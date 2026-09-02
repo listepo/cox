@@ -11,6 +11,8 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+# T2.2: permission rules compile path globs (`Read(~/.ssh/**)`) once.
+globset = { workspace = true }
 
 [dev-dependencies]
 cox-provider = { path = "../cox-provider", version = "0.1.0" }
@@ -19,3 +21,4 @@ cox-tools = { path = "../cox-tools", version = "0.1.0" }
 insta = { workspace = true }
 serde = { workspace = true }
 proptest = { workspace = true }
+rstest = { workspace = true }

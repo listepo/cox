@@ -10,14 +10,15 @@ use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, Event, Message, Risk, Role, SandboxPolicy, ToolCall, ToolOutput,
-    ToolResult, Usage,
+    Concurrency, Content, DecidedBy, Decision, Event, Message, Risk, Role, SandboxPolicy, ToolCall,
+    ToolOutput, ToolResult, Usage,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use crate::session::Session;
+use crate::permission::Outcome;
+use crate::session::{Session, State};
 
 #[derive(Default)]
 pub(crate) struct Streamed {
@@ -101,40 +102,53 @@ pub(crate) async fn run_tools(
         .map(|t| (t.spec().name, t.clone()))
         .collect();
     let order: Vec<CallId> = calls.iter().map(|(id, _, _)| *id).collect();
-    for (id, name, input) in &calls {
-        let subject = tools
-            .get(name)
-            .map(|t| t.subject(input))
-            .unwrap_or_default();
-        let call = ToolCall {
-            id: *id,
-            name: name.clone(),
-            input: input.clone(),
-            // Per call, not per tool: `apply_patch` escalates to
-            // `Destructive` on the patches that delete a lot of files.
-            risk: tools
-                .get(name)
-                .map(|t| t.risk(input))
-                .unwrap_or(Risk::ReadOnly),
-            subject,
-        };
-        session.emit(Event::ToolCallRequested { call }).await?;
+    let calls: Vec<ToolCall> = calls
+        .into_iter()
+        .map(|(id, name, input)| {
+            let tool = tools.get(&name);
+            ToolCall {
+                id,
+                subject: tool.map(|t| t.subject(&input)).unwrap_or_default(),
+                // Per call, not per tool: `apply_patch` escalates to
+                // `Destructive` on the patches that delete a lot of files.
+                risk: tool.map(|t| t.risk(&input)).unwrap_or(Risk::ReadOnly),
+                name,
+                input,
+            }
+        })
+        .collect();
+    for call in &calls {
+        session
+            .emit(Event::ToolCallRequested { call: call.clone() })
+            .await?;
     }
+    // Gate serially so the user answers one prompt at a time and an
+    // `AllowForSession` grant covers the calls behind it in the same batch.
     let mut serial = Vec::new();
     let mut parallel = Vec::new();
-    let mut unknown = HashMap::new();
-    for (id, name, input) in calls {
-        let Some(tool) = tools.get(&name) else {
-            unknown.insert(id, failed_result(&format!("unknown tool {name}")));
+    let mut done = HashMap::new();
+    for call in calls {
+        let Some(tool) = tools.get(&call.name).cloned() else {
+            done.insert(
+                call.id,
+                failed_result(&format!("unknown tool {}", call.name)),
+            );
             continue;
         };
+        let id = call.id;
+        let input = match gate(session, tool.as_ref(), call).await? {
+            Ok(input) => input,
+            Err(result) => {
+                done.insert(id, result);
+                continue;
+            }
+        };
         if tool.spec().concurrency == Concurrency::Exclusive {
-            serial.push((id, tool.clone(), input));
+            serial.push((id, tool, input));
         } else {
-            parallel.push((id, tool.clone(), input));
+            parallel.push((id, tool, input));
         }
     }
-    let mut done = unknown;
     for (id, tool, input) in serial {
         let (id, result) = run_one(session, id, tool, input).await;
         done.insert(id, result);
@@ -181,6 +195,73 @@ pub(crate) async fn run_tools(
             .await?;
     }
     Ok(results)
+}
+
+/// Asks the permission engine and, when it escalates, the user. Returns the
+/// input to run with (the user may have edited it) or the failed result the
+/// model sees. Auto-allows emit nothing: they are the common case and the
+/// rollout already carries `ToolCallRequested`.
+async fn gate(
+    session: &Session,
+    tool: &dyn Tool,
+    mut call: ToolCall,
+) -> Result<Result<Value, ToolResult>, CoreError> {
+    let id = call.id;
+    let denied = |reason: &str| failed_result(&format!("permission denied: {reason}"));
+    loop {
+        let why = match session.decide(&call).await {
+            Outcome::Allow { .. } => return Ok(Ok(call.input)),
+            Outcome::Deny { reason, by } => {
+                session
+                    .emit(Event::ApprovalDecided {
+                        call_id: id,
+                        decision: Decision::Deny {
+                            reason: reason.clone(),
+                        },
+                        by,
+                    })
+                    .await?;
+                return Ok(Err(denied(&reason)));
+            }
+            Outcome::Ask(why) => why,
+        };
+        let rx = session.await_decision(id).await;
+        session
+            .emit(Event::ApprovalRequired {
+                call: call.clone(),
+                why,
+            })
+            .await?;
+        let cancel = session.cancel_token();
+        let decision = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Decision::Deny { reason: "interrupted".into() },
+            d = rx => d.unwrap_or(Decision::Deny { reason: "session closed".into() }),
+        };
+        session.set_state(State::RunningTools).await;
+        session
+            .emit(Event::ApprovalDecided {
+                call_id: id,
+                decision: decision.clone(),
+                by: DecidedBy::User,
+            })
+            .await?;
+        match decision {
+            Decision::Allow => return Ok(Ok(call.input)),
+            Decision::AllowForSession => {
+                session.grant(call.name, call.subject).await;
+                return Ok(Ok(call.input));
+            }
+            Decision::Deny { reason } => return Ok(Err(denied(&reason))),
+            // A rewritten input is a new call as far as the rules go: its
+            // risk and subject change, so it goes back through `decide`.
+            Decision::Edit { input } => {
+                call.risk = tool.risk(&input);
+                call.subject = tool.subject(&input);
+                call.input = input;
+            }
+        }
+    }
 }
 
 async fn run_one(

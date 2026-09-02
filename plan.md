@@ -53,7 +53,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 |-------|------|------|
 | `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow, dotenvy 0.15 |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
-| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
+| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, portable-pty 0.9, shlex, landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`) |
@@ -562,18 +562,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 ### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
 
 ### P2 — Core loop (goal: a session that runs turns, calls tools, asks permission, resumes)
-
-#### T2.2 Permission engine
-Model: opus · Status: open · Depends: T2.1 · Size: ~200
-Goal: §1.8 exactly, pure and table-tested.
-Files: `crates/cox-core/src/permission/{mod,rules}.rs`, `crates/cox-core/tests/permission.rs`.
-Steps: (1) Rule parser: `Tool`, `Tool(subject)`, `Tool(prefix:*)`, path globs (`globset`, `~` expansion), MCP wildcards, Claude tool-name aliases. (2) `Engine::compile(rules)`, `decide(call, mode, policy, grants) -> Decision`. (3) Session grants keyed by (tool, subject prefix). (4) Wire into the loop: `Ask` → `ApprovalRequired`, await `Submission::Approve`, `AllowForSession` adds a grant, `Edit{input}` re-runs `decide` with the new input. (5) Tests: 30-row table (rstest) including `deny_beats_allow`, `bash_prefix_pattern_matches_npm_run_test_colon_star`, `plan_mode_denies_writes_without_prompt`, `never_policy_turns_ask_into_deny`, `read_ssh_denied_by_default`; proptest `adding_deny_never_weakens`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core permission_
-```
-Done when: loop scenario `ask_then_approve` and `ask_then_deny` snapshots exist.
-Out of scope: bash command classification (T3.7) — `Exec` risk is taken from the tool spec here.
 
 #### T2.6 Re-read and re-run dedup
 Model: sonnet · Status: open · Depends: T2.5 · Size: ~120

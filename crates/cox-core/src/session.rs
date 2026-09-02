@@ -6,16 +6,18 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use cox_protocol::errors::{CoreError, StoreError};
-use cox_protocol::ids::{ItemId, SessionId, TurnId};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Provider, Store, Tool};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Job, Level, Message, ModelId, Role, StopReason, Submission, Tier,
+    Content, Decision, Event, ItemKind, Job, Level, Message, ModelId, PermissionMode, Role,
+    StopReason, Submission, Tier, ToolCall,
 };
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::budget;
 use crate::context::assemble;
+use crate::permission::{Engine, Outcome};
 use crate::turn::{consume_provider, results_message, run_tools};
 
 /// Loop states from plan.md §1.3.
@@ -29,8 +31,7 @@ pub enum State {
     Streaming,
     /// Tools from the last assistant message are running.
     RunningTools,
-    /// Waiting on `Submission::Approve` (wired in T2.2).
-    #[allow(dead_code)]
+    /// Waiting on `Submission::Approve`.
     AwaitingApproval,
     /// Compaction is running (wired in T8.1).
     #[allow(dead_code)]
@@ -52,6 +53,11 @@ struct Inner {
     provider_calls: u32,
     spent_usd: f64,
     budget_warned: bool,
+    permission_mode: PermissionMode,
+    /// `AllowForSession` grants as `(tool, subject prefix)`.
+    grants: Vec<(String, String)>,
+    /// Calls parked in `AwaitingApproval`, answered by `Submission::Approve`.
+    pending: HashMap<CallId, oneshot::Sender<Decision>>,
 }
 
 /// One conversation: a provider, tools, a store, and an event stream.
@@ -63,6 +69,7 @@ pub struct Session {
     pub(crate) tools: Vec<Arc<dyn Tool>>,
     pub(crate) store: Arc<dyn Store>,
     pub(crate) archive: Arc<dyn Archive>,
+    pub(crate) engine: Arc<Engine>,
     pub(crate) cwd: PathBuf,
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
     tx: mpsc::Sender<Event>,
@@ -82,6 +89,9 @@ impl Session {
     ) -> Result<Self, CoreError> {
         let id = SessionId::new();
         let (tx, rx) = mpsc::channel(256);
+        let home = std::env::home_dir();
+        let engine = Engine::compile(&config.permissions, home.as_deref(), &cwd)?;
+        let permission_mode = config.permissions.mode;
         let session = Self {
             id,
             config,
@@ -89,6 +99,7 @@ impl Session {
             tools,
             store,
             archive,
+            engine: Arc::new(engine),
             cwd: cwd.clone(),
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             tx,
@@ -99,6 +110,9 @@ impl Session {
                 provider_calls: 0,
                 spent_usd: 0.0,
                 budget_warned: false,
+                permission_mode,
+                grants: Vec::new(),
+                pending: HashMap::new(),
             })),
         };
         let started = Event::SessionStarted {
@@ -172,9 +186,59 @@ impl Session {
                 self.interrupt();
                 Ok(())
             }
+            Submission::Approve { call_id, decision } => {
+                let waiter = self.inner.lock().await.pending.remove(&call_id);
+                match waiter {
+                    Some(tx) => {
+                        let _ = tx.send(decision);
+                        Ok(())
+                    }
+                    None => {
+                        self.emit(Event::Notice {
+                            level: Level::Warn,
+                            text: format!("no approval pending for call {call_id}"),
+                        })
+                        .await
+                    }
+                }
+            }
+            Submission::SetPermissionMode { mode } => {
+                self.inner.lock().await.permission_mode = mode;
+                self.emit(Event::Notice {
+                    level: Level::Info,
+                    text: format!("permission mode: {mode:?}"),
+                })
+                .await
+            }
             Submission::Shutdown => Ok(()),
             _ => Ok(()),
         }
+    }
+
+    /// The engine's verdict for `call` under the session's current mode
+    /// and grants (plan.md §1.8).
+    pub(crate) async fn decide(&self, call: &ToolCall) -> Outcome {
+        let inner = self.inner.lock().await;
+        self.engine.decide(
+            call,
+            inner.permission_mode,
+            self.config.permissions.approval,
+            &inner.grants,
+        )
+    }
+
+    /// Parks `call_id` until `Submission::Approve` answers it.
+    pub(crate) async fn await_decision(&self, call_id: CallId) -> oneshot::Receiver<Decision> {
+        let (tx, rx) = oneshot::channel();
+        let mut inner = self.inner.lock().await;
+        inner.state = State::AwaitingApproval;
+        inner.pending.insert(call_id, tx);
+        rx
+    }
+
+    /// Records an `AllowForSession` grant.
+    pub(crate) async fn grant(&self, tool: String, subject: String) {
+        self.inner.lock().await.grants.push((tool, subject));
     }
 
     async fn run_turn(&self, text: String) -> Result<(), CoreError> {
@@ -384,7 +448,7 @@ impl Session {
         Ok(Step::Continue)
     }
 
-    async fn set_state(&self, state: State) {
+    pub(crate) async fn set_state(&self, state: State) {
         self.inner.lock().await.state = state;
     }
 

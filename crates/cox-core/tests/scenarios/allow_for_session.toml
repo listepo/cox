@@ -1,0 +1,10 @@
+[[turn]]
+text = "first write"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+[[turn]]
+text = "second write"
+tool_calls = [{ name = "touch", input = { path = "b" } }]
+
+[[turn]]
+text = "done"

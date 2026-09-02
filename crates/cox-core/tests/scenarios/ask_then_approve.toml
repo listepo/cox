@@ -1,0 +1,6 @@
+[[turn]]
+text = "writing"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+[[turn]]
+text = "done"

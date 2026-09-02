@@ -7,11 +7,13 @@
 
 mod budget;
 mod context;
+pub mod permission;
 mod rollout;
 mod session;
 mod truncate;
 mod turn;
 
 pub use context::assemble;
+pub use permission::{Engine, Outcome};
 pub use rollout::History;
 pub use session::{MemoryStore, Session};

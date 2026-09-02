@@ -730,3 +730,32 @@ test result: ok. 7 passed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T2.2 Permission engine
+Model: fable · Status: done 2026-09-03 · Depends: T2.1 · Size: ~200
+Goal: §1.8 exactly, pure and table-tested.
+Files: `crates/cox-core/src/permission/{mod,rules}.rs`, `crates/cox-core/tests/permission.rs`.
+Steps: (1) Rule parser: `Tool`, `Tool(subject)`, `Tool(prefix:*)`, path globs (`globset`, `~` expansion), MCP wildcards, Claude tool-name aliases. (2) `Engine::compile(rules)`, `decide(call, mode, policy, grants) -> Decision`. (3) Session grants keyed by (tool, subject prefix). (4) Wire into the loop: `Ask` → `ApprovalRequired`, await `Submission::Approve`, `AllowForSession` adds a grant, `Edit{input}` re-runs `decide` with the new input. (5) Tests: 30-row table (rstest) including `deny_beats_allow`, `bash_prefix_pattern_matches_npm_run_test_colon_star`, `plan_mode_denies_writes_without_prompt`, `never_policy_turns_ask_into_deny`, `read_ssh_denied_by_default`; proptest `adding_deny_never_weakens`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core permission_
+```
+Done when: loop scenario `ask_then_approve` and `ask_then_deny` snapshots exist.
+Out of scope: bash command classification (T3.7) — `Exec` risk is taken from the tool spec here.
+
+What landed: `permission::rules` (grammar → `Rule`/`Subject`; `canonical_tool` aliases; `globset` path globs with `~`/cwd anchoring; `domain:` host match; `prefix:*` word-boundary match; `mcp__server__*`) and `permission::Engine` (`compile` → `CoreError::Config` on a bad rule; `decide` = §1.8 steps 1–9 → `Outcome::{Allow,Deny,Ask}` with `DecidedBy`). Loop wiring in `turn::gate`: calls are gated serially after `ToolCallRequested`; `Ask` emits `ApprovalRequired`, parks the call in `State::AwaitingApproval` on a oneshot answered by `Submission::Approve` (interrupt → deny); `AllowForSession` records a `(tool, subject)` grant; `Edit{input}` recomputes risk/subject and re-runs `decide`; `Deny` becomes the failed tool result `permission denied: <reason>` plus `ApprovalDecided`. `Submission::SetPermissionMode` switches the session mode. Auto-allows emit no event, so existing snapshots are unchanged. 37-row rstest table + 3 named tests + proptest; loop scenarios `ask_then_approve`, `ask_then_deny` (snapshots), `allow_for_session`, edit re-decide, plan-mode deny. New dep in `cox-core`: `globset` (workspace pin, §1.1 row updated); dev-dep `rstest`. Size: ~330 LOC over 6 files, reported rather than split because the plan lists the loop wiring as step 4 of this task.
+Not done: rollout `History.grants` are not replayed into a resumed session yet (nothing consumes `History.grants`; T2.4 follow-up). `allow_for_session_persists` is read but not acted on (T7.5).
+
+Check output:
+```text
+$ mise exec -- cargo test -p cox-core permission_
+test permission_rule_grammar_matches_claude_code_forms ... ok
+test permission_table::case_01_deny_beats_allow … case_37_rule_tool_names_are_case_insensitive ... ok
+test permission_read_ssh_denied_by_default ... ok
+test permission_outcomes_name_their_source ... ok
+test permission_bad_rule_is_a_config_error_not_a_skipped_guard ... ok
+test permission_adding_deny_never_weakens ... ok
+test result: ok. 41 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

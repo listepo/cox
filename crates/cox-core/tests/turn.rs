@@ -9,7 +9,8 @@ use cox_core::{MemoryStore, Session};
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, Event, Risk, StopReason, Submission, ToolOutput, ToolSpec,
+    Concurrency, Content, DecidedBy, Decision, Event, Risk, StopReason, Submission, ToolOutput,
+    ToolSpec,
 };
 use cox_provider::scripted::Scripted;
 use serde_json::Value;
@@ -396,6 +397,170 @@ async fn turn_interrupt_mid_tool_snapshot() {
             ..
         })
     ));
+}
+
+/// Runs `name` until the first `ApprovalRequired`, answers it with
+/// `decision`, then drains the turn.
+async fn ask_scenario(name: &str, decision: Decision) -> Vec<Event> {
+    ask_scenario_with(name, cox_protocol::Config::default(), decision).await
+}
+
+async fn ask_scenario_with(
+    name: &str,
+    config: cox_protocol::Config,
+    decision: Decision,
+) -> Vec<Event> {
+    let (session, _, mut rx) = open(&scenario(name), config);
+    let running = {
+        let session = session.clone();
+        tokio::spawn(async move {
+            session
+                .submit(Submission::UserTurn {
+                    text: "write".into(),
+                    attachments: vec![],
+                    confirm_think: false,
+                })
+                .await
+        })
+    };
+    let mut events = Vec::new();
+    let call_id = loop {
+        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("wait prompt")
+            .expect("closed");
+        let asked = match &ev {
+            Event::ApprovalRequired { call, .. } => Some(call.id),
+            _ => None,
+        };
+        events.push(ev);
+        if let Some(id) = asked {
+            break id;
+        }
+    };
+    session
+        .submit(Submission::Approve { call_id, decision })
+        .await
+        .expect("approve");
+    running.await.expect("join").expect("turn");
+    events.extend(drain(&mut rx).await);
+    events
+}
+
+fn tool_results(events: &[Event]) -> Vec<(bool, String)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::ToolCallDone { result, .. } => Some((result.ok, result.visible.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn turn_write_asks_then_runs_on_allow_snapshot() {
+    let events = ask_scenario("ask_then_approve", Decision::Allow).await;
+    snapshot("ask_then_approve", &events);
+    assert_eq!(tool_results(&events), [(true, "touched".to_string())]);
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::ApprovalDecided {
+            decision: Decision::Allow,
+            by: DecidedBy::User,
+            ..
+        }
+    )));
+}
+
+#[tokio::test]
+async fn turn_write_asks_then_fails_on_deny_snapshot() {
+    let events = ask_scenario(
+        "ask_then_deny",
+        Decision::Deny {
+            reason: "no".into(),
+        },
+    )
+    .await;
+    snapshot("ask_then_deny", &events);
+    assert_eq!(
+        tool_results(&events),
+        [(false, "permission denied: no".to_string())]
+    );
+    assert!(matches!(
+        events.last(),
+        Some(Event::TurnDone {
+            stop: StopReason::EndTurn,
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn turn_allow_for_session_covers_the_next_call() {
+    let events = ask_scenario("allow_for_session", Decision::AllowForSession).await;
+    let prompts = events
+        .iter()
+        .filter(|e| matches!(e, Event::ApprovalRequired { .. }))
+        .count();
+    assert_eq!(prompts, 1);
+    assert_eq!(tool_results(&events).len(), 2);
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::ApprovalDecided {
+            by: DecidedBy::User,
+            decision: Decision::AllowForSession,
+            ..
+        }
+    )));
+}
+
+#[tokio::test]
+async fn turn_edited_input_goes_back_through_the_rules() {
+    let mut config = cox_protocol::Config::default();
+    config.permissions.ask = vec!["echo(hi)".into()];
+    let events = ask_scenario_with(
+        "one_tool",
+        config,
+        Decision::Edit {
+            input: serde_json::json!({"text": "bye"}),
+        },
+    )
+    .await;
+    // `echo(bye)` matches no ask rule and is read-only, so the edited call
+    // runs without a second prompt.
+    let prompts = events
+        .iter()
+        .filter(|e| matches!(e, Event::ApprovalRequired { .. }))
+        .count();
+    assert_eq!(prompts, 1);
+    assert_eq!(tool_results(&events), [(true, "bye".to_string())]);
+}
+
+#[tokio::test]
+async fn turn_plan_mode_denies_write_without_prompt() {
+    let mut config = cox_protocol::Config::default();
+    config.permissions.mode = cox_protocol::types::PermissionMode::Plan;
+    let (session, _, mut rx) = open(&scenario("ask_then_deny"), config);
+    session
+        .submit(Submission::UserTurn {
+            text: "plan".into(),
+            attachments: vec![],
+            confirm_think: false,
+        })
+        .await
+        .expect("submit");
+    let events = drain(&mut rx).await;
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::ApprovalRequired { .. }))
+    );
+    let results = tool_results(&events);
+    assert_eq!(results.len(), 1);
+    assert!(
+        !results[0].0 && results[0].1.contains("plan mode"),
+        "{results:?}"
+    );
 }
 
 #[tokio::test]
