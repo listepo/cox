@@ -9,42 +9,14 @@ use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, Event, Message, ModelId, Request, Risk, Role, SandboxPolicy, SystemBlock,
-    Thinking, Tier, ToolCall, ToolOutput, ToolResult, Usage,
+    Concurrency, Content, Event, Message, Risk, Role, SandboxPolicy, ToolCall, ToolOutput,
+    ToolResult, Usage,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::session::Session;
-
-/// Builds the provider-neutral request for this call (T2.3 will pin cache
-/// order; here the history is sent as-is so the loop is testable).
-pub(crate) fn assemble(
-    history: &[Message],
-    tools: &[Arc<dyn Tool>],
-    model: ModelId,
-    effort: cox_protocol::types::Effort,
-    max_tokens: u32,
-    thinking: Thinking,
-) -> Request {
-    Request {
-        tier: Tier::Code,
-        job: cox_protocol::types::Job::Main,
-        model,
-        system: vec![SystemBlock {
-            text: String::new(),
-            cache: true,
-        }],
-        tools: tools.iter().map(|t| t.spec()).collect(),
-        messages: history.to_vec(),
-        effort,
-        max_tokens,
-        thinking,
-        cache_breakpoints: vec![],
-        stop_sequences: vec![],
-    }
-}
 
 #[derive(Default)]
 pub(crate) struct Streamed {

@@ -8,12 +8,14 @@ use cox_protocol::errors::{CoreError, StoreError};
 use cox_protocol::ids::{ItemId, SessionId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Provider, Store, Tool};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Job, Message, ModelId, Role, StopReason, Submission, Tier,
+    Content, Event, ItemKind, Job, Level, Message, ModelId, Role, StopReason, Submission, Tier,
 };
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::turn::{assemble, consume_provider, results_message, run_tools};
+use crate::budget;
+use crate::context::assemble;
+use crate::turn::{consume_provider, results_message, run_tools};
 
 /// Loop states from plan.md §1.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +49,8 @@ struct Inner {
     state: State,
     history: Vec<Message>,
     provider_calls: u32,
+    spent_usd: f64,
+    budget_warned: bool,
 }
 
 /// One conversation: a provider, tools, a store, and an event stream.
@@ -92,6 +96,8 @@ impl Session {
                 state: State::Idle,
                 history: Vec::new(),
                 provider_calls: 0,
+                spent_usd: 0.0,
+                budget_warned: false,
             })),
         };
         let started = Event::SessionStarted {
@@ -232,15 +238,36 @@ impl Session {
             inner.state = State::Assembling;
             inner.provider_calls += 1;
         }
-        let tier = &self.config.tiers.code;
-        let req = assemble(
-            &history,
-            &self.tools,
-            ModelId(tier.model.clone()),
-            tier.effort,
-            tier.max_tokens,
-            tier.thinking,
-        );
+        let req = assemble(&history, &self.config, &self.tools, &self.cwd, "");
+        let (spent, warned) = {
+            let inner = self.inner.lock().await;
+            (inner.spent_usd, inner.budget_warned)
+        };
+        match budget::decide(
+            spent,
+            self.config.budget.session_usd,
+            self.config.budget.warn_at,
+            warned,
+        ) {
+            budget::Decision::Stop => {
+                self.finish(turn, StopReason::Budget).await?;
+                return Ok(Step::Done);
+            }
+            budget::Decision::Warn => {
+                {
+                    self.inner.lock().await.budget_warned = true;
+                }
+                self.emit(Event::Notice {
+                    level: Level::Budget,
+                    text: format!(
+                        "budget ${spent:.2} of ${:.2}",
+                        self.config.budget.session_usd
+                    ),
+                })
+                .await?;
+            }
+            budget::Decision::Proceed => {}
+        }
         let assistant_item = ItemId::new();
         self.emit(Event::ItemStarted {
             item: assistant_item,
@@ -296,6 +323,9 @@ impl Session {
                 usage,
             })
             .map_err(|error| CoreError::Store { error })?;
+        if budget::counts(Tier::Code, self.config.budget.cheap_counts) {
+            self.inner.lock().await.spent_usd += usage.cost_usd;
+        }
         self.emit(Event::Usage { turn, usage }).await?;
         self.emit(Event::ItemDone {
             item: assistant_item,

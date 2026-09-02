@@ -1,0 +1,10 @@
+---
+source: crates/cox-core/tests/budget.rs
+expression: kinds(&second)
+---
+[
+  "turn_started",
+  "item_started",
+  "item_done",
+  "turn_done:Budget"
+]

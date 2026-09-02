@@ -5,7 +5,12 @@
 
 #![warn(missing_docs)]
 
+mod budget;
+mod context;
+mod rollout;
 mod session;
 mod turn;
 
+pub use context::assemble;
+pub use rollout::History;
 pub use session::{MemoryStore, Session};

@@ -9,6 +9,7 @@ mod config_cmd;
 mod config_load;
 mod doctor;
 mod record;
+mod resume;
 mod stats;
 
 use clap::Parser;
@@ -37,6 +38,7 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         }
+        Some(Command::Run(args)) => resume::run(&cli, args),
         Some(_) => {
             println!("not implemented");
             Ok(())

@@ -555,3 +555,66 @@ Finished `dev` profile
 $ mise exec -- cargo fmt --check
 (clean)
 ```
+#### T3.6 `write` and `todo`
+Model: grok · Status: done 2026-09-02 · Depends: T3.1 · Size: ~120
+Goal: new-file writes and a structured todo list.
+Files: `crates/cox-tools/src/write.rs`, `crates/cox-tools/src/todo.rs`.
+
+Notes: already on `main` from earlier work (`write.rs` / `todo.rs` exported from `cox-tools`). Check run as two cargo filters because clap/cargo take one `TESTNAME`.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-tools write_
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.01s
+$ mise exec -- cargo test -p cox-tools todo_
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.00s
+```
+
+#### T2.3 Context assembly and cache breakpoints
+Model: grok · Status: done 2026-09-02 · Depends: T2.1 · Size: ~180
+Goal: §1.9 order with exactly the three breakpoints, byte-stable across turns.
+Files: `crates/cox-core/src/context.rs`, `crates/cox-core/tests/context.rs`.
+
+Notes: `assemble` lives in `context.rs` (`include_str!("prompt.md")` for `system[1]`; instruction stub until T7.1). `system[0]` is canonical JSON of non-deferred specs sorted by name, then deferred appended. Breakpoints: after `system[2]`, end of previous turn, last message, truncated to 3. Volatile date/cwd/permission_mode is `system[3]` with `cache: false`. Session calls `assemble` with empty date (T7.1/clock later). Discovered-tool `Notice` on cache miss not emitted yet (no `tool_search` until T3.8). Anthropic `cache_control` on three blocks already covered by T1.1 `anthropic_request_parallel_tool_results`.
+Overrun: also `crates/cox-core/src/{lib.rs,turn.rs,session.rs,prompt.md}`.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-core context_
+test context::tests::context_three_breakpoints_max_indices ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+test context_three_breakpoints_max ... ok
+test context_volatile_content_after_breakpoint ... ok
+test context_prefix_bytes_identical_between_turns ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+#### T2.7 Budgets
+Model: grok · Status: done 2026-09-02 · Depends: T1.7, T2.1 · Size: ~100
+Goal: D6h — a session stops at its cap and says so with numbers.
+Files: `crates/cox-core/src/budget.rs`.
+
+Notes: `budget::decide` is pure (Proceed/Warn/Stop). Session spend uses `usage.cost_usd` from the provider when `counts(tier, cheap_counts)`. 80% → `Notice { level: Budget }` once; at cap → `TurnDone { Budget }`. Scenario snapshot `tests/scenarios/budget_hit.events.snap`. Pre-call `estimate(req)` is not converted to USD (no price table in cox-core). Monthly cap unused. `cox run -p` exit 3 is T6.1.
+Overrun: also `crates/cox-core/src/session.rs` and `tests/budget.rs` + snapshot.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-core budget_
+test budget::tests::budget_cheap_excluded_when_configured ... ok
+test budget::tests::budget_stops_when_spent_at_cap ... ok
+test budget::tests::budget_warns_once_at_threshold ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+test budget_hit ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+#### T2.8 Design doc: loop
+Model: grok · Status: done 2026-09-02 · Depends: T2.1 · Size: doc
+Goal: `docs/design/loop.md`: vs Claude Code's loop, Codex Thread/Turn/Item, Pi's minimal loop; the six rules of §1.3 and what would falsify them.
+
+Notes: compares Claude Code `while tool_use`, Codex Thread/Turn/Item, and Pi's four-tool loop; names the six §1.3 rules with their test names and falsifiers. Think-tier review still pending (doc footer).
+Check:
+```
+docs/design/loop.md exists (82 lines) and names:
+turn_all_tool_results_return_in_one_message
+ask_then_approve
+turn_interrupt_mid_tool_snapshot
+turn_no_event_after_turn_done
+truncate_is_lossless_via_archive
+resume_builds_identical_request
+```

@@ -22,7 +22,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D10 | **TUI = ratatui 0.30 + crossterm 0.29 in TEA form, inline viewport.** `State`, `update(State, Msg) -> State`, `view(&State, Frame)`. Inline (non-alternate-screen) rendering so native scrollback keeps the transcript. Every widget has an `insta` snapshot through `TestBackend`; end-to-end through `portable-pty` + `vt100`. | Codex made the same choices and tests them the same way (R§1.6). TEA makes `update` a pure function that a test can drive without a terminal. |
 | D11 | **Four surfaces from day one: `cox` (TUI), `cox run -p` (headless; `text`/`json`/`stream-json`), `cox acp` (Agent Client Protocol 2.0 for Zed/JetBrains/neovim), `cox mcp` (built-in tools as an MCP server).** Each is ≤ 300 LOC over the event stream. | D2 makes them cheap; ACP is what gets a terminal agent into editors without an extension per IDE (R§3.2); `cox mcp` lets Claude Code or Codex borrow cox's tools. |
 | D12 | **No test touches the network or needs an API key.** `Provider` has `Scripted` (fixtures) and `Replay` (recorded cassettes, re-recorded on demand with `cox record`) implementations; tools run in `tempfile` trees; the patch parser and `str_replace` have `proptest` suites; transcripts and TUI frames are `insta` snapshots; the real binary is driven by `assert_cmd` against `COX_HOME`. Evals (Terminal-Bench adapter) are a separate, opt-in `just eval`. | A coding agent is a distributed system with a nondeterministic component; the only cheap regression suite is one that replays events instead of models (R§5). |
-| D13 | **One config file; every flag is a key.** `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `COX_<SECTION>_<KEY>` < flags, via clap 4 (derive) + figment + toml_edit. `cox config show --sources` reports provenance. `.claude/settings.json` permissions and hooks are *imported* (read-only) when present. | Same rule as rtok D12/D14; it worked. Headless and ACP runs are launched with fixed command lines, so flags alone cannot configure them. |
+| D13 | **One config file; every flag is a key.** `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `COX_<SECTION>_<KEY>` < flags, via clap 4 (derive) + figment + toml_edit. `cox config show --sources` reports provenance. `.claude/settings.json` permissions and hooks are *imported* (read-only) when present. `.env` / `.env.local` (dotenvy, T0.7) are not a config layer: they inject unset process env before figment reads `COX_*`, and never override variables already set (CI, `COX_HOME=...` tests). | Same rule as rtok D12/D14; it worked. Headless and ACP runs are launched with fixed command lines, so flags alone cannot configure them. Local API keys live in `.env`, which gitignores. |
 | D14 | **Everything not written by cox is untrusted, and extensions fail open.** Model output, tool results, MCP responses, hook stdout, skill files and repository instruction files pass the guards in `AGENTS.md` → Trust boundaries. A broken hook, server or skill is warned about and skipped. | Aider's credential leak and Claude Code's escape-sequence incidents are both "trusted text from the wrong side" bugs (R§2.2). |
 | D15 | **Each component is designed against the field before it is built.** Every P-phase's first task is a ≤ 1-page `docs/design/<component>.md`: the problem in one measurable number, what Claude Code / Codex / Pi / OpenCode / aider do, what cox does and why it is at least as good, and what would falsify it. Written by the `code` tier; reviewed, not written, by `think`. | rtok D15. Copying a competitor caps cox at that competitor. |
 | D16 | **Observability is `tracing` with an optional OpenTelemetry GenAI exporter.** Spans carry `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`. Off by default; `cox stats` reads the ledger locally. | Codex ships opentelemetry 0.31 (R§1.3); the GenAI semconv is still experimental, so it stays behind a feature flag. |
@@ -51,7 +51,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 
 | Crate | Owns | Key deps (pinned in T0.1; versions verified 2026-09-02, R§4.5) |
 |-------|------|------|
-| `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow |
+| `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow, dotenvy 0.15 |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
@@ -342,7 +342,7 @@ endpoint = ""
 redact = true
 ```
 
-Precedence (D13): embedded defaults < `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `.claude/settings.json` (permissions/hooks/env only, imported) < `COX_<SECTION>_<KEY>` (e.g. `COX_TIERS_CODE_MODEL`) < CLI flags. Project config may not raise `budget.*`, set `permissions.mode = "bypass"`, set `sandbox.mode = "danger-full-access"` or set `tiers.think.confirm = false`; violations are reported by `cox config show` and ignored. `cox config show --sources` prints every effective key with its origin; `cox config set <key> <value>` edits the user file with `toml_edit` preserving comments.
+Precedence (D13): embedded defaults < `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `.claude/settings.json` (permissions/hooks/env only, imported) < `COX_<SECTION>_<KEY>` (e.g. `COX_TIERS_CODE_MODEL`) < CLI flags. Before figment runs, `dotenvy` loads `.env` then `.env.local` walking up from cwd (T0.7); missing files are ignored; already-set variables are left alone, so a key that arrived only via `.env` still shows as `env` in `cox config show --sources`. Project config may not raise `budget.*`, set `permissions.mode = "bypass"`, set `sandbox.mode = "danger-full-access"` or set `tiers.think.confirm = false`; violations are reported by `cox config show` and ignored. `cox config show --sources` prints every effective key with its origin; `cox config set <key> <value>` edits the user file with `toml_edit` preserving comments.
 
 ### 1.7 Storage schema (`cox-store`)
 
@@ -555,9 +555,21 @@ P0 ─▶ P1 ─▶ P2 ─▶ P3 ─▶ P4 ─▶ P5(rest) ─▶ P6 ─▶ P7 �
         └──▶ T8.3, T8.4 (ledger tooling) can start after T1.7
 ```
 
-Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2 → T1.5 → T2.1 → T2.3 → T2.4 → T5.1 → T5.2 → T5.3. Everything else in P0–P2 can run in parallel with it (T0.5, T0.6, T1.3, T1.4, T1.6–T1.8, T2.2, T2.5–T2.8).
+Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2 → T1.5 → T2.1 → T2.3 → T2.4 → T5.1 → T5.2 → T5.3. Everything else in P0–P2 can run in parallel with it (T0.5, T0.6, T0.7, T1.3, T1.4, T1.6–T1.8, T2.2, T2.5–T2.8).
 
 ### P0 — Scaffold (goal: `cox --version`, config, doctor, CI green)
+
+#### T0.7 `.env` via dotenvy
+Model: haiku · Status: open · Depends: T0.3 · Size: ~80
+Goal: API keys and `COX_*` can come from a `.env` file without becoming a second config format.
+Files: `crates/cox/src/main.rs`, `crates/cox/src/config_load.rs`, workspace + `crates/cox` `Cargo.toml`.
+Steps: (1) Workspace dep `dotenvy` 0.15 on `cox` only — `cox-core` stays filesystem-free. (2) `load_dotenv()` as the first call in `main`, before clap/`cox_home`: walk from cwd, load `.env` then `.env.local`; dotenvy's default is do-not-override, so CI, real env, and `COX_HOME=/tmp/...` test invocations win. Missing files are not an error. (3) Gitignore `.env` and `.env.local`. (4) Tests load a tempfile via `dotenvy::from_path`, never the repo `.env` (D12).
+Check:
+```bash
+mise exec -- cargo test -p cox config_dotenv_
+```
+Done when: `config_dotenv_fills_unset_cox_key` and `config_dotenv_does_not_override_set_env` pass; `cox config show --sources` still labels a `.env`-injected `COX_*` key as `env`.
+Out of scope: a figment `.env` provider; doctor copy; `.claude/settings.json` `env` import (T7.5).
 
 ### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
 
@@ -586,17 +598,6 @@ mise exec -- cargo test -p cox-core permission_
 ```
 Done when: loop scenario `ask_then_approve` and `ask_then_deny` snapshots exist.
 Out of scope: bash command classification (T3.7) — `Exec` risk is taken from the tool spec here.
-
-#### T2.3 Context assembly and cache breakpoints
-Model: sonnet · Status: open · Depends: T2.1 · Size: ~180
-Goal: §1.9 order with exactly the three breakpoints, byte-stable across turns.
-Files: `crates/cox-core/src/context.rs`, `crates/cox-core/tests/context.rs`.
-Steps: (1) `assemble(history, config, ext) -> Request`: `system[0]` canonical JSON of sorted non-deferred tool specs; `system[1]` versioned prompt constant (`include_str!("prompt.md")`, no date/cwd); `system[2]` instruction block from `cox-ext` (stub returns fixed text until T7.1); `system[3]` volatile. (2) Breakpoints: after `system[2]`, end of previous turn, last message. (3) Discovered tools appended to `system[0]` with a `Notice` about the one-time cache miss. (4) Tests: `prefix_bytes_identical_between_turns` (two turns, compare serialized `system[0..=2]`), `volatile_content_after_breakpoint`, `three_breakpoints_max`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core context_
-```
-Done when: the Anthropic translator snapshot (T1.1) for a two-turn scenario shows `cache_control` on exactly three blocks.
 
 #### T2.4 Rollout writer/reader, resume, continue
 Model: sonnet · Status: open · Depends: T2.1, T0.4 · Size: ~180
@@ -631,33 +632,7 @@ mise exec -- cargo test -p cox-core dedup_
 ```
 Done when: T8.5 can toggle it via `context.dedup_window_turns = 0`.
 
-#### T2.7 Budgets
-Model: haiku · Status: open · Depends: T1.7, T2.1 · Size: ~100
-Goal: D6h — a session stops at its cap and says so with numbers.
-Files: `crates/cox-core/src/budget.rs`.
-Steps: (1) Before each call: session spend (ledger sum) + estimate(req) vs `budget.session_usd`; monthly likewise. (2) 80 % → `Notice(Budget)` once; 100 % → `TurnDone{Budget}` and the next `UserTurn` is refused with the totals until the user raises the cap (`/cost raise <usd>`, session-only). (3) `cheap_counts=false` excludes cheap-tier rows.
-Check:
-```bash
-mise exec -- cargo test -p cox-core budget_
-```
-Done when: scenario `budget_hit` snapshot exists; `cox run -p` exits 3 on budget.
-
-#### T2.8 Design doc: loop
-Model: sonnet · Status: open · Depends: T2.1 · Size: doc
-Goal: `docs/design/loop.md`: vs Claude Code's loop, Codex Thread/Turn/Item, Pi's minimal loop; the six rules of §1.3 and what would falsify them.
-Check: file exists, names the six rules with their test names.
-
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
-
-#### T3.6 `write` and `todo`
-Model: haiku · Status: open · Depends: T3.1 · Size: ~120
-Goal: new-file writes and a structured todo list.
-Files: `crates/cox-tools/src/write.rs`, `crates/cox-tools/src/todo.rs`.
-Steps: (1) `write`: create dirs, atomic write; existing file with > 200 lines → error "file has N lines; use edit or apply_patch"; pre-write content archived. (2) `todo`: validate ids unique, states `pending|in_progress|done`; output the list; emit `structured` so the TUI renders a panel (T5.5).
-Check:
-```bash
-mise exec -- cargo test -p cox-tools write_ todo_
-```
 
 #### T3.7 `bash` with PTY, streaming, classification
 Model: opus · Status: open · Depends: T3.1, T2.5 · Size: ~200
@@ -1103,7 +1078,7 @@ mise exec -- cargo deny check && ls fuzz/fuzz_targets | wc -l | grep -q 4
 
 | Milestone | Phases | What a user can do | Tasks |
 |-----------|--------|--------------------|-------|
-| M1 "talks" | P0, P1, P2, T5.1–T5.3 | chat with tools in a scripted or real provider, resume a session | 25 |
+| M1 "talks" | P0, P1, P2, T5.1–T5.3 | chat with tools in a scripted or real provider, resume a session | 26 |
 | M2 "edits safely" | P3, P4, rest of P5 | daily-driver TUI: diff-shaped edits, sandboxed shell, approvals, diff view | 21 |
 | M3 "fits in" | P6, P7 | headless/CI, MCP both ways, Claude Code/Codex config compatibility, hooks, skills | 13 |
 | M4 "cheap" | P8, P9 | compaction, archive/expand, dedup, deferred tools, tiered routing, budgets, measured savings | 9 |
@@ -1112,8 +1087,6 @@ mise exec -- cargo deny check && ls fuzz/fuzz_targets | wc -l | grep -q 4
 
 Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 → the rest. M4 before M3 if cost is the pain; M3 before M4 if adoption is.
 
-Estimated model spend for the whole v0.1 plan at the suggested tiers, assuming ~60 k tokens per task: 77 tasks ≈ 30 haiku, 38 sonnet, 9 opus → roughly $2 (haiku) + $35 (sonnet) + $25 (opus) in output-dominated cost, plus fable reviews of four design docs (≈ $5). Under $100 if tasks stay within their size limit; the ledger (T1.7) makes this a measured number after M1.
-
 ## 6. Plan amendments
 
 - A1 2026-09-02 D9, §1.1, §1.7, T0.4 — Diesel 2.2 (sqlite, bundled libsqlite3-sys with FTS5, diesel_migrations) replaces rusqlite as the store layer, matching rtok D13. Why: user request; typed models for ledger joins; sync so hooks and tests need no runtime. Effect on other tasks: T1.7, T8.3, T8.4, T10.1, T10.3 write Diesel queries in `cox-store`, never SQL elsewhere.
@@ -1121,6 +1094,7 @@ Estimated model spend for the whole v0.1 plan at the suggested tiers, assuming ~
 - A3 2026-09-02 §2, `AGENTS.md` — don't duplicate code or logic; reuse an existing helper or extract one shared helper at the responsible layer. Why: user request.
 - A4 2026-09-02 §2, `AGENTS.md` — every implemented task is marked done and moved to `done.md` with its Check output. Why: user request.
 - A5 2026-09-02 §1.2, `cox-protocol::Tool`, T3.5 — added `Tool::risk(&self, input) -> Risk`, defaulting to `spec().risk`; `cox-core::turn::run_tools` now asks the tool instead of reading `spec().risk`. Why: T3.5 step 4 and the §4 tool table require `apply_patch` to be `Destructive` only when a patch deletes > 5 files, and a static `ToolSpec` cannot express a per-call risk. Effect on other tasks: none — every other tool inherits the default; T2.2's permission engine keeps reading `ToolCall.risk`.
+- A6 2026-09-02 D13, §1.1, §1.6, T0.7 — `dotenvy` 0.15 on `cox` loads `.env` then `.env.local` from cwd (walk up) into unset process env before figment. Why: user request (local API keys / `COX_*` without a second config file). Effect: not a figment layer and does not override set variables, so D12 tests and CI keep winning; provenance stays `env`. `cox-core` does not take this dep.
 - A7 2026-09-02 `website/` — added a standalone Hugo documentation site using Tailwind CSS (modern home page plus architecture and configuration references). Why: user request. Effect: no runtime crate or release behaviour changes; publish with `hugo --source website`.
 - A8 2026-09-02 `website/`, `.github/workflows/deploy-pages.yml` — deploy the Hugo site to GitHub Pages from `main`, building within `website/` and publishing `website/public`. Why: user request. Effect: the deploy workflow installs the pinned Tailwind dependencies and runs only when site/workflow files change.
 
