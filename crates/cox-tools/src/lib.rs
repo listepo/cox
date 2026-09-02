@@ -3,6 +3,7 @@
 //! from `cox-core` because every tool touches the filesystem or a process
 //! and must go through a trait, never called directly by the loop.
 
+pub mod bash;
 pub mod edit;
 pub mod expand;
 pub mod glob;

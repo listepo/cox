@@ -785,3 +785,30 @@ test dedup_write_invalidates_dedup ... ok
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T3.7 `bash` with PTY, streaming, classification
+Model: fable · Status: done 2026-09-03 · Depends: T3.1, T2.5 · Size: ~200
+Goal: commands run under the sandbox policy with streamed output and a risk classification the engine can use.
+Files: `crates/cox-tools/src/bash/{mod,classify}.rs`, `crates/cox-tools/tests/bash.rs`.
+Steps: (1) `portable-pty` (so tools that need a TTY behave), cwd = workspace, env allowlist (`PATH`, `HOME`, `LANG`, `TERM`, plus `sandbox.env_passthrough`), `timeout_s` → SIGTERM then SIGKILL, `cancel` token. (2) Stream chunks to `ToolCx.output` (sanitised for display); the model gets ANSI-stripped text + `exit <code>` + duration. (3) `classify(command) -> Risk` using `tree-sitter-bash`: split on `;`, `&&`, `||`, pipes; `Destructive` for `rm -r`, `git push --force`, `git reset --hard`, `git clean`, `dd`, `mkfs`, `> /dev/`, `sudo`, `chmod -R`, `curl … | sh`; `ReadOnly` for an allowlist (`ls`, `cat`, `head`, `tail`, `grep`, `rg`, `find`, `git status/diff/log/show`, `cargo check/test/build`, `npm test`, `pwd`, `echo` without redirect); else `Exec`. Redirects and subshells escalate to at least `Exec`. (4) `background: true` → returns a task id; output collected into the archive; `TaskCreated/Completed` (T9.2 completes this). (5) Tests: `bash_streams_and_archives`, `cd_and_rm_rf_are_classified_destructive`, `timeout_kills_process_group`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools bash_
+```
+Out of scope: the sandbox itself (P4) — here `SandboxPolicy::None` is used and the tests assert the policy is threaded through.
+
+What landed: `cox_tools::bash::BashTool` (`command`, `timeout_s` default 120, `background`) runs `sh -c` on a `portable-pty` PTY in the session cwd with an env allowlist (`PATH`, `HOME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `USER`, `SHELL`, plus `NO_COLOR`/`PAGER=cat`), streams ANSI-stripped chunks to `ToolCx.output`, and returns the stripped text plus `[exit <code> in <ms>]`. Timeout and `cancel` send SIGTERM to the process group, SIGKILL two seconds later; the result keeps the partial output and says why it was killed (`is_error`). The reader holds the slave open and stops on exit status plus a `poll` drain because macOS discards unread PTY output when the last slave closes. `Tool::risk` is `classify(command)`: a tree-sitter-bash walk over `;`/`&&`/`||`/pipes taking the riskiest segment — `Destructive` for `rm -r`, forced push, `reset --hard`, `clean`, `dd`, `mkfs*`, `sudo`, `chmod/chown -R`, `> /dev/<device>`, `curl|wget … | sh`; `ReadOnly` for the allowlist (incl. `git status/diff/log/show`, `cargo check/test/build/clippy`, `npm test`, `cd`, `2>/dev/null`, fd dups, `<`); redirects, subshells, substitutions and parse errors are at least `Exec`. `background: true` spawns the run detached from the turn and archives its output under the call. Tests: `bash_streams_and_archives`, `bash_cd_and_rm_rf_are_classified_destructive` (36 rows), `bash_timeout_kills_process_group` (a backgrounded `sleep` dies too), `bash_cancel_stops_the_command`, `bash_env_is_an_allowlist_and_cwd_is_the_workspace`, `bash_runs_under_every_sandbox_mode` (policy threaded through `command_for`). New deps in `cox-tools` (all workspace pins from §1.1): `portable-pty`, `tree-sitter-bash`, `nix` (signal/process/poll).
+Not done: `sandbox.env_passthrough` (no such config key exists yet; the allowlist is fixed until P4 adds it), `TaskCreated`/`TaskCompleted` for background runs and a way to fetch that archive row by task id (T9.2, as the plan says), the sandbox wrap itself (P4). Size: ~560 LOC over 5 files, of which ~200 is the classification table and its test rows.
+```
+$ mise exec -- cargo test -p cox-tools bash_
+test bash::tests::bash_risk_comes_from_the_command_line ... ok
+test bash_cd_and_rm_rf_are_classified_destructive ... ok
+test bash_env_is_an_allowlist_and_cwd_is_the_workspace ... ok
+test bash_runs_under_every_sandbox_mode ... ok
+test bash_cancel_stops_the_command ... ok
+test bash_streams_and_archives ... ok
+test bash_timeout_kills_process_group ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

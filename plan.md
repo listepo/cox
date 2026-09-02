@@ -563,29 +563,7 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P2 — Core loop (goal: a session that runs turns, calls tools, asks permission, resumes)
 
-#### T2.6 Re-read and re-run dedup
-Model: sonnet · Status: open · Depends: T2.5 · Size: ~120
-Goal: D6b — an identical read/grep/glob within the window costs a pointer, not the payload.
-Files: `crates/cox-core/src/dedup.rs`, `crates/cox-core/tests/dedup.rs`.
-Steps: (1) Key = (tool, canonical input) for `ReadOnly` tools only; value = (archive id, turn, subjects). (2) Invalidate when any `Write`/`Exec` tool's subject overlaps the key's subject (path prefix), or after `dedup_window_turns`. (3) Visible result: `unchanged since turn 7, see #id (expand to re-show)`. (4) Test `second_identical_read_costs_under_50_tokens`; `write_invalidates_dedup`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core dedup_
-```
-Done when: T8.5 can toggle it via `context.dedup_window_turns = 0`.
-
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
-
-#### T3.7 `bash` with PTY, streaming, classification
-Model: opus · Status: open · Depends: T3.1, T2.5 · Size: ~200
-Goal: commands run under the sandbox policy with streamed output and a risk classification the engine can use.
-Files: `crates/cox-tools/src/bash/{mod,classify}.rs`, `crates/cox-tools/tests/bash.rs`.
-Steps: (1) `portable-pty` (so tools that need a TTY behave), cwd = workspace, env allowlist (`PATH`, `HOME`, `LANG`, `TERM`, plus `sandbox.env_passthrough`), `timeout_s` → SIGTERM then SIGKILL, `cancel` token. (2) Stream chunks to `ToolCx.output` (sanitised for display); the model gets ANSI-stripped text + `exit <code>` + duration. (3) `classify(command) -> Risk` using `tree-sitter-bash`: split on `;`, `&&`, `||`, pipes; `Destructive` for `rm -r`, `git push --force`, `git reset --hard`, `git clean`, `dd`, `mkfs`, `> /dev/`, `sudo`, `chmod -R`, `curl … | sh`; `ReadOnly` for an allowlist (`ls`, `cat`, `head`, `tail`, `grep`, `rg`, `find`, `git status/diff/log/show`, `cargo check/test/build`, `npm test`, `pwd`, `echo` without redirect); else `Exec`. Redirects and subshells escalate to at least `Exec`. (4) `background: true` → returns a task id; output collected into the archive; `TaskCreated/Completed` (T9.2 completes this). (5) Tests: `bash_streams_and_archives`, `cd_and_rm_rf_are_classified_destructive`, `timeout_kills_process_group`.
-Check:
-```bash
-mise exec -- cargo test -p cox-tools bash_
-```
-Out of scope: the sandbox itself (P4) — here `SandboxPolicy::None` is used and the tests assert the policy is threaded through.
 
 #### T3.8 `ask_user`, `tool_search`, `web_fetch`
 Model: sonnet · Status: open · Depends: T2.3 · Size: ~200
