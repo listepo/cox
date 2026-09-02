@@ -374,3 +374,27 @@ $ mise exec -- cargo clippy -p cox-provider --all-targets -- -D warnings
 $ mise exec -- cargo fmt -p cox-provider --check
 (clean)
 ```
+
+#### T1.7 Usage, prices, ledger rows
+Model: haiku · Status: done 2026-09-02 · Depends: T0.4, T1.2
+Goal: every provider call writes one `usage` row with cost computed from a dated price table.
+Files: `config/prices.toml`, `crates/cox-provider/src/usage.rs`, `crates/cox/src/stats.rs`, `crates/cox-store/src/{lib,models}.rs`.
+Notes: `ledger_row` costs the call before handing back the row, so the unknown-model rule (cost 0, `estimated = true`) lives in one place rather than at each call site. `PriceTable` parses with the workspace's existing figment TOML reader — no second toml crate. `UsageDbRow` (was `NewUsage`) gained `Queryable`/`Selectable` so `usage_for_session` reads through the same struct it writes.
+Prices re-verified 2026-09-02 against https://platform.claude.com/docs/en/about-claude/pricing — all four rows correct as written, including two that looked wrong: Sonnet 5 stays $2/$10 (the scheduled 2026-09-01 rise to $3/$15 was cancelled) and Fable 5.1's $0.25 cache read is the documented 0.025× multiplier, not the usual 0.1×. Recorded in `research.md` §6 row 28.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-provider usage_
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out
+```
+
+#### T1.3 OpenAI Responses API
+Model: sonnet · Status: done 2026-09-02 · Depends: T1.2
+Goal: the same `Request` streams through `/v1/responses` with tool calls and usage.
+Files: `crates/cox-provider/src/openai/{mod,responses}.rs`, `fixtures/openai-responses/*.sse`.
+Notes: `responses.rs` existed but was never declared in `lib.rs`, so it had never compiled. Wiring it in exposed two defects: the three fixtures were missing SSE's terminating blank line (so `response.completed` was never dispatched and no `Stop`/`Usage` was emitted), which in turn broke the `input_tokens_details.cached_tokens` → `cache_read_tokens` mapping step 2 requires. Fixed the fixtures rather than the parser — `sse.rs` discards an unterminated trailing event exactly as the SSE spec says, and the Anthropic fixtures already end with the blank line.
+`call_id` on the wire is deliberately not reused: cox mints its own `CallId` per `function_call` item and sends it as both `function_call.call_id` and `function_call_output.call_id`, which it can do because cox owns the history (`store: false`, `previous_response_id` unused).
+Check:
+```bash
+$ mise exec -- cargo test -p cox-provider responses_
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out
+```
