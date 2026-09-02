@@ -293,6 +293,50 @@ $ mise exec -- cargo fmt -p cox-tools --check
 (clean)
 ```
 
+#### T3.2 `read`
+Model: sonnet · Status: done 2026-09-02 · Depends: T3.1
+Goal: whole, ranged and outline reads with caps.
+Files: `crates/cox-tools/src/{read,outline}.rs`, `fixtures/outline/large.rs`, `crates/cox-tools/src/lib.rs` (`pub mod read;`/`pub mod outline;`), `crates/cox-tools/Cargo.toml`.
+
+What landed: `ReadTool` implements `cox_protocol::Tool` (`spec()` name `read`, `input_schema` generated via `schemars::schema_for!(ReadInput)`, `Risk::ReadOnly`, `Concurrency::Parallel`). `ReadInput { path, lines: Option<String>, mode: Option<String> }`. Every path goes through `cox_tools::path::confine(&cx.roots, &cx.cwd, &input.path)` before any filesystem call. Binary detection reads the whole file then checks the first 8 KiB for a NUL byte → `ToolError::Binary` (the enum variant is a unit variant already fixed by T0.2 in a crate I do not own, so no `{bytes}` field is available — noted as a deviation below). `mode="text"` (default) renders `n\tline` text for the requested `lines="a-b"` range (1-based inclusive, clamped; a malformed range silently falls back to the whole file rather than erroring) or the whole file, and always appends a `[... N lines total]`/`[showing lines a-b of N total]` trailer so the model learns the total line count even from a partial read. `mode="outline"` calls `outline::outline`.
+
+`outline.rs`: tree-sitter (`tree-sitter-rust`/`-typescript` (`.ts`/`.tsx` variants)/`-python`/`-go`) walks the whole tree for a per-language node-kind allow-list (`function_item`/`struct_item`/`enum_item`/`trait_item`/`impl_item`/`type_item` for Rust, analogous sets for the others) and renders `line: signature`, where "signature" is the node's own text up to wherever a body/block child begins (whitespace-collapsed to one line) — a single generic extractor across all four grammars instead of a per-language query. Falls back to markdown `#`/`##` heading lines for `.md`/`.markdown`, else lines starting with `fn `/`fn(`/`def `/`class `/`func `/`pub `/`export `, for every other extension or a tree-sitter parse failure.
+
+Both `render_text` and the outline body pass through one `cap()` backstop: since `ToolCx` (`cox-protocol::traits`, owned by a different, already-completed task) carries no `tool_output_visible_bytes` field, there is nothing to read the real cap from at this layer — used a fixed `VISIBLE_CAP_BYTES = 64 * 1024` const instead, cutting at the last whole line inside the cap with a `[... truncated at 65536 bytes; re-read with a narrower lines= range for the rest]` note. This does not contradict `ToolOutput.text`'s "untruncated, the core truncates" doc comment in spirit — the core's archive+truncate step (T2.6, already done) is still the lossless path; this is only a per-call safety net so one huge file can't balloon a single `ToolOutput` before that runs.
+
+`fixtures/outline/large.rs`: a synthetic, non-compiling (not part of the workspace) 1000-line Rust file with 40 top-level `pub fn`s plus a `pub struct Widget`/`impl Widget { pub fn new }`, padded with `// filler line N` comments to exactly 1000 lines. Its outline is ~45 lines (well under the 120-line ceiling) and lists every `pub fn`.
+
+Deviations:
+- **`ToolError::Binary` carries no `size` field.** Plan.md T3.2 step 2 asks for "`ToolError::Binary` with size"; the actual enum (`crates/cox-protocol/src/errors.rs`, finished in T0.2 by a different task, out of scope to edit here per the shared-file rules) declares `Binary` as a unit variant. Returned `Err(ToolError::Binary)` as-is; the file's size is knowable from the `bytes.len()` already computed in `read.rs::call` but has nowhere to go on this error type.
+- **Malformed `lines=` does not error.** A `lines` string that isn't `"usize-usize"`, or has `start > end`/`0`, is treated as absent (whole file) rather than raising a `ToolError` — no matching variant exists for "bad tool input" beyond `Denied{why}` (used for a JSON-shape failure) or `NotFound`, neither of which fits, and a malformed range shouldn't cost the model a failed round trip when the intent (read this file) is still clear.
+- **Whole file loaded into memory before the binary/NUL sniff**, `ponytail:`-flagged in `read.rs` — a real ceiling for a very large binary file (loads it fully before rejecting), fine for the source-file-sized inputs this tool targets; upgrade path is a bounded `File::open` + `take(BINARY_SNIFF_BYTES)` pre-read.
+- **`crates/cox-tools/Cargo.toml` staged whole, not `git add -p`-split.** T3.3 (grep/glob, running concurrently) had already added `async-trait`/`serde`/`serde_json`/`schemars`/`ignore`/`grep-searcher`/`grep-regex`/`globset`/`nucleo` to `[dependencies]` (and removed `async-trait` from `[dev-dependencies]`, which `read.rs`'s non-test `impl Tool for ReadTool` also needs) before this task started editing the file; only appended the five `tree-sitter*` lines after their block. `git add -p` needs an interactive session this environment cannot provide, so the whole file is staged — no line of the diff besides the `tree-sitter*` block plus its one-line comment is mine.
+- **`Cargo.lock` staged whole for the same reason** — it now also carries lock entries from T3.3's new deps and from unrelated concurrent work in `cox-provider` (`config/prices.toml`, `crates/cox-provider/src/usage.rs`, both untouched and unstaged here). Root `Cargo.toml` was **not** staged: T3.3 added a `grep-regex` row there but this task needed no root workspace-dependency change (`tree-sitter`/`tree-sitter-rust`/`tree-sitter-typescript`/`tree-sitter-python`/`tree-sitter-go` were already present), so nothing of mine lives in that file.
+- **`crates/cox-tools/src/lib.rs`** only carries my two `pub mod` lines — clean, no concurrent edits found there at commit time.
+
+Check:
+```
+$ mise exec -- cargo test -p cox-tools read_
+running 4 tests
+test read::tests::read_confinement_refuses_a_path_outside_the_root ... ok
+test read::tests::read_ranged_read_returns_only_the_requested_lines ... ok
+test read::tests::read_binary_file_is_rejected_with_binary_error ... ok
+test read::tests::read_outline_of_1000_line_rust_fixture_is_short_and_lists_every_pub_fn ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+
+$ mise exec -- cargo clippy -p cox-tools --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s)
+(clean)
+
+$ mise exec -- cargo fmt -p cox-tools --check
+(clean)
+
+$ mise exec -- cargo test -p cox-tools
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (unittests, incl. outline_*/path::tests)
+running 20 tests (tests/confine.rs)
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
 #### T1.2 SSE parser and Anthropic stream state machine
 Model: sonnet · Status: done 2026-09-02 · Depends: T1.1
 
