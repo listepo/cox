@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">cox logo</title>
+  <desc id="desc">A coxswain's steering mark: a white C and oar on a forest-green circle.</desc>
+  <circle cx="48" cy="48" r="44" fill="#176b49"/>
+  <path d="M55.5 27.5a22 22 0 1 0 0 41" fill="none" stroke="#f7f8f5" stroke-linecap="round" stroke-width="8"/>
+  <path d="m61 22 7.5 7.5M49 46l25 25" fill="none" stroke="#b9edc9" stroke-linecap="round" stroke-width="5"/>
+  <path d="m71.5 69.5 7-7 4.5 11.5z" fill="#b9edc9"/>
+</svg>
