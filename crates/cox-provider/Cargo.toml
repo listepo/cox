@@ -7,3 +7,12 @@ license.workspace = true
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
+async-trait = { workspace = true }
+keyring = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

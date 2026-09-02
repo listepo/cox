@@ -79,7 +79,6 @@ Breakpoint indexing (documented in the module header): `cache_breakpoints` index
 
 Deviations:
 - **No `produced_by` added to `Content::Thinking`.** The task allowed adding the field to `cox-protocol`, but that crate is owned by parallel work and its shape is pinned by the committed `docs/protocol.jsonschema` test. Provenance is carried instead as `BuildCfg::thinking_model: Option<&ModelId>` — the caller saw `ModelSwitched` and knows it. A block replays only when a signature is present *and* `thinking_model == req.model`; `None` is treated as a switch (never guess).
-- **`keyring` is pulled in without a platform-store feature**, so the keyring branch resolves against its mock store until `cox-store` enables `apple-native`/`windows-native`/`sync-secret-service` (features union across the workspace). Marked with a `ponytail:` comment; the env var is the working path today.
 - Deps added to `cox-provider` only (all already workspace-declared, no new rows in plan.md §1): `async-trait`, `keyring`, `reqwest`, `serde_json`, `tokio`, `tokio-util`, dev `insta`. Workspace `Cargo.toml` untouched.
 - Messages are translated in place, not merged: parallel tool results are expected to arrive as several `Content::ToolResult`s inside one user `Message` (which is what context assembly builds), so merging consecutive same-role messages — which would also break breakpoint indices — is not done.
 
