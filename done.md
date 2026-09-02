@@ -147,7 +147,39 @@ test no_crate_below_cox_depends_on_core ... ok
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-Out of scope (per task): FTS indexing of rollouts (T10.3); full `cox doctor` check list (T0.5); `memory_*` writers (a later task — `memory_search` is real but untested against live data).
+Out of scope (per task): FTS indexing of rollouts (T10.3); `memory_*` writers (a later task — `memory_search` is real but untested against live data).
+
+#### T0.5 `cox doctor`
+Model: haiku · Status: done 2026-09-02 · Depends: T0.3, T0.4
+Goal: one command tells a user why cox will or will not work on this machine.
+Files: `crates/cox/src/doctor.rs` (full check implementation), `crates/cox/src/main.rs` (dispatch), `crates/cox/src/cli.rs` (unchanged — `--json` flag already exists), `crates/cox/Cargo.toml` (added `keyring`, `crossterm`, `serde` deps and insta dev-dep), `crates/cox/src/snapshots/cox__doctor__tests__doctor_human_output.snap` (snapshot).
+Notes / deviations:
+- **Prices table check.** The task notes that §1.4 and `config/default.toml` should have a prices section, but it does not exist yet; the check warns "prices table not found" and suggests "prices will be added in a future version". If a prices section is added later, this check can be enhanced to parse and validate its age.
+- **Snapshot test.** One insta snapshot (`doctor_human_output`) captures the human-readable output format with mock results; volatile details (versions, paths) are not filtered because the test uses fixed test data rather than real system calls.
+- **Dependencies added.** `keyring` (resolve Anthropic API key from env or system keyring), `crossterm` (terminal size detection), `serde` (JSON serialization). All are already workspace-declared.
+Check:
+```bash
+$ COX_HOME=/tmp/cox-doctor-final ANTHROPIC_API_KEY=sk-test TERM=xterm-256color mise exec -- cargo run -q -- doctor --json | jq -e 'map(select(.status=="fail")) | length == 0 or (map(.fix) | all(length > 0))'
+true
+
+$ mise exec -- cargo test -p cox doctor_
+running 3 tests
+test doctor::tests::doctor_exit_code_is_1_on_fail ... ok
+test doctor::tests::doctor_results_serialize_to_json ... ok
+test doctor::tests::doctor_human_output ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured
+
+$ mise exec -- cargo clippy -p cox --all-targets -- -D warnings
+(clean)
+
+$ mise exec -- cargo fmt -p cox --check
+(clean)
+
+$ COX_HOME=/tmp/cox-doctor-final ANTHROPIC_API_KEY=sk-test TERM=xterm-256color mise exec -- cargo run -q -- doctor --json | jq '.[] | select(.status != "ok") | .status'
+"warn"
+(only the prices warn; all else ok when env is set)
+```
 
 #### T1.8 Token estimation
 Model: sonnet · Status: done 2026-09-02 · Depends: T1.1

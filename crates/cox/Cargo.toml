@@ -24,6 +24,11 @@ figment = { workspace = true }
 toml_edit = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
+# T0.5: doctor command checks: keyring for API key detection, crossterm for terminal size
+keyring = { workspace = true }
+crossterm = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+insta = { workspace = true }

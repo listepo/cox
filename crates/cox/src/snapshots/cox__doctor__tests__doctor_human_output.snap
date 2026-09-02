@@ -1,0 +1,17 @@
+---
+source: crates/cox/src/doctor.rs
+assertion_line: 413
+expression: output
+---
+toolchain: ✓ rustc 1.97.1
+COX_HOME writable: ✓ /home/user/.cox
+db: ✓ database opens and schema is valid
+API keys: ✓ Anthropic API key found
+sandbox backend: ⚠ sandbox-exec not found, sandbox disabled
+  fix: sandbox-exec is part of macOS; check your installation
+git: ✓ git version 2.40.0
+terminal: ✓ TERM=xterm-256color, true colour detected, size 120x40
+prices: ⚠ prices table not found in configuration
+  fix: prices will be added in a future version
+settings.json: ⚠ .claude/settings.json not found
+  fix: create ~/.claude/settings.json or a project-local .claude/settings.json if you need custom permissions or hooks
