@@ -14,5 +14,8 @@ tokio-util = { workspace = true }
 
 [dev-dependencies]
 cox-provider = { path = "../cox-provider", version = "0.1.0" }
+# T2.5: the `big_tool_output` scenario follows the trailer with a real `expand` call.
+cox-tools = { path = "../cox-tools", version = "0.1.0" }
 insta = { workspace = true }
 serde = { workspace = true }
+proptest = { workspace = true }

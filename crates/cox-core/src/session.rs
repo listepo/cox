@@ -1,6 +1,7 @@
 //! `Session`: Submission in, Event out. The only type `cox-tui` / `cox run`
 //! / ACP should talk to; they never call a provider or tool themselves.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -405,6 +406,7 @@ impl Session {
 pub struct MemoryStore {
     events: StdMutex<Vec<Event>>,
     usage: StdMutex<Vec<cox_protocol::UsageRow>>,
+    archive: StdMutex<HashMap<cox_protocol::ArchiveId, Vec<u8>>>,
 }
 
 impl MemoryStore {
@@ -413,6 +415,7 @@ impl MemoryStore {
         Self {
             events: StdMutex::new(Vec::new()),
             usage: StdMutex::new(Vec::new()),
+            archive: StdMutex::new(HashMap::new()),
         }
     }
 
@@ -454,11 +457,21 @@ impl Store for MemoryStore {
             .push(row.clone());
         Ok(())
     }
-    fn archive_put(&self, _a: &ArchivePut) -> Result<cox_protocol::ArchiveId, StoreError> {
-        Ok(cox_protocol::ArchiveId::new())
+    fn archive_put(&self, a: &ArchivePut) -> Result<cox_protocol::ArchiveId, StoreError> {
+        let id = cox_protocol::ArchiveId::new();
+        self.archive
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, a.bytes.clone());
+        Ok(id)
     }
-    fn archive_get(&self, _id: &cox_protocol::ArchiveId) -> Result<Vec<u8>, StoreError> {
-        Err(StoreError::NotFound)
+    fn archive_get(&self, id: &cox_protocol::ArchiveId) -> Result<Vec<u8>, StoreError> {
+        self.archive
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
     }
     fn memory_search(
         &self,

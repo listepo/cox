@@ -74,7 +74,10 @@ expression: value
   {
     "call_id": "<id>",
     "result": {
-      "archive": null,
+      "archive": {
+        "bytes": 2,
+        "id": "<id>"
+      },
       "bytes": 2,
       "diff": null,
       "duration_ms": 0,

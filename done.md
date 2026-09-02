@@ -672,3 +672,32 @@ clean.
 $ mise exec -- cargo fmt --check
 clean.
 ```
+
+#### T2.5 Tool-output archive and lossless truncation
+Model: fable · Status: done 2026-09-03 · Depends: T2.1, T0.4 · Size: ~180
+Goal: D6a — the model never sees a cut without a handle to the rest.
+Files: `crates/cox-core/src/truncate.rs`, `crates/cox-tools/src/expand.rs`, `crates/cox/src/expand_cmd.rs`.
+Steps: (1) On `ToolOutput`: `archive_put` first (sha256, bytes, subject); then `truncate(text, head_lines, tail_lines, visible_bytes)` → visible + trailer `[… 41 KiB archived; expand #01J…  lines 61–1 240]`. (2) `expand` tool (§1.11) and `cox expand <id> [--lines]` read from the archive; expanded output is itself truncated with pointers (no unbounded reads). (3) Line-safe cuts (never split a UTF-8 char or a line). (4) proptest `truncate_is_lossless_via_archive`: for random inputs, `archive_get(id) == original`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core truncate_ && mise exec -- cargo test -p cox-tools expand_
+```
+Done when: loop scenario `big_tool_output` snapshot shows the trailer and a follow-up `expand` call.
+
+What landed: the archive-then-truncate path in `run_one` and the `expand` tool/CLI were committed earlier (fa260e0, b030659, 6fda492) but the task was left open with failing loop snapshots. This finish adds: `visible()` drops tail then head lines rather than chopping the trailer when head/tail alone exceed the cap; `MemoryStore` keeps a real archive map so loop tests can read back; the `truncate_is_lossless_via_archive` proptest; `expand_` tests; `cox expand` reuses `parse_range`/`select_lines` from the tool instead of a copy; scenario `big_tool_output` (trailer in the snapshot; the follow-up `ExpandTool` call is issued by the test, since the archive id is only known at run time). The four stale loop snapshots (`archive: null` → `ArchiveRef`) were accepted.
+
+Check output:
+```text
+$ mise exec -- cargo test -p cox-core truncate_
+test truncate::tests::truncate_keeps_head_tail_and_archive_handle ... ok
+test truncate::tests::truncate_keeps_trailer_when_one_line_exceeds_cap ... ok
+test truncate::tests::truncate_is_lossless_via_archive ... ok
+$ mise exec -- cargo test -p cox-tools expand_
+test expand::tests::expand_parse_range_rejects_inverted_and_zero ... ok
+test expand::tests::expand_rejects_bad_and_unknown_ids ... ok
+test expand::tests::expand_returns_archived_text_and_line_ranges ... ok
+$ mise exec -- cargo test -p cox-core --test turn
+10 passed (incl. turn_big_tool_output_is_truncated_then_expandable)
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

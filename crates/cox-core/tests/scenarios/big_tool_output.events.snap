@@ -20,7 +20,7 @@ expression: value
     "item": "<id>",
     "kind": {
       "attachments": [],
-      "text": "interrupt",
+      "text": "big",
       "type": "user_message"
     },
     "type": "item_started"
@@ -36,6 +36,11 @@ expression: value
       "type": "assistant_message"
     },
     "type": "item_started"
+  },
+  {
+    "item": "<id>",
+    "text": "listing",
+    "type": "text_delta"
   },
   {
     "turn": "<id>",
@@ -57,10 +62,12 @@ expression: value
   {
     "call": {
       "id": "<id>",
-      "input": {},
-      "name": "slow",
+      "input": {
+        "text": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20"
+      },
+      "name": "echo",
       "risk": "read_only",
-      "subject": "slow"
+      "subject": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20"
     },
     "type": "tool_call_requested"
   },
@@ -68,20 +75,50 @@ expression: value
     "call_id": "<id>",
     "result": {
       "archive": {
-        "bytes": 9,
+        "bytes": 159,
         "id": "<id>"
       },
-      "bytes": 9,
+      "bytes": 159,
       "diff": null,
       "duration_ms": 0,
-      "ok": false,
-      "visible": "cancelled"
+      "ok": true,
+      "visible": "line 01\nline 02\n[… 1 KiB archived; expand #<id> lines 3–18]\nline 19\nline 20"
     },
     "type": "tool_call_done"
   },
   {
+    "item": "<id>",
+    "kind": {
+      "text": "",
+      "type": "assistant_message"
+    },
+    "type": "item_started"
+  },
+  {
+    "item": "<id>",
+    "text": "done",
+    "type": "text_delta"
+  },
+  {
+    "turn": "<id>",
+    "type": "usage",
+    "usage": {
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.0,
+      "estimated": true,
+      "input_tokens": 0,
+      "latency_ms": 0,
+      "output_tokens": 0
+    }
+  },
+  {
+    "item": "<id>",
+    "type": "item_done"
+  },
+  {
     "stop": {
-      "type": "interrupted"
+      "type": "end_turn"
     },
     "turn": "<id>",
     "type": "turn_done"

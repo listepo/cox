@@ -173,6 +173,13 @@ fn is_ulid(s: &str) -> bool {
 fn redact(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::String(s) if is_ulid(s) => *s = "<id>".into(),
+        // The truncation trailer embeds an archive id mid-string.
+        serde_json::Value::String(s) if s.contains("expand #") => {
+            let start = s.find("expand #").unwrap_or(0) + "expand #".len();
+            if s.len() >= start + 26 && is_ulid(&s[start..start + 26]) {
+                s.replace_range(start..start + 26, "<id>");
+            }
+        }
         serde_json::Value::Object(map) => {
             for (k, v) in map.iter_mut() {
                 if matches!(
@@ -256,6 +263,58 @@ async fn turn_three_parallel_snapshot() {
         .filter(|c| matches!(c, Content::ToolResult { .. }))
         .count();
     assert_eq!(n, 3);
+}
+
+#[tokio::test]
+async fn turn_big_tool_output_is_truncated_then_expandable() {
+    let mut config = cox_protocol::Config::default();
+    config.context.tool_output_visible_bytes = 120;
+    config.context.tool_output_head_lines = 2;
+    config.context.tool_output_tail_lines = 2;
+    let (session, store, mut rx) = open(&scenario("big_tool_output"), config);
+    session
+        .submit(Submission::UserTurn {
+            text: "big".into(),
+            attachments: vec![],
+            confirm_think: false,
+        })
+        .await
+        .expect("submit");
+    let events = drain(&mut rx).await;
+    snapshot("big_tool_output", &events);
+    let result = events
+        .iter()
+        .find_map(|e| match e {
+            Event::ToolCallDone { result, .. } => Some(result.clone()),
+            _ => None,
+        })
+        .expect("tool result");
+    let archive = result.archive.expect("archived before truncation");
+    assert!(result.visible.contains(&format!("expand #{}", archive.id)));
+    assert!(result.visible.len() <= 120);
+    // The follow-up `expand` call reads the whole output back from the archive.
+    let (tx, _rx) = mpsc::channel(1);
+    let cx = cox_tools::tool_cx(
+        vec![PathBuf::from("/tmp/cox-turn")],
+        PathBuf::from("/tmp/cox-turn"),
+        cox_protocol::types::SandboxPolicy {
+            mode: cox_protocol::types::SandboxMode::ReadOnly,
+            network: false,
+            writable: vec![],
+            readonly_in_workspace: vec![],
+        },
+        store,
+        tokio_util::sync::CancellationToken::new(),
+        tx,
+        cox_protocol::ids::SessionId::new(),
+        cox_protocol::ids::CallId::new(),
+    );
+    let expanded = cox_tools::expand::ExpandTool
+        .call(serde_json::json!({"id": archive.id.to_string()}), &cx)
+        .await
+        .expect("expand");
+    assert_eq!(expanded.text.len() as u64, archive.bytes);
+    assert!(expanded.text.starts_with("line 01\n") && expanded.text.ends_with("line 20"));
 }
 
 #[tokio::test]
