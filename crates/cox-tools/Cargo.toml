@@ -26,10 +26,8 @@ tree-sitter-python = { workspace = true }
 tree-sitter-go = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
-# T3.7 (`bash`): PTY-backed runs, tree-sitter risk classification, process-group signals.
-portable-pty = { workspace = true }
 tree-sitter-bash = { workspace = true }
-nix = { workspace = true, features = ["signal", "process", "poll"] }
+nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
 # T3.8 (`web_fetch`): HTTP client with a hard timeout; shares the workspace rustls pin with cox-provider.
 reqwest = { workspace = true }
 
@@ -37,3 +35,9 @@ reqwest = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
+
+# T4.2: Linux confinement without bwrap — Landlock for the filesystem,
+# seccomp for the network. Linux-only crates, so gated on the target.
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = { workspace = true }
+seccompiler = { workspace = true }

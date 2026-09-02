@@ -891,3 +891,32 @@ sandbox: ✓ seatbelt
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T4.2 Linux bubblewrap, Landlock + seccomp
+Model: fable · Status: done 2026-09-03 · Depends: T3.7 · Size: ~200
+Goal: the same three guarantees on Linux with and without `bwrap`.
+Files: `crates/cox-tools/src/sandbox/{bwrap,landlock}.rs`, `.github/workflows/ci.yml` (two Linux jobs).
+Steps: (1) `bwrap` argv: `--unshare-user --unshare-pid --die-with-parent --ro-bind / / --bind <root> <root> --ro-bind <root>/.git <root>/.git --tmpfs /tmp --proc /proc --dev /dev`, `--unshare-net` unless `network`; `PR_SET_NO_NEW_PRIVS`. (2) Fallback: `landlock` crate ruleset (ABI best-effort ≥ 3: read on `/`, write on roots minus readonly subpaths) applied in `pre_exec`, plus `seccompiler` filter denying `connect`/`socket(AF_INET*)` when `!network`. (3) Backend selection `sandbox.linux_backend = auto`: bwrap if on PATH and user namespaces allowed, else landlock, else `none` with a `Notice(Security)` and forced `on-request`. (4) CI: job A installs `bubblewrap`; job B does not; both run the three assertions.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools sandbox_linux_
+```
+
+What landed: `sandbox::bwrap::argv` builds the bubblewrap argv (user + pid namespaces, `--die-with-parent`, `/` read-only, the writable set bound read-write, every root × `readonly_in_workspace` re-bound read-only after it so it wins, private `/tmp`, `--unshare-net` unless `network`; `bwrap` sets `PR_SET_NO_NEW_PRIVS` itself). `sandbox::landlock` (Linux only) prepares a `Guard` before the fork — Landlock ABI ≥ 3 best-effort ruleset with read on `/` and write on the writable set, plus a seccomp filter that fails `connect` and `socket(AF_INET|AF_INET6)` with `EPERM` when `!network` — and `sandbox::command` applies it in `pre_exec`. `sandbox::backend(linux_backend)` picks: macOS → seatbelt; Linux `auto` → `bwrap` if a real probe run with the same namespaces succeeds (a binary on PATH is not enough: Docker, AppArmor and hardened kernels refuse user namespaces), else `landlock` if `landlock_create_ruleset` answers, else `None`; `bwrap`/`landlock`/`none` force one. `SandboxPolicy.linux_backend` (`LinuxBackend`, kebab-case, default `auto`) carries `[sandbox].linux_backend` into the tool context. `bash` runs the `Command` from `sandbox::command` on a `nix::pty::openpty` pair with `pre_exec` (`setsid` + `TIOCSCTTY`) instead of `portable-pty`, which exposes neither `pre_exec` nor the slave fd; the macOS poll-drain output fix is kept. `cox doctor` prints `sandbox: ✓ <backend>` or warns `none: shell commands run unconfined` with an OS-specific fix. Tests: `tests/sandbox_linux.rs` (backend matches `COX_EXPECT_SANDBOX`, write inside allowed, write outside denied, `.git/HEAD` unchanged under bwrap, read-only denies a write inside the root, `curl` fails without network); `bwrap_*` unit tests for the argv on every platform; `landlock_prepare_builds_a_guard_with_a_network_filter_when_offline`. CI: the matrix job installs `bubblewrap` and expects `bwrap`; a new `sandbox-landlock` job on ubuntu-24.04 removes it and expects `landlock`.
+Not done: Landlock only grants, so it cannot carve `.git` out of a writable root — `sandbox_linux_keeps_git_read_only_inside_the_root` skips unless the backend is bwrap, and `doctor` names the backend so the user can tell. Step 3's "none → `Notice(Security)` + forced `on-request`" is left to the surface that builds the session (`cox-core` cannot ask `cox-tools` which backend exists; P5/P6 wiring). The Linux tests were not executed on this host (macOS, no Docker daemon); the Linux code was type-checked and clippy'd with `--target aarch64-unknown-linux-gnu` and runs in CI. Dependencies: `landlock 0.4.7` (filesystem confinement without bwrap), `seccompiler 0.5` (network filter for the Landlock path); `portable-pty` dropped. Size: ~420 LOC over 10 files (two new modules, the Linux test file, `bash`, `sandbox/mod.rs`, `seatbelt.rs`, protocol types + config, `doctor`, CI).
+```
+$ mise exec -- cargo test -p cox-tools sandbox_ bwrap_ seatbelt_   (macOS host)
+test sandbox::bwrap::tests::bwrap_workspace_write_binds_the_root_and_rebinds_git_read_only ... ok
+test sandbox::bwrap::tests::bwrap_read_only_binds_nothing_writable_and_network_flag_drops_unshare_net ... ok
+test sandbox::bwrap::tests::bwrap_skips_missing_sources_and_scratch_under_tmp ... ok
+test sandbox::tests::sandbox_macos_backend_is_seatbelt_and_wraps_the_shell ... ok
+test sandbox::tests::sandbox_danger_full_access_runs_the_shell_bare ... ok
+test sandbox::tests::sandbox_writable_is_scratch_plus_roots_only_in_workspace_write ... ok
+test sandbox::seatbelt::tests::* (3) ... ok · tests/sandbox_macos.rs (5) ... ok · bash_runs_under_every_sandbox_mode ... ok
+$ mise exec -- cargo test -p cox-tools sandbox_linux_
+not run on this host (macOS); `tests/sandbox_linux.rs` runs in CI jobs `test (ubuntu)` (bwrap) and `sandbox-landlock`.
+$ mise exec -- cargo clippy -p cox-tools --all-targets --target aarch64-unknown-linux-gnu -- -D warnings
+Finished `dev` profile — 0 warnings (stub C compiler for ring/tree-sitter objects).
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

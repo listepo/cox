@@ -6,10 +6,12 @@
 
 mod classify;
 
-use std::ffi::OsString;
-use std::io::Read;
-use std::os::fd::{BorrowedFd, RawFd};
+use std::fs::File;
+use std::io::{self, Read};
+use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -19,10 +21,12 @@ use cox_protocol::{
     ArchivePut, Concurrency, Risk, SandboxPolicy, TaskId, Tool, ToolCx, ToolError, ToolOutput,
     ToolSpec,
 };
+use nix::libc;
 use nix::poll::{PollFd, PollFlags, poll};
+use nix::pty::{Winsize, openpty};
 use nix::sys::signal::{Signal, killpg};
-use nix::unistd::Pid;
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use nix::sys::termios::Termios;
+use nix::unistd::{Pid, setsid};
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::Value;
@@ -202,20 +206,17 @@ impl Run {
     }
 }
 
-/// Builds the child: the sandbox decides the argv (`sandbox-exec … /bin/sh
-/// -c` or the bare shell), this only adds cwd and the environment.
+/// Builds the child: the sandbox decides the program (`sandbox-exec`,
+/// `bwrap` or the bare shell) and any pre-exec hook, this only adds cwd and
+/// the environment.
 fn command_for(
     command: &str,
     cwd: &Path,
     roots: &[PathBuf],
     sandbox: &SandboxPolicy,
-) -> CommandBuilder {
-    let argv = crate::sandbox::argv(sandbox, roots, command)
-        .into_iter()
-        .map(OsString::from)
-        .collect();
-    let mut cmd = CommandBuilder::from_argv(argv);
-    cmd.cwd(cwd);
+) -> Result<Command, ToolError> {
+    let mut cmd = crate::sandbox::command(sandbox, roots, command).map_err(|_| ToolError::Io)?;
+    cmd.current_dir(cwd);
     cmd.env_clear();
     for key in ENV_ALLOWLIST {
         if let Some(value) = std::env::var_os(key) {
@@ -226,15 +227,33 @@ fn command_for(
     cmd.env("NO_COLOR", "1");
     cmd.env("PAGER", "cat");
     cmd.env("GIT_PAGER", "cat");
-    cmd
+    Ok(cmd)
 }
 
-fn signal(pid: Option<u32>, sig: Signal) {
-    // The child is its own session leader (portable-pty calls setsid), so
-    // its pid is the process group of everything it started.
-    if let Some(pid) = pid {
-        let _ = killpg(Pid::from_raw(pid as i32), sig);
+/// Makes the PTY slave the child's stdio and controlling terminal.
+fn attach_pty(cmd: &mut Command, slave: &OwnedFd) -> Result<(), ToolError> {
+    let stdio = |fd: &OwnedFd| fd.try_clone().map(Stdio::from).map_err(|_| ToolError::Io);
+    cmd.stdin(stdio(slave)?)
+        .stdout(stdio(slave)?)
+        .stderr(stdio(slave)?);
+    // SAFETY: between fork and exec only async-signal-safe calls run here:
+    // `setsid` and one `ioctl`, nothing that allocates or locks.
+    unsafe {
+        cmd.pre_exec(|| {
+            setsid()?;
+            if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
     }
+    Ok(())
+}
+
+fn signal(pid: u32, sig: Signal) {
+    // The child is its own session leader (`attach_pty` calls setsid), so
+    // its pid is the process group of everything it started.
+    let _ = killpg(Pid::from_raw(pid as i32), sig);
 }
 
 async fn run(
@@ -247,27 +266,25 @@ async fn run(
     timeout: Duration,
 ) -> Result<Run, ToolError> {
     let start = Instant::now();
-    let pair = native_pty_system()
-        .openpty(PtySize {
-            rows: 40,
-            cols: 120,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|_| ToolError::Io)?;
-    let mut child = pair
-        .slave
-        .spawn_command(command_for(command, cwd, roots, sandbox))
-        .map_err(|_| ToolError::Io)?;
-    let pid = child.process_id();
-    let mut reader = pair.master.try_clone_reader().map_err(|_| ToolError::Io)?;
-    let fd = pair.master.as_raw_fd();
-    let master = pair.master;
+    let size = Winsize {
+        ws_row: 40,
+        ws_col: 120,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let pty = openpty(&size, None::<&Termios>).map_err(|_| ToolError::Io)?;
+    let mut cmd = command_for(command, cwd, roots, sandbox)?;
+    attach_pty(&mut cmd, &pty.slave)?;
+    let mut child = cmd.spawn().map_err(|_| ToolError::Io)?;
+    let pid = child.id();
+    let mut reader = File::from(pty.master.try_clone().map_err(|_| ToolError::Io)?);
+    let fd = pty.master.as_raw_fd();
+    let master = pty.master;
     // Our slave stays open until the reader is done: macOS throws away
     // whatever the master has not read yet when the last slave closes, so
     // a quick `echo ok` would otherwise exit before its output arrived.
     // The reader therefore stops on the exit status plus a drain, not EOF.
-    let slave = pair.slave;
+    let slave = pty.slave;
 
     let phase = Arc::new(AtomicU8::new(RUNNING));
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
@@ -279,7 +296,7 @@ async fn run(
             if phase == STOP {
                 break;
             }
-            if fd.is_none_or(|fd| readable(fd, POLL_SLICE_MS)) {
+            if readable(fd, POLL_SLICE_MS) {
                 match reader.read(&mut buf) {
                     Ok(n) if n > 0 => {
                         if tx.blocking_send(buf[..n].to_vec()).is_err() {
@@ -324,7 +341,11 @@ async fn run(
             },
             status = &mut wait, if !exited => {
                 exited = true;
-                run.code = status.ok().and_then(Result::ok).map(|s| s.exit_code());
+                run.code = status
+                    .ok()
+                    .and_then(Result::ok)
+                    .and_then(|s| s.code().or_else(|| s.signal().map(|n| 128 + n)))
+                    .map(|c| c as u32);
                 phase.store(DRAINING, Ordering::Relaxed);
                 if drained {
                     break;

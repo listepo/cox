@@ -19,7 +19,9 @@ use std::path::PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ApprovalPolicy, Effort, PermissionMode, SandboxMode, Thinking, Tier};
+use crate::types::{
+    ApprovalPolicy, Effort, LinuxBackend, PermissionMode, SandboxMode, Thinking, Tier,
+};
 
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
 /// `crates/cox/src/config_load.rs` merges this beneath the user, project,
@@ -427,7 +429,7 @@ pub struct SandboxConfig {
     /// Paths inside the workspace that stay read-only even in `workspace-write`.
     pub readonly_in_workspace: Vec<PathBuf>,
     /// Linux backend selection: `auto` | `bwrap` | `landlock` | `none`.
-    pub linux_backend: String,
+    pub linux_backend: LinuxBackend,
 }
 
 impl Default for SandboxConfig {
@@ -441,7 +443,7 @@ impl Default for SandboxConfig {
                 PathBuf::from(".cox"),
                 PathBuf::from(".claude"),
             ],
-            linux_backend: "auto".to_string(),
+            linux_backend: LinuxBackend::Auto,
         }
     }
 }

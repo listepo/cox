@@ -281,6 +281,7 @@ async fn run_one(
             network: session.config.sandbox.network,
             writable: session.config.sandbox.writable.clone(),
             readonly_in_workspace: session.config.sandbox.readonly_in_workspace.clone(),
+            linux_backend: session.config.sandbox.linux_backend,
         },
         archive: session.archive.clone(),
         cancel: session.cancel_token(),

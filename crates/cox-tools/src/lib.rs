@@ -86,6 +86,7 @@ mod tests {
             network: false,
             writable: vec![],
             readonly_in_workspace: vec![],
+            linux_backend: Default::default(),
         };
         let session = SessionId::new();
         let call = CallId::new();

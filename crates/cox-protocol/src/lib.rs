@@ -32,10 +32,10 @@ pub use traits::{
 pub use types::ArchiveRef;
 pub use types::{
     ApprovalPolicy, Attachment, Caps, Concurrency, Content, DecidedBy, Decision, Diff, Effort,
-    Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level, Message, ModelId, PermissionMode,
-    ProviderEvent, ProviderId, Request, Risk, Role, SandboxMode, SandboxPolicy, SlashCommand,
-    StopReason, Submission, SystemBlock, Thinking, Tier, ToolCall, ToolOutput, ToolResult,
-    ToolSpec, Usage, Why,
+    Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level, LinuxBackend, Message, ModelId,
+    PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role, SandboxMode, SandboxPolicy,
+    SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier, ToolCall, ToolOutput,
+    ToolResult, ToolSpec, Usage, Why,
 };
 
 #[cfg(test)]

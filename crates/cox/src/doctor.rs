@@ -179,8 +179,8 @@ fn check_api_keys() -> CheckResult {
 }
 
 fn check_sandbox() -> CheckResult {
-    match cox_tools::sandbox::backend() {
-        Some(backend) => CheckResult::ok("sandbox", backend.to_string()),
+    match cox_tools::sandbox::backend(cox_protocol::LinuxBackend::Auto) {
+        Some(backend) => CheckResult::ok("sandbox", backend.name().to_string()),
         None => CheckResult::warn(
             "sandbox",
             "none: shell commands run unconfined".to_string(),

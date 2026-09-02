@@ -28,25 +28,12 @@ const BASE: &str = "(version 1)
 /// subpaths are denied after the roots are allowed.
 pub fn profile(policy: &SandboxPolicy, roots: &[PathBuf], scratch: &[PathBuf]) -> String {
     let mut out = String::from(BASE);
-    let workspace_write = policy.mode == SandboxMode::WorkspaceWrite;
-    let mut writable: Vec<&Path> = scratch.iter().map(PathBuf::as_path).collect();
-    if workspace_write {
-        writable.extend(roots.iter().chain(&policy.writable).map(PathBuf::as_path));
-    }
+    let writable = super::writable(policy, roots, scratch);
     if !writable.is_empty() {
         out.push_str(&rule("allow file-write*", &writable));
     }
-    let readonly: Vec<PathBuf> = roots
-        .iter()
-        .flat_map(|root| {
-            policy
-                .readonly_in_workspace
-                .iter()
-                .map(|sub| root.join(sub))
-        })
-        .collect();
-    if workspace_write && !readonly.is_empty() {
-        let readonly: Vec<&Path> = readonly.iter().map(PathBuf::as_path).collect();
+    let readonly = super::readonly(policy, roots);
+    if policy.mode == SandboxMode::WorkspaceWrite && !readonly.is_empty() {
         out.push_str(&rule("deny file-write*", &readonly));
     }
     if policy.network {
@@ -55,7 +42,7 @@ pub fn profile(policy: &SandboxPolicy, roots: &[PathBuf], scratch: &[PathBuf]) -
     out
 }
 
-fn rule(head: &str, paths: &[&Path]) -> String {
+fn rule(head: &str, paths: &[PathBuf]) -> String {
     let subpaths: String = paths
         .iter()
         .map(|p| format!(" (subpath \"{}\")", escape(&real(p))))
@@ -87,6 +74,7 @@ mod tests {
             network,
             writable: vec![PathBuf::from("/extra/out")],
             readonly_in_workspace: vec![PathBuf::from(".git"), PathBuf::from(".cox")],
+            linux_backend: Default::default(),
         }
     }
 

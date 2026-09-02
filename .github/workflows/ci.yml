@@ -24,6 +24,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap.
+      - name: bubblewrap
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          echo "COX_EXPECT_SANDBOX=bwrap" >> "$GITHUB_ENV"
+
       - name: fmt
         run: cargo fmt --check
 
@@ -34,6 +42,29 @@ jobs:
 
       - name: test
         run: cargo nextest run --workspace
+
+  # Linux job B (plan.md T4.2): no bwrap on PATH, so the sandbox must fall
+  # back to Landlock + seccomp and still hold the same guarantees.
+  sandbox-landlock:
+    runs-on: ubuntu-24.04
+    env:
+      COX_EXPECT_SANDBOX: landlock
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: no bubblewrap
+        run: |
+          sudo apt-get remove -y bubblewrap || true
+          if command -v bwrap; then echo "bwrap still on PATH" && exit 1; fi
+
+      - uses: taiki-e/install-action@nextest
+
+      - name: sandbox tests without bwrap
+        run: cargo nextest run -p cox-tools sandbox_ bash_
 
   deny:
     runs-on: ubuntu-24.04

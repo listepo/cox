@@ -34,6 +34,7 @@ pub fn policy(mode: SandboxMode) -> SandboxPolicy {
         network: false,
         writable: vec![],
         readonly_in_workspace: vec![PathBuf::from(".git"), PathBuf::from(".cox")],
+        linux_backend: Default::default(),
     }
 }
 

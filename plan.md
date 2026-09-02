@@ -55,7 +55,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
-| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, portable-pty 0.9, shlex, landlock 0.4.7, seccompiler 0.5, nix |
+| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex |
@@ -566,16 +566,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
 
 ### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
-
-#### T4.2 Linux bubblewrap, Landlock + seccomp
-Model: opus · Status: open · Depends: T3.7 · Size: ~200
-Goal: the same three guarantees on Linux with and without `bwrap`.
-Files: `crates/cox-tools/src/sandbox/{bwrap,landlock}.rs`, `.github/workflows/ci.yml` (two Linux jobs).
-Steps: (1) `bwrap` argv: `--unshare-user --unshare-pid --die-with-parent --ro-bind / / --bind <root> <root> --ro-bind <root>/.git <root>/.git --tmpfs /tmp --proc /proc --dev /dev`, `--unshare-net` unless `network`; `PR_SET_NO_NEW_PRIVS`. (2) Fallback: `landlock` crate ruleset (ABI best-effort ≥ 3: read on `/`, write on roots minus readonly subpaths) applied in `pre_exec`, plus `seccompiler` filter denying `connect`/`socket(AF_INET*)` when `!network`. (3) Backend selection `sandbox.linux_backend = auto`: bwrap if on PATH and user namespaces allowed, else landlock, else `none` with a `Notice(Security)` and forced `on-request`. (4) CI: job A installs `bubblewrap`; job B does not; both run the three assertions.
-Check:
-```bash
-mise exec -- cargo test -p cox-tools sandbox_linux_
-```
 
 #### T4.3 Approval policy × sandbox mode matrix
 Model: sonnet · Status: open · Depends: T4.1, T4.2, T2.2 · Size: ~150

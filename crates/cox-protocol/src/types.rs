@@ -222,6 +222,21 @@ pub enum HookEvent {
     PostCompact,
 }
 
+/// `sandbox.linux_backend` (plan.md T4.2): which Linux confinement to use.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinuxBackend {
+    /// `bwrap` when it can create namespaces here, else Landlock, else none.
+    #[default]
+    Auto,
+    /// bubblewrap only.
+    Bwrap,
+    /// Landlock + seccomp only.
+    Landlock,
+    /// No confinement on Linux; the surface warns and forces `on-request`.
+    None,
+}
+
 /// `[sandbox]` config, resolved for one call (plan.md §1.6/D7).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SandboxPolicy {
@@ -233,6 +248,8 @@ pub struct SandboxPolicy {
     pub writable: Vec<PathBuf>,
     /// Paths inside the workspace that stay read-only even in `workspace-write` (`.git`, `.cox`).
     pub readonly_in_workspace: Vec<PathBuf>,
+    /// Which Linux backend confines the command; ignored elsewhere.
+    pub linux_backend: LinuxBackend,
 }
 
 // ---------------------------------------------------------------------

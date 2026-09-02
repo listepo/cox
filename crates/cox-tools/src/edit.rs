@@ -324,6 +324,7 @@ mod tests {
                 network: false,
                 writable: vec![],
                 readonly_in_workspace: vec![],
+                linux_backend: Default::default(),
             },
             Arc::new(NoopArchive),
             CancellationToken::new(),

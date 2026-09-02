@@ -139,6 +139,7 @@ async fn turn_big_tool_output_is_truncated_then_expandable() {
             network: false,
             writable: vec![],
             readonly_in_workspace: vec![],
+            linux_backend: Default::default(),
         },
         store,
         tokio_util::sync::CancellationToken::new(),
