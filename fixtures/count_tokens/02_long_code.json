@@ -1,0 +1,29 @@
+{
+  "_note": "input_tokens is NOT a real Anthropic count_tokens response — cox-provider's tests run with no network and no API key (AGENTS.md D12). It is tiktoken-rs o200k_base's count over the same rendered text cox_provider::tokens::rendered_message_text/rendered_full_text produce, used as a documented stand-in ground truth for tuning the byte-heuristic constants in tokens.rs (see BYTES_PER_TOKEN/TOKENS_PER_SCHEMA_KEY/TOKENS_PER_MESSAGE). tiktoken undercounts real Claude tokens by roughly 15-20% on prose and more on code, so this bounds the heuristic against a proxy, not the real Anthropic tokenizer.",
+  "request": {
+    "tier": "code",
+    "job": "main",
+    "model": "claude-sonnet-5",
+    "system": [
+      { "text": "You are cox, a terminal coding agent.", "cache": true }
+    ],
+    "tools": [],
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "I have a rolling-average helper that I suspect has an off-by-one bug somewhere in the windowing logic, but I have not been able to pin down exactly which comparison is wrong. Can you walk through what this function does step by step, point out the bug precisely, and suggest a minimal fix that keeps the same function signature and does not change its allocation strategy?\n\n```rust\nfn window_sum(data: &[f64], window: usize) -> Vec<f64> {\n    let mut out = Vec::with_capacity(data.len());\n    let mut sum = 0.0;\n    for i in 0..data.len() {\n        sum += data[i];\n        if i >= window {\n            sum -= data[i - window];\n        }\n        if i + 1 >= window {\n            out.push(sum / window as f64);\n        }\n    }\n    out\n}\n```\n\nIt is called like this from `main`, in case the calling convention matters for the fix:\n\n```rust\nfn main() {\n    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];\n    let averaged = window_sum(&data, 3);\n    for (i, v) in averaged.iter().enumerate() {\n        println!(\"window {}: {:.3}\", i, v);\n    }\n}\n```\n\nPlease also mention whether the fix changes behaviour for a window size larger than the input slice.\n"
+          }
+        ]
+      }
+    ],
+    "effort": "high",
+    "max_tokens": 4096,
+    "thinking": "adaptive",
+    "cache_breakpoints": [0],
+    "stop_sequences": []
+  },
+  "input_tokens": 334
+}

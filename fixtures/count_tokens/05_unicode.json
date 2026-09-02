@@ -1,0 +1,29 @@
+{
+  "_note": "input_tokens is NOT a real Anthropic count_tokens response — cox-provider's tests run with no network and no API key (AGENTS.md D12). It is tiktoken-rs o200k_base's count over the same rendered text cox_provider::tokens::rendered_message_text/rendered_full_text produce, used as a documented stand-in ground truth for tuning the byte-heuristic constants in tokens.rs (see BYTES_PER_TOKEN/TOKENS_PER_SCHEMA_KEY/TOKENS_PER_MESSAGE). tiktoken undercounts real Claude tokens by roughly 15-20% on prose and more on code, so this bounds the heuristic against a proxy, not the real Anthropic tokenizer. This fixture is unicode-heavy (CJK, Cyrillic, accented Latin, emoji) since multi-byte UTF-8 skews a pure bytes-per-token ratio.",
+  "request": {
+    "tier": "cheap",
+    "job": "explore",
+    "model": "claude-haiku-5",
+    "system": [
+      { "text": "You are cox.", "cache": true }
+    ],
+    "tools": [],
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Translate to English, one sentence: \"Café — naïve résumé façade, très bien merci, mais le service était lent.\" 😀🎉 你好，谢谢！"
+          }
+        ]
+      }
+    ],
+    "effort": "low",
+    "max_tokens": 512,
+    "thinking": "off",
+    "cache_breakpoints": [],
+    "stop_sequences": []
+  },
+  "input_tokens": 38
+}

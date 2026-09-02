@@ -1,0 +1,93 @@
+{
+  "_note": "input_tokens is NOT a real Anthropic count_tokens response — cox-provider's tests run with no network and no API key (AGENTS.md D12). It is tiktoken-rs o200k_base's count over the same rendered text cox_provider::tokens::rendered_message_text/rendered_full_text produce, used as a documented stand-in ground truth for tuning the byte-heuristic constants in tokens.rs (see BYTES_PER_TOKEN/TOKENS_PER_SCHEMA_KEY/TOKENS_PER_MESSAGE). tiktoken undercounts real Claude tokens by roughly 15-20% on prose and more on code, so this bounds the heuristic against a proxy, not the real Anthropic tokenizer. This fixture is schema-heavy (four tool specs) to bound TOKENS_PER_SCHEMA_KEY specifically.",
+  "request": {
+    "tier": "code",
+    "job": "main",
+    "model": "claude-sonnet-5",
+    "system": [
+      { "text": "You are cox. Tools are listed below.", "cache": true }
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "Read a file from the workspace.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "Absolute path to read" },
+            "offset": { "type": "integer", "description": "Line to start from" },
+            "limit": { "type": "integer", "description": "Max lines to return" }
+          },
+          "required": ["path"]
+        },
+        "deferred": false,
+        "risk": "read_only",
+        "concurrency": "parallel"
+      },
+      {
+        "name": "edit",
+        "description": "Replace text in a file.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "old_string": { "type": "string" },
+            "new_string": { "type": "string" },
+            "replace_all": { "type": "boolean" }
+          },
+          "required": ["path", "old_string", "new_string"]
+        },
+        "deferred": false,
+        "risk": "write",
+        "concurrency": "exclusive"
+      },
+      {
+        "name": "bash",
+        "description": "Run a shell command in the sandbox.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": { "type": "string" },
+            "timeout_ms": { "type": "integer" },
+            "cwd": { "type": "string" }
+          },
+          "required": ["command"]
+        },
+        "deferred": false,
+        "risk": "exec",
+        "concurrency": "exclusive"
+      },
+      {
+        "name": "grep",
+        "description": "Search file contents for a pattern.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "pattern": { "type": "string" },
+            "path": { "type": "string" },
+            "glob": { "type": "string" },
+            "case_insensitive": { "type": "boolean" }
+          },
+          "required": ["pattern"]
+        },
+        "deferred": false,
+        "risk": "read_only",
+        "concurrency": "parallel"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "List the available tools and what each one is for." }
+        ]
+      }
+    ],
+    "effort": "high",
+    "max_tokens": 2048,
+    "thinking": "off",
+    "cache_breakpoints": [0],
+    "stop_sequences": []
+  },
+  "input_tokens": 236
+}

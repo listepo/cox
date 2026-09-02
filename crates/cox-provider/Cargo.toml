@@ -13,6 +13,13 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+# OpenAI-side token counting for T1.8 (no Anthropic-tokenizer equivalent is public).
+tiktoken-rs = { workspace = true }
+# T1.2: SSE parsing (sse.rs) over a reqwest byte stream.
+eventsource-stream = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+wiremock = { workspace = true }

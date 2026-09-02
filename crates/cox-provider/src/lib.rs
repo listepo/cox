@@ -10,7 +10,10 @@
 //! what `cache_control` or `output_config` are.
 //!
 //! - [`anthropic`] — Messages API: cache breakpoints, adaptive thinking, effort, refusal fallbacks.
+//! - [`sse`] — generic Server-Sent-Events framing shared by every SSE-based provider.
 
 #![warn(missing_docs)]
 
 pub mod anthropic;
+pub mod sse;
+pub mod tokens;

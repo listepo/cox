@@ -1,0 +1,76 @@
+{
+  "_note": "input_tokens is NOT a real Anthropic count_tokens response — cox-provider's tests run with no network and no API key (AGENTS.md D12). It is tiktoken-rs o200k_base's count over the same rendered text cox_provider::tokens::rendered_message_text/rendered_full_text produce, used as a documented stand-in ground truth for tuning the byte-heuristic constants in tokens.rs (see BYTES_PER_TOKEN/TOKENS_PER_SCHEMA_KEY/TOKENS_PER_MESSAGE). tiktoken undercounts real Claude tokens by roughly 15-20% on prose and more on code, so this bounds the heuristic against a proxy, not the real Anthropic tokenizer. This fixture exercises a three-message tool-call/tool-result turn (parallel batch answered in one user message, per plan.md §1.3).",
+  "request": {
+    "tier": "code",
+    "job": "main",
+    "model": "claude-sonnet-5",
+    "system": [
+      { "text": "You are cox, a terminal coding agent.", "cache": true }
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "Read a file from the workspace.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "Absolute path to read" }
+          },
+          "required": ["path"]
+        },
+        "deferred": false,
+        "risk": "read_only",
+        "concurrency": "parallel"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "Read both config files and summarize the differences." }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "Reading both files now." },
+          {
+            "type": "tool_use",
+            "id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
+            "name": "read",
+            "input": { "path": "config/a.toml" }
+          },
+          {
+            "type": "tool_use",
+            "id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
+            "name": "read",
+            "input": { "path": "config/b.toml" }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
+            "content": "[server]\nport = 8080\nhost = \"0.0.0.0\"\n\n[logging]\nlevel = \"info\"\n",
+            "is_error": false
+          },
+          {
+            "type": "tool_result",
+            "call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
+            "content": "[server]\nport = 9090\nhost = \"127.0.0.1\"\n\n[logging]\nlevel = \"debug\"\n",
+            "is_error": false
+          }
+        ]
+      }
+    ],
+    "effort": "high",
+    "max_tokens": 2048,
+    "thinking": "off",
+    "cache_breakpoints": [0],
+    "stop_sequences": []
+  },
+  "input_tokens": 131
+}
