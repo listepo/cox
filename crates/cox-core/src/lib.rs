@@ -2,3 +2,10 @@
 //! the permission engine, hooks, model routing, budget. No I/O except
 //! through traits in `cox-protocol`, so the loop can be tested by replaying
 //! events instead of calling a model.
+
+#![warn(missing_docs)]
+
+mod session;
+mod turn;
+
+pub use session::{MemoryStore, Session};

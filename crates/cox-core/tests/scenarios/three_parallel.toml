@@ -1,0 +1,9 @@
+[[turn]]
+tool_calls = [
+  { name = "echo", input = { text = "a" } },
+  { name = "echo", input = { text = "b" } },
+  { name = "echo", input = { text = "c" } },
+]
+
+[[turn]]
+text = "all three"

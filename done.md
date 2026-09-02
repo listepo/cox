@@ -499,3 +499,30 @@ Check:
 $ mise exec -- cargo test -p cox-provider chat_
 test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.03s
 ```
+
+#### T1.5 Scripted and Replay providers, `cox record`
+Model: grok · Status: done 2026-09-02 · Depends: T1.2 · Size: ~200
+Goal: the whole loop and every test run with no network and no key.
+Files: `crates/cox-provider/src/{scripted,replay}.rs`, `crates/cox/src/record.rs`.
+
+Notes: `Scripted` serves one `[[turn]]` per provider call (`EndTurn` always; tool use is inferred from `ToolUseStart`). `Replay` hashes a canonical `Request` (volatile `date`/`cwd`/`created_at` masked) and feeds the cassette SSE through `AnthropicStream`. `COX_PROVIDER=scripted|replay` (plus `COX_SCENARIO` / `COX_CASSETTES`) selects them. `cox record` writes a cassette from `-p` + `--sse` rather than capturing a live session (the loop is T2.1; live capture can replace `--sse` later). `no_secrets_in_fixtures` walks `fixtures/` and `cassettes/` through `redact_secrets`; that helper had to copy UTF-8 by char — treating bytes as `char` false-positived unicode fixtures.
+Overrun: also `crates/cox-provider/src/lib.rs`, `crates/cox-provider/Cargo.toml` (`sha2`, already a workspace dep), `crates/cox/src/{cli,main}.rs`. `scripted.rs` + `replay.rs` together exceed the ~200 LOC size line because of tests.
+Check:
+```bash
+$ env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY mise exec -- cargo test --workspace
+test result: ok (workspace: cox 11, deps 2, cox-core turn 9, protocol 47, provider 73 including no_secrets_in_fixtures, store 9, tools 32, confine 20, edit 4)
+```
+
+#### T2.1 `Session` state machine and turn loop
+Model: grok · Status: done 2026-09-02 · Depends: T0.2, T1.5 · Size: ~200 (+ scenarios)
+Goal: §1.3 as code, with `Scripted` and two stub tools (`echo` ReadOnly, `touch` Write).
+Files: `crates/cox-core/src/{session,turn}.rs`, `crates/cox-core/tests/turn.rs` + `scenarios/*.toml`.
+
+Notes: `Session::submit` / `events` / `step` — one provider call and its tool batch per `step()`, I/O only through traits. Permission always allows (T2.2). Stub tools live in the integration test (`echo` ReadOnly/Parallel, `touch` Write/Exclusive, plus test-only `slow` for interrupt). `cox-provider` is a *dev*-dependency of `cox-core` so loop tests can use `Scripted` without violating the runtime "cox-core depends only on cox-protocol" rule; `crates/cox/tests/deps.rs` ignores `kind == "dev"`. `Session::new` takes store+archive+cwd rather than hooks (T7.4). Six insta snapshots: `text_only`, `one_tool`, `three_parallel`, `interrupt`, `provider_error`, `max_turns`.
+Overrun: `session.rs` (~450) and `tests/turn.rs` (~390) exceed the ~200 LOC guidance; scenarios are extra files the task listing already named. Also `crates/cox-core/{Cargo.toml,src/lib.rs}`.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-core turn_
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+```
+

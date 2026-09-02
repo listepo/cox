@@ -1,0 +1,450 @@
+//! `Session`: Submission in, Event out. The only type `cox-tui` / `cox run`
+//! / ACP should talk to; they never call a provider or tool themselves.
+
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex as StdMutex};
+
+use cox_protocol::errors::{CoreError, StoreError};
+use cox_protocol::ids::{ItemId, SessionId, TurnId};
+use cox_protocol::traits::{Archive, ArchivePut, Provider, Store, Tool};
+use cox_protocol::types::{
+    Content, Event, ItemKind, Job, Message, ModelId, Role, StopReason, Submission, Tier,
+};
+use tokio::sync::{Mutex, mpsc};
+use tokio_util::sync::CancellationToken;
+
+use crate::turn::{assemble, consume_provider, results_message, run_tools};
+
+/// Loop states from plan.md §1.3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    /// No turn in flight.
+    Idle,
+    /// Building the next provider request.
+    Assembling,
+    /// A provider stream is open.
+    Streaming,
+    /// Tools from the last assistant message are running.
+    RunningTools,
+    /// Waiting on `Submission::Approve` (wired in T2.2).
+    #[allow(dead_code)]
+    AwaitingApproval,
+    /// Compaction is running (wired in T8.1).
+    #[allow(dead_code)]
+    Compacting,
+    /// Emitting `TurnDone` and flushing.
+    Finishing,
+    /// `Submission::Interrupt` is draining work.
+    Interrupted,
+}
+
+enum Step {
+    Continue,
+    Done,
+}
+
+struct Inner {
+    state: State,
+    history: Vec<Message>,
+    provider_calls: u32,
+}
+
+/// One conversation: a provider, tools, a store, and an event stream.
+#[derive(Clone)]
+pub struct Session {
+    pub(crate) id: SessionId,
+    pub(crate) config: cox_protocol::Config,
+    pub(crate) provider: Arc<dyn Provider>,
+    pub(crate) tools: Vec<Arc<dyn Tool>>,
+    pub(crate) store: Arc<dyn Store>,
+    pub(crate) archive: Arc<dyn Archive>,
+    pub(crate) cwd: PathBuf,
+    pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
+    tx: mpsc::Sender<Event>,
+    rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
+    inner: Arc<Mutex<Inner>>,
+}
+
+impl Session {
+    /// Constructs a session and emits `SessionStarted`.
+    pub fn new(
+        config: cox_protocol::Config,
+        provider: Arc<dyn Provider>,
+        tools: Vec<Arc<dyn Tool>>,
+        store: Arc<dyn Store>,
+        archive: Arc<dyn Archive>,
+        cwd: PathBuf,
+    ) -> Result<Self, CoreError> {
+        let id = SessionId::new();
+        let (tx, rx) = mpsc::channel(256);
+        let session = Self {
+            id,
+            config,
+            provider,
+            tools,
+            store,
+            archive,
+            cwd: cwd.clone(),
+            cancel: Arc::new(StdMutex::new(CancellationToken::new())),
+            tx,
+            rx: Arc::new(StdMutex::new(Some(rx))),
+            inner: Arc::new(Mutex::new(Inner {
+                state: State::Idle,
+                history: Vec::new(),
+                provider_calls: 0,
+            })),
+        };
+        let started = Event::SessionStarted {
+            session: id,
+            config_digest: String::new(),
+            cwd,
+        };
+        session
+            .store
+            .session_create(&cox_protocol::SessionRow {
+                id,
+                created_at: String::new(),
+                cwd: session.cwd.clone(),
+                project_slug: String::new(),
+                title: None,
+                parent_id: None,
+                rollout_path: PathBuf::new(),
+            })
+            .map_err(|error| CoreError::Store { error })?;
+        session.store.rollout_append(&id, &started).ok();
+        let _ = session.tx.try_send(started);
+        Ok(session)
+    }
+
+    /// Takes the event receiver once.
+    pub fn events(&self) -> Option<mpsc::Receiver<Event>> {
+        self.rx.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    /// The transcript the next `assemble` will send (loop tests).
+    pub async fn history(&self) -> Vec<Message> {
+        self.inner.lock().await.history.clone()
+    }
+
+    pub(crate) fn clone_handle(&self) -> Self {
+        self.clone()
+    }
+
+    pub(crate) async fn emit(&self, ev: Event) -> Result<(), CoreError> {
+        self.store
+            .rollout_append(&self.id, &ev)
+            .map_err(|error| CoreError::Store { error })?;
+        let _ = self.tx.send(ev).await;
+        Ok(())
+    }
+
+    /// Cancels the provider stream and running tools.
+    pub fn interrupt(&self) {
+        self.cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .cancel();
+    }
+
+    pub(crate) fn cancel_token(&self) -> CancellationToken {
+        self.cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Feeds one submission into the state machine.
+    pub async fn submit(&self, sub: Submission) -> Result<(), CoreError> {
+        match sub {
+            Submission::UserTurn {
+                text,
+                confirm_think: _,
+                attachments: _,
+            } => self.run_turn(text).await,
+            Submission::Interrupt => {
+                self.interrupt();
+                Ok(())
+            }
+            Submission::Shutdown => Ok(()),
+            _ => Ok(()),
+        }
+    }
+
+    async fn run_turn(&self, text: String) -> Result<(), CoreError> {
+        {
+            let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
+            *c = CancellationToken::new();
+        }
+        let turn = TurnId::new();
+        let user_item = ItemId::new();
+        {
+            let mut inner = self.inner.lock().await;
+            inner.state = State::Assembling;
+            inner.history.push(Message {
+                role: Role::User,
+                content: vec![Content::Text { text: text.clone() }],
+            });
+            inner.provider_calls = 0;
+        }
+        self.emit(Event::TurnStarted {
+            turn,
+            job: Job::Main,
+            tier: Tier::Code,
+            model: ModelId(self.config.tiers.code.model.clone()),
+        })
+        .await?;
+        self.emit(Event::ItemStarted {
+            item: user_item,
+            kind: ItemKind::UserMessage {
+                text,
+                attachments: vec![],
+            },
+        })
+        .await?;
+        self.emit(Event::ItemDone { item: user_item }).await?;
+
+        loop {
+            match self.step(turn).await? {
+                Step::Continue => {}
+                Step::Done => return Ok(()),
+            }
+        }
+    }
+
+    /// One provider call and its tool batch. The turn loop is just
+    /// `while step() == Continue`; I/O happens only through traits.
+    async fn step(&self, turn: TurnId) -> Result<Step, CoreError> {
+        if self.cancel_token().is_cancelled() {
+            self.set_state(State::Interrupted).await;
+            self.finish(turn, StopReason::Interrupted).await?;
+            return Ok(Step::Done);
+        }
+        let (history, calls_so_far) = {
+            let inner = self.inner.lock().await;
+            (inner.history.clone(), inner.provider_calls)
+        };
+        if calls_so_far >= self.config.core.max_turns {
+            self.finish(turn, StopReason::MaxTurns).await?;
+            return Ok(Step::Done);
+        }
+        {
+            let mut inner = self.inner.lock().await;
+            inner.state = State::Assembling;
+            inner.provider_calls += 1;
+        }
+        let tier = &self.config.tiers.code;
+        let req = assemble(
+            &history,
+            &self.tools,
+            ModelId(tier.model.clone()),
+            tier.effort,
+            tier.max_tokens,
+            tier.thinking,
+        );
+        let assistant_item = ItemId::new();
+        self.emit(Event::ItemStarted {
+            item: assistant_item,
+            kind: ItemKind::AssistantMessage {
+                text: String::new(),
+            },
+        })
+        .await?;
+        self.set_state(State::Streaming).await;
+        let (ptx, mut prx) = mpsc::channel(64);
+        let provider = self.provider.clone();
+        let cancel = self.cancel_token();
+        let join = tokio::spawn(async move { provider.stream(req, ptx, cancel).await });
+        let streamed = match consume_provider(self, &mut prx, assistant_item).await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = join.await;
+                self.emit(Event::Error {
+                    error: e.clone(),
+                    fatal: false,
+                })
+                .await?;
+                self.finish(turn, StopReason::Error).await?;
+                return Ok(Step::Done);
+            }
+        };
+        let usage = match join.await {
+            Ok(Ok(u)) => u,
+            Ok(Err(error)) => {
+                self.emit(Event::Error {
+                    error: CoreError::Provider { error },
+                    fatal: false,
+                })
+                .await?;
+                self.finish(turn, StopReason::Error).await?;
+                return Ok(Step::Done);
+            }
+            Err(_) => {
+                self.set_state(State::Interrupted).await;
+                self.finish(turn, StopReason::Interrupted).await?;
+                return Ok(Step::Done);
+            }
+        };
+        let usage = streamed.usage.unwrap_or(usage);
+        self.store
+            .usage_insert(&cox_protocol::UsageRow {
+                session_id: self.id,
+                turn: calls_so_far + 1,
+                job: Job::Main,
+                tier: Tier::Code,
+                provider: self.provider.id(),
+                model: ModelId(self.config.tiers.code.model.clone()),
+                usage,
+            })
+            .map_err(|error| CoreError::Store { error })?;
+        self.emit(Event::Usage { turn, usage }).await?;
+        self.emit(Event::ItemDone {
+            item: assistant_item,
+        })
+        .await?;
+
+        if streamed.calls.is_empty() {
+            if !streamed.text.is_empty() {
+                let mut inner = self.inner.lock().await;
+                inner.history.push(Message {
+                    role: Role::Assistant,
+                    content: vec![Content::Text {
+                        text: streamed.text,
+                    }],
+                });
+            }
+            self.finish(turn, StopReason::EndTurn).await?;
+            return Ok(Step::Done);
+        }
+
+        {
+            let mut inner = self.inner.lock().await;
+            inner.history.push(Message {
+                role: Role::Assistant,
+                content: {
+                    let mut blocks = Vec::new();
+                    if !streamed.text.is_empty() {
+                        blocks.push(Content::Text {
+                            text: streamed.text.clone(),
+                        });
+                    }
+                    for (id, name, input) in &streamed.calls {
+                        blocks.push(Content::ToolUse {
+                            id: *id,
+                            name: name.clone(),
+                            input: input.clone(),
+                        });
+                    }
+                    blocks
+                },
+            });
+            inner.state = State::RunningTools;
+        }
+        let results = run_tools(self, streamed.calls).await?;
+        if self.cancel_token().is_cancelled() {
+            self.set_state(State::Interrupted).await;
+            self.finish(turn, StopReason::Interrupted).await?;
+            return Ok(Step::Done);
+        }
+        let msg = results_message(results);
+        {
+            let mut inner = self.inner.lock().await;
+            inner.history.push(msg);
+        }
+        Ok(Step::Continue)
+    }
+
+    async fn set_state(&self, state: State) {
+        self.inner.lock().await.state = state;
+    }
+
+    async fn finish(&self, turn: TurnId, stop: StopReason) -> Result<(), CoreError> {
+        {
+            let mut inner = self.inner.lock().await;
+            inner.state = State::Finishing;
+        }
+        self.emit(Event::TurnDone { turn, stop }).await?;
+        {
+            let mut inner = self.inner.lock().await;
+            inner.state = State::Idle;
+        }
+        Ok(())
+    }
+}
+
+/// In-memory store for loop tests: no SQLite, same trait.
+pub struct MemoryStore {
+    events: StdMutex<Vec<Event>>,
+    usage: StdMutex<Vec<cox_protocol::UsageRow>>,
+}
+
+impl MemoryStore {
+    /// Empty ledger and rollout.
+    pub fn new() -> Self {
+        Self {
+            events: StdMutex::new(Vec::new()),
+            usage: StdMutex::new(Vec::new()),
+        }
+    }
+
+    /// Ledger rows written for this session (test assertion).
+    pub fn usage_rows(&self) -> Vec<cox_protocol::UsageRow> {
+        self.usage.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+impl Default for MemoryStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Store for MemoryStore {
+    fn open(_home: &std::path::Path) -> Result<Self, StoreError> {
+        Ok(Self::new())
+    }
+    fn session_create(&self, _s: &cox_protocol::SessionRow) -> Result<(), StoreError> {
+        Ok(())
+    }
+    fn rollout_append(&self, _id: &SessionId, ev: &Event) -> Result<u64, StoreError> {
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        events.push(ev.clone());
+        Ok(events.len() as u64)
+    }
+    fn rollout_read(&self, _id: &SessionId) -> Result<Vec<Event>, StoreError> {
+        Ok(self
+            .events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
+    }
+    fn usage_insert(&self, row: &cox_protocol::UsageRow) -> Result<(), StoreError> {
+        self.usage
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(row.clone());
+        Ok(())
+    }
+    fn archive_put(&self, _a: &ArchivePut) -> Result<cox_protocol::ArchiveId, StoreError> {
+        Ok(cox_protocol::ArchiveId::new())
+    }
+    fn archive_get(&self, _id: &cox_protocol::ArchiveId) -> Result<Vec<u8>, StoreError> {
+        Err(StoreError::NotFound)
+    }
+    fn memory_search(
+        &self,
+        _q: &str,
+        _limit: usize,
+    ) -> Result<Vec<cox_protocol::MemoryHit>, StoreError> {
+        Ok(vec![])
+    }
+}
+
+#[async_trait::async_trait]
+impl Archive for MemoryStore {
+    async fn put(&self, put: ArchivePut) -> Result<cox_protocol::ArchiveId, StoreError> {
+        self.archive_put(&put)
+    }
+    async fn get(&self, id: &cox_protocol::ArchiveId) -> Result<Vec<u8>, StoreError> {
+        self.archive_get(id)
+    }
+}

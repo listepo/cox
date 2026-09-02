@@ -1,0 +1,5 @@
+[[turn]]
+tool_calls = [{ name = "echo", input = { text = "1" } }]
+
+[[turn]]
+text = "should not be reached"

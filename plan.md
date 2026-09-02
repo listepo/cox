@@ -561,18 +561,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
 
-#### T1.5 Scripted and Replay providers, `cox record`
-Model: sonnet · Status: open · Depends: T1.2 · Size: ~200
-Goal: the whole loop and every test run with no network and no key.
-Files: `crates/cox-provider/src/{scripted,replay}.rs`, `crates/cox/src/record.rs`.
-Steps: (1) `Scripted`: replies from a TOML scenario (`[[turn]] text = … tool_calls = [{name, input}]`), one per provider call, error if the scenario runs out. (2) `Replay`: cassette dir with `<hash>.request.json` + `<hash>.sse`; hash = sha256 of the canonical request with volatile fields (date, cwd) masked; miss → `ProviderError::Unsupported("cassette miss: <hash>")` listing nearest request diff. (3) `cox record <name> -p …`: runs a real session and writes the cassette; `--redact` replaces key patterns; a test greps `fixtures/` and `cassettes/` for `sk-[A-Za-z0-9]{8,}` and `Bearer `. (4) `COX_PROVIDER=scripted|replay` env selects them.
-Check:
-```bash
-env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY mise exec -- cargo test --workspace
-```
-Done when: CI runs with no secrets configured; `no_secrets_in_fixtures` passes.
-Out of scope: the loop itself (T2.1).
-
 #### T1.6 Retry, backoff, timeouts, cancellation
 Model: sonnet · Status: open · Depends: T1.2 · Size: ~150
 Goal: transient failures retry, permanent ones surface typed, cancel drops the connection.
@@ -586,18 +574,6 @@ Done when: `retries_then_succeeds` (wiremock 2×429 then 200) and `cancel_mid_st
 Out of scope: budget (T2.7).
 
 ### P2 — Core loop (goal: a session that runs turns, calls tools, asks permission, resumes)
-
-#### T2.1 `Session` state machine and turn loop
-Model: opus · Status: open · Depends: T0.2, T1.5 · Size: ~200 (+ scenarios)
-Goal: §1.3 as code, with `Scripted` and two stub tools (`echo` ReadOnly, `touch` Write).
-Files: `crates/cox-core/src/{session,turn}.rs`, `crates/cox-core/tests/turn.rs` + `scenarios/*.toml`.
-Steps: (1) `Session::new(config, provider, tools, store, hooks)`; `submit(Submission)`; `events() -> Receiver<Event>`. (2) States per §1.3 as an enum; transitions in one `step()` function; no I/O outside traits. (3) Parallel tool execution with `JoinSet`, cap `parallel_tools`, `Exclusive` tools serialised. (4) Golden event JSONL (insta) for scenarios: text-only; one tool call; three parallel calls returned in one user message in emission order; interrupt mid-tool; provider error mid-stream; `max_turns` reached. (5) Tests `all_tool_results_return_in_one_message`, `no_event_after_turn_done`, `every_request_has_a_usage_row`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core turn_
-```
-Done when: six scenario snapshots committed; `update`-style pure `step()` has no `async fn` signature other than awaiting trait calls.
-Out of scope: permission engine (T2.2) — stubs allow everything here; archive/truncation (T2.5).
 
 #### T2.2 Permission engine
 Model: opus · Status: open · Depends: T2.1 · Size: ~200

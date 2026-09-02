@@ -37,6 +37,7 @@ fn workspace_deps() -> HashMap<String, HashSet<String>> {
                 .as_array()
                 .expect("dependencies array")
                 .iter()
+                .filter(|d| d.get("kind").and_then(|k| k.as_str()) != Some("dev"))
                 .filter_map(|d| d["name"].as_str().map(str::to_string))
                 .filter(|d| workspace_names.contains(d))
                 .collect();

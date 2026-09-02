@@ -1,0 +1,6 @@
+[[turn]]
+text = "echoing"
+tool_calls = [{ name = "echo", input = { text = "hi" } }]
+
+[[turn]]
+text = "done"

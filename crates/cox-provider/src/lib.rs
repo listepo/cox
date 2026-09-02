@@ -16,6 +16,31 @@
 
 pub mod anthropic;
 pub mod openai;
+pub mod replay;
+pub mod scripted;
 pub mod sse;
 pub mod tokens;
 pub mod usage;
+
+use cox_protocol::errors::ProviderError;
+use cox_protocol::traits::Provider;
+
+/// Builds a test-double [`Provider`] from `COX_PROVIDER`.
+///
+/// `None` means construct a real provider. `scripted` needs `COX_SCENARIO`;
+/// `replay` needs `COX_CASSETTES`.
+pub fn from_env() -> Result<Option<Box<dyn Provider>>, ProviderError> {
+    match std::env::var("COX_PROVIDER") {
+        Ok(name) if name.eq_ignore_ascii_case("scripted") => {
+            Ok(Some(Box::new(scripted::Scripted::from_env()?)))
+        }
+        Ok(name) if name.eq_ignore_ascii_case("replay") => {
+            Ok(Some(Box::new(replay::Replay::from_env()?)))
+        }
+        Ok(name) if name.is_empty() => Ok(None),
+        Ok(name) => Err(ProviderError::Unsupported {
+            feature: format!("COX_PROVIDER={name}"),
+        }),
+        Err(_) => Ok(None),
+    }
+}

@@ -80,7 +80,7 @@ pub enum Command {
     /// Report why cox will or will not work on this machine.
     Doctor,
     /// Re-record a provider cassette.
-    Record,
+    Record(RecordArgs),
     /// Serve built-in tools over MCP stdio.
     Mcp,
     /// Agent Client Protocol server on stdio.
@@ -128,6 +128,22 @@ pub struct StatsArgs {
     /// Print stats for a specific session by id.
     #[arg(long, value_name = "ID")]
     pub session: Option<String>,
+}
+
+/// `cox record <name> -p <prompt> [--sse FILE] [--redact]` (plan.md T1.5).
+#[derive(Args, Debug)]
+pub struct RecordArgs {
+    /// Cassette name (`cassettes/<name>/` under `COX_HOME`).
+    pub name: String,
+    /// The prompt recorded as the request's user message.
+    #[arg(short = 'p', long = "prompt", value_name = "TEXT")]
+    pub prompt: Option<String>,
+    /// Redact `sk-` keys and `Bearer ` prefixes.
+    #[arg(long)]
+    pub redact: bool,
+    /// Raw SSE body to store (live capture waits on a session loop).
+    #[arg(long, value_name = "FILE")]
+    pub sse: Option<PathBuf>,
 }
 
 /// `cox config <action>` (plan.md §1.12/§1.6).

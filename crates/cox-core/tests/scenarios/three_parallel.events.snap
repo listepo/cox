@@ -1,0 +1,166 @@
+---
+source: crates/cox-core/tests/turn.rs
+expression: value
+---
+[
+  {
+    "config_digest": "",
+    "cwd": "/tmp/cox-turn",
+    "session": "<id>",
+    "type": "session_started"
+  },
+  {
+    "job": "main",
+    "model": "claude-sonnet-5",
+    "tier": "code",
+    "turn": "<id>",
+    "type": "turn_started"
+  },
+  {
+    "item": "<id>",
+    "kind": {
+      "attachments": [],
+      "text": "three_parallel",
+      "type": "user_message"
+    },
+    "type": "item_started"
+  },
+  {
+    "item": "<id>",
+    "type": "item_done"
+  },
+  {
+    "item": "<id>",
+    "kind": {
+      "text": "",
+      "type": "assistant_message"
+    },
+    "type": "item_started"
+  },
+  {
+    "turn": "<id>",
+    "type": "usage",
+    "usage": {
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.0,
+      "estimated": true,
+      "input_tokens": 0,
+      "latency_ms": 0,
+      "output_tokens": 0
+    }
+  },
+  {
+    "item": "<id>",
+    "type": "item_done"
+  },
+  {
+    "call": {
+      "id": "<id>",
+      "input": {
+        "text": "a"
+      },
+      "name": "echo",
+      "risk": "read_only",
+      "subject": "a"
+    },
+    "type": "tool_call_requested"
+  },
+  {
+    "call": {
+      "id": "<id>",
+      "input": {
+        "text": "b"
+      },
+      "name": "echo",
+      "risk": "read_only",
+      "subject": "b"
+    },
+    "type": "tool_call_requested"
+  },
+  {
+    "call": {
+      "id": "<id>",
+      "input": {
+        "text": "c"
+      },
+      "name": "echo",
+      "risk": "read_only",
+      "subject": "c"
+    },
+    "type": "tool_call_requested"
+  },
+  {
+    "call_id": "<id>",
+    "result": {
+      "archive": null,
+      "bytes": 1,
+      "diff": null,
+      "duration_ms": 0,
+      "ok": true,
+      "visible": "a"
+    },
+    "type": "tool_call_done"
+  },
+  {
+    "call_id": "<id>",
+    "result": {
+      "archive": null,
+      "bytes": 1,
+      "diff": null,
+      "duration_ms": 0,
+      "ok": true,
+      "visible": "b"
+    },
+    "type": "tool_call_done"
+  },
+  {
+    "call_id": "<id>",
+    "result": {
+      "archive": null,
+      "bytes": 1,
+      "diff": null,
+      "duration_ms": 0,
+      "ok": true,
+      "visible": "c"
+    },
+    "type": "tool_call_done"
+  },
+  {
+    "item": "<id>",
+    "kind": {
+      "text": "",
+      "type": "assistant_message"
+    },
+    "type": "item_started"
+  },
+  {
+    "item": "<id>",
+    "text": "all three",
+    "type": "text_delta"
+  },
+  {
+    "turn": "<id>",
+    "type": "usage",
+    "usage": {
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.0,
+      "estimated": true,
+      "input_tokens": 0,
+      "latency_ms": 0,
+      "output_tokens": 0
+    }
+  },
+  {
+    "item": "<id>",
+    "type": "item_done"
+  },
+  {
+    "stop": {
+      "type": "end_turn"
+    },
+    "turn": "<id>",
+    "type": "turn_done"
+  }
+]

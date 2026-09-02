@@ -1,0 +1,63 @@
+---
+source: crates/cox-core/tests/turn.rs
+expression: value
+---
+[
+  {
+    "config_digest": "",
+    "cwd": "/tmp/cox-turn",
+    "session": "<id>",
+    "type": "session_started"
+  },
+  {
+    "job": "main",
+    "model": "claude-sonnet-5",
+    "tier": "code",
+    "turn": "<id>",
+    "type": "turn_started"
+  },
+  {
+    "item": "<id>",
+    "kind": {
+      "attachments": [],
+      "text": "provider_error",
+      "type": "user_message"
+    },
+    "type": "item_started"
+  },
+  {
+    "item": "<id>",
+    "type": "item_done"
+  },
+  {
+    "item": "<id>",
+    "kind": {
+      "text": "",
+      "type": "assistant_message"
+    },
+    "type": "item_started"
+  },
+  {
+    "item": "<id>",
+    "text": "partial",
+    "type": "text_delta"
+  },
+  {
+    "error": {
+      "error": {
+        "message": "boom",
+        "type": "bad_request"
+      },
+      "type": "provider"
+    },
+    "fatal": false,
+    "type": "error"
+  },
+  {
+    "stop": {
+      "type": "error"
+    },
+    "turn": "<id>",
+    "type": "turn_done"
+  }
+]

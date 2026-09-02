@@ -8,6 +8,7 @@ mod cli;
 mod config_cmd;
 mod config_load;
 mod doctor;
+mod record;
 mod stats;
 
 use clap::Parser;
@@ -25,6 +26,7 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Doctor) => {
             std::process::exit(doctor::run(cli.json));
         }
+        Some(Command::Record(args)) => record::run(&cli, args),
         Some(Command::Stats(args)) => {
             if let Some(session_id) = &args.session {
                 let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
