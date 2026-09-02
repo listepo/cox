@@ -11,12 +11,14 @@
 //!
 //! - [`anthropic`] — Messages API: cache breakpoints, adaptive thinking, effort, refusal fallbacks.
 //! - [`sse`] — generic Server-Sent-Events framing shared by every SSE-based provider.
+//! - [`retry`] — backoff before the first byte, shared by every network backend.
 
 #![warn(missing_docs)]
 
 pub mod anthropic;
 pub mod openai;
 pub mod replay;
+pub mod retry;
 pub mod scripted;
 pub mod sse;
 pub mod tokens;

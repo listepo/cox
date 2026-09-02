@@ -561,18 +561,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
 
-#### T1.6 Retry, backoff, timeouts, cancellation
-Model: sonnet · Status: open · Depends: T1.2 · Size: ~150
-Goal: transient failures retry, permanent ones surface typed, cancel drops the connection.
-Files: `crates/cox-provider/src/retry.rs`, `crates/cox-provider/src/anthropic/mod.rs`.
-Steps: (1) Wrapper around `stream`: retry on `RateLimited`/`Overloaded`/`Network`/`Timeout` before any byte was delivered; after first byte, no retry (emit `Error`). (2) Backoff 1 s × 2ⁿ ± 25 % jitter, max 4, honour `retry-after`; emit `ProviderEvent::Retrying`. (3) Connect timeout 10 s, idle-read timeout `timeout_s`. (4) `CancellationToken` checked between chunks; drop of the response body closes the socket.
-Check:
-```bash
-mise exec -- cargo test -p cox-provider retry_
-```
-Done when: `retries_then_succeeds` (wiremock 2×429 then 200) and `cancel_mid_stream_drops_connection` (wiremock sees the connection close within 200 ms) pass.
-Out of scope: budget (T2.7).
-
 ### P2 — Core loop (goal: a session that runs turns, calls tools, asks permission, resumes)
 
 #### T2.2 Permission engine

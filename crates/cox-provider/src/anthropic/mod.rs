@@ -66,23 +66,41 @@ pub struct AnthropicProvider {
     pub fallbacks: bool,
     /// The shared connection pool.
     pub http: reqwest::Client,
+    /// Backoff for transient failures before the first byte (T1.6).
+    pub retry: crate::retry::Policy,
 }
+
+/// How long a TCP/TLS handshake may take before the call is `Network`.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl AnthropicProvider {
     /// Builds a provider, resolving the credential from the environment or
     /// the keyring. Fails with [`ProviderError::Auth`] rather than panicking
-    /// when neither has one.
+    /// when neither has one. `timeout_s` is the idle-read timeout between
+    /// stream chunks (`providers.anthropic.timeout_s`), not a whole-call cap:
+    /// a long answer streams for minutes without ever being idle.
     pub fn new(
         base_url: impl Into<String>,
         ttl: CacheTtl,
         fallbacks: bool,
+        timeout_s: u64,
+        max_retries: u32,
     ) -> Result<Self, ProviderError> {
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .read_timeout(std::time::Duration::from_secs(timeout_s.max(1)))
+            .build()
+            .map_err(|_| ProviderError::Network)?;
         Ok(Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key: resolve_api_key()?,
             ttl,
             fallbacks,
-            http: reqwest::Client::new(),
+            http,
+            retry: crate::retry::Policy {
+                max_retries,
+                ..Default::default()
+            },
         })
     }
 
@@ -178,12 +196,35 @@ impl Provider for AnthropicProvider {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
+        crate::retry::stream_with_retry(self.retry, sink, cancel, |sink, cancel| {
+            self.stream_once(&req, sink, cancel)
+        })
+        .await
+    }
+
+    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
+        // `POST {base_url}/v1/messages/count_tokens` with the same body;
+        // out of scope for T1.2 (streaming only) — lands in T1.8.
+        Err(ProviderError::Unsupported {
+            feature: "count_tokens lands in T1.8".into(),
+        })
+    }
+}
+
+impl AnthropicProvider {
+    /// One HTTP attempt; `stream` wraps it in the retry policy.
+    async fn stream_once(
+        &self,
+        req: &Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
         let started = std::time::Instant::now();
         // No `ModelSwitched` signal reaches a `Provider`: `stream`'s
         // signature (cox-protocol T0.2) carries only the `Request`, so
         // thinking-block replay stays off here — see request.rs's
         // `BuildCfg::thinking_model` doc and this module's `stream` doc.
-        let body = request::build_body(&req, self.build_cfg(None));
+        let body = request::build_body(req, self.build_cfg(None));
 
         let response = self
             .http
@@ -236,14 +277,6 @@ impl Provider for AnthropicProvider {
         let mut usage = machine.usage();
         usage.latency_ms = started.elapsed().as_millis() as u64;
         Ok(usage)
-    }
-
-    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
-        // `POST {base_url}/v1/messages/count_tokens` with the same body;
-        // out of scope for T1.2 (streaming only) — lands in T1.8.
-        Err(ProviderError::Unsupported {
-            feature: "count_tokens lands in T1.8".into(),
-        })
     }
 }
 
@@ -306,7 +339,19 @@ mod tests {
             ttl: CacheTtl::FiveMinutes,
             fallbacks,
             http: reqwest::Client::new(),
+            retry: crate::retry::Policy {
+                max_retries: 4,
+                base: std::time::Duration::from_millis(1),
+            },
         }
+    }
+
+    async fn drain_events(rx: &mut mpsc::Receiver<ProviderEvent>) -> Vec<ProviderEvent> {
+        let mut out = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            out.push(event);
+        }
+        out
     }
 
     #[test]
@@ -420,13 +465,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = AnthropicProvider {
-            base_url: server.uri(),
-            api_key: "sk-test".into(),
-            ttl: CacheTtl::FiveMinutes,
-            fallbacks: false,
-            http: reqwest::Client::new(),
-        };
+        let mut client = provider(false);
+        client.base_url = server.uri();
 
         let (tx, mut rx) = mpsc::channel(64);
         let got_usage = client
@@ -434,10 +474,7 @@ mod tests {
             .await
             .expect("stream succeeds");
 
-        let mut got_events = Vec::new();
-        while let Ok(event) = rx.try_recv() {
-            got_events.push(event);
-        }
+        let got_events = drain_events(&mut rx).await;
 
         // Golden: the same fixture replayed straight through the pure state
         // machine (no network) must match exactly.
@@ -462,5 +499,105 @@ mod tests {
         assert_eq!(got_usage.cache_read_tokens, 50);
         assert_eq!(got_usage.cache_write_tokens, 100);
         assert_eq!(got_usage.output_tokens, 24);
+    }
+
+    /// T1.6: two 429s before any byte, then a 200 — the caller sees two
+    /// `Retrying` events and one clean stream.
+    #[tokio::test]
+    async fn retry_retries_then_succeeds() {
+        use wiremock::matchers::{method, path};
+        let fixture = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/anthropic/one_tool_call.sse"),
+        )
+        .expect("fixture reads");
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(wiremock::ResponseTemplate::new(429).insert_header("retry-after", "0"))
+            .up_to_n_times(2)
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_raw(fixture, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+        let mut client = provider(false);
+        client.base_url = server.uri();
+
+        let (tx, mut rx) = mpsc::channel(64);
+        let usage = client
+            .stream(minimal_request(), tx, CancellationToken::new())
+            .await
+            .expect("third attempt succeeds");
+        assert_eq!(usage.output_tokens, 24);
+        let events = drain_events(&mut rx).await;
+        let attempts: Vec<u32> = events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderEvent::Retrying { attempt, .. } => Some(*attempt),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(attempts, [1, 2]);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::MessageStart { .. }))
+        );
+        assert_eq!(server.received_requests().await.map(|r| r.len()), Some(3));
+    }
+
+    /// T1.6: cancelling mid-stream drops the response body, which closes the
+    /// socket — observed by a raw server as EOF within 200 ms.
+    #[tokio::test]
+    async fn retry_cancel_mid_stream_drops_connection() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.expect("accept");
+            let mut buf = vec![0u8; 8192];
+            let _ = sock.read(&mut buf).await;
+            let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
+            let frame = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n";
+            let chunk = format!("{head}{:x}\r\n{frame}\r\n", frame.len());
+            sock.write_all(chunk.as_bytes()).await.expect("write");
+            // Keep the stream open; the client's close is the only way out.
+            loop {
+                match sock.read(&mut buf).await {
+                    Ok(0) | Err(_) => return std::time::Instant::now(),
+                    Ok(_) => {}
+                }
+            }
+        });
+        let mut client = provider(false);
+        client.base_url = format!("http://{addr}");
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = mpsc::channel(64);
+        let streaming = {
+            let cancel = cancel.clone();
+            tokio::spawn(async move { client.stream(minimal_request(), tx, cancel).await })
+        };
+        let first = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("first event in time");
+        assert!(matches!(first, Some(ProviderEvent::MessageStart { .. })));
+        let cancelled_at = std::time::Instant::now();
+        cancel.cancel();
+        assert!(matches!(
+            streaming.await.expect("join"),
+            Err(ProviderError::Cancelled)
+        ));
+        let closed_at = tokio::time::timeout(std::time::Duration::from_secs(2), server)
+            .await
+            .expect("server saw the close")
+            .expect("server task");
+        assert!(closed_at.duration_since(cancelled_at) < std::time::Duration::from_millis(200));
     }
 }

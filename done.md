@@ -701,3 +701,32 @@ $ mise exec -- cargo test -p cox-core --test turn
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T1.6 Retry, backoff, timeouts, cancellation
+Model: fable · Status: done 2026-09-03 · Depends: T1.2 · Size: ~150
+Goal: transient failures retry, permanent ones surface typed, cancel drops the connection.
+Files: `crates/cox-provider/src/retry.rs`, `crates/cox-provider/src/anthropic/mod.rs`.
+Steps: (1) Wrapper around `stream`: retry on `RateLimited`/`Overloaded`/`Network`/`Timeout` before any byte was delivered; after first byte, no retry (emit `Error`). (2) Backoff 1 s × 2ⁿ ± 25 % jitter, max 4, honour `retry-after`; emit `ProviderEvent::Retrying`. (3) Connect timeout 10 s, idle-read timeout `timeout_s`. (4) `CancellationToken` checked between chunks; drop of the response body closes the socket.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider retry_
+```
+Done when: `retries_then_succeeds` (wiremock 2×429 then 200) and `cancel_mid_stream_drops_connection` (wiremock sees the connection close within 200 ms) pass.
+Out of scope: budget (T2.7).
+
+What landed: `retry::stream_with_retry` forwards each attempt through a private channel so it knows whether the caller saw a byte; `Policy::delay` is `base × 2ⁿ ± 25 %` (jitter from clock nanos, no random crate) or `retry-after` capped at 60 s. `AnthropicProvider::new` now takes `timeout_s`/`max_retries` and builds the client with a 10 s connect timeout and an idle-read timeout; `stream` is `stream_once` under the policy. Not done: the OpenAI backends are not wrapped yet (the plan lists only the Anthropic file; wrapping `chat.rs`/`responses.rs` is one line each once their constructors take a policy). The mid-stream close test uses a raw `TcpListener` rather than wiremock, which cannot observe a client hang-up.
+
+Check output:
+```text
+$ mise exec -- cargo test -p cox-provider retry_
+test retry::tests::retry_delay_doubles_and_honours_retry_after ... ok
+test retry::tests::retry_cancel_during_backoff_returns_cancelled ... ok
+test retry::tests::retry_does_not_retry_after_first_byte ... ok
+test retry::tests::retry_retries_transient_then_succeeds_and_reports_attempts ... ok
+test retry::tests::retry_gives_up_after_max_and_never_on_permanent_errors ... ok
+test anthropic::tests::retry_cancel_mid_stream_drops_connection ... ok
+test anthropic::tests::retry_retries_then_succeeds ... ok
+test result: ok. 7 passed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```
