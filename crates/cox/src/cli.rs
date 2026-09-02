@@ -72,7 +72,7 @@ pub enum Command {
     /// List / search rollouts.
     Sessions,
     /// Print archived tool output by id.
-    Expand,
+    Expand(ExpandArgs),
     /// Usage and cost stats.
     Stats(StatsArgs),
     /// Read or write config.
@@ -90,6 +90,16 @@ pub enum Command {
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate,
+}
+
+/// `cox expand <id>` (plan.md T2.5).
+#[derive(Args, Debug)]
+pub struct ExpandArgs {
+    /// Archive id printed alongside a truncated tool result.
+    pub id: String,
+    /// Optional 1-based inclusive line range (`START-END`).
+    #[arg(long)]
+    pub lines: Option<String>,
 }
 
 /// `cox run` (plan.md §1.12). Only the clap shape and the flag→config-key

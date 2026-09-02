@@ -8,6 +8,7 @@ mod cli;
 mod config_cmd;
 mod config_load;
 mod doctor;
+mod expand_cmd;
 mod record;
 mod resume;
 mod stats;
@@ -40,6 +41,10 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Some(Command::Run(args)) => resume::run(&cli, args),
+        Some(Command::Expand(args)) => {
+            let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
+            expand_cmd::run(home, &args.id, args.lines.as_deref())
+        }
         Some(_) => {
             println!("not implemented");
             Ok(())
