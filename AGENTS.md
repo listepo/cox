@@ -38,10 +38,11 @@ The rule that keeps crates honest: anything that talks to the network, the files
 
 ## Workflow
 
-Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; set `in progress` + model; branch `cox/<task-id>`. ≤200 LOC, ≤3 files per task. Run the task's Check, then the three commands above, commit `<task-id>: <title>`. Done → move the task to `done.md` with `Status: done <date>` and its Check output. **Before you stop** (end/compaction/handoff): unfinished → `open`, `Model: -`.
+Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; set `in progress` + model; work only on `main` (no task branches). ≤200 LOC, ≤3 files per task. Run the task's Check, then the three commands above, commit `<task-id>: <title>`. Every implemented task is marked `Status: done <date>` and moved to `done.md` with its Check output — implemented work left in `plan.md` as `open` or `in progress` is unfinished. **Before you stop** (end/compaction/handoff): unfinished → `open`, `Model: -`.
 
 ## Conventions
 
+- Don't duplicate code or logic — find the existing helper and reuse it, or extract one shared helper at the responsible layer.
 - Every file opens with a `//!` header saying what the module owns and why it is separate. Comments explain *why*, never *what*.
 - No `unwrap`, `expect`, `panic!`, `todo!` outside tests. Errors are `thiserror` enums per crate; `anyhow` only in `crates/cox`.
 - Tests live in `#[cfg(test)] mod tests` at the bottom of the file, named as the claim they prove (`compaction_keeps_last_two_turns_verbatim`). Transcript and TUI tests are `insta` snapshots. A bug fix adds the narrowest regression test that fails without it.

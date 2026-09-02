@@ -539,7 +539,11 @@ Done when: the observable state after the Check, plus what must be in done.md.
 Out of scope: what the next task does, so the agent does not do it here.
 ```
 
-Branch `cox/<task-id>`; commit `<task-id>: <title>`; any new dependency needs a row in §1.1 and a reason in the commit. If the Check cannot pass without exceeding the size limit, split the task with an amendment in §6 and do the first half. Skipped or failing steps are reported in `done.md`, never silently.
+Work only on `main` — no `cox/<task-id>` or other task branches. Commit `<task-id>: <title>` on `main`; any new dependency needs a row in §1.1 and a reason in the commit. If the Check cannot pass without exceeding the size limit, split the task with an amendment in §6 and do the first half. Skipped or failing steps are reported in `done.md`, never silently.
+
+Don't duplicate code or logic — find the existing helper and reuse it, or extract one shared helper at the responsible layer. Never a per-caller guard-patch. A new snippet is checked with `jscpd` (`check_duplication`) before committing.
+
+Every implemented task is marked `Status: done <date>` and moved to `done.md` with its Check output. Code in the tree whose task still sits in `plan.md` as `open` or `in progress` is unfinished work.
 
 ## 3. Phases and tasks
 
@@ -1148,6 +1152,9 @@ Estimated model spend for the whole v0.1 plan at the suggested tiers, assuming ~
 ## 6. Plan amendments
 
 - A1 2026-09-02 D9, §1.1, §1.7, T0.4 — Diesel 2.2 (sqlite, bundled libsqlite3-sys with FTS5, diesel_migrations) replaces rusqlite as the store layer, matching rtok D13. Why: user request; typed models for ledger joins; sync so hooks and tests need no runtime. Effect on other tasks: T1.7, T8.3, T8.4, T10.1, T10.3 write Diesel queries in `cox-store`, never SQL elsewhere.
+- A2 2026-09-02 §2, `AGENTS.md` — agents work only on `main`; no `cox/<task-id>` branches. Why: user request. Effect: claim, commit and finish tasks on `main`.
+- A3 2026-09-02 §2, `AGENTS.md` — don't duplicate code or logic; reuse an existing helper or extract one shared helper at the responsible layer. Why: user request.
+- A4 2026-09-02 §2, `AGENTS.md` — every implemented task is marked done and moved to `done.md` with its Check output. Why: user request.
 
 ## 7. Risk register
 
