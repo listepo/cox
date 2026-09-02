@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use cox_protocol::ArchivePut;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
@@ -226,11 +227,35 @@ async fn run_one(
             structured: None,
         },
     };
+    let bytes = output.text.len() as u64;
+    let archive = session
+        .archive
+        .put(ArchivePut {
+            session: session.id,
+            call: id,
+            tool: tool.spec().name,
+            subject: None,
+            bytes: output.text.as_bytes().to_vec(),
+        })
+        .await;
+    let (archive, visible) = match archive {
+        Ok(id) => {
+            let visible = crate::truncate::visible(
+                &output.text,
+                id,
+                session.config.context.tool_output_visible_bytes as usize,
+                session.config.context.tool_output_head_lines as usize,
+                session.config.context.tool_output_tail_lines as usize,
+            );
+            (Some(cox_protocol::ArchiveRef { id, bytes }), visible)
+        }
+        Err(_) => (None, "tool output could not be archived".into()),
+    };
     let result = ToolResult {
         ok: !output.is_error,
-        visible: output.text.clone(),
-        archive: None,
-        bytes: output.text.len() as u64,
+        visible,
+        archive,
+        bytes,
         duration_ms: started.elapsed().as_millis() as u64,
         diff: output.diff,
     };

@@ -588,7 +588,7 @@ Done when: loop scenario `ask_then_approve` and `ask_then_deny` snapshots exist.
 Out of scope: bash command classification (T3.7) — `Exec` risk is taken from the tool spec here.
 
 #### T2.5 Tool-output archive and lossless truncation
-Model: sonnet · Status: open · Depends: T2.1, T0.4 · Size: ~180
+Model: - · Status: open · Depends: T2.1, T0.4 · Size: ~180
 Goal: D6a — the model never sees a cut without a handle to the rest.
 Files: `crates/cox-core/src/truncate.rs`, `crates/cox-tools/src/expand.rs`, `crates/cox/src/expand_cmd.rs`.
 Steps: (1) On `ToolOutput`: `archive_put` first (sha256, bytes, subject); then `truncate(text, head_lines, tail_lines, visible_bytes)` → visible + trailer `[… 41 KiB archived; expand #01J…  lines 61–1 240]`. (2) `expand` tool (§1.11) and `cox expand <id> [--lines]` read from the archive; expanded output is itself truncated with pointers (no unbounded reads). (3) Line-safe cuts (never split a UTF-8 char or a line). (4) proptest `truncate_is_lossless_via_archive`: for random inputs, `archive_get(id) == original`.
