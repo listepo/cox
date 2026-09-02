@@ -45,6 +45,58 @@ fn workspace_deps() -> HashMap<String, HashSet<String>> {
         .collect()
 }
 
+/// Maps each workspace crate name to the set of *all* its declared
+/// dependency names (workspace and external alike), unlike `workspace_deps`
+/// which filters down to workspace crates only.
+fn all_deps() -> HashMap<String, HashSet<String>> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .output()
+        .expect("cargo metadata should run");
+    assert!(
+        output.status.success(),
+        "cargo metadata exited with {:?}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let meta: Value =
+        serde_json::from_slice(&output.stdout).expect("cargo metadata output is valid json");
+
+    meta["packages"]
+        .as_array()
+        .expect("packages array")
+        .iter()
+        .map(|pkg| {
+            let name = pkg["name"].as_str().expect("package name").to_string();
+            let deps = pkg["dependencies"]
+                .as_array()
+                .expect("dependencies array")
+                .iter()
+                .filter_map(|d| d["name"].as_str().map(str::to_string))
+                .collect();
+            (name, deps)
+        })
+        .collect()
+}
+
+/// D9/plan.md §1.7: "No other crate may depend on `diesel`" — `cox-store`
+/// is the only crate allowed to contain SQL.
+#[test]
+fn only_store_depends_on_diesel() {
+    let deps = all_deps();
+    for (crate_name, crate_deps) in &deps {
+        if crate_name == "cox-store" {
+            continue;
+        }
+        for diesel_crate in ["diesel", "diesel_migrations", "libsqlite3-sys"] {
+            assert!(
+                !crate_deps.contains(diesel_crate),
+                "{crate_name} must not depend on {diesel_crate}; only cox-store may contain SQL"
+            );
+        }
+    }
+}
+
 #[test]
 fn no_crate_below_cox_depends_on_core() {
     let deps = workspace_deps();

@@ -5,6 +5,8 @@
 
 use clap::{Parser, Subcommand};
 
+mod doctor;
+
 #[derive(Parser)]
 #[command(name = "cox", version, about = "cox — a modular terminal coding agent")]
 struct Cli {
@@ -45,6 +47,7 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
+        Some(Command::Doctor) => doctor::run(),
         Some(_) => println!("not implemented"),
         None => println!("not implemented"),
     }

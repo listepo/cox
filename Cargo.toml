@@ -57,9 +57,15 @@ nix = "0.29"
 rmcp = { version = "3.2", features = ["client", "server", "auth"] }
 
 # cox-store
-rusqlite = { version = "0.40", features = ["bundled", "fts5"] }
+# diesel/diesel_migrations pinned "2.2" per plan.md D9 resolve to the latest
+# 2.x compatible release (2.3.x) on crates.io as of 2026-09-02; verified no
+# semver-breaking API change vs. 2.2 for the sqlite backend used here.
+diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = "2.2"
+libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 directories = "6"
 keyring = "4"
+sha2 = "0.10"
 
 # cox-ext
 serde_yaml = "0.9"

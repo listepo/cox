@@ -103,3 +103,48 @@ $ mise exec -- cargo fmt --check -p cox-provider
 $ mise exec -- cargo test -p cox-provider
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
+
+#### T0.4 Store: Diesel schema, migrations, rollout files
+Model: sonnet · Status: done 2026-09-02 · Depends: T0.2
+Goal: §1.7 schema opens, migrates and round-trips rows through Diesel models; rollouts append and read back.
+Files: `crates/cox-store/src/{lib,schema,models,rollout}.rs`, `crates/cox-store/migrations/00000000000001_init/{up,down}.sql`, `crates/cox-store/Cargo.toml`, `Cargo.toml` (workspace), `crates/cox/src/{main,doctor}.rs`, `crates/cox/tests/deps.rs`.
+
+What landed: `Store { home, conn: Mutex<SqliteConnection>, rollouts: Mutex<HashMap<SessionId, RolloutWriter>> }` implementing `cox_protocol::{Store, Archive}`. `Store::open` creates `sessions/archive/logs/projects/cassettes` under `home`, opens `cox.db`, sets `journal_mode=WAL; foreign_keys=ON; busy_timeout=5000` via `batch_execute`, then `run_pending_migrations` from `embed_migrations!("migrations")`. `schema.rs` is hand-written `table!` macros (no `diesel_cli` install) for the four non-virtual tables (`migrations`, `sessions`, `usage`, `archive`, `memory`); FTS5 tables have no `table!` entry and are queried via `sql_query`/`QueryableByName` (`memory_search`, currently unexercised — no writer populates `memory`/`memory_fts` yet, `ponytail:`-flagged). `models.rs` holds `Insertable` structs plus one narrow `Queryable` (`ArchiveBytes`: `inline`/`path`/`sha256` only, selected explicitly rather than hydrating the whole row). `archive_put` inlines payloads ≤ 16 KiB, else writes `archive/<id>` and stores the relative path; `archive_get` recomputes the sha256 and returns `StoreError::Corrupt` on mismatch (tested by tampering with an on-disk archive file). `rollout.rs`'s `RolloutWriter` keeps one open `File` + `next_seq` + an unsynced-line counter per session, `fsync`ing every 16 lines and on `Event::TurnDone`; `read_lines` tolerates exactly one truncated trailing line (anything earlier that fails to parse is a hard `Io` error, not silently dropped) and reopening a writer resumes `next_seq` from what it can already parse. `crates/cox/src/doctor.rs` is the minimal T0.4 stub the task asked for — resolves `COX_HOME` (env override else `Store::default_home()`, `~/.cox`) and prints `db: ok`/`db: fail <reason>`; T0.5 replaces its `run()` with the full check list. `only_store_depends_on_diesel` added to `crates/cox/tests/deps.rs`, walking *unfiltered* `cargo metadata` dependency names (workspace_deps() filters to workspace crates only, so a new helper `all_deps()` was added) to assert no crate but `cox-store` names `diesel`/`diesel_migrations`/`libsqlite3-sys`.
+
+No timestamp/date crate was added: `now_rfc3339()` in `lib.rs` formats `SystemTime::now()` with Howard Hinnant's public-domain `civil_from_days` days→Y-M-D algorithm (stdlib only), assuming non-negative days-since-epoch (`ponytail:` comment on the ceiling — real "now" values never hit it).
+
+Deviations:
+- **Dependency versions**: plan.md D9/§1.1 says "Diesel 2.2" / "diesel_migrations 2.2" / "libsqlite3-sys 0.30". Verified live against crates.io 2026-09-02: `diesel = "2.2"` and `diesel_migrations = "2.2"` (semver ranges, same as every other workspace dep) both resolve to the newest compatible 2.x releases — `diesel 2.3.12` / `diesel_derives 2.3.9` / `diesel_migrations 2.3.2` — because no `2.2.x` patch exists beyond `2.2.0`; confirmed via a standalone scratch crate that this resolves and builds cleanly (including an FTS5 smoke test through `diesel::sql_query`) before touching the workspace. `libsqlite3-sys = "0.30"` was tried pinned as specified and also resolves cleanly (`0.30.1`) against `diesel 2.3.12`'s `sqlite` feature, so it is pinned as the plan says (no conflict to route around) — `sha2 = "0.10"` added, not in plan.md §1.1's row but implied by "sha256 verified on read"; noted here as the one-line reason.
+- **No `cox-protocol` edits.** `SessionRow`/`UsageRow`/`ArchivePut`/`Archive` needed nothing extra: `sessions` columns absent from `SessionRow` (`updated_at`, `turns`, `cost_usd`, `state`) are creation-time defaults (`updated_at = created_at`, `turns = 0`, `cost_usd = 0.0`, `state = "open"`), and `usage.context_tokens`/`created_at` are derived (`Usage::context_tokens()`, `now_rfc3339()`) rather than caller-supplied.
+- `crates/cox/Cargo.toml` was not touched (out of scope per the task) — `doctor.rs` reaches the store purely through `cox-store`/`cox-protocol`, already path-deps of `crates/cox`.
+
+Check:
+```bash
+$ mise exec -- cargo test -p cox-store
+test rollout::tests::append_and_read_round_trip ... ok
+test rollout::tests::truncated_last_line_is_dropped_not_fatal ... ok
+test rollout::tests::writer_resumes_seq_after_reopen ... ok
+test tests::archive_get_detects_corrupt_bytes ... ok
+test tests::archive_roundtrip_inline_and_file ... ok
+test tests::migrations_are_idempotent ... ok
+test tests::rollout_survives_truncated_tail ... ok
+test tests::schema_snapshot_matches ... ok
+test tests::usage_insert_and_sum ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+$ COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- doctor | grep 'db: ok'
+db: ok
+
+$ mise exec -- cargo clippy -p cox-store --all-targets -- -D warnings
+(clean)
+$ mise exec -- cargo clippy -p cox --all-targets -- -D warnings
+(clean)
+$ mise exec -- cargo fmt --check -p cox-store && mise exec -- cargo fmt --check -p cox
+(clean)
+$ mise exec -- cargo test -p cox --test deps
+test only_store_depends_on_diesel ... ok
+test no_crate_below_cox_depends_on_core ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Out of scope (per task): FTS indexing of rollouts (T10.3); full `cox doctor` check list (T0.5); `memory_*` writers (a later task — `memory_search` is real but untested against live data).
