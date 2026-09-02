@@ -587,17 +587,6 @@ mise exec -- cargo test -p cox-core permission_
 Done when: loop scenario `ask_then_approve` and `ask_then_deny` snapshots exist.
 Out of scope: bash command classification (T3.7) — `Exec` risk is taken from the tool spec here.
 
-#### T2.4 Rollout writer/reader, resume, continue
-Model: sonnet · Status: open · Depends: T2.1, T0.4 · Size: ~180
-Goal: every event is persisted; `cox resume <id>` and `--continue` rebuild an identical request.
-Files: `crates/cox-core/src/rollout.rs`, `crates/cox/src/resume.rs`, `crates/cox-core/tests/resume.rs`.
-Steps: (1) Event sink → `Store::rollout_append`; session row updated on `TurnDone` (turns, cost, title once set). (2) `History::from_events(Vec<Event>)`: coalesce deltas, honour `Compacted.dropped`, restore grants marked persistent, restore permission mode. (3) `--continue` = most recent session for this cwd; `resume <id>` any. (4) Test: run 20 events, resume, assemble; assert byte-equal to a fresh session driven by the same submissions.
-Check:
-```bash
-mise exec -- cargo test -p cox-core resume_
-```
-Done when: `resume_builds_identical_request` passes; a truncated last rollout line resumes with a `Notice`.
-
 #### T2.5 Tool-output archive and lossless truncation
 Model: sonnet · Status: open · Depends: T2.1, T0.4 · Size: ~180
 Goal: D6a — the model never sees a cut without a handle to the rest.

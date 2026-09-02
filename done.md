@@ -643,3 +643,32 @@ test result: ok. 2 passed; 0 failed
 $ mise exec -- cargo fmt --check && mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo test --workspace
 all checks passed
 ```
+
+#### T2.4 Rollout writer/reader, resume, continue
+Model: terra · Status: done 2026-09-02 · Depends: T2.1, T0.4 · Size: ~180
+Goal: every event is persisted; `cox resume <id>` and `--continue` rebuild an identical request.
+Files: `crates/cox-core/src/rollout.rs`, `crates/cox/src/resume.rs`, `crates/cox-core/tests/resume.rs`.
+Steps: (1) Event sink → `Store::rollout_append`; session row updated on `TurnDone` (turns, cost, title once set). (2) `History::from_events(Vec<Event>)`: coalesce deltas, honour `Compacted.dropped`, restore grants marked persistent, restore permission mode. (3) `--continue` = most recent session for this cwd; `resume <id>` any. (4) Test: run 20 events, resume, assemble; assert byte-equal to a fresh session driven by the same submissions.
+Check:
+```bash
+mise exec -- cargo test -p cox-core resume_
+```
+Done when: `resume_builds_identical_request` passes; a truncated last rollout line resumes with a `Notice`.
+
+What landed: event-sink persistence and history reconstruction were already present; `cox run --continue` now selects the most recently created session for the active cwd. The concrete store preserves the crash-truncated-tail signal for resume so it can emit the existing warning notice, and updates denormalized session turn/cost counters at each durable `TurnDone`. The latest-session query uses the time-sortable session ULID as a deterministic tie-breaker when two rows share a millisecond timestamp. Permission-mode restoration remains a no-op until T2.2 emits a mode-change event; grants are restored from persisted `AllowForSession` decisions.
+
+Check output:
+```text
+$ mise exec -- cargo test -p cox-core resume_
+3 rollout resume tests passed; integration test `resume_builds_identical_request` passed.
+$ mise exec -- cargo test -p cox-store
+10 tests passed, including cwd-scoped latest-session lookup and TurnDone session counters.
+$ mise exec -- cargo test -p cox resume_
+resume truncated-tail warning test passed.
+$ mise exec -- cargo test --workspace
+all workspace tests passed.
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean.
+$ mise exec -- cargo fmt --check
+clean.
+```

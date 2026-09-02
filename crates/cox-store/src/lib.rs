@@ -202,13 +202,18 @@ impl StoreTrait for Store {
                 v.insert(w)
             }
         };
-        writer.append(now_rfc3339(), ev).map_err(|_| StoreError::Io)
+        let seq = writer
+            .append(now_rfc3339(), ev)
+            .map_err(|_| StoreError::Io)?;
+        drop(writers);
+        if matches!(ev, Event::TurnDone { .. }) {
+            self.finish_session_turn(id)?;
+        }
+        Ok(seq)
     }
 
     fn rollout_read(&self, id: &SessionId) -> Result<Vec<Event>, StoreError> {
-        let path = self.sessions_dir().join(format!("{id}.jsonl"));
-        let (events, _truncated) = rollout::read_lines(&path).map_err(|_| StoreError::Io)?;
-        Ok(events)
+        Ok(self.rollout_read_with_truncation(id)?.0)
     }
 
     fn usage_insert(&self, row: &UsageRow) -> Result<(), StoreError> {
@@ -360,6 +365,60 @@ impl Archive for Store {
 
 /// Public query methods for surfaces like `cox stats`.
 impl Store {
+    /// Updates the denormalized session counters at a durable turn boundary.
+    /// Usage is recorded before `TurnDone`, so the ledger is the source of
+    /// truth for the stored cost rather than a second accumulator.
+    fn finish_session_turn(&self, id: &SessionId) -> Result<(), StoreError> {
+        let session_id = id.to_string();
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let cost: Option<f64> = schema::usage::table
+            .filter(schema::usage::session_id.eq(&session_id))
+            .select(diesel::dsl::sum(schema::usage::cost_usd))
+            .first(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        diesel::update(schema::sessions::table.filter(schema::sessions::id.eq(session_id)))
+            .set((
+                schema::sessions::turns.eq(schema::sessions::turns + 1),
+                schema::sessions::cost_usd.eq(cost.unwrap_or_default()),
+                schema::sessions::updated_at.eq(now_rfc3339()),
+            ))
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
+    /// Reads a rollout and reports whether a crash-truncated final line was
+    /// discarded. Surfaces use this to warn without treating a recoverable
+    /// tail as a corrupt session.
+    pub fn rollout_read_with_truncation(
+        &self,
+        id: &SessionId,
+    ) -> Result<(Vec<Event>, bool), StoreError> {
+        let path = self.sessions_dir().join(format!("{id}.jsonl"));
+        rollout::read_lines(&path).map_err(|_| StoreError::Io)
+    }
+
+    /// The most recently created session for `cwd`, used by `cox run --continue`.
+    pub fn latest_session_for_cwd(&self, cwd: &Path) -> Result<SessionId, StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let id: Option<String> = schema::sessions::table
+            .filter(schema::sessions::cwd.eq(cwd.to_string_lossy().as_ref()))
+            // ULIDs make the tie-breaker chronological too: two sessions can
+            // share the millisecond-resolution `created_at` timestamp.
+            .order_by((
+                schema::sessions::created_at.desc(),
+                schema::sessions::id.desc(),
+            ))
+            .select(schema::sessions::id)
+            .first(&mut *conn)
+            .optional()
+            .map_err(|_| StoreError::Sqlite)?;
+        let id = id.ok_or(StoreError::NotFound)?;
+        id.parse().map_err(|_| StoreError::Corrupt {
+            path: self.home.join("cox.db"),
+        })
+    }
+
     /// Every usage row for one session, in turn order — what
     /// `cox stats --session <id>` prints (T1.7).
     pub fn usage_for_session(&self, session_id: &SessionId) -> Result<Vec<UsageRow>, StoreError> {
@@ -540,6 +599,46 @@ mod tests {
     }
 
     #[test]
+    fn latest_session_for_cwd_excludes_other_directories() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let cwd = PathBuf::from("/workspace/cox");
+        let older = SessionId::new();
+
+        for (id, row_cwd) in [
+            (older, cwd.clone()),
+            (SessionId::new(), PathBuf::from("/elsewhere")),
+        ] {
+            store
+                .session_create(&SessionRow {
+                    id,
+                    created_at: String::new(),
+                    cwd: row_cwd,
+                    project_slug: String::new(),
+                    title: None,
+                    parent_id: None,
+                    rollout_path: PathBuf::new(),
+                })
+                .expect("session");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let newer = SessionId::new();
+        store
+            .session_create(&SessionRow {
+                id: newer,
+                created_at: String::new(),
+                cwd: cwd.clone(),
+                project_slug: String::new(),
+                title: None,
+                parent_id: None,
+                rollout_path: PathBuf::new(),
+            })
+            .expect("session");
+
+        assert_eq!(store.latest_session_for_cwd(&cwd).expect("latest"), newer);
+    }
+
+    #[test]
     fn usage_insert_and_sum() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = Store::open(dir.path()).expect("open store");
@@ -571,5 +670,24 @@ mod tests {
             .expect("load usage rows");
         let total: i64 = input_tokens.iter().sum();
         assert_eq!(total, 350);
+        drop(conn);
+
+        store
+            .rollout_append(
+                &session,
+                &Event::TurnDone {
+                    turn: cox_protocol::TurnId::new(),
+                    stop: cox_protocol::StopReason::EndTurn,
+                },
+            )
+            .expect("turn done");
+        let mut conn = store.conn.lock().expect("lock");
+        let (turns, cost): (i32, f64) = schema::sessions::table
+            .filter(schema::sessions::id.eq(session.to_string()))
+            .select((schema::sessions::turns, schema::sessions::cost_usd))
+            .first(&mut *conn)
+            .expect("session counters");
+        assert_eq!(turns, 1);
+        assert_eq!(cost, 0.02);
     }
 }
