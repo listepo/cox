@@ -229,9 +229,11 @@ impl OpenAiResponsesStream {
                 text: str_field(&value, "delta"),
             }]),
             "response.output_item.added" => self.on_output_item_added(&value),
-            "response.function_call_arguments.delta" => Ok(vec![ProviderEvent::ToolUseInputDelta {
-                text: str_field(&value, "delta"),
-            }]),
+            "response.function_call_arguments.delta" => {
+                Ok(vec![ProviderEvent::ToolUseInputDelta {
+                    text: str_field(&value, "delta"),
+                }])
+            }
             "response.function_call_arguments.done" => Ok(vec![ProviderEvent::ToolUseEnd]),
             "response.completed" => self.on_completed(&value),
             "error" => self.on_error(&value).map(|e| vec![e]),
@@ -529,8 +531,7 @@ mod tests {
             content: vec![
                 Content::Pointer {
                     archive: ArchiveRef {
-                        id: ArchiveId::from_str("01ARZ3NDEKTSV4RRFFQ69G5FB0")
-                            .expect("valid ulid"),
+                        id: ArchiveId::from_str("01ARZ3NDEKTSV4RRFFQ69G5FB0").expect("valid ulid"),
                         bytes: 91_000,
                     },
                     summary: "bash cargo test: 91000 bytes, exit 0".into(),
@@ -556,7 +557,8 @@ mod tests {
             }],
         }];
 
-        let err = build_body(&req).expect_err("a signed thinking block must not be dropped silently");
+        let err =
+            build_body(&req).expect_err("a signed thinking block must not be dropped silently");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
     }
 

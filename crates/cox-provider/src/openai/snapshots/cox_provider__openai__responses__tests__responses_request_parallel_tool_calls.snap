@@ -1,0 +1,58 @@
+---
+source: crates/cox-provider/src/openai/responses.rs
+expression: body
+---
+{
+  "input": [
+    {
+      "content": "read both files",
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "arguments": "{\"path\":\"a.rs\"}",
+      "call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
+      "name": "read",
+      "type": "function_call"
+    },
+    {
+      "arguments": "{\"path\":\"b.rs\"}",
+      "call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
+      "name": "read",
+      "type": "function_call"
+    },
+    {
+      "call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
+      "output": "fn a() {}",
+      "type": "function_call_output"
+    },
+    {
+      "call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
+      "output": "Error: no such file",
+      "type": "function_call_output"
+    }
+  ],
+  "instructions": "<tool specs>\n\nYou are cox.",
+  "max_output_tokens": 16384,
+  "model": "gpt-5.1",
+  "reasoning": {
+    "effort": "high"
+  },
+  "store": false,
+  "stream": true,
+  "tools": [
+    {
+      "description": "Read a file",
+      "name": "read",
+      "parameters": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "function"
+    }
+  ]
+}

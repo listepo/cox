@@ -15,6 +15,7 @@
 #![warn(missing_docs)]
 
 pub mod anthropic;
+pub mod openai;
 pub mod sse;
 pub mod tokens;
 pub mod usage;

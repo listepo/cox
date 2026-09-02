@@ -27,3 +27,4 @@ data: {"type":"response.output_item.done","sequence_number":8,"output_index":1,"
 
 event: response.completed
 data: {"type":"response.completed","sequence_number":9,"response":{"id":"resp_003","object":"response","status":"completed","model":"gpt-5.1","output":[{"id":"fc_001","type":"function_call","status":"completed","call_id":"call_ReadA1","name":"read","arguments":"{\"path\":\"a.rs\"}"},{"id":"fc_002","type":"function_call","status":"completed","call_id":"call_ReadB2","name":"read","arguments":"{\"path\":\"b.rs\"}"}],"usage":{"input_tokens":600,"input_tokens_details":{"cached_tokens":0},"output_tokens":40,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":640}}}
+

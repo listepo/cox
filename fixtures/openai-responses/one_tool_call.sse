@@ -18,3 +18,4 @@ data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"
 
 event: response.completed
 data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_002","object":"response","status":"completed","model":"gpt-5.1","output":[{"id":"fc_001","type":"function_call","status":"completed","call_id":"call_ReadA1B2C3","name":"read","arguments":"{\"path\":\"a.rs\"}"}],"usage":{"input_tokens":512,"input_tokens_details":{"cached_tokens":50},"output_tokens":24,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":536}}}
+

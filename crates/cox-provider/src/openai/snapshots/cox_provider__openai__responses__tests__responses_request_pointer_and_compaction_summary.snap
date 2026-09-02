@@ -1,0 +1,41 @@
+---
+source: crates/cox-provider/src/openai/responses.rs
+expression: body
+---
+{
+  "input": [
+    {
+      "content": "[archived: bash cargo test: 91000 bytes, exit 0; expand 01ARZ3NDEKTSV4RRFFQ69G5FB0]",
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "content": "now fix the failing test",
+      "role": "user",
+      "type": "message"
+    }
+  ],
+  "instructions": "<tool specs>\n\nYou are cox.",
+  "max_output_tokens": 16384,
+  "model": "gpt-5.1",
+  "reasoning": {
+    "effort": "high"
+  },
+  "store": false,
+  "stream": true,
+  "tools": [
+    {
+      "description": "Read a file",
+      "name": "read",
+      "parameters": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "function"
+    }
+  ]
+}

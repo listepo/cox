@@ -158,8 +158,8 @@ mod tests {
     fn usage_prices_toml_parses_and_has_all_tier_models() {
         let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
         assert_eq!(table.prices.len(), 4);
-        // The file is ordered cheapest-tier-first for a human editing it;
-        // `price_for` is a linear find, so nothing depends on the order.
+        // `price_for` is a linear find, so row order carries no meaning and
+        // is not asserted on.
         // Verify all required tier models are present.
         let ids: Vec<&str> = table.prices.iter().map(|p| p.id.as_str()).collect();
         assert!(ids.contains(&"claude-haiku-4-5"));
