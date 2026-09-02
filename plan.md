@@ -681,17 +681,6 @@ Check: file exists, names the six rules with their test names.
 
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
 
-#### T3.4 `edit` (str_replace)
-Model: sonnet · Status: open · Depends: T3.1 · Size: ~180
-Goal: D8 — exact-match edits with a safe fallback, returning a diff.
-Files: `crates/cox-tools/src/edit.rs`, `crates/cox-tools/tests/edit.rs`.
-Steps: (1) Exact match count: 1 → replace; 0 → whitespace-insensitive match (collapse runs of spaces/tabs, trim line ends) → 1 → replace; >1 → `Ambiguous{matches: line numbers}`; still 0 → `NotFound` with the three closest lines (`similar` ratio). (2) `replace_all`. (3) Preserve line endings and trailing newline; atomic write (temp + rename). (4) Pre-edit content archived (subject = path) so `cox expand` can restore (undo without git). (5) Unified diff via `similar` in `ToolOutput.diff`. (6) proptest `edit_then_reverse_edit_is_identity`; `ambiguous_match_is_rejected`.
-Check:
-```bash
-mise exec -- cargo test -p cox-tools edit_
-```
-Done when: the tool description shows the model the exact error strings it may see.
-
 #### T3.5 `apply_patch` (V4A)
 Model: opus · Status: open · Depends: T3.4 · Size: ~200
 Goal: Codex's patch grammar parses, prints and applies.

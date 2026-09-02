@@ -427,3 +427,35 @@ Check:
 $ mise exec -- cargo test -p cox-tools -- grep_ glob_
 test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.08s
 ```
+
+#### T3.4 `edit` (str_replace)
+Model: opus · Status: done 2026-09-02 · Depends: T3.1 · Size: ~180
+Goal: D8 — exact-match edits with a safe fallback, returning a diff.
+Files: `crates/cox-tools/src/edit.rs`, `crates/cox-tools/tests/edit.rs`.
+Steps: (1) Exact match count: 1 → replace; 0 → whitespace-insensitive match (collapse runs of spaces/tabs, trim line ends) → 1 → replace; >1 → `Ambiguous{matches: line numbers}`; still 0 → `NotFound` with the three closest lines (`similar` ratio). (2) `replace_all`. (3) Preserve line endings and trailing newline; atomic write (temp + rename). (4) Pre-edit content archived (subject = path) so `cox expand` can restore (undo without git). (5) Unified diff via `similar` in `ToolOutput.diff`. (6) proptest `edit_then_reverse_edit_is_identity`; `ambiguous_match_is_rejected`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools edit_
+```
+Done when: the tool description shows the model the exact error strings it may see.
+
+Notes: steps 1-5 were already implemented in `edit.rs`; this task added the
+missing `crates/cox-tools/tests/edit.rs` (step 6). Two findings while writing
+it, neither of which changed `edit.rs`:
+- The whitespace fallback forgives interior runs and trailing space but *not*
+  leading indentation — `normalize_line` collapses an indent to one space
+  rather than removing it, which is exactly what plan.md's "collapse runs of
+  spaces/tabs, trim line ends" specifies. Dropping the indent alone still
+  works, because step 1 is a plain substring search; only when interior
+  whitespace *also* differs does the indent become significant. Both halves
+  of that contract are now pinned by tests, so a later change to
+  `normalize_line` cannot silently widen it without a plan amendment.
+- `ambiguous_match_is_rejected` is named `edit_ambiguous_match_is_rejected`.
+  Under plan.md's own name the task's Check (`... edit_`) filtered it out and
+  never ran it; the prefix matches the convention every other Check uses.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-tools -- edit_
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.01s   # src/edit.rs
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s   # tests/edit.rs
+```
