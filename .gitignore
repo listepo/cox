@@ -2,3 +2,5 @@ target/
 *.snap.new
 .DS_Store
 /.serena
+.env
+.env.local

@@ -559,18 +559,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P0 — Scaffold (goal: `cox --version`, config, doctor, CI green)
 
-#### T0.7 `.env` via dotenvy
-Model: haiku · Status: open · Depends: T0.3 · Size: ~80
-Goal: API keys and `COX_*` can come from a `.env` file without becoming a second config format.
-Files: `crates/cox/src/main.rs`, `crates/cox/src/config_load.rs`, workspace + `crates/cox` `Cargo.toml`.
-Steps: (1) Workspace dep `dotenvy` 0.15 on `cox` only — `cox-core` stays filesystem-free. (2) `load_dotenv()` as the first call in `main`, before clap/`cox_home`: walk from cwd, load `.env` then `.env.local`; dotenvy's default is do-not-override, so CI, real env, and `COX_HOME=/tmp/...` test invocations win. Missing files are not an error. (3) Gitignore `.env` and `.env.local`. (4) Tests load a tempfile via `dotenvy::from_path`, never the repo `.env` (D12).
-Check:
-```bash
-mise exec -- cargo test -p cox config_dotenv_
-```
-Done when: `config_dotenv_fills_unset_cox_key` and `config_dotenv_does_not_override_set_env` pass; `cox config show --sources` still labels a `.env`-injected `COX_*` key as `env`.
-Out of scope: a figment `.env` provider; doctor copy; `.claude/settings.json` `env` import (T7.5).
-
 ### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
 
 #### T1.6 Retry, backoff, timeouts, cancellation

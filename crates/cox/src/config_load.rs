@@ -421,6 +421,31 @@ pub fn load(cwd: &Path, cli: &Cli) -> Result<LoadedConfig, CoreError> {
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
+/// Sets env vars for the duration of `f`, restoring the previous value
+/// (or absence) afterwards, holding [`ENV_LOCK`] throughout so this
+/// doesn't race other env-mutating tests in the crate.
+pub(crate) fn temp_env(vars: &[(&str, Option<&str>)], f: impl FnOnce()) {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let previous: Vec<(String, Option<String>)> = vars
+        .iter()
+        .map(|(k, _)| (k.to_string(), env::var(k).ok()))
+        .collect();
+    for (k, v) in vars {
+        match v {
+            Some(v) => unsafe { env::set_var(k, v) },
+            None => unsafe { env::remove_var(k) },
+        }
+    }
+    f();
+    for (k, v) in previous {
+        match v {
+            Some(v) => unsafe { env::set_var(&k, v) },
+            None => unsafe { env::remove_var(&k) },
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::fs;
 
@@ -537,29 +562,5 @@ mod tests {
                 assert_eq!(loaded.source_of("tiers.code.model"), "env");
             },
         );
-    }
-
-    /// Sets env vars for the duration of `f`, restoring the previous value
-    /// (or absence) afterwards, holding [`ENV_LOCK`] throughout so this
-    /// doesn't race other env-mutating tests in the crate.
-    fn temp_env(vars: &[(&str, Option<&str>)], f: impl FnOnce()) {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let previous: Vec<(String, Option<String>)> = vars
-            .iter()
-            .map(|(k, _)| (k.to_string(), env::var(k).ok()))
-            .collect();
-        for (k, v) in vars {
-            match v {
-                Some(v) => unsafe { env::set_var(k, v) },
-                None => unsafe { env::remove_var(k) },
-            }
-        }
-        f();
-        for (k, v) in previous {
-            match v {
-                Some(v) => unsafe { env::set_var(&k, v) },
-                None => unsafe { env::remove_var(&k) },
-            }
-        }
     }
 }

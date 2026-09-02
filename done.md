@@ -618,3 +618,28 @@ turn_no_event_after_turn_done
 truncate_is_lossless_via_archive
 resume_builds_identical_request
 ```
+
+#### T0.7 `.env` via dotenvy
+Model: terra · Status: done 2026-09-02 · Depends: T0.3 · Size: ~80
+Goal: API keys and `COX_*` can come from a `.env` file without becoming a second config format.
+Files: `crates/cox/src/main.rs`, `crates/cox/src/config_load.rs`, workspace + `crates/cox` `Cargo.toml`.
+Steps: (1) Workspace dep `dotenvy` 0.15 on `cox` only — `cox-core` stays filesystem-free. (2) `load_dotenv()` as the first call in `main`, before clap/`cox_home`: walk from cwd, load `.env` then `.env.local`; dotenvy's default is do-not-override, so CI, real env, and `COX_HOME=/tmp/...` test invocations win. Missing files are not an error. (3) Gitignore `.env` and `.env.local`. (4) Tests load a tempfile via `dotenvy::from_path`, never the repo `.env` (D12).
+Check:
+```bash
+mise exec -- cargo test -p cox config_dotenv_
+```
+Done when: `config_dotenv_fills_unset_cox_key` and `config_dotenv_does_not_override_set_env` pass; `cox config show --sources` still labels a `.env`-injected `COX_*` key as `env`.
+Out of scope: a figment `.env` provider; doctor copy; `.claude/settings.json` `env` import (T7.5).
+
+Notes: `load_dotenv()` runs before clap parsing and searches upward for `.env` then `.env.local` with dotenvy's non-overriding loader. Missing files are ignored, while malformed or unreadable files still fail startup. Tests use `dotenvy::from_path` against tempfiles and reuse the configuration test environment lock, proving an unset `COX_*` key is read as the `env` layer and a shell-set value wins.
+Check:
+```bash
+$ mise exec -- cargo test -p cox config_dotenv_
+running 2 tests
+test tests::config_dotenv_fills_unset_cox_key ... ok
+test tests::config_dotenv_does_not_override_set_env ... ok
+test result: ok. 2 passed; 0 failed
+
+$ mise exec -- cargo fmt --check && mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo test --workspace
+all checks passed
+```

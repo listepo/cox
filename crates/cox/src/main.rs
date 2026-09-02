@@ -16,6 +16,7 @@ use clap::Parser;
 use cli::{Cli, Command, ConfigAction};
 
 fn main() -> anyhow::Result<()> {
+    load_dotenv()?;
     let cli = Cli::parse();
     let cwd = match &cli.cwd {
         Some(dir) => dir.clone(),
@@ -50,6 +51,21 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
+/// Loads local secrets and `COX_*` overrides before clap reads the process
+/// environment. `from_filename` walks upward from the process cwd and never
+/// overwrites a value supplied by the shell or CI; `.env.local` therefore
+/// fills only still-unset keys after `.env`.
+fn load_dotenv() -> anyhow::Result<()> {
+    for filename in [".env", ".env.local"] {
+        if let Err(error) = dotenvy::from_filename(filename)
+            && !error.not_found()
+        {
+            return Err(error.into());
+        }
+    }
+    Ok(())
+}
+
 fn run_config(cwd: &std::path::Path, cli: &Cli, action: &ConfigAction) -> anyhow::Result<()> {
     match action {
         ConfigAction::Show { sources } => {
@@ -76,5 +92,64 @@ fn run_config(cwd: &std::path::Path, cli: &Cli, action: &ConfigAction) -> anyhow
             println!("{}", config_cmd::path().display());
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn config_cli() -> Cli {
+        Cli::parse_from(["cox", "config", "show"])
+    }
+
+    #[test]
+    fn config_dotenv_fills_unset_cox_key() {
+        let home = tempdir().expect("home tempdir");
+        let env_file = tempdir().expect("dotenv tempdir");
+        let cwd = tempdir().expect("cwd tempdir");
+        let path = env_file.path().join(".env");
+        fs::write(&path, "COX_TIERS_CODE_MODEL=dotenv-model\n").expect("write dotenv");
+
+        crate::config_load::temp_env(
+            &[
+                ("COX_HOME", Some(home.path().to_str().expect("utf-8 home"))),
+                ("COX_TIERS_CODE_MODEL", None),
+            ],
+            || {
+                dotenvy::from_path(&path).expect("load dotenv");
+                let loaded =
+                    crate::config_load::load(cwd.path(), &config_cli()).expect("load config");
+                assert_eq!(loaded.config.tiers.code.model, "dotenv-model");
+                assert_eq!(loaded.source_of("tiers.code.model"), "env");
+            },
+        );
+    }
+
+    #[test]
+    fn config_dotenv_does_not_override_set_env() {
+        let home = tempdir().expect("home tempdir");
+        let env_file = tempdir().expect("dotenv tempdir");
+        let cwd = tempdir().expect("cwd tempdir");
+        let path = env_file.path().join(".env");
+        fs::write(&path, "COX_TIERS_CODE_MODEL=dotenv-model\n").expect("write dotenv");
+
+        crate::config_load::temp_env(
+            &[
+                ("COX_HOME", Some(home.path().to_str().expect("utf-8 home"))),
+                ("COX_TIERS_CODE_MODEL", Some("shell-model")),
+            ],
+            || {
+                dotenvy::from_path(&path).expect("load dotenv");
+                let loaded =
+                    crate::config_load::load(cwd.path(), &config_cli()).expect("load config");
+                assert_eq!(loaded.config.tiers.code.model, "shell-model");
+                assert_eq!(loaded.source_of("tiers.code.model"), "env");
+            },
+        );
     }
 }

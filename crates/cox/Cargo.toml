@@ -23,6 +23,8 @@ cox-acp = { path = "../cox-acp", version = "0.1.0" }
 figment = { workspace = true }
 toml_edit = { workspace = true }
 anyhow = { workspace = true }
+# T0.7: the CLI boundary loads .env/.env.local before parsing flags.
+dotenvy = { workspace = true }
 serde_json = { workspace = true }
 # T0.5: doctor command checks: keyring for API key detection, crossterm for terminal size
 keyring = { workspace = true }
