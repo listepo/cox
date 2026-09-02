@@ -1,18 +1,23 @@
 //! The Anthropic Messages API backend: the client handle, its headers and
 //! its credential lookup. The body translation lives next door in
-//! [`request`] so it can be snapshot-tested with no key and no socket.
+//! [`request`] so it can be snapshot-tested with no key and no socket; the
+//! SSE → `ProviderEvent` state machine lives in [`stream`] for the same
+//! reason (fixtures, no socket).
 //!
 //! Kept apart from the OpenAI backends because the fields that decide cost
 //! here — `cache_control` placement, `output_config.effort`, adaptive
 //! `thinking`, `fallbacks` — have no counterpart there (D3).
 
 pub mod request;
+pub mod stream;
 
 use async_trait::async_trait;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
 use cox_protocol::types::{Caps, ProviderEvent, ProviderId, Request, Usage};
+use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -169,22 +174,125 @@ impl Provider for AnthropicProvider {
 
     async fn stream(
         &self,
-        _req: Request,
-        _sink: mpsc::Sender<ProviderEvent>,
-        _cancel: CancellationToken,
+        req: Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
-        Err(ProviderError::Unsupported {
-            feature: "streaming lands in T1.2".into(),
-        })
+        let started = std::time::Instant::now();
+        // No `ModelSwitched` signal reaches a `Provider`: `stream`'s
+        // signature (cox-protocol T0.2) carries only the `Request`, so
+        // thinking-block replay stays off here — see request.rs's
+        // `BuildCfg::thinking_model` doc and this module's `stream` doc.
+        let body = request::build_body(&req, self.build_cfg(None));
+
+        let response = self
+            .http
+            .post(format!("{}/v1/messages", self.base_url))
+            .headers(self.headers()?)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::Network
+                }
+            })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let retry_after = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok());
+            let body_text = response.text().await.unwrap_or_default();
+            return Err(http_error(status, &body_text, retry_after));
+        }
+
+        let mut frames = std::pin::pin!(crate::sse::sse_stream(response.bytes_stream()));
+        let mut machine = stream::AnthropicStream::new();
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+                frame = frames.next() => frame,
+            };
+            let Some(frame) = next else {
+                break;
+            };
+            let (event, data) = frame.map_err(|_| ProviderError::Network)?;
+            for provider_event in machine.feed(event.as_deref(), &data)? {
+                // The receiving end (`cox-core`) hung up: nothing left to
+                // stream to, so unwind as a cancellation rather than
+                // silently dropping the rest of the call.
+                if sink.send(provider_event).await.is_err() {
+                    return Err(ProviderError::Cancelled);
+                }
+            }
+        }
+
+        let mut usage = machine.usage();
+        usage.latency_ms = started.elapsed().as_millis() as u64;
+        Ok(usage)
     }
 
     async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
         // `POST {base_url}/v1/messages/count_tokens` with the same body;
-        // wired up alongside the streaming client in T1.2.
+        // out of scope for T1.2 (streaming only) — lands in T1.8.
         Err(ProviderError::Unsupported {
-            feature: "count_tokens lands in T1.2".into(),
+            feature: "count_tokens lands in T1.8".into(),
         })
     }
+}
+
+/// Maps a non-2xx `/v1/messages` response to a `ProviderError` (plan.md
+/// §1.14). `retry_after` comes from the `retry-after` header, read before
+/// the body is consumed.
+fn http_error(status: reqwest::StatusCode, body: &str, retry_after: Option<u64>) -> ProviderError {
+    let message = error_message(body);
+    match status.as_u16() {
+        401 => ProviderError::Auth,
+        429 => ProviderError::RateLimited { retry_after },
+        503 | 529 => ProviderError::Overloaded,
+        // A too-long prompt is a 400 `invalid_request_error` in practice
+        // (413 is reserved for raw request-body size); handled the same way
+        // regardless of which status carried it.
+        400 | 413 => match parse_context_too_long(&message) {
+            Some((got, max)) => ProviderError::ContextTooLong { max, got },
+            None => ProviderError::BadRequest { message },
+        },
+        _ => ProviderError::BadRequest { message },
+    }
+}
+
+/// Anthropic's error envelope is `{"error": {"type": ..., "message": ...}}`
+/// (claude-api skill, `shared/error-codes.md`); falls back to the raw body
+/// when it is not that shape, so a proxy's plain-text error is not lost.
+fn error_message(body: &str) -> String {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("error")?.get("message")?.as_str().map(str::to_string))
+        .unwrap_or_else(|| body.to_string())
+}
+
+/// Best-effort extraction of `(got, max)` from a "prompt is too long: N
+/// tokens > M maximum"-shaped message. No fixed wire schema is documented
+/// for this case, so this is read-only best effort: a message that does not
+/// mention "too long", or that carries fewer than two numbers, falls back
+/// to a plain `BadRequest` in [`http_error`] rather than guessing.
+fn parse_context_too_long(message: &str) -> Option<(u32, u32)> {
+    if !message.to_ascii_lowercase().contains("too long") {
+        return None;
+    }
+    let mut numbers = message
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<u32>().ok());
+    let got = numbers.next()?;
+    let max = numbers.next()?;
+    Some((got, max))
 }
 
 #[cfg(test)]
@@ -232,5 +340,127 @@ mod tests {
         unsafe { std::env::set_var("ANTHROPIC_API_KEY", "sk-from-env") };
         assert_eq!(resolve_api_key().ok().as_deref(), Some("sk-from-env"));
         unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+    }
+
+    #[test]
+    fn http_error_maps_known_statuses() {
+        assert!(matches!(
+            http_error(reqwest::StatusCode::UNAUTHORIZED, "{}", None),
+            ProviderError::Auth
+        ));
+        assert!(matches!(
+            http_error(reqwest::StatusCode::TOO_MANY_REQUESTS, "{}", Some(30)),
+            ProviderError::RateLimited {
+                retry_after: Some(30)
+            }
+        ));
+        assert!(matches!(
+            http_error(reqwest::StatusCode::SERVICE_UNAVAILABLE, "{}", None),
+            ProviderError::Overloaded
+        ));
+        let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 250000 tokens > 200000 maximum"}}"#;
+        assert_eq!(
+            http_error(reqwest::StatusCode::BAD_REQUEST, body, None),
+            ProviderError::ContextTooLong {
+                max: 200_000,
+                got: 250_000,
+            }
+        );
+        let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"messages: roles must alternate"}}"#;
+        assert_eq!(
+            http_error(reqwest::StatusCode::BAD_REQUEST, body, None),
+            ProviderError::BadRequest {
+                message: "messages: roles must alternate".into(),
+            }
+        );
+    }
+
+    fn minimal_request() -> Request {
+        use cox_protocol::types::{Content, Effort, Job, Message, Role, Thinking, Tier};
+
+        Request {
+            tier: Tier::Code,
+            job: Job::Main,
+            model: cox_protocol::types::ModelId("claude-sonnet-5".into()),
+            system: vec![],
+            tools: vec![],
+            messages: vec![Message {
+                role: Role::User,
+                content: vec![Content::Text {
+                    text: "read a.rs".into(),
+                }],
+            }],
+            effort: Effort::High,
+            max_tokens: 1024,
+            thinking: Thinking::Off,
+            cache_breakpoints: vec![],
+            stop_sequences: vec![],
+        }
+    }
+
+    /// Contract test (plan.md §1.5): the wired-up `Provider::stream` client,
+    /// driven against a `wiremock` server serving a real fixture byte-for-
+    /// byte, must produce exactly what the pure state machine produces from
+    /// the same fixture — and a `Usage` that carries the cache fields.
+    #[tokio::test]
+    async fn anthropic_stream_over_http() {
+        let fixture = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/anthropic/one_tool_call.sse"),
+        )
+        .expect("fixture reads");
+
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/v1/messages"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_raw(fixture.clone(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = AnthropicProvider {
+            base_url: server.uri(),
+            api_key: "sk-test".into(),
+            ttl: CacheTtl::FiveMinutes,
+            fallbacks: false,
+            http: reqwest::Client::new(),
+        };
+
+        let (tx, mut rx) = mpsc::channel(64);
+        let got_usage = client
+            .stream(minimal_request(), tx, CancellationToken::new())
+            .await
+            .expect("stream succeeds");
+
+        let mut got_events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            got_events.push(event);
+        }
+
+        // Golden: the same fixture replayed straight through the pure state
+        // machine (no network) must match exactly.
+        let mut machine = stream::AnthropicStream::new();
+        let mut want_events = Vec::new();
+        for (event, data) in crate::sse::parse_sse_str(&fixture) {
+            want_events.extend(
+                machine
+                    .feed(event.as_deref(), &data)
+                    .expect("fixture parses"),
+            );
+        }
+
+        // `ToolUseStart.id` is a freshly minted random `CallId` on every
+        // `feed` call (see `stream.rs`'s module header), so the live and
+        // golden runs mint different ones even for the same fixture;
+        // normalize both before comparing structure.
+        assert_eq!(
+            stream::normalize_tool_ids(got_events),
+            stream::normalize_tool_ids(want_events)
+        );
+        assert_eq!(got_usage.cache_read_tokens, 50);
+        assert_eq!(got_usage.cache_write_tokens, 100);
+        assert_eq!(got_usage.output_tokens, 24);
     }
 }

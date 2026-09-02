@@ -260,3 +260,41 @@ $ mise exec -- cargo clippy -p cox-tools --all-targets -- -D warnings
 $ mise exec -- cargo fmt -p cox-tools --check
 (clean)
 ```
+
+#### T1.2 SSE parser and Anthropic stream state machine
+Model: sonnet · Status: done 2026-09-02 · Depends: T1.1
+
+Goal: turn Anthropic's `/v1/messages` SSE body into `ProviderEvent`s, wired into `Provider::stream`.
+Files: `crates/cox-provider/src/sse.rs` (new), `crates/cox-provider/src/anthropic/stream.rs` (new), `crates/cox-provider/src/anthropic/mod.rs`, `crates/cox-provider/Cargo.toml`, `crates/cox-provider/src/lib.rs`, `Cargo.toml` (workspace: `bytes`, `futures`), `fixtures/anthropic/{text_only,one_tool_call,parallel_tool_calls,refusal,max_tokens}.sse`, `crates/cox-provider/src/anthropic/snapshots/*.snap` (5, insta).
+
+What landed: `sse::sse_stream` wraps a `reqwest` byte stream in `eventsource_stream::Eventsource`, reducing each frame to `(Option<String>, String)` (event name, joined `data:` lines; `message`/absent → `None`); `sse::parse_sse_str` runs the identical parser over an in-memory fixture through one `futures::executor::block_on` chunk, no network. `anthropic::stream::AnthropicStream` is a small state machine (`current_block: Option<BlockKind>`, running `Usage`) that `feed(event, data) -> Result<Vec<ProviderEvent>, ProviderError>`s: `message_start` seeds usage + `MessageStart`; `content_block_start` opens `Text|Thinking|ToolUse` (`ToolUse` emits `ToolUseStart` with a freshly minted `CallId`, not Anthropic's wire `toolu_...` id — see deviations); `content_block_delta` maps `text_delta`/`thinking_delta` → `TextDelta`/`ThinkingDelta`, `input_json_delta.partial_json` → `ToolUseInputDelta`, `signature_delta` is dropped (no ProviderEvent field carries it, see deviations); `content_block_stop` → `ToolUseEnd` only for a tool block; `message_delta` merges usage (only overwrites fields present in the JSON, so message_start's cache fields survive a delta that only carries `output_tokens`) and, on a terminal `stop_reason`, emits `Stop{stop}` — `refusal` → `StopReason::Refusal{detail}` (`"{category}: {explanation}"` from `stop_details`), every other stop_reason (`end_turn`/`tool_use`/`max_tokens`/`stop_sequence`) → `StopReason::EndTurn` per cox-protocol's own doc comment that a provider only ever emits `EndTurn`/`Refusal`/`Error`; `error` → `ProviderError` via the same status-independent mapping `mod.rs` uses for HTTP errors. `Provider::stream` in `anthropic/mod.rs` POSTs the T1.1 body to `{base_url}/v1/messages`, maps non-2xx via a new `http_error()` (401→`Auth`, 429→`RateLimited{retry_after}` from the `retry-after` header, 503/529→`Overloaded`, 400/413 with a "too long" message → `ContextTooLong{limit,requested}` best-effort-parsed from the message text else `BadRequest`), then drives `sse::sse_stream` through `AnthropicStream`, sending each `ProviderEvent` on `sink` under a `tokio::select! { biased; }` against `cancel`, returning the final `Usage` with `latency_ms` filled from an `Instant` taken at call start.
+
+Deviations:
+- **No `cox-protocol` edits**, despite the task authorizing them "if needed". Two things plan.md's task text implies a new field for — a tool_use id that round-trips Anthropic's own `toolu_...` string, and `signature_delta` on a thinking block — were both left out, following T1.1's own precedent of not touching a crate under parallel edit for the same reason. `CallId` stays a minted ULID (self-consistent within one request, which is all `tool_use.id`/`tool_result.tool_use_id` matching requires — T1.1 already sends our own id both ways); a `signature_delta` frame is parsed but its payload dropped, same reasoning as T1.1's dropped thinking-block provenance.
+- **`redacted_thinking` content blocks are silently ignored.** Not in plan.md's literal T1.2 step list (`text | thinking | tool_use`); `on_block_start` no-ops on an unrecognized block type rather than failing the stream, so a redacted block just produces no events instead of an error.
+- **StopReason collapsing.** plan.md's turn-loop pseudocode elsewhere references `stop == ToolUse`/`stop == MaxTokens`, which don't exist as `StopReason` variants; trusted the committed type's doc comment instead (a provider only emits `EndTurn`/`Refusal`/`Error`) over the aspirational pseudocode.
+- Added `bytes`/`futures` to the workspace `Cargo.toml` (not `tokio-stream` — `futures::StreamExt`/`futures::stream::iter` covered every need, one dependency instead of two for the same job).
+- The malformed-JSON and unknown-event paths return `ProviderError::Parse`/no-op respectively rather than panicking — covered by `malformed_json_is_a_parse_error_not_a_panic` and `unknown_event_is_ignored_not_fatal`.
+- Two failures in `crates/cox-provider/src/tokens.rs` (`tokens_count_json_keys_walks_nested_schemas`, `tokens_estimate_within_15_percent_of_fixtures`) show up in an unfiltered `cargo test -p cox-provider` — that file belongs to the parallel T1.8 task, not touched here; T1.2's own Check filters to `anthropic_stream_` and is unaffected.
+
+Sources consulted (bundled `claude-api` skill, 2026-09-02): `python/claude-api/streaming.md` (event sequence `message_start → content_block_start/delta/stop* → message_delta → message_stop`, `ping` keepalives, `ping` is discarded); `curl/examples.md` (`input_json_delta.partial_json` accumulation for tool inputs, `signature_delta` on thinking blocks); `shared/error-codes.md` (status→error-type mapping: 401 `authentication_error`, 429 `rate_limit_error` with `retry-after`, 529/503 `overloaded_error`, 400 `invalid_request_error`); `shared/model-migration.md` (context-length-exceeded phrasing inside a 400's message, no dedicated status code — parsed from text); `python/claude-api/README.md` (`stop_reason: "refusal"` paired with `stop_details: {category, explanation}`, introduced alongside `output_config.effort`).
+
+Check:
+```bash
+$ mise exec -- cargo test -p cox-provider anthropic_stream_
+running 6 tests
+test anthropic::tests::anthropic_stream_over_http ... ok
+test anthropic::stream::tests::anthropic_stream_refusal ... ok
+test anthropic::stream::tests::anthropic_stream_max_tokens ... ok
+test anthropic::stream::tests::anthropic_stream_one_tool_call ... ok
+test anthropic::stream::tests::anthropic_stream_parallel_tool_calls ... ok
+test anthropic::stream::tests::anthropic_stream_text_only ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.02s
+
+$ mise exec -- cargo clippy -p cox-provider --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+(clean)
+
+$ mise exec -- cargo fmt -p cox-provider --check
+(clean)
+```

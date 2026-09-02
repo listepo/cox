@@ -33,6 +33,10 @@ tracing = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 eventsource-stream = "0.2.3"
 tiktoken-rs = "0.12"
+# T1.2: turns a reqwest byte stream into SSE frames (`sse.rs`) and drives the
+# in-memory fixture parser (`parse_sse_str`) through the same code path.
+bytes = "1"
+futures = "0.3"
 
 # cox-tools
 ignore = "0.4.33"
