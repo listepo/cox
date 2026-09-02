@@ -1,0 +1,2358 @@
+{
+  "event": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Event",
+    "description": "Everything a consumer (TUI, `stream-json`, ACP, the rollout file) can\nobserve from a session (plan.md §1.2/§1.3). Every surface consumes the\nsame stream; nothing is emitted after `TurnDone` for that turn.",
+    "oneOf": [
+      {
+        "description": "A new session began.",
+        "type": "object",
+        "properties": {
+          "config_digest": {
+            "description": "Hash of the effective config, for `resume_builds_identical_request`-style checks.",
+            "type": "string"
+          },
+          "cwd": {
+            "description": "The working directory the session started in.",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session's id.",
+            "$ref": "#/$defs/SessionId"
+          },
+          "type": {
+            "type": "string",
+            "const": "session_started"
+          }
+        },
+        "required": [
+          "type",
+          "session",
+          "config_digest",
+          "cwd"
+        ]
+      },
+      {
+        "description": "A new turn began.",
+        "type": "object",
+        "properties": {
+          "job": {
+            "description": "Which job this turn is (usually `Job::Main`).",
+            "$ref": "#/$defs/Job"
+          },
+          "model": {
+            "description": "The specific model used.",
+            "$ref": "#/$defs/ModelId"
+          },
+          "tier": {
+            "description": "The tier routed to.",
+            "$ref": "#/$defs/Tier"
+          },
+          "turn": {
+            "description": "The turn's id.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "type": {
+            "type": "string",
+            "const": "turn_started"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "job",
+          "tier",
+          "model"
+        ]
+      },
+      {
+        "description": "A new transcript item began accumulating.",
+        "type": "object",
+        "properties": {
+          "item": {
+            "description": "The item's id.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "kind": {
+            "description": "What kind of item this is (may still be filling in text).",
+            "$ref": "#/$defs/ItemKind"
+          },
+          "type": {
+            "type": "string",
+            "const": "item_started"
+          }
+        },
+        "required": [
+          "type",
+          "item",
+          "kind"
+        ]
+      },
+      {
+        "description": "Streamed text for an `AssistantMessage` item.",
+        "type": "object",
+        "properties": {
+          "item": {
+            "description": "The item this delta belongs to.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "text": {
+            "description": "The next chunk of text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "text_delta"
+          }
+        },
+        "required": [
+          "type",
+          "item",
+          "text"
+        ]
+      },
+      {
+        "description": "Streamed text for a `Thinking` item.",
+        "type": "object",
+        "properties": {
+          "item": {
+            "description": "The item this delta belongs to.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "text": {
+            "description": "The next chunk of thinking text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "thinking_delta"
+          }
+        },
+        "required": [
+          "type",
+          "item",
+          "text"
+        ]
+      },
+      {
+        "description": "The model requested a tool call.",
+        "type": "object",
+        "properties": {
+          "call": {
+            "description": "The requested call.",
+            "$ref": "#/$defs/ToolCall"
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_call_requested"
+          }
+        },
+        "required": [
+          "type",
+          "call"
+        ]
+      },
+      {
+        "description": "A tool call needs a decision before it can run.",
+        "type": "object",
+        "properties": {
+          "call": {
+            "description": "The call awaiting a decision.",
+            "$ref": "#/$defs/ToolCall"
+          },
+          "type": {
+            "type": "string",
+            "const": "approval_required"
+          },
+          "why": {
+            "description": "Why it needs one.",
+            "$ref": "#/$defs/Why"
+          }
+        },
+        "required": [
+          "type",
+          "call",
+          "why"
+        ]
+      },
+      {
+        "description": "A pending approval was decided.",
+        "type": "object",
+        "properties": {
+          "by": {
+            "description": "Who/what decided it.",
+            "$ref": "#/$defs/DecidedBy"
+          },
+          "call_id": {
+            "description": "The call that was decided.",
+            "$ref": "#/$defs/CallId"
+          },
+          "decision": {
+            "description": "The decision.",
+            "$ref": "#/$defs/Decision"
+          },
+          "type": {
+            "type": "string",
+            "const": "approval_decided"
+          }
+        },
+        "required": [
+          "type",
+          "call_id",
+          "decision",
+          "by"
+        ]
+      },
+      {
+        "description": "Streamed stdout/stderr from a running tool, already sanitised for display.",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The call producing output.",
+            "$ref": "#/$defs/CallId"
+          },
+          "delta": {
+            "description": "The next chunk of output.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_call_output"
+          }
+        },
+        "required": [
+          "type",
+          "call_id",
+          "delta"
+        ]
+      },
+      {
+        "description": "A tool call finished.",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The call that finished.",
+            "$ref": "#/$defs/CallId"
+          },
+          "result": {
+            "description": "Its result.",
+            "$ref": "#/$defs/ToolResult"
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_call_done"
+          }
+        },
+        "required": [
+          "type",
+          "call_id",
+          "result"
+        ]
+      },
+      {
+        "description": "A transcript item finished accumulating.",
+        "type": "object",
+        "properties": {
+          "item": {
+            "description": "The item that finished.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "type": {
+            "type": "string",
+            "const": "item_done"
+          }
+        },
+        "required": [
+          "type",
+          "item"
+        ]
+      },
+      {
+        "description": "A provider call's usage/cost was recorded.",
+        "type": "object",
+        "properties": {
+          "turn": {
+            "description": "The turn this usage belongs to.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "type": {
+            "type": "string",
+            "const": "usage"
+          },
+          "usage": {
+            "description": "The recorded usage.",
+            "$ref": "#/$defs/Usage"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "usage"
+        ]
+      },
+      {
+        "description": "Compaction ran and replaced older items with a summary.",
+        "type": "object",
+        "properties": {
+          "after_tokens": {
+            "description": "Context tokens after compaction.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "before_tokens": {
+            "description": "Context tokens before compaction.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "dropped": {
+            "description": "Items now skipped when building requests (rollout keeps them).",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ItemId"
+            }
+          },
+          "summary": {
+            "description": "The new summary item's id.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "type": {
+            "type": "string",
+            "const": "compacted"
+          }
+        },
+        "required": [
+          "type",
+          "summary",
+          "dropped",
+          "before_tokens",
+          "after_tokens"
+        ]
+      },
+      {
+        "description": "A background subagent task was created.",
+        "type": "object",
+        "properties": {
+          "label": {
+            "description": "A short human-readable label.",
+            "type": "string"
+          },
+          "task": {
+            "description": "The task's id.",
+            "$ref": "#/$defs/TaskId"
+          },
+          "tier": {
+            "description": "The tier it runs on.",
+            "$ref": "#/$defs/Tier"
+          },
+          "type": {
+            "type": "string",
+            "const": "task_created"
+          }
+        },
+        "required": [
+          "type",
+          "task",
+          "label",
+          "tier"
+        ]
+      },
+      {
+        "description": "A background subagent task finished.",
+        "type": "object",
+        "properties": {
+          "cost_usd": {
+            "description": "What it cost, in USD.",
+            "type": "number",
+            "format": "double"
+          },
+          "result_item": {
+            "description": "The item holding its result.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "task": {
+            "description": "The task that finished.",
+            "$ref": "#/$defs/TaskId"
+          },
+          "type": {
+            "type": "string",
+            "const": "task_completed"
+          }
+        },
+        "required": [
+          "type",
+          "task",
+          "result_item",
+          "cost_usd"
+        ]
+      },
+      {
+        "description": "A tier's model changed mid-session.",
+        "type": "object",
+        "properties": {
+          "from": {
+            "description": "The previous model.",
+            "$ref": "#/$defs/ModelId"
+          },
+          "tier": {
+            "description": "Which tier changed.",
+            "$ref": "#/$defs/Tier"
+          },
+          "to": {
+            "description": "The new model.",
+            "$ref": "#/$defs/ModelId"
+          },
+          "type": {
+            "type": "string",
+            "const": "model_switched"
+          }
+        },
+        "required": [
+          "type",
+          "tier",
+          "from",
+          "to"
+        ]
+      },
+      {
+        "description": "An informational or warning message, not part of the model-visible transcript.",
+        "type": "object",
+        "properties": {
+          "level": {
+            "description": "Severity.",
+            "$ref": "#/$defs/Level"
+          },
+          "text": {
+            "description": "The message.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "notice"
+          }
+        },
+        "required": [
+          "type",
+          "level",
+          "text"
+        ]
+      },
+      {
+        "description": "A turn finished.",
+        "type": "object",
+        "properties": {
+          "stop": {
+            "description": "Why it stopped.",
+            "$ref": "#/$defs/StopReason"
+          },
+          "turn": {
+            "description": "The turn that finished.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "type": {
+            "type": "string",
+            "const": "turn_done"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "stop"
+        ]
+      },
+      {
+        "description": "An error occurred.",
+        "type": "object",
+        "properties": {
+          "error": {
+            "description": "What went wrong.",
+            "$ref": "#/$defs/CoreError"
+          },
+          "fatal": {
+            "description": "Whether the whole session must end (`StoreError::Corrupt`, `Config`) or just the turn.",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "const": "error"
+          }
+        },
+        "required": [
+          "type",
+          "error",
+          "fatal"
+        ]
+      }
+    ],
+    "$defs": {
+      "ApprovalPolicy": {
+        "description": "`permissions.approval` (plan.md §1.6/§1.8 step 8).",
+        "oneOf": [
+          {
+            "description": "Anything not covered by an `allow` rule asks.",
+            "type": "string",
+            "const": "untrusted"
+          },
+          {
+            "description": "Default: risk-based asking (step 7).",
+            "type": "string",
+            "const": "on-request"
+          },
+          {
+            "description": "`Exec` runs sandboxed without asking; asks only if the sandbox denies.",
+            "type": "string",
+            "const": "on-failure"
+          },
+          {
+            "description": "Any `Ask` becomes `Deny` (headless default).",
+            "type": "string",
+            "const": "never"
+          }
+        ]
+      },
+      "ArchiveId": {
+        "description": "ArchiveId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "ArchiveRef": {
+        "description": "A pointer to a full tool output stored in the archive (plan.md §1.7/D6a).",
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "description": "Size of the archived payload, in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "id": {
+            "description": "The archive row's id (`cox expand <id>`).",
+            "$ref": "#/$defs/ArchiveId"
+          }
+        },
+        "required": [
+          "id",
+          "bytes"
+        ]
+      },
+      "Attachment": {
+        "description": "A file, image or other blob attached to a `UserTurn`.",
+        "type": "object",
+        "properties": {
+          "data_b64": {
+            "description": "Base64-encoded bytes.",
+            "type": "string"
+          },
+          "media_type": {
+            "description": "MIME type, e.g. `\"image/png\"`.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Display name (usually the original filename).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "media_type",
+          "data_b64"
+        ]
+      },
+      "CallId": {
+        "description": "CallId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "CoreError": {
+        "description": "Failures from `cox-core`'s turn loop.",
+        "oneOf": [
+          {
+            "description": "The session or monthly budget cap was hit.",
+            "type": "object",
+            "properties": {
+              "cap": {
+                "description": "The configured cap, in USD.",
+                "type": "number",
+                "format": "double"
+              },
+              "spent": {
+                "description": "Amount spent so far, in USD.",
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "const": "budget"
+              }
+            },
+            "required": [
+              "type",
+              "spent",
+              "cap"
+            ]
+          },
+          {
+            "description": "The turn was cancelled via `Submission::Interrupt`.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "interrupted"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The provider call failed.",
+            "type": "object",
+            "properties": {
+              "error": {
+                "description": "The underlying provider failure.",
+                "$ref": "#/$defs/ProviderError"
+              },
+              "type": {
+                "type": "string",
+                "const": "provider"
+              }
+            },
+            "required": [
+              "type",
+              "error"
+            ]
+          },
+          {
+            "description": "A tool call failed.",
+            "type": "object",
+            "properties": {
+              "call": {
+                "description": "The call that failed.",
+                "$ref": "#/$defs/CallId"
+              },
+              "error": {
+                "description": "The underlying tool failure.",
+                "$ref": "#/$defs/ToolError"
+              },
+              "type": {
+                "type": "string",
+                "const": "tool"
+              }
+            },
+            "required": [
+              "type",
+              "call",
+              "error"
+            ]
+          },
+          {
+            "description": "Compaction failed to produce a summary.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "compaction"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "A config value was invalid or out of range.",
+            "type": "object",
+            "properties": {
+              "key": {
+                "description": "The dotted config key.",
+                "type": "string"
+              },
+              "message": {
+                "description": "Why the value was rejected.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "config"
+              }
+            },
+            "required": [
+              "type",
+              "key",
+              "message"
+            ]
+          },
+          {
+            "description": "The store failed (fatal to the session, per plan.md §1.14).",
+            "type": "object",
+            "properties": {
+              "error": {
+                "description": "The underlying store failure.",
+                "$ref": "#/$defs/StoreError"
+              },
+              "type": {
+                "type": "string",
+                "const": "store"
+              }
+            },
+            "required": [
+              "type",
+              "error"
+            ]
+          },
+          {
+            "description": "A hook failed in a way that was not fail-open (rare; hooks usually just warn).",
+            "type": "object",
+            "properties": {
+              "error": {
+                "description": "The hook's error text.",
+                "type": "string"
+              },
+              "id": {
+                "description": "The hook's configured id.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "hook"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "error"
+            ]
+          }
+        ]
+      },
+      "DecidedBy": {
+        "description": "Who decided an approval (`ApprovalDecided::by`).",
+        "oneOf": [
+          {
+            "description": "The user answered an `ApprovalRequired` prompt.",
+            "type": "string",
+            "const": "user"
+          },
+          {
+            "description": "An `allow`/`deny`/`ask` rule matched.",
+            "type": "string",
+            "const": "rule"
+          },
+          {
+            "description": "An `AllowForSession` grant from earlier in the session matched.",
+            "type": "string",
+            "const": "session"
+          },
+          {
+            "description": "The permission mode or approval policy decided without a rule.",
+            "type": "string",
+            "const": "policy"
+          },
+          {
+            "description": "A `PreToolUse` hook decided (`Block`/`Modify`).",
+            "type": "string",
+            "const": "hook"
+          }
+        ]
+      },
+      "Decision": {
+        "description": "An approval decision, for both `Submission::Approve` and `ApprovalDecided`.",
+        "oneOf": [
+          {
+            "description": "Run the call once.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "allow"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Run this call and grant future calls with the same tool + subject prefix, for this session.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "allow_for_session"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Refuse the call.",
+            "type": "object",
+            "properties": {
+              "reason": {
+                "description": "Shown to the model as the tool result.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "deny"
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "description": "Run the call, but with edited input (e.g. a corrected path).",
+            "type": "object",
+            "properties": {
+              "input": {
+                "description": "The replacement input."
+              },
+              "type": {
+                "type": "string",
+                "const": "edit"
+              }
+            },
+            "required": [
+              "type",
+              "input"
+            ]
+          }
+        ]
+      },
+      "Diff": {
+        "description": "A unified diff for one file, produced by `edit`/`apply_patch`/`write`.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "The file the diff applies to.",
+            "type": "string"
+          },
+          "unified": {
+            "description": "Unified diff text (`---`/`+++`/`@@` form).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "unified"
+        ]
+      },
+      "ItemId": {
+        "description": "ItemId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "ItemKind": {
+        "description": "What kind of transcript item an `Item` is; each variant carries exactly\nwhat that item needs to be replayed into history on resume (plan.md\n§1.7: \"resume rebuilds `history` from `ItemStarted`/`ItemDone` pairs\").",
+        "oneOf": [
+          {
+            "description": "The user's turn text plus any attachments.",
+            "type": "object",
+            "properties": {
+              "attachments": {
+                "description": "Attached files/images, if any.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Attachment"
+                }
+              },
+              "text": {
+                "description": "The submitted text.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "user_message"
+              }
+            },
+            "required": [
+              "type",
+              "text",
+              "attachments"
+            ]
+          },
+          {
+            "description": "The assistant's visible reply text.",
+            "type": "object",
+            "properties": {
+              "text": {
+                "description": "The accumulated text (from `TextDelta`s).",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "assistant_message"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "description": "An extended-thinking block.",
+            "type": "object",
+            "properties": {
+              "signature": {
+                "description": "The provider's signature for replaying the block back, if it requires one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "description": "The accumulated thinking text.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "thinking"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "description": "A tool call the model requested.",
+            "type": "object",
+            "properties": {
+              "call": {
+                "description": "The call itself.",
+                "$ref": "#/$defs/ToolCall"
+              },
+              "type": {
+                "type": "string",
+                "const": "tool_call"
+              }
+            },
+            "required": [
+              "type",
+              "call"
+            ]
+          },
+          {
+            "description": "A finished tool call's result.",
+            "type": "object",
+            "properties": {
+              "call_id": {
+                "description": "The call this result belongs to.",
+                "$ref": "#/$defs/CallId"
+              },
+              "result": {
+                "description": "The result.",
+                "$ref": "#/$defs/ToolResult"
+              },
+              "type": {
+                "type": "string",
+                "const": "tool_result"
+              }
+            },
+            "required": [
+              "type",
+              "call_id",
+              "result"
+            ]
+          },
+          {
+            "description": "A compaction summary.",
+            "type": "object",
+            "properties": {
+              "text": {
+                "description": "The summary text.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "summary"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "description": "A cox-generated notice (not part of the model-visible transcript).",
+            "type": "object",
+            "properties": {
+              "level": {
+                "description": "The notice's severity.",
+                "$ref": "#/$defs/Level"
+              },
+              "text": {
+                "description": "The notice text.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "notice"
+              }
+            },
+            "required": [
+              "type",
+              "level",
+              "text"
+            ]
+          }
+        ]
+      },
+      "Job": {
+        "description": "What a request is *for* (plan.md §1.4); every job is pinned to one tier in config.",
+        "oneOf": [
+          {
+            "description": "The main coding turn.",
+            "type": "string",
+            "const": "main"
+          },
+          {
+            "description": "A `/think`/`--deep` plan.",
+            "type": "string",
+            "const": "plan"
+          },
+          {
+            "description": "Compaction summary.",
+            "type": "string",
+            "const": "compact"
+          },
+          {
+            "description": "Session title generation.",
+            "type": "string",
+            "const": "title"
+          },
+          {
+            "description": "Tool-result or transcript summarisation.",
+            "type": "string",
+            "const": "summarize"
+          },
+          {
+            "description": "Commit message generation.",
+            "type": "string",
+            "const": "commit"
+          },
+          {
+            "description": "Memory extraction.",
+            "type": "string",
+            "const": "memory"
+          },
+          {
+            "description": "An `explore` subagent.",
+            "type": "string",
+            "const": "explore"
+          },
+          {
+            "description": "A background shell/HTTP subagent.",
+            "type": "string",
+            "const": "shell"
+          },
+          {
+            "description": "A hook-driven LLM call.",
+            "type": "string",
+            "const": "hook"
+          }
+        ]
+      },
+      "Level": {
+        "description": "Severity of a `Notice` event.",
+        "oneOf": [
+          {
+            "description": "Informational; no action needed.",
+            "type": "string",
+            "const": "info"
+          },
+          {
+            "description": "Something degraded but the turn continued (e.g. a skipped hook).",
+            "type": "string",
+            "const": "warn"
+          },
+          {
+            "description": "A budget threshold was crossed.",
+            "type": "string",
+            "const": "budget"
+          },
+          {
+            "description": "A trust-boundary guard fired (sanitized output, sandbox denial).",
+            "type": "string",
+            "const": "security"
+          }
+        ]
+      },
+      "ModelId": {
+        "description": "A newtype around a provider's model identifier (e.g. `\"claude-sonnet-5\"`).\nDeliberately a bare string, not an enum: models are configured, not\ncompiled in (`config/default.toml` [tiers.*].model).",
+        "type": "string"
+      },
+      "ProviderError": {
+        "description": "Failures from a `Provider` implementation (`cox-provider`).",
+        "oneOf": [
+          {
+            "description": "The provider rejected the request's credentials.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "auth"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The provider is rate-limiting this key.",
+            "type": "object",
+            "properties": {
+              "retry_after": {
+                "description": "Seconds to wait before retrying, from the provider's `retry-after`, if given.",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "const": "rate_limited"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The provider is temporarily overloaded (5xx, no retry-after).",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "overloaded"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The provider rejected the request shape itself (4xx, not auth).",
+            "type": "object",
+            "properties": {
+              "message": {
+                "description": "The provider's error message, verbatim.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "bad_request"
+              }
+            },
+            "required": [
+              "type",
+              "message"
+            ]
+          },
+          {
+            "description": "The assembled request exceeds the model's context window.",
+            "type": "object",
+            "properties": {
+              "got": {
+                "description": "The estimated size of the request that was rejected.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "max": {
+                "description": "The model's max context, in tokens.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "const": "context_too_long"
+              }
+            },
+            "required": [
+              "type",
+              "max",
+              "got"
+            ]
+          },
+          {
+            "description": "The model declined to continue (content policy, not an error).",
+            "type": "object",
+            "properties": {
+              "detail": {
+                "description": "The provider's refusal text, if any.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "refusal"
+              }
+            },
+            "required": [
+              "type",
+              "detail"
+            ]
+          },
+          {
+            "description": "A transport-level failure (DNS, TLS, connection reset).",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "network"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The request exceeded `providers.*.timeout_s`.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "timeout"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The stream was cancelled via `Interrupt`.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "cancelled"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The SSE/JSON stream contained a line cox could not parse.",
+            "type": "object",
+            "properties": {
+              "line": {
+                "description": "1-based line number within the stream where parsing failed.",
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "const": "parse"
+              }
+            },
+            "required": [
+              "type",
+              "line"
+            ]
+          },
+          {
+            "description": "The request used a capability (`thinking`, `cache`, …) the provider lacks.",
+            "type": "object",
+            "properties": {
+              "feature": {
+                "description": "The capability name, matching a `Caps` field.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "unsupported"
+              }
+            },
+            "required": [
+              "type",
+              "feature"
+            ]
+          }
+        ]
+      },
+      "Risk": {
+        "description": "How risky a tool call is, independent of what it does (plan.md §1.8).",
+        "oneOf": [
+          {
+            "description": "Cannot change anything cox does not already show the model.",
+            "type": "string",
+            "const": "read_only"
+          },
+          {
+            "description": "Writes inside the workspace.",
+            "type": "string",
+            "const": "write"
+          },
+          {
+            "description": "Runs a process.",
+            "type": "string",
+            "const": "exec"
+          },
+          {
+            "description": "Can destroy data or affect more than the immediate subject (`rm -rf`, `apply_patch` deleting > 5 files).",
+            "type": "string",
+            "const": "destructive"
+          }
+        ]
+      },
+      "SessionId": {
+        "description": "SessionId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "StopReason": {
+        "description": "Why a provider call or a turn stopped.\n\nReused for both `ProviderEvent::Stop` (one provider call) and\n`Event::TurnDone` (the whole turn); a provider only ever emits\n`EndTurn`/`Refusal`/`Error`, the others are added by `cox-core` once it\nhas aggregated multiple calls in a turn.",
+        "oneOf": [
+          {
+            "description": "The model finished normally.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "end_turn"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "`core.max_turns` provider calls were used up without finishing.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "max_turns"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "`Submission::Interrupt` cancelled the turn.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "interrupted"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "A budget cap stopped the turn before another call was made.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "budget"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The model refused to continue.",
+            "type": "object",
+            "properties": {
+              "detail": {
+                "description": "The provider's refusal text, if any.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "refusal"
+              }
+            },
+            "required": [
+              "type",
+              "detail"
+            ]
+          },
+          {
+            "description": "The turn ended in an unrecoverable error.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "error"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      },
+      "StoreError": {
+        "description": "Failures from `cox-store`.",
+        "oneOf": [
+          {
+            "description": "`cox.db` could not be opened.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "open"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "A schema migration failed partway.",
+            "type": "object",
+            "properties": {
+              "from": {
+                "description": "The schema version migrated from.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "to": {
+                "description": "The schema version migration was attempting to reach.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "const": "migrate"
+              }
+            },
+            "required": [
+              "type",
+              "from",
+              "to"
+            ]
+          },
+          {
+            "description": "The store file exists but failed an integrity check.",
+            "type": "object",
+            "properties": {
+              "path": {
+                "description": "Path to the corrupt file.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "corrupt"
+              }
+            },
+            "required": [
+              "type",
+              "path"
+            ]
+          },
+          {
+            "description": "The requested row does not exist.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "not_found"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "A filesystem I/O error occurred.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "io"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The underlying SQLite call failed.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "sqlite"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      },
+      "TaskId": {
+        "description": "TaskId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "Tier": {
+        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+        "oneOf": [
+          {
+            "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
+            "type": "string",
+            "const": "cheap"
+          },
+          {
+            "description": "Sonnet by default, Opus when picked; the main coding turn.",
+            "type": "string",
+            "const": "code"
+          },
+          {
+            "description": "Fable 5.1 only, only via `/think`/`--deep`, always confirmed.",
+            "type": "string",
+            "const": "think"
+          }
+        ]
+      },
+      "ToolCall": {
+        "description": "A request from the model to run a tool.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Correlates `ToolCallRequested` through `ToolCallDone`.",
+            "$ref": "#/$defs/CallId"
+          },
+          "input": {
+            "description": "The model-supplied arguments, validated against the tool's `input_schema`."
+          },
+          "name": {
+            "description": "The tool's registered name (or `mcp__<server>__<tool>`).",
+            "type": "string"
+          },
+          "risk": {
+            "description": "The call's risk classification, used by the permission engine.",
+            "$ref": "#/$defs/Risk"
+          },
+          "subject": {
+            "description": "What permission rules match on: the confined path, command line, URL, or MCP name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "input",
+          "risk",
+          "subject"
+        ]
+      },
+      "ToolError": {
+        "description": "Failures from a `Tool` implementation (`cox-tools`, `cox-mcp`).",
+        "oneOf": [
+          {
+            "description": "The permission engine denied the call before it ran.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "denied"
+              },
+              "why": {
+                "description": "Human-readable reason, shown to the model so it can try another approach.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "why"
+            ]
+          },
+          {
+            "description": "A path argument escaped every workspace root.",
+            "type": "object",
+            "properties": {
+              "path": {
+                "description": "The path the tool was given.",
+                "type": "string"
+              },
+              "root": {
+                "description": "The workspace root it failed to stay under.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "confined"
+              }
+            },
+            "required": [
+              "type",
+              "path",
+              "root"
+            ]
+          },
+          {
+            "description": "The sandbox refused the operation.",
+            "type": "object",
+            "properties": {
+              "detail": {
+                "description": "The sandbox backend's denial detail.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "sandbox_denied"
+              }
+            },
+            "required": [
+              "type",
+              "detail"
+            ]
+          },
+          {
+            "description": "The tool exceeded its allotted time.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "timeout"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The target (file, path, id) does not exist.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "not_found"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "An `edit` match was not unique.",
+            "type": "object",
+            "properties": {
+              "matches": {
+                "description": "The matching line numbers or excerpts, for the model to disambiguate.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "const": "ambiguous"
+              }
+            },
+            "required": [
+              "type",
+              "matches"
+            ]
+          },
+          {
+            "description": "The output exceeded the archive/visible cap.",
+            "type": "object",
+            "properties": {
+              "bytes": {
+                "description": "The actual size in bytes.",
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "cap": {
+                "description": "The configured cap in bytes.",
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "const": "too_large"
+              }
+            },
+            "required": [
+              "type",
+              "bytes",
+              "cap"
+            ]
+          },
+          {
+            "description": "The target file is binary; the tool refuses to read/edit it as text.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "binary"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "A filesystem I/O error occurred.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "io"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The call was cancelled via the shared `CancellationToken`.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "cancelled"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      },
+      "ToolResult": {
+        "description": "The outcome of a finished tool call, as it appears in history.",
+        "type": "object",
+        "properties": {
+          "archive": {
+            "description": "Where the untruncated output lives, if it was archived.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ArchiveRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bytes": {
+            "description": "Size of the full (pre-truncation) output, in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "diff": {
+            "description": "A unified diff, for edit-shaped tools.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Diff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "description": "Wall-clock time the call took.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "ok": {
+            "description": "Whether the call succeeded.",
+            "type": "boolean"
+          },
+          "visible": {
+            "description": "What the model sees: possibly truncated, with a pointer trailer.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "visible",
+          "bytes",
+          "duration_ms"
+        ]
+      },
+      "TurnId": {
+        "description": "TurnId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "Usage": {
+        "description": "Per-request token/cost accounting (plan.md §1.2/§1.9); one row per provider call.",
+        "type": "object",
+        "properties": {
+          "cache_read_tokens": {
+            "description": "Input tokens served from cache (billed at the cache-read rate).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "cache_write_tokens": {
+            "description": "Input tokens written to cache (billed at the cache-write rate).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "cost_usd": {
+            "description": "Computed cost of this call, in USD.",
+            "type": "number",
+            "format": "double"
+          },
+          "estimated": {
+            "description": "True when the provider reported no usage and cox estimated it.",
+            "type": "boolean"
+          },
+          "input_tokens": {
+            "description": "Input tokens billed at the full rate.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "latency_ms": {
+            "description": "Wall-clock latency of this call.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "description": "Output tokens generated.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "estimated",
+          "cost_usd",
+          "latency_ms"
+        ]
+      },
+      "Why": {
+        "description": "Why an `ApprovalRequired` was raised (plan.md §1.2/§1.8 step 9).",
+        "oneOf": [
+          {
+            "description": "An `ask` rule matched.",
+            "type": "object",
+            "properties": {
+              "rule": {
+                "description": "The rule string that matched (e.g. `\"Bash(git commit:*)\"`).",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "rule_ask"
+              }
+            },
+            "required": [
+              "type",
+              "rule"
+            ]
+          },
+          {
+            "description": "No rule matched; the call's risk classification requires asking.",
+            "type": "object",
+            "properties": {
+              "risk": {
+                "description": "The call's risk.",
+                "$ref": "#/$defs/Risk"
+              },
+              "type": {
+                "type": "string",
+                "const": "risk"
+              }
+            },
+            "required": [
+              "type",
+              "risk"
+            ]
+          },
+          {
+            "description": "The sandbox denied the call and `approval == on-failure`.",
+            "type": "object",
+            "properties": {
+              "detail": {
+                "description": "The sandbox backend's denial detail.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "sandbox_denied"
+              }
+            },
+            "required": [
+              "type",
+              "detail"
+            ]
+          },
+          {
+            "description": "The active approval policy forces asking regardless of risk.",
+            "type": "object",
+            "properties": {
+              "policy": {
+                "description": "The policy in effect.",
+                "$ref": "#/$defs/ApprovalPolicy"
+              },
+              "type": {
+                "type": "string",
+                "const": "policy"
+              }
+            },
+            "required": [
+              "type",
+              "policy"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "submission": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Submission",
+    "description": "A submission into the core state machine: everything a surface can ask\n`cox-core` to do (plan.md §1.2/§1.3).",
+    "oneOf": [
+      {
+        "description": "Start (or continue) a turn with user text.",
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "description": "Attached files/images.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Attachment"
+            }
+          },
+          "confirm_think": {
+            "description": "Required to be `true` for the turn to route to `Tier::Think` (plan.md invariant #9).",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "The submitted text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "user_turn"
+          }
+        },
+        "required": [
+          "type",
+          "text",
+          "attachments",
+          "confirm_think"
+        ]
+      },
+      {
+        "description": "Answer a pending `ApprovalRequired`.",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The call being decided.",
+            "$ref": "#/$defs/CallId"
+          },
+          "decision": {
+            "description": "The decision.",
+            "$ref": "#/$defs/Decision"
+          },
+          "type": {
+            "type": "string",
+            "const": "approve"
+          }
+        },
+        "required": [
+          "type",
+          "call_id",
+          "decision"
+        ]
+      },
+      {
+        "description": "Cancel the running turn; tools get the shared cancellation token.",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "interrupt"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "description": "Compact the session now, optionally focused on something specific.",
+        "type": "object",
+        "properties": {
+          "focus": {
+            "description": "What the summary should emphasise, if given.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "compact"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      {
+        "description": "Change the tier's model for the rest of the session.",
+        "type": "object",
+        "properties": {
+          "model": {
+            "description": "The model to switch to; `None` restores the tier's configured default.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ModelId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tier": {
+            "description": "Which tier to change.",
+            "$ref": "#/$defs/Tier"
+          },
+          "type": {
+            "type": "string",
+            "const": "switch_model"
+          }
+        },
+        "required": [
+          "type",
+          "tier"
+        ]
+      },
+      {
+        "description": "Change the active permission mode.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The new mode.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "type": {
+            "type": "string",
+            "const": "set_permission_mode"
+          }
+        },
+        "required": [
+          "type",
+          "mode"
+        ]
+      },
+      {
+        "description": "A slash command the surface parsed but did not resolve itself.",
+        "type": "object",
+        "properties": {
+          "command": {
+            "description": "The parsed command.",
+            "$ref": "#/$defs/SlashCommand"
+          },
+          "type": {
+            "type": "string",
+            "const": "command"
+          }
+        },
+        "required": [
+          "type",
+          "command"
+        ]
+      },
+      {
+        "description": "A hook runner's result for a hook the core is waiting on.",
+        "type": "object",
+        "properties": {
+          "hook_id": {
+            "description": "The hook invocation's id.",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "The outcome.",
+            "$ref": "#/$defs/HookOutcome"
+          },
+          "type": {
+            "type": "string",
+            "const": "hook_result"
+          }
+        },
+        "required": [
+          "type",
+          "hook_id",
+          "outcome"
+        ]
+      },
+      {
+        "description": "Wind down the session cleanly.",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "shutdown"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      }
+    ],
+    "$defs": {
+      "Attachment": {
+        "description": "A file, image or other blob attached to a `UserTurn`.",
+        "type": "object",
+        "properties": {
+          "data_b64": {
+            "description": "Base64-encoded bytes.",
+            "type": "string"
+          },
+          "media_type": {
+            "description": "MIME type, e.g. `\"image/png\"`.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Display name (usually the original filename).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "media_type",
+          "data_b64"
+        ]
+      },
+      "CallId": {
+        "description": "CallId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "Decision": {
+        "description": "An approval decision, for both `Submission::Approve` and `ApprovalDecided`.",
+        "oneOf": [
+          {
+            "description": "Run the call once.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "allow"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Run this call and grant future calls with the same tool + subject prefix, for this session.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "allow_for_session"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Refuse the call.",
+            "type": "object",
+            "properties": {
+              "reason": {
+                "description": "Shown to the model as the tool result.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "deny"
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "description": "Run the call, but with edited input (e.g. a corrected path).",
+            "type": "object",
+            "properties": {
+              "input": {
+                "description": "The replacement input."
+              },
+              "type": {
+                "type": "string",
+                "const": "edit"
+              }
+            },
+            "required": [
+              "type",
+              "input"
+            ]
+          }
+        ]
+      },
+      "HookOutcome": {
+        "description": "A hook runner's verdict for one hook invocation (plan.md §1.2).",
+        "oneOf": [
+          {
+            "description": "Proceed unchanged.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "continue"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Stop the action the hook gated.",
+            "type": "object",
+            "properties": {
+              "reason": {
+                "description": "Shown to the user/model as the reason.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "block"
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ]
+          },
+          {
+            "description": "Proceed with different input (e.g. a rewritten prompt or tool input).",
+            "type": "object",
+            "properties": {
+              "input": {
+                "description": "The replacement input."
+              },
+              "type": {
+                "type": "string",
+                "const": "modify"
+              }
+            },
+            "required": [
+              "type",
+              "input"
+            ]
+          },
+          {
+            "description": "The hook itself failed to run; fail-open per D14/AGENTS.md.",
+            "type": "object",
+            "properties": {
+              "error": {
+                "description": "What went wrong (timeout, non-zero exit, bad JSON).",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "failed"
+              }
+            },
+            "required": [
+              "type",
+              "error"
+            ]
+          }
+        ]
+      },
+      "ModelId": {
+        "description": "A newtype around a provider's model identifier (e.g. `\"claude-sonnet-5\"`).\nDeliberately a bare string, not an enum: models are configured, not\ncompiled in (`config/default.toml` [tiers.*].model).",
+        "type": "string"
+      },
+      "PermissionMode": {
+        "description": "`permissions.mode` (plan.md §1.6/§1.8).",
+        "oneOf": [
+          {
+            "description": "Rules and risk decide as usual.",
+            "type": "string",
+            "const": "default"
+          },
+          {
+            "description": "Only `Risk::ReadOnly` is allowed; everything else denies without asking.",
+            "type": "string",
+            "const": "plan"
+          },
+          {
+            "description": "`Write` is allowed automatically; `Exec`/`Destructive` still ask unless a safe-command match.",
+            "type": "string",
+            "const": "auto"
+          },
+          {
+            "description": "Everything is allowed; flag-only, banner shown.",
+            "type": "string",
+            "const": "bypass"
+          }
+        ]
+      },
+      "SlashCommand": {
+        "description": "A parsed `.claude/commands/*.md`-style slash command the surface could\nnot resolve to a built-in `Submission` variant, forwarded to `cox-ext`\nfor execution.",
+        "type": "object",
+        "properties": {
+          "args": {
+            "description": "Everything after the command name, already tokenized.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "description": "The command name, without the leading `/`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "args"
+        ]
+      },
+      "Tier": {
+        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+        "oneOf": [
+          {
+            "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
+            "type": "string",
+            "const": "cheap"
+          },
+          {
+            "description": "Sonnet by default, Opus when picked; the main coding turn.",
+            "type": "string",
+            "const": "code"
+          },
+          {
+            "description": "Fable 5.1 only, only via `/think`/`--deep`, always confirmed.",
+            "type": "string",
+            "const": "think"
+          }
+        ]
+      }
+    }
+  }
+}

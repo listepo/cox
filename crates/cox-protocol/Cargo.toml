@@ -7,4 +7,19 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+async-trait = { workspace = true }
+schemars = { workspace = true }
+ulid = { workspace = true }
+# Workspace pins tokio's "full" feature set for cox-core; cox-protocol only
+# needs mpsc::Sender for trait signatures (no I/O, no runtime) but Cargo
+# forbids a workspace member from narrowing default-features below the
+# workspace's own declaration, so this inherits "full" in practice.
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+insta = { workspace = true }
+pretty_assertions = { workspace = true }

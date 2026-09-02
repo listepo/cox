@@ -135,7 +135,7 @@ Copilot's auto model selection is praised because it is explicit, priced (10 % d
 | code structure | tree-sitter 0.25 (Codex) / 0.27 (latest, MSRV 1.90) + grammars | — | pin to grammar compatibility |
 | git | shell out to `git` | gix 0.87.1, git2 0.21 | gix is v0.2 |
 | tokens | tiktoken-rs 0.12.0 | tokenizers 0.23 | Anthropic: `count_tokens` endpoint |
-| store / config | rusqlite 0.40.2 (bundled, fts5), toml 1.1, toml_edit 0.25, figment, directories 6, keyring 4.2 | sqlx 0.9 (Codex), turso | sync store for hooks/tests |
+| store / config | diesel 2.2 (`sqlite`) + libsqlite3-sys 0.30 (`bundled`, FTS5) + diesel_migrations, toml 1.1, toml_edit 0.25, figment, directories 6, keyring 4.2 | rusqlite 0.40.2 (plan v1), sqlx 0.9 (Codex), SeaORM (async) | sync ORM as in rtok D13: typed models, no runtime in hooks/tests; FTS5 via `sql_query` |
 | plugins (v0.2) | extism 1.30.0 | wasmtime 48 (component model), rhai 1.26, mlua 0.12, dylib (`abi_stable`: rejected, ABI fragility) | — |
 | process / sandbox | portable-pty 0.9.0, shlex 2, landlock 0.4.7, seccompiler 0.5.0, nix; `sandbox-exec` via `Command` | birdcage | — |
 | observability / CLI / errors | tracing 0.1.44, tracing-subscriber 0.3.23, tracing-appender, opentelemetry 0.31 (feature), clap 4.6, thiserror 2.0, anyhow 1 | miette, color-eyre | — |
