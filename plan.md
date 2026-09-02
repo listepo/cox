@@ -1,0 +1,1344 @@
+# cox — implementation plan and roadmap for a modular Rust TUI coding agent
+
+Status: plan v2, 2026-09-02 (v1 expanded: full protocol types, config schema, storage schema, permission algorithm, context layout, compaction algorithm, tool catalogue, CLI and TUI surfaces, error taxonomy, per-task Goal/Files/Steps/Check/Done-when, dependency graph, risk register). Nothing implemented yet; `Cargo.toml` does not exist until T0.1. Companion evidence: `research.md` (competitor dissection, crate survey, fact-check ledger) and `report.html` (the same for humans). Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …`. Finished tasks move to `done.md` verbatim with their Check output.
+
+Name: **cox** — the coxswain steers the boat and calls the strokes; the crew (models, tools, MCP servers) does the rowing. Binary `cox`, crates `cox-*`, home `~/.cox/`.
+
+How to read this file: §0 decisions are settled; §1 is the design every task must conform to (types, schemas, algorithms, surfaces); §2 is how a task is worked; §3 is the task list, one block per task; §4 is done; §5 is the roadmap; §6 amendments; §7 risks.
+
+## 0. Decisions (read before any task)
+
+| # | Decision | Why (evidence in research.md) |
+|---|----------|-------------------------------|
+| D1 | **One Cargo workspace, one static binary, ten in-tree crates (§1). No WASM or dylib plugin host in v0.1.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
+| D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP and the JSONL rollout are four consumers of one event stream. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
+| D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
+| D4 | **Adopt existing formats verbatim instead of inventing ones.** `AGENTS.md` (and `CLAUDE.md`) hierarchy; Agent Skills `SKILL.md`; Claude Code hook JSON protocol and `.claude/settings.json` permission-rule syntax (`Bash(npm run test:*)`), `.claude/commands/*.md`, `.claude/agents/*.md`; `.mcp.json`; Codex `apply_patch` (V4A) grammar; `--output-format stream-json`. cox-native equivalents live under `.cox/` with the same schemas. | A user with a Claude Code or Codex setup gets cox for free, and the rtok hook stack works unchanged (R§3). Every one of these is documented and already read by ≥ 2 agents. |
+| D5 | **Route by job tier, never by guesswork, never up.** Three tiers in config: `cheap` (default `claude-haiku-4-5`; any local model), `code` (default `claude-sonnet-5`; `claude-opus-5` when the user picks it or the task is flagged large), `think` (`claude-fable-5-1`, only via `/think` or `--deep`, always confirmed). Jobs pinned to `cheap`: session title, compaction summary, tool-result summarisation, commit message, memory extraction, explore/search subagents, background shell and HTTP subagents, hook-driven LLM calls. Every request carries a `job` tag into the ledger. | User constraint. Claude Code's silent Haiku delegation is its most-cited complaint (R§2.1); Copilot's auto-routing is praised because it is explicit and discounted. Anthropic's own guidance: measure the capable model at lower `effort` before building a cascade, because caches are model-scoped (R§4.4). |
+| D6 | **Token economy is core, not a plugin.** (a) every tool output is archived before the model sees it; the model sees head/tail + `expand <id>`; (b) identical read/grep within N turns returns "unchanged, see #id"; (c) `read` has `lines=` and `mode=outline` (tree-sitter); (d) tool schemas beyond the core eight are deferred and found through a `tool_search` tool; (e) prefix is byte-stable: tools → system → instruction files → last cache breakpoint → volatile; (f) compaction is append-only, keeps the last two turns verbatim, runs on `cheap`; (g) one per-request `usage` row with cache read/write; (h) session and monthly budget caps. Metric: *context-token-turns*. | rtok measured 3–40 % real savings from external hooks against 60–95 % vendor claims; the difference is that hooks cannot touch what the model sees. A native agent can (R§4.1–4.2). Minimum cacheable prefix is 512 tokens on the Claude 5 family and 4 096 on Haiku 4.5, so one volatile byte in the system prompt costs the whole cache (R§6 ledger #21). |
+| D7 | **Sandbox on by default.** macOS: Seatbelt profiles via `sandbox-exec`. Linux: bubblewrap when present, else Landlock + seccomp. Sandbox modes `read-only` / `workspace-write` / `danger-full-access`; approval policies `untrusted` / `on-request` / `on-failure` / `never` (Codex vocabulary) combined with Claude-style allow/deny rules. `.git` and `.cox` stay read-only inside `workspace-write`. Windows: no sandbox, loud warning, `on-request` forced. | Both Codex and Claude Code converged on exactly this pair of mechanisms (R§1.4, R§2.1, ledger #11). Instruction files are requests; the sandbox is the guarantee. |
+| D8 | **Edits are diff-shaped.** `edit` = exact `str_replace` with a whitespace-insensitive fallback and a uniqueness check; `apply_patch` = V4A grammar (Add/Update/Delete, `@@` context, progressive matching). `write` is for new files; rewriting an existing file over 200 lines is denied with a hint. | 5–20× fewer output tokens than whole-file writes (R§4.2); OpenAI models are trained on V4A and Claude on `str_replace`, so supporting both removes a class of edit failures. |
+| D9 | **One SQLite file plus human-readable rollouts.** `~/.cox/cox.db` (rusqlite, bundled, WAL, FTS5): sessions, usage ledger, tool-output archive index, memory. Each session is also `~/.cox/sessions/<id>.jsonl` — the event stream itself — used for resume, replay tests and export. Archived payloads over 16 KiB live under `~/.cox/archive/`. | Codex stores rollouts as JSONL and moved indexes to sqlx 0.9; Claude Code uses JSONL; engram/claude-mem converge on SQLite+FTS5 (R§1.5). Sync rusqlite keeps the store usable from hooks and tests without a runtime. |
+| D10 | **TUI = ratatui 0.30 + crossterm 0.29 in TEA form, inline viewport.** `State`, `update(State, Msg) -> State`, `view(&State, Frame)`. Inline (non-alternate-screen) rendering so native scrollback keeps the transcript. Every widget has an `insta` snapshot through `TestBackend`; end-to-end through `portable-pty` + `vt100`. | Codex made the same choices and tests them the same way (R§1.6). TEA makes `update` a pure function that a test can drive without a terminal. |
+| D11 | **Four surfaces from day one: `cox` (TUI), `cox run -p` (headless; `text`/`json`/`stream-json`), `cox acp` (Agent Client Protocol 2.0 for Zed/JetBrains/neovim), `cox mcp` (built-in tools as an MCP server).** Each is ≤ 300 LOC over the event stream. | D2 makes them cheap; ACP is what gets a terminal agent into editors without an extension per IDE (R§3.2); `cox mcp` lets Claude Code or Codex borrow cox's tools. |
+| D12 | **No test touches the network or needs an API key.** `Provider` has `Scripted` (fixtures) and `Replay` (recorded cassettes, re-recorded on demand with `cox record`) implementations; tools run in `tempfile` trees; the patch parser and `str_replace` have `proptest` suites; transcripts and TUI frames are `insta` snapshots; the real binary is driven by `assert_cmd` against `COX_HOME`. Evals (Terminal-Bench adapter) are a separate, opt-in `just eval`. | A coding agent is a distributed system with a nondeterministic component; the only cheap regression suite is one that replays events instead of models (R§5). |
+| D13 | **One config file; every flag is a key.** `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `COX_<SECTION>_<KEY>` < flags, via clap 4 (derive) + figment + toml_edit. `cox config show --sources` reports provenance. `.claude/settings.json` permissions and hooks are *imported* (read-only) when present. | Same rule as rtok D12/D14; it worked. Headless and ACP runs are launched with fixed command lines, so flags alone cannot configure them. |
+| D14 | **Everything not written by cox is untrusted, and extensions fail open.** Model output, tool results, MCP responses, hook stdout, skill files and repository instruction files pass the guards in `AGENTS.md` → Trust boundaries. A broken hook, server or skill is warned about and skipped. | Aider's credential leak and Claude Code's escape-sequence incidents are both "trusted text from the wrong side" bugs (R§2.2). |
+| D15 | **Each component is designed against the field before it is built.** Every P-phase's first task is a ≤ 1-page `docs/design/<component>.md`: the problem in one measurable number, what Claude Code / Codex / Pi / OpenCode / aider do, what cox does and why it is at least as good, and what would falsify it. Written by the `code` tier; reviewed, not written, by `think`. | rtok D15. Copying a competitor caps cox at that competitor. |
+| D16 | **Observability is `tracing` with an optional OpenTelemetry GenAI exporter.** Spans carry `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`. Off by default; `cox stats` reads the ledger locally. | Codex ships opentelemetry 0.31 (R§1.3); the GenAI semconv is still experimental, so it stays behind a feature flag. |
+
+Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; git worktree isolation for subagents; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
+
+## 1. Architecture
+
+```
+            ┌────────────────────────────── cox (one binary) ──────────────────────────────┐
+ terminal ──┤ cox            cox-tui  ─┐                                                    │
+ script  ───┤ cox run -p     stream-json┤  Submission ▶ ┌──────────┐ ▶ Event                │
+ Zed/IDE ───┤ cox acp        cox-acp  ─┤───────────────▶│ cox-core │───────────────▶ rollout │
+ other agent┤ cox mcp        (server) ─┘                └────┬─────┘  (.jsonl, ledger)       │
+            │                                  traits in cox-protocol │                       │
+            │        ┌──────────────┬──────────────┬──────────┴──────┬──────────────┐        │
+            │   cox-provider    cox-tools       cox-mcp          cox-store      cox-ext        │
+            │   Anthropic       read/edit/      rmcp client      SQLite +       AGENTS.md      │
+            │   OpenAI Resp.    apply_patch     stdio/HTTP       archive        skills/cmds    │
+            │   OpenAI Chat     bash+sandbox    OAuth            FTS5           hooks/agents   │
+            │   Scripted/Replay grep/glob/outline                               settings.json  │
+            └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.1 Crates
+
+| Crate | Owns | Key deps (pinned in T0.1; versions verified 2026-09-02, R§4.5) |
+|-------|------|------|
+| `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow |
+| `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
+| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
+| `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
+| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, portable-pty 0.9, shlex, landlock 0.4.7, seccompiler 0.5, nix |
+| `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`) |
+| `cox-store` | `~/.cox/cox.db` schema and migrations, rollout writer/reader, archive, FTS5 search, ledger queries | rusqlite 0.40 (bundled, fts5), directories 6, keyring 4 |
+| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex |
+| `cox-tui` | TEA app, composer (tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.10 → spans), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, arboard 3 |
+| `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
+
+Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16; tools: cargo-nextest, cargo-deny, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
+
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`; `cox-core` → `cox-protocol` only; `cox-provider`, `cox-tools`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only. No crate below `cox` depends on `cox-core`.
+
+### 1.2 The contract every crate shares (`cox-protocol`)
+
+All types derive `Serialize, Deserialize, Debug, Clone, PartialEq`; enums are `#[serde(tag = "type", rename_all = "snake_case")]` so the rollout is greppable. Ids are newtypes over `String` (ULID): `SessionId`, `TurnId`, `ItemId`, `CallId`, `ArchiveId`.
+
+```rust
+pub enum Submission {
+    UserTurn { text: String, attachments: Vec<Attachment>, confirm_think: bool },
+    Approve { call_id: CallId, decision: Decision },          // Decision: Allow | AllowForSession | Deny { reason } | Edit { input }
+    Interrupt,                                               // cancels the running turn; tools get the cancel token
+    Compact { focus: Option<String> },
+    SwitchModel { tier: Tier, model: Option<ModelId> },       // None = tier default
+    SetPermissionMode(PermissionMode),                        // default | plan | auto | bypass
+    Command(SlashCommand),                                    // parsed by the surface, executed by the core
+    HookResult { hook_id: String, outcome: HookOutcome },     // hook runner is outside the core
+    Shutdown,
+}
+
+pub enum Event {
+    SessionStarted { session: SessionId, config_digest: String, cwd: PathBuf },
+    TurnStarted   { turn: TurnId, job: Job, tier: Tier, model: ModelId },
+    ItemStarted   { item: ItemId, kind: ItemKind },          // ItemKind: UserMessage | AssistantMessage | Thinking | ToolCall | ToolResult | Summary | Notice
+    TextDelta     { item: ItemId, text: String },
+    ThinkingDelta { item: ItemId, text: String },
+    ToolCallRequested { call: ToolCall },                    // ToolCall { id, name, input: Value, risk: Risk, subject: String }
+    ApprovalRequired  { call: ToolCall, why: Why },          // Why: RuleAsk { rule } | Risk(Risk) | SandboxDenied { detail } | Policy(ApprovalPolicy)
+    ApprovalDecided   { call_id: CallId, decision: Decision, by: DecidedBy }, // User | Rule | Session | Policy | Hook
+    ToolCallOutput    { call_id: CallId, delta: String },     // streaming stdout/stderr, already sanitised for display
+    ToolCallDone      { call_id: CallId, result: ToolResult },// ToolResult { ok: bool, visible: String, archive: Option<ArchiveRef>, bytes: u64, duration_ms: u64, diff: Option<Diff> }
+    ItemDone      { item: ItemId },
+    Usage         { turn: TurnId, usage: Usage },
+    Compacted     { summary: ItemId, dropped: Vec<ItemId>, before_tokens: u32, after_tokens: u32 },
+    TaskCreated   { task: TaskId, label: String, tier: Tier },
+    TaskCompleted { task: TaskId, result_item: ItemId, cost_usd: f64 },
+    ModelSwitched { tier: Tier, from: ModelId, to: ModelId },
+    Notice        { level: Level, text: String },            // Level: Info | Warn | Budget | Security
+    TurnDone      { turn: TurnId, stop: StopReason },        // EndTurn | MaxTurns | Interrupted | Budget | Refusal { detail } | Error
+    Error         { error: CoreError, fatal: bool },
+}
+
+pub struct Usage {
+    pub input_tokens: u32, pub output_tokens: u32,
+    pub cache_read_tokens: u32, pub cache_write_tokens: u32,
+    pub estimated: bool,                                     // true when the provider gave no usage and cox estimated
+    pub cost_usd: f64, pub latency_ms: u64,
+}
+
+pub struct Request {                                         // provider-neutral; providers translate, nothing above knows a wire format
+    pub tier: Tier, pub job: Job, pub model: ModelId,
+    pub system: Vec<SystemBlock>,                            // SystemBlock { text, cache: bool }
+    pub tools: Vec<ToolSpec>,                                // already filtered: deferred tools absent unless discovered
+    pub messages: Vec<Message>,                              // Message { role: User | Assistant, content: Vec<Content> }
+    pub effort: Effort, pub max_tokens: u32, pub thinking: Thinking, // Thinking: Off | Adaptive
+    pub cache_breakpoints: Vec<usize>,                       // indices into system+messages, ≤ 3
+    pub stop_sequences: Vec<String>,
+}
+pub enum Content { Text(String), Thinking { text, signature: Option<String> }, ToolUse { id, name, input }, ToolResult { call_id, content: String, is_error: bool }, Image { media_type, data_b64 }, Pointer { archive: ArchiveRef, summary: String } }
+
+pub enum ProviderEvent { MessageStart { model }, TextDelta(String), ThinkingDelta(String), ToolUseStart { id, name }, ToolUseInputDelta(String), ToolUseEnd, Stop(StopReason), Usage(Usage), Retrying { attempt, after_ms }, Error(ProviderError) }
+
+pub struct ToolSpec { pub name: String, pub description: String, pub input_schema: Value, pub deferred: bool, pub risk: Risk, pub concurrency: Concurrency } // Risk: ReadOnly | Write | Exec | Destructive; Concurrency: Parallel | Exclusive
+
+#[async_trait] pub trait Provider: Send + Sync {
+    fn id(&self) -> ProviderId;
+    fn capabilities(&self) -> Caps;                          // Caps { cache: bool, thinking: bool, server_tools: bool, count_tokens: bool, max_context: u32 }
+    async fn stream(&self, req: Request, sink: mpsc::Sender<ProviderEvent>, cancel: CancellationToken) -> Result<Usage, ProviderError>;
+    async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError>;
+}
+#[async_trait] pub trait Tool: Send + Sync {
+    fn spec(&self) -> ToolSpec;
+    fn subject(&self, input: &Value) -> String;              // what permission rules match on: path, command line, url, mcp name
+    async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError>;
+}
+pub struct ToolCx { pub roots: Vec<PathBuf>, pub cwd: PathBuf, pub sandbox: SandboxPolicy, pub archive: Arc<dyn Archive>, pub cancel: CancellationToken, pub output: mpsc::Sender<String>, pub session: SessionId, pub call: CallId }
+pub struct ToolOutput { pub text: String, pub is_error: bool, pub diff: Option<Diff>, pub structured: Option<Value> } // text is untruncated; the core archives and truncates
+
+pub trait Store: Send + Sync {                               // sync on purpose (D9)
+    fn open(home: &Path) -> Result<Self, StoreError> where Self: Sized;
+    fn session_create(&self, s: &SessionRow) -> Result<(), StoreError>;
+    fn rollout_append(&self, id: &SessionId, ev: &Event) -> Result<u64, StoreError>;
+    fn rollout_read(&self, id: &SessionId) -> Result<Vec<Event>, StoreError>;
+    fn usage_insert(&self, row: &UsageRow) -> Result<(), StoreError>;
+    fn archive_put(&self, a: &ArchivePut) -> Result<ArchiveId, StoreError>;
+    fn archive_get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError>;
+    fn memory_search(&self, q: &str, limit: usize) -> Result<Vec<MemoryHit>, StoreError>;
+}
+#[async_trait] pub trait Hook: Send + Sync { async fn run(&self, event: HookEvent, payload: Value, timeout: Duration) -> HookOutcome; } // Continue | Block { reason } | Modify { input } | Failed { error }
+```
+
+### 1.3 The turn loop (`cox-core`)
+
+States of `Session`: `Idle → Assembling → Streaming → (AwaitingApproval ⇄ RunningTools) → Streaming … → Finishing → Idle`, plus `Compacting` (entered from `Idle` after `TurnDone`) and `Interrupted` (from any state; drains tools, emits `TurnDone{Interrupted}`).
+
+```
+on Submission::UserTurn(text):
+  1. hooks: UserPromptSubmit (may block or rewrite text)
+  2. history.push(UserMessage(text)); turn = new TurnId
+  3. loop:
+     a. req = assemble(history, config)                 # §1.9 order; exactly one movable breakpoint
+     b. (tier, model, effort) = router.pick(job=Main)   # think requires confirm_think == true
+     c. budget.check(estimate(req)) else TurnDone{Budget}
+     d. provider.stream(req) → forward deltas as Events; collect tool_use blocks; usage row
+     e. if stop == EndTurn: break
+        if stop == MaxTokens: push assistant partial, continue once, else break with Notice
+        if stop == Refusal: TurnDone{Refusal}; break
+        if stop == ToolUse:
+           calls = collected tool_use blocks (1..n)
+           for each call (in parallel up to core.parallel_tools, Exclusive tools serialised):
+             i.   hooks: PreToolUse (Block → result is_error with reason; Modify → new input)
+             ii.  decision = engine.decide(call)         # §1.8; Ask → emit ApprovalRequired, await Submission::Approve
+             iii. if Deny: result = error("denied: <why>")
+             iv.  else run tool under sandbox policy; stream ToolCallOutput; on SandboxDenied and policy==on-failure → ApprovalRequired{SandboxDenied} → rerun unsandboxed only if approved
+             v.   archive full output BEFORE truncation; visible = truncate(head/tail, pointer trailer)
+             vi.  dedup: if hash(name,input) seen within dedup_window and no write to its subject since → visible = "unchanged since #<id>"
+             vii. hooks: PostToolUse / PostToolUseFailure
+           history.push(UserMessage(all tool results, in call order))   # one message; parallel tool use breaks otherwise
+           continue loop
+  4. hooks: Stop; TurnDone{EndTurn}
+  5. if context_tokens ≥ compact_at × max_context: enter Compacting (§1.10) on cheap tier, then Idle
+```
+
+Rules the loop enforces, testable one by one: (1) all tool results for one assistant message go back in one user message, in the order the calls were emitted; (2) an `ApprovalRequired` blocks only that call — other approved parallel calls proceed; (3) `Interrupt` cancels the provider stream and every running tool via the shared token, then emits the partial assistant item and `TurnDone{Interrupted}`; (4) no `Event` is emitted after `TurnDone` for that turn; (5) the archive row exists before the model sees truncated text; (6) the request built after resume from the rollout is byte-identical to the one a live session would have built.
+
+### 1.4 Routing table (D5)
+
+| Job | Tier | Default model | Effort | Note |
+|-----|------|---------------|--------|------|
+| main coding turn | `code` | `claude-sonnet-5` | `high` | `/model opus` switches for the session; never auto |
+| large refactor flagged by user | `code` | `claude-opus-5` | `xhigh` | user picks |
+| `/think`, `--deep` plan | `think` | `claude-fable-5-1` | `high` | confirm prompt shows price ($10/$50 per MTok) |
+| compaction summary | `cheap` | `claude-haiku-4-5` | — | output ≤ 2 k tokens |
+| tool-result summary, title, commit message, memory extraction | `cheap` | `claude-haiku-4-5` | — | batched where possible |
+| explore / search subagent | `cheap` | `claude-haiku-4-5` | — | read-only tools; result ≤ 1 k tokens |
+| background shell / HTTP subagent | `cheap` | `claude-haiku-4-5` or local | — | `bash`, `web_fetch` only |
+| local-only mode | all | Ollama/vLLM model | — | `cox --provider local` |
+
+Prices for the ledger (Anthropic first-party, from the Claude API reference cached 2026-06-24; re-verify in T1.7): Haiku 4.5 $1/$5, Sonnet 5 $2/$10, Opus 5 $5/$25, Fable 5.1 $10/$50 per MTok; cache write 1.25×, cache read 0.1× of input (Fable 5.1 cache read $0.25/MTok). `config/prices.toml` carries `verified_on` per row; a row older than 90 days makes `cox doctor` warn.
+
+### 1.5 Testing pyramid (D12)
+
+| Level | What | How | Where |
+|-------|------|-----|-------|
+| unit | parsers (SSE, V4A, frontmatter, permission rules), `str_replace`, truncation, cache-order assembly | plain tests + `proptest` | each crate |
+| contract | `Provider` against recorded HTTP | `wiremock` serving `fixtures/<provider>/*.sse` | `cox-provider` |
+| loop | full turns with `Scripted` provider; golden `Event` JSONL | `insta` on the event stream | `cox-core/tests` |
+| tool | every tool in a tempdir; sandbox denial paths | `tempfile`, `assert_fs` | `cox-tools/tests` |
+| TUI | each widget and whole frames | `TestBackend` + `insta` | `cox-tui` |
+| binary | `cox run -p` and `cox` under a PTY | `assert_cmd`, `portable-pty` + `vt100` | `tests/` |
+| eval (opt-in) | Terminal-Bench adapter, 10 in-repo tasks | `just eval`, real provider, ledger diff | `evals/` |
+
+Fixture conventions: `fixtures/<provider>/<name>.sse` is the raw SSE body; `<name>.request.json` the request cox sent; `<name>.events.jsonl` the golden `ProviderEvent`s. Loop fixtures: `cox-core/tests/scenarios/<name>.toml` (scripted replies per turn) + `<name>.events.snap` (insta). Secrets are redacted at record time (`cox record --redact` replaces `sk-…` and `Bearer …` with `«redacted»`); a test in T1.5 greps fixtures for key patterns.
+
+### 1.6 Configuration schema (`config/default.toml`, embedded; every key documented in `docs/config.md` by test)
+
+```toml
+[core]
+home = "~/.cox"                 # COX_HOME overrides
+workspace_roots = []            # empty = git root of cwd, else cwd; extra roots via --add-dir
+max_turns = 200                 # per UserTurn, counts provider calls
+parallel_tools = 4
+log_level = "info"              # tracing filter; file log at ~/.cox/logs/cox.log
+
+[tiers.cheap]
+provider = "anthropic"
+model = "claude-haiku-4-5"
+effort = "low"
+max_tokens = 4096
+
+[tiers.code]
+provider = "anthropic"
+model = "claude-sonnet-5"
+effort = "high"
+max_tokens = 16384
+thinking = "adaptive"
+
+[tiers.think]
+provider = "anthropic"
+model = "claude-fable-5-1"
+effort = "high"
+max_tokens = 32768
+thinking = "adaptive"
+confirm = true                  # cannot be set false in project config
+
+[jobs]                          # job → tier; values must name a tier
+main = "code"
+plan = "think"
+compact = "cheap"
+title = "cheap"
+summarize = "cheap"
+commit = "cheap"
+memory = "cheap"
+explore = "cheap"
+shell = "cheap"
+hook = "cheap"
+
+[providers.anthropic]
+base_url = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"   # else keyring entry "cox/anthropic"
+cache_ttl = "5m"                    # "5m" | "1h"
+fallbacks = true                    # fallbacks: "default" + beta header
+timeout_s = 120
+max_retries = 4
+
+[providers.openai]
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+api = "responses"                   # "responses" | "chat"
+
+[providers.local]
+base_url = "http://localhost:11434/v1"
+api = "chat"
+model = "qwen3-coder"
+context_window = 32768              # local servers do not report it
+
+[context]
+compact_at = 0.75                   # fraction of max_context
+keep_turns = 2
+microcompact_after_turns = 6
+tool_output_visible_bytes = 8192
+tool_output_head_lines = 60
+tool_output_tail_lines = 20
+dedup_window_turns = 8
+instruction_budget_tokens = 8000
+memory_budget_tokens = 800
+deferred_tools = true
+
+[permissions]
+mode = "default"                    # default | plan | auto | bypass (bypass only via flag)
+approval = "on-request"             # untrusted | on-request | on-failure | never
+allow = []                          # rule strings, §1.8
+ask = []
+deny = ["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]
+import_claude_settings = true
+allow_for_session_persists = false
+
+[sandbox]
+mode = "workspace-write"            # read-only | workspace-write | danger-full-access
+network = false
+writable = []                       # extra writable roots
+readonly_in_workspace = [".git", ".cox", ".claude"]
+linux_backend = "auto"              # auto | bwrap | landlock | none
+
+[budget]
+session_usd = 5.0
+monthly_usd = 100.0
+warn_at = 0.8
+cheap_counts = true
+
+[tui]
+vim = false
+theme = "auto"                      # auto | dark | light
+inline = true
+show_thinking = "collapsed"         # collapsed | hidden | full
+mouse = true
+
+[hooks]
+timeout_s = 60
+fail_open = true
+
+[mcp]
+timeout_s = 30
+deferred = true
+servers = {}                        # [mcp.servers.<name>] command/args/url/env — same shape as .mcp.json
+
+[memory]
+enabled = true
+extract = false                     # end-of-session extraction on cheap tier
+dir = ""                            # default ~/.cox/projects/<slug>/memory
+
+[telemetry]
+otel = false
+endpoint = ""
+
+[record]
+redact = true
+```
+
+Precedence (D13): embedded defaults < `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `.claude/settings.json` (permissions/hooks/env only, imported) < `COX_<SECTION>_<KEY>` (e.g. `COX_TIERS_CODE_MODEL`) < CLI flags. Project config may not raise `budget.*`, set `permissions.mode = "bypass"`, set `sandbox.mode = "danger-full-access"` or set `tiers.think.confirm = false`; violations are reported by `cox config show` and ignored. `cox config show --sources` prints every effective key with its origin; `cox config set <key> <value>` edits the user file with `toml_edit` preserving comments.
+
+### 1.7 Storage schema (`cox-store`)
+
+Directory layout under `COX_HOME`:
+
+```
+~/.cox/
+  config.toml
+  cox.db                     # SQLite, WAL, FTS5
+  sessions/<ulid>.jsonl      # rollout: one Event per line
+  archive/<ulid>             # archived tool outputs > 16 KiB (smaller ones inline in the db)
+  logs/cox.log               # tracing-appender, daily rotation
+  projects/<slug>/memory/    # MEMORY.md + one file per fact (Claude Code layout)
+  cassettes/<name>/          # cox record output
+```
+
+```sql
+CREATE TABLE migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  cwd TEXT NOT NULL, project_slug TEXT NOT NULL, title TEXT, parent_id TEXT,
+  rollout_path TEXT NOT NULL, turns INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0, state TEXT NOT NULL CHECK (state IN ('open','closed','error'))
+);
+CREATE TABLE usage (
+  id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), turn INTEGER NOT NULL,
+  job TEXT NOT NULL, tier TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL,
+  estimated INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL, latency_ms INTEGER NOT NULL,
+  context_tokens INTEGER NOT NULL,            -- what the model saw this call (for context-token-turns)
+  created_at TEXT NOT NULL
+);
+CREATE INDEX usage_session ON usage(session_id, turn);
+CREATE INDEX usage_day ON usage(created_at);
+CREATE TABLE archive (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, call_id TEXT NOT NULL, tool TEXT NOT NULL,
+  subject TEXT, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
+  inline BLOB, path TEXT, created_at TEXT NOT NULL,
+  CHECK ((inline IS NULL) <> (path IS NULL))
+);
+CREATE TABLE memory (
+  id INTEGER PRIMARY KEY, project_slug TEXT NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL,
+  kind TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(project_slug, name)
+);
+CREATE VIRTUAL TABLE memory_fts USING fts5(name, body, project_slug UNINDEXED);
+CREATE VIRTUAL TABLE rollout_fts USING fts5(session_id UNINDEXED, turn UNINDEXED, text);
+```
+
+Rollout line format: `{"seq":17,"ts":"2026-09-02T10:11:12.345Z","event":{"type":"text_delta","item":"…","text":"…"}}`. `seq` is monotonic per session; the reader tolerates a truncated last line (crash during write). `TextDelta`/`ThinkingDelta`/`ToolCallOutput` are coalesced on read into their items; resume rebuilds `history` from `ItemStarted`/`ItemDone` pairs and `Compacted`.
+
+### 1.8 Permission rules and the decision algorithm (`cox_core::permission::Engine`)
+
+Rule grammar (Claude Code's, verbatim): `Tool`, `Tool(subject)`, `Tool(prefix:*)`; file tools take a glob (`Read(~/.ssh/**)`, `Edit(src/**)`), `Bash` takes a command prefix (`Bash(npm run test:*)`, `Bash(git commit:*)`), MCP tools match `mcp__<server>__<tool>` or `mcp__<server>__*`, `WebFetch(domain:example.com)`. Tool names are matched case-insensitively against cox's names and their Claude aliases (`Read`=`read`, `Edit`=`edit`, `Write`=`write`, `Bash`=`bash`, `Grep`=`grep`, `Glob`=`glob`, `WebFetch`=`web_fetch`, `Agent`=`agent`).
+
+Decision order for a `ToolCall` with `risk` and `subject`:
+
+1. `deny` rules (user, project, imported): first match → `Deny`.
+2. `PermissionMode::Bypass` → `Allow` (flag-only mode; banner shown).
+3. `PermissionMode::Plan`: `Risk::ReadOnly` → `Allow`; everything else → `Deny("plan mode")` — no prompt, so the model learns to plan.
+4. `allow` rules: first match → `Allow`.
+5. `ask` rules: first match → `Ask(RuleAsk)`.
+6. Session grants (`AllowForSession` with the same tool + subject prefix) → `Allow`.
+7. By risk: `ReadOnly` → `Allow`; `Write` → `Allow` in `auto`, else `Ask(Risk)`; `Exec` → `Ask(Risk)` unless the command is classified safe (T3.7 classifier: read-only commands like `ls`, `cat`, `git status`, `cargo test`, no redirects, no `sudo`) and mode is `auto`; `Destructive` → `Ask` in every mode except `Bypass`.
+8. Approval policy adjusts step 7: `untrusted` → anything not from an `allow` rule asks; `on-request` → as above; `on-failure` → `Exec` runs sandboxed without asking and asks only when the sandbox denies; `never` → any `Ask` becomes `Deny` (headless default unless `--approve on-request`).
+9. A `Deny` or `Ask` carries `Why`; the model sees the reason in the tool result so it can choose another approach.
+
+The engine is pure: `decide(&self, call, mode, policy, grants) -> Decision`. Rules are compiled once (`globset` for paths, tokenised prefix for bash). Table-driven tests (T2.2) cover 30 rule/call pairs; `proptest` checks that adding a `deny` never turns a `Deny` into anything else.
+
+### 1.9 Context assembly and cache layout
+
+```
+ ┌ system[0]  tool specs, non-deferred, sorted by name, canonical JSON        ┐ byte-stable for the session
+ │ system[1]  cox system prompt (versioned string, no date, no cwd)           │  cache breakpoint 1 (after system[2])
+ │ system[2]  instruction files: AGENTS.md/CLAUDE.md chain, skills index      ┘
+ │ system[3]  volatile: date, cwd, git branch, memory index, permission mode      no cache (changes daily / per turn)
+ │ messages   [Summary item if compacted]
+ │            history … (older tool results microcompacted to pointers)         cache breakpoint 2 = end of previous turn
+ │            this turn's user message + tool results                           cache breakpoint 3 = last message (moves every call)
+ └
+```
+
+Invariants: bytes of `system[0..=2]` are identical across all calls of a session unless the user changes instruction files or tools are discovered via `tool_search` (discovered tools are appended to `system[0]`, which invalidates breakpoint 1 once; `Notice` explains it). Anthropic allows 4 breakpoints; cox uses 3 so a fourth is free for experiments. OpenAI providers ignore breakpoints (automatic prefix caching) but still benefit from the stable order. `Request.cache_breakpoints` are indices; the Anthropic translator turns them into `cache_control: {"type": "ephemeral", "ttl": …}`.
+
+Token accounting per call writes `context_tokens` (input + cache read + cache write) to the ledger; `context-token-turns` for a session is the sum. T8.5 measures each D6 mechanism by toggling it and replaying recorded sessions.
+
+### 1.10 Compaction and microcompaction
+
+Trigger: after `TurnDone`, when `context_tokens_last_call ≥ context.compact_at × max_context`, or on `/compact [focus]`, or when a provider returns a context-length error (then compaction runs before retrying once).
+
+Algorithm (append-only, D6f):
+1. `PreCompact` hooks run with `{trigger, focus}`; a hook may `Block` (compaction skipped, notice shown).
+2. Items to summarise = all items older than the last `keep_turns` turns, excluding items already dropped. Pointers replace archived tool results in the summariser input.
+3. Request on the `compact` job (cheap tier): system = "You are compacting a coding session…" + focus; user = the items rendered as a transcript; output ≤ 2 048 tokens with fixed sections: Goal · Decisions · Files touched (paths) · Open todo · Errors seen · Next step.
+4. On success: append `Item::Summary`, emit `Compacted{summary, dropped, before, after}`. The rollout keeps every original line; `dropped` ids are skipped when building requests. On failure: `Notice(Warn)`, nothing changes.
+5. `PostCompact` hooks; instruction files are re-read (Claude Code behaviour) but only re-emitted if their bytes changed.
+
+Microcompaction (no model call): when building a request, tool results older than `microcompact_after_turns` turns are replaced by `Content::Pointer { archive, summary: "<tool> <subject>: N bytes, exit 0" }`. The rollout is untouched.
+
+### 1.11 Tool catalogue (core eight are non-deferred; the rest are found by `tool_search`)
+
+| Tool | Input schema (required first) | Risk | Output | Notes |
+|------|-------------------------------|------|--------|-------|
+| `read` | `path`; `lines: "a-b"`; `mode: "text"\|"outline"` | ReadOnly | text with line numbers, or outline | size cap → pointer; binary → refuse with hint; images v0.2 |
+| `grep` | `pattern`; `path`; `glob`; `context: n`; `max_results` (100) | ReadOnly | `path:line: text` | ripgrep libs; respects `.gitignore`; cap → pointer |
+| `glob` | `pattern`; `path`; `limit` (200) | ReadOnly | paths sorted by mtime, nucleo-ranked when `query` given | |
+| `edit` | `path`, `old`, `new`; `replace_all: bool` | Write | unified diff | exact → whitespace-insensitive; ambiguity is an error listing match lines |
+| `apply_patch` | `patch` (V4A text) | Write | per-file diff summary | Add/Update/Delete/Move; `Destructive` if it deletes > 5 files |
+| `write` | `path`, `content` | Write | bytes written | existing file > 200 lines → error "use edit" |
+| `bash` | `command`; `timeout_s` (120); `background: bool` | Exec / Destructive (classified) | streamed stdout+stderr, exit code | sandboxed; env allowlist; cwd = workspace |
+| `todo` | `items: [{id, text, state}]` | ReadOnly | rendered list | state drives the TUI todo panel |
+| `expand` | `id` (archive id); `lines: "a-b"` | ReadOnly | archived bytes (capped, further pointers) | deferred: false (always present, tiny schema) |
+| `ask_user` | `question`; `options: [..]` | ReadOnly | the answer | blocks the turn; headless → error unless `--answer` |
+| `tool_search` | `query` | ReadOnly | up to 5 matching deferred tool specs, appended to `system[0]` | BM25 over name + description |
+| `web_fetch` | `url`; `max_bytes` | ReadOnly (network) | readable text | Anthropic server tool passthrough when available; else reqwest + readability; domain rules |
+| `agent` | `task`; `preset: "explore"\|"shell"\|<name>`; `tier`; `tools: [..]`; `budget_usd`; `background: bool` | inherits max of its tools | result text ≤ cap, summarised on cheap if over | subagent = nested `Session` with its own rollout, parent id set |
+| `memory_save` / `memory_search` | `name, body` / `query` | Write / ReadOnly | id / hits | P10 |
+| `mcp__<server>__<tool>` | server's schema | from server annotations, default Write | server result, archived like any tool | deferred by default |
+
+Every tool's `subject()` is what rules match on: the confined path, the command line, the URL, or the namespaced MCP name.
+
+### 1.12 CLI surface (`crates/cox`)
+
+```
+cox [PROMPT] [--continue | --resume <id>]           interactive TUI; PROMPT is the first turn
+cox run -p <prompt> [--output-format text|json|stream-json] [--max-turns N] [--allowed-tools a,b]
+        [--permission-mode default|plan|auto|bypass] [--approve never|on-request] [--answer <text>]
+        [--continue | --resume <id>] [--deep]        headless; exit 0 ok · 1 error · 2 denied · 3 budget · 4 interrupted
+cox sessions [--grep <q>] [--json] [--limit N]       list / search rollouts
+cox expand <archive-id> [--lines a-b]                print archived tool output
+cox stats [--session <id> | --day | --month] [--cache] [--json | --csv]
+cox config show [--sources] | get <key> | set <key> <value> | path
+cox doctor [--json]
+cox record <name> -p <prompt> [--redact] [--provider ...] re-record a cassette with a real key
+cox mcp [--allow-write] [--tools a,b]                serve built-in tools over MCP stdio
+cox acp                                              Agent Client Protocol server on stdio
+cox ext list [--json]                                instruction files, skills, commands, agents, hooks, MCP servers in effect
+cox self update [--version v]
+Global: --provider <name> --model <id> --tier <tier>=<model> --sandbox <mode> --budget <usd> --cwd <dir> --add-dir <dir>
+        --home <dir> -v/-vv --json (machine output where supported) --no-hooks --no-mcp
+```
+
+Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--sandbox danger-full-access` are flag-only and print a persistent banner.
+
+### 1.13 TUI keymap and slash commands (`cox-tui`)
+
+| Key | Action | Key | Action |
+|-----|--------|-----|--------|
+| `Enter` | send | `Shift+Enter` / `Alt+Enter` | newline |
+| `Esc` | interrupt turn / close modal | `Ctrl+C` ×2 within 1 s | quit |
+| `Tab` | cycle permission mode default → plan → auto | `Ctrl+O` | transcript overlay (full scrollback, search `/`) |
+| `Ctrl+T` | toggle thinking visibility | `Ctrl+E` | expand last tool output |
+| `@` | file picker (nucleo) | `/` at line start | command palette |
+| `y` / `s` / `n` / `e` in approval modal | allow / allow for session / deny / edit command | `Ctrl+R` | prompt history search |
+| `PageUp/PageDown`, mouse wheel | scroll transcript | `Ctrl+L` | redraw |
+
+Slash commands (parsed in the surface, executed as `Submission::Command`): `/model [tier] [model]`, `/think <prompt>` (confirm dialog with price), `/compact [focus]`, `/cost`, `/permissions`, `/sandbox <mode>`, `/resume`, `/sessions`, `/expand <id>`, `/agents`, `/skills`, `/hooks`, `/mcp`, `/doctor`, `/clear` (new session, same cwd), `/vim`, `/help`, `/quit`. Markdown files in `.claude/commands` and `.cox/commands` appear in the same palette (T7.3).
+
+Status line (one row): `sonnet-5 · ctx 41% · $0.83 · workspace-write · 2 tasks · [plan]`.
+
+### 1.14 Error taxonomy
+
+| Crate | Enum | Variants |
+|-------|------|----------|
+| `cox-provider` | `ProviderError` | `Auth`, `RateLimited { retry_after }`, `Overloaded`, `BadRequest { message }`, `ContextTooLong { max, got }`, `Refusal { detail }`, `Network`, `Timeout`, `Cancelled`, `Parse { line }`, `Unsupported { feature }` |
+| `cox-tools` | `ToolError` | `Denied { why }`, `Confined { path, root }`, `SandboxDenied { detail }`, `Timeout`, `NotFound`, `Ambiguous { matches }`, `TooLarge { bytes, cap }`, `Binary`, `Io`, `Cancelled` |
+| `cox-core` | `CoreError` | `Budget { spent, cap }`, `Interrupted`, `Provider(ProviderError)`, `Tool { call, error }`, `Compaction`, `Config { key, message }`, `Store(StoreError)`, `Hook { id, error }` |
+| `cox-store` | `StoreError` | `Open`, `Migrate { from, to }`, `Corrupt { path }`, `NotFound`, `Io`, `Sqlite` |
+| `cox-ext` | `ExtError` | `Frontmatter { path, line }`, `HookTimeout`, `HookCrashed { status }`, `TooLarge { path, budget }`, `Cycle { path }` |
+| `cox-mcp` | `McpError` | `Spawn`, `Handshake`, `Auth`, `Timeout`, `Transport`, `ToolFailed { server, tool }` |
+
+Retryable: `RateLimited`, `Overloaded`, `Network`, `Timeout` (provider) — exponential backoff 1 s × 2ⁿ, jitter, max 4, honouring `retry-after`. Fatal to the turn, not the session: everything else. Fatal to the session: `StoreError::Corrupt`, `Config`.
+
+### 1.15 Cross-cutting invariants (each is a named test somewhere in §3)
+
+1. `prefix_bytes_identical_between_turns` (T2.3) · 2. `truncate_is_lossless_via_archive` (T2.5) · 3. `all_tool_results_return_in_one_message` (T2.1) · 4. `deny_beats_allow` (T2.2) · 5. `compaction_keeps_last_two_turns_verbatim` (T8.1) · 6. `resume_builds_identical_request` (T2.4) · 7. `no_event_after_turn_done` (T2.1) · 8. `every_request_has_a_usage_row` (T1.7) · 9. `think_requires_confirmation` (T9.1) · 10. `broken_hook_is_skipped_not_fatal` (T7.4) · 11. `sandbox_denies_write_outside_workspace` (T4.1/T4.2) · 12. `every_flag_has_a_config_key` (T0.3) · 13. `no_crate_below_cox_depends_on_core` (T0.1) · 14. `sanitize_strips_escapes` (T5.6).
+
+## 2. Working agreement for agents
+
+See `AGENTS.md`. In short: claim `open` tasks only; ≤ 200 LOC and ≤ 3 files per task (tests count; fixtures and snapshots do not); the Check is not optional; `Model:` records who did it. Task model guidance: **haiku** for scaffolding, fixtures, snapshot updates, docs, shell/CI; **sonnet** for most code; **opus** for the state machine, permission engine, sandbox, compaction, V4A, MCP client, ACP; **fable** never writes code — it reviews `docs/design/*.md` when a phase gate asks for it.
+
+Task block format used in §3:
+
+```
+#### T<phase>.<n> <title>
+Model: <tier> · Status: open · Depends: <task ids> · Size: ~<LOC>
+Goal: one sentence, measurable.
+Files: the files this task creates or edits (≤ 3 source files).
+Steps: numbered; each step is something a reviewer can see in the diff.
+Check: a bash block that exits 0 when the task is done; run under `mise exec`.
+Done when: the observable state after the Check, plus what must be in done.md.
+Out of scope: what the next task does, so the agent does not do it here.
+```
+
+Branch `cox/<task-id>`; commit `<task-id>: <title>`; any new dependency needs a row in §1.1 and a reason in the commit. If the Check cannot pass without exceeding the size limit, split the task with an amendment in §6 and do the first half. Skipped or failing steps are reported in `done.md`, never silently.
+
+## 3. Phases and tasks
+
+### 3.0 Dependency graph and critical path
+
+```
+P0 ─▶ P1 ─▶ P2 ─▶ P3 ─▶ P4 ─▶ P5(rest) ─▶ P6 ─▶ P7 ─▶ P8 ─▶ P9 ─▶ P10 ─▶ P11 ─▶ P12
+        │            └──▶ T5.1–T5.3 (TUI slice, after T2.4)
+        └──▶ T8.3, T8.4 (ledger tooling) can start after T1.7
+```
+
+Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2 → T1.5 → T2.1 → T2.3 → T2.4 → T5.1 → T5.2 → T5.3. Everything else in P0–P2 can run in parallel with it (T0.5, T0.6, T1.3, T1.4, T1.6–T1.8, T2.2, T2.5–T2.8).
+
+### P0 — Scaffold (goal: `cox --version`, config, doctor, CI green)
+
+#### T0.1 Workspace scaffold
+Model: haiku · Status: open · Depends: — · Size: ~150
+Goal: ten crates build empty, CI runs fmt/clippy/nextest on macOS and Linux, dependency direction is enforced.
+Files: `Cargo.toml` (workspace), `crates/*/Cargo.toml` + `src/lib.rs` (each with a `//!` header), `justfile`, `deny.toml`, `.github/workflows/ci.yml`, `tests/deps.rs`.
+Steps: (1) `cargo new --lib` for the nine libs and `cargo new` for `crates/cox`; `[workspace] resolver = "3"`, `rust-version = "1.97"`, `edition = "2024"`; all deps from §1.1 as `[workspace.dependencies]` with exact versions. (2) `justfile` targets `check` (fmt + clippy `-D warnings`), `test` (`cargo nextest run --workspace`), `snap` (`cargo insta review`), `eval`, `bench`. (3) `deny.toml`: licenses allow MIT/Apache-2.0/BSD/ISC/Unicode/Zlib/MPL-2.0; bans duplicate `tokio`. (4) CI matrix `macos-15`, `ubuntu-24.04`; caches `~/.cargo` and `target`; job `deny`. (5) `tests/deps.rs` runs `cargo metadata` and asserts the direction rules in §1.1.
+Check:
+```bash
+mise exec -- cargo build --workspace && mise exec -- cargo test --workspace && mise exec -- cargo deny check
+```
+Done when: CI green on the commit; `cox --version` prints `cox 0.1.0-dev`.
+Out of scope: any type in `cox-protocol` (T0.2).
+
+#### T0.2 Protocol types
+Model: sonnet · Status: open · Depends: T0.1 · Size: ~200
+Goal: every type in §1.2 exists with serde round-trips and schemars for tool schemas.
+Files: `crates/cox-protocol/src/{lib,submission,event,request,tool,usage,error}.rs` (split across ≤ 3 files if the limit bites: `lib.rs`, `types.rs`, `traits.rs`).
+Steps: (1) Ids as ULID newtypes with `Display`/`FromStr`. (2) `Submission`, `Event`, `Usage`, `Request`, `Content`, `ProviderEvent`, `ToolSpec`, `ToolCx`, `ToolOutput`, `Decision`, `Why`, `Risk`, `Tier`, `Job`, `StopReason`, error enums (§1.14). (3) Traits `Provider`, `Tool`, `Store`, `Hook`, `Archive` with `async_trait`. (4) Tests: `event_json_roundtrip` over one value per variant (rstest), `usage_sums_cache_fields` (`context_tokens()` = input + cache read + cache write), `event_tags_are_snake_case` (grep the serialized form).
+Check:
+```bash
+mise exec -- cargo test -p cox-protocol && mise exec -- cargo doc -p cox-protocol --no-deps
+```
+Done when: `cargo doc` has no missing-docs warnings for public items; a `docs/protocol.jsonschema` is generated by a test and committed.
+Out of scope: any behaviour; this crate has no logic beyond serde.
+
+#### T0.3 Config loading and provenance
+Model: sonnet · Status: open · Depends: T0.2 · Size: ~200
+Goal: §1.6 loads with the precedence in D13, and every clap flag has a config key.
+Files: `crates/cox-protocol/src/config.rs` (the `Config` struct, `Deserialize` with `deny_unknown_fields`), `config/default.toml` (embedded via `include_str!`), `crates/cox/src/config_cmd.rs`.
+Steps: (1) figment: `Toml::string(default)`, `Toml::file(user)`, `Toml::file(project)`, `Env::prefixed("COX_").split("_")`, then flag overrides via `Serialized`. (2) Project-config guard list from §1.6 (`budget.*` raise, `permissions.mode=bypass`, `sandbox.mode=danger-full-access`, `tiers.think.confirm=false`) → ignored with a `Notice`. (3) `cox config show [--sources]` prints `key = value  # user|project|env|flag|default`; `get`, `set` (toml_edit), `path`. (4) Test `every_flag_has_a_config_key` walks the clap `Command` tree and checks a `flag → key` map; test `project_cannot_raise_budget`.
+Check:
+```bash
+mise exec -- cargo test -p cox config_ && COX_TIERS_CODE_MODEL=claude-opus-5 mise exec -- cargo run -q -- config show --sources | grep 'tiers.code.model = "claude-opus-5"  # env'
+```
+Done when: `docs/config.md` is generated from `default.toml` comments by a test (T12.3 extends it).
+Out of scope: `.claude/settings.json` import (T7.5).
+
+#### T0.4 Store: SQLite schema, migrations, rollout files
+Model: sonnet · Status: open · Depends: T0.2 · Size: ~200
+Goal: §1.7 schema opens, migrates and round-trips rows; rollouts append and read back.
+Files: `crates/cox-store/src/{lib,schema,rollout}.rs`, `crates/cox-store/migrations/0001_init.sql`.
+Steps: (1) `Store::open(home)`: create dirs, `PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000`; apply migrations in order. (2) `session_create/update`, `usage_insert`, `archive_put/get` (inline ≤ 16 KiB, else `archive/<id>` file, sha256 verified on read), `memory_*` stubs. (3) `rollout_append` writes one JSON line with `seq`, fsyncs every 16 lines and on `TurnDone`; `rollout_read` tolerates a truncated last line. (4) Tests in a tempdir: `migrations_are_idempotent`, `archive_roundtrip_inline_and_file`, `rollout_survives_truncated_tail`.
+Check:
+```bash
+mise exec -- cargo test -p cox-store && COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- doctor | grep 'db: ok'
+```
+Done when: `sqlite3 ~/.cox/cox.db .schema` matches §1.7 (snapshot test).
+Out of scope: FTS indexing of rollouts (T10.3).
+
+#### T0.5 `cox doctor`
+Model: haiku · Status: open · Depends: T0.3, T0.4 · Size: ~150
+Goal: one command tells a user why cox will or will not work on this machine.
+Files: `crates/cox/src/doctor.rs`.
+Steps: checks, each `ok | warn | fail` with a one-line fix: toolchain version, `COX_HOME` writable, db opens, API keys (env or keyring) per configured provider, sandbox backend (`sandbox-exec` present / `bwrap` on PATH / Landlock ABI ≥ 3 / none), `git` on PATH, terminal (`TERM`, true colour, size), prices table age (§1.4), `.claude/settings.json` found. `--json` emits an array of `{check, status, detail, fix}`.
+Check:
+```bash
+COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- doctor --json | jq -e 'map(select(.status=="fail")) | length == 0 or (map(.fix) | all(length > 0))'
+```
+Done when: exit code 0 when no `fail`, 1 otherwise; snapshot of the human output.
+Out of scope: fixing anything automatically.
+
+#### T0.6 Design doc: protocol
+Model: sonnet · Status: open · Depends: T0.2 · Size: doc
+Goal: `docs/design/protocol.md` per D15: Submission/Event vs Codex SQ/EQ vs Claude stream-json vs ACP; what cox borrows, drops, and what would falsify the design (e.g. a surface that needs state the events do not carry).
+Files: `docs/design/protocol.md`.
+Check: file exists, ≤ 1 page, has the four sections (problem number · field · cox · falsifier); reviewed once by the `think` tier (review notes appended).
+Done when: linked from `research.md` §1.2.
+
+### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
+
+#### T1.1 Anthropic request translation
+Model: opus · Status: open · Depends: T0.2 · Size: ~200
+Goal: a `Request` becomes a byte-exact Anthropic Messages body with cache breakpoints, thinking, effort, fallbacks and tool results.
+Files: `crates/cox-provider/src/anthropic/{mod,request}.rs`.
+Steps: (1) `system` → array of text blocks; blocks at breakpoint indices get `cache_control: {type: ephemeral, ttl}`. (2) `tools` → `input_schema`; `tool_choice` auto. (3) messages: consecutive `ToolResult`s stay in one user message; `Thinking` blocks replayed unchanged with signature on the same model, stripped when the model changed (`ModelSwitched`). (4) `thinking: {type: adaptive}` when `Caps.thinking`; `output_config: {effort}`; `fallbacks: "default"` plus its beta header when `providers.anthropic.fallbacks`; `max_tokens`; `stop_sequences`. (5) Headers: `anthropic-version`, `x-api-key` from env or keyring, `anthropic-beta` list assembled from features. (6) Snapshot tests of the JSON body for three fixture requests: plain text, parallel tool results, post-compaction with summary + pointer content.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider anthropic_request_
+```
+Done when: `docs/design/provider.md` notes (in one paragraph) which fields decide cost.
+Out of scope: streaming (T1.2), retries (T1.6).
+
+#### T1.2 SSE parser and Anthropic stream state machine
+Model: sonnet · Status: open · Depends: T1.1 · Size: ~200
+Goal: an Anthropic SSE body becomes `ProviderEvent`s, including parallel tool_use and refusal.
+Files: `crates/cox-provider/src/sse.rs`, `crates/cox-provider/src/anthropic/stream.rs`, `fixtures/anthropic/*.sse`.
+Steps: (1) `eventsource-stream` over the reqwest byte stream; map `event:`/`data:` pairs. (2) State machine: `message_start` (model, usage in) → `content_block_start` (text | thinking | tool_use) → deltas (`text_delta`, `thinking_delta`, `signature_delta`, `input_json_delta` accumulated per block index) → `content_block_stop` → `message_delta` (stop_reason, `stop_details`, usage out incl. cache fields) → `message_stop`. (3) `error` events → `ProviderError`. (4) Fixtures (5): text only; one tool call; two parallel tool calls; refusal with `stop_details`; `max_tokens` stop. Golden `.events.jsonl` via insta.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider anthropic_stream_
+```
+Done when: a `wiremock` test serves each fixture and the `Provider::stream` output equals the golden events.
+Out of scope: OpenAI (T1.3–T1.4).
+
+#### T1.3 OpenAI Responses API
+Model: sonnet · Status: open · Depends: T1.2 · Size: ~200
+Goal: the same `Request` streams through `/v1/responses` with tool calls and usage.
+Files: `crates/cox-provider/src/openai/responses.rs`, `fixtures/openai-responses/*.sse`.
+Steps: (1) Translate: `instructions` = system blocks joined (no cache control); `input` items (message, `function_call`, `function_call_output`); `tools` as functions; `reasoning: {effort}`; `store: false`; `previous_response_id` unused — history is ours. (2) Events: `response.output_text.delta`, `response.function_call_arguments.delta/done`, `response.completed` (usage incl. `input_tokens_details.cached_tokens` → `cache_read_tokens`), `error`. (3) Three fixtures: text; tool call; parallel tool calls.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider responses_
+```
+Done when: golden events for the three fixtures; unsupported features (`Thinking` replay) degrade with `ProviderError::Unsupported` only when actually requested.
+Out of scope: Chat Completions (T1.4).
+
+#### T1.4 OpenAI Chat Completions for local servers
+Model: sonnet · Status: open · Depends: T1.3 · Size: ~180
+Goal: Ollama/vLLM/LM Studio/llama.cpp/OpenRouter work through the Chat subset with streaming tool calls.
+Files: `crates/cox-provider/src/openai/chat.rs`, `fixtures/openai-chat/*.sse`.
+Steps: (1) `messages` with `tool_calls`/`tool` roles; `stream: true`, `stream_options: {include_usage: true}`; `tools` functions. (2) Deltas: `choices[0].delta.content`, `delta.tool_calls[i].function.arguments` accumulated by index; `finish_reason` map. (3) No auth header when `api_key_env` is unset; `context_window` from config. (4) `cox --provider local doctor` probes `GET {base_url}/models`.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider chat_
+```
+Done when: a `wiremock` shaped like Ollama's `/v1/chat/completions` completes a tool-call turn.
+Out of scope: model listing UI.
+
+#### T1.5 Scripted and Replay providers, `cox record`
+Model: sonnet · Status: open · Depends: T1.2 · Size: ~200
+Goal: the whole loop and every test run with no network and no key.
+Files: `crates/cox-provider/src/{scripted,replay}.rs`, `crates/cox/src/record.rs`.
+Steps: (1) `Scripted`: replies from a TOML scenario (`[[turn]] text = … tool_calls = [{name, input}]`), one per provider call, error if the scenario runs out. (2) `Replay`: cassette dir with `<hash>.request.json` + `<hash>.sse`; hash = sha256 of the canonical request with volatile fields (date, cwd) masked; miss → `ProviderError::Unsupported("cassette miss: <hash>")` listing nearest request diff. (3) `cox record <name> -p …`: runs a real session and writes the cassette; `--redact` replaces key patterns; a test greps `fixtures/` and `cassettes/` for `sk-[A-Za-z0-9]{8,}` and `Bearer `. (4) `COX_PROVIDER=scripted|replay` env selects them.
+Check:
+```bash
+env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY mise exec -- cargo test --workspace
+```
+Done when: CI runs with no secrets configured; `no_secrets_in_fixtures` passes.
+Out of scope: the loop itself (T2.1).
+
+#### T1.6 Retry, backoff, timeouts, cancellation
+Model: sonnet · Status: open · Depends: T1.2 · Size: ~150
+Goal: transient failures retry, permanent ones surface typed, cancel drops the connection.
+Files: `crates/cox-provider/src/retry.rs`, `crates/cox-provider/src/anthropic/mod.rs`.
+Steps: (1) Wrapper around `stream`: retry on `RateLimited`/`Overloaded`/`Network`/`Timeout` before any byte was delivered; after first byte, no retry (emit `Error`). (2) Backoff 1 s × 2ⁿ ± 25 % jitter, max 4, honour `retry-after`; emit `ProviderEvent::Retrying`. (3) Connect timeout 10 s, idle-read timeout `timeout_s`. (4) `CancellationToken` checked between chunks; drop of the response body closes the socket.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider retry_
+```
+Done when: `retries_then_succeeds` (wiremock 2×429 then 200) and `cancel_mid_stream_drops_connection` (wiremock sees the connection close within 200 ms) pass.
+Out of scope: budget (T2.7).
+
+#### T1.7 Usage, prices, ledger rows
+Model: haiku · Status: open · Depends: T0.4, T1.2 · Size: ~150
+Goal: every provider call writes one `usage` row with cost computed from a dated price table.
+Files: `config/prices.toml`, `crates/cox-provider/src/usage.rs`, `crates/cox/src/stats.rs` (minimal).
+Steps: (1) `prices.toml`: `[[model]] id, input, output, cache_write, cache_read, verified_on, source_url`; fill Anthropic rows from §1.4, then re-verify against the official pricing page and update `verified_on` (record the URL and date in `research.md` §6). (2) `cost(usage, price)`; unknown model → cost 0 with `estimated = true` and a `Notice(Warn)` once per session. (3) `usage_insert` after every call including retries that delivered bytes. (4) `cox stats --session <id>` prints input/output/cache read/cache write/cost per turn.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider usage_ && COX_PROVIDER=scripted COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- run -p hi --output-format json >/dev/null && echo ok
+```
+Done when: `every_request_has_a_usage_row` loop test (added in T2.1) has the hook it needs; `research.md` §4.1 prices carry the re-verified date.
+Out of scope: aggregation and CSV (T8.4).
+
+#### T1.8 Token estimation
+Model: haiku · Status: open · Depends: T1.1 · Size: ~120
+Goal: a context-size estimate good enough to trigger compaction and budgets when no endpoint is available.
+Files: `crates/cox-provider/src/tokens.rs`, `fixtures/count_tokens/*.json`.
+Steps: (1) Anthropic: `POST /v1/messages/count_tokens` when online and `Caps.count_tokens`. (2) OpenAI: `tiktoken-rs` `o200k_base`. (3) Fallback: `bytes / 3.5` for text, `+ 6` per tool schema key, flagged `estimated`. (4) Five recorded `count_tokens` fixtures bound the heuristic within ±15 %.
+Check:
+```bash
+mise exec -- cargo test -p cox-provider tokens_
+```
+Done when: `estimate_within_15_percent_of_fixtures` passes.
+
+### P2 — Core loop (goal: a session that runs turns, calls tools, asks permission, resumes)
+
+#### T2.1 `Session` state machine and turn loop
+Model: opus · Status: open · Depends: T0.2, T1.5 · Size: ~200 (+ scenarios)
+Goal: §1.3 as code, with `Scripted` and two stub tools (`echo` ReadOnly, `touch` Write).
+Files: `crates/cox-core/src/{session,turn}.rs`, `crates/cox-core/tests/turn.rs` + `scenarios/*.toml`.
+Steps: (1) `Session::new(config, provider, tools, store, hooks)`; `submit(Submission)`; `events() -> Receiver<Event>`. (2) States per §1.3 as an enum; transitions in one `step()` function; no I/O outside traits. (3) Parallel tool execution with `JoinSet`, cap `parallel_tools`, `Exclusive` tools serialised. (4) Golden event JSONL (insta) for scenarios: text-only; one tool call; three parallel calls returned in one user message in emission order; interrupt mid-tool; provider error mid-stream; `max_turns` reached. (5) Tests `all_tool_results_return_in_one_message`, `no_event_after_turn_done`, `every_request_has_a_usage_row`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core turn_
+```
+Done when: six scenario snapshots committed; `update`-style pure `step()` has no `async fn` signature other than awaiting trait calls.
+Out of scope: permission engine (T2.2) — stubs allow everything here; archive/truncation (T2.5).
+
+#### T2.2 Permission engine
+Model: opus · Status: open · Depends: T2.1 · Size: ~200
+Goal: §1.8 exactly, pure and table-tested.
+Files: `crates/cox-core/src/permission/{mod,rules}.rs`, `crates/cox-core/tests/permission.rs`.
+Steps: (1) Rule parser: `Tool`, `Tool(subject)`, `Tool(prefix:*)`, path globs (`globset`, `~` expansion), MCP wildcards, Claude tool-name aliases. (2) `Engine::compile(rules)`, `decide(call, mode, policy, grants) -> Decision`. (3) Session grants keyed by (tool, subject prefix). (4) Wire into the loop: `Ask` → `ApprovalRequired`, await `Submission::Approve`, `AllowForSession` adds a grant, `Edit{input}` re-runs `decide` with the new input. (5) Tests: 30-row table (rstest) including `deny_beats_allow`, `bash_prefix_pattern_matches_npm_run_test_colon_star`, `plan_mode_denies_writes_without_prompt`, `never_policy_turns_ask_into_deny`, `read_ssh_denied_by_default`; proptest `adding_deny_never_weakens`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core permission_
+```
+Done when: loop scenario `ask_then_approve` and `ask_then_deny` snapshots exist.
+Out of scope: bash command classification (T3.7) — `Exec` risk is taken from the tool spec here.
+
+#### T2.3 Context assembly and cache breakpoints
+Model: sonnet · Status: open · Depends: T2.1 · Size: ~180
+Goal: §1.9 order with exactly the three breakpoints, byte-stable across turns.
+Files: `crates/cox-core/src/context.rs`, `crates/cox-core/tests/context.rs`.
+Steps: (1) `assemble(history, config, ext) -> Request`: `system[0]` canonical JSON of sorted non-deferred tool specs; `system[1]` versioned prompt constant (`include_str!("prompt.md")`, no date/cwd); `system[2]` instruction block from `cox-ext` (stub returns fixed text until T7.1); `system[3]` volatile. (2) Breakpoints: after `system[2]`, end of previous turn, last message. (3) Discovered tools appended to `system[0]` with a `Notice` about the one-time cache miss. (4) Tests: `prefix_bytes_identical_between_turns` (two turns, compare serialized `system[0..=2]`), `volatile_content_after_breakpoint`, `three_breakpoints_max`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core context_
+```
+Done when: the Anthropic translator snapshot (T1.1) for a two-turn scenario shows `cache_control` on exactly three blocks.
+
+#### T2.4 Rollout writer/reader, resume, continue
+Model: sonnet · Status: open · Depends: T2.1, T0.4 · Size: ~180
+Goal: every event is persisted; `cox resume <id>` and `--continue` rebuild an identical request.
+Files: `crates/cox-core/src/rollout.rs`, `crates/cox/src/resume.rs`, `crates/cox-core/tests/resume.rs`.
+Steps: (1) Event sink → `Store::rollout_append`; session row updated on `TurnDone` (turns, cost, title once set). (2) `History::from_events(Vec<Event>)`: coalesce deltas, honour `Compacted.dropped`, restore grants marked persistent, restore permission mode. (3) `--continue` = most recent session for this cwd; `resume <id>` any. (4) Test: run 20 events, resume, assemble; assert byte-equal to a fresh session driven by the same submissions.
+Check:
+```bash
+mise exec -- cargo test -p cox-core resume_
+```
+Done when: `resume_builds_identical_request` passes; a truncated last rollout line resumes with a `Notice`.
+
+#### T2.5 Tool-output archive and lossless truncation
+Model: sonnet · Status: open · Depends: T2.1, T0.4 · Size: ~180
+Goal: D6a — the model never sees a cut without a handle to the rest.
+Files: `crates/cox-core/src/truncate.rs`, `crates/cox-tools/src/expand.rs`, `crates/cox/src/expand_cmd.rs`.
+Steps: (1) On `ToolOutput`: `archive_put` first (sha256, bytes, subject); then `truncate(text, head_lines, tail_lines, visible_bytes)` → visible + trailer `[… 41 KiB archived; expand #01J…  lines 61–1 240]`. (2) `expand` tool (§1.11) and `cox expand <id> [--lines]` read from the archive; expanded output is itself truncated with pointers (no unbounded reads). (3) Line-safe cuts (never split a UTF-8 char or a line). (4) proptest `truncate_is_lossless_via_archive`: for random inputs, `archive_get(id) == original`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core truncate_ && mise exec -- cargo test -p cox-tools expand_
+```
+Done when: loop scenario `big_tool_output` snapshot shows the trailer and a follow-up `expand` call.
+
+#### T2.6 Re-read and re-run dedup
+Model: sonnet · Status: open · Depends: T2.5 · Size: ~120
+Goal: D6b — an identical read/grep/glob within the window costs a pointer, not the payload.
+Files: `crates/cox-core/src/dedup.rs`, `crates/cox-core/tests/dedup.rs`.
+Steps: (1) Key = (tool, canonical input) for `ReadOnly` tools only; value = (archive id, turn, subjects). (2) Invalidate when any `Write`/`Exec` tool's subject overlaps the key's subject (path prefix), or after `dedup_window_turns`. (3) Visible result: `unchanged since turn 7, see #id (expand to re-show)`. (4) Test `second_identical_read_costs_under_50_tokens`; `write_invalidates_dedup`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core dedup_
+```
+Done when: T8.5 can toggle it via `context.dedup_window_turns = 0`.
+
+#### T2.7 Budgets
+Model: haiku · Status: open · Depends: T1.7, T2.1 · Size: ~100
+Goal: D6h — a session stops at its cap and says so with numbers.
+Files: `crates/cox-core/src/budget.rs`.
+Steps: (1) Before each call: session spend (ledger sum) + estimate(req) vs `budget.session_usd`; monthly likewise. (2) 80 % → `Notice(Budget)` once; 100 % → `TurnDone{Budget}` and the next `UserTurn` is refused with the totals until the user raises the cap (`/cost raise <usd>`, session-only). (3) `cheap_counts=false` excludes cheap-tier rows.
+Check:
+```bash
+mise exec -- cargo test -p cox-core budget_
+```
+Done when: scenario `budget_hit` snapshot exists; `cox run -p` exits 3 on budget.
+
+#### T2.8 Design doc: loop
+Model: sonnet · Status: open · Depends: T2.1 · Size: doc
+Goal: `docs/design/loop.md`: vs Claude Code's loop, Codex Thread/Turn/Item, Pi's minimal loop; the six rules of §1.3 and what would falsify them.
+Check: file exists, names the six rules with their test names.
+
+### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
+
+#### T3.1 Path confinement and `ToolCx`
+Model: sonnet · Status: open · Depends: T2.2 · Size: ~150
+Goal: no path from the model escapes the workspace roots.
+Files: `crates/cox-tools/src/path.rs`, `crates/cox-tools/tests/confine.rs`.
+Steps: (1) `confine(roots, cwd, input) -> Result<PathBuf, ToolError::Confined>`: expand `~`, join relative to cwd, `..` normalisation before and after symlink resolution (`canonicalize` of the deepest existing ancestor), reject absolute paths outside roots, reject Windows drive/UNC/ADS syntax (`C:`, `\\?\`, `:stream`), reject NUL. (2) `ToolCx` builder from session config. (3) 20-case table incl. symlink-to-outside inside a tempdir, `..` through a symlink, root itself, non-existent target in an existing dir (allowed for `write`).
+Check:
+```bash
+mise exec -- cargo test -p cox-tools confine_
+```
+Done when: every file tool calls `confine` first (grep test: no `Path::new(input` outside `path.rs`).
+
+#### T3.2 `read`
+Model: sonnet · Status: open · Depends: T3.1 · Size: ~200
+Goal: whole, ranged and outline reads with caps.
+Files: `crates/cox-tools/src/read.rs`, `crates/cox-tools/src/outline.rs`, `fixtures/outline/*`.
+Steps: (1) Text with `n\t` line prefixes; `lines=a-b`; cap `tool_output_visible_bytes` (the core truncates; `read` reports total lines). (2) Binary detection (NUL in first 8 KiB) → `ToolError::Binary` with size. (3) `mode=outline`: tree-sitter queries for rs/ts/tsx/py/go returning `line: signature` for functions, types, impls, classes; fallback for other files = headings (`#`, `##`) or lines matching `^(fn|def|class|func|pub|export)`. (4) Test: outline of a 1 000-line Rust fixture is < 120 lines and lists every `pub fn`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools read_
+```
+Done when: `read` spec description tells the model when to use `outline` and `lines`.
+
+#### T3.3 `grep` and `glob`
+Model: sonnet · Status: open · Depends: T3.1 · Size: ~180
+Goal: ripgrep-equivalent search with caps and pointers.
+Files: `crates/cox-tools/src/grep.rs`, `crates/cox-tools/src/glob.rs`.
+Steps: (1) `grep`: `ignore::WalkBuilder` (gitignore, hidden off), `grep-regex` + `grep-searcher` sinks, `-n`, `context`, `glob` filter, `max_results` → pointer trailer via archive of the full result. (2) `glob`: `globset` over the walk, sort by mtime desc, `limit`; optional `query` fuzzy-ranked by `nucleo`. (3) Test: for five patterns on a fixture tree, output equals `rg -n --no-heading` (rg invoked only if present on the test machine; otherwise golden files).
+Check:
+```bash
+mise exec -- cargo test -p cox-tools grep_ glob_
+```
+Done when: both respect `confine` and `.gitignore`.
+
+#### T3.4 `edit` (str_replace)
+Model: sonnet · Status: open · Depends: T3.1 · Size: ~180
+Goal: D8 — exact-match edits with a safe fallback, returning a diff.
+Files: `crates/cox-tools/src/edit.rs`, `crates/cox-tools/tests/edit.rs`.
+Steps: (1) Exact match count: 1 → replace; 0 → whitespace-insensitive match (collapse runs of spaces/tabs, trim line ends) → 1 → replace; >1 → `Ambiguous{matches: line numbers}`; still 0 → `NotFound` with the three closest lines (`similar` ratio). (2) `replace_all`. (3) Preserve line endings and trailing newline; atomic write (temp + rename). (4) Pre-edit content archived (subject = path) so `cox expand` can restore (undo without git). (5) Unified diff via `similar` in `ToolOutput.diff`. (6) proptest `edit_then_reverse_edit_is_identity`; `ambiguous_match_is_rejected`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools edit_
+```
+Done when: the tool description shows the model the exact error strings it may see.
+
+#### T3.5 `apply_patch` (V4A)
+Model: opus · Status: open · Depends: T3.4 · Size: ~200
+Goal: Codex's patch grammar parses, prints and applies.
+Files: `crates/cox-tools/src/v4a/{parse,apply}.rs`, `fixtures/v4a/*.patch` + `.before/` `.after/` trees.
+Steps: (1) Grammar: `*** Begin Patch` … `*** End Patch`; `*** Add File: p` (+ lines), `*** Delete File: p`, `*** Update File: p` [`*** Move to: q`], hunks `@@ ctx` with ` `, `-`, `+` lines, `*** End of File`. (2) Progressive matching per hunk: exact → trailing-whitespace-insensitive → all-whitespace-insensitive; unique match required; report the hunk index on failure. (3) Apply all-or-nothing (stage in memory, write atomically). (4) `Risk::Destructive` when > 5 deletes. (5) 25 golden patches incl. Codex's documented examples; proptest `parse(print(p)) == p`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools v4a_
+```
+Done when: a fuzz target `fuzz/v4a_parse.rs` exists (run in T12.4).
+
+#### T3.6 `write` and `todo`
+Model: haiku · Status: open · Depends: T3.1 · Size: ~120
+Goal: new-file writes and a structured todo list.
+Files: `crates/cox-tools/src/write.rs`, `crates/cox-tools/src/todo.rs`.
+Steps: (1) `write`: create dirs, atomic write; existing file with > 200 lines → error "file has N lines; use edit or apply_patch"; pre-write content archived. (2) `todo`: validate ids unique, states `pending|in_progress|done`; output the list; emit `structured` so the TUI renders a panel (T5.5).
+Check:
+```bash
+mise exec -- cargo test -p cox-tools write_ todo_
+```
+
+#### T3.7 `bash` with PTY, streaming, classification
+Model: opus · Status: open · Depends: T3.1, T2.5 · Size: ~200
+Goal: commands run under the sandbox policy with streamed output and a risk classification the engine can use.
+Files: `crates/cox-tools/src/bash/{mod,classify}.rs`, `crates/cox-tools/tests/bash.rs`.
+Steps: (1) `portable-pty` (so tools that need a TTY behave), cwd = workspace, env allowlist (`PATH`, `HOME`, `LANG`, `TERM`, plus `sandbox.env_passthrough`), `timeout_s` → SIGTERM then SIGKILL, `cancel` token. (2) Stream chunks to `ToolCx.output` (sanitised for display); the model gets ANSI-stripped text + `exit <code>` + duration. (3) `classify(command) -> Risk` using `tree-sitter-bash`: split on `;`, `&&`, `||`, pipes; `Destructive` for `rm -r`, `git push --force`, `git reset --hard`, `git clean`, `dd`, `mkfs`, `> /dev/`, `sudo`, `chmod -R`, `curl … | sh`; `ReadOnly` for an allowlist (`ls`, `cat`, `head`, `tail`, `grep`, `rg`, `find`, `git status/diff/log/show`, `cargo check/test/build`, `npm test`, `pwd`, `echo` without redirect); else `Exec`. Redirects and subshells escalate to at least `Exec`. (4) `background: true` → returns a task id; output collected into the archive; `TaskCreated/Completed` (T9.2 completes this). (5) Tests: `bash_streams_and_archives`, `cd_and_rm_rf_are_classified_destructive`, `timeout_kills_process_group`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools bash_
+```
+Out of scope: the sandbox itself (P4) — here `SandboxPolicy::None` is used and the tests assert the policy is threaded through.
+
+#### T3.8 `ask_user`, `tool_search`, `web_fetch`
+Model: sonnet · Status: open · Depends: T2.3 · Size: ~200
+Goal: deferred tool discovery works end to end; the model can ask and fetch.
+Files: `crates/cox-tools/src/{ask_user,tool_search,web_fetch}.rs`.
+Steps: (1) `ask_user`: emits `ApprovalRequired`-like `Event::Notice`? No — a dedicated `ToolCallRequested` with `risk: ReadOnly` and a surface-side prompt; headless returns `--answer` or an error. (2) `tool_search`: BM25 (own ~60-line implementation, no dep) over deferred `ToolSpec` name+description; returns ≤ 5 specs; the core appends them to `system[0]` (T2.3 hook). (3) `web_fetch`: on Anthropic with `Caps.server_tools` pass `web_fetch_20260209` as a server tool instead (the provider adds it; the local tool is hidden); otherwise reqwest with 10 s timeout, `max_bytes`, `readability`-style extraction (strip script/style/nav, keep headings/paragraphs/code), `WebFetch(domain:…)` rules. (4) Test `deferred_tools_absent_until_searched` on the request body.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools tool_search_ web_fetch_ && mise exec -- cargo test -p cox-core deferred_
+```
+
+#### T3.9 `agent` tool (subagents)
+Model: opus · Status: open · Depends: T2.1, T2.7, T3.8 · Size: ~200
+Goal: a nested session with its own tier, tool allowlist, budget and result cap.
+Files: `crates/cox-core/src/subagent.rs`, `crates/cox-tools/src/agent.rs`, `crates/cox-core/tests/subagent.rs`.
+Steps: (1) Child `Session` with `parent_id`, own rollout, shared store and archive, tools filtered by allowlist, budget slice, `max_turns`. (2) Presets `explore` (cheap tier, `read/grep/glob/outline/expand` only, result ≤ 1 k tokens) and `shell` (cheap, `bash/web_fetch`). (3) Result over cap → summarised on the `summarize` job. (4) Parent sees `TaskCreated`, child's `Usage` rolled up with `job = agent:<preset>`; foreground waits, background returns (T9.2 completes). (5) Test `explore_subagent_uses_cheap_tier_and_read_only_tools`; `subagent_budget_is_a_slice_of_parent`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core subagent_
+```
+
+### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
+
+#### T4.1 macOS Seatbelt
+Model: opus · Status: open · Depends: T3.7 · Size: ~180
+Goal: `bash` cannot write outside the workspace, cannot touch `.git`/`.cox`, has no network unless allowed.
+Files: `crates/cox-tools/src/sandbox/{mod,seatbelt}.rs`, `crates/cox-tools/tests/sandbox_macos.rs`.
+Steps: (1) `SandboxPolicy { mode, writable_roots, readonly_subpaths, network }` → profile text: `(version 1) (deny default) (allow process-exec process-fork) (allow file-read*) (allow file-write* (subpath "<root>") …) (deny file-write* (subpath "<root>/.git") …) (allow sysctl-read mach-lookup …)`, `(allow network*)` only when `network`; `/tmp`, `$TMPDIR`, `~/.cache` writable. (2) Exec via `sandbox-exec -p <profile> -- /bin/sh -c <cmd>` (`Command`, not a shell string). (3) `read-only` mode: no `file-write*` at all except `$TMPDIR`. (4) Tests (macOS only, `#[cfg(target_os="macos")]`): write inside allowed; `echo x > $HOME/outside` denied; `.git/HEAD` write denied; `curl` fails without network.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools sandbox_macos_
+```
+Done when: `cox doctor` reports `sandbox: seatbelt`.
+
+#### T4.2 Linux bubblewrap, Landlock + seccomp
+Model: opus · Status: open · Depends: T3.7 · Size: ~200
+Goal: the same three guarantees on Linux with and without `bwrap`.
+Files: `crates/cox-tools/src/sandbox/{bwrap,landlock}.rs`, `.github/workflows/ci.yml` (two Linux jobs).
+Steps: (1) `bwrap` argv: `--unshare-user --unshare-pid --die-with-parent --ro-bind / / --bind <root> <root> --ro-bind <root>/.git <root>/.git --tmpfs /tmp --proc /proc --dev /dev`, `--unshare-net` unless `network`; `PR_SET_NO_NEW_PRIVS`. (2) Fallback: `landlock` crate ruleset (ABI best-effort ≥ 3: read on `/`, write on roots minus readonly subpaths) applied in `pre_exec`, plus `seccompiler` filter denying `connect`/`socket(AF_INET*)` when `!network`. (3) Backend selection `sandbox.linux_backend = auto`: bwrap if on PATH and user namespaces allowed, else landlock, else `none` with a `Notice(Security)` and forced `on-request`. (4) CI: job A installs `bubblewrap`; job B does not; both run the three assertions.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools sandbox_linux_
+```
+
+#### T4.3 Approval policy × sandbox mode matrix
+Model: sonnet · Status: open · Depends: T4.1, T4.2, T2.2 · Size: ~150
+Goal: the 12 combinations behave as §1.8 step 8 says; `danger-full-access` is loud.
+Files: `crates/cox-core/src/permission/policy.rs`, `crates/cox-core/tests/policy_matrix.rs`, `crates/cox-tui/src/banner.rs`.
+Steps: (1) Table `(policy, sandbox_mode) → behaviour` for `Exec` calls; `on-failure`: run sandboxed, on `SandboxDenied` emit `ApprovalRequired{SandboxDenied}`, rerun unsandboxed only on `Allow`. (2) `danger-full-access` requires the flag and shows a persistent banner in the TUI and a line in every `stream-json` `SessionStarted`. (3) 12-cell rstest matrix; TUI snapshot `banner_danger_full_access`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core policy_ && mise exec -- cargo test -p cox-tui banner_
+```
+
+#### T4.4 Design doc: sandbox
+Model: sonnet · Status: open · Depends: T4.2 · Size: doc
+Goal: `docs/design/sandbox.md`: Seatbelt vs bwrap vs Landlock vs Claude Code's socat proxy; the Windows story (none in v0.1, WSL2 recommended); falsifier = any documented escape.
+Check: file exists; reviewed by `think`.
+
+### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
+
+#### T5.1 TEA skeleton and test harness
+Model: sonnet · Status: open · Depends: T2.4 · Size: ~200
+Goal: `State`/`Msg`/`update`/`view`, inline viewport, resize, teardown, `TestBackend` snapshots.
+Files: `crates/cox-tui/src/{app,state,view}.rs`, `crates/cox-tui/tests/frames.rs`.
+Steps: (1) `State { transcript: Vec<Cell>, composer, status, modal: Option<Modal>, mode, tasks, scroll }`; `Msg { Key(KeyEvent), Paste(String), Event(Event), Tick, Resize(w,h) }`; `update(&mut State, Msg) -> Vec<Cmd>` where `Cmd` = `Submit(Submission) | Quit | Copy(String)`; no async, no I/O. (2) Runtime: crossterm event stream + core events on a `select!`; `Terminal::with_options(Viewport::Inline(n))`; `insert_before` for finished cells so scrollback keeps them. (3) Panic hook restores the terminal. (4) Harness `render(&State, w, h) -> Buffer` + `insta::assert_snapshot!(buffer_to_string)`. (5) Snapshot `frame_empty_session`; test `update_is_pure` (type-level: `update` is a free fn over `&mut State`).
+Check:
+```bash
+mise exec -- cargo test -p cox-tui frame_
+```
+
+#### T5.2 Composer
+Model: sonnet · Status: open · Depends: T5.1 · Size: ~200
+Goal: a multi-line composer with history, `@` picker, `/` palette, paste, interrupt and quit.
+Files: `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/picker.rs`.
+Steps: (1) `tui-textarea` wrapped; `Enter` submits, `Shift/Alt+Enter` newline, bracketed paste → single `Paste`. (2) `@` opens a nucleo-ranked picker over the workspace walk (ignore rules), `Tab/Enter` inserts the path. (3) `/` at column 0 opens the palette over built-in + markdown commands (T7.3 feeds it). (4) `Esc` → `Interrupt` when a turn runs, else clears the modal; `Ctrl+C` twice → quit; `Ctrl+R` history search. (5) Snapshots `composer_at_mention_open`, `composer_slash_palette`, `composer_multiline`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui composer_
+```
+
+#### T5.3 Transcript cells and streaming markdown
+Model: sonnet · Status: open · Depends: T5.1 · Size: ~200
+Goal: one cell type per item kind, rendered from a golden event JSONL.
+Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/markdown.rs`.
+Steps: (1) Cells: user, assistant (streaming), thinking (collapsed line with token count; `Ctrl+T`), tool call (name + subject, spinner/elapsed, head/tail output, `expand #id` hint, exit code), notice (level-coloured), error, summary (compaction). (2) Markdown: `pulldown-cmark` → `Line`/`Span` with headings, lists, emphasis, inline code, fenced code via `syntect` (theme by `tui.theme`), tables as aligned text; incremental re-render of the last open block only. (3) Width-aware wrapping via `unicode-width`. (4) Snapshots: one per cell type from `fixtures/events/transcript.jsonl`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui cell_
+```
+
+#### T5.4 Diff view and approval modal
+Model: sonnet · Status: open · Depends: T5.3, T2.2 · Size: ~180
+Goal: edits are reviewable and approvals are one keypress.
+Files: `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/modal.rs`.
+Steps: (1) Diff cell from `ToolResult.diff`: per-file header, hunks coloured, collapse/expand per file, `+n −m` summary. (2) Approval modal bound to `ApprovalRequired`: tool, subject (command shown verbatim, sanitised), `Why`, keys `y` allow, `s` allow for session, `n` deny, `e` edit (for bash: edit the command inline, resubmits `Decision::Edit`). (3) Snapshots `diff_two_files`, `modal_bash_approval`; keypress test `y_sends_approve_submission`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui diff_ modal_
+```
+
+#### T5.5 Status line, todo panel, slash commands
+Model: haiku · Status: open · Depends: T5.3 · Size: ~160
+Goal: §1.13 status line and built-in slash commands.
+Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/commands.rs`.
+Steps: (1) Status: tier model, `ctx N%` from last usage, session cost, sandbox mode, task count, permission mode tag. (2) Todo panel from the `todo` tool's structured output, toggled by `/todo`. (3) Commands from §1.13 parsed into `Submission::Command`/`SwitchModel`/`SetPermissionMode`/`Compact`; `/help` lists them. (4) Snapshot `status_line_after_two_turns`; test `slash_model_opus_emits_switch_model`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui status_ command_
+```
+
+#### T5.6 `text::sanitize`
+Model: sonnet · Status: open · Depends: T5.1 · Size: ~120
+Goal: nothing the model or a tool prints can escape its cell or the terminal.
+Files: `crates/cox-tui/src/text.rs`, `crates/cox-tui/tests/sanitize.rs`.
+Steps: (1) Strip ESC/CSI/OSC/DCS sequences (own state machine or `vte` parser), C0 controls except `\n`/`\t`, bidi overrides (U+202A–202E, U+2066–2069), zero-width joiners in suspicious runs; replace with `␛`-style markers when `-v`. (2) Width-safe truncation. (3) Applied at the cell boundary for every model/tool string. (4) 50 hostile strings (OSC 52 clipboard, title set, cursor moves, RTL override, overlong lines) render inside the cell in a `TestBackend` frame.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui sanitize_
+```
+
+#### T5.7 Vim-lite
+Model: haiku · Status: open · Depends: T5.2 · Size: ~120
+Goal: normal/insert modes in the composer behind `tui.vim`.
+Files: `crates/cox-tui/src/vim.rs`.
+Steps: `Esc`/`i`/`a`/`o`, `hjkl`, `w`/`b`/`0`/`$`, `dd`/`yy`/`p`/`x`, counts; mode shown in the status line. Keypress table test.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui vim_
+```
+
+#### T5.8 PTY end-to-end
+Model: sonnet · Status: open · Depends: T5.5, T1.5 · Size: ~150
+Goal: the real binary, under a PTY, renders a scripted turn.
+Files: `tests/tui_e2e.rs`.
+Steps: (1) `portable-pty` spawns `cox` with `COX_PROVIDER=scripted`, `COX_HOME=tempdir`, scenario env; 100×30. (2) Type a prompt + Enter; poll the `vt100` screen until the reply text appears (≤ 5 s). (3) Assert status line shows `$0.00` and `scripted`. (4) `Ctrl+C` ×2 exits 0.
+Check:
+```bash
+mise exec -- cargo test --test tui_e2e
+```
+Done when: passes on macOS and Linux CI.
+
+### P6 — Headless and MCP server (goal: scripts and other agents can drive cox)
+
+#### T6.1 `cox run -p`
+Model: sonnet · Status: open · Depends: T2.4, T2.7, T3.8 · Size: ~200
+Goal: §1.12 headless surface with three output formats and exit codes.
+Files: `crates/cox/src/run.rs`, `tests/run_cli.rs`.
+Steps: (1) `text`: final assistant text only. `json`: `{session, result, usage, cost_usd, turns, stop}`. `stream-json`: one `Event` per line, plus Claude-compatible aliases where they exist (`type: "assistant"|"result"` wrappers alongside cox's tags). (2) Flags → config; `--approve never` default (asks become denies); `--approve on-request` reads `{"approve":"<call_id>"}` / `{"deny":…}` lines from stdin (T6.3). (3) Exit codes 0/1/2/3/4. (4) `assert_cmd` tests per format with the scripted provider; `jq -c .type` over stream-json lists `session_started … turn_done`.
+Check:
+```bash
+mise exec -- cargo test --test run_cli
+```
+
+#### T6.2 `cox mcp` server
+Model: sonnet · Status: open · Depends: T3.3, T2.2 · Size: ~180
+Goal: cox's tools served over MCP stdio with the same permission engine.
+Files: `crates/cox-mcp/src/server.rs`, `crates/cox-mcp/tests/server.rs`.
+Steps: (1) rmcp `ServerHandler` listing non-deferred tools (`read`, `grep`, `glob`, `outline` by default; `--allow-write` adds `edit`/`write`/`apply_patch`; `bash` only with `--tools bash`). (2) Calls go through `Engine` with `policy = never` (deny instead of ask) and the sandbox policy. (3) Test: an rmcp client over an in-process duplex lists tools and calls `read`; `write` absent without the flag.
+Check:
+```bash
+mise exec -- cargo test -p cox-mcp server_
+```
+Done when: Claude Code's `.mcp.json` entry `{"cox": {"command": "cox", "args": ["mcp"]}}` works (manual smoke noted in `docs/compat.md`).
+
+#### T6.3 Headless approvals over stdin
+Model: haiku · Status: open · Depends: T6.1 · Size: ~100
+Goal: a driver script can approve or deny calls.
+Files: `crates/cox/src/run.rs` (extend), `tests/run_cli.rs` (extend).
+Steps: stdin reader task parses JSON lines → `Submission::Approve`; `ApprovalRequired` printed as a stream-json line so the driver can react; timeout `hooks.timeout_s` → deny.
+Check:
+```bash
+mise exec -- cargo test --test run_cli approve_
+```
+
+### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
+
+#### T7.1 Instruction files
+Model: sonnet · Status: open · Depends: T2.3 · Size: ~180
+Goal: the `AGENTS.md`/`CLAUDE.md` chain loads in documented order under a budget, byte-stable.
+Files: `crates/cox-ext/src/instructions.rs`, `crates/cox-ext/tests/instructions.rs`.
+Steps: (1) Search order: `~/.cox/AGENTS.md`, `~/.claude/CLAUDE.md`, then from git root down to cwd: `AGENTS.md`, `CLAUDE.md`, `.cox/AGENTS.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`; each file once (symlinks deduped by canonical path). (2) `@path` includes (Claude syntax), cycle detection, depth ≤ 3. (3) Budget `instruction_budget_tokens`: files beyond it are dropped with a `Notice` naming them. (4) Output: one block `# Instructions\n## <path>\n<body>…` with paths relative to git root. (5) Fixture tree with 4 files → snapshot; `cycle_is_reported`; `order_is_stable_across_runs`.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext instructions_
+```
+
+#### T7.2 Skills
+Model: sonnet · Status: open · Depends: T7.1 · Size: ~180
+Goal: Agent Skills spec: index in the prompt, body on invoke, `allowed-tools` respected.
+Files: `crates/cox-ext/src/skills.rs`, `crates/cox-ext/src/frontmatter.rs`.
+Steps: (1) Discover `~/.cox/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md`, `.cox/skills`, `.claude/skills`. (2) Frontmatter parser (YAML subset: scalars, lists; `name`, `description`, `license`, `allowed-tools`, `metadata`, `compatibility`); malformed → skipped with `Notice`. (3) Index line per skill in `system[2]`: `- <name>: <description>`; a `skill` deferred tool (or `/name`) loads the body as a user-visible item; `allowed-tools` narrows the engine for that turn. (4) Test with a sample skill from `anthropics/skills` (vendored fixture): body absent from the first request, present after invoke.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext skills_
+```
+
+#### T7.3 Commands and subagent definitions
+Model: sonnet · Status: open · Depends: T7.2, T3.9 · Size: ~160
+Goal: `.claude/commands/*.md` and `.claude/agents/*.md` (and `.cox/` twins) work.
+Files: `crates/cox-ext/src/commands.rs`, `crates/cox-ext/src/agents.rs`.
+Steps: (1) Commands: frontmatter `description`, `allowed-tools`, `model` (tier name or model id → tier), `argument-hint`; body with `$ARGUMENTS`, `$1..$n`, `!`command`` shell inclusion (runs through `bash` tool with the engine), `@file` inclusion. (2) Agents: `name`, `description`, `tools`, `model` → `agent` presets. (3) Both appear in `/` palette and `cox ext list`. (4) Tests: fixture command expands; subagent def restricts tools in a loop test.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext commands_ agents_
+```
+
+#### T7.4 Hooks
+Model: opus · Status: open · Depends: T2.1, T7.1 · Size: ~200
+Goal: Claude Code's hook protocol, fail open.
+Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-core/src/hooks.rs` (the call sites), `crates/cox-ext/tests/hooks.rs`.
+Steps: (1) Config: `[[hooks.<Event>]] matcher = "Bash" command = "…" timeout = 60` from `.cox/config.toml` and imported `.claude/settings.json`. (2) Payload JSON on stdin (`session_id`, `cwd`, `hook_event_name`, `tool_name`, `tool_input`, `tool_response`, …); stdout JSON parsed for `decision`/`reason`/`updatedInput`/`additionalContext`; exit 2 = block with stderr as reason; other non-zero = warn and continue. (3) Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Notification`. (4) Timeout kills the process group; crash/timeout → `Notice(Warn)` and continue (`fail_open`). (5) Tests with shell stubs: `pre_tool_use_exit_2_blocks_bash`, `crashing_hook_is_skipped_not_fatal`, `updated_input_is_applied`; an rtok hook fixture if `rtok` is on PATH (skipped otherwise).
+Check:
+```bash
+mise exec -- cargo test -p cox-ext hooks_
+```
+
+#### T7.5 `.claude/settings.json` import
+Model: haiku · Status: open · Depends: T2.2, T7.4 · Size: ~120
+Goal: permissions, hooks and env from Claude settings merge below `.cox` config.
+Files: `crates/cox-ext/src/claude_settings.rs`.
+Steps: (1) Read `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json` in that order. (2) `permissions.allow/ask/deny` → rules; `hooks` → hook config; `env` → tool env passthrough; unknown keys ignored. (3) `cox config show --sources` labels them `claude-settings`. (4) Test: a fixture settings file yields the same `Engine` decisions as the equivalent native rules.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext claude_settings_
+```
+
+#### T7.6 MCP client
+Model: opus · Status: open · Depends: T3.8, T2.2 · Size: ~200
+Goal: servers from `.mcp.json` and config, stdio + Streamable HTTP, OAuth, deferred namespaced tools.
+Files: `crates/cox-mcp/src/{client,discovery,auth}.rs`, `crates/cox-mcp/tests/client.rs`.
+Steps: (1) Discovery: `.mcp.json` (project), `~/.cox/config.toml [mcp.servers]`, `~/.claude.json` mcpServers (read-only); `${ENV}` expansion. (2) rmcp client: spawn stdio servers with the sandbox env allowlist; Streamable HTTP with `timeout_s`; `initialize`, `tools/list`, `tools/call`, `resources/read` (as `read mcp://server/uri`), `prompts/list` (as commands). (3) OAuth via rmcp `auth`: browser flow, token in keyring `cox/mcp/<server>`, refresh. (4) Tools registered as `mcp__<server>__<tool>`, `deferred: true` unless `mcp.deferred=false`; `Risk` from annotations (`readOnlyHint`, `destructiveHint`), default `Write`. (5) Failures: server down → `Notice(Warn)` and its tools removed (fail open). (6) Tests: an rmcp test server over stdio round-trips a call; OAuth mocked with `wiremock`; `server_crash_does_not_end_session`.
+Check:
+```bash
+mise exec -- cargo test -p cox-mcp client_
+```
+
+#### T7.7 Design doc: extensions
+Model: sonnet · Status: open · Depends: T7.6 · Size: doc
+Goal: `docs/design/extensions.md`: why data + processes (not in-process plugins) in v0.1; the v0.2 WASM contract sketch (`Tool` over extism with the same `ToolSpec`); falsifier = an extension users need that cannot be expressed as markdown, hook or MCP.
+Check: file exists.
+
+### P8 — Context economy (goal: measured savings, cache hit rate visible)
+
+#### T8.1 Compaction
+Model: opus · Status: open · Depends: T2.4, T7.4 · Size: ~200
+Goal: §1.10 exactly, with hooks and `/compact [focus]`.
+Files: `crates/cox-core/src/compact.rs`, `crates/cox-core/tests/compact.rs`, `crates/cox-core/src/prompts/compact.md`.
+Steps: (1) Trigger conditions; `Compacting` state; `PreCompact` hook. (2) Summariser request on the `compact` job with the fixed section template; ≤ 2 048 output tokens. (3) Append `Summary` item, emit `Compacted`, mark dropped ids; instruction files re-read and diffed. (4) Context-length error from a provider → compact then retry once. (5) Tests: `compaction_keeps_last_two_turns_verbatim`, `compaction_is_append_only_in_rollout`, `request_after_compaction_keeps_cached_prefix` (bytes before breakpoint 1 unchanged), `focus_is_passed_to_summarizer`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core compact_
+```
+
+#### T8.2 Microcompaction
+Model: sonnet · Status: open · Depends: T2.5 · Size: ~100
+Goal: old tool results become pointers in the request without a model call.
+Files: `crates/cox-core/src/context.rs` (extend), `crates/cox-core/tests/microcompact.rs`.
+Steps: when building `messages`, tool results older than `microcompact_after_turns` → `Content::Pointer`; rollout untouched; `cox expand` still works; the last `keep_turns` turns are never touched.
+Check:
+```bash
+mise exec -- cargo test -p cox-core microcompact_
+```
+
+#### T8.3 Cache diagnostics
+Model: sonnet · Status: open · Depends: T1.7, T2.3 · Size: ~150
+Goal: a broken cache is visible and explained.
+Files: `crates/cox-core/src/cache_diag.rs`, `crates/cox/src/stats.rs` (extend).
+Steps: (1) Per call: cache read ratio = `cache_read / (input + cache_read + cache_write)`; kept in the session and shown in the status line as `cache 87%`. (2) The core keeps the previous request's prefix bytes (hash per block); when a call has `cache_read == 0` after a non-zero one, diff block hashes and emit `Notice(Info, "cache miss: system[2] changed at byte 1 203 (instruction file …)")`. (3) `cox stats --cache [--session]` lists such turns.
+Check:
+```bash
+mise exec -- cargo test -p cox-core cache_diag_
+```
+Done when: scenario with a deliberately volatile byte is flagged with the right block name.
+
+#### T8.4 `cox stats`
+Model: haiku · Status: open · Depends: T1.7 · Size: ~150
+Goal: cost and token views over the ledger.
+Files: `crates/cox/src/stats.rs`, `crates/cox-store/src/queries.rs`.
+Steps: `--session`, `--day`, `--month` groupings by tier and job; context-token-turns per session; top tools by archived bytes; `--json` (schema snapshot) and `--csv`.
+Check:
+```bash
+mise exec -- cargo test -p cox stats_
+```
+
+#### T8.5 Bench: measured savings
+Model: sonnet · Status: open · Depends: T8.1, T8.2, T2.6, T3.8 · Size: ~180
+Goal: a table in `research.md` §4.6 with a number per D6 mechanism.
+Files: `evals/token/README.md`, `evals/token/sessions/*.jsonl` (5 recorded sessions, redacted), `crates/cox-core/src/bin/bench.rs` or `justfile` target `bench`.
+Steps: (1) Replay each session's submissions through the loop with the `Replay` provider (cassettes recorded once) and count `context_tokens` per call. (2) Toggle each mechanism via config (`tool_output_visible_bytes = 0` → no truncation? no: set to `u32::MAX`; `dedup_window_turns = 0`; `deferred_tools = false`; `compact_at = 1.0`; `microcompact_after_turns = u32::MAX`; outline off via a flag) and re-run. (3) Print a table: mechanism · sessions · context-token-turns before/after · Δ %. (4) Commit the table to `research.md` §4.6; a mechanism with no measurable delta is flagged for removal in §6.
+Check:
+```bash
+just bench | tee /dev/stderr | grep -E '^\| (archive|dedup|outline|deferred|prefix|compaction)' | grep -vq ' 0 %'
+```
+
+### P9 — Routing and subagents (goal: D5 enforced end to end)
+
+#### T9.1 `Router`
+Model: sonnet · Status: open · Depends: T2.1, T1.4 · Size: ~150
+Goal: job → tier → provider/model/effort from config, with the think gate.
+Files: `crates/cox-core/src/router.rs`, `crates/cox-core/tests/router.rs`.
+Steps: (1) `Router::pick(job, overrides) -> (ProviderId, ModelId, Effort, Thinking)`. (2) `think` tier requires `confirm_think`; otherwise `CoreError::Config`-style refusal with a `Notice` showing the price. (3) `/model <tier> <model>` and `--tier code=…` overrides for the session; `ModelSwitched` event; thinking blocks stripped after a switch. (4) Local-only mode: `--provider local` maps all tiers to the local provider. (5) 12-job table test; `think_requires_confirmation`; `never_auto_escalates` (a failing cheap call is retried on cheap, not on code).
+Check:
+```bash
+mise exec -- cargo test -p cox-core router_
+```
+
+#### T9.2 Background tasks
+Model: sonnet · Status: open · Depends: T3.9, T3.7 · Size: ~150
+Goal: `agent`/`bash` with `background: true` run concurrently and report visibly.
+Files: `crates/cox-core/src/tasks.rs`, `crates/cox-tui/src/tasks.rs`.
+Steps: (1) Task registry; `TaskCreated/Completed`; results become a `Notice`-level item the user sees, and enter the model's context only as a short pointer line (never silently as a full result). (2) Hooks `SubagentStart/Stop`. (3) Status line count; `/tasks` list; TUI snapshot with two running tasks.
+Check:
+```bash
+mise exec -- cargo test -p cox-core tasks_ && mise exec -- cargo test -p cox-tui tasks_
+```
+
+#### T9.3 Subagent presets
+Model: haiku · Status: open · Depends: T7.3, T9.1 · Size: ~80
+Goal: `explore` and `shell` presets as markdown agent definitions shipped in the binary.
+Files: `config/agents/explore.md`, `config/agents/shell.md`, `crates/cox-ext/src/agents.rs` (extend: embedded defaults).
+Check:
+```bash
+COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- ext list --json | jq -e '.agents | map(.name) | index("explore") and index("shell")'
+```
+
+#### T9.4 Design doc: routing
+Model: sonnet · Status: open · Depends: T9.1 · Size: doc
+Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.
+Check: file exists; reviewed by `think`.
+
+### P10 — Memory (goal: cross-session memory with zero model cost by default)
+
+#### T10.1 Project memory
+Model: sonnet · Status: open · Depends: T7.1, T0.4 · Size: ~180
+Goal: Claude Code's memory layout, loaded under a budget, searchable.
+Files: `crates/cox-ext/src/memory.rs`, `crates/cox-tools/src/memory.rs`.
+Steps: (1) `~/.cox/projects/<slug>/memory/MEMORY.md` index + one file per fact with the frontmatter Claude Code uses (`name`, `description`, `type`). (2) Index injected in `system[3]` under `memory_budget_tokens`. (3) `memory_save` (writes a file, updates index and `memory_fts`), `memory_search` (FTS5, top 5, bodies capped). (4) Tests: index under 800 tokens with 40 facts; search finds a saved fact.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext memory_ && mise exec -- cargo test -p cox-tools memory_
+```
+
+#### T10.2 End-of-session extraction
+Model: haiku · Status: open · Depends: T10.1 · Size: ~100
+Goal: optional cheap-tier extraction of durable facts, deduplicated.
+Files: `crates/cox-core/src/memory_extract.rs`, `crates/cox-core/src/prompts/memory.md`.
+Steps: on `Shutdown` with `memory.extract`, run the `memory` job over the session summary/items; candidate facts compared by FTS similarity (> 0.8 → skip); write new files; `SessionEnd` hook after.
+Check:
+```bash
+mise exec -- cargo test -p cox-core memory_extract_
+```
+
+#### T10.3 Session search
+Model: haiku · Status: open · Depends: T2.4 · Size: ~120
+Goal: `cox sessions` and `/resume` picker with full-text search.
+Files: `crates/cox/src/sessions.rs`, `crates/cox-store/src/fts.rs`, `crates/cox-tui/src/picker.rs` (extend).
+Steps: index user/assistant text into `rollout_fts` on `ItemDone`; `cox sessions --grep`; picker lists title, cwd, age, cost.
+Check:
+```bash
+mise exec -- cargo test -p cox sessions_
+```
+
+### P11 — ACP and IDE (goal: cox inside Zed and JetBrains)
+
+#### T11.1 `cox acp`
+Model: opus · Status: open · Depends: T6.1, T2.2 · Size: ~200
+Goal: Agent Client Protocol 2.0 server over the event stream.
+Files: `crates/cox-acp/src/{lib,server,map}.rs`, `crates/cox-acp/tests/conformance.rs`.
+Steps: (1) `initialize` (capabilities: fs read/write, terminal, permission requests), `authenticate` (none), `session/new`, `session/load` (resume), `session/prompt` → `UserTurn`; `session/cancel` → `Interrupt`. (2) `Event` → ACP `session/update` (agent message chunks, thought chunks, tool call start/progress/done with diffs and locations, plan from `todo`). (3) `ApprovalRequired` → `session/request_permission` with options allow/allow-always/reject; decision → `Submission::Approve`. (4) When the client offers fs/terminal, `read`/`edit`/`write` go through `fs/read_text_file`/`fs/write_text_file` so the editor's buffers stay authoritative; `bash` through `terminal/*`. (5) Conformance: the reference example client from the `agent-client-protocol` repo completes a scripted prompt; permission round-trip test.
+Check:
+```bash
+mise exec -- cargo test -p cox-acp
+```
+
+#### T11.2 IDE docs and smoke
+Model: haiku · Status: open · Depends: T11.1 · Size: doc
+Goal: `docs/ide.md` with a working Zed `settings.json` snippet (`agent_servers`), JetBrains steps, neovim (via an ACP plugin) note; one recorded smoke run in `research.md` §3.
+Check: file exists; snippet validated by a JSON test.
+
+### P12 — Quality and release (goal: v0.1 installable and measured)
+
+#### T12.1 Evals
+Model: sonnet · Status: open · Depends: T6.1, T8.4 · Size: ~200
+Goal: an opt-in harness that reports pass rate and cost per task.
+Files: `evals/tasks/*.yaml` (10 tasks: prompt, setup script, check script, timeout), `evals/tbench/adapter.py` or `.rs`, `justfile` target `eval`.
+Steps: (1) Runner: for each task, fresh tempdir, `setup`, `cox run -p --output-format json --max-turns 40 --approve never --permission-mode auto`, `check` exit code, cost from the JSON. (2) Terminal-Bench adapter following the harness's agent interface (install `cox`, run headless, return trajectory). (3) `just eval` table; a scripted-provider dry run in CI to keep the harness compiling. (4) One real run recorded in `research.md` §5.3 with date, model, pass rate, cost.
+Check:
+```bash
+COX_PROVIDER=scripted just eval --dry-run
+```
+
+#### T12.2 Release
+Model: haiku · Status: open · Depends: T12.1 · Size: ~120
+Goal: installable binaries.
+Files: `Cargo.toml` (`[workspace.metadata.dist]`), `.github/workflows/release.yml`, `install.sh`, `crates/cox/src/self_update.rs`.
+Steps: `cargo-dist` targets `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`; `SHA256SUMS`; `install.sh` (curl | sh discouraged in docs; give the checksum step); `cox self update` verifies the checksum before replacing the binary.
+Check:
+```bash
+git tag v0.1.0-rc1 && git push --tags   # CI produces four archives + SHA256SUMS
+```
+
+#### T12.3 Docs
+Model: haiku · Status: open · Depends: T12.2 · Size: doc
+Goal: `README.md` (60-second start), `docs/config.md` (every key, generated), `docs/tools.md`, `docs/compat.md` (what is read from `.claude/` and `.codex/`, what is not), `docs/ide.md` (T11.2), `CHANGELOG.md` via git-cliff.
+Check:
+```bash
+mise exec -- cargo test -p cox docs_config_covers_every_key
+```
+
+#### T12.4 Security pass
+Model: sonnet · Status: open · Depends: T3.5, T1.2, T7.2 · Size: ~150
+Goal: supply-chain and parser hardening in CI.
+Files: `fuzz/Cargo.toml`, `fuzz/fuzz_targets/{sse,v4a,frontmatter,permission_rules}.rs`, `.github/workflows/nightly.yml`.
+Steps: `cargo deny check` and `cargo audit` on every PR; nightly `cargo fuzz run <target> -- -max_total_time=600` for the four parsers; a `SECURITY.md` naming the trust boundaries from `AGENTS.md`.
+Check:
+```bash
+mise exec -- cargo deny check && ls fuzz/fuzz_targets | wc -l | grep -q 4
+```
+
+## 4. Definition of done for v0.1
+
+1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
+2. `cargo test --workspace` passes offline with no API key in under 90 s on CI; every widget, transcript cell and loop scenario has a snapshot.
+3. A user with `.claude/settings.json`, `CLAUDE.md`, `.claude/commands`, `.claude/agents`, `.mcp.json` and rtok hooks gets identical behaviour without editing them.
+4. `cox stats` shows cost by tier and job; the `just bench` table in `research.md` §4.6 shows measured savings for each D6 mechanism; cache-read ratio on turn ≥ 3 of a typical session is ≥ 80 %.
+5. `cox run -p` and `cox acp` pass their conformance tests; `cox mcp` serves `read`/`grep`/`glob` to Claude Code.
+6. No `unwrap`/`panic!` outside tests; `cargo deny` clean; fuzz jobs green.
+7. The fourteen invariants in §1.15 each have a passing, named test.
+
+## 5. Roadmap
+
+| Milestone | Phases | What a user can do | Tasks |
+|-----------|--------|--------------------|-------|
+| M1 "talks" | P0, P1, P2, T5.1–T5.3 | chat with tools in a scripted or real provider, resume a session | 25 |
+| M2 "edits safely" | P3, P4, rest of P5 | daily-driver TUI: diff-shaped edits, sandboxed shell, approvals, diff view | 21 |
+| M3 "fits in" | P6, P7 | headless/CI, MCP both ways, Claude Code/Codex config compatibility, hooks, skills | 13 |
+| M4 "cheap" | P8, P9 | compaction, archive/expand, dedup, deferred tools, tiered routing, budgets, measured savings | 9 |
+| M5 "everywhere" | P10, P11, P12 | memory, Zed/JetBrains via ACP, evals, release | 9 |
+| v0.2 | — | WASM plugins (extism), LSP diagnostics, Gemini, images, worktrees, repo map, architect/editor mode | — |
+
+Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 → the rest. M4 before M3 if cost is the pain; M3 before M4 if adoption is.
+
+Estimated model spend for the whole v0.1 plan at the suggested tiers, assuming ~60 k tokens per task: 77 tasks ≈ 30 haiku, 38 sonnet, 9 opus → roughly $2 (haiku) + $35 (sonnet) + $25 (opus) in output-dominated cost, plus fable reviews of four design docs (≈ $5). Under $100 if tasks stay within their size limit; the ledger (T1.7) makes this a measured number after M1.
+
+## 6. Plan amendments
+
+(none yet — add `A<n> <date> <task> <what changed and why>`)
+
+## 7. Risk register
+
+| # | Risk | Signal | Mitigation | Task |
+|---|------|--------|------------|------|
+| R1 | Anthropic wire format changes (beta headers, `fallbacks`, effort names) break T1.1 | contract tests fail after re-recording | own provider layer isolates it to one file; cassettes re-recorded with `cox record`; prices/features carry `verified_on` | T1.1, T1.5, T1.7 |
+| R2 | Cache hit rate stays low because instruction files or tool lists change mid-session | `cox stats --cache` shows repeated misses | breakpoint layout §1.9; discovered tools appended not reordered; diagnostics name the byte | T2.3, T8.3 |
+| R3 | Sandbox blocks legitimate builds (network for `cargo fetch`, writes to `~/.cargo`) | users switch to `danger-full-access` | `writable` extras and `network` per project; `on-failure` policy asks instead of failing; doctor explains | T4.1–T4.3 |
+| R4 | tree-sitter grammar/version churn (0.25 vs 0.27) | build breaks on update | pin grammars to a tested set; outline has a regex fallback | T3.2, T3.7 |
+| R5 | ratatui inline viewport glitches on some terminals (tmux, Windows Terminal) | scrollback corruption reports | `tui.inline = false` falls back to alternate screen; PTY e2e covers both | T5.1, T5.8 |
+| R6 | Hook or MCP server hangs the turn | turns stall | timeouts, process-group kill, fail open | T7.4, T7.6 |
+| R7 | Bash classifier misses a destructive command | a destructive command runs without asking | classifier is an allowlist for `ReadOnly` (unknown → `Exec` → ask); sandbox is the second guard; fuzz the parser | T3.7, T12.4 |
+| R8 | Task size limits force half-finished features | many §6 amendments | split by design at planning time; a phase gate reviews before the next phase starts | §2 |
+| R9 | Third-party prices and thresholds in research were unverifiable | ledger cost wrong | `prices.toml` verified from official pages before the ledger goes live; doctor warns when stale | T1.7 |
