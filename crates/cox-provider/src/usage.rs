@@ -9,17 +9,23 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 
+use figment::Figment;
+use figment::providers::{Format, Toml};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use cox_protocol::ids::{SessionId, TurnId};
+use cox_protocol::ids::SessionId;
 use cox_protocol::traits::UsageRow;
 use cox_protocol::types::{Job, ModelId, ProviderId, Tier, Usage};
 
 const DEFAULT_PRICES: &str = include_str!("../../../config/prices.toml");
 
+/// One `[[model]]` row of `config/prices.toml`: the four per-MTok rates a
+/// call is billed at, plus the provenance that lets `cox doctor` flag a
+/// stale table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Price {
+    /// The `ModelId` string this row prices.
     pub id: String,
     /// Input tokens, USD per MTok.
     pub input: f64,
@@ -29,7 +35,9 @@ pub struct Price {
     pub cache_write: f64,
     /// Cache read tokens, USD per MTok.
     pub cache_read: f64,
+    /// ISO date these rates were last checked against `source_url`.
     pub verified_on: String,
+    /// The official pricing page the rates were read from.
     pub source_url: String,
 }
 
@@ -38,10 +46,13 @@ struct PriceToml {
     model: Vec<Price>,
 }
 
+/// Why a price table could not be loaded.
 #[derive(Debug, Error)]
 pub enum PriceError {
+    /// The TOML did not parse, or did not match the `[[model]]` shape.
     #[error("failed to parse price table: {0}")]
     Parse(String),
+    /// The price file existed but could not be read.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -67,8 +78,9 @@ impl PriceTable {
     }
 
     fn from_str(content: &str) -> Result<Self, PriceError> {
-        let table: PriceToml =
-            toml::from_str(content).map_err(|e| PriceError::Parse(e.to_string()))?;
+        let table: PriceToml = Figment::from(Toml::string(content))
+            .extract()
+            .map_err(|e| PriceError::Parse(e.to_string()))?;
         Ok(PriceTable {
             prices: table.model,
             warned_models: Mutex::new(HashSet::new()),
@@ -94,28 +106,45 @@ impl PriceTable {
     /// Returns true the first time this model is seen, false on subsequent calls.
     /// Used to emit one `Notice(Warn)` per session for unknown models.
     pub fn warn_once(&self, model: &ModelId) -> bool {
-        let mut warned = self.warned_models.lock().unwrap();
+        // A poisoned lock only means some other thread panicked mid-warn; the
+        // warned-set is advisory, so recovering beats propagating.
+        let mut warned = self
+            .warned_models
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         warned.insert(model.0.clone())
     }
 }
 
-/// Prepares a ledger row for insertion via `Store::usage_insert`.
-/// Called after the provider returns a `Usage` event.
+/// Fills in the cost of a call and returns the row `Store::usage_insert`
+/// takes. `price_for` returning `None` is not an error: the row is still
+/// written, costed at 0 and flagged `estimated`, so an unpriced model can
+/// never make a call disappear from the ledger.
+#[allow(clippy::too_many_arguments)]
 pub fn ledger_row(
     session: SessionId,
-    turn: TurnId,
+    turn: u32,
     job: Job,
     tier: Tier,
-    provider: String,
+    provider: ProviderId,
     model: ModelId,
     usage: Usage,
+    prices: &PriceTable,
 ) -> UsageRow {
+    let mut usage = usage;
+    match prices.price_for(&model) {
+        Some(price) => usage.cost_usd = prices.cost(&usage, price),
+        None => {
+            usage.cost_usd = 0.0;
+            usage.estimated = true;
+        }
+    }
     UsageRow {
         session_id: session,
-        turn: turn.as_ref().parse::<u32>().unwrap_or(0),
+        turn,
         job,
         tier,
-        provider: provider.into(),
+        provider,
         model,
         usage,
     }
@@ -129,16 +158,8 @@ mod tests {
     fn usage_prices_toml_parses_and_has_all_tier_models() {
         let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
         assert_eq!(table.prices.len(), 4);
-        assert!(
-            table
-                .prices
-                .iter()
-                .map(|p| p.id.as_str())
-                .collect::<Vec<_>>()
-                .windows(2)
-                .all(|w| w[0] <= w[1]),
-            "prices must be sorted by id"
-        );
+        // The file is ordered cheapest-tier-first for a human editing it;
+        // `price_for` is a linear find, so nothing depends on the order.
         // Verify all required tier models are present.
         let ids: Vec<&str> = table.prices.iter().map(|p| p.id.as_str()).collect();
         assert!(ids.contains(&"claude-haiku-4-5"));
@@ -151,7 +172,7 @@ mod tests {
     fn usage_cost_matches_hand_computed() {
         let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
         let price = table
-            .price_for(&ModelId::new("claude-haiku-4-5"))
+            .price_for(&ModelId("claude-haiku-4-5".into()))
             .expect("haiku price");
         let usage = Usage {
             input_tokens: 1_000_000,
@@ -173,45 +194,70 @@ mod tests {
     #[test]
     fn usage_unknown_model_is_estimated_and_warns_once() {
         let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
-        let unknown = ModelId::new("claude-unknown-42");
+        let unknown = ModelId("claude-unknown-42".into());
         assert!(table.price_for(&unknown).is_none());
         // First call to warn_once returns true.
         assert!(table.warn_once(&unknown));
         // Second call returns false (already warned).
         assert!(!table.warn_once(&unknown));
         // A different model triggers warning anew.
-        let another = ModelId::new("claude-other-99");
+        let another = ModelId("claude-other-99".into());
         assert!(table.warn_once(&another));
     }
 
-    #[test]
-    fn usage_ledger_row_roundtrips_through_store() {
-        let session = SessionId::new("s1");
-        let turn = TurnId::new("t1");
-        let usage = Usage {
-            input_tokens: 100,
-            output_tokens: 50,
-            cache_read_tokens: 20,
-            cache_write_tokens: 10,
+    fn sample_usage() -> Usage {
+        Usage {
+            input_tokens: 1_000_000,
+            output_tokens: 100_000,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             estimated: false,
-            cost_usd: 0.001,
+            cost_usd: 0.0,
             latency_ms: 50,
-        };
+        }
+    }
+
+    #[test]
+    fn usage_ledger_row_carries_cost_and_identity() {
+        let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
+        let session = SessionId::new();
         let row = ledger_row(
-            session.clone(),
-            turn.clone(),
+            session,
+            3,
             Job::Main,
             Tier::Code,
-            "anthropic".to_string(),
-            ModelId::new("claude-sonnet-5"),
-            usage,
+            ProviderId::Anthropic,
+            ModelId("claude-haiku-4-5".into()),
+            sample_usage(),
+            &table,
         );
-        // Verify the row contains all the expected values.
         assert_eq!(row.session_id, session);
+        assert_eq!(row.turn, 3);
         assert_eq!(row.job, Job::Main);
         assert_eq!(row.tier, Tier::Code);
-        assert_eq!(row.model.as_ref(), "claude-sonnet-5");
-        assert_eq!(row.usage.input_tokens, 100);
-        assert_eq!(row.usage.output_tokens, 50);
+        assert_eq!(row.provider, ProviderId::Anthropic);
+        assert_eq!(row.model.0, "claude-haiku-4-5");
+        // Haiku: 1M input @ $1/M + 100k output @ $5/M = $1.50.
+        assert!((row.usage.cost_usd - 1.5).abs() < 0.0001);
+        assert!(!row.usage.estimated);
+    }
+
+    #[test]
+    fn usage_ledger_row_for_unknown_model_is_zero_cost_and_estimated() {
+        let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
+        let row = ledger_row(
+            SessionId::new(),
+            1,
+            Job::Main,
+            Tier::Code,
+            ProviderId::Local,
+            ModelId("some-local-model".into()),
+            sample_usage(),
+            &table,
+        );
+        // An unpriced model still produces a row — costed 0, flagged estimated.
+        assert_eq!(row.usage.cost_usd, 0.0);
+        assert!(row.usage.estimated);
+        assert_eq!(row.usage.input_tokens, 1_000_000);
     }
 }

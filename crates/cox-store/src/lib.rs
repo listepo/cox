@@ -21,11 +21,11 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use sha2::{Digest, Sha256};
 
 use cox_protocol::{
-    Archive, ArchiveId, ArchivePut, Event, MemoryHit, SessionId, SessionRow, Store as StoreTrait,
-    StoreError, UsageRow,
+    Archive, ArchiveId, ArchivePut, Event, MemoryHit, ModelId, SessionId, SessionRow,
+    Store as StoreTrait, StoreError, Usage, UsageRow,
 };
 
-use models::{NewArchive, NewSession, NewUsage};
+use models::{NewArchive, NewSession, UsageDbRow};
 use rollout::RolloutWriter;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -117,11 +117,11 @@ fn to_tag<T: serde::Serialize>(value: &T) -> String {
     }
 }
 
-fn from_tag<T: serde::de::DeserializeOwned>(s: &str) -> T {
-    // Reconstruct the JSON value that to_tag would have produced from T.
-    // to_tag serializes to a bare string, so we deserialize from that string directly.
-    serde_json::from_value(serde_json::Value::String(s.to_string()))
-        .unwrap_or_else(|_| serde_json::from_value(serde_json::json!(s)).unwrap_or_default())
+/// Inverse of `to_tag`: a stored tag is the bare string form of a unit-variant
+/// enum, so it deserializes straight from a JSON string. `None` means the tag
+/// no longer names a variant — a corrupt row, not a defaultable one.
+fn from_tag<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
+    serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -212,7 +212,7 @@ impl StoreTrait for Store {
     }
 
     fn usage_insert(&self, row: &UsageRow) -> Result<(), StoreError> {
-        let new_row = NewUsage {
+        let new_row = UsageDbRow {
             session_id: row.session_id.to_string(),
             turn: row.turn as i32,
             job: to_tag(&row.job),
@@ -360,84 +360,42 @@ impl Archive for Store {
 
 /// Public query methods for surfaces like `cox stats`.
 impl Store {
-    /// Retrieves all usage rows for a session, ordered by turn.
-    /// Used by `cox stats --session <id>` to display per-turn costs (T1.7).
+    /// Every usage row for one session, in turn order — what
+    /// `cox stats --session <id>` prints (T1.7).
     pub fn usage_for_session(&self, session_id: &SessionId) -> Result<Vec<UsageRow>, StoreError> {
-        use diesel::prelude::*;
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let rows: Vec<(
-            String,
-            i32,
-            String,
-            String,
-            String,
-            String,
-            i64,
-            i64,
-            i64,
-            i64,
-            bool,
-            f64,
-            i64,
-        )> = schema::usage::table
+        let rows: Vec<UsageDbRow> = schema::usage::table
             .filter(schema::usage::session_id.eq(session_id.to_string()))
             .order_by(schema::usage::turn.asc())
-            .select((
-                schema::usage::session_id,
-                schema::usage::turn,
-                schema::usage::job,
-                schema::usage::tier,
-                schema::usage::provider,
-                schema::usage::model,
-                schema::usage::input_tokens,
-                schema::usage::output_tokens,
-                schema::usage::cache_read_tokens,
-                schema::usage::cache_write_tokens,
-                schema::usage::estimated,
-                schema::usage::cost_usd,
-                schema::usage::latency_ms,
-            ))
+            .select(UsageDbRow::as_select())
             .load(&mut *conn)
             .map_err(|_| StoreError::Sqlite)?;
+        drop(conn);
 
-        Ok(rows
-            .into_iter()
-            .map(
-                |(
-                    session_id,
-                    turn,
-                    job,
-                    tier,
-                    provider,
-                    model,
-                    input,
-                    output,
-                    cache_read,
-                    cache_write,
-                    estimated,
-                    cost_usd,
-                    latency_ms,
-                )| {
-                    UsageRow {
-                        session_id: SessionId::new(&session_id),
-                        turn: turn as u32,
-                        job: from_tag(&job),
-                        tier: from_tag(&tier),
-                        provider: provider.into(),
-                        model: ModelId::new(&model),
-                        usage: Usage {
-                            input_tokens: input as u32,
-                            output_tokens: output as u32,
-                            cache_read_tokens: cache_read as u32,
-                            cache_write_tokens: cache_write as u32,
-                            estimated,
-                            cost_usd,
-                            latency_ms: latency_ms as u64,
-                        },
-                    }
-                },
-            )
-            .collect())
+        rows.into_iter()
+            .map(|r| {
+                let corrupt = || StoreError::Corrupt {
+                    path: self.home.join("cox.db"),
+                };
+                Ok(UsageRow {
+                    session_id: r.session_id.parse().map_err(|_| corrupt())?,
+                    turn: r.turn as u32,
+                    job: from_tag(&r.job).ok_or_else(corrupt)?,
+                    tier: from_tag(&r.tier).ok_or_else(corrupt)?,
+                    provider: from_tag(&r.provider).ok_or_else(corrupt)?,
+                    model: ModelId(r.model),
+                    usage: Usage {
+                        input_tokens: r.input_tokens as u32,
+                        output_tokens: r.output_tokens as u32,
+                        cache_read_tokens: r.cache_read_tokens as u32,
+                        cache_write_tokens: r.cache_write_tokens as u32,
+                        estimated: r.estimated,
+                        cost_usd: r.cost_usd,
+                        latency_ms: r.latency_ms as u64,
+                    },
+                })
+            })
+            .collect()
     }
 }
 

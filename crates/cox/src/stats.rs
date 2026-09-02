@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
-use cox_protocol::SessionId;
+use cox_protocol::{SessionId, Store as _};
 use cox_store::Store;
 
 pub fn run(home: &Path, session_id: &str) -> anyhow::Result<()> {
     let store = Store::open(home)?;
-    let session = SessionId::new(session_id);
+    let session: SessionId = session_id.parse()?;
     let rows = store.usage_for_session(&session)?;
 
     if rows.is_empty() {
@@ -24,11 +24,11 @@ pub fn run(home: &Path, session_id: &str) -> anyhow::Result<()> {
     println!("{}", "-".repeat(105));
 
     // Print each row.
-    for row in rows {
+    for row in &rows {
         println!(
             "{:<5} {:<20} {:<12} {:<12} {:<12} {:<12} ${:<11.4} {:<10}ms",
             row.turn,
-            row.model.as_ref(),
+            row.model.0,
             row.usage.input_tokens,
             row.usage.output_tokens,
             row.usage.cache_read_tokens,

@@ -23,9 +23,13 @@ pub(crate) struct NewSession {
     pub state: String,
 }
 
-#[derive(Insertable)]
+/// Both directions of the `usage` table: written by `usage_insert`, read back
+/// by `usage_for_session` (`cox stats`). Field order matches the table's
+/// column order after `id`, which is what `Selectable` checks.
+#[derive(Insertable, Queryable, Selectable)]
 #[diesel(table_name = usage)]
-pub(crate) struct NewUsage {
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub(crate) struct UsageDbRow {
     pub session_id: String,
     pub turn: i32,
     pub job: String,

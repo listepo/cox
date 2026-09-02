@@ -293,6 +293,7 @@ fn not_found(content: &str, old: &str) -> ToolError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::sync::Arc;
 
     use cox_protocol::{ArchiveId, SandboxMode, SandboxPolicy, SessionId, StoreError};

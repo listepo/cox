@@ -19,6 +19,11 @@ tiktoken-rs = { workspace = true }
 eventsource-stream = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+# T1.7: the price table (`config/prices.toml`) is deserialised with the
+# workspace's existing TOML reader rather than a second toml crate.
+serde = { workspace = true }
+thiserror = { workspace = true }
+figment = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
