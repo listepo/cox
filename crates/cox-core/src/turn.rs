@@ -129,7 +129,6 @@ pub(crate) async fn run_tools(
         .collect();
     let order: Vec<CallId> = calls.iter().map(|(id, _, _)| *id).collect();
     for (id, name, input) in &calls {
-        let spec = tools.get(name).map(|t| t.spec());
         let subject = tools
             .get(name)
             .map(|t| t.subject(input))
@@ -138,7 +137,12 @@ pub(crate) async fn run_tools(
             id: *id,
             name: name.clone(),
             input: input.clone(),
-            risk: spec.as_ref().map(|s| s.risk).unwrap_or(Risk::ReadOnly),
+            // Per call, not per tool: `apply_patch` escalates to
+            // `Destructive` on the patches that delete a lot of files.
+            risk: tools
+                .get(name)
+                .map(|t| t.risk(input))
+                .unwrap_or(Risk::ReadOnly),
             subject,
         };
         session.emit(Event::ToolCallRequested { call }).await?;

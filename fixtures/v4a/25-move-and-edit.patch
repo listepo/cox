@@ -1,0 +1,10 @@
+*** Begin Patch
+*** Update File: legacy.rs
+*** Move to: modern.rs
+@@
+-use old;
++use new;
+@@
+-fn b() {}
++fn b2() {}
+*** End Patch

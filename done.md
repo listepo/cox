@@ -526,3 +526,32 @@ $ mise exec -- cargo test -p cox-core turn_
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 ```
 
+#### T3.5 `apply_patch` (V4A)
+Model: opus · Status: done 2026-09-02 · Depends: T3.4 · Size: ~200
+Goal: Codex's patch grammar parses, prints and applies.
+Files: `crates/cox-tools/src/v4a/{parse,apply}.rs`, `fixtures/v4a/*.patch` + `.before/` `.after/` trees.
+Steps: (1) Grammar: `*** Begin Patch` … `*** End Patch`; `*** Add File: p` (+ lines), `*** Delete File: p`, `*** Update File: p` [`*** Move to: q`], hunks `@@ ctx` with ` `, `-`, `+` lines, `*** End of File`. (2) Progressive matching per hunk: exact → trailing-whitespace-insensitive → all-whitespace-insensitive; unique match required; report the hunk index on failure. (3) Apply all-or-nothing (stage in memory, write atomically). (4) `Risk::Destructive` when > 5 deletes. (5) 25 golden patches incl. Codex's documented examples; proptest `parse(print(p)) == p`.
+
+Notes: `parse.rs` is a pure text ↔ AST bijection (`Patch`/`Op`/`Hunk`/`HunkLine` + `Display`); `apply.rs` holds the resolution and the tool. `stage()` takes a `read` closure instead of touching the filesystem, so all-or-nothing is structural rather than a discipline: a patch that fails on its fourth file cannot have written its first three. Hunks match through three normalisers in order (exact, `trim_end`, all-whitespace-stripped); `@@` headers advance a cursor rather than hard-failing, since a stale header is a hint and the hunk body is the real anchor. Two anchors are tried for `*** End of File` because `split('\n')` on a file ending in a newline leaves a trailing empty element no patch author wrote. Errors are `ToolError::Denied { why }` rather than a crate-local `thiserror` enum — `thiserror` is not a `cox-tools` dependency and every one of these messages is read by the model.
+
+Deviations: (1) step 4 needed a plan amendment — `ToolSpec.risk` is static, so `Risk::Destructive` on > 5 deletes is impossible to express from `spec()`. Added `Tool::risk(&self, input)` with a `spec().risk` default (plan.md §6 A5); `cox-core::turn::run_tools` now calls it. (2) The fuzz target is at `fuzz/fuzz_targets/v4a_parse.rs`, not the literal `fuzz/v4a_parse.rs`, so it already sits in the layout T12.4 declares (`fuzz/Cargo.toml`, `fuzz/fuzz_targets/*.rs`) and needs no move. It is inert until T12.4 adds the manifest — the workspace is `members = ["crates/*"]`. (3) `*** Add File:` with zero `+` lines produces an empty file, not a file containing one blank line.
+
+Overrun: 5 source files (`src/v4a/{mod,parse,apply}.rs`, `src/lib.rs`, `tests/v4a.rs`) plus `cox-protocol/src/traits.rs`, `cox-core/src/turn.rs`, the 90-file fixture corpus and the fuzz target; `parse.rs` (~420) and `apply.rs` (~500) each exceed the ~200 LOC line, mostly tests. No new dependencies.
+
+Check:
+```bash
+$ mise exec -- cargo test -p cox-tools -- v4a_
+running 14 tests   (src/v4a: 5 parse incl. 2 proptests, 9 apply)
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.09s
+
+     Running tests/v4a.rs
+test v4a_golden_corpus_applies_every_patch ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+$ mise exec -- cargo test --workspace
+test result: ok  (24 binaries, 0 failures)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile
+$ mise exec -- cargo fmt --check
+(clean)
+```

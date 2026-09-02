@@ -10,6 +10,7 @@ pub mod outline;
 pub mod path;
 pub mod read;
 pub mod todo;
+pub mod v4a;
 pub mod write;
 
 use std::path::PathBuf;

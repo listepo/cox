@@ -1,0 +1,6 @@
+*** Begin Patch
+*** Update File: a.rs
+@@ fn main() {
+-    println!("one");
++    println!("two");
+*** End Patch

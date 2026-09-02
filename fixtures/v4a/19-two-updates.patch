@@ -1,0 +1,10 @@
+*** Begin Patch
+*** Update File: a.txt
+@@
+-a1
++a2
+*** Update File: b.txt
+@@
+-b1
++b2
+*** End Patch

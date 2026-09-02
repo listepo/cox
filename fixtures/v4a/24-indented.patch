@@ -1,0 +1,6 @@
+*** Begin Patch
+*** Update File: a.py
+@@ def f():
+-            do(i)
++            do(i + 1)
+*** End Patch

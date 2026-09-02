@@ -1,0 +1,7 @@
+*** Begin Patch
+*** Update File: old.rs
+*** Move to: new.rs
+@@
+-value = 1
++value = 2
+*** End Patch

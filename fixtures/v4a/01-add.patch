@@ -1,0 +1,4 @@
+*** Begin Patch
+*** Add File: new.py
++print("hi")
+*** End Patch

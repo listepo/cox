@@ -1,0 +1,9 @@
+*** Begin Patch
+*** Add File: fresh.rs
++fresh
+*** Update File: keep.rs
+@@
+-old
++new
+*** Delete File: bye.rs
+*** End Patch

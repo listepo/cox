@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use crate::errors::{ProviderError, StoreError, ToolError};
 use crate::ids::{ArchiveId, CallId, SessionId};
 use crate::types::{
-    Caps, ProviderEvent, ProviderId, Request, SandboxPolicy, ToolOutput, ToolSpec, Usage,
+    Caps, ProviderEvent, ProviderId, Request, Risk, SandboxPolicy, ToolOutput, ToolSpec, Usage,
 };
 
 /// A row inserted for a new session (`Store::session_create`), matching the
@@ -146,6 +146,13 @@ pub trait Tool: Send + Sync {
     /// What permission rules match this call on: the confined path, command
     /// line, URL, or namespaced MCP name.
     fn subject(&self, input: &Value) -> String;
+    /// This *call's* risk, which is not always the tool's. `spec().risk` is
+    /// a default: `apply_patch` is an ordinary write until the patch in
+    /// front of it deletes more than five files, and only the input says
+    /// which it is (plan.md §4 tool table, T3.5 step 4).
+    fn risk(&self, _input: &Value) -> Risk {
+        self.spec().risk
+    }
     /// Runs the tool. `text` in the returned `ToolOutput` is untruncated;
     /// the core archives it and truncates what the model sees.
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError>;

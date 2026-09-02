@@ -1,0 +1,6 @@
+*** Begin Patch
+*** Update File: a.rs
+@@
+-let x = 1;
++let x = 9;
+*** End Patch

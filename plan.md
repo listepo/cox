@@ -649,17 +649,6 @@ Check: file exists, names the six rules with their test names.
 
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
 
-#### T3.5 `apply_patch` (V4A)
-Model: opus · Status: open · Depends: T3.4 · Size: ~200
-Goal: Codex's patch grammar parses, prints and applies.
-Files: `crates/cox-tools/src/v4a/{parse,apply}.rs`, `fixtures/v4a/*.patch` + `.before/` `.after/` trees.
-Steps: (1) Grammar: `*** Begin Patch` … `*** End Patch`; `*** Add File: p` (+ lines), `*** Delete File: p`, `*** Update File: p` [`*** Move to: q`], hunks `@@ ctx` with ` `, `-`, `+` lines, `*** End of File`. (2) Progressive matching per hunk: exact → trailing-whitespace-insensitive → all-whitespace-insensitive; unique match required; report the hunk index on failure. (3) Apply all-or-nothing (stage in memory, write atomically). (4) `Risk::Destructive` when > 5 deletes. (5) 25 golden patches incl. Codex's documented examples; proptest `parse(print(p)) == p`.
-Check:
-```bash
-mise exec -- cargo test -p cox-tools v4a_
-```
-Done when: a fuzz target `fuzz/v4a_parse.rs` exists (run in T12.4).
-
 #### T3.6 `write` and `todo`
 Model: haiku · Status: open · Depends: T3.1 · Size: ~120
 Goal: new-file writes and a structured todo list.
@@ -1131,6 +1120,7 @@ Estimated model spend for the whole v0.1 plan at the suggested tiers, assuming ~
 - A2 2026-09-02 §2, `AGENTS.md` — agents work only on `main`; no `cox/<task-id>` branches. Why: user request. Effect: claim, commit and finish tasks on `main`.
 - A3 2026-09-02 §2, `AGENTS.md` — don't duplicate code or logic; reuse an existing helper or extract one shared helper at the responsible layer. Why: user request.
 - A4 2026-09-02 §2, `AGENTS.md` — every implemented task is marked done and moved to `done.md` with its Check output. Why: user request.
+- A5 2026-09-02 §1.2, `cox-protocol::Tool`, T3.5 — added `Tool::risk(&self, input) -> Risk`, defaulting to `spec().risk`; `cox-core::turn::run_tools` now asks the tool instead of reading `spec().risk`. Why: T3.5 step 4 and the §4 tool table require `apply_patch` to be `Destructive` only when a patch deletes > 5 files, and a static `ToolSpec` cannot express a per-call risk. Effect on other tasks: none — every other tool inherits the default; T2.2's permission engine keeps reading `ToolCall.risk`.
 
 ## 7. Risk register
 
