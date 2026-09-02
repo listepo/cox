@@ -136,17 +136,18 @@ pub(crate) async fn run_tools(
             continue;
         };
         let id = call.id;
-        let input = match gate(session, tool.as_ref(), call).await? {
-            Ok(input) => input,
+        let call = match gate(session, tool.as_ref(), call).await? {
+            Ok(call) => call,
             Err(result) => {
                 done.insert(id, result);
                 continue;
             }
         };
+        session.dedup_invalidate(call.risk, &call.subject).await;
         if tool.spec().concurrency == Concurrency::Exclusive {
-            serial.push((id, tool, input));
+            serial.push((id, tool, call.input));
         } else {
-            parallel.push((id, tool, input));
+            parallel.push((id, tool, call.input));
         }
     }
     for (id, tool, input) in serial {
@@ -198,19 +199,19 @@ pub(crate) async fn run_tools(
 }
 
 /// Asks the permission engine and, when it escalates, the user. Returns the
-/// input to run with (the user may have edited it) or the failed result the
+/// call to run (the user may have edited its input) or the failed result the
 /// model sees. Auto-allows emit nothing: they are the common case and the
 /// rollout already carries `ToolCallRequested`.
 async fn gate(
     session: &Session,
     tool: &dyn Tool,
     mut call: ToolCall,
-) -> Result<Result<Value, ToolResult>, CoreError> {
+) -> Result<Result<ToolCall, ToolResult>, CoreError> {
     let id = call.id;
     let denied = |reason: &str| failed_result(&format!("permission denied: {reason}"));
     loop {
         let why = match session.decide(&call).await {
-            Outcome::Allow { .. } => return Ok(Ok(call.input)),
+            Outcome::Allow { .. } => return Ok(Ok(call)),
             Outcome::Deny { reason, by } => {
                 session
                     .emit(Event::ApprovalDecided {
@@ -247,10 +248,10 @@ async fn gate(
             })
             .await?;
         match decision {
-            Decision::Allow => return Ok(Ok(call.input)),
+            Decision::Allow => return Ok(Ok(call)),
             Decision::AllowForSession => {
-                session.grant(call.name, call.subject).await;
-                return Ok(Ok(call.input));
+                session.grant(call.name.clone(), call.subject.clone()).await;
+                return Ok(Ok(call));
             }
             Decision::Deny { reason } => return Ok(Err(denied(&reason))),
             // A rewritten input is a new call as far as the rules go: its
@@ -299,6 +300,9 @@ async fn run_one(
                 .await;
         }
     });
+    // Only read-only calls are dedup candidates; keep what the key needs.
+    let read_key =
+        (tool.risk(&input) == Risk::ReadOnly).then(|| (input.clone(), tool.subject(&input)));
     let output = match tool.call(input, &cx).await {
         Ok(o) => o,
         Err(e) => ToolOutput {
@@ -321,13 +325,27 @@ async fn run_one(
         .await;
     let (archive, visible) = match archive {
         Ok(id) => {
-            let visible = crate::truncate::visible(
-                &output.text,
-                id,
-                session.config.context.tool_output_visible_bytes as usize,
-                session.config.context.tool_output_head_lines as usize,
-                session.config.context.tool_output_tail_lines as usize,
-            );
+            let mut pointer = None;
+            if let Some((input, subject)) = read_key.filter(|_| !output.is_error) {
+                pointer = session
+                    .dedup_observe(
+                        &tool.spec().name,
+                        &input,
+                        &subject,
+                        id,
+                        output.text.as_bytes(),
+                    )
+                    .await;
+            }
+            let visible = pointer.unwrap_or_else(|| {
+                crate::truncate::visible(
+                    &output.text,
+                    id,
+                    session.config.context.tool_output_visible_bytes as usize,
+                    session.config.context.tool_output_head_lines as usize,
+                    session.config.context.tool_output_tail_lines as usize,
+                )
+            });
             (Some(cox_protocol::ArchiveRef { id, bytes }), visible)
         }
         Err(_) => (None, "tool output could not be archived".into()),

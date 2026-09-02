@@ -3,8 +3,8 @@ text = "first write"
 tool_calls = [{ name = "touch", input = { path = "a" } }]
 
 [[turn]]
-text = "second write"
-tool_calls = [{ name = "touch", input = { path = "b" } }]
+text = "second write under the same subject prefix"
+tool_calls = [{ name = "touch", input = { path = "a/nested" } }]
 
 [[turn]]
 text = "done"

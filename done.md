@@ -759,3 +759,29 @@ test result: ok. 41 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T2.6 Re-read and re-run dedup
+Model: fable · Status: done 2026-09-03 · Depends: T2.5 · Size: ~120
+Goal: D6b — an identical read/grep/glob within the window costs a pointer, not the payload.
+Files: `crates/cox-core/src/dedup.rs`, `crates/cox-core/tests/dedup.rs`.
+Steps: (1) Key = (tool, canonical input) for `ReadOnly` tools only; value = (archive id, turn, subjects). (2) Invalidate when any `Write`/`Exec` tool's subject overlaps the key's subject (path prefix), or after `dedup_window_turns`. (3) Visible result: `unchanged since turn 7, see #id (expand to re-show)`. (4) Test `second_identical_read_costs_under_50_tokens`; `write_invalidates_dedup`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core dedup_
+```
+Done when: T8.5 can toggle it via `context.dedup_window_turns = 0`.
+
+What landed: `cox_core::dedup::Dedup`, owned by the session (`Session::dedup_observe`/`dedup_invalidate`, window = provider rounds counted in `step`). `turn::run_one` records every successful `ReadOnly` result after its archive row exists and swaps the visible text for the pointer on a hit; the key is (tool, JSON with sorted object keys) and the entry also keeps a digest of the bytes, so a file changed outside cox still shows its payload. `run_tools` invalidates before running each gated call: a `Write` drops entries whose subject overlaps the call's subject as a path prefix, `Exec`/`Destructive` drop everything. `dedup_window_turns = 0` disables it. Loop tests `dedup_second_identical_read_costs_under_50_tokens`, `dedup_write_invalidates_dedup`, `dedup_window_zero_disables_dedup` over new scenarios `reread`, `reread_after_write`; the stub tools moved to a shared `tests/common` harness (the `touch` stub's subject is now its path, which changed the `subject` field in two approval snapshots and made the `allow_for_session` scenario write under the first call's prefix).
+Not done: nothing from the plan. Size: ~250 LOC over 8 files (module, session/turn wiring, harness, tests, scenarios) — reported rather than split because the harness extraction is what keeps `turn.rs` and `dedup.rs` from duplicating the stubs.
+```
+$ mise exec -- cargo test -p cox-core dedup_
+test dedup::tests::dedup_changed_output_and_expired_window_show_the_payload ... ok
+test dedup::tests::dedup_key_ignores_object_key_order ... ok
+test dedup::tests::dedup_second_identical_read_is_a_pointer_to_the_first_archive ... ok
+test dedup::tests::dedup_write_invalidates_by_path_prefix_and_exec_clears_all ... ok
+test dedup_second_identical_read_costs_under_50_tokens ... ok
+test dedup_window_zero_disables_dedup ... ok
+test dedup_write_invalidates_dedup ... ok
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

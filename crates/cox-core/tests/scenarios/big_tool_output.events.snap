@@ -20,7 +20,7 @@ expression: value
     "item": "<id>",
     "kind": {
       "attachments": [],
-      "text": "big",
+      "text": "big_tool_output",
       "type": "user_message"
     },
     "type": "item_started"

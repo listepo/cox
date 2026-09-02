@@ -67,7 +67,7 @@ expression: value
       },
       "name": "touch",
       "risk": "write",
-      "subject": "touch"
+      "subject": "a"
     },
     "type": "tool_call_requested"
   },
@@ -79,7 +79,7 @@ expression: value
       },
       "name": "touch",
       "risk": "write",
-      "subject": "touch"
+      "subject": "a"
     },
     "type": "approval_required",
     "why": {

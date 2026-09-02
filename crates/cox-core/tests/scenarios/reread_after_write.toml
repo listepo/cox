@@ -1,0 +1,22 @@
+[[turn]]
+text = "read a"
+tool_calls = [{ name = "echo", input = { text = "a" } }]
+
+[[turn]]
+text = "write b"
+tool_calls = [{ name = "touch", input = { path = "b" } }]
+
+[[turn]]
+text = "read a again (b changed, a did not)"
+tool_calls = [{ name = "echo", input = { text = "a" } }]
+
+[[turn]]
+text = "write a"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+[[turn]]
+text = "read a after writing it"
+tool_calls = [{ name = "echo", input = { text = "a" } }]
+
+[[turn]]
+text = "done"

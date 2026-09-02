@@ -1,168 +1,19 @@
 //! Loop tests: Scripted provider + stub tools, golden Event JSONL (T2.1).
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
+use common::{drain, open, run_with, scenario, spawn_turn, tool_results};
 use cox_core::{MemoryStore, Session};
-use cox_protocol::errors::ToolError;
-use cox_protocol::traits::{Tool, ToolCx};
-use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, Risk, StopReason, Submission, ToolOutput,
-    ToolSpec,
-};
-use cox_provider::scripted::Scripted;
-use serde_json::Value;
+use cox_protocol::traits::Tool;
+use cox_protocol::types::{Content, DecidedBy, Decision, Event, StopReason, Submission};
 use tokio::sync::mpsc;
 
-struct Echo;
-struct Touch;
-struct Slow;
-
-#[async_trait]
-impl Tool for Echo {
-    fn spec(&self) -> ToolSpec {
-        ToolSpec {
-            name: "echo".into(),
-            description: "echo input text".into(),
-            input_schema: serde_json::json!({"type": "object"}),
-            deferred: false,
-            risk: Risk::ReadOnly,
-            concurrency: Concurrency::Parallel,
-        }
-    }
-    fn subject(&self, input: &Value) -> String {
-        input
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .into()
-    }
-    async fn call(&self, input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
-        Ok(ToolOutput {
-            text: self.subject(&input),
-            is_error: false,
-            diff: None,
-            structured: None,
-        })
-    }
-}
-
-#[async_trait]
-impl Tool for Touch {
-    fn spec(&self) -> ToolSpec {
-        ToolSpec {
-            name: "touch".into(),
-            description: "exclusive write stub".into(),
-            input_schema: serde_json::json!({"type": "object"}),
-            deferred: false,
-            risk: Risk::Write,
-            concurrency: Concurrency::Exclusive,
-        }
-    }
-    fn subject(&self, _input: &Value) -> String {
-        "touch".into()
-    }
-    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
-        Ok(ToolOutput {
-            text: "touched".into(),
-            is_error: false,
-            diff: None,
-            structured: None,
-        })
-    }
-}
-
-#[async_trait]
-impl Tool for Slow {
-    fn spec(&self) -> ToolSpec {
-        ToolSpec {
-            name: "slow".into(),
-            description: "polls cancel".into(),
-            input_schema: serde_json::json!({"type": "object"}),
-            deferred: false,
-            risk: Risk::ReadOnly,
-            concurrency: Concurrency::Parallel,
-        }
-    }
-    fn subject(&self, _input: &Value) -> String {
-        "slow".into()
-    }
-    async fn call(&self, _input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError> {
-        loop {
-            if cx.cancel.is_cancelled() {
-                return Ok(ToolOutput {
-                    text: "cancelled".into(),
-                    is_error: true,
-                    diff: None,
-                    structured: None,
-                });
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    }
-}
-
-fn scenario(name: &str) -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/scenarios")
-        .join(format!("{name}.toml"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
-}
-
-fn tools() -> Vec<Arc<dyn Tool>> {
-    vec![Arc::new(Echo), Arc::new(Touch), Arc::new(Slow)]
-}
-
-fn open(
-    toml: &str,
-    mut config: cox_protocol::Config,
-) -> (Session, Arc<MemoryStore>, mpsc::Receiver<Event>) {
-    config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
-    let provider = Arc::new(Scripted::from_toml(toml, "").expect("scenario"));
-    let store = Arc::new(MemoryStore::new());
-    let session = Session::new(
-        config,
-        provider,
-        tools(),
-        store.clone(),
-        store.clone(),
-        PathBuf::from("/tmp/cox-turn"),
-    )
-    .expect("session");
-    let rx = session.events().expect("events once");
-    (session, store, rx)
-}
-
-async fn drain(rx: &mut mpsc::Receiver<Event>) -> Vec<Event> {
-    let mut out = Vec::new();
-    loop {
-        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("event timeout")
-            .expect("event stream closed");
-        let done = matches!(ev, Event::TurnDone { .. });
-        out.push(ev);
-        if done {
-            break;
-        }
-    }
-    out
-}
-
 async fn run(name: &str) -> (Vec<Event>, Arc<MemoryStore>, Session) {
-    let (session, store, mut rx) = open(&scenario(name), cox_protocol::Config::default());
-    session
-        .submit(Submission::UserTurn {
-            text: name.into(),
-            attachments: vec![],
-            confirm_think: false,
-        })
-        .await
-        .expect("submit");
-    let events = drain(&mut rx).await;
-    (events, store, session)
+    run_with(name, cox_protocol::Config::default()).await
 }
 
 fn is_ulid(s: &str) -> bool {
@@ -241,13 +92,7 @@ async fn turn_one_tool_snapshot() {
 async fn turn_three_parallel_snapshot() {
     let (events, _, session) = run("three_parallel").await;
     snapshot("three_parallel", &events);
-    let done: Vec<_> = events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ToolCallDone { result, .. } => Some(result.visible.as_str()),
-            _ => None,
-        })
-        .collect();
+    let done: Vec<_> = tool_results(&events).into_iter().map(|r| r.1).collect();
     assert_eq!(done, ["a", "b", "c"]);
     let history = session.history().await;
     let results = history
@@ -272,16 +117,7 @@ async fn turn_big_tool_output_is_truncated_then_expandable() {
     config.context.tool_output_visible_bytes = 120;
     config.context.tool_output_head_lines = 2;
     config.context.tool_output_tail_lines = 2;
-    let (session, store, mut rx) = open(&scenario("big_tool_output"), config);
-    session
-        .submit(Submission::UserTurn {
-            text: "big".into(),
-            attachments: vec![],
-            confirm_think: false,
-        })
-        .await
-        .expect("submit");
-    let events = drain(&mut rx).await;
+    let (events, store, _) = run_with("big_tool_output", config).await;
     snapshot("big_tool_output", &events);
     let result = events
         .iter()
@@ -336,16 +172,7 @@ async fn turn_provider_error_snapshot() {
 async fn turn_max_turns_snapshot() {
     let mut config = cox_protocol::Config::default();
     config.core.max_turns = 1;
-    let (session, _, mut rx) = open(&scenario("max_turns"), config);
-    session
-        .submit(Submission::UserTurn {
-            text: "max".into(),
-            attachments: vec![],
-            confirm_think: false,
-        })
-        .await
-        .expect("submit");
-    let events = drain(&mut rx).await;
+    let (events, _, _) = run_with("max_turns", config).await;
     snapshot("max_turns", &events);
     assert!(matches!(
         events.last(),
@@ -356,33 +183,27 @@ async fn turn_max_turns_snapshot() {
     ));
 }
 
-#[tokio::test]
-async fn turn_interrupt_mid_tool_snapshot() {
-    let (session, _, mut rx) = open(&scenario("interrupt"), cox_protocol::Config::default());
-    let running = {
-        let session = session.clone();
-        tokio::spawn(async move {
-            session
-                .submit(Submission::UserTurn {
-                    text: "interrupt".into(),
-                    attachments: vec![],
-                    confirm_think: false,
-                })
-                .await
-        })
-    };
+/// Collects events until `pred` matches one (inclusive).
+async fn until(rx: &mut mpsc::Receiver<Event>, pred: impl Fn(&Event) -> bool) -> Vec<Event> {
     let mut events = Vec::new();
     loop {
         let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
-            .expect("wait tool")
+            .expect("wait event")
             .expect("closed");
-        let requested = matches!(ev, Event::ToolCallRequested { .. });
+        let hit = pred(&ev);
         events.push(ev);
-        if requested {
-            break;
+        if hit {
+            return events;
         }
     }
+}
+
+#[tokio::test]
+async fn turn_interrupt_mid_tool_snapshot() {
+    let (session, _, mut rx) = open(&scenario("interrupt"), cox_protocol::Config::default());
+    let running = spawn_turn(&session, "interrupt");
+    let mut events = until(&mut rx, |e| matches!(e, Event::ToolCallRequested { .. })).await;
     session
         .submit(Submission::Interrupt)
         .await
@@ -411,33 +232,15 @@ async fn ask_scenario_with(
     decision: Decision,
 ) -> Vec<Event> {
     let (session, _, mut rx) = open(&scenario(name), config);
-    let running = {
-        let session = session.clone();
-        tokio::spawn(async move {
-            session
-                .submit(Submission::UserTurn {
-                    text: "write".into(),
-                    attachments: vec![],
-                    confirm_think: false,
-                })
-                .await
-        })
-    };
-    let mut events = Vec::new();
-    let call_id = loop {
-        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("wait prompt")
-            .expect("closed");
-        let asked = match &ev {
+    let running = spawn_turn(&session, "write");
+    let mut events = until(&mut rx, |e| matches!(e, Event::ApprovalRequired { .. })).await;
+    let call_id = events
+        .iter()
+        .find_map(|e| match e {
             Event::ApprovalRequired { call, .. } => Some(call.id),
             _ => None,
-        };
-        events.push(ev);
-        if let Some(id) = asked {
-            break id;
-        }
-    };
+        })
+        .expect("prompt");
     session
         .submit(Submission::Approve { call_id, decision })
         .await
@@ -445,16 +248,6 @@ async fn ask_scenario_with(
     running.await.expect("join").expect("turn");
     events.extend(drain(&mut rx).await);
     events
-}
-
-fn tool_results(events: &[Event]) -> Vec<(bool, String)> {
-    events
-        .iter()
-        .filter_map(|e| match e {
-            Event::ToolCallDone { result, .. } => Some((result.ok, result.visible.clone())),
-            _ => None,
-        })
-        .collect()
 }
 
 #[tokio::test]
@@ -540,16 +333,7 @@ async fn turn_edited_input_goes_back_through_the_rules() {
 async fn turn_plan_mode_denies_write_without_prompt() {
     let mut config = cox_protocol::Config::default();
     config.permissions.mode = cox_protocol::types::PermissionMode::Plan;
-    let (session, _, mut rx) = open(&scenario("ask_then_deny"), config);
-    session
-        .submit(Submission::UserTurn {
-            text: "plan".into(),
-            attachments: vec![],
-            confirm_think: false,
-        })
-        .await
-        .expect("submit");
-    let events = drain(&mut rx).await;
+    let (events, _, _) = run_with("ask_then_deny", config).await;
     assert!(
         !events
             .iter()

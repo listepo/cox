@@ -7,6 +7,7 @@
 
 mod budget;
 mod context;
+mod dedup;
 pub mod permission;
 mod rollout;
 mod session;

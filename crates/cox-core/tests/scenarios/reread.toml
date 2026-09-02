@@ -1,0 +1,10 @@
+[[turn]]
+text = "reading"
+tool_calls = [{ name = "echo", input = { text = "a" } }]
+
+[[turn]]
+text = "reading again"
+tool_calls = [{ name = "echo", input = { text = "a" } }]
+
+[[turn]]
+text = "done"

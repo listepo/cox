@@ -20,7 +20,7 @@ expression: value
     "item": "<id>",
     "kind": {
       "attachments": [],
-      "text": "max",
+      "text": "max_turns",
       "type": "user_message"
     },
     "type": "item_started"

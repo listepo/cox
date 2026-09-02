@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::budget;
 use crate::context::assemble;
+use crate::dedup::Dedup;
 use crate::permission::{Engine, Outcome};
 use crate::turn::{consume_provider, results_message, run_tools};
 
@@ -58,6 +59,9 @@ struct Inner {
     grants: Vec<(String, String)>,
     /// Calls parked in `AwaitingApproval`, answered by `Submission::Approve`.
     pending: HashMap<CallId, oneshot::Sender<Decision>>,
+    /// Provider rounds so far in this session; the dedup window counts these.
+    round: u32,
+    dedup: Dedup,
 }
 
 /// One conversation: a provider, tools, a store, and an event stream.
@@ -92,6 +96,7 @@ impl Session {
         let home = std::env::home_dir();
         let engine = Engine::compile(&config.permissions, home.as_deref(), &cwd)?;
         let permission_mode = config.permissions.mode;
+        let dedup = Dedup::new(config.context.dedup_window_turns);
         let session = Self {
             id,
             config,
@@ -113,6 +118,8 @@ impl Session {
                 permission_mode,
                 grants: Vec::new(),
                 pending: HashMap::new(),
+                round: 0,
+                dedup,
             })),
         };
         let started = Event::SessionStarted {
@@ -241,6 +248,26 @@ impl Session {
         self.inner.lock().await.grants.push((tool, subject));
     }
 
+    /// Dedup bookkeeping for a read-only result; `Some` is the pointer text
+    /// that replaces the payload.
+    pub(crate) async fn dedup_observe(
+        &self,
+        tool: &str,
+        input: &serde_json::Value,
+        subject: &str,
+        id: cox_protocol::ArchiveId,
+        output: &[u8],
+    ) -> Option<String> {
+        let mut inner = self.inner.lock().await;
+        let round = inner.round;
+        inner.dedup.observe(tool, input, subject, id, round, output)
+    }
+
+    /// Forgets cached reads a write or command may have changed.
+    pub(crate) async fn dedup_invalidate(&self, risk: cox_protocol::types::Risk, subject: &str) {
+        self.inner.lock().await.dedup.invalidate(risk, subject);
+    }
+
     async fn run_turn(&self, text: String) -> Result<(), CoreError> {
         {
             let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
@@ -302,6 +329,7 @@ impl Session {
             let mut inner = self.inner.lock().await;
             inner.state = State::Assembling;
             inner.provider_calls += 1;
+            inner.round += 1;
         }
         let req = assemble(&history, &self.config, &self.tools, &self.cwd, "");
         let (spent, warned) = {
