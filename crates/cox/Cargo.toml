@@ -1,0 +1,21 @@
+[package]
+name = "cox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
+cox-core = { path = "../cox-core", version = "0.1.0" }
+cox-provider = { path = "../cox-provider", version = "0.1.0" }
+cox-tools = { path = "../cox-tools", version = "0.1.0" }
+cox-mcp = { path = "../cox-mcp", version = "0.1.0" }
+cox-store = { path = "../cox-store", version = "0.1.0" }
+cox-ext = { path = "../cox-ext", version = "0.1.0" }
+cox-tui = { path = "../cox-tui", version = "0.1.0" }
+cox-acp = { path = "../cox-acp", version = "0.1.0" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
