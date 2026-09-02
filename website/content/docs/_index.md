@@ -19,6 +19,18 @@ weight: 1
 
 The Rust workspace and foundational protocol, provider, tool, storage, and configuration work are in progress. The public API and installation flow are not yet stable; treat this site as design documentation rather than a release manual.
 
+## Develop cox
+
+The repository pins Rust with [mise](https://mise.jdx.dev/). After cloning, run the quality gates through mise:
+
+```bash
+mise exec -- cargo fmt --check
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo test --workspace
+```
+
+The documentation site itself lives in `website/`. Install its Node dependencies with `npm ci`, run `npm run build:css`, then build with Hugo. GitHub Actions publishes the `main` branch build to this site.
+
 ## Documentation map
 
 - [Architecture]({{< relref "architecture" >}}) explains the core event model and crate boundaries.
