@@ -13,14 +13,17 @@
 //! - [`types`] — `Submission`, `Event`, the provider-neutral `Request`/`Content`, `ToolSpec`, and everything reachable from them.
 //! - [`errors`] — the error taxonomy (plan.md §1.14): `ProviderError`, `ToolError`, `CoreError`, `StoreError`, `ExtError`, `McpError`.
 //! - [`traits`] — `Provider`, `Tool`, `ToolCx`, `Store`, `Hook`, `Archive`: the seams every other crate implements against.
+//! - [`config`] — the `Config` struct tree mirroring `config/default.toml` (plan.md §1.6).
 
 #![warn(missing_docs)]
 
+pub mod config;
 pub mod errors;
 pub mod ids;
 pub mod traits;
 pub mod types;
 
+pub use config::{Config, DEFAULT_CONFIG_TOML};
 pub use errors::{CoreError, ExtError, McpError, ProviderError, StoreError, ToolError};
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{

@@ -16,6 +16,14 @@ cox-store = { path = "../cox-store", version = "0.1.0" }
 cox-ext = { path = "../cox-ext", version = "0.1.0" }
 cox-tui = { path = "../cox-tui", version = "0.1.0" }
 cox-acp = { path = "../cox-acp", version = "0.1.0" }
+# T0.3: config loading (figment layers default/user/project/env/flag),
+# `cox config set` (toml_edit, preserves comments), anyhow at the cox-crate
+# boundary (AGENTS.md: "anyhow only in crates/cox"), serde_json to build
+# the CLI-flag override layer and `--json` output.
+figment = { workspace = true }
+toml_edit = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+tempfile = { workspace = true }

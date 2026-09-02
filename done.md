@@ -148,3 +148,41 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 Out of scope (per task): FTS indexing of rollouts (T10.3); full `cox doctor` check list (T0.5); `memory_*` writers (a later task — `memory_search` is real but untested against live data).
+
+#### T0.3 Config loading and provenance
+Model: sonnet · Status: done 2026-09-02
+Goal: layered config (default/user/project/env/flag) with per-key provenance, project-config guard list, and a `cox config` subcommand.
+Files: `config/default.toml` (verbatim §1.6, `include_str!`'d), `crates/cox-protocol/src/config.rs` (`Config` struct tree, one struct per table, `deny_unknown_fields, default` + hand-written `Default` impls matching default.toml), `crates/cox-protocol/src/lib.rs` (export `Config`/`DEFAULT_CONFIG_TOML`), `docs/config.md` (generated + committed, create-on-first-run test keeps it in sync with default.toml), `crates/cox/Cargo.toml` (added `figment`, `toml_edit`, `anyhow`; moved `serde_json` to normal deps; `tempfile` dev-dep), `crates/cox/src/cli.rs` (clap `Cli`/global flags/`Config` subcommand), `crates/cox/src/config_load.rs` (figment layering via a `Named<P>` metadata wrapper for provenance, `COX_HOME` special-casing, project guard list, `flag_key_map()`), `crates/cox/src/config_cmd.rs` (`show`/`get`/`set`/`path`, `toml_edit` comment-preserving writes), `crates/cox/src/main.rs` (thin dispatch).
+Notes / deviations:
+- **`HooksConfig`/`McpConfig` skip `deny_unknown_fields`.** Both use `#[serde(flatten)]` for their dynamic maps (`events: HashMap<String, Vec<HookConfig>>`, `servers: HashMap<String, McpServerConfig>`), which serde forbids combining with `deny_unknown_fields` on the same struct. Documented with a doc comment at each struct.
+- **`HooksConfig`/`McpConfig` each got an extra `enabled: bool` field** (default `true`, not present in default.toml) to back `--no-hooks`/`--no-mcp`.
+- **Flag-key map carries a `runtime.*` namespace** for CLI flags that map to `RunArgs` rather than a persisted config key (`prompt`, `output-format`, `max-turns`, `allowed-tools`, `answer`, `continue`, `resume`, `deep`) so `every_flag_has_a_config_key` has a real entry for every flag without inventing persisted config surface for run-only options.
+- **`Toml::file()` not `Toml::file_exact()`** for user/project layers — `file_exact` hard-errors when the file is absent; `file()` on an absolute path checks existence first and returns empty data, which is what "optional user/project config" needs.
+- **Guard-list reversion computed in Rust, not in figment's Value tree** — build two figments (`default+user+project+env+flag` and `default+user+env+flag`), extract both into `Config`, diff the 6 guarded keys, and revert violations on the struct directly; `LoadedConfig::source_of()` consults whichever figment matches for provenance on a reverted key.
+Check:
+```
+$ mise exec -- cargo test -p cox-protocol config_
+running 4 tests
+test config::tests::config_default_matches_hand_built_defaults ... ok
+test config::tests::config_hooks_deny_unknown_but_accept_event_arrays ... ok
+test config::tests::config_json_roundtrip ... ok
+test config::tests::config_docs_config_md_matches_default_toml ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.00s
+
+$ mise exec -- cargo test -p cox config_
+running 8 tests
+test config_load::tests::config_every_flag_has_a_config_key ... ok
+test cli::tests::config_cli_parses_run_and_config_subcommands ... ok
+test config_cmd::tests::config_set_preserves_comments ... ok
+test cli::tests::config_cli_command_builds_without_panicking ... ok
+test config_cmd::tests::config_set_creates_missing_file_and_parents ... ok
+test config_load::tests::config_defaults_parse ... ok
+test config_load::tests::config_project_cannot_raise_budget ... ok
+test config_load::tests::config_env_overrides_project ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+$ COX_TIERS_CODE_MODEL=claude-opus-5 mise exec -- cargo run -q -- config show --sources | grep 'tiers.code.model = "claude-opus-5"  # env'
+tiers.code.model = "claude-opus-5"  # env
+```
+`cargo fmt --check -p cox-protocol -p cox`: clean. `cargo clippy -p cox-protocol -p cox --all-targets -- -D warnings`: at commit time this transitively fails inside `cox-provider` (`clone_on_copy` on `Usage` in `crates/cox-provider/src/anthropic/stream.rs:111,243`) — that crate is mid-edit by the parallel T1.2 task and outside T0.3's file scope; clippy on `cox-protocol`/`cox`'s own code has no findings once `cox-provider` builds.
+Manually smoke-tested `cox config path/get/set/show --sources` against a scratch `COX_HOME`.

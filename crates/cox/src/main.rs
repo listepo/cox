@@ -1,54 +1,61 @@
-//! The clap surface and dispatch — nothing else. Every subcommand below is
-//! a stub until its task lands (T0.3 config, T0.4/T0.5 doctor, T2.x run,
-//! ...); each one prints a notice and exits 0 rather than erroring, so the
-//! binary is a stable target for scripts and CI while the crate fills in.
+//! The clap surface and dispatch — nothing else. `config` (T0.3) is wired
+//! up; every other subcommand is a stub until its task lands (T0.4/T0.5
+//! doctor, T2.x run, ...) — each prints a notice and exits 0 rather than
+//! erroring, so the binary is a stable target for scripts and CI while the
+//! crate fills in.
 
-use clap::{Parser, Subcommand};
+mod cli;
+mod config_cmd;
+mod config_load;
 
-mod doctor;
+use clap::Parser;
+use cli::{Cli, Command, ConfigAction};
 
-#[derive(Parser)]
-#[command(name = "cox", version, about = "cox — a modular terminal coding agent")]
-struct Cli {
-    /// First-turn prompt for the interactive TUI (stub: ignored for now).
-    prompt: Option<String>,
-
-    #[command(subcommand)]
-    command: Option<Command>,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Headless run: `cox run -p <prompt>`.
-    Run,
-    /// List / search rollouts.
-    Sessions,
-    /// Print archived tool output by id.
-    Expand,
-    /// Usage and cost stats.
-    Stats,
-    /// Read or write config.
-    Config,
-    /// Report why cox will or will not work on this machine.
-    Doctor,
-    /// Re-record a provider cassette.
-    Record,
-    /// Serve built-in tools over MCP stdio.
-    Mcp,
-    /// Agent Client Protocol server on stdio.
-    Acp,
-    /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
-    Ext,
-    /// Self-update the binary.
-    #[command(name = "self")]
-    SelfUpdate,
-}
-
-fn main() {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    match cli.command {
-        Some(Command::Doctor) => doctor::run(),
-        Some(_) => println!("not implemented"),
-        None => println!("not implemented"),
+    let cwd = match &cli.cwd {
+        Some(dir) => dir.clone(),
+        None => std::env::current_dir().unwrap_or_default(),
+    };
+
+    match &cli.command {
+        Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),
+        Some(_) => {
+            println!("not implemented");
+            Ok(())
+        }
+        None => {
+            println!("not implemented");
+            Ok(())
+        }
+    }
+}
+
+fn run_config(cwd: &std::path::Path, cli: &Cli, action: &ConfigAction) -> anyhow::Result<()> {
+    match action {
+        ConfigAction::Show { sources } => {
+            let loaded = config_load::load(cwd, cli)?;
+            config_cmd::show(&loaded, *sources);
+            Ok(())
+        }
+        ConfigAction::Get { key } => {
+            let loaded = config_load::load(cwd, cli)?;
+            match config_cmd::get(&loaded, key) {
+                Some(value) => {
+                    println!("{value}");
+                    Ok(())
+                }
+                None => Err(anyhow::anyhow!("no such config key: {key}")),
+            }
+        }
+        ConfigAction::Set { key, value } => {
+            let path = config_cmd::set(key, value)?;
+            println!("{}", path.display());
+            Ok(())
+        }
+        ConfigAction::Path => {
+            println!("{}", config_cmd::path().display());
+            Ok(())
+        }
     }
 }
