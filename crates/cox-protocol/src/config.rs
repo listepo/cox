@@ -138,6 +138,17 @@ pub struct TiersConfig {
     pub think: TierConfig,
 }
 
+impl TiersConfig {
+    /// The `[tiers.<tier>]` block for `tier`.
+    pub fn get(&self, tier: crate::types::Tier) -> &TierConfig {
+        match tier {
+            crate::types::Tier::Cheap => &self.cheap,
+            crate::types::Tier::Code => &self.code,
+            crate::types::Tier::Think => &self.think,
+        }
+    }
+}
+
 impl Default for TiersConfig {
     fn default() -> Self {
         Self {
@@ -193,6 +204,25 @@ pub struct JobsConfig {
     pub shell: Tier,
     /// `jobs.hook`
     pub hook: Tier,
+}
+
+impl JobsConfig {
+    /// The tier a job is pinned to (`[jobs]`, plan.md §1.4).
+    pub fn tier_for(&self, job: crate::types::Job) -> crate::types::Tier {
+        use crate::types::Job as J;
+        match job {
+            J::Main => self.main,
+            J::Plan => self.plan,
+            J::Compact => self.compact,
+            J::Title => self.title,
+            J::Summarize => self.summarize,
+            J::Commit => self.commit,
+            J::Memory => self.memory,
+            J::Explore => self.explore,
+            J::Shell => self.shell,
+            J::Hook => self.hook,
+        }
+    }
 }
 
 impl Default for JobsConfig {

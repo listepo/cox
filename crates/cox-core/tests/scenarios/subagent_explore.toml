@@ -1,0 +1,22 @@
+# Parent delegates; the child (explore preset) may only use read-only tools.
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "find x", preset = "explore", tools = ["echo", "touch"] } }]
+
+# child: a write tool was asked for but filtered out
+[[turn]]
+text = "trying a write"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+# child: a read-only tool works
+[[turn]]
+text = "reading"
+tool_calls = [{ name = "echo", input = { text = "x" } }]
+
+# child: answer
+[[turn]]
+text = "result: x"
+
+# parent
+[[turn]]
+text = "done"

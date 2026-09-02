@@ -77,6 +77,10 @@ pub struct Session {
     pub(crate) archive: Arc<dyn Archive>,
     pub(crate) engine: Arc<Engine>,
     pub(crate) cwd: PathBuf,
+    /// What this session's turns are for; `Main` unless it is a subagent.
+    pub(crate) job: Job,
+    /// The tier every provider call in this session is routed to.
+    pub(crate) tier: Tier,
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
@@ -84,7 +88,10 @@ pub struct Session {
 }
 
 impl Session {
-    /// Constructs a session and emits `SessionStarted`.
+    /// Constructs a session and emits `SessionStarted`. The `agent` tool is
+    /// added here rather than by the caller because it needs a handle to
+    /// this very session; children (`spawn_child`) do not get one, so a
+    /// subagent cannot spawn subagents.
     pub fn new(
         config: cox_protocol::Config,
         provider: Arc<dyn Provider>,
@@ -92,6 +99,58 @@ impl Session {
         store: Arc<dyn Store>,
         archive: Arc<dyn Archive>,
         cwd: PathBuf,
+    ) -> Result<Self, CoreError> {
+        let mut session = Self::build(
+            config,
+            provider,
+            tools,
+            store,
+            archive,
+            cwd,
+            None,
+            Job::Main,
+            Tier::Code,
+        )?;
+        let parent = session.clone();
+        session
+            .tools
+            .push(Arc::new(crate::subagent::AgentTool::new(parent)));
+        Ok(session)
+    }
+
+    /// A child session sharing this one's provider, store and archive
+    /// (plan.md T3.9): its own rollout and budget, `parent_id` set.
+    pub(crate) fn spawn_child(
+        &self,
+        config: cox_protocol::Config,
+        tools: Vec<Arc<dyn Tool>>,
+        job: Job,
+        tier: Tier,
+    ) -> Result<Self, CoreError> {
+        Self::build(
+            config,
+            self.provider.clone(),
+            tools,
+            self.store.clone(),
+            self.archive.clone(),
+            self.cwd.clone(),
+            Some(self.id),
+            job,
+            tier,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        config: cox_protocol::Config,
+        provider: Arc<dyn Provider>,
+        tools: Vec<Arc<dyn Tool>>,
+        store: Arc<dyn Store>,
+        archive: Arc<dyn Archive>,
+        cwd: PathBuf,
+        parent_id: Option<SessionId>,
+        job: Job,
+        tier: Tier,
     ) -> Result<Self, CoreError> {
         let id = SessionId::new();
         let (tx, rx) = mpsc::channel(256);
@@ -108,6 +167,8 @@ impl Session {
             archive,
             engine: Arc::new(engine),
             cwd: cwd.clone(),
+            job,
+            tier,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
@@ -138,7 +199,7 @@ impl Session {
                 cwd: session.cwd.clone(),
                 project_slug: String::new(),
                 title: None,
-                parent_id: None,
+                parent_id,
                 rollout_path: PathBuf::new(),
             })
             .map_err(|error| CoreError::Store { error })?;
@@ -271,6 +332,16 @@ impl Session {
         self.inner.lock().await.dedup.invalidate(risk, subject);
     }
 
+    /// What this session has spent so far, in USD.
+    pub(crate) async fn spent(&self) -> f64 {
+        self.inner.lock().await.spent_usd
+    }
+
+    /// Charges a subagent's (or side job's) cost to this session.
+    pub(crate) async fn add_spend(&self, usd: f64) {
+        self.inner.lock().await.spent_usd += usd;
+    }
+
     /// Records deferred tools found by `tool_search`; returns the ones that
     /// are new, which is what the next request adds to its tool list.
     pub(crate) async fn discover(&self, names: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -303,9 +374,9 @@ impl Session {
         }
         self.emit(Event::TurnStarted {
             turn,
-            job: Job::Main,
-            tier: Tier::Code,
-            model: ModelId(self.config.tiers.code.model.clone()),
+            job: self.job,
+            tier: self.tier,
+            model: ModelId(self.config.tiers.get(self.tier).model.clone()),
         })
         .await?;
         self.emit(Event::ItemStarted {
@@ -355,6 +426,7 @@ impl Session {
         let req = assemble_with(
             &history,
             &self.config,
+            self.tier,
             &self.tools,
             &discovered,
             &self.cwd,
@@ -437,14 +509,14 @@ impl Session {
             .usage_insert(&cox_protocol::UsageRow {
                 session_id: self.id,
                 turn: calls_so_far + 1,
-                job: Job::Main,
-                tier: Tier::Code,
+                job: self.job,
+                tier: self.tier,
                 provider: self.provider.id(),
-                model: ModelId(self.config.tiers.code.model.clone()),
+                model: ModelId(self.config.tiers.get(self.tier).model.clone()),
                 usage,
             })
             .map_err(|error| CoreError::Store { error })?;
-        if budget::counts(Tier::Code, self.config.budget.cheap_counts) {
+        if budget::counts(self.tier, self.config.budget.cheap_counts) {
             self.inner.lock().await.spent_usd += usage.cost_usd;
         }
         self.emit(Event::Usage { turn, usage }).await?;

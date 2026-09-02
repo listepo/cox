@@ -11,6 +11,7 @@ mod dedup;
 pub mod permission;
 mod rollout;
 mod session;
+pub mod subagent;
 mod truncate;
 mod turn;
 

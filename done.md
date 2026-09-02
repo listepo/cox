@@ -842,3 +842,25 @@ test deferred_tools_absent_until_searched ... ok
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T3.9 `agent` tool (subagents)
+Model: fable · Status: done 2026-09-03 · Depends: T2.1, T2.7, T3.8 · Size: ~200
+Goal: a nested session with its own tier, tool allowlist, budget and result cap.
+Files: `crates/cox-core/src/subagent.rs`, `crates/cox-tools/src/agent.rs`, `crates/cox-core/tests/subagent.rs`.
+Steps: (1) Child `Session` with `parent_id`, own rollout, shared store and archive, tools filtered by allowlist, budget slice, `max_turns`. (2) Presets `explore` (cheap tier, `read/grep/glob/outline/expand` only, result ≤ 1 k tokens) and `shell` (cheap, `bash/web_fetch`). (3) Result over cap → summarised on the `summarize` job. (4) Parent sees `TaskCreated`, child's `Usage` rolled up with `job = agent:<preset>`; foreground waits, background returns (T9.2 completes). (5) Test `explore_subagent_uses_cheap_tier_and_read_only_tools`; `subagent_budget_is_a_slice_of_parent`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core subagent_
+```
+
+What landed: `cox_core::subagent` — `Preset` data (`EXPLORE`: job Explore, `read/grep/glob/outline/expand`, read-only enforced by risk, 30 turns, 1k-token result cap; `SHELL`: job Shell, `bash/web_fetch`, 2k cap), `slice(parent_cap, spent, requested)` (a quarter of what the parent has left by default, never more than remains), and `AgentTool` (deferred; risk = max over the child's tools; subject = preset name). `Session::new` now adds `agent` itself because the tool needs a handle to its parent; `Session::spawn_child` builds a child with the shared provider/store/archive, its own rollout and `parent_id`, `budget.session_usd` = the slice, `core.max_turns` = the preset's, and no `agent` tool (no recursion). Sessions carry `job`/`tier`: `TurnStarted`, the usage rows, budget counting and `assemble_with` (new `tier` parameter, model/effort from `tiers.get(tier)`) all use them, so a child's calls are ledgered as `job = explore|shell` on the cheap tier under the child's session id. The parent emits `TaskCreated{tier}` / `TaskCompleted{cost_usd}`, streams `[preset] <tool>` progress lines, charges the child's cost to its own spend, and returns the child's last assistant text; over the cap it runs one `Job::Summarize` request on that job's tier (own usage row) and falls back to a cut when the provider fails. `JobsConfig::tier_for` and `TiersConfig::get` were added to `cox-protocol` for this. Tests: `subagent_explore_uses_cheap_tier_and_read_only_tools` and `subagent_result_over_cap_is_summarised_on_the_summarize_job` through the loop (scenarios `subagent_explore`, `subagent_summary`), unit tests `subagent_budget_is_a_slice_of_parent`, `subagent_presets_are_explore_and_shell`.
+Not done: `crates/cox-tools/src/agent.rs` does not exist — `cox-tools` may not depend on `cox-core` (plan.md §1.1 dependency direction), so the tool and its presets live in `cox-core::subagent`; `background: true` is accepted but runs in the foreground (T9.2, as the plan says); custom `<name>` presets from subagent definitions arrive with T7.x. Size: ~330 LOC over 7 files (module, session/context/config wiring, tests, two scenarios).
+```
+$ mise exec -- cargo test -p cox-core subagent_
+test subagent::tests::subagent_budget_is_a_slice_of_parent ... ok
+test subagent::tests::subagent_presets_are_explore_and_shell ... ok
+test subagent_result_over_cap_is_summarised_on_the_summarize_job ... ok
+test subagent_explore_uses_cheap_tier_and_read_only_tools ... ok
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

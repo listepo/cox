@@ -20,7 +20,7 @@ pub fn assemble(
     cwd: &Path,
     date: &str,
 ) -> Request {
-    assemble_with(history, config, tools, &[], cwd, date)
+    assemble_with(history, config, Tier::Code, tools, &[], cwd, date)
 }
 
 /// `assemble` with the deferred tools the model has found through
@@ -31,6 +31,7 @@ pub fn assemble(
 pub fn assemble_with(
     history: &[Message],
     config: &cox_protocol::Config,
+    tier: Tier,
     tools: &[Arc<dyn Tool>],
     discovered: &[String],
     cwd: &Path,
@@ -79,17 +80,17 @@ pub fn assemble_with(
         },
     ];
     let cache_breakpoints = breakpoints(system.len(), history.len());
-    let tier = &config.tiers.code;
+    let tc = config.tiers.get(tier);
     Request {
-        tier: Tier::Code,
+        tier,
         job: Job::Main,
-        model: ModelId(tier.model.clone()),
+        model: ModelId(tc.model.clone()),
         system,
         tools: specs,
         messages: history.to_vec(),
-        effort: tier.effort,
-        max_tokens: tier.max_tokens,
-        thinking: tier.thinking,
+        effort: tc.effort,
+        max_tokens: tc.max_tokens,
+        thinking: tc.thinking,
         cache_breakpoints,
         stop_sequences: vec![],
     }

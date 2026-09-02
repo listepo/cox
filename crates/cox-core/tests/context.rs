@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use cox_core::assemble;
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Tool, ToolCx};
-use cox_protocol::types::{Concurrency, Content, Message, Risk, Role, ToolOutput, ToolSpec};
+use cox_protocol::types::{Concurrency, Content, Message, Risk, Role, Tier, ToolOutput, ToolSpec};
 use serde_json::Value;
 
 struct Echo;
@@ -147,8 +147,15 @@ fn deferred_tools_absent_until_searched() {
     assert!(!before.system[0].text.contains("web_fetch"));
 
     let found = ["web_fetch".to_string()];
-    let after =
-        cox_core::assemble_with(&[user("hi")], &config, &tools, &found, Path::new("/w"), "d");
+    let after = cox_core::assemble_with(
+        &[user("hi")],
+        &config,
+        Tier::Code,
+        &tools,
+        &found,
+        Path::new("/w"),
+        "d",
+    );
     assert_eq!(
         names(&after),
         ["echo", "web_fetch"],
@@ -159,6 +166,7 @@ fn deferred_tools_absent_until_searched() {
     let again = cox_core::assemble_with(
         &[user("hi"), user("more")],
         &config,
+        Tier::Code,
         &tools,
         &found,
         Path::new("/x"),

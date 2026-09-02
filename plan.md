@@ -565,16 +565,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
 
-#### T3.9 `agent` tool (subagents)
-Model: opus · Status: open · Depends: T2.1, T2.7, T3.8 · Size: ~200
-Goal: a nested session with its own tier, tool allowlist, budget and result cap.
-Files: `crates/cox-core/src/subagent.rs`, `crates/cox-tools/src/agent.rs`, `crates/cox-core/tests/subagent.rs`.
-Steps: (1) Child `Session` with `parent_id`, own rollout, shared store and archive, tools filtered by allowlist, budget slice, `max_turns`. (2) Presets `explore` (cheap tier, `read/grep/glob/outline/expand` only, result ≤ 1 k tokens) and `shell` (cheap, `bash/web_fetch`). (3) Result over cap → summarised on the `summarize` job. (4) Parent sees `TaskCreated`, child's `Usage` rolled up with `job = agent:<preset>`; foreground waits, background returns (T9.2 completes). (5) Test `explore_subagent_uses_cheap_tier_and_read_only_tools`; `subagent_budget_is_a_slice_of_parent`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core subagent_
-```
-
 ### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
 
 #### T4.1 macOS Seatbelt
