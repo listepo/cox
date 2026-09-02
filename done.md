@@ -186,3 +186,38 @@ tiers.code.model = "claude-opus-5"  # env
 ```
 `cargo fmt --check -p cox-protocol -p cox`: clean. `cargo clippy -p cox-protocol -p cox --all-targets -- -D warnings`: at commit time this transitively fails inside `cox-provider` (`clone_on_copy` on `Usage` in `crates/cox-provider/src/anthropic/stream.rs:111,243`) — that crate is mid-edit by the parallel T1.2 task and outside T0.3's file scope; clippy on `cox-protocol`/`cox`'s own code has no findings once `cox-provider` builds.
 Manually smoke-tested `cox config path/get/set/show --sources` against a scratch `COX_HOME`.
+
+#### T3.1 Path confinement and `ToolCx`
+Model: sonnet · Status: done 2026-09-02 · Depends: T2.2
+Goal: no path from the model escapes the workspace roots.
+Files: `crates/cox-tools/src/{lib,path}.rs`, `crates/cox-tools/tests/confine.rs`, `crates/cox-tools/Cargo.toml`.
+
+What landed: `cox_tools::path::confine(roots: &[PathBuf], cwd: &Path, input: &str) -> Result<PathBuf, ToolError>`. Order: (1) reject NUL and any `:` (blanket-bans Windows drive/ADS syntax, `\\?\`, plus a leading `\\` for UNC) — cheaper and more conservative than pattern-matching each Windows form, `ponytail:`-flagged in the doc comment. (2) expand a leading `~`/`~/…` via `$HOME`, join relative to `cwd`. (3) a filesystem-free lexical `.`/`..` collapse (`PathBuf::pop`, a no-op at the root, so a `..` chain clamps at `/` instead of underflowing) checked against lexical roots — a cheap first reject. (4) the authoritative check: walk the *raw*, un-collapsed joined path (via its `Component` list, not `Path::pop`/`file_name`, which return `None` once the trailing component is `.`/`..` and would cut a mid-walk `..` short) down to the deepest existing ancestor, `canonicalize` only that ancestor, reattach the non-existent tail, lexically collapse once more, and check containment against canonicalized roots. Canonicalizing the raw (not lexically-pre-collapsed) path is what catches `linkdir/../secret.txt` where `linkdir` is a symlink pointing outside every root: a purely lexical check cancels `linkdir/..` to nothing and would let it through; letting the OS resolve the symlink first (by checking `.exists()`/`canonicalize` on the un-collapsed prefix) resolves `..` against where the symlink really points. `ToolError::Confined` reports whichever configured root shares the longest component prefix with the offending path.
+
+`tool_cx()` in `lib.rs` is a thin named constructor (`roots, cwd, sandbox, archive, cancel, output, session, call) -> ToolCx`) — every `ToolCx` field is already `pub`, so this isn't a real builder, just one place callers look instead of repeating the struct literal. **Session-config wiring (T2.2/T0.3) is out of scope here** — every argument is a plain value the caller must already have; no default-filling from `Config` was added.
+
+`tests/confine.rs`: 20 `confine_*` tests (plain functions, not `rstest` — the fixture setup differs enough per case, symlinks vs. plain dirs vs. `$HOME`, that a single parametrized table added more ceremony than it removed) covering: plain relative path, root itself, non-existent leaf in an existing dir, deeply non-existent nested path, `./a/../b`-style collapse, trailing slash, `~` expansion (against the real `$HOME`, no env mutation — avoids a race with parallel test threads), `cwd` vs. root distinction, a second root, plain `..` escape above root, absolute path outside roots, symlink-to-outside, `..` through a symlink, NUL, `C:\x`, `\\?\C:\x`, `file.txt:stream`, a bare `\\server\share` UNC prefix, and empty `roots`. Plus `confine_is_the_only_path_constructor`, the done-when grep guard: walks `crates/cox-tools/src`, fails if any file but `path.rs` contains `Path::new(input` or `PathBuf::from(input`. Every fixture root is canonicalized once at setup (not compared against the raw tempdir path) because macOS tempdirs sit behind `/tmp` → `/private/tmp`-style symlinks that `confine`'s own resolution step would otherwise turn into a spurious mismatch.
+
+Deviations:
+- Deps added to `cox-tools` only (all already workspace-declared, no new §1 rows needed): `tokio`, `tokio-util` (for `ToolCx`'s `mpsc::Sender`/`CancellationToken` fields in `tool_cx()`); dev-deps `async-trait` (only to implement the `Archive` trait for a `NoopArchive` test double), `tempfile`, `rstest` (pulled in per the task but not used as a parametrizing macro — see above).
+- No `read`/`edit`/`write`/etc. tool exists yet to call `confine`, so `confine_is_the_only_path_constructor` is trivially green; it starts pulling weight from T3.2 onward.
+
+Check:
+```
+$ mise exec -- cargo test -p cox-tools confine_
+running 3 tests
+test tests::tool_cx_wires_every_field_through ... ok
+test path::tests::confine_rejects_dotdot_escape_above_root ... ok
+test path::tests::confine_plain_relative_path_stays_in_root ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+running 20 tests (tests/confine.rs)
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+$ mise exec -- cargo clippy -p cox-tools --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s)
+(clean)
+
+$ mise exec -- cargo fmt -p cox-tools --check
+(clean)
+```
