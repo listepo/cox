@@ -1,0 +1,70 @@
+---
+source: crates/cox-provider/src/openai/chat.rs
+expression: body
+---
+{
+  "max_tokens": 16384,
+  "messages": [
+    {
+      "content": "<tool specs>\n\nYou are cox.",
+      "role": "system"
+    },
+    {
+      "content": "read both files",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"path\":\"a.rs\"}",
+            "name": "read"
+          },
+          "id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
+          "type": "function"
+        },
+        {
+          "function": {
+            "arguments": "{\"path\":\"b.rs\"}",
+            "name": "read"
+          },
+          "id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "content": "fn a() {}",
+      "role": "tool",
+      "tool_call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA1"
+    },
+    {
+      "content": "Error: no such file",
+      "role": "tool",
+      "tool_call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA2"
+    }
+  ],
+  "model": "qwen3-coder",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "tools": [
+    {
+      "function": {
+        "description": "Read a file",
+        "name": "read",
+        "parameters": {
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ]
+}

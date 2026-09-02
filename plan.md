@@ -557,18 +557,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P1 — Provider (goal: one real streamed turn with tool use through each wire format, all replayable)
 
-#### T1.4 OpenAI Chat Completions for local servers
-Model: sonnet · Status: open · Depends: T1.3 · Size: ~180
-Goal: Ollama/vLLM/LM Studio/llama.cpp/OpenRouter work through the Chat subset with streaming tool calls.
-Files: `crates/cox-provider/src/openai/chat.rs`, `fixtures/openai-chat/*.sse`.
-Steps: (1) `messages` with `tool_calls`/`tool` roles; `stream: true`, `stream_options: {include_usage: true}`; `tools` functions. (2) Deltas: `choices[0].delta.content`, `delta.tool_calls[i].function.arguments` accumulated by index; `finish_reason` map. (3) No auth header when `api_key_env` is unset; `context_window` from config. (4) `cox --provider local doctor` probes `GET {base_url}/models`.
-Check:
-```bash
-mise exec -- cargo test -p cox-provider chat_
-```
-Done when: a `wiremock` shaped like Ollama's `/v1/chat/completions` completes a tool-call turn.
-Out of scope: model listing UI.
-
 #### T1.5 Scripted and Replay providers, `cox record`
 Model: sonnet · Status: open · Depends: T1.2 · Size: ~200
 Goal: the whole loop and every test run with no network and no key.

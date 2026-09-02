@@ -459,3 +459,43 @@ $ mise exec -- cargo test -p cox-tools -- edit_
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.01s   # src/edit.rs
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s   # tests/edit.rs
 ```
+
+#### T1.4 OpenAI Chat Completions for local servers
+Model: sonnet · Status: done 2026-09-02 · Depends: T1.3 · Size: ~180
+Goal: Ollama/vLLM/LM Studio/llama.cpp/OpenRouter work through the Chat subset with streaming tool calls.
+Files: `crates/cox-provider/src/openai/chat.rs`, `fixtures/openai-chat/*.sse`.
+
+Notes: the "Done when" (a wiremock shaped like Ollama's /v1/chat/completions
+completes a tool-call turn) is `chat_over_http_ollama_shaped`; fixtures are
+Ollama/vLLM-shaped `chat.completion.chunk` frames (no named SSE events), with
+usage on a choice-less terminal frame per `stream_options.include_usage`.
+Three findings:
+- `StopReason` on the wire is *not* mapped 1:1 to `finish_reason`:
+  `tool_calls`, `stop`, `length` and unknown reasons all collapse to
+  `StopReason::EndTurn`, `content_filter` to `Refusal`. This matches the
+  convention `anthropic::stream` already established (§1.2: a provider only
+  ever emits EndTurn/Refusal/Error; the core infers tool use from the
+  `ToolUseStart`s it saw). The first draft of this task assumed a
+  `Stop. ToolUse` shape that `cox-protocol` deliberately does not have.
+- Chat streams parallel tool calls interleaved *by index*
+  (`delta.tool_calls[i]`), unlike Anthropic/Responses where blocks are
+  sequential — so the chat machine keeps a Vec of per-index accumulators
+  (`AccruedCall`), and `ToolUseEnd` is emitted once per call at the shared
+  terminal `finish_reason` frame.
+- wiremock's matchers have no `header_not_exists`; the "no Authorization
+  header on a local server" contract is instead pinned by mounting a mock
+  gated on `header_exists("authorization")` answering 401 *after* the happy
+  mock (later mounts win), so sending the header flips the test red. Writing
+  the auth test caught a real bug: the client sent the raw key instead of
+  `Bearer <key>`.
+Step 4 ("`cox --provider local doctor` probes `GET {base_url}/models`") was
+*not* done: it needs provider construction from config in the CLI (today
+nothing builds a `Provider` from `LoadedConfig` — that is T9.1's router
+job) and an HTTP call from the sync `doctor::run`, and the task's Files
+line lists only chat.rs + fixtures. Recorded here rather than silently
+dropped, per the working agreement.
+Check:
+```bash
+$ mise exec -- cargo test -p cox-provider chat_
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.03s
+```
