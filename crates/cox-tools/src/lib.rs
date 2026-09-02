@@ -12,6 +12,7 @@ pub mod grep;
 pub mod outline;
 pub mod path;
 pub mod read;
+pub mod sandbox;
 pub mod todo;
 pub mod tool_search;
 pub mod v4a;

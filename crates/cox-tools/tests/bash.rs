@@ -2,56 +2,17 @@
 //! allowlist, classification, and that a timeout or cancel kills the whole
 //! process group, not just the shell.
 
+mod common;
+
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cox_protocol::{
-    Archive, ArchiveId, ArchivePut, CallId, Risk, SandboxMode, SandboxPolicy, SessionId,
-    StoreError, Tool, ToolCx, ToolOutput,
-};
+use cox_protocol::{Risk, SandboxMode, Tool, ToolOutput};
 use cox_tools::bash::{BashTool, classify};
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
 use serde_json::{Value, json};
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-
-struct NoopArchive;
-
-#[async_trait::async_trait]
-impl Archive for NoopArchive {
-    async fn put(&self, _put: ArchivePut) -> Result<ArchiveId, StoreError> {
-        Ok(ArchiveId::new())
-    }
-    async fn get(&self, _id: &ArchiveId) -> Result<Vec<u8>, StoreError> {
-        Ok(Vec::new())
-    }
-}
-
-fn cx(
-    root: PathBuf,
-    mode: SandboxMode,
-    cancel: CancellationToken,
-) -> (ToolCx, mpsc::Receiver<String>) {
-    let (tx, rx) = mpsc::channel(256);
-    let cx = ToolCx {
-        roots: vec![root.clone()],
-        cwd: root,
-        sandbox: SandboxPolicy {
-            mode,
-            network: false,
-            writable: vec![],
-            readonly_in_workspace: vec![],
-        },
-        archive: Arc::new(NoopArchive),
-        cancel,
-        output: tx,
-        session: SessionId::new(),
-        call: CallId::new(),
-    };
-    (cx, rx)
-}
 
 /// Runs `input` and returns the result with every streamed chunk.
 async fn run(
@@ -60,7 +21,7 @@ async fn run(
     cancel: CancellationToken,
     input: Value,
 ) -> (ToolOutput, Vec<String>) {
-    let (cx, mut rx) = cx(root, mode, cancel);
+    let (cx, mut rx) = common::cx(root, common::policy(mode), cancel);
     let out = BashTool.call(input, &cx).await.expect("bash runs");
     drop(cx);
     let mut chunks = Vec::new();

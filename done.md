@@ -864,3 +864,30 @@ test subagent_explore_uses_cheap_tier_and_read_only_tools ... ok
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T4.1 macOS Seatbelt
+Model: fable · Status: done 2026-09-03 · Depends: T3.7 · Size: ~180
+Goal: `bash` cannot write outside the workspace, cannot touch `.git`/`.cox`, has no network unless allowed.
+Files: `crates/cox-tools/src/sandbox/{mod,seatbelt}.rs`, `crates/cox-tools/tests/sandbox_macos.rs`.
+Steps: (1) `SandboxPolicy { mode, writable_roots, readonly_subpaths, network }` → profile text: `(version 1) (deny default) (allow process-exec process-fork) (allow file-read*) (allow file-write* (subpath "<root>") …) (deny file-write* (subpath "<root>/.git") …) (allow sysctl-read mach-lookup …)`, `(allow network*)` only when `network`; `/tmp`, `$TMPDIR`, `~/.cache` writable. (2) Exec via `sandbox-exec -p <profile> -- /bin/sh -c <cmd>` (`Command`, not a shell string). (3) `read-only` mode: no `file-write*` at all except `$TMPDIR`. (4) Tests (macOS only, `#[cfg(target_os="macos")]`): write inside allowed; `echo x > $HOME/outside` denied; `.git/HEAD` write denied; `curl` fails without network.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools sandbox_macos_
+```
+Done when: `cox doctor` reports `sandbox: seatbelt`.
+
+What landed: `cox_tools::sandbox` — `backend()` (`seatbelt` when `/usr/bin/sandbox-exec` exists, `bwrap` when on PATH on Linux, else `None`) and `argv(policy, roots, command)`, the one place a shell command becomes an argv: `danger-full-access` and hosts without a backend get the bare `/bin/sh -c`, macOS gets `sandbox-exec -p <profile> -- /bin/sh -c <cmd>` (argv, never a shell string). `sandbox::seatbelt::profile` builds the text: `(deny default)` plus the rules a shell on a PTY needs, `file-write*` on the workspace roots and `[sandbox].writable` in `workspace-write`, a later `deny file-write*` on every root × `readonly_in_workspace` (`.git`, `.cox`, `.claude` by default), `(allow network*)` only when `network`; the temp dir is writable in every mode, `/tmp` and `~/.cache` only in `workspace-write`; paths are canonicalised (`/tmp` → `/private/tmp`) and quoted. `bash` now gets its `CommandBuilder` from `sandbox::argv` and carries `cx.roots` through `run`/`background`. `cox doctor` asks `sandbox::backend()` and prints `sandbox: ok seatbelt`. Tests: `tests/sandbox_macos.rs` (write inside allowed, `$HOME` write denied and nothing leaked, `.git/HEAD` unchanged, read-only denies a write inside the root, `curl` fails without network) through the real tool; `seatbelt_*` unit tests for the profile text on every platform; `sandbox_danger_full_access_runs_the_shell_bare`. `tests/common/mod.rs` now holds the cox-tools integration fixture (`NoopArchive`, `policy`, `cx`) and `tests/bash.rs` uses it.
+Not done: Linux still runs bare (T4.2); a Seatbelt denial is only visible as the command's own "Operation not permitted" and non-zero exit — mapping it to `SandboxDenied` for `on-failure` is T4.3. Observed, not fixed: `core.workspace_roots` is documented as "empty means git root of cwd, else cwd" but nothing resolves it yet, and `confine` and the sandbox both treat empty roots as "nothing writable" — the surface that creates the session (P5/P6 wiring) must fill it. Size: ~280 LOC over 8 files (two new modules, tests, fixture, `bash`, `lib.rs`, `doctor.rs`).
+```
+$ mise exec -- cargo test -p cox-tools sandbox_macos_
+test sandbox::tests::sandbox_macos_backend_is_seatbelt_and_wraps_the_shell ... ok
+test sandbox_macos_read_only_denies_writes_inside_the_root ... ok
+test sandbox_macos_denies_writes_outside_the_root ... ok
+test sandbox_macos_workspace_write_allows_writes_inside_the_root ... ok
+test sandbox_macos_keeps_git_read_only_inside_the_root ... ok
+test sandbox_macos_blocks_the_network_unless_allowed ... ok
+$ COX_HOME=<scratch> cargo run -- doctor | grep sandbox
+sandbox: ✓ seatbelt
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

@@ -567,17 +567,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
 
-#### T4.1 macOS Seatbelt
-Model: opus · Status: open · Depends: T3.7 · Size: ~180
-Goal: `bash` cannot write outside the workspace, cannot touch `.git`/`.cox`, has no network unless allowed.
-Files: `crates/cox-tools/src/sandbox/{mod,seatbelt}.rs`, `crates/cox-tools/tests/sandbox_macos.rs`.
-Steps: (1) `SandboxPolicy { mode, writable_roots, readonly_subpaths, network }` → profile text: `(version 1) (deny default) (allow process-exec process-fork) (allow file-read*) (allow file-write* (subpath "<root>") …) (deny file-write* (subpath "<root>/.git") …) (allow sysctl-read mach-lookup …)`, `(allow network*)` only when `network`; `/tmp`, `$TMPDIR`, `~/.cache` writable. (2) Exec via `sandbox-exec -p <profile> -- /bin/sh -c <cmd>` (`Command`, not a shell string). (3) `read-only` mode: no `file-write*` at all except `$TMPDIR`. (4) Tests (macOS only, `#[cfg(target_os="macos")]`): write inside allowed; `echo x > $HOME/outside` denied; `.git/HEAD` write denied; `curl` fails without network.
-Check:
-```bash
-mise exec -- cargo test -p cox-tools sandbox_macos_
-```
-Done when: `cox doctor` reports `sandbox: seatbelt`.
-
 #### T4.2 Linux bubblewrap, Landlock + seccomp
 Model: opus · Status: open · Depends: T3.7 · Size: ~200
 Goal: the same three guarantees on Linux with and without `bwrap`.

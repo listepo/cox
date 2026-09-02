@@ -6,9 +6,10 @@
 
 mod classify;
 
+use std::ffi::OsString;
 use std::io::Read;
 use std::os::fd::{BorrowedFd, RawFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -114,6 +115,7 @@ impl Tool for BashTool {
         let run = run(
             &input.command,
             &cx.cwd,
+            &cx.roots,
             &cx.sandbox,
             &cx.cancel,
             &cx.output,
@@ -134,7 +136,8 @@ impl Tool for BashTool {
 /// `TaskCompleted` and a way to fetch the row by task id arrive with T9.2.
 fn background(command: String, timeout: Duration, cx: &ToolCx) -> ToolOutput {
     let task = TaskId::new();
-    let (cwd, sandbox, archive) = (cx.cwd.clone(), cx.sandbox.clone(), cx.archive.clone());
+    let (cwd, roots, sandbox) = (cx.cwd.clone(), cx.roots.clone(), cx.sandbox.clone());
+    let archive = cx.archive.clone();
     let (session, call) = (cx.session, cx.call);
     let subject = command.clone();
     tokio::spawn(async move {
@@ -144,6 +147,7 @@ fn background(command: String, timeout: Duration, cx: &ToolCx) -> ToolOutput {
         if let Ok(run) = run(
             &command,
             &cwd,
+            &roots,
             &sandbox,
             &CancellationToken::new(),
             &sink,
@@ -198,13 +202,19 @@ impl Run {
     }
 }
 
-/// Builds the child. The sandbox policy is threaded through here so P4 can
-/// wrap the command (Seatbelt/Landlock/bwrap) in one place; until then every
-/// mode runs the command as-is.
-fn command_for(command: &str, cwd: &Path, _sandbox: &SandboxPolicy) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new("/bin/sh");
-    cmd.arg("-c");
-    cmd.arg(command);
+/// Builds the child: the sandbox decides the argv (`sandbox-exec … /bin/sh
+/// -c` or the bare shell), this only adds cwd and the environment.
+fn command_for(
+    command: &str,
+    cwd: &Path,
+    roots: &[PathBuf],
+    sandbox: &SandboxPolicy,
+) -> CommandBuilder {
+    let argv = crate::sandbox::argv(sandbox, roots, command)
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    let mut cmd = CommandBuilder::from_argv(argv);
     cmd.cwd(cwd);
     cmd.env_clear();
     for key in ENV_ALLOWLIST {
@@ -230,6 +240,7 @@ fn signal(pid: Option<u32>, sig: Signal) {
 async fn run(
     command: &str,
     cwd: &Path,
+    roots: &[PathBuf],
     sandbox: &SandboxPolicy,
     cancel: &CancellationToken,
     output: &mpsc::Sender<String>,
@@ -246,7 +257,7 @@ async fn run(
         .map_err(|_| ToolError::Io)?;
     let mut child = pair
         .slave
-        .spawn_command(command_for(command, cwd, sandbox))
+        .spawn_command(command_for(command, cwd, roots, sandbox))
         .map_err(|_| ToolError::Io)?;
     let pid = child.process_id();
     let mut reader = pair.master.try_clone_reader().map_err(|_| ToolError::Io)?;

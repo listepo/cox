@@ -179,57 +179,20 @@ fn check_api_keys() -> CheckResult {
 }
 
 fn check_sandbox() -> CheckResult {
-    let os = env::consts::OS;
-    let status = if os == "macos" {
-        // macOS: check for sandbox-exec.
-        ProcessCommand::new("which")
-            .arg("sandbox-exec")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    } else if os == "linux" {
-        // Linux: check for bwrap or landlock/seccomp support.
-        let has_bwrap = ProcessCommand::new("which")
-            .arg("bwrap")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        // Landlock detection is complex; bwrap is the primary check.
-        has_bwrap
-    } else {
-        false
-    };
-
-    if status {
-        let backend = if os == "macos" {
-            "sandbox-exec"
-        } else if os == "linux" {
-            "bwrap"
-        } else {
-            "none"
-        };
-        CheckResult::ok("sandbox backend", format!("{} available", backend))
-    } else {
-        let backend = if os == "macos" {
-            "sandbox-exec"
-        } else if os == "linux" {
-            "bwrap"
-        } else {
-            "none"
-        };
-        CheckResult::warn(
-            "sandbox backend",
-            format!("{} not found, sandbox disabled", backend),
-            if os == "macos" {
-                "sandbox-exec is part of macOS; check your installation".to_string()
-            } else if os == "linux" {
-                "install bubblewrap: apt install bubblewrap (Debian/Ubuntu) or equivalent"
-                    .to_string()
-            } else {
-                "sandbox is not supported on this platform".to_string()
+    match cox_tools::sandbox::backend() {
+        Some(backend) => CheckResult::ok("sandbox", backend.to_string()),
+        None => CheckResult::warn(
+            "sandbox",
+            "none: shell commands run unconfined".to_string(),
+            match env::consts::OS {
+                "macos" => "sandbox-exec is part of macOS; check your installation".to_string(),
+                "linux" => {
+                    "install bubblewrap: apt install bubblewrap (Debian/Ubuntu) or equivalent"
+                        .to_string()
+                }
+                _ => "sandbox is not supported on this platform".to_string(),
             },
-        )
+        ),
     }
 }
 
