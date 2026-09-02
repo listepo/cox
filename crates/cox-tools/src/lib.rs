@@ -3,9 +3,12 @@
 //! from `cox-core` because every tool touches the filesystem or a process
 //! and must go through a trait, never called directly by the loop.
 
+pub mod edit;
 pub mod outline;
 pub mod path;
 pub mod read;
+pub mod todo;
+pub mod write;
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -74,7 +74,7 @@ pub enum Command {
     /// Print archived tool output by id.
     Expand,
     /// Usage and cost stats.
-    Stats,
+    Stats(StatsArgs),
     /// Read or write config.
     Config(ConfigArgs),
     /// Report why cox will or will not work on this machine.
@@ -120,6 +120,14 @@ pub struct RunArgs {
     /// Route this run's `plan` job through the `think` tier.
     #[arg(long)]
     pub deep: bool,
+}
+
+/// `cox stats` (plan.md §1.12/T1.7). Print usage and cost statistics.
+#[derive(Args, Debug)]
+pub struct StatsArgs {
+    /// Print stats for a specific session by id.
+    #[arg(long, value_name = "ID")]
+    pub session: Option<String>,
 }
 
 /// `cox config <action>` (plan.md §1.12/§1.6).

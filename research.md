@@ -18,7 +18,7 @@ Design response: `docs/design/protocol.md`.
 | TUI | ratatui 0.30.2 (default-features off), crossterm 0.29 (OpenAI fork), ratatui-macros 0.7, pulldown-cmark 0.10, syntect 5, image 0.25, arboard 3 | same, unforked crossterm |
 | async / net | tokio 1, tokio-util, tokio-stream, reqwest 0.12, **eventsource-stream 0.2.3**, tokio-tungstenite 0.28, axum 0.8, tonic 0.14 | same minus axum/tonic (no app-server in v0.1) |
 | MCP | rmcp =3.1.3 | rmcp 3.2 |
-| storage | sqlx 0.9 (SQLite), JSONL rollouts in `~/.codex/sessions` | rusqlite (sync; hooks and tests need no runtime) + JSONL |
+| storage | sqlx 0.9 (SQLite), JSONL rollouts in `~/.codex/sessions` | Diesel 2.2 on bundled SQLite (sync ORM; hooks and tests need no runtime; plan A1) + JSONL |
 | diff / patch | diffy 0.4.2, similar 2.7 | diffy 0.5, similar 3.2 |
 | code | tree-sitter 0.25.10, tree-sitter-bash 0.25, tree-sitter-powershell (command classification), nucleo (git), ignore 0.4.23 | same idea; tree-sitter-bash for the permission engine |
 | sandbox | landlock 0.4.4, seccompiler 0.5, bubblewrap wrapper, Seatbelt via `sandbox-exec` | same |
@@ -164,6 +164,7 @@ Copilot's auto model selection is praised because it is explicit, priced (10 % d
 | 3 | MCP latest revision 2026-07-28 (E) | confirmed | modelcontextprotocol.io changelog |
 | 4 | HTTP+SSE deprecated in 2026-07-28 (E) | confirmed, clarified | deprecated since 2025-03-26; reclassified 2026-07-28 |
 | 5–7, 18 | Anthropic prices from finout.io (E) | unverifiable by the checker | plan uses the Claude API reference table cached 2026-06-24: Haiku 4.5 $1/$5, Sonnet 5 $2/$10, Opus 5 $5/$25, Fable 5.1 $10/$50; report E's "Sonnet promo ends Sept 1, then $3/$15" is unconfirmed → T1.7 re-verifies from the official pricing page |
+| 28 | Anthropic prices re-verified 2026-09-02 (T1.7) | confirmed, Sonnet 5 promo extended | Haiku 4.5 $1/$5, Sonnet 5 $2/$10 (promo extended indefinitely), Opus 5 $5/$25, Fable 5.1 $10/$50; cache pricing verified; config/prices.toml carries verified_on dates — https://platform.claude.com/docs/pricing |
 | 8 | eventsource-stream last release 2022-02-17 (D) | confirmed date, verdict rejected | Codex ships it (§1.3); small and finished |
 | 9–10 | Claude Code compaction at 250–300 k; tool results 500–2 000 tokens (F) | unverifiable | dropped as design inputs |
 | 11 | Claude Code sandbox = Seatbelt / bubblewrap (A) | confirmed | code.claude.com/docs/en/sandboxing |
