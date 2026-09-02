@@ -1,0 +1,5 @@
+file.txt:2:second line goes deep
+main.rs:4:    println!("hello {n}");
+nested/deep.rs:1:pub fn deep() -> &'static str {
+nested/deep.rs:2:    // TODO: return something less hello-shaped
+nested/deep.rs:3:    "hello from 13 levels down"

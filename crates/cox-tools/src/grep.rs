@@ -117,7 +117,11 @@ impl Sink for GrepSink<'_> {
 
 /// A file's glob filter matches either its basename (`*.rs` at any depth,
 /// gitignore-style) or its full path (patterns that spell out a directory).
-fn glob_allows(glob: &globset::GlobMatcher, entry_path: &Path, file_name: &std::ffi::OsStr) -> bool {
+pub(crate) fn glob_allows(
+    glob: &globset::GlobMatcher,
+    entry_path: &Path,
+    file_name: &std::ffi::OsStr,
+) -> bool {
     glob.is_match(file_name) || glob.is_match(entry_path)
 }
 
@@ -153,10 +157,9 @@ impl cox_protocol::Tool for GrepTool {
     }
 
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError> {
-        let input: GrepInput = serde_json::from_value(input)
-            .map_err(|e| ToolError::Denied {
-                why: format!("invalid input: {e}"),
-            })?;
+        let input: GrepInput = serde_json::from_value(input).map_err(|e| ToolError::Denied {
+            why: format!("invalid input: {e}"),
+        })?;
 
         let root = path::confine(&cx.roots, &cx.cwd, input.path.as_deref().unwrap_or("."))?;
         if !root.exists() {
@@ -185,10 +188,10 @@ impl cox_protocol::Tool for GrepTool {
                 continue;
             }
             let entry_path = entry.path();
-            if let Some(gm) = &glob_matcher {
-                if !glob_allows(gm, entry_path, entry.file_name()) {
-                    continue;
-                }
+            if let Some(gm) = &glob_matcher
+                && !glob_allows(gm, entry_path, entry.file_name())
+            {
+                continue;
             }
 
             let mut builder = SearcherBuilder::new();
@@ -203,7 +206,10 @@ impl cox_protocol::Tool for GrepTool {
             };
             // A search error (binary content, unreadable file) just skips
             // that file rather than failing the whole call.
-            if searcher.search_path(&matcher, entry_path, &mut sink).is_ok() {
+            if searcher
+                .search_path(&matcher, entry_path, &mut sink)
+                .is_ok()
+            {
                 all.extend(sink.lines);
             }
         }
@@ -299,7 +305,12 @@ fn text_error(text: String) -> ToolOutput {
 /// duplicating the `hidden(false)` + gitignore configuration.
 pub(crate) fn walker(root: &PathBuf) -> WalkBuilder {
     let mut w = WalkBuilder::new(root);
-    w.hidden(false).sort_by_file_path(|a, b| a.cmp(b));
+    // `require_git(false)`: a `.gitignore` states intent whether or not a
+    // `.git` directory happens to sit above it, and a worktree the agent is
+    // handed may not be a repository at all.
+    w.hidden(false)
+        .require_git(false)
+        .sort_by_file_path(|a, b| a.cmp(b));
     w
 }
 
@@ -308,7 +319,9 @@ mod tests {
     use std::process::Command;
     use std::sync::Arc;
 
-    use cox_protocol::{Archive, ArchiveId, SandboxMode, SandboxPolicy, SessionId, StoreError, Tool};
+    use cox_protocol::{
+        Archive, ArchiveId, SandboxMode, SandboxPolicy, SessionId, StoreError, Tool,
+    };
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
@@ -378,9 +391,12 @@ mod tests {
         Some(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
     }
 
+    /// Deliberately *beside* `fixtures/grep`, not inside it: a golden file
+    /// holding match text would itself be searched, so `fn_space.golden`
+    /// would match its own contents and never stabilise.
     fn golden_path(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/grep")
+            .join("../../fixtures/grep-golden")
             .join(format!("{name}.golden"))
     }
 
@@ -392,11 +408,15 @@ mod tests {
         match rg_output(pattern, &root) {
             Some(want) => assert_eq!(got_text, want, "pattern {pattern:?}"),
             None => {
+                // The golden files hold paths relative to the fixture root;
+                // an absolute path would only ever match on the machine that
+                // generated it.
+                let got_rel = got_text.replace(&format!("{}/", root.display()), "");
                 let want = std::fs::read_to_string(golden_path(name))
                     .unwrap_or_else(|_| panic!("golden file missing for {name}"))
                     .trim_end()
                     .to_string();
-                assert_eq!(got_text, want, "pattern {pattern:?} (golden)");
+                assert_eq!(got_rel, want, "pattern {pattern:?} (golden)");
             }
         }
     }
@@ -452,13 +472,21 @@ mod tests {
             out.text
         );
         // Exactly one match line shown before the trailer.
-        let match_lines = out.text.lines().filter(|l| l.contains(":TODO") || l.contains("TODO")).count();
+        let match_lines = out
+            .text
+            .lines()
+            .filter(|l| l.contains(":TODO") || l.contains("TODO"))
+            .count();
         assert!(match_lines >= 1);
     }
 
     #[tokio::test]
     async fn grep_context_includes_surrounding_lines() {
-        let out = run("deep", serde_json::json!({ "context": 1, "glob": "file.txt" })).await;
+        let out = run(
+            "deep",
+            serde_json::json!({ "context": 1, "glob": "file.txt" }),
+        )
+        .await;
         assert!(out.text.contains("second line") || out.text.lines().count() > 1);
     }
 }

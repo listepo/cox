@@ -1,0 +1,2 @@
+main.rs:1:pub fn main() {
+nested/deep.rs:1:pub fn deep() -> &'static str {

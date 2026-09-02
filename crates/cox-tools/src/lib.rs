@@ -4,6 +4,8 @@
 //! and must go through a trait, never called directly by the loop.
 
 pub mod edit;
+pub mod glob;
+pub mod grep;
 pub mod outline;
 pub mod path;
 pub mod read;

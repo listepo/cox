@@ -1,0 +1,4 @@
+main.rs:3:    let n = 42;
+main.rs:7:fn helper(x: u32) -> u32 {
+main.rs:8:    x + 7
+nested/deep.rs:3:    "hello from 13 levels down"

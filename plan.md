@@ -681,17 +681,6 @@ Check: file exists, names the six rules with their test names.
 
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
 
-#### T3.3 `grep` and `glob`
-Model: sonnet · Status: open · Depends: T3.1 · Size: ~180
-Goal: ripgrep-equivalent search with caps and pointers.
-Files: `crates/cox-tools/src/grep.rs`, `crates/cox-tools/src/glob.rs`.
-Steps: (1) `grep`: `ignore::WalkBuilder` (gitignore, hidden off), `grep-regex` + `grep-searcher` sinks, `-n`, `context`, `glob` filter, `max_results` → pointer trailer via archive of the full result. (2) `glob`: `globset` over the walk, sort by mtime desc, `limit`; optional `query` fuzzy-ranked by `nucleo`. (3) Test: for five patterns on a fixture tree, output equals `rg -n --no-heading` (rg invoked only if present on the test machine; otherwise golden files).
-Check:
-```bash
-mise exec -- cargo test -p cox-tools grep_ glob_
-```
-Done when: both respect `confine` and `.gitignore`.
-
 #### T3.4 `edit` (str_replace)
 Model: sonnet · Status: open · Depends: T3.1 · Size: ~180
 Goal: D8 — exact-match edits with a safe fallback, returning a diff.
