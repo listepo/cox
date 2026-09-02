@@ -61,3 +61,46 @@ $ mise exec -- cargo test --workspace
 $ mise exec -- cargo deny check
 advisories ok, bans ok, licenses ok, sources ok
 ```
+
+#### T0.6 Protocol design doc
+Model: sonnet · Status: done 2026-09-02
+Goal: `docs/design/protocol.md` per D15 — problem in one measurable number, what the field does, what cox does and why, falsifiers.
+Files: `docs/design/protocol.md`, `research.md` (one-line link at end of §1.2).
+Check: file exists, ≤ 1 page, four sections; think review pending.
+
+#### T1.1 Anthropic request translation
+Model: opus · Status: done 2026-09-02 · Depends: T0.2
+Goal: a `Request` becomes a byte-exact Anthropic Messages body with cache breakpoints, thinking, effort, fallbacks and tool results.
+Files: `crates/cox-provider/src/lib.rs`, `crates/cox-provider/src/anthropic/{mod,request}.rs`, `crates/cox-provider/Cargo.toml`, `docs/design/provider.md`.
+
+What landed: `AnthropicProvider { base_url, api_key, ttl, fallbacks, http }` with a headers builder (`anthropic-version: 2023-06-01`, sensitive `x-api-key`, `anthropic-beta` assembled only from enabled features), `Caps`, and `resolve_api_key()` (`ANTHROPIC_API_KEY`, else keyring entry `cox/anthropic`, else `ProviderError::Auth` — never a panic). `request::build_body(&Request, BuildCfg) -> Value` is pure: system text blocks, `tools` + `tool_choice: auto`, `thinking: {"type":"adaptive"}` on 4.6+/5 families, `output_config.effort`, `max_tokens`, `stop_sequences`, `stream: true`, `fallbacks: "default"`. `Provider::stream`/`count_tokens` return `Unsupported` until T1.2.
+
+Breakpoint indexing (documented in the module header): `cache_breakpoints` index the concatenation `system ++ messages`; a system index marks that text block, a message index marks that message's *last* content block. Out-of-range indices and indices naming a `SystemBlock { cache: false }` are skipped rather than failing the turn; placement clamps at four (`MAX_BREAKPOINTS`).
+
+Deviations:
+- **No `produced_by` added to `Content::Thinking`.** The task allowed adding the field to `cox-protocol`, but that crate is owned by parallel work and its shape is pinned by the committed `docs/protocol.jsonschema` test. Provenance is carried instead as `BuildCfg::thinking_model: Option<&ModelId>` — the caller saw `ModelSwitched` and knows it. A block replays only when a signature is present *and* `thinking_model == req.model`; `None` is treated as a switch (never guess).
+- **`keyring` is pulled in without a platform-store feature**, so the keyring branch resolves against its mock store until `cox-store` enables `apple-native`/`windows-native`/`sync-secret-service` (features union across the workspace). Marked with a `ponytail:` comment; the env var is the working path today.
+- Deps added to `cox-provider` only (all already workspace-declared, no new rows in plan.md §1): `async-trait`, `keyring`, `reqwest`, `serde_json`, `tokio`, `tokio-util`, dev `insta`. Workspace `Cargo.toml` untouched.
+- Messages are translated in place, not merged: parallel tool results are expected to arrive as several `Content::ToolResult`s inside one user `Message` (which is what context assembly builds), so merging consecutive same-role messages — which would also break breakpoint indices — is not done.
+
+Sources consulted (bundled `claude-api` skill, 2026-09-02): `curl/examples.md` (`anthropic-version: 2023-06-01`, `cache_control: {"type":"ephemeral","ttl":"1h"}`, `tool_result` shape, `thinking: {"type":"adaptive"}`, `budget_tokens` is a 400 on 4.7+/5); `shared/prompt-caching.md` (max **4** `cache_control` breakpoints per request; render order `tools → system → messages`); `python/claude-api/README.md` (`output_config: {"effort": "low|medium|high|xhigh|max"}`); `shared/model-migration.md` §"Migrating to Claude Opus 5 → New API features" (`fallbacks: "default"` scalar form, beta header **`server-side-fallback-2026-07-01`**, distinct from the array form's `-2026-06-01`) and §1591/1601 (a thinking signature binds the block to the model and the prefix that produced it); `shared/token-counting.md` (`POST /v1/messages/count_tokens`); `shared/tool-use-concepts.md` (forced `tool_choice` is a 400 on Fable/Mythos 5.1 → always `auto`).
+
+Check:
+```bash
+$ mise exec -- cargo test -p cox-provider anthropic_request_
+running 3 tests
+test anthropic::request::tests::anthropic_request_plain_text ... ok
+test anthropic::request::tests::anthropic_request_after_compaction ... ok
+test anthropic::request::tests::anthropic_request_parallel_tool_results ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.02s
+
+$ mise exec -- cargo clippy -p cox-provider --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.41s
+(clean)
+
+$ mise exec -- cargo fmt --check -p cox-provider
+(clean)
+
+$ mise exec -- cargo test -p cox-provider
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```

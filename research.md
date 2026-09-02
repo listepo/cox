@@ -10,6 +10,8 @@ Rust workspace with 160+ crates, edition 2024, release `rust-v0.152.0` (2026-09-
 ### 1.2 Protocol: Submission Queue / Event Queue
 The core is driven by a submission queue and emits an event queue; the TUI, `codex exec`, the app-server (JSON-RPC 2.0 over stdio/WebSocket/Unix socket for IDE extensions) and the MCP server are all consumers. Hierarchy `Thread → Turn → Item`, item deltas streamed, bounded queues with an overload error (`-32001`), queued submissions with stable ids that auto-start when the thread is idle. [high — app-server README] → cox D2, D11.
 
+Design response: `docs/design/protocol.md`.
+
 ### 1.3 Dependencies (read from `codex-rs/Cargo.toml` on 2026-09-02, not from memory)
 | Concern | Codex uses | cox verdict |
 |---|---|---|
