@@ -20,19 +20,40 @@ pub fn assemble(
     cwd: &Path,
     date: &str,
 ) -> Request {
-    let mut stable: Vec<_> = tools
+    assemble_with(history, config, tools, &[], cwd, date)
+}
+
+/// `assemble` with the deferred tools the model has found through
+/// `tool_search` (D6d): those specs join the request in discovery order
+/// after the stable core set, so the prefix changes once per discovery
+/// and is stable again afterwards. With `context.deferred_tools = false`
+/// nothing is deferred and every tool is always present.
+pub fn assemble_with(
+    history: &[Message],
+    config: &cox_protocol::Config,
+    tools: &[Arc<dyn Tool>],
+    discovered: &[String],
+    cwd: &Path,
+    date: &str,
+) -> Request {
+    let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
+    let deferring = config.context.deferred_tools;
+    let mut specs: Vec<_> = all
         .iter()
-        .map(|t| t.spec())
-        .filter(|s| !s.deferred)
+        .filter(|s| !deferring || !s.deferred)
+        .cloned()
         .collect();
-    stable.sort_by(|a, b| a.name.cmp(&b.name));
-    let discovered: Vec<_> = tools
-        .iter()
-        .map(|t| t.spec())
-        .filter(|s| s.deferred)
-        .collect();
-    let mut specs = stable;
-    specs.extend(discovered);
+    specs.sort_by(|a, b| a.name.cmp(&b.name));
+    if deferring {
+        for name in discovered {
+            if specs.iter().any(|s| &s.name == name) {
+                continue;
+            }
+            if let Some(spec) = all.iter().find(|s| s.deferred && &s.name == name) {
+                specs.push(spec.clone());
+            }
+        }
+    }
     let tools_json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
 
     let system = vec![
@@ -64,7 +85,7 @@ pub fn assemble(
         job: Job::Main,
         model: ModelId(tier.model.clone()),
         system,
-        tools: tools.iter().map(|t| t.spec()).collect(),
+        tools: specs,
         messages: history.to_vec(),
         effort: tier.effort,
         max_tokens: tier.max_tokens,

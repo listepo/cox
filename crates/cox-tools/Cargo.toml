@@ -30,6 +30,8 @@ similar = { workspace = true }
 portable-pty = { workspace = true }
 tree-sitter-bash = { workspace = true }
 nix = { workspace = true, features = ["signal", "process", "poll"] }
+# T3.8 (`web_fetch`): HTTP client with a hard timeout; shares the workspace rustls pin with cox-provider.
+reqwest = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

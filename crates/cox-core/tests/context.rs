@@ -102,3 +102,75 @@ fn context_three_breakpoints_max() {
     assert_eq!(req.cache_breakpoints.len(), 3);
     assert!(req.cache_breakpoints.windows(2).all(|w| w[0] < w[1]));
 }
+
+/// A deferred tool: absent from the request until `tool_search` names it.
+struct Deferred(&'static str);
+
+#[async_trait]
+impl Tool for Deferred {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: self.0.into(),
+            description: "deferred".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+            deferred: true,
+            risk: Risk::ReadOnly,
+            concurrency: Concurrency::Parallel,
+        }
+    }
+    fn subject(&self, _input: &Value) -> String {
+        String::new()
+    }
+    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput {
+            text: String::new(),
+            is_error: false,
+            diff: None,
+            structured: None,
+        })
+    }
+}
+
+#[test]
+fn deferred_tools_absent_until_searched() {
+    let config = cox_protocol::Config::default();
+    let tools: Vec<Arc<dyn Tool>> = vec![
+        Arc::new(Deferred("mcp__gh__issue")),
+        Arc::new(Echo),
+        Arc::new(Deferred("web_fetch")),
+    ];
+    let names = |req: &cox_protocol::types::Request| {
+        req.tools.iter().map(|t| t.name.clone()).collect::<Vec<_>>()
+    };
+    let before = assemble(&[user("hi")], &config, &tools, Path::new("/w"), "d");
+    assert_eq!(names(&before), ["echo"]);
+    assert!(!before.system[0].text.contains("web_fetch"));
+
+    let found = ["web_fetch".to_string()];
+    let after =
+        cox_core::assemble_with(&[user("hi")], &config, &tools, &found, Path::new("/w"), "d");
+    assert_eq!(
+        names(&after),
+        ["echo", "web_fetch"],
+        "core first, discovered after"
+    );
+    assert!(after.system[0].text.contains("web_fetch"));
+    assert!(!after.system[0].text.contains("mcp__gh__issue"));
+    let again = cox_core::assemble_with(
+        &[user("hi"), user("more")],
+        &config,
+        &tools,
+        &found,
+        Path::new("/x"),
+        "e",
+    );
+    assert_eq!(
+        after.system[0].text, again.system[0].text,
+        "stable after discovery"
+    );
+
+    let mut everything = config.clone();
+    everything.context.deferred_tools = false;
+    let all = assemble(&[user("hi")], &everything, &tools, Path::new("/w"), "d");
+    assert_eq!(names(&all), ["echo", "mcp__gh__issue", "web_fetch"]);
+}

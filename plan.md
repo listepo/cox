@@ -565,16 +565,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P3 — Tools (goal: the eight core tools, diff-shaped edits, everything confined)
 
-#### T3.8 `ask_user`, `tool_search`, `web_fetch`
-Model: sonnet · Status: open · Depends: T2.3 · Size: ~200
-Goal: deferred tool discovery works end to end; the model can ask and fetch.
-Files: `crates/cox-tools/src/{ask_user,tool_search,web_fetch}.rs`.
-Steps: (1) `ask_user`: emits `ApprovalRequired`-like `Event::Notice`? No — a dedicated `ToolCallRequested` with `risk: ReadOnly` and a surface-side prompt; headless returns `--answer` or an error. (2) `tool_search`: BM25 (own ~60-line implementation, no dep) over deferred `ToolSpec` name+description; returns ≤ 5 specs; the core appends them to `system[0]` (T2.3 hook). (3) `web_fetch`: on Anthropic with `Caps.server_tools` pass `web_fetch_20260209` as a server tool instead (the provider adds it; the local tool is hidden); otherwise reqwest with 10 s timeout, `max_bytes`, `readability`-style extraction (strip script/style/nav, keep headings/paragraphs/code), `WebFetch(domain:…)` rules. (4) Test `deferred_tools_absent_until_searched` on the request body.
-Check:
-```bash
-mise exec -- cargo test -p cox-tools tool_search_ web_fetch_ && mise exec -- cargo test -p cox-core deferred_
-```
-
 #### T3.9 `agent` tool (subagents)
 Model: opus · Status: open · Depends: T2.1, T2.7, T3.8 · Size: ~200
 Goal: a nested session with its own tier, tool allowlist, budget and result cap.

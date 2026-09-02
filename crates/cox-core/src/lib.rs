@@ -14,7 +14,7 @@ mod session;
 mod truncate;
 mod turn;
 
-pub use context::assemble;
+pub use context::{assemble, assemble_with};
 pub use permission::{Engine, Outcome};
 pub use rollout::History;
 pub use session::{MemoryStore, Session};

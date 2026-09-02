@@ -657,6 +657,7 @@ dependencies = [
  "nucleo",
  "portable-pty",
  "proptest",
+ "reqwest",
  "rstest",
  "schemars",
  "serde",

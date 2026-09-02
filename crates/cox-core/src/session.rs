@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::budget;
-use crate::context::assemble;
+use crate::context::assemble_with;
 use crate::dedup::Dedup;
 use crate::permission::{Engine, Outcome};
 use crate::turn::{consume_provider, results_message, run_tools};
@@ -62,6 +62,8 @@ struct Inner {
     /// Provider rounds so far in this session; the dedup window counts these.
     round: u32,
     dedup: Dedup,
+    /// Deferred tools found through `tool_search`, in discovery order.
+    discovered: Vec<String>,
 }
 
 /// One conversation: a provider, tools, a store, and an event stream.
@@ -120,6 +122,7 @@ impl Session {
                 pending: HashMap::new(),
                 round: 0,
                 dedup,
+                discovered: Vec::new(),
             })),
         };
         let started = Event::SessionStarted {
@@ -268,6 +271,20 @@ impl Session {
         self.inner.lock().await.dedup.invalidate(risk, subject);
     }
 
+    /// Records deferred tools found by `tool_search`; returns the ones that
+    /// are new, which is what the next request adds to its tool list.
+    pub(crate) async fn discover(&self, names: impl IntoIterator<Item = String>) -> Vec<String> {
+        let mut inner = self.inner.lock().await;
+        let mut added = Vec::new();
+        for name in names {
+            if !inner.discovered.contains(&name) {
+                inner.discovered.push(name.clone());
+                added.push(name);
+            }
+        }
+        added
+    }
+
     async fn run_turn(&self, text: String) -> Result<(), CoreError> {
         {
             let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
@@ -317,9 +334,13 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far) = {
+        let (history, calls_so_far, discovered) = {
             let inner = self.inner.lock().await;
-            (inner.history.clone(), inner.provider_calls)
+            (
+                inner.history.clone(),
+                inner.provider_calls,
+                inner.discovered.clone(),
+            )
         };
         if calls_so_far >= self.config.core.max_turns {
             self.finish(turn, StopReason::MaxTurns).await?;
@@ -331,7 +352,14 @@ impl Session {
             inner.provider_calls += 1;
             inner.round += 1;
         }
-        let req = assemble(&history, &self.config, &self.tools, &self.cwd, "");
+        let req = assemble_with(
+            &history,
+            &self.config,
+            &self.tools,
+            &discovered,
+            &self.cwd,
+            "",
+        );
         let (spent, warned) = {
             let inner = self.inner.lock().await;
             (inner.spent_usd, inner.budget_warned)

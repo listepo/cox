@@ -812,3 +812,33 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T3.8 `ask_user`, `tool_search`, `web_fetch`
+Model: fable · Status: done 2026-09-03 · Depends: T2.3 · Size: ~200
+Goal: deferred tool discovery works end to end; the model can ask and fetch.
+Files: `crates/cox-tools/src/{ask_user,tool_search,web_fetch}.rs`.
+Steps: (1) `ask_user`: emits `ApprovalRequired`-like `Event::Notice`? No — a dedicated `ToolCallRequested` with `risk: ReadOnly` and a surface-side prompt; headless returns `--answer` or an error. (2) `tool_search`: BM25 (own ~60-line implementation, no dep) over deferred `ToolSpec` name+description; returns ≤ 5 specs; the core appends them to `system[0]` (T2.3 hook). (3) `web_fetch`: on Anthropic with `Caps.server_tools` pass `web_fetch_20260209` as a server tool instead (the provider adds it; the local tool is hidden); otherwise reqwest with 10 s timeout, `max_bytes`, `readability`-style extraction (strip script/style/nav, keep headings/paragraphs/code), `WebFetch(domain:…)` rules. (4) Test `deferred_tools_absent_until_searched` on the request body.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools tool_search_ web_fetch_ && mise exec -- cargo test -p cox-core deferred_
+```
+
+What landed: `cox_tools::ask_user::AskUserTool` (deferred, ReadOnly, exclusive) answers from `Answers::Fixed(--answer)` in headless runs (no answer → `denied`) or hands a `Question {call, question, options, reply}` to the surface over an mpsc channel and waits, cancel-aware (biased, so an interrupt wins). `cox_tools::tool_search::ToolSearchTool::new(specs)` indexes the deferred specs, Okapi BM25 (k1 1.2, b 0.75, ~40 lines) over tokenised name + description, returns ≤ 5 specs as JSON and names them in `structured.discovered`; the core (`turn::run_one`) records those in the session's `discovered` list, emits an info `Notice` about the one-off prefix change, and `context::assemble_with` builds the request as sorted core specs + discovered specs in discovery order — `Request.tools` and `system[0]` now really omit deferred tools until then (`context.deferred_tools = false` turns deferral off). `cox_tools::web_fetch::WebFetchTool` fetches http(s) only with a 10 s reqwest timeout, ≤ 5 redirects, streams the body up to `max_bytes` (default 100 KiB, says when cut), and reduces HTML with a hand-rolled walk (drop script/style/nav/header/footer/aside/…, prefer `<main>`/`<article>`, keep headings, paragraphs, lists, tables, `<pre>` as fenced code, inline code, entity decoding); its subject is the URL so `WebFetch(domain:…)` rules apply. Tests: `deferred_tools_absent_until_searched` (request body before/after discovery, stability after, deferral off), unit tests for ranking/cap/structured output, headless and surface `ask_user`, extraction, and three `web_fetch` tests against a local `TcpListener` server (readable text, byte cap, scheme guard + connection refused). New dep in `cox-tools`: `reqwest` (workspace pin already used by `cox-provider`).
+Not done: the Anthropic server-tool passthrough for `web_fetch` (`web_fetch_20260209`) — it needs `server_tool_use`/`web_fetch_tool_result` blocks in the SSE consumer and a request-side substitution; nothing consumes `Caps.server_tools` yet, so the local tool is always used. The plan's Check line passes two positional filters to `cargo test`, which cargo rejects; the equivalent `-- tool_search_ web_fetch_` form was run. Size: ~620 LOC over 9 files (three tools, three test files, context/session/turn wiring).
+```
+$ mise exec -- cargo test -p cox-tools -- tool_search_ web_fetch_ ask_user_
+test tool_search::tests::tool_search_ranks_the_matching_deferred_tool_first ... ok
+test tool_search::tests::tool_search_returns_at_most_five_and_nothing_for_no_match ... ok
+test tool_search::tests::tool_search_reports_discovered_names_in_structured_output ... ok
+test ask_user::tests::ask_user_headless_returns_the_fixed_answer_or_an_error ... ok
+test ask_user::tests::ask_user_surface_reply_is_the_result_and_cancel_unblocks ... ok
+test web_fetch::tests::web_fetch_extract_keeps_headings_paragraphs_lists_and_code ... ok
+test web_fetch::tests::web_fetch_decode_handles_numeric_and_unknown_entities ... ok
+test web_fetch_only_takes_http_urls_and_reports_bad_status ... ok
+test web_fetch_returns_readable_text_for_html ... ok
+test web_fetch_caps_bytes_and_says_so ... ok
+$ mise exec -- cargo test -p cox-core deferred_
+test deferred_tools_absent_until_searched ... ok
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

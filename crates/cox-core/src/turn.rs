@@ -10,8 +10,8 @@ use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, Message, Risk, Role, SandboxPolicy, ToolCall,
-    ToolOutput, ToolResult, Usage,
+    Concurrency, Content, DecidedBy, Decision, Event, Level, Message, Risk, Role, SandboxPolicy,
+    ToolCall, ToolOutput, ToolResult, Usage,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -312,6 +312,36 @@ async fn run_one(
             structured: None,
         },
     };
+    // `tool_search` names what it found in `structured.discovered`; the
+    // next request carries those schemas (D6d) and the prefix changes once.
+    let found: Vec<String> = output
+        .structured
+        .as_ref()
+        .and_then(|s| s.get("discovered"))
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !found.is_empty() {
+        let added = session.discover(found).await;
+        if !added.is_empty() {
+            let _ = session
+                .emit(Event::Notice {
+                    level: Level::Info,
+                    text: format!(
+                        "discovered tools {}: their schemas join the next request, which \
+                         re-caches the prefix once",
+                        added.join(", ")
+                    ),
+                })
+                .await;
+        }
+    }
     let bytes = output.text.len() as u64;
     let archive = session
         .archive
