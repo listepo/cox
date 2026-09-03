@@ -1520,3 +1520,12 @@ ext list --json | jq -e '...' → true
 cargo test -p cox-ext → green (embedded_defaults_include_explore_and_shell)
 ```
 
+#### T9.4 Design doc: routing
+Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
+Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.
+Check: file exists; reviewed by `think`.
+
+What landed: `docs/design/routing.md` (56 lines: the 5–10× bill question, the field, pinned job→tier + never-up + think gate + ledger tags, falsifier = cheap-tier retries costing more than they save, measurable with the bench harness).
+Note: `think`-tier review pending (same standing as T0.6).
+Check: file exists.
+

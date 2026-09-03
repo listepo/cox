@@ -577,13 +577,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P9 — Routing and subagents (goal: D5 enforced end to end)
 
-#### T9.4 Design doc: routing
-
-#### T9.4 Design doc: routing
-Model: sonnet · Status: open · Depends: T9.1 · Size: doc
-Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.
-Check: file exists; reviewed by `think`.
-
 ### P10 — Memory (goal: cross-session memory with zero model cost by default)
 
 #### T10.1 Project memory
