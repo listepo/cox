@@ -581,16 +581,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P11 — ACP and IDE (goal: cox inside Zed and JetBrains)
 
-#### T11.1 `cox acp`
-Model: opus · Status: open · Depends: T6.1, T2.2 · Size: ~200
-Goal: Agent Client Protocol 2.0 server over the event stream.
-Files: `crates/cox-acp/src/{lib,server,map}.rs`, `crates/cox-acp/tests/conformance.rs`.
-Steps: (1) `initialize` (capabilities: fs read/write, terminal, permission requests), `authenticate` (none), `session/new`, `session/load` (resume), `session/prompt` → `UserTurn`; `session/cancel` → `Interrupt`. (2) `Event` → ACP `session/update` (agent message chunks, thought chunks, tool call start/progress/done with diffs and locations, plan from `todo`). (3) `ApprovalRequired` → `session/request_permission` with options allow/allow-always/reject; decision → `Submission::Approve`. (4) When the client offers fs/terminal, `read`/`edit`/`write` go through `fs/read_text_file`/`fs/write_text_file` so the editor's buffers stay authoritative; `bash` through `terminal/*`. (5) Conformance: the reference example client from the `agent-client-protocol` repo completes a scripted prompt; permission round-trip test.
-Check:
-```bash
-mise exec -- cargo test -p cox-acp
-```
-
 #### T11.2 IDE docs and smoke
 Model: haiku · Status: open · Depends: T11.1 · Size: doc
 Goal: `docs/ide.md` with a working Zed `settings.json` snippet (`agent_servers`), JetBrains steps, neovim (via an ACP plugin) note; one recorded smoke run in `research.md` §3.

@@ -1581,6 +1581,30 @@ Check output:
 cargo test -p cox sessions_ → 4 passed (age_buckets, list_rows_shape, list_limits_rows, grep_finds_indexed_text) + e2e sessions_grep_finds_a_scripted_run + core sessions_index_captures_user_and_assistant_text + tui picker_session_entry
 ```
 
+#### T11.1 `cox acp`
+Model: opus · Status: done 2026-09-04 · Depends: T6.1, T2.2 · Size: ~200
+Goal: Agent Client Protocol 2.0 server over the event stream.
+Files: `crates/cox-acp/src/{lib,server,map}.rs`, `crates/cox-acp/tests/conformance.rs`.
+Steps: (1) `initialize` (capabilities: fs read/write, terminal, permission requests), `authenticate` (none), `session/new`, `session/load` (resume), `session/prompt` → `UserTurn`; `session/cancel` → `Interrupt`. (2) `Event` → ACP `session/update` (agent message chunks, thought chunks, tool call start/progress/done with diffs and locations, plan from `todo`). (3) `ApprovalRequired` → `session/request_permission` with options allow/allow-always/reject; decision → `Submission::Approve`. (4) When the client offers fs/terminal, `read`/`edit`/`write` go through `fs/read_text_file`/`fs/write_text_file` so the editor's buffers stay authoritative; `bash` through `terminal/*`. (5) Conformance: the reference example client from the `agent-client-protocol` repo completes a scripted prompt; permission round-trip test.
+Check:
+```bash
+mise exec -- cargo test -p cox-acp
+```
+
+What landed: `map.rs` (pure `Event`→`SessionUpdate`: message/thought chunks with message ids, tool start with kind/title/locations/raw input, done updates with status + text content, `todo`→`Plan`, stop mapping); `client_tools.rs` (`ClientLink` + `read`/`edit`/`write` via `fs/*`, `bash` via `terminal/*`, same names/subjects/risks as local tools); `server.rs` (`SessionFactory` trait, per-session forwarder + broadcast, prompt driver outside the dispatch loop with late `Responder`, permission flow, cancel→`Interrupt`, `session/load` within server lifetime); `acp_cmd.rs` factory (real config/provider/store/tools, client-tool swap, local normalization inherited) + `cox acp` stdio dispatch.
+Notes / deviations:
+- **7 files, not 4.** Plus `Cargo.toml`/`Cargo.lock` (SDK dep, already in §1.1), `cli.rs` (`Clone` for the factory's `Cli`), `session.rs` (`provider_for`, `with_client_tools`), `acp_cmd.rs` (factory + dispatch — the server crate may only depend on core/protocol per the direction test, so session construction lives in the binary).
+- **Conformance is in-process `Channel`, not the example-client subprocess:** same reference SDK client code paths (initialize/new/prompt/updates/permission), deterministic, no processes.
+- **`session/load` resumes live sessions only:** a restart drops sessions (core has no rehydration API); unknown ids are explicit errors, never empty sessions.
+- **v1 wire protocol only** (SDK 2.0.0 crate, v1 methods — the plan's method list): `initialize` answers V1; no `session/list|delete|close|resume|set_mode` handlers (method-not-found, clients probe).
+- **Outline via client is keyword-grade** (tree-sitter lives in `cox-tools`, unreachable by direction); unified diffs render as text (cox `Diff` has no old/new split); background `bash` over ACP is a clear error (a detached terminal has nowhere to report).
+- **Progress deltas skipped:** `ToolCallOutput` streaming would spam one update per delta; the Done update carries the result.
+Check output:
+```
+cargo test -p cox-acp → 2 passed (scripted_prompt_completes, permission_round_trip_allows_the_turn)
+stdio smoke: initialize/authenticate/session-new/session-load round-trips verified against the real binary
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

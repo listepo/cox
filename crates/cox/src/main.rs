@@ -4,6 +4,7 @@
 //! erroring, so the binary is a stable target for scripts and CI while the
 //! crate fills in.
 
+mod acp_cmd;
 mod cli;
 mod config_cmd;
 mod config_load;
@@ -52,6 +53,7 @@ fn main() -> anyhow::Result<()> {
             }
         },
         Some(Command::Run(args)) => std::process::exit(run::run(&cli, args, &cwd)?),
+        Some(Command::Acp) => acp_cmd::run(&cli, &cwd),
         Some(Command::Sessions(args)) => {
             let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
             sessions::run(&home, args)?;

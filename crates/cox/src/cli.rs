@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use clap::{ArgAction, Args, Parser, Subcommand};
 
 /// Root command: `cox [PROMPT] [subcommand] [global flags]`.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "cox", version, about = "cox — a modular terminal coding agent")]
 pub struct Cli {
     /// First-turn prompt for the interactive TUI (stub: ignored for now).
@@ -65,7 +65,7 @@ pub struct Cli {
 /// Top-level subcommands (plan.md §1.12). Only `Run` and `Config` are
 /// implemented past their clap shape in T0.3; the rest print `not
 /// implemented` until their own task lands.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Headless run: `cox run -p <prompt>`.
     Run(RunArgs),
@@ -93,7 +93,7 @@ pub enum Command {
 }
 
 /// `cox expand <id>` (plan.md T2.5).
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ExpandArgs {
     /// Archive id printed alongside a truncated tool result.
     pub id: String,
@@ -104,7 +104,7 @@ pub struct ExpandArgs {
 
 /// `cox run` (plan.md §1.12). Only the clap shape and the flag→config-key
 /// mapping land in T0.3; execution is T2.x.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct RunArgs {
     /// The prompt to run headlessly.
     #[arg(short = 'p', long = "prompt", value_name = "TEXT")]
@@ -133,7 +133,7 @@ pub struct RunArgs {
 }
 
 /// `cox stats` (plan.md §1.12/T1.7). Print usage and cost statistics.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct StatsArgs {
     /// Print stats for a specific session by id.
     #[arg(long, value_name = "ID")]
@@ -156,7 +156,7 @@ pub struct StatsArgs {
 }
 
 /// `cox sessions [--grep <q>] [--json] [--limit N]` (plan.md §1.12/T10.3).
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct SessionsArgs {
     /// Full-text search over indexed session text.
     #[arg(long, value_name = "QUERY")]
@@ -171,7 +171,7 @@ pub struct SessionsArgs {
 
 /// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools
 /// by default; writes are opt-in and `bash` only by name.
-#[derive(Args, Debug, Default)]
+#[derive(Args, Debug, Default, Clone)]
 pub struct McpArgs {
     /// Also serve `edit`, `write` and `apply_patch`.
     #[arg(long)]
@@ -182,7 +182,7 @@ pub struct McpArgs {
 }
 
 /// `cox record <name> -p <prompt> [--sse FILE] [--redact]` (plan.md T1.5).
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct RecordArgs {
     /// Cassette name (`cassettes/<name>/` under `COX_HOME`).
     pub name: String,
@@ -198,14 +198,14 @@ pub struct RecordArgs {
 }
 
 /// `cox config <action>` (plan.md §1.12/§1.6).
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ConfigArgs {
     #[command(subcommand)]
     pub action: ConfigAction,
 }
 
 /// `cox config` subcommands.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ConfigAction {
     /// Print every effective config key.
     Show {
@@ -231,14 +231,14 @@ pub enum ConfigAction {
 
 /// `cox ext [list]` (plan.md §1.12/T9.3): bare `ext` prints the human
 /// report; `ext list` lists definitions, `--json` for machine output.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ExtArgs {
     #[command(subcommand)]
     pub action: Option<ExtAction>,
 }
 
 /// `cox ext` subcommands.
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ExtAction {
     /// List instruction-adjacent definitions in effect.
     List {

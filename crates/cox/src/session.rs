@@ -111,7 +111,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
 
 /// The `tiers.code` provider decides which real client to build; every tier
 /// of a session goes through the same provider object (routing picks models).
-fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
+pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
     if let Some(double) = cox_provider::from_env()? {
         return Ok(Arc::from(double));
     }
@@ -177,6 +177,28 @@ pub(crate) fn tools(
     tools
 }
 
+/// Swaps local file/shell tools for client-backed ones where the ACP
+/// client offers `fs`/`terminal` (T11.1 step 4), so the editor's buffers
+/// stay authoritative. Names, subjects and risk classes are unchanged.
+pub(crate) fn with_client_tools(
+    tools: Vec<Arc<dyn Tool>>,
+    link: cox_acp::ClientLink,
+    fs: bool,
+    terminal: bool,
+) -> Vec<Arc<dyn Tool>> {
+    use cox_acp::client_tools::{FsEditTool, FsReadTool, FsWriteTool, TerminalBashTool};
+    let link = std::sync::Arc::new(link);
+    tools
+        .into_iter()
+        .map(|t| match t.spec().name.as_str() {
+            "read" if fs => Arc::new(FsReadTool::new(link.clone())) as Arc<dyn Tool>,
+            "edit" if fs => Arc::new(FsEditTool::new(link.clone())) as Arc<dyn Tool>,
+            "write" if fs => Arc::new(FsWriteTool::new(link.clone())) as Arc<dyn Tool>,
+            "bash" if terminal => Arc::new(TerminalBashTool::new(link.clone())) as Arc<dyn Tool>,
+            _ => t,
+        })
+        .collect()
+}
 /// Where a session's memory facts live: `config.memory.dir` wins, else
 /// `<home>/projects/<slug>/memory` (T10.1).
 pub(crate) fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBuf {

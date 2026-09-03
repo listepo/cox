@@ -8,3 +8,12 @@ license.workspace = true
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
 cox-core = { path = "../cox-core", version = "0.1.0" }
+agent-client-protocol = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+cox-provider = { path = "../cox-provider", version = "0.1.0" }
+tempfile = { workspace = true }
