@@ -950,3 +950,16 @@ test result: ok. 2 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T4.4 Design doc: sandbox
+Model: fable · Status: done 2026-09-03 · Depends: T4.2 · Size: doc
+Goal: `docs/design/sandbox.md`: Seatbelt vs bwrap vs Landlock vs Claude Code's socat proxy; the Windows story (none in v0.1, WSL2 recommended); falsifier = any documented escape.
+Check: file exists; reviewed by `think`.
+
+What landed: `docs/design/sandbox.md` in the D15 shape — the three-guarantee claim as the measurable problem; Claude Code (Seatbelt / bwrap + the socat-bridged proxy for a domain allowlist), Codex (same pair, Landlock fallback, boolean network), Pi (container around the agent); cox's one front door `sandbox::command`, the probe-based backend choice, a guarantee × backend table, the writable set, the §1.8 step 8 meeting point with the permission engine, what was borrowed and what was dropped (the socat proxy — network stays a boolean, a domain allowlist is a §6 amendment); Windows: none in v0.1, WSL2 recommended; four known limits (Landlock cannot carve `.git` out, `process-exec` allowed by design, textual denial markers, symlinks resolved by the kernel); four falsifiers, the first being any documented escape. Review section written at think tier (Fable 5.1): two watch-points — toolchain caches outside the writable set will make `on-failure` ask on the first build, and the `Permission denied` marker needs a regression test that a real mode-bit failure stays a question.
+Not done: the review is by the same model that wrote the doc, in the same session; an independent second read is still worth a phase gate. Nothing in code changed.
+```
+$ ls docs/design/sandbox.md
+docs/design/sandbox.md
+$ reviewed by think: see "## Review" in the file.
+```

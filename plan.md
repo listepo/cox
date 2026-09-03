@@ -567,11 +567,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
 
-#### T4.4 Design doc: sandbox
-Model: sonnet · Status: open · Depends: T4.2 · Size: doc
-Goal: `docs/design/sandbox.md`: Seatbelt vs bwrap vs Landlock vs Claude Code's socat proxy; the Windows story (none in v0.1, WSL2 recommended); falsifier = any documented escape.
-Check: file exists; reviewed by `think`.
-
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
 
 #### T5.1 TEA skeleton and test harness
