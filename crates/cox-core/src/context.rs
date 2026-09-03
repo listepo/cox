@@ -1,11 +1,13 @@
 //! Cache-stable request assembly (plan.md §1.9). Separate from `turn` so the
 //! prefix order can be snapshot-tested without running tools.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use cox_protocol::ids::CallId;
 use cox_protocol::traits::Tool;
-use cox_protocol::types::{Job, Message, ModelId, Request, SystemBlock, Tier};
+use cox_protocol::types::{ArchiveRef, Content, Job, Message, ModelId, Request, SystemBlock, Tier};
 
 /// Instruction-file stub until T7.1 reads the AGENTS.md chain.
 const INSTRUCTIONS: &str = "Follow repository instruction files when present.";
@@ -109,6 +111,82 @@ fn breakpoints(system_len: usize, n_messages: usize) -> Vec<usize> {
     }
     bps.truncate(3);
     bps
+}
+
+/// Microcompaction (T8.2 §1.10): old tool results become `Pointer`s in the
+/// request without a model call. Pure over a copy: the stored history keeps
+/// the visible text (so the rollout and `cox expand` are untouched); only
+/// the returned messages change, one block at a time, so turn boundaries
+/// and cache breakpoints are unaffected.
+///
+/// A result is replaced when its turn is older than `after_turns` back from
+/// the newest AND outside the last `keep_turns` turns (which are never
+/// touched). Turns come from `turn_starts` (T8.1 marks); an empty slice
+/// means "no turn info" and returns the input unchanged.
+pub fn microcompact(
+    messages: &[Message],
+    turn_starts: &[usize],
+    keep_turns: u32,
+    after_turns: u32,
+    archives: &HashMap<CallId, ArchiveRef>,
+) -> Vec<Message> {
+    if turn_starts.is_empty() || messages.is_empty() {
+        return messages.to_vec();
+    }
+    let n = turn_starts.len();
+    let keep_from = n.saturating_sub(keep_turns as usize);
+    let turn_of = |m: usize| -> usize {
+        match turn_starts.binary_search(&m) {
+            Ok(t) => t,
+            Err(0) => 0,
+            Err(t) => t - 1,
+        }
+        .min(n - 1)
+    };
+    // Tool names live in the matching `ToolUse` block in history.
+    let mut names: HashMap<CallId, &str> = HashMap::new();
+    for msg in messages {
+        for c in &msg.content {
+            if let Content::ToolUse { id, name, .. } = c {
+                names.insert(*id, name.as_str());
+            }
+        }
+    }
+    messages
+        .iter()
+        .enumerate()
+        .map(|(m, msg)| {
+            let t = turn_of(m);
+            // ponytail: O(turns) scan per message via binary_search; fine at
+            // session sizes, revisit with a cursor if history grows large.
+            if t >= keep_from || (n - t) <= after_turns as usize {
+                return msg.clone();
+            }
+            let content = msg
+                .content
+                .iter()
+                .map(|c| match c {
+                    Content::ToolResult { call_id, .. } => match archives.get(call_id) {
+                        Some(arch) => Content::Pointer {
+                            archive: arch.clone(),
+                            summary: format!(
+                                "{}: {} bytes archived; expand #{}",
+                                names.get(call_id).copied().unwrap_or("tool"),
+                                arch.bytes,
+                                arch.id
+                            ),
+                        },
+                        None => c.clone(),
+                    },
+                    _ => c.clone(),
+                })
+                .collect();
+            Message {
+                role: msg.role,
+                content,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

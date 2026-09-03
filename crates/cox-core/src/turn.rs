@@ -448,11 +448,16 @@ async fn run_one(
     let result = ToolResult {
         ok: !output.is_error,
         visible,
-        archive,
+        archive: archive.clone(),
         bytes,
         duration_ms: started.elapsed().as_millis() as u64,
         diff: output.diff,
     };
+    // T8.2: the request microcompacts old results to `Pointer`s; the stored
+    // history keeps the visible text, so remember the handle here.
+    if let Some(arch) = &archive {
+        session.remember_archive(id, arch.clone()).await;
+    }
     (id, result)
 }
 

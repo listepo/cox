@@ -17,7 +17,7 @@ pub mod subagent;
 mod truncate;
 mod turn;
 
-pub use context::{assemble, assemble_with};
+pub use context::{assemble, assemble_with, microcompact};
 pub use permission::{Engine, Outcome};
 pub use rollout::History;
 pub use session::{MemoryStore, Session};

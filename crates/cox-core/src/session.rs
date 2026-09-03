@@ -9,8 +9,8 @@ use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
 use cox_protocol::types::{
-    Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message, ModelId,
-    PermissionMode, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
+    ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
+    ModelId, PermissionMode, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -68,6 +68,9 @@ pub(crate) struct Inner {
     discovered: Vec<String>,
     /// Where each turn starts in `history` (T8.1 compaction cuts on these).
     pub(crate) turn_marks: Vec<TurnMark>,
+    /// `call_id` → archived payload for microcompaction (T8.2): the request
+    /// replaces old results with `Pointer`s, the stored history keeps them.
+    pub(crate) archives: HashMap<CallId, ArchiveRef>,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -199,6 +202,7 @@ impl Session {
                 dedup,
                 discovered: Vec::new(),
                 turn_marks: Vec::new(),
+                archives: HashMap::new(),
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -378,6 +382,11 @@ impl Session {
         self.inner.lock().await.dedup.invalidate(risk, subject);
     }
 
+    /// Remembers where a tool result is archived for microcompaction (T8.2).
+    pub(crate) async fn remember_archive(&self, call: CallId, archive: ArchiveRef) {
+        self.inner.lock().await.archives.insert(call, archive);
+    }
+
     /// What this session has spent so far, in USD.
     pub(crate) async fn spent(&self) -> f64 {
         self.inner.lock().await.spent_usd
@@ -484,12 +493,14 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered) = {
+        let (history, calls_so_far, discovered, marks, archives) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
                 inner.provider_calls,
                 inner.discovered.clone(),
+                inner.turn_marks.iter().map(|m| m.start).collect::<Vec<_>>(),
+                inner.archives.clone(),
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -502,8 +513,15 @@ impl Session {
             inner.provider_calls += 1;
             inner.round += 1;
         }
-        let req = assemble_with(
+        let req_messages = crate::context::microcompact(
             &history,
+            &marks,
+            self.config.context.keep_turns,
+            self.config.context.microcompact_after_turns,
+            &archives,
+        );
+        let req = assemble_with(
+            &req_messages,
             &self.config,
             self.tier,
             &self.tools,

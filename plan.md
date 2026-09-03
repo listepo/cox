@@ -575,15 +575,7 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P8 — Context economy (goal: measured savings, cache hit rate visible)
 
-#### T8.2 Microcompaction
-Model: sonnet · Status: open · Depends: T2.5 · Size: ~100
-Goal: old tool results become pointers in the request without a model call.
-Files: `crates/cox-core/src/context.rs` (extend), `crates/cox-core/tests/microcompact.rs`.
-Steps: when building `messages`, tool results older than `microcompact_after_turns` → `Content::Pointer`; rollout untouched; `cox expand` still works; the last `keep_turns` turns are never touched.
-Check:
-```bash
-mise exec -- cargo test -p cox-core microcompact_
-```
+#### T8.3 Cache diagnostics
 
 #### T8.3 Cache diagnostics
 Model: sonnet · Status: open · Depends: T1.7, T2.3 · Size: ~150

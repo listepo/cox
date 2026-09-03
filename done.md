@@ -1375,3 +1375,22 @@ Check output:
 cargo test -p cox-core compact_ → lib 2 passed; integration 4 passed (keeps_last_two_turns_verbatim, is_append_only_in_rollout, request_after_compaction_keeps_cached_prefix, focus_is_passed_to_summarizer)
 ```
 
+#### T8.2 Microcompaction
+Model: sonnet · Status: done 2026-09-03 · Depends: T2.5 · Size: ~100
+Goal: old tool results become pointers in the request without a model call.
+Files: `crates/cox-core/src/context.rs` (extend), `crates/cox-core/tests/microcompact.rs`.
+Steps: when building `messages`, tool results older than `microcompact_after_turns` → `Content::Pointer`; rollout untouched; `cox expand` still works; the last `keep_turns` turns are never touched.
+Check:
+```bash
+mise exec -- cargo test -p cox-core microcompact_
+```
+
+What landed: `context::microcompact` (pure over a request copy: turn index via binary search on T8.1 marks, replace when older than `after_turns` and outside the last `keep_turns`; tool name from the matching `ToolUse` block, `"<name>: N bytes archived; expand #<id>"` summary; results without a known archive left alone; empty turn info is a no-op), wired in `session::step` before `assemble_with` (stored history keeps visible text, so the rollout and `expand` are untouched and turn marks stay valid), `Inner.archives` side table populated in `turn::run_one`, `microcompact` re-exported from `lib.rs`, `tests/microcompact.rs` ×4.
+Notes / deviations:
+- **4 files, not 2.** The side table needs `session.rs` (marks + archives into the request path) and `turn.rs` (remember the handle where the archive row is created) plus the `lib.rs` re-export.
+- **Summariser input (T8.1) still sees stored visible text**, not microcompacted pointers; `transcript` already renders `Pointer`s when present, and stored results are the capped visible form, so the summariser stays bounded without a second rewrite.
+Check output:
+```
+cargo test -p cox-core microcompact_ → integration 4 passed (old_results_become_pointers, keeps_last_keep_turns_verbatim, rollout_untouched_and_expand_works, empty_turn_info_is_noop)
+```
+
