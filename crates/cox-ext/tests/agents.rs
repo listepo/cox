@@ -14,8 +14,16 @@ fn fixtures() -> PathBuf {
 fn agents_fixture_parses_and_maps_its_model() {
     let found = discover(&[fixtures()]);
     assert!(found.notices.is_empty(), "{:?}", found.notices);
-    assert_eq!(found.agents.len(), 1);
-    let def = &found.agents[0];
+    // Embedded explore/shell first, the fixture dir's reviewer appended.
+    assert_eq!(
+        found
+            .agents
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>(),
+        ["explore", "shell", "reviewer"]
+    );
+    let def = &found.agents[2];
     assert_eq!(def.name, "reviewer");
     assert_eq!(def.description, "Reviews diffs for correctness.");
     assert_eq!(def.tools, ["read", "grep", "glob"]);
@@ -26,7 +34,11 @@ fn agents_fixture_parses_and_maps_its_model() {
 #[test]
 fn agents_restrict_keeps_only_listed_tools_the_parent_has() {
     let found = discover(&[fixtures()]);
-    let def = &found.agents[0];
+    let def = found
+        .agents
+        .iter()
+        .find(|a| a.name == "reviewer")
+        .expect("reviewer");
     let parent: Vec<(String, u8)> = ["read", "edit", "grep", "bash"]
         .iter()
         .enumerate()
@@ -42,6 +54,14 @@ fn agents_missing_fields_are_skipped_with_a_notice() {
     std::fs::write(dir.path().join("a.md"), "---\nname: a\n---\nbody\n").unwrap();
     std::fs::write(dir.path().join("b.md"), "no frontmatter\n").unwrap();
     let found = discover(&[dir.path().to_path_buf()]);
-    assert!(found.agents.is_empty());
+    // The two broken files are skipped; the embedded presets still ship.
+    assert_eq!(
+        found
+            .agents
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>(),
+        ["explore", "shell"]
+    );
     assert_eq!(found.notices.len(), 2, "{:?}", found.notices);
 }

@@ -1500,3 +1500,23 @@ cargo test -p cox-core tasks_ → lib 2 + integration 2 passed (pointer_line_is_
 cargo test -p cox-tui tasks_ → 1 passed (list_shows_two_running_tasks + snapshot)
 ```
 
+#### T9.3 Subagent presets
+Model: haiku · Status: done 2026-09-03 · Depends: T7.3, T9.1 · Size: ~80
+Goal: `explore` and `shell` presets as markdown agent definitions shipped in the binary.
+Files: `config/agents/explore.md`, `config/agents/shell.md`, `crates/cox-ext/src/agents.rs` (extend: embedded defaults).
+Check:
+```bash
+COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- ext list --json | jq -e '.agents | map(.name) | index("explore") and index("shell")'
+```
+
+What landed: `config/agents/explore.md` + `shell.md` (names/tools/models mirroring the core `agent` presets), `include_str!` embedded defaults seeded first in `discover()` (same-named files override them), `cox ext list [--json]` surface (`ExtArgs`/`ExtAction`, bare `ext` keeps the human report).
+Notes / deviations:
+- **7 files, not 3.** Plus `cli.rs` + `main.rs` + `ext_cmd.rs`: `cox ext` took no subcommand and had no `--json`, which the Check requires — `ext list` is new, bare `ext` unchanged.
+- **Core `agent` presets untouched:** the markdown defs are the listed source of truth; the runner's allowlists already match them by construction (pinned by the embedded test asserting the exact tool lists).
+- **3 existing tests updated** for the new first-two entries (ext fixture tests, `run_cli` project-tree test).
+Check output:
+```
+ext list --json | jq -e '...' → true
+cargo test -p cox-ext → green (embedded_defaults_include_explore_and_shell)
+```
+

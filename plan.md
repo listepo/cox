@@ -577,14 +577,7 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P9 — Routing and subagents (goal: D5 enforced end to end)
 
-#### T9.3 Subagent presets
-Model: haiku · Status: open · Depends: T7.3, T9.1 · Size: ~80
-Goal: `explore` and `shell` presets as markdown agent definitions shipped in the binary.
-Files: `config/agents/explore.md`, `config/agents/shell.md`, `crates/cox-ext/src/agents.rs` (extend: embedded defaults).
-Check:
-```bash
-COX_HOME=$(mktemp -d) mise exec -- cargo run -q -- ext list --json | jq -e '.agents | map(.name) | index("explore") and index("shell")'
-```
+#### T9.4 Design doc: routing
 
 #### T9.4 Design doc: routing
 Model: sonnet · Status: open · Depends: T9.1 · Size: doc

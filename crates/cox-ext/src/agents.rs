@@ -11,6 +11,12 @@ use serde::Deserialize;
 
 use crate::frontmatter;
 
+/// The `explore` and `shell` presets shipped in the binary (T9.3): the same
+/// names, tools and models as the core's `agent` presets, so `cox ext list`
+/// shows them with no config files present.
+const EXPLORE_MD: &str = include_str!("../../../config/agents/explore.md");
+const SHELL_MD: &str = include_str!("../../../config/agents/shell.md");
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentDef {
     pub name: String,
@@ -58,7 +64,17 @@ pub fn agent_dirs(
 }
 
 pub fn discover(dirs: &[PathBuf]) -> Discovered {
+    // Embedded presets first (T9.3): a same-named file in any dir overrides
+    // them through the retain+push below, so users can replace either.
     let mut found = Discovered::default();
+    for (name, text) in [("explore", EXPLORE_MD), ("shell", SHELL_MD)] {
+        match parse_agent_text(&PathBuf::from(format!("<embedded>/{name}.md")), text) {
+            Ok(def) => found.agents.push(def),
+            Err(reason) => found
+                .notices
+                .push(format!("embedded agent {name} skipped: {reason}")),
+        }
+    }
     for dir in dirs {
         let Ok(entries) = fs::read_dir(dir) else {
             continue;
@@ -86,7 +102,11 @@ pub fn discover(dirs: &[PathBuf]) -> Discovered {
 
 fn parse_agent(path: &Path) -> Result<AgentDef, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let (header, body): (Header, &str) = frontmatter::parse(&text).map_err(|e| e.to_string())?;
+    parse_agent_text(path, &text)
+}
+
+fn parse_agent_text(path: &Path, text: &str) -> Result<AgentDef, String> {
+    let (header, body): (Header, &str) = frontmatter::parse(text).map_err(|e| e.to_string())?;
     let name = header.name.ok_or("missing `name`")?;
     let description = header.description.ok_or("missing `description`")?;
     Ok(AgentDef {
@@ -145,5 +165,22 @@ mod tests {
         assert_eq!(tier_for(Some("gpt-5")), Some(Tier::Code));
         assert_eq!(tier_for(Some("inherit")), None);
         assert_eq!(tier_for(None), None);
+    }
+
+    #[test]
+    fn agents_embedded_defaults_include_explore_and_shell() {
+        // No dirs at all: only the two shipped presets come back, and a
+        // same-named file would override them (retain+push order).
+        let found = discover(&[]);
+        assert!(found.notices.is_empty(), "{:?}", found.notices);
+        let names: Vec<&str> = found.agents.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["explore", "shell"]);
+        let explore = &found.agents[0];
+        assert_eq!(explore.tools, ["read", "grep", "glob", "outline", "expand"]);
+        assert_eq!(explore.model.as_deref(), Some("haiku"));
+        assert!(!explore.body.is_empty());
+        let shell = &found.agents[1];
+        assert_eq!(shell.tools, ["bash", "web_fetch"]);
+        assert_eq!(shell.model.as_deref(), Some("haiku"));
     }
 }

@@ -11,6 +11,53 @@ use cox_ext::{agents, commands, instructions, skills};
 use crate::cli::Cli;
 use crate::config_load::{self, cox_home, find_git_root, home_dir};
 
+/// `cox ext list [--json]` (T9.3 Check): agent (and sibling) definitions in
+/// effect, including the embedded presets with no config files present.
+pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
+    let cox_home = cli.home.clone().unwrap_or_else(cox_home);
+    let claude_home = home_dir().join(".claude");
+    let git_root = find_git_root(cwd);
+    let project = git_root.clone().unwrap_or_else(|| cwd.to_path_buf());
+    let (ch, cl, pr) = (
+        Some(cox_home.as_path()),
+        Some(claude_home.as_path()),
+        Some(project.as_path()),
+    );
+    let defs = agents::discover(&agents::agent_dirs(ch, cl, pr));
+    let cmds = commands::discover(&commands::command_dirs(ch, cl, pr));
+    let found = skills::discover(&skills::skill_dirs(ch, cl, pr));
+    if !json {
+        let mut out = String::new();
+        section(
+            &mut out,
+            "agents",
+            defs.agents.iter().map(|a| a.name.as_str()),
+        );
+        section(
+            &mut out,
+            "commands",
+            cmds.commands.iter().map(|c| c.name.as_str()),
+        );
+        section(
+            &mut out,
+            "skills",
+            found.skills.iter().map(|s| s.name.as_str()),
+        );
+        return out;
+    }
+    serde_json::json!({
+        "agents": defs.agents.iter().map(|a| serde_json::json!({
+            "name": a.name,
+            "description": a.description,
+            "tools": a.tools,
+            "model": a.model,
+        })).collect::<Vec<_>>(),
+        "commands": cmds.commands.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+        "skills": found.skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
 pub fn report(cli: &Cli, cwd: &Path) -> String {
     let config = config_load::load(cwd, cli)
         .map(|l| l.config)

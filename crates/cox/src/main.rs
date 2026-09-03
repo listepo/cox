@@ -40,10 +40,16 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Mcp(args)) => mcp_cmd::run(&cli, args, &cwd),
-        Some(Command::Ext) => {
-            print!("{}", ext_cmd::report(&cli, &cwd));
-            Ok(())
-        }
+        Some(Command::Ext(args)) => match &args.action {
+            None => {
+                print!("{}", ext_cmd::report(&cli, &cwd));
+                Ok(())
+            }
+            Some(crate::cli::ExtAction::List { json }) => {
+                print!("{}", ext_cmd::list(&cli, &cwd, *json));
+                Ok(())
+            }
+        },
         Some(Command::Run(args)) => std::process::exit(run::run(&cli, args, &cwd)?),
         Some(Command::Expand(args)) => {
             let home = cli.home.as_deref().unwrap_or_else(|| &cwd);

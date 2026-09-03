@@ -249,6 +249,10 @@ fn ext_lists_commands_and_agents_from_the_project_tree() {
         "{text}"
     );
     assert!(text.contains("commands:\n  review"), "{text}");
-    assert!(text.contains("agents:\n  scout"), "{text}");
+    // Embedded explore/shell first, the project tree's scout appended.
+    assert!(
+        text.contains("agents:\n  explore\n  shell\n  scout"),
+        "{text}"
+    );
     assert!(text.contains("notices: none"), "{text}");
 }

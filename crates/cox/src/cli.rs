@@ -86,7 +86,7 @@ pub enum Command {
     /// Agent Client Protocol server on stdio.
     Acp,
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
-    Ext,
+    Ext(ExtArgs),
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate,
@@ -213,6 +213,25 @@ pub enum ConfigAction {
     },
     /// Print the user config file path.
     Path,
+}
+
+/// `cox ext [list]` (plan.md §1.12/T9.3): bare `ext` prints the human
+/// report; `ext list` lists definitions, `--json` for machine output.
+#[derive(Args, Debug)]
+pub struct ExtArgs {
+    #[command(subcommand)]
+    pub action: Option<ExtAction>,
+}
+
+/// `cox ext` subcommands.
+#[derive(Subcommand, Debug)]
+pub enum ExtAction {
+    /// List instruction-adjacent definitions in effect.
+    List {
+        /// Machine-readable JSON output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(test)]
