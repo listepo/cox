@@ -22,7 +22,11 @@ dotenvy = "0.15"
 
 # cox-protocol
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# preserve_order: agent-client-protocol-schema requires it, which unifies the
+# feature into every workspace build anyway; pinning it here makes JSON key
+# order (snapshots, rollout lines, ledger JSON) identical for per-crate and
+# full-workspace runs instead of depending on the invocation.
+serde_json = { version = "1.0", features = ["preserve_order"] }
 schemars = "1"
 thiserror = "2"
 ulid = { version = "1", features = ["serde"] }

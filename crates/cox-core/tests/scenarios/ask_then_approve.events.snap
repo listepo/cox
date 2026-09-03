@@ -4,147 +4,147 @@ expression: value
 ---
 [
   {
-    "config_digest": "",
-    "cwd": "/tmp/cox-turn",
+    "type": "session_started",
     "session": "<id>",
-    "type": "session_started"
+    "config_digest": "",
+    "cwd": "/tmp/cox-turn"
   },
   {
+    "type": "turn_started",
+    "turn": "<id>",
     "job": "main",
-    "model": "claude-sonnet-5",
     "tier": "code",
-    "turn": "<id>",
-    "type": "turn_started"
+    "model": "claude-sonnet-5"
   },
   {
+    "type": "item_started",
     "item": "<id>",
     "kind": {
-      "attachments": [],
+      "type": "user_message",
       "text": "write",
-      "type": "user_message"
-    },
-    "type": "item_started"
+      "attachments": []
+    }
   },
   {
-    "item": "<id>",
-    "type": "item_done"
+    "type": "item_done",
+    "item": "<id>"
   },
   {
+    "type": "item_started",
     "item": "<id>",
     "kind": {
-      "text": "",
-      "type": "assistant_message"
-    },
-    "type": "item_started"
+      "type": "assistant_message",
+      "text": ""
+    }
   },
   {
+    "type": "text_delta",
     "item": "<id>",
-    "text": "writing",
-    "type": "text_delta"
+    "text": "writing"
   },
   {
-    "turn": "<id>",
     "type": "usage",
+    "turn": "<id>",
     "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
       "cache_read_tokens": 0,
       "cache_write_tokens": 0,
-      "cost_usd": 0.0,
       "estimated": true,
-      "input_tokens": 0,
-      "latency_ms": 0,
-      "output_tokens": 0
+      "cost_usd": 0.0,
+      "latency_ms": 0
     }
   },
   {
-    "item": "<id>",
-    "type": "item_done"
+    "type": "item_done",
+    "item": "<id>"
   },
   {
+    "type": "tool_call_requested",
     "call": {
       "id": "<id>",
+      "name": "touch",
       "input": {
         "path": "a"
       },
-      "name": "touch",
       "risk": "write",
       "subject": "a"
-    },
-    "type": "tool_call_requested"
+    }
   },
   {
-    "call": {
-      "id": "<id>",
-      "input": {
-        "path": "a"
-      },
-      "name": "touch",
-      "risk": "write",
-      "subject": "a"
-    },
     "type": "approval_required",
-    "why": {
+    "call": {
+      "id": "<id>",
+      "name": "touch",
+      "input": {
+        "path": "a"
+      },
       "risk": "write",
-      "type": "risk"
+      "subject": "a"
+    },
+    "why": {
+      "type": "risk",
+      "risk": "write"
     }
   },
   {
-    "by": "user",
+    "type": "approval_decided",
     "call_id": "<id>",
     "decision": {
       "type": "allow"
     },
-    "type": "approval_decided"
+    "by": "user"
   },
   {
+    "type": "tool_call_done",
     "call_id": "<id>",
     "result": {
+      "ok": true,
+      "visible": "touched",
       "archive": {
-        "bytes": 7,
-        "id": "<id>"
+        "id": "<id>",
+        "bytes": 7
       },
       "bytes": 7,
-      "diff": null,
       "duration_ms": 0,
-      "ok": true,
-      "visible": "touched"
-    },
-    "type": "tool_call_done"
-  },
-  {
-    "item": "<id>",
-    "kind": {
-      "text": "",
-      "type": "assistant_message"
-    },
-    "type": "item_started"
-  },
-  {
-    "item": "<id>",
-    "text": "done",
-    "type": "text_delta"
-  },
-  {
-    "turn": "<id>",
-    "type": "usage",
-    "usage": {
-      "cache_read_tokens": 0,
-      "cache_write_tokens": 0,
-      "cost_usd": 0.0,
-      "estimated": true,
-      "input_tokens": 0,
-      "latency_ms": 0,
-      "output_tokens": 0
+      "diff": null
     }
   },
   {
+    "type": "item_started",
     "item": "<id>",
-    "type": "item_done"
+    "kind": {
+      "type": "assistant_message",
+      "text": ""
+    }
   },
   {
+    "type": "text_delta",
+    "item": "<id>",
+    "text": "done"
+  },
+  {
+    "type": "usage",
+    "turn": "<id>",
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "estimated": true,
+      "cost_usd": 0.0,
+      "latency_ms": 0
+    }
+  },
+  {
+    "type": "item_done",
+    "item": "<id>"
+  },
+  {
+    "type": "turn_done",
+    "turn": "<id>",
     "stop": {
       "type": "end_turn"
-    },
-    "turn": "<id>",
-    "type": "turn_done"
+    }
   }
 ]

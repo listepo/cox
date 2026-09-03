@@ -3,60 +3,60 @@ source: crates/cox-provider/src/anthropic/request.rs
 expression: "build_body(&req, cfg(None))"
 ---
 {
-  "fallbacks": "default",
+  "model": "claude-sonnet-5",
   "max_tokens": 16384,
   "messages": [
     {
+      "role": "user",
       "content": [
         {
-          "text": "what does cox-provider own?",
-          "type": "text"
+          "type": "text",
+          "text": "what does cox-provider own?"
         }
-      ],
-      "role": "user"
+      ]
     }
   ],
-  "model": "claude-sonnet-5",
+  "stream": true,
   "output_config": {
     "effort": "high"
   },
-  "stream": true,
   "system": [
     {
-      "text": "<tool specs>",
-      "type": "text"
+      "type": "text",
+      "text": "<tool specs>"
     },
     {
-      "cache_control": {
-        "ttl": "5m",
-        "type": "ephemeral"
-      },
+      "type": "text",
       "text": "You are cox.",
-      "type": "text"
+      "cache_control": {
+        "type": "ephemeral",
+        "ttl": "5m"
+      }
     },
     {
-      "text": "date: 2026-09-02",
-      "type": "text"
+      "type": "text",
+      "text": "date: 2026-09-02"
     }
   ],
-  "thinking": {
-    "type": "adaptive"
-  },
-  "tool_choice": {
-    "type": "auto"
-  },
   "tools": [
     {
+      "name": "read",
       "description": "Read a file",
       "input_schema": {
+        "type": "object",
         "properties": {
           "path": {
             "type": "string"
           }
-        },
-        "type": "object"
-      },
-      "name": "read"
+        }
+      }
     }
-  ]
+  ],
+  "tool_choice": {
+    "type": "auto"
+  },
+  "thinking": {
+    "type": "adaptive"
+  },
+  "fallbacks": "default"
 }

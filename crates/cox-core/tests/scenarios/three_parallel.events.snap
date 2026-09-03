@@ -4,172 +4,172 @@ expression: value
 ---
 [
   {
-    "config_digest": "",
-    "cwd": "/tmp/cox-turn",
+    "type": "session_started",
     "session": "<id>",
-    "type": "session_started"
+    "config_digest": "",
+    "cwd": "/tmp/cox-turn"
   },
   {
+    "type": "turn_started",
+    "turn": "<id>",
     "job": "main",
-    "model": "claude-sonnet-5",
     "tier": "code",
-    "turn": "<id>",
-    "type": "turn_started"
+    "model": "claude-sonnet-5"
   },
   {
+    "type": "item_started",
     "item": "<id>",
     "kind": {
-      "attachments": [],
+      "type": "user_message",
       "text": "three_parallel",
-      "type": "user_message"
-    },
-    "type": "item_started"
-  },
-  {
-    "item": "<id>",
-    "type": "item_done"
-  },
-  {
-    "item": "<id>",
-    "kind": {
-      "text": "",
-      "type": "assistant_message"
-    },
-    "type": "item_started"
-  },
-  {
-    "turn": "<id>",
-    "type": "usage",
-    "usage": {
-      "cache_read_tokens": 0,
-      "cache_write_tokens": 0,
-      "cost_usd": 0.0,
-      "estimated": true,
-      "input_tokens": 0,
-      "latency_ms": 0,
-      "output_tokens": 0
+      "attachments": []
     }
   },
   {
-    "item": "<id>",
-    "type": "item_done"
+    "type": "item_done",
+    "item": "<id>"
   },
   {
+    "type": "item_started",
+    "item": "<id>",
+    "kind": {
+      "type": "assistant_message",
+      "text": ""
+    }
+  },
+  {
+    "type": "usage",
+    "turn": "<id>",
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "estimated": true,
+      "cost_usd": 0.0,
+      "latency_ms": 0
+    }
+  },
+  {
+    "type": "item_done",
+    "item": "<id>"
+  },
+  {
+    "type": "tool_call_requested",
     "call": {
       "id": "<id>",
+      "name": "echo",
       "input": {
         "text": "a"
       },
-      "name": "echo",
       "risk": "read_only",
       "subject": "a"
-    },
-    "type": "tool_call_requested"
-  },
-  {
-    "call": {
-      "id": "<id>",
-      "input": {
-        "text": "b"
-      },
-      "name": "echo",
-      "risk": "read_only",
-      "subject": "b"
-    },
-    "type": "tool_call_requested"
-  },
-  {
-    "call": {
-      "id": "<id>",
-      "input": {
-        "text": "c"
-      },
-      "name": "echo",
-      "risk": "read_only",
-      "subject": "c"
-    },
-    "type": "tool_call_requested"
-  },
-  {
-    "call_id": "<id>",
-    "result": {
-      "archive": {
-        "bytes": 1,
-        "id": "<id>"
-      },
-      "bytes": 1,
-      "diff": null,
-      "duration_ms": 0,
-      "ok": true,
-      "visible": "a"
-    },
-    "type": "tool_call_done"
-  },
-  {
-    "call_id": "<id>",
-    "result": {
-      "archive": {
-        "bytes": 1,
-        "id": "<id>"
-      },
-      "bytes": 1,
-      "diff": null,
-      "duration_ms": 0,
-      "ok": true,
-      "visible": "b"
-    },
-    "type": "tool_call_done"
-  },
-  {
-    "call_id": "<id>",
-    "result": {
-      "archive": {
-        "bytes": 1,
-        "id": "<id>"
-      },
-      "bytes": 1,
-      "diff": null,
-      "duration_ms": 0,
-      "ok": true,
-      "visible": "c"
-    },
-    "type": "tool_call_done"
-  },
-  {
-    "item": "<id>",
-    "kind": {
-      "text": "",
-      "type": "assistant_message"
-    },
-    "type": "item_started"
-  },
-  {
-    "item": "<id>",
-    "text": "all three",
-    "type": "text_delta"
-  },
-  {
-    "turn": "<id>",
-    "type": "usage",
-    "usage": {
-      "cache_read_tokens": 0,
-      "cache_write_tokens": 0,
-      "cost_usd": 0.0,
-      "estimated": true,
-      "input_tokens": 0,
-      "latency_ms": 0,
-      "output_tokens": 0
     }
   },
   {
-    "item": "<id>",
-    "type": "item_done"
+    "type": "tool_call_requested",
+    "call": {
+      "id": "<id>",
+      "name": "echo",
+      "input": {
+        "text": "b"
+      },
+      "risk": "read_only",
+      "subject": "b"
+    }
   },
   {
+    "type": "tool_call_requested",
+    "call": {
+      "id": "<id>",
+      "name": "echo",
+      "input": {
+        "text": "c"
+      },
+      "risk": "read_only",
+      "subject": "c"
+    }
+  },
+  {
+    "type": "tool_call_done",
+    "call_id": "<id>",
+    "result": {
+      "ok": true,
+      "visible": "a",
+      "archive": {
+        "id": "<id>",
+        "bytes": 1
+      },
+      "bytes": 1,
+      "duration_ms": 0,
+      "diff": null
+    }
+  },
+  {
+    "type": "tool_call_done",
+    "call_id": "<id>",
+    "result": {
+      "ok": true,
+      "visible": "b",
+      "archive": {
+        "id": "<id>",
+        "bytes": 1
+      },
+      "bytes": 1,
+      "duration_ms": 0,
+      "diff": null
+    }
+  },
+  {
+    "type": "tool_call_done",
+    "call_id": "<id>",
+    "result": {
+      "ok": true,
+      "visible": "c",
+      "archive": {
+        "id": "<id>",
+        "bytes": 1
+      },
+      "bytes": 1,
+      "duration_ms": 0,
+      "diff": null
+    }
+  },
+  {
+    "type": "item_started",
+    "item": "<id>",
+    "kind": {
+      "type": "assistant_message",
+      "text": ""
+    }
+  },
+  {
+    "type": "text_delta",
+    "item": "<id>",
+    "text": "all three"
+  },
+  {
+    "type": "usage",
+    "turn": "<id>",
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "estimated": true,
+      "cost_usd": 0.0,
+      "latency_ms": 0
+    }
+  },
+  {
+    "type": "item_done",
+    "item": "<id>"
+  },
+  {
+    "type": "turn_done",
+    "turn": "<id>",
     "stop": {
       "type": "end_turn"
-    },
-    "turn": "<id>",
-    "type": "turn_done"
+    }
   }
 ]

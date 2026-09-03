@@ -3,68 +3,68 @@ source: crates/cox-provider/src/openai/chat.rs
 expression: body
 ---
 {
-  "max_tokens": 16384,
+  "model": "qwen3-coder",
   "messages": [
     {
-      "content": "<tool specs>\n\nYou are cox.",
-      "role": "system"
+      "role": "system",
+      "content": "<tool specs>\n\nYou are cox."
     },
     {
-      "content": "read both files",
-      "role": "user"
+      "role": "user",
+      "content": "read both files"
     },
     {
       "role": "assistant",
       "tool_calls": [
         {
-          "function": {
-            "arguments": "{\"path\":\"a.rs\"}",
-            "name": "read"
-          },
           "id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
-          "type": "function"
+          "type": "function",
+          "function": {
+            "name": "read",
+            "arguments": "{\"path\":\"a.rs\"}"
+          }
         },
         {
-          "function": {
-            "arguments": "{\"path\":\"b.rs\"}",
-            "name": "read"
-          },
           "id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
-          "type": "function"
+          "type": "function",
+          "function": {
+            "name": "read",
+            "arguments": "{\"path\":\"b.rs\"}"
+          }
         }
       ]
     },
     {
-      "content": "fn a() {}",
       "role": "tool",
-      "tool_call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA1"
+      "tool_call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA1",
+      "content": "fn a() {}"
     },
     {
-      "content": "Error: no such file",
       "role": "tool",
-      "tool_call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA2"
+      "tool_call_id": "01ARZ3NDEKTSV4RRFFQ69G5FA2",
+      "content": "Error: no such file"
     }
   ],
-  "model": "qwen3-coder",
   "stream": true,
   "stream_options": {
     "include_usage": true
   },
+  "max_tokens": 16384,
   "tools": [
     {
+      "type": "function",
       "function": {
-        "description": "Read a file",
         "name": "read",
+        "description": "Read a file",
         "parameters": {
+          "type": "object",
           "properties": {
             "path": {
               "type": "string"
             }
-          },
-          "type": "object"
+          }
         }
-      },
-      "type": "function"
+      }
     }
   ]
 }

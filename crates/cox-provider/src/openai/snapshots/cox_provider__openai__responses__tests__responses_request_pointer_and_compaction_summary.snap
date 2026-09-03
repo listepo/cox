@@ -3,39 +3,39 @@ source: crates/cox-provider/src/openai/responses.rs
 expression: body
 ---
 {
+  "model": "gpt-5.1",
   "input": [
     {
-      "content": "[archived: bash cargo test: 91000 bytes, exit 0; expand 01ARZ3NDEKTSV4RRFFQ69G5FB0]",
+      "type": "message",
       "role": "user",
-      "type": "message"
+      "content": "[archived: bash cargo test: 91000 bytes, exit 0; expand 01ARZ3NDEKTSV4RRFFQ69G5FB0]"
     },
     {
-      "content": "now fix the failing test",
+      "type": "message",
       "role": "user",
-      "type": "message"
+      "content": "now fix the failing test"
     }
   ],
-  "instructions": "<tool specs>\n\nYou are cox.",
+  "stream": true,
+  "store": false,
   "max_output_tokens": 16384,
-  "model": "gpt-5.1",
   "reasoning": {
     "effort": "high"
   },
-  "store": false,
-  "stream": true,
+  "instructions": "<tool specs>\n\nYou are cox.",
   "tools": [
     {
-      "description": "Read a file",
+      "type": "function",
       "name": "read",
+      "description": "Read a file",
       "parameters": {
+        "type": "object",
         "properties": {
           "path": {
             "type": "string"
           }
-        },
-        "type": "object"
-      },
-      "type": "function"
+        }
+      }
     }
   ]
 }

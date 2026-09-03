@@ -4,88 +4,88 @@ expression: value
 ---
 [
   {
-    "config_digest": "",
-    "cwd": "/tmp/cox-turn",
+    "type": "session_started",
     "session": "<id>",
-    "type": "session_started"
+    "config_digest": "",
+    "cwd": "/tmp/cox-turn"
   },
   {
+    "type": "turn_started",
+    "turn": "<id>",
     "job": "main",
-    "model": "claude-sonnet-5",
     "tier": "code",
-    "turn": "<id>",
-    "type": "turn_started"
+    "model": "claude-sonnet-5"
   },
   {
+    "type": "item_started",
     "item": "<id>",
     "kind": {
-      "attachments": [],
+      "type": "user_message",
       "text": "max_turns",
-      "type": "user_message"
-    },
-    "type": "item_started"
-  },
-  {
-    "item": "<id>",
-    "type": "item_done"
-  },
-  {
-    "item": "<id>",
-    "kind": {
-      "text": "",
-      "type": "assistant_message"
-    },
-    "type": "item_started"
-  },
-  {
-    "turn": "<id>",
-    "type": "usage",
-    "usage": {
-      "cache_read_tokens": 0,
-      "cache_write_tokens": 0,
-      "cost_usd": 0.0,
-      "estimated": true,
-      "input_tokens": 0,
-      "latency_ms": 0,
-      "output_tokens": 0
+      "attachments": []
     }
   },
   {
-    "item": "<id>",
-    "type": "item_done"
+    "type": "item_done",
+    "item": "<id>"
   },
   {
+    "type": "item_started",
+    "item": "<id>",
+    "kind": {
+      "type": "assistant_message",
+      "text": ""
+    }
+  },
+  {
+    "type": "usage",
+    "turn": "<id>",
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "estimated": true,
+      "cost_usd": 0.0,
+      "latency_ms": 0
+    }
+  },
+  {
+    "type": "item_done",
+    "item": "<id>"
+  },
+  {
+    "type": "tool_call_requested",
     "call": {
       "id": "<id>",
+      "name": "echo",
       "input": {
         "text": "1"
       },
-      "name": "echo",
       "risk": "read_only",
       "subject": "1"
-    },
-    "type": "tool_call_requested"
+    }
   },
   {
+    "type": "tool_call_done",
     "call_id": "<id>",
     "result": {
+      "ok": true,
+      "visible": "1",
       "archive": {
-        "bytes": 1,
-        "id": "<id>"
+        "id": "<id>",
+        "bytes": 1
       },
       "bytes": 1,
-      "diff": null,
       "duration_ms": 0,
-      "ok": true,
-      "visible": "1"
-    },
-    "type": "tool_call_done"
+      "diff": null
+    }
   },
   {
+    "type": "turn_done",
+    "turn": "<id>",
     "stop": {
       "type": "max_turns"
-    },
-    "turn": "<id>",
-    "type": "turn_done"
+    }
   }
 ]

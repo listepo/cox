@@ -4,60 +4,60 @@ expression: value
 ---
 [
   {
-    "config_digest": "",
-    "cwd": "/tmp/cox-turn",
+    "type": "session_started",
     "session": "<id>",
-    "type": "session_started"
+    "config_digest": "",
+    "cwd": "/tmp/cox-turn"
   },
   {
-    "job": "main",
-    "model": "claude-sonnet-5",
-    "tier": "code",
+    "type": "turn_started",
     "turn": "<id>",
-    "type": "turn_started"
+    "job": "main",
+    "tier": "code",
+    "model": "claude-sonnet-5"
   },
   {
+    "type": "item_started",
     "item": "<id>",
     "kind": {
-      "attachments": [],
+      "type": "user_message",
       "text": "provider_error",
-      "type": "user_message"
-    },
-    "type": "item_started"
+      "attachments": []
+    }
   },
   {
-    "item": "<id>",
-    "type": "item_done"
+    "type": "item_done",
+    "item": "<id>"
   },
   {
+    "type": "item_started",
     "item": "<id>",
     "kind": {
-      "text": "",
-      "type": "assistant_message"
-    },
-    "type": "item_started"
+      "type": "assistant_message",
+      "text": ""
+    }
   },
   {
+    "type": "text_delta",
     "item": "<id>",
-    "text": "partial",
-    "type": "text_delta"
+    "text": "partial"
   },
   {
+    "type": "error",
     "error": {
+      "type": "provider",
       "error": {
-        "message": "boom",
-        "type": "bad_request"
-      },
-      "type": "provider"
+        "type": "bad_request",
+        "message": "boom"
+      }
     },
-    "fatal": false,
-    "type": "error"
+    "fatal": false
   },
   {
+    "type": "turn_done",
+    "turn": "<id>",
     "stop": {
       "type": "error"
-    },
-    "turn": "<id>",
-    "type": "turn_done"
+    }
   }
 ]
