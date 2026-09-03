@@ -659,7 +659,9 @@ fn generate_config_docs(toml: &str) -> String {
         if line.is_empty() {
             continue;
         }
-        if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        // Section headers may carry a trailing comment (`[jobs]  # …`).
+        let header = line.split('#').next().unwrap_or(line).trim();
+        if let Some(section) = header.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
             out.push_str(&format!("## `[{section}]`\n\n"));
             continue;
         }

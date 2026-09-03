@@ -22,3 +22,19 @@ Smoke 2026-09-03, macOS, stdio JSON-RPC by hand: `initialize` reports
 `glob` by default; `read note.txt` returns the numbered file; `write` is
 "unknown tool" without `--allow-write` and a denied result with it under the
 default permission mode; `read ../note.txt` is rejected by path confinement.
+
+## Claude Code / Codex compatibility (T12.3)
+
+A checkout configured for Claude Code or Codex works with cox unchanged:
+
+| Their setup | cox reads | Notes |
+|---|---|---|
+| `AGENTS.md` / `CLAUDE.md` hierarchy | yes | same lookup order |
+| `SKILL.md` agent skills | yes | same frontmatter |
+| `.claude/settings.json` permissions, hooks, env | yes, read-only | one config layer; never written back |
+| `.claude/commands/*.md`, `.claude/agents/*.md` | yes | same palette, `explore`/`shell` presets ship embedded |
+| `.mcp.json` servers | yes | stdio + Streamable HTTP; `${ENV}` expansion |
+| Codex `apply_patch` (V4A) | yes | Add/Update/Delete/Move, `@@` context |
+| `--output-format stream-json` | yes | same event shapes for scripts |
+| `~/.codex/config.toml` | no | Codex config is not imported |
+| MCP resources/prompts, MCP OAuth, image input | no | deferred to v0.2 |

@@ -6,6 +6,23 @@
 
 [Documentation](https://listepo.github.io/cox/) · [Architecture](https://listepo.github.io/cox/docs/architecture/) · [Configuration](https://listepo.github.io/cox/docs/configuration/)
 
+## 60-second start
+
+```bash
+git clone https://github.com/listepo/cox && cd cox
+mise exec -- cargo build -p cox
+export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
+./target/debug/cox doctor          # green except prices? you are good
+./target/debug/cox -p "create hello.txt containing hi"
+./target/debug/cox                 # interactive TUI: Enter sends, Esc interrupts
+```
+
+`y`/`s`/`n` answers approval prompts, `/model` switches tiers,
+`/compact` compacts now, `cox run -p` drives headless scripts, `cox acp`
+serves Zed and JetBrains. Costs land in `cox stats`; see
+[`docs/config.md`](docs/config.md) for every key and
+[`docs/tools.md`](docs/tools.md) for the tool catalogue.
+
 ## Status
 
 cox is under active development. APIs, configuration, and installation instructions are not yet stable. The Rust workspace already contains the protocol, core turn loop, provider adapters, tools, storage, extension loading, TUI, ACP, and MCP crates; features are completed incrementally against the project plan.

@@ -583,14 +583,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
-#### T12.3 Docs
-Model: haiku · Status: open · Depends: T12.2 · Size: doc
-Goal: `README.md` (60-second start), `docs/config.md` (every key, generated), `docs/tools.md`, `docs/compat.md` (what is read from `.claude/` and `.codex/`, what is not), `docs/ide.md` (T11.2), `CHANGELOG.md` via git-cliff.
-Check:
-```bash
-mise exec -- cargo test -p cox docs_config_covers_every_key
-```
-
 #### T12.4 Security pass
 Model: sonnet · Status: open · Depends: T3.5, T1.2, T7.2 · Size: ~150
 Goal: supply-chain and parser hardening in CI.

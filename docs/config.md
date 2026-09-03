@@ -30,6 +30,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `max_tokens` = `32768`
 - `thinking` = `"adaptive"`
 - `confirm` = `true` — cannot be set false in project config
+## `[jobs]`
+
 - `main` = `"code"`
 - `plan` = `"think"`
 - `compact` = `"cheap"`
