@@ -1520,6 +1520,26 @@ ext list --json | jq -e '...' → true
 cargo test -p cox-ext → green (embedded_defaults_include_explore_and_shell)
 ```
 
+#### T10.1 Project memory
+Model: sonnet · Status: done 2026-09-03 · Depends: T7.1, T0.4 · Size: ~180
+Goal: Claude Code's memory layout, loaded under a budget, searchable.
+Files: `crates/cox-ext/src/memory.rs`, `crates/cox-tools/src/memory.rs`.
+Steps: (1) `~/.cox/projects/<slug>/memory/MEMORY.md` index + one file per fact with the frontmatter Claude Code uses (`name`, `description`, `type`). (2) Index injected in `system[3]` under `memory_budget_tokens`. (3) `memory_save` (writes a file, updates index and `memory_fts`), `memory_search` (FTS5, top 5, bodies capped). (4) Tests: index under 800 tokens with 40 facts; search finds a saved fact.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext memory_ && mise exec -- cargo test -p cox-tools memory_
+```
+
+What landed: `cox-ext/memory.rs` (slug/dir resolution, `save_fact` + scan-rebuilt `MEMORY.md`, `load_index`, budgeted `index_text`); `memory_save`/`memory_search` tools holding `Arc<dyn Store>` + dir (save writes file + index line + `memory_upsert`; search reads FTS hits first, then fills from files, top 5 capped excerpts); `Store::memory_upsert` with rowid-aligned FTS writes (re-save replaces both rows, join stays lined up); `MemoryStore` keeps a memory map with a substring `memory_search`; binary wires both tools with the real store + `memory_dir_for` (`config.memory.dir` wins); cox-store FTS roundtrip test.
+Notes / deviations:
+- **8 files, not 2.** Plus `traits.rs` (`memory_upsert`), `cox-store/{lib,models}.rs` (writer + row type), `session.rs` (`MemoryStore` map), `cox/src/session.rs` + `mcp_cmd.rs` (tool wiring — without it prod saves would never reach FTS).
+- **File duplication across the direction boundary:** the fact-file format lives in both `cox-ext` and `cox-tools` (tools may not depend on ext); each side notes the other as canonical layout spec.
+- **NOT done: `system[3]` index injection.** Reading files into `assemble` needs an assemble-plumbing decision shared with T7.1's still-stub instruction files; `index_text` exists, budgeted and tested, awaiting that call site. The index therefore costs zero model tokens today (P10's goal) rather than budgeted ones.
+Check output:
+```
+cargo test -p cox-ext memory_ → 4 passed; cargo test -p cox-tools memory_ → 4 passed; cox-store memory_upsert_and_search_roundtrip → ok
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

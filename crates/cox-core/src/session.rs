@@ -868,6 +868,8 @@ pub struct MemoryStore {
     events: StdMutex<Vec<Event>>,
     usage: StdMutex<Vec<cox_protocol::UsageRow>>,
     archive: StdMutex<HashMap<cox_protocol::ArchiveId, Vec<u8>>>,
+    /// `(project, name)` → `(path, body)` for `memory_*` (T10.1).
+    memory: StdMutex<HashMap<(String, String), (String, String)>>,
 }
 
 impl MemoryStore {
@@ -877,6 +879,7 @@ impl MemoryStore {
             events: StdMutex::new(Vec::new()),
             usage: StdMutex::new(Vec::new()),
             archive: StdMutex::new(HashMap::new()),
+            memory: StdMutex::new(HashMap::new()),
         }
     }
 
@@ -936,10 +939,57 @@ impl Store for MemoryStore {
     }
     fn memory_search(
         &self,
-        _q: &str,
-        _limit: usize,
+        q: &str,
+        limit: usize,
     ) -> Result<Vec<cox_protocol::MemoryHit>, StoreError> {
-        Ok(vec![])
+        // Substring stand-in for FTS5: every term must appear in the name or
+        // body, most hits first. The real ranking lives in `cox-store`.
+        let terms: Vec<String> = q.split_whitespace().map(str::to_lowercase).collect();
+        let mut hits: Vec<(usize, String, String, String)> = self
+            .memory
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter_map(|((_, name), (path, body))| {
+                if terms.is_empty() {
+                    return None;
+                }
+                let hay = format!("{name}\n{body}").to_lowercase();
+                if !terms.iter().all(|t| hay.contains(t)) {
+                    return None;
+                }
+                let score = terms.iter().map(|t| hay.matches(t).count()).sum();
+                let snippet: String = body.chars().take(200).collect();
+                Some((score, name.clone(), path.clone(), snippet))
+            })
+            .collect();
+        hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        Ok(hits
+            .into_iter()
+            .take(limit.max(1))
+            .map(|(_, name, path, snippet)| cox_protocol::MemoryHit {
+                name,
+                path: path.into(),
+                snippet,
+            })
+            .collect())
+    }
+    fn memory_upsert(
+        &self,
+        project: &str,
+        name: &str,
+        path: &str,
+        _kind: &str,
+        body: &str,
+    ) -> Result<(), StoreError> {
+        self.memory
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                (project.to_string(), name.to_string()),
+                (path.to_string(), body.to_string()),
+            );
+        Ok(())
     }
 }
 

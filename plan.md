@@ -579,16 +579,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P10 — Memory (goal: cross-session memory with zero model cost by default)
 
-#### T10.1 Project memory
-Model: sonnet · Status: open · Depends: T7.1, T0.4 · Size: ~180
-Goal: Claude Code's memory layout, loaded under a budget, searchable.
-Files: `crates/cox-ext/src/memory.rs`, `crates/cox-tools/src/memory.rs`.
-Steps: (1) `~/.cox/projects/<slug>/memory/MEMORY.md` index + one file per fact with the frontmatter Claude Code uses (`name`, `description`, `type`). (2) Index injected in `system[3]` under `memory_budget_tokens`. (3) `memory_save` (writes a file, updates index and `memory_fts`), `memory_search` (FTS5, top 5, bodies capped). (4) Tests: index under 800 tokens with 40 facts; search finds a saved fact.
-Check:
-```bash
-mise exec -- cargo test -p cox-ext memory_ && mise exec -- cargo test -p cox-tools memory_
-```
-
 #### T10.2 End-of-session extraction
 Model: haiku · Status: open · Depends: T10.1 · Size: ~100
 Goal: optional cheap-tier extraction of durable facts, deduplicated.

@@ -2,7 +2,7 @@
 //! store and the built-in tool set. Kept out of `main.rs` so the TUI and
 //! `cox run -p` (T6.1) assemble the same session the same way.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cox_core::Session;
@@ -18,6 +18,7 @@ use cox_tools::edit::EditTool;
 use cox_tools::expand::ExpandTool;
 use cox_tools::glob::GlobTool;
 use cox_tools::grep::GrepTool;
+use cox_tools::memory::{MemorySaveTool, MemorySearchTool};
 use cox_tools::read::ReadTool;
 use cox_tools::todo::TodoTool;
 use cox_tools::tool_search::ToolSearchTool;
@@ -55,7 +56,8 @@ pub async fn open(
     let provider = provider_for(&config)?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
-    let mut all = tools(answer);
+    let mdir = memory_dir_for(&loaded.config, &home, cwd);
+    let mut all = tools(answer, &store, mdir);
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd).await);
     }
@@ -148,7 +150,12 @@ fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
 }
 
 /// Every built-in tool except `agent`, which the session adds itself.
-pub(crate) fn tools(answer: Option<String>) -> Vec<Arc<dyn Tool>> {
+pub(crate) fn tools(
+    answer: Option<String>,
+    store: &Arc<Store>,
+    mdir: PathBuf,
+) -> Vec<Arc<dyn Tool>> {
+    let mem: Arc<dyn cox_protocol::Store> = store.clone();
     let mut tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ReadTool),
         Arc::new(EditTool),
@@ -162,8 +169,20 @@ pub(crate) fn tools(answer: Option<String>) -> Vec<Arc<dyn Tool>> {
         Arc::new(WebFetchTool::new()),
         // ponytail: the TUI has no question surface yet; `--answer` or nothing.
         Arc::new(AskUserTool::new(Answers::Fixed(answer))),
+        Arc::new(MemorySaveTool::new(mem.clone(), mdir.clone())),
+        Arc::new(MemorySearchTool::new(mem, mdir)),
     ];
     let specs: Vec<_> = tools.iter().map(|t| t.spec()).collect();
     tools.push(Arc::new(ToolSearchTool::new(specs)));
     tools
+}
+
+/// Where a session's memory facts live: `config.memory.dir` wins, else
+/// `<home>/projects/<slug>/memory` (T10.1).
+pub(crate) fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBuf {
+    if config.memory.dir.is_empty() {
+        cox_ext::memory::memory_dir(home, cwd)
+    } else {
+        PathBuf::from(&config.memory.dir)
+    }
 }

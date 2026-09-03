@@ -9,6 +9,7 @@ pub mod edit;
 pub mod expand;
 pub mod glob;
 pub mod grep;
+pub mod memory;
 pub mod outline;
 pub mod path;
 pub mod read;

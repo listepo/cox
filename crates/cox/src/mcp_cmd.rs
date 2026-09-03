@@ -60,7 +60,8 @@ pub fn run(cli: &Cli, args: &McpArgs, cwd: &Path) -> anyhow::Result<()> {
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
     let names = selected(args);
-    let tools = session::tools(None)
+    let mdir = session::memory_dir_for(&config, &home, cwd);
+    let tools = session::tools(None, &store, mdir)
         .into_iter()
         .filter(|t| names.contains(&t.spec().name))
         .collect();

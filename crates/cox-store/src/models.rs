@@ -5,7 +5,7 @@
 
 use diesel::prelude::*;
 
-use crate::schema::{archive, sessions, usage};
+use crate::schema::{archive, memory, sessions, usage};
 
 #[derive(Insertable)]
 #[diesel(table_name = sessions)]
@@ -69,4 +69,16 @@ pub(crate) struct ArchiveBytes {
     pub inline: Option<Vec<u8>>,
     pub path: Option<String>,
     pub sha256: String,
+}
+
+/// One `memory` row for `Store::memory_upsert` (T10.1); `id` autoincrements
+/// and the matching `memory_fts` row is written with the same rowid.
+#[derive(Insertable)]
+#[diesel(table_name = memory)]
+pub(crate) struct NewMemory {
+    pub project_slug: String,
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub updated_at: String,
 }

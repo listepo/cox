@@ -180,6 +180,17 @@ pub trait Store: Send + Sync {
     fn archive_get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError>;
     /// Full-text searches memory facts for a project.
     fn memory_search(&self, q: &str, limit: usize) -> Result<Vec<MemoryHit>, StoreError>;
+    /// Records one memory fact's searchable text (plan.md T10.1): the
+    /// `memory` row and its `memory_fts` row share a rowid so
+    /// `memory_search`'s join lines up. Re-saving a name replaces both rows.
+    fn memory_upsert(
+        &self,
+        project: &str,
+        name: &str,
+        path: &str,
+        kind: &str,
+        body: &str,
+    ) -> Result<(), StoreError>;
 }
 
 /// Where a tool's full, pre-truncation output is written before the model

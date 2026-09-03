@@ -26,7 +26,7 @@ use cox_protocol::{
     Store as StoreTrait, StoreError, Usage, UsageRow,
 };
 
-use models::{NewArchive, NewSession, UsageDbRow};
+use models::{NewArchive, NewMemory, NewSession, UsageDbRow};
 use rollout::RolloutWriter;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -314,11 +314,8 @@ impl StoreTrait for Store {
     }
 
     fn memory_search(&self, q: &str, limit: usize) -> Result<Vec<MemoryHit>, StoreError> {
-        // ponytail: no writer populates `memory`/`memory_fts` yet (memory
-        // ingestion is a later task), so this is a real but unexercised FTS5
-        // query. It joins by rowid, which only lines up once a future
-        // inserter writes both tables together; fine while the table is
-        // empty. Upgrade once T-memory-ingest exists.
+        // Both tables are written together by `memory_upsert` with a shared
+        // rowid, which is what the join below lines up on.
         #[derive(diesel::QueryableByName)]
         struct Hit {
             #[diesel(sql_type = diesel::sql_types::Text)]
@@ -348,6 +345,70 @@ impl StoreTrait for Store {
                 snippet: h.snippet,
             })
             .collect())
+    }
+
+    fn memory_upsert(
+        &self,
+        project: &str,
+        name: &str,
+        path: &str,
+        kind: &str,
+        body: &str,
+    ) -> Result<(), StoreError> {
+        // The FTS row carries the memory row's rowid explicitly, so the
+        // `memory_search` join lines up on re-saves as well as first saves.
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let existing: Option<i32> = schema::memory::table
+            .filter(schema::memory::project_slug.eq(project))
+            .filter(schema::memory::name.eq(name))
+            .select(schema::memory::id)
+            .first(&mut *conn)
+            .optional()
+            .map_err(|_| StoreError::Sqlite)?;
+        let rowid = match existing {
+            Some(id) => {
+                diesel::update(schema::memory::table.filter(schema::memory::id.eq(id)))
+                    .set((
+                        schema::memory::path.eq(path),
+                        schema::memory::kind.eq(kind),
+                        schema::memory::updated_at.eq(now_rfc3339()),
+                    ))
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+                diesel::sql_query("DELETE FROM memory_fts WHERE rowid = ?")
+                    .bind::<diesel::sql_types::BigInt, _>(i64::from(id))
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+                i64::from(id)
+            }
+            None => {
+                diesel::insert_into(schema::memory::table)
+                    .values(&NewMemory {
+                        project_slug: project.to_string(),
+                        name: name.to_string(),
+                        path: path.to_string(),
+                        kind: kind.to_string(),
+                        updated_at: now_rfc3339(),
+                    })
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+                diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                    "last_insert_rowid()",
+                ))
+                .get_result(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+            }
+        };
+        diesel::sql_query(
+            "INSERT INTO memory_fts(rowid, name, body, project_slug) VALUES(?,?,?,?)",
+        )
+        .bind::<diesel::sql_types::BigInt, _>(rowid)
+        .bind::<diesel::sql_types::Text, _>(name)
+        .bind::<diesel::sql_types::Text, _>(body)
+        .bind::<diesel::sql_types::Text, _>(project)
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
     }
 }
 
@@ -520,6 +581,45 @@ mod tests {
             .map(|r| format!("-- {}\n{};\n\n", r.name, r.sql))
             .collect();
         insta::assert_snapshot!(rendered);
+    }
+
+    #[test]
+    fn memory_upsert_and_search_roundtrip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        store
+            .memory_upsert(
+                "proj",
+                "auth-flow",
+                "auth-flow.md",
+                "decision",
+                "Login goes through auth.rs with sessions.",
+            )
+            .expect("upsert");
+        let hits = store.memory_search("sessions auth", 5).expect("search");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "auth-flow");
+        assert_eq!(hits[0].path, PathBuf::from("auth-flow.md"));
+        // Re-saving replaces both rows: the join stays aligned, so the old
+        // terms stop matching and the new ones start, with no ghost rows.
+        store
+            .memory_upsert(
+                "proj",
+                "auth-flow",
+                "auth-flow.md",
+                "fact",
+                "Completely different words here.",
+            )
+            .expect("re-upsert");
+        assert!(
+            store
+                .memory_search("sessions", 5)
+                .expect("search")
+                .is_empty()
+        );
+        let hits = store.memory_search("different words", 5).expect("search");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "auth-flow");
     }
 
     #[test]
