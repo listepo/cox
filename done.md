@@ -1306,3 +1306,23 @@ cargo test -p cox-ext hooks_            → 6 passed
 cargo test -p cox-core --test hooks     → 3 passed
 ```
 
+
+#### T7.5 `.claude/settings.json` import
+Model: fable · Status: done 2026-09-03 · Depends: T2.2, T7.4 · Size: ~120
+Goal: permissions, hooks and env from Claude settings merge below `.cox` config.
+Files: `crates/cox-ext/src/claude_settings.rs`.
+Steps: (1) Read `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json` in that order. (2) `permissions.allow/ask/deny` → rules; `hooks` → hook config; `env` → tool env passthrough; unknown keys ignored. (3) `cox config show --sources` labels them `claude-settings`. (4) Test: a fixture settings file yields the same `Engine` decisions as the equivalent native rules.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext claude_settings_
+```
+
+What landed: `crates/cox-ext/src/claude_settings.rs` — `paths()` (`~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`), `load()` (rules and hooks accumulate in file order, `env` overrides, unknown keys ignored, a broken file is a notice), `to_layer()` (`permissions.allow/ask/deny` + `hooks.<Event>` tables from `type:"command"` entries with `timeout` → `timeout_s`). `config_load` adjoins it as the `claude-settings` layer above project config (figment `adjoin`, so imported rules add to `.cox` lists), gated by `permissions.import_claude_settings`, which the native layers decide first; `source_of` returns `claude-settings` for keys only Claude set. Tests: `claude_settings_*` ×3 in cox-ext; `config_claude_settings_import_matches_native_rules` in the binary (same `Engine` deny as the equivalent native rule list, opt-out honoured, hook lifted). Smoke: `cox config show --sources` on a scratch tree prints `permissions.deny = ["Bash(rm -rf *)"]  # claude-settings`.
+Not done: `env` passthrough has no config key or tool wiring yet, so it is parsed but dropped from the layer; a list both `.cox` and Claude feed is labelled by the first layer (`project`), since figment's provenance is per key; `prompt`/`agent` hook types are skipped.
+Size: ~250 LOC across 5 files (+2 fixtures).
+Check output:
+```
+cargo test -p cox-ext claude_settings_  → 3 passed
+cargo test -p cox config_claude         → 1 passed
+```
+

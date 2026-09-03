@@ -4,6 +4,7 @@
 //! core agent logic.
 
 pub mod agents;
+pub mod claude_settings;
 pub mod commands;
 pub mod frontmatter;
 pub mod hooks;

@@ -573,16 +573,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
 
-#### T7.5 `.claude/settings.json` import
-Model: haiku · Status: open · Depends: T2.2, T7.4 · Size: ~120
-Goal: permissions, hooks and env from Claude settings merge below `.cox` config.
-Files: `crates/cox-ext/src/claude_settings.rs`.
-Steps: (1) Read `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json` in that order. (2) `permissions.allow/ask/deny` → rules; `hooks` → hook config; `env` → tool env passthrough; unknown keys ignored. (3) `cox config show --sources` labels them `claude-settings`. (4) Test: a fixture settings file yields the same `Engine` decisions as the equivalent native rules.
-Check:
-```bash
-mise exec -- cargo test -p cox-ext claude_settings_
-```
-
 #### T7.6 MCP client
 Model: opus · Status: open · Depends: T3.8, T2.2 · Size: ~200
 Goal: servers from `.mcp.json` and config, stdio + Streamable HTTP, OAuth, deferred namespaced tools.

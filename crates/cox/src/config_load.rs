@@ -4,13 +4,14 @@
 //! project-config guard list, and records which layer last set each key so
 //! `cox config show --sources` can print it.
 //!
-//! `.claude/settings.json` import is T7.5 (out of scope here, plan.md §1.6
+//! `.claude/settings.json` (T7.5) is one more layer above project config (plan.md §1.6
 //! "Out of scope").
 
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 
+use cox_ext::claude_settings;
 use cox_protocol::config::DEFAULT_CONFIG_TOML;
 use cox_protocol::{Config, CoreError, PermissionMode, SandboxMode};
 use figment::providers::{Env, Format, Serialized, Toml};
@@ -348,12 +349,18 @@ impl LoadedConfig {
             Some("project") => "project",
             Some("env") => "env",
             Some("flag") => "flag",
+            Some("claude-settings") => "claude-settings",
             _ => "default",
         }
     }
 }
 
-fn build_figment(user_path: &Path, project_path: Option<&Path>, flags: &JsonValue) -> Figment {
+fn build_figment(
+    user_path: &Path,
+    project_path: Option<&Path>,
+    claude: Option<&JsonValue>,
+    flags: &JsonValue,
+) -> Figment {
     // `Toml::file` (not `file_exact`): both paths here are always absolute
     // (`cox_home()`/git-root-derived), and for an absolute path `Data::file`
     // checks existence directly rather than searching parent directories —
@@ -364,6 +371,14 @@ fn build_figment(user_path: &Path, project_path: Option<&Path>, flags: &JsonValu
         .merge(named("user", Toml::file(user_path)));
     if let Some(project_path) = project_path {
         fig = fig.merge(named("project", Toml::file(project_path)));
+    }
+    if let Some(claude) = claude {
+        // `adjoin`, not `merge`: imported rules and hooks add to the `.cox`
+        // lists rather than replace them (D13: imported, read-only).
+        fig = fig.adjoin(named(
+            "claude-settings",
+            Serialized::defaults(claude.clone()),
+        ));
     }
     fig = fig.merge(named(
         "env",
@@ -393,8 +408,18 @@ pub fn load(cwd: &Path, cli: &Cli) -> Result<LoadedConfig, CoreError> {
     let project_path = project_config_path(cwd);
     let flags = flag_overrides(cli);
 
-    let full_fig = build_figment(&user_path, project_path.as_deref(), &flags);
-    let pre_project_fig = build_figment(&user_path, None, &flags);
+    // Whether to import is itself a config key, so the `.cox` layers decide
+    // before the Claude layer exists.
+    let native: Config = build_figment(&user_path, project_path.as_deref(), None, &flags)
+        .extract()
+        .map_err(to_core_error)?;
+    let claude = native
+        .permissions
+        .import_claude_settings
+        .then(|| claude_layer(cwd))
+        .flatten();
+    let full_fig = build_figment(&user_path, project_path.as_deref(), claude.as_ref(), &flags);
+    let pre_project_fig = build_figment(&user_path, None, claude.as_ref(), &flags);
 
     let full_cfg: Config = full_fig.extract().map_err(to_core_error)?;
     let without_project_cfg: Config = pre_project_fig.extract().map_err(to_core_error)?;
@@ -414,6 +439,19 @@ pub fn load(cwd: &Path, cli: &Cli) -> Result<LoadedConfig, CoreError> {
         full_fig,
         pre_project_fig,
     })
+}
+
+/// The imported `.claude/settings.json` files for `cwd`, if any exist.
+/// Broken files are warned about and skipped (D14).
+fn claude_layer(cwd: &Path) -> Option<JsonValue> {
+    let claude_home = home_dir().join(".claude");
+    let project = find_git_root(cwd);
+    let paths = claude_settings::paths(Some(&claude_home), project.as_deref());
+    let settings = claude_settings::load(&paths);
+    for notice in &settings.notices {
+        eprintln!("cox: warning: {notice}");
+    }
+    (!settings.is_empty()).then(|| settings.to_layer())
 }
 
 /// Serializes every test in this crate that mutates process-wide env vars
@@ -564,6 +602,107 @@ mod tests {
                 let loaded = load(git_root.path(), &cli).expect("load succeeds");
                 assert_eq!(loaded.config.tiers.code.model, "env-model");
                 assert_eq!(loaded.source_of("tiers.code.model"), "env");
+            },
+        );
+    }
+}
+
+#[cfg(test)]
+mod claude_settings_tests {
+    use clap::Parser;
+    use cox_core::permission::{Engine, Outcome};
+    use cox_protocol::ids::CallId;
+    use cox_protocol::types::{ApprovalPolicy, PermissionMode, Risk, SandboxMode, ToolCall};
+    use std::fs;
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::cli::Cli;
+
+    fn rm_call() -> ToolCall {
+        ToolCall {
+            id: CallId::new(),
+            name: "bash".into(),
+            input: serde_json::json!({ "command": "rm -rf build" }),
+            risk: Risk::Exec,
+            subject: "rm -rf build".into(),
+        }
+    }
+
+    fn deny_of(cfg: &Config, cwd: &Path) -> Option<String> {
+        let engine = Engine::compile(&cfg.permissions, None, cwd).expect("engine");
+        match engine.decide(
+            &rm_call(),
+            PermissionMode::Auto,
+            ApprovalPolicy::Never,
+            SandboxMode::WorkspaceWrite,
+            &[],
+        ) {
+            Outcome::Deny { reason, .. } => Some(reason),
+            _ => None,
+        }
+    }
+
+    /// T7.5 step 4: the fixture yields the same decision as native rules,
+    /// adds to (not replaces) the project's own list, and is labelled.
+    #[test]
+    fn config_claude_settings_import_matches_native_rules() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        fs::create_dir_all(git_root.path().join(".claude")).expect("mkdir .claude");
+        fs::write(
+            git_root.path().join(".cox/config.toml"),
+            "[permissions]\ndeny = [\"Bash(curl *)\"]\n",
+        )
+        .expect("write project config");
+        fs::write(
+            git_root.path().join(".claude/settings.json"),
+            r#"{"permissions":{"deny":["Bash(rm -rf *)"]},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}"#,
+        )
+        .expect("write settings");
+        let native_dir = tempdir().expect("tempdir");
+        fs::create_dir_all(native_dir.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(native_dir.path().join(".cox")).expect("mkdir .cox");
+        fs::write(
+            native_dir.path().join(".cox/config.toml"),
+            "[permissions]\ndeny = [\"Bash(curl *)\", \"Bash(rm -rf *)\"]\n",
+        )
+        .expect("write native config");
+
+        temp_env(
+            &[
+                ("COX_HOME", Some(home.path().to_str().unwrap())),
+                ("HOME", Some(home.path().to_str().unwrap())),
+            ],
+            || {
+                let cli = Cli::parse_from(["cox"]);
+                let imported = load(git_root.path(), &cli).expect("load imported");
+                let native = load(native_dir.path(), &cli).expect("load native");
+                assert_eq!(
+                    imported.config.permissions.deny,
+                    native.config.permissions.deny
+                );
+                let denied = deny_of(&imported.config, git_root.path());
+                assert!(denied.is_some(), "rm must be denied");
+                assert_eq!(denied, deny_of(&native.config, native_dir.path()));
+                // A list both layers feed keeps the first layer's label
+                // (figment `adjoin`); a key only Claude sets is labelled.
+                assert_eq!(imported.source_of("permissions.deny"), "project");
+                assert_eq!(imported.source_of("hooks.Stop"), "claude-settings");
+                assert_eq!(native.source_of("permissions.deny"), "project");
+                assert_eq!(imported.config.hooks.events["Stop"][0].command, "say done");
+
+                // The import is opt-out.
+                fs::write(
+                    git_root.path().join(".cox/config.toml"),
+                    "[permissions]\ndeny = [\"Bash(curl *)\"]\nimport_claude_settings = false\n",
+                )
+                .expect("rewrite project config");
+                let off = load(git_root.path(), &cli).expect("load opt-out");
+                assert_eq!(off.config.permissions.deny, ["Bash(curl *)"]);
+                assert!(off.config.hooks.events.is_empty());
             },
         );
     }
