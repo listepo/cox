@@ -1345,3 +1345,12 @@ Check output:
 cargo test -p cox-mcp client_ → 4 passed (3 integration + 1 unit)
 ```
 
+
+#### T7.7 Design doc: extensions
+Model: fable · Status: done 2026-09-03 · Depends: T7.6 · Size: doc
+Goal: `docs/design/extensions.md`: why data + processes (not in-process plugins) in v0.1; the v0.2 WASM contract sketch (`Tool` over extism with the same `ToolSpec`); falsifier = an extension users need that cannot be expressed as markdown, hook or MCP.
+Check: file exists.
+
+What landed: `docs/design/extensions.md` — problem, the field (Claude Code, Codex, Gemini/Copilot, Zed/Cursor), the v0.1 table of extension kinds with their modules and the three properties that make data + processes enough (guards, fail open, nothing in-process), the v0.2 extism contract sketch (`Tool` serialised: `spec/subject/risk/call` exports, `read/archive_put/output/cancelled` imports, `wasm__<plugin>__<tool>` naming), three falsifiers, review notes.
+Check: file exists.
+

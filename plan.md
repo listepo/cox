@@ -573,11 +573,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
 
-#### T7.7 Design doc: extensions
-Model: sonnet · Status: open · Depends: T7.6 · Size: doc
-Goal: `docs/design/extensions.md`: why data + processes (not in-process plugins) in v0.1; the v0.2 WASM contract sketch (`Tool` over extism with the same `ToolSpec`); falsifier = an extension users need that cannot be expressed as markdown, hook or MCP.
-Check: file exists.
-
 ### P8 — Context economy (goal: measured savings, cache hit rate visible)
 
 #### T8.1 Compaction
