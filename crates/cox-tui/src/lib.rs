@@ -2,4 +2,7 @@
 //! output goes through here. Separate from `cox-core` so the agent loop has
 //! no notion of a terminal and the TUI can be tested by feeding it `Event`s.
 
+pub mod app;
 pub mod banner;
+pub mod state;
+pub mod view;

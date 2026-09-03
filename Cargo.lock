@@ -734,8 +734,13 @@ version = "0.1.0"
 dependencies = [
  "cox-core",
  "cox-protocol",
+ "crossterm",
+ "futures",
  "insta",
  "ratatui",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -803,6 +808,7 @@ dependencies = [
  "crossterm_winapi",
  "derive_more",
  "document-features",
+ "futures-core",
  "mio",
  "parking_lot",
  "rustix",

@@ -963,3 +963,26 @@ $ ls docs/design/sandbox.md
 docs/design/sandbox.md
 $ reviewed by think: see "## Review" in the file.
 ```
+
+#### T5.1 TEA skeleton and test harness
+Model: fable · Status: done 2026-09-03 · Depends: T2.4 · Size: ~200
+Goal: `State`/`Msg`/`update`/`view`, inline viewport, resize, teardown, `TestBackend` snapshots.
+Files: `crates/cox-tui/src/{app,state,view}.rs`, `crates/cox-tui/tests/frames.rs`.
+Steps: (1) `State { transcript: Vec<Cell>, composer, status, modal: Option<Modal>, mode, tasks, scroll }`; `Msg { Key(KeyEvent), Paste(String), Event(Event), Tick, Resize(w,h) }`; `update(&mut State, Msg) -> Vec<Cmd>` where `Cmd` = `Submit(Submission) | Quit | Copy(String)`; no async, no I/O. (2) Runtime: crossterm event stream + core events on a `select!`; `Terminal::with_options(Viewport::Inline(n))`; `insert_before` for finished cells so scrollback keeps them. (3) Panic hook restores the terminal. (4) Harness `render(&State, w, h) -> Buffer` + `insta::assert_snapshot!(buffer_to_string)`. (5) Snapshot `frame_empty_session`; test `update_is_pure` (type-level: `update` is a free fn over `&mut State`).
+Check:
+```bash
+mise exec -- cargo test -p cox-tui frame_
+```
+
+What landed: `cox_tui::state` — `Cell { User, Assistant, Thinking, Tool, Notice }`, `State` as specified plus `banner: Option<Banner>`, `Msg`, `Cmd`, and the pure `update`: keys drive a plain-`String` composer (Enter submits a `UserTurn`, Backspace, Ctrl-C interrupts while a turn runs and quits otherwise, Ctrl-D quits), an open approval modal takes `y`/`Enter`/`a`/`n`/`Esc` and submits `Approve`, and every `Event` folds into the transcript, status, modal, tasks or banner (`Notice{Security}` pins the T4.3 banner). `State::take_finished` yields the done cells at the head so a streaming cell holds its followers. `cox_tui::view` — `view(&State, Rect, &mut Buffer) -> Option<Position>` draws banner / transcript / modal / composer / status, `cell_lines` is the one renderer for a cell (viewport and scrollback agree), `render(&State, w, h) -> Buffer` and `buffer_to_string` are the harness (the banner test now uses it). `cox_tui::app::run(Session, State)` — raw mode + bracketed paste, `Viewport::Inline(15)`, crossterm `EventStream` and `Session::events()` on one `select!` with a 100 ms tick, `Cmd`s executed against the session, finished cells pushed with `insert_before`, a panic hook and an unconditional `restore()` on exit; `TuiError` (`Io`, `Core`, `EventsTaken`). Tests: `frame_empty_session` and `frame_after_one_turn_replays_events` (a replayed user/tool/streamed-reply turn: two cells leave for scrollback, the streaming reply stays; snapshot of scrollback + viewport), `update_is_pure` (type-level), `update_enter_submits_the_composer_as_a_user_turn`. Dependencies added to `cox-tui`: `crossterm` (`event-stream`), `tokio`, `futures`, `thiserror`, dev `serde_json` — all workspace rows already in §1.1.
+Not done: the binary does not open the TUI yet — `cox` with no subcommand still prints `not implemented` because nothing in `crates/cox` builds a real `Session` (provider + tools + store); that wiring is the P5/P6 surface task (T5.8 PTY end-to-end drives the real binary). `Cmd::Copy` is emitted by nothing and executed as a no-op until the transcript cells (T5.3) need the clipboard; `scroll` is state without a key yet (T5.3). The status line shows `Debug` names (`WorkspaceWrite`, `Default`) until T5.5 formats it. Size: ~470 LOC over 4 new files + 3 touched (`state` is the bulk: the event fold is 100 lines on its own).
+```
+$ mise exec -- cargo test -p cox-tui frame_
+test frame_empty_session ... ok
+test frame_after_one_turn_replays_events ... ok
+test result: ok. 2 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui
+banner_* (2) · frame_* (2) · update_is_pure · update_enter_submits_the_composer_as_a_user_turn ... ok
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

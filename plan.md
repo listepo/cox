@@ -569,16 +569,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
 
-#### T5.1 TEA skeleton and test harness
-Model: sonnet · Status: open · Depends: T2.4 · Size: ~200
-Goal: `State`/`Msg`/`update`/`view`, inline viewport, resize, teardown, `TestBackend` snapshots.
-Files: `crates/cox-tui/src/{app,state,view}.rs`, `crates/cox-tui/tests/frames.rs`.
-Steps: (1) `State { transcript: Vec<Cell>, composer, status, modal: Option<Modal>, mode, tasks, scroll }`; `Msg { Key(KeyEvent), Paste(String), Event(Event), Tick, Resize(w,h) }`; `update(&mut State, Msg) -> Vec<Cmd>` where `Cmd` = `Submit(Submission) | Quit | Copy(String)`; no async, no I/O. (2) Runtime: crossterm event stream + core events on a `select!`; `Terminal::with_options(Viewport::Inline(n))`; `insert_before` for finished cells so scrollback keeps them. (3) Panic hook restores the terminal. (4) Harness `render(&State, w, h) -> Buffer` + `insta::assert_snapshot!(buffer_to_string)`. (5) Snapshot `frame_empty_session`; test `update_is_pure` (type-level: `update` is a free fn over `&mut State`).
-Check:
-```bash
-mise exec -- cargo test -p cox-tui frame_
-```
-
 #### T5.2 Composer
 Model: sonnet · Status: open · Depends: T5.1 · Size: ~200
 Goal: a multi-line composer with history, `@` picker, `/` palette, paste, interrupt and quit.

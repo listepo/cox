@@ -47,25 +47,15 @@ impl Banner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::widgets::Widget;
 
     fn render(banner: &Banner, width: u16) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(width, 1)).expect("terminal");
-        terminal
-            .draw(|frame| frame.render_widget(banner.line(), frame.area()))
-            .expect("draw");
-        let buf = terminal.backend().buffer();
-        (0..buf.area.height)
-            .map(|y| {
-                (0..buf.area.width)
-                    .map(|x| buf[(x, y)].symbol())
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        let area = Rect::new(0, 0, width, 1);
+        let mut buf = Buffer::empty(area);
+        banner.line().render(area, &mut buf);
+        crate::view::buffer_to_string(&buf)
     }
 
     #[test]
