@@ -30,9 +30,17 @@ use crate::cli::Cli;
 use crate::config_load::{self, LoadedConfig};
 
 /// Loads config, picks the provider (`COX_PROVIDER` test doubles first) and
-/// opens the store under `COX_HOME`.
-pub fn open(cli: &Cli, cwd: &Path) -> anyhow::Result<(Session, LoadedConfig)> {
-    let loaded = config_load::load(cwd, cli)?;
+/// opens the store under `COX_HOME`. `answer` is what `ask_user` returns
+/// when no one is there to ask; `tweak` lets a surface adjust the effective
+/// config before the session locks it in.
+pub fn open(
+    cli: &Cli,
+    cwd: &Path,
+    answer: Option<String>,
+    tweak: impl FnOnce(&mut Config),
+) -> anyhow::Result<(Session, LoadedConfig)> {
+    let mut loaded = config_load::load(cwd, cli)?;
+    tweak(&mut loaded.config);
     let config = loaded.config.clone();
     let provider = provider_for(&config)?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
@@ -40,7 +48,7 @@ pub fn open(cli: &Cli, cwd: &Path) -> anyhow::Result<(Session, LoadedConfig)> {
     let session = Session::new(
         config,
         provider,
-        tools(),
+        tools(answer),
         store.clone(),
         store,
         cwd.to_path_buf(),
@@ -50,7 +58,7 @@ pub fn open(cli: &Cli, cwd: &Path) -> anyhow::Result<(Session, LoadedConfig)> {
 
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
-    let (session, loaded) = open(cli, cwd)?;
+    let (session, loaded) = open(cli, cwd, None, |_| {})?;
     let config = &loaded.config;
     let mut state = State::new(config.permissions.mode, config.sandbox.mode);
     state.files = cox_tools::glob::workspace_files(cwd);
@@ -103,7 +111,7 @@ fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
 }
 
 /// Every built-in tool except `agent`, which the session adds itself.
-fn tools() -> Vec<Arc<dyn Tool>> {
+fn tools(answer: Option<String>) -> Vec<Arc<dyn Tool>> {
     let mut tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ReadTool),
         Arc::new(EditTool),
@@ -115,8 +123,8 @@ fn tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(TodoTool),
         Arc::new(ExpandTool),
         Arc::new(WebFetchTool::new()),
-        // ponytail: the TUI has no question surface yet; ask_user answers "no answer".
-        Arc::new(AskUserTool::new(Answers::Fixed(None))),
+        // ponytail: the TUI has no question surface yet; `--answer` or nothing.
+        Arc::new(AskUserTool::new(Answers::Fixed(answer))),
     ];
     let specs: Vec<_> = tools.iter().map(|t| t.spec()).collect();
     tools.push(Arc::new(ToolSearchTool::new(specs)));

@@ -11,6 +11,7 @@ mod doctor;
 mod expand_cmd;
 mod record;
 mod resume;
+mod run;
 mod session;
 mod stats;
 
@@ -41,7 +42,7 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         }
-        Some(Command::Run(args)) => resume::run(&cli, args),
+        Some(Command::Run(args)) => std::process::exit(run::run(&cli, args, &cwd)?),
         Some(Command::Expand(args)) => {
             let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
             expand_cmd::run(home, &args.id, args.lines.as_deref())

@@ -571,16 +571,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P6 — Headless and MCP server (goal: scripts and other agents can drive cox)
 
-#### T6.1 `cox run -p`
-Model: sonnet · Status: open · Depends: T2.4, T2.7, T3.8 · Size: ~200
-Goal: §1.12 headless surface with three output formats and exit codes.
-Files: `crates/cox/src/run.rs`, `tests/run_cli.rs`.
-Steps: (1) `text`: final assistant text only. `json`: `{session, result, usage, cost_usd, turns, stop}`. `stream-json`: one `Event` per line, plus Claude-compatible aliases where they exist (`type: "assistant"|"result"` wrappers alongside cox's tags). (2) Flags → config; `--approve never` default (asks become denies); `--approve on-request` reads `{"approve":"<call_id>"}` / `{"deny":…}` lines from stdin (T6.3). (3) Exit codes 0/1/2/3/4. (4) `assert_cmd` tests per format with the scripted provider; `jq -c .type` over stream-json lists `session_started … turn_done`.
-Check:
-```bash
-mise exec -- cargo test --test run_cli
-```
-
 #### T6.2 `cox mcp` server
 Model: sonnet · Status: open · Depends: T3.3, T2.2 · Size: ~180
 Goal: cox's tools served over MCP stdio with the same permission engine.

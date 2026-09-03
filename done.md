@@ -1146,3 +1146,28 @@ test result: ok. 1 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T6.1 `cox run -p`
+Model: fable · Status: done 2026-09-03 · Depends: T2.4, T2.7, T3.8 · Size: ~200
+Goal: §1.12 headless surface with three output formats and exit codes.
+Files: `crates/cox/src/run.rs`, `tests/run_cli.rs`.
+Steps: (1) `text`: final assistant text only. `json`: `{session, result, usage, cost_usd, turns, stop}`. `stream-json`: one `Event` per line, plus Claude-compatible aliases where they exist (`type: "assistant"|"result"` wrappers alongside cox's tags). (2) Flags → config; `--approve never` default (asks become denies); `--approve on-request` reads `{"approve":"<call_id>"}` / `{"deny":…}` lines from stdin (T6.3). (3) Exit codes 0/1/2/3/4. (4) `assert_cmd` tests per format with the scripted provider; `jq -c .type` over stream-json lists `session_started … turn_done`.
+Check:
+```bash
+mise exec -- cargo test --test run_cli
+```
+
+What landed: `crates/cox/src/run.rs` — `run(cli, args, cwd) -> exit code`; without `-p` it is still the T2.4 resume/continue listing. With `-p`: `session::open` (now takes the `--answer` text for `ask_user` and a `tweak` closure; headless forces `permissions.approval = never` unless `--approve` was given), one `UserTurn`, then the event stream is folded into an `Outcome` (session id, per-item assistant text → last one is `result`, summed tokens and `cost_usd`, `turns` = provider calls, `denied` = `ApprovalDecided` denials, stop reason, fatal error). `text` prints the final text; `json` prints `{session, result, usage{input,output,cache_read,cache_write}, cost_usd, turns, stop, denied, exit_code}`; `stream-json` prints every `Event` line as-is plus `{"type":"assistant","message":{…}}` per finished assistant item and a trailing `{"type":"result", …summary, is_error}`. Exit codes: 0 ok · 1 error/fatal · 2 refusal or any denial · 3 budget · 4 interrupted; Ctrl+C → `session.interrupt()`. An `ApprovalRequired` that still arrives (`--approve on-request`) is denied with "no approver in headless mode" until T6.3 reads stdin. Tests `crates/cox/tests/run_cli.rs` (assert_cmd, scripted provider): text, json fields, stream-json type order (`session_started` … `turn_done`, `result` last, `assistant` alias present), denied `write` under default+never → exit 2 and no file, `--permission-mode auto` → file written and exit 0, bad format → exit 1. Fixture `crates/cox/tests/scenarios/write_then_done.toml`. Dev-deps assert_cmd 2, predicates 3 (already in §1.1).
+Not done: `--resume`/`--continue` together with `-p` (core has no history-injection API yet — `Session::new` starts empty); `--approve on-request` stdin protocol is T6.3; `stop` serialises as the protocol's `{"type":"end_turn"}` object, not a bare string. Size: ~200 LOC `run.rs`, ~110 tests, ~15 `session.rs`/`main.rs`.
+```
+$ mise exec -- cargo test -p cox --test run_cli
+test unknown_output_format_is_an_error ... ok
+test text_format_prints_the_final_assistant_text ... ok
+test stream_json_lists_every_event_and_the_claude_aliases ... ok
+test json_format_reports_result_usage_cost_and_stop ... ok
+test a_denied_write_exits_2_and_the_file_is_not_written ... ok
+test auto_mode_writes_the_file_and_exits_0 ... ok
+test result: ok. 6 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

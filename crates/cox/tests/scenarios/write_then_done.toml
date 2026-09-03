@@ -1,0 +1,6 @@
+[[turn]]
+text = "writing"
+tool_calls = [{ name = "write", input = { path = "a.txt", content = "x" } }]
+
+[[turn]]
+text = "done"
