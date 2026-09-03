@@ -569,16 +569,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
 
-#### T5.4 Diff view and approval modal
-Model: sonnet · Status: open · Depends: T5.3, T2.2 · Size: ~180
-Goal: edits are reviewable and approvals are one keypress.
-Files: `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/modal.rs`.
-Steps: (1) Diff cell from `ToolResult.diff`: per-file header, hunks coloured, collapse/expand per file, `+n −m` summary. (2) Approval modal bound to `ApprovalRequired`: tool, subject (command shown verbatim, sanitised), `Why`, keys `y` allow, `s` allow for session, `n` deny, `e` edit (for bash: edit the command inline, resubmits `Decision::Edit`). (3) Snapshots `diff_two_files`, `modal_bash_approval`; keypress test `y_sends_approve_submission`.
-Check:
-```bash
-mise exec -- cargo test -p cox-tui diff_ modal_
-```
-
 #### T5.5 Status line, todo panel, slash commands
 Model: haiku · Status: open · Depends: T5.3 · Size: ~160
 Goal: §1.13 status line and built-in slash commands.

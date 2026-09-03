@@ -1034,3 +1034,26 @@ test result: ok. 6 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.4 Diff view and approval modal
+Model: fable · Status: done 2026-09-03 · Depends: T5.3, T2.2 · Size: ~180
+Goal: edits are reviewable and approvals are one keypress.
+Files: `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/modal.rs`.
+Steps: (1) Diff cell from `ToolResult.diff`: per-file header, hunks coloured, collapse/expand per file, `+n −m` summary. (2) Approval modal bound to `ApprovalRequired`: tool, subject (command shown verbatim, sanitised), `Why`, keys `y` allow, `s` allow for session, `n` deny, `e` edit (for bash: edit the command inline, resubmits `Decision::Edit`). (3) Snapshots `diff_two_files`, `modal_bash_approval`; keypress test `y_sends_approve_submission`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui diff_ modal_
+```
+
+What landed: `diff.rs` — `counts(unified)` (`+n −m`, file markers excluded) and `lines(&Diff, expanded)`: a bold `± path  +n −m` header, then when expanded the unified text with `@@` cyan, `+` green, `-` red, `---`/`+++`/`\` dim; the tool cell prints it between the output and the `✓/✗` line whenever `ToolResult.diff` is set, and `Ctrl+O` toggles `State::show_diffs` (carried in `Look`) between full and header-only. `modal.rs` — `Approval { call, why, editing }` owns the approval modal: `lines()` shows `approve <tool> <subject>?`, a one-line reason per `Why` variant, and the key row; `key()` maps `y`/`Enter` → `Allow`, `s` → `AllowForSession`, `n`/`Esc` → `Deny`, and for `bash` `e` opens an inline editor over `input.command` (chars, `Backspace`, `Esc` cancels back to the prompt) whose `Enter` sends `Decision::Edit { input }` with the command replaced, or plain `Allow` when unchanged. `Modal::Approval(Approval)` replaces the struct variant; `state` only forwards keys and wraps the decision in `Submission::Approve`. Tests in `tests/approval.rs`: `diff_two_files` (two edit cells expanded, then collapsed by `Ctrl+O`), `modal_bash_approval` (the prompt, then the editor mid-edit), `y_sends_approve_submission` (all four keys → their `Decision`, modal closed), `modal_edit_resubmits_the_command_as_decision_edit` (plus `Esc` keeps the call pending); `diff::counts` has a unit test.
+Not done: collapse is per session (`Ctrl+O`), not per file — with the inline viewport a finished cell is already in scrollback, so there is nothing to select; the subject is shown verbatim but not yet sanitised (`text::sanitize` is T5.6 and will wrap this line); `s` replaced the earlier `a` key per the plan. Size: ~190 LOC over `diff.rs`, `modal.rs`, `state`, `view`, `cells`, plus tests.
+```
+$ mise exec -- cargo test -p cox-tui --test approval
+test diff_two_files ... ok
+test modal_bash_approval ... ok
+test y_sends_approve_submission ... ok
+test modal_edit_resubmits_the_command_as_decision_edit ... ok
+test result: ok. 4 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

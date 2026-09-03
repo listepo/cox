@@ -6,7 +6,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
@@ -17,7 +17,7 @@ use crate::state::{Modal, State};
 pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let banner = u16::from(state.banner.is_some());
     let modal = match &state.modal {
-        Some(Modal::Approval { .. }) => 3,
+        Some(Modal::Approval(a)) => a.height(),
         Some(Modal::Picker(p)) => p.height(),
         None => 0,
     };
@@ -48,17 +48,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         .render(transcript, buf);
 
     match &state.modal {
-        Some(Modal::Approval { call, why }) => Paragraph::new(vec![
-            Line::styled(
-                format!(" approve {} {}?", call.name, call.subject),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::raw(format!(" {why:?}")),
-            Line::raw(" [y]es  [a]lways this session  [n]o"),
-        ])
-        .render(modal_area, buf),
+        Some(Modal::Approval(a)) => Paragraph::new(a.lines()).render(modal_area, buf),
         Some(Modal::Picker(p)) => Paragraph::new(p.lines()).render(modal_area, buf),
         None => {}
     }

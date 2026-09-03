@@ -8,6 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::diff;
 use crate::markdown;
 use crate::state::Cell;
 
@@ -18,6 +19,8 @@ pub struct Look {
     pub dark: bool,
     /// `Ctrl+T`: thinking expanded rather than a one-line count.
     pub show_thinking: bool,
+    /// `Ctrl+O`: diffs in full rather than their `+n −m` header.
+    pub show_diffs: bool,
     /// Ticks (100 ms) since start; drives the spinner and elapsed time.
     pub tick: u64,
 }
@@ -75,6 +78,9 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                 );
             } else {
                 lines.extend(out.iter().map(|l| Line::raw(format!("  {l}"))));
+            }
+            if let Some(d) = result.as_ref().and_then(|r| r.diff.as_ref()) {
+                lines.extend(diff::lines(d, look.show_diffs));
             }
             match result {
                 Some(r) => {

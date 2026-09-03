@@ -5,14 +5,14 @@
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Decision, Event, ItemKind, Level, PermissionMode, SandboxMode, Submission, Tier, ToolCall,
-    ToolResult, Why,
+    Event, ItemKind, Level, PermissionMode, SandboxMode, Submission, Tier, ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::banner::Banner;
 use crate::cells::Look;
 use crate::composer::{Composer, Edit};
+use crate::modal::Approval;
 use crate::picker::{BUILTIN_COMMANDS, Kind, Pick, Picker};
 
 /// One transcript entry. A finished cell leaves the viewport for the
@@ -80,7 +80,7 @@ pub struct Status {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
-    Approval { call: ToolCall, why: Why },
+    Approval(Approval),
     Picker(Picker),
 }
 
@@ -107,6 +107,8 @@ pub struct State {
     pub show_thinking: bool,
     /// `tui.theme` resolved: dark unless the user chose light.
     pub dark: bool,
+    /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
+    pub show_diffs: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +152,7 @@ impl State {
             tick: 0,
             show_thinking: false,
             dark: true,
+            show_diffs: true,
         }
     }
 
@@ -159,6 +162,7 @@ impl State {
             width,
             dark: self.dark,
             show_thinking: self.show_thinking,
+            show_diffs: self.show_diffs,
             tick: self.tick,
         }
     }
@@ -225,24 +229,21 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         state.show_thinking = !state.show_thinking;
         return Vec::new();
     }
+    if ctrl && key.code == KeyCode::Char('o') {
+        state.show_diffs = !state.show_diffs;
+        return Vec::new();
+    }
     match state.modal.take() {
-        Some(Modal::Approval { call, why }) => {
-            let decision = match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => Decision::Allow,
-                KeyCode::Char('a') => Decision::AllowForSession,
-                KeyCode::Char('n') | KeyCode::Esc => Decision::Deny {
-                    reason: "denied by user".into(),
-                },
-                _ => {
-                    state.modal = Some(Modal::Approval { call, why });
-                    return Vec::new();
-                }
-            };
-            vec![Cmd::Submit(Submission::Approve {
-                call_id: call.id,
+        Some(Modal::Approval(mut approval)) => match approval.key(key) {
+            Some(decision) => vec![Cmd::Submit(Submission::Approve {
+                call_id: approval.call.id,
                 decision,
-            })]
-        }
+            })],
+            None => {
+                state.modal = Some(Modal::Approval(approval));
+                Vec::new()
+            }
+        },
         Some(Modal::Picker(mut picker)) => {
             match picker.key(key) {
                 Pick::Nothing => state.modal = Some(Modal::Picker(picker)),
@@ -357,7 +358,9 @@ fn on_event(state: &mut State, ev: Event) {
                 *r = Some(result);
             }
         }
-        Event::ApprovalRequired { call, why } => state.modal = Some(Modal::Approval { call, why }),
+        Event::ApprovalRequired { call, why } => {
+            state.modal = Some(Modal::Approval(Approval::new(call, why)));
+        }
         Event::ApprovalDecided { .. } => state.modal = None,
         Event::TurnStarted { tier, model, .. } => {
             state.status.busy = true;
