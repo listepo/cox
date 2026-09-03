@@ -1,0 +1,7 @@
+{"summary": "## Goal\nDocument the public API\n## Decisions\nOutline each module\n## Files touched\nREADME.md\n## Open todo\nWrite the docs\n## Errors seen\nNone\n## Next step\nUpdate the guide"}
+{"user": "Outline lib.rs for the docs.", "assistant": "Outlining.", "calls": [{"tool": "read", "input": {"path": "src/lib.rs", "mode": "outline"}}], "final": "Widget, Canvas and their methods."}
+{"user": "Outline auth.rs too.", "assistant": "Outlining.", "calls": [{"tool": "read", "input": {"path": "src/auth.rs", "mode": "outline"}}], "final": "Session, Credentials, AuthError, three fns."}
+{"user": "Read the README.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "README.md"}}], "final": "Short layout overview."}
+{"user": "Read the guide.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "docs/guide.md"}}], "final": "Three working rules."}
+{"user": "Read the manifest.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "Cargo.toml"}}], "final": "One dependency: serde."}
+{"user": "List the docs.", "assistant": "Globbing.", "calls": [{"tool": "glob", "input": {"pattern": "docs/**"}}], "final": "Just the guide."}

@@ -1435,3 +1435,25 @@ Check output:
 cargo test -p cox stats_ → 5 passed (session_summary_groups_by_tier_and_job, json_holds_the_summary_shape, csv_starts_with_a_header_row, top_tools_orders_by_bytes, usage_by_period_buckets_one_day)
 ```
 
+#### T8.5 Bench: measured savings
+Model: sonnet · Status: done 2026-09-03 · Depends: T8.1, T8.2, T2.6, T3.8 · Size: ~180
+Goal: a table in `research.md` §4.6 with a number per D6 mechanism.
+Files: `evals/token/README.md`, `evals/token/sessions/*.jsonl` (5 recorded sessions, redacted), `crates/cox-core/src/bin/bench.rs` or `justfile` target `bench`.
+Steps: (1) Replay each session's submissions through the loop with the `Replay` provider (cassettes recorded once) and count `context_tokens` per call. (2) Toggle each mechanism via config (`tool_output_visible_bytes = 0` → no truncation? no: set to `u32::MAX`; `dedup_window_turns = 0`; `deferred_tools = false`; `compact_at = 1.0`; `microcompact_after_turns = u32::MAX`; outline off via a flag) and re-run. (3) Print a table: mechanism · sessions · context-token-turns before/after · Δ %. (4) Commit the table to `research.md` §4.6; a mechanism with no measurable delta is flagged for removal in §6.
+Check:
+```bash
+just bench | tee /dev/stderr | grep -E '^\| (archive|dedup|outline|deferred|prefix|compaction)' | grep -vq ' 0 %'
+```
+
+What landed: `crates/cox/examples/bench.rs` (`cargo run -p cox --example bench`, `just bench`): replays 5 hand-written 6-turn transcripts through the real `Session` loop (`Scripted` specs generated per variant, real `read`/`grep`/`glob` over `evals/token/workspace` plus two never-called deferred tools), sums `Usage::context_tokens` from the loop's own ledger rows; baseline is shipped defaults + one real `/compact` after turn 4, each variant disables one mechanism via its real config flag (outline by rewriting `mode` to `text`). `evals/token/README.md` documents the method; `research.md` §4.6 holds the table (archive 62.2, dedup 5.7, outline 6.1, deferred 21.7, compaction 8.1, prefix 39.3).
+Notes / deviations:
+- **`Scripted`, not `Replay`, and no cassettes.** Provider responses are generated from the transcript (assistant text + tool calls), not recorded from a live model — there is nothing worth recording, and `Scripted` replays deterministically offline. Tool outputs come from the fixture files at replay time.
+- **Bench is an example in `crates/cox`, not a bin in `cox-core`.** It needs `cox-tools` (real tools) and `tempfile`-free committed fixtures; `cox-core` cannot depend on `cox-tools` (dependency direction test).
+- **Baseline `/compact` is manual.** `Scripted` reports `max_context = u32::MAX`, so auto-compact never fires offline; the manual compact runs the real `compact()` path including the summary provider call.
+- **`prefix` is emulated** (stable-prefix bytes × calls-1 via real `assemble` + `estimate`): offline replays observe no server cache hits. Read it as cache-write volume, per the README.
+- **No zero-delta mechanism**, so no §6 removal flag.
+Check output:
+```
+just bench → 6 rows, all non-zero (archive 62.2 % … prefix 39.3 %); Check exits 0
+```
+

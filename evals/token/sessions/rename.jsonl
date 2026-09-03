@@ -1,0 +1,7 @@
+{"summary": "## Goal\nRename Widget across the crate\n## Decisions\nOutline big files before reading\n## Files touched\ndata/big.rs, src/lib.rs\n## Open todo\nApply the rename\n## Errors seen\nNone\n## Next step\nRun the tests"}
+{"user": "I want to rename Widget. Where is it defined?", "assistant": "Reading lib.rs.", "calls": [{"tool": "read", "input": {"path": "src/lib.rs"}}], "final": "Widget is defined in src/lib.rs."}
+{"user": "Find every use of Widget.", "assistant": "Searching.", "calls": [{"tool": "grep", "input": {"pattern": "Widget"}}], "final": "Used in lib.rs, main.rs and generated fns."}
+{"user": "Outline the big generated file before I touch it.", "assistant": "Outlining.", "calls": [{"tool": "read", "input": {"path": "data/big.rs", "mode": "outline"}}], "final": "Forty generated fns plus filler."}
+{"user": "Read the big file in full.", "assistant": "Reading all of it.", "calls": [{"tool": "read", "input": {"path": "data/big.rs"}}], "final": "Mostly filler after the generated fns."}
+{"user": "Read the big file again, I need the exact filler wording.", "assistant": "Same read again.", "calls": [{"tool": "read", "input": {"path": "data/big.rs"}}], "final": "Same content as before."}
+{"user": "Check the README for naming conventions.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "README.md"}}], "final": "No naming rules documented."}

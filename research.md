@@ -144,10 +144,26 @@ Copilot's auto model selection is praised because it is explicit, priced (10 % d
 | tests | insta 1.48.0, proptest 1.11, wiremock 0.6.5, rstest 0.26, mockall 0.15, assert_cmd 2.2, predicates 3, assert_fs, tempfile 3.27, pretty_assertions, vt100 0.16.2, cargo-nextest, cargo-mutants (optional), cargo-llvm-cov | httpmock 0.8, expectrl | — |
 | misc / release | uuid 1.26, jiff or chrono 0.4.45, notify 8.2, which 8, semver 1, cargo-dist, cargo-deny 0.20, git-cliff | indicatif (headless progress) | — |
 
-### 4.6 Measured savings (filled by T8.5)
+### 4.6 Measured savings (filled by T8.5, 2026-09-03, `just bench`)
 | Mechanism | Sessions | Context-token-turns before | after | Δ |
 |---|---|---|---|---|
-| (pending) | | | | |
+| archive (D6a truncation) | 5 | 393337 | 148662 | 62.2 % |
+| dedup (D6b re-read) | 5 | 157588 | 148662 | 5.7 % |
+| outline (D6c) | 5 | 158291 | 148662 | 6.1 % |
+| deferred tools (D6d) | 5 | 189854 | 148662 | 21.7 % |
+| compaction (D6f) | 5 | 161736 | 148662 | 8.1 % |
+| prefix stability (D6e, emulated cache-write) | 5 | 244790 | 148662 | 39.3 % |
+
+Method: 5 hand-written transcripts (`evals/token/sessions/*.jsonl`, 6 turns
+each over the `evals/token/workspace` fixture) replayed through the real
+`Session` loop with a `Scripted` provider and real `read`/`grep`/`glob`
+tools; toggling is the real config flag per mechanism (see
+`evals/token/README.md`). Totals are sums of `Usage::context_tokens` from
+the ledger rows the loop wrote. Caveats: transcripts are built to exercise
+each mechanism (big-file reads, repeated reads, outlines), so the shares
+are ceiling-shaped, not field averages; `prefix` counts emulated
+cache-write bytes, not billed tokens. No mechanism measured 0, so none is
+flagged for removal.
 
 ## 5. Testability patterns adopted
 1. `Provider` trait with `Scripted` and `Replay` (cassette) implementations; cassettes re-recorded on demand and redacted. Temperature 0 and seeds do not give bit-exact replay across providers; replaying the event log does. [high]

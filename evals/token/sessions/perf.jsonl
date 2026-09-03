@@ -1,0 +1,7 @@
+{"summary": "## Goal\nCheck startup cost of big.rs\n## Decisions\nMeasure first, then outline\n## Files touched\ndata/big.rs\n## Open todo\nDecide on codegen split\n## Errors seen\nNone\n## Next step\nTime the build"}
+{"user": "Read the big generated file.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "data/big.rs"}}], "final": "Sixty-four kilobytes, mostly filler."}
+{"user": "How much filler is there?", "assistant": "Searching.", "calls": [{"tool": "grep", "input": {"pattern": "filler"}}], "final": "Hundreds of filler lines."}
+{"user": "Outline it to see the real items.", "assistant": "Outlining.", "calls": [{"tool": "read", "input": {"path": "data/big.rs", "mode": "outline"}}], "final": "Forty generated functions."}
+{"user": "Read it once more for the exact header.", "assistant": "Same read again.", "calls": [{"tool": "read", "input": {"path": "data/big.rs"}}], "final": "Same header as before."}
+{"user": "Check main.rs imports.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "src/main.rs"}}], "final": "Imports Canvas and Widget."}
+{"user": "Check lib.rs widgets.", "assistant": "Reading it.", "calls": [{"tool": "read", "input": {"path": "src/lib.rs"}}], "final": "Widget has id, name, visible."}

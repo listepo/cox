@@ -575,16 +575,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P8 — Context economy (goal: measured savings, cache hit rate visible)
 
-#### T8.5 Bench: measured savings
-Model: sonnet · Status: open · Depends: T8.1, T8.2, T2.6, T3.8 · Size: ~180
-Goal: a table in `research.md` §4.6 with a number per D6 mechanism.
-Files: `evals/token/README.md`, `evals/token/sessions/*.jsonl` (5 recorded sessions, redacted), `crates/cox-core/src/bin/bench.rs` or `justfile` target `bench`.
-Steps: (1) Replay each session's submissions through the loop with the `Replay` provider (cassettes recorded once) and count `context_tokens` per call. (2) Toggle each mechanism via config (`tool_output_visible_bytes = 0` → no truncation? no: set to `u32::MAX`; `dedup_window_turns = 0`; `deferred_tools = false`; `compact_at = 1.0`; `microcompact_after_turns = u32::MAX`; outline off via a flag) and re-run. (3) Print a table: mechanism · sessions · context-token-turns before/after · Δ %. (4) Commit the table to `research.md` §4.6; a mechanism with no measurable delta is flagged for removal in §6.
-Check:
-```bash
-just bench | tee /dev/stderr | grep -E '^\| (archive|dedup|outline|deferred|prefix|compaction)' | grep -vq ' 0 %'
-```
-
 ### P9 — Routing and subagents (goal: D5 enforced end to end)
 
 #### T9.1 `Router`

@@ -15,4 +15,4 @@ eval:
     echo "not yet"
 
 bench:
-    echo "not yet"
+    mise exec -- cargo run -q -p cox --example bench
