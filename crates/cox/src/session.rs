@@ -41,6 +41,16 @@ pub async fn open(
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
+    // T9.1 step 4: `--provider local` maps every tier to the local server;
+    // the router then resolves the local model for all of them.
+    if loaded.config.tiers.code.provider == "local" {
+        for tier in [
+            &mut loaded.config.tiers.cheap,
+            &mut loaded.config.tiers.think,
+        ] {
+            tier.provider = "local".into();
+        }
+    }
     let config = loaded.config.clone();
     let provider = provider_for(&config)?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);

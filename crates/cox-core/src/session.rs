@@ -22,6 +22,7 @@ use crate::context::assemble_with;
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
+use crate::router::{Overrides, Route, RouteError, Router};
 use crate::turn::{consume_provider, results_message, run_tools};
 
 /// Loop states from plan.md §1.3.
@@ -76,6 +77,8 @@ pub(crate) struct Inner {
     pub(crate) cache: CacheTracker,
     /// Last call's cache share, for the status line (T8.3 step 1).
     pub(crate) cache_ratio: f64,
+    /// Session routing overrides from `/model` (T9.1).
+    pub(crate) overrides: Overrides,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -210,6 +213,7 @@ impl Session {
                 archives: HashMap::new(),
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
+                overrides: Overrides::default(),
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -296,9 +300,9 @@ impl Session {
         match sub {
             Submission::UserTurn {
                 text,
-                confirm_think: _,
+                confirm_think,
                 attachments: _,
-            } => self.run_turn(text).await,
+            } => self.run_turn(text, confirm_think).await,
             Submission::Interrupt => {
                 self.interrupt();
                 Ok(())
@@ -331,6 +335,7 @@ impl Session {
                 .compact(compact::Trigger::Manual, focus)
                 .await
                 .map(|_| ()),
+            Submission::SwitchModel { tier, model } => self.switch_model(tier, model).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
@@ -353,6 +358,58 @@ impl Session {
             self.config.sandbox.mode,
             &inner.grants,
         )
+    }
+
+    /// The route for `job` under the session's overrides (T9.1). Pure
+    /// except for the lock that reads the overrides.
+    pub(crate) async fn route_for(
+        &self,
+        job: Job,
+        confirm_think: bool,
+    ) -> Result<Route, RouteError> {
+        let (overrides, tier) = {
+            let inner = self.inner.lock().await;
+            (inner.overrides.clone(), self.tier)
+        };
+        Router::pick(&self.config, job, tier, &overrides, confirm_think)
+    }
+
+    /// `/model <tier> [model]` (T9.1 step 3): main turns run on `tier` with
+    /// `model`, or the tier default when `None`; thinking blocks are
+    /// stripped because their signatures bind to the previous model.
+    pub(crate) async fn switch_model(
+        &self,
+        tier: Tier,
+        model: Option<ModelId>,
+    ) -> Result<(), CoreError> {
+        let route_err = |e: RouteError| CoreError::Config {
+            key: "tiers".into(),
+            message: e.notice(),
+        };
+        let from = self
+            .route_for(Job::Main, true)
+            .await
+            .map_err(route_err)?
+            .model;
+        {
+            let mut inner = self.inner.lock().await;
+            inner.overrides.main_tier = Some(tier);
+            match model {
+                Some(m) => {
+                    inner.overrides.models.insert(tier, m);
+                }
+                None => {
+                    inner.overrides.models.remove(&tier);
+                }
+            }
+            inner.history = crate::router::strip_thinking(&inner.history);
+        }
+        let to = self
+            .route_for(Job::Main, true)
+            .await
+            .map_err(route_err)?
+            .model;
+        self.emit(Event::ModelSwitched { tier, from, to }).await
     }
 
     /// Parks `call_id` until `Submission::Approve` answers it.
@@ -418,7 +475,7 @@ impl Session {
         added
     }
 
-    async fn run_turn(&self, text: String) -> Result<(), CoreError> {
+    async fn run_turn(&self, text: String, confirm_think: bool) -> Result<(), CoreError> {
         {
             let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
             *c = CancellationToken::new();
@@ -436,7 +493,9 @@ impl Session {
         .await
         {
             HookOutcome::Block { reason } => {
-                self.emit_turn_started(turn).await?;
+                let tc = self.config.tiers.get(self.tier);
+                self.emit_turn_started(turn, self.tier, ModelId(tc.model.clone()))
+                    .await?;
                 self.emit(Event::Notice {
                     level: Level::Warn,
                     text: format!("prompt blocked by hook: {reason}"),
@@ -448,6 +507,36 @@ impl Session {
             }
             HookOutcome::Modify { input } => input.as_str().map_or(text, str::to_owned),
             _ => text,
+        };
+        // T9.1: the think tier needs `confirm_think`; without it the turn is
+        // refused before any provider call, with the price in the notice.
+        // An unknown provider name is a turn-fatal config error instead.
+        let route = match self.route_for(Job::Main, confirm_think).await {
+            Ok(route) => route,
+            Err(RouteError::NeedsConfirm { tier, model }) => {
+                self.emit_turn_started(turn, tier, model.clone()).await?;
+                let detail = RouteError::NeedsConfirm { tier, model }.notice();
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: detail.clone(),
+                })
+                .await?;
+                return self.finish(turn, StopReason::Refusal { detail }).await;
+            }
+            Err(e) => {
+                let tc = self.config.tiers.get(self.tier);
+                self.emit_turn_started(turn, self.tier, ModelId(tc.model.clone()))
+                    .await?;
+                self.emit(Event::Error {
+                    error: CoreError::Config {
+                        key: "tiers".into(),
+                        message: e.notice(),
+                    },
+                    fatal: false,
+                })
+                .await?;
+                return self.finish(turn, StopReason::Error).await;
+            }
         };
         // §1.10 trigger, applied at the next turn's start rather than after
         // `TurnDone` so nothing follows a turn's last event (§1.3 rule 7).
@@ -473,7 +562,8 @@ impl Session {
             inner.provider_calls = 0;
             inner.retried_after_too_long = false;
         }
-        self.emit_turn_started(turn).await?;
+        self.emit_turn_started(turn, route.tier, route.model.clone())
+            .await?;
         self.emit(Event::ItemStarted {
             item: user_item,
             kind: ItemKind::UserMessage {
@@ -527,15 +617,34 @@ impl Session {
             self.config.context.microcompact_after_turns,
             &archives,
         );
-        let req = assemble_with(
+        // T9.1: every provider call routes through the Router; the gate
+        // already passed in `run_turn`, so only a bad provider name can fail
+        // here and it is turn-fatal, never silent.
+        let route = match self.route_for(Job::Main, true).await {
+            Ok(route) => route,
+            Err(e) => {
+                self.emit(Event::Error {
+                    error: CoreError::Config {
+                        key: "tiers".into(),
+                        message: e.notice(),
+                    },
+                    fatal: false,
+                })
+                .await?;
+                self.finish(turn, StopReason::Error).await?;
+                return Ok(Step::Done);
+            }
+        };
+        let mut req = assemble_with(
             &req_messages,
             &self.config,
-            self.tier,
+            route.tier,
             &self.tools,
             &discovered,
             &self.cwd,
             "",
         );
+        req.model = route.model.clone();
         // T8.3: hash the prefix before the request moves into the stream.
         let prefix_texts: Vec<String> = req.system.iter().map(|b| b.text.clone()).collect();
         let (spent, warned) = {
@@ -648,13 +757,13 @@ impl Session {
                 session_id: self.id,
                 turn: calls_so_far + 1,
                 job: self.job,
-                tier: self.tier,
+                tier: route.tier,
                 provider: self.provider.id(),
-                model: ModelId(self.config.tiers.get(self.tier).model.clone()),
+                model: route.model.clone(),
                 usage,
             })
             .map_err(|error| CoreError::Store { error })?;
-        if budget::counts(self.tier, self.config.budget.cheap_counts) {
+        if budget::counts(route.tier, self.config.budget.cheap_counts) {
             self.inner.lock().await.spent_usd += usage.cost_usd;
         }
         self.emit(Event::Usage { turn, usage }).await?;
@@ -714,12 +823,17 @@ impl Session {
         Ok(Step::Continue)
     }
 
-    async fn emit_turn_started(&self, turn: TurnId) -> Result<(), CoreError> {
+    async fn emit_turn_started(
+        &self,
+        turn: TurnId,
+        tier: Tier,
+        model: ModelId,
+    ) -> Result<(), CoreError> {
         self.emit(Event::TurnStarted {
             turn,
             job: self.job,
-            tier: self.tier,
-            model: ModelId(self.config.tiers.get(self.tier).model.clone()),
+            tier,
+            model,
         })
         .await
     }

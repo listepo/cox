@@ -7,8 +7,8 @@
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::ItemId;
 use cox_protocol::types::{
-    Content, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message, ModelId, ProviderEvent,
-    Request, Role, SystemBlock,
+    Content, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message, ProviderEvent, Request,
+    Role, SystemBlock,
 };
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -213,15 +213,16 @@ impl Session {
     /// One request on the `compact` job, recorded in the ledger like any
     /// other (D6g); `None` when the provider fails or answers nothing.
     async fn summarise(&self, messages: &[Message], focus: Option<&str>) -> Option<String> {
-        let tier = self.config.jobs.tier_for(Job::Compact);
-        let tc = self.config.tiers.get(tier);
-        let model = ModelId(tc.model.clone());
+        // T9.1: the summary routes like any other job, so a `/model` switch
+        // of the cheap tier applies here too.
+        let route = self.route_for(Job::Compact, true).await.ok()?;
+        let model = route.model.clone();
         let mut system = PROMPT.to_string();
         if let Some(focus) = focus {
             system.push_str(&format!("\nFocus on: {focus}\n"));
         }
         let req = Request {
-            tier,
+            tier: route.tier,
             job: Job::Compact,
             model: model.clone(),
             system: vec![SystemBlock {
@@ -235,9 +236,9 @@ impl Session {
                     text: transcript(messages),
                 }],
             }],
-            effort: tc.effort,
-            max_tokens: MAX_SUMMARY_TOKENS.min(tc.max_tokens),
-            thinking: tc.thinking,
+            effort: route.effort,
+            max_tokens: MAX_SUMMARY_TOKENS.min(route.max_tokens),
+            thinking: route.thinking,
             cache_breakpoints: vec![],
             stop_sequences: vec![],
         };
@@ -257,13 +258,13 @@ impl Session {
                 session_id: self.id,
                 turn: 0,
                 job: Job::Compact,
-                tier,
+                tier: route.tier,
                 provider: self.provider.id(),
                 model,
                 usage,
             })
             .ok()?;
-        if budget::counts(tier, self.config.budget.cheap_counts) {
+        if budget::counts(route.tier, self.config.budget.cheap_counts) {
             self.add_spend(usage.cost_usd).await;
         }
         let out = out.trim().to_string();

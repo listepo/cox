@@ -1457,3 +1457,25 @@ Check output:
 just bench → 6 rows, all non-zero (archive 62.2 % … prefix 39.3 %); Check exits 0
 ```
 
+#### T9.1 `Router`
+Model: sonnet · Status: done 2026-09-03 · Depends: T2.1, T1.4 · Size: ~150
+Goal: job → tier → provider/model/effort from config, with the think gate.
+Files: `crates/cox-core/src/router.rs`, `crates/cox-core/tests/router.rs`.
+Steps: (1) `Router::pick(job, overrides) -> (ProviderId, ModelId, Effort, Thinking)`. (2) `think` tier requires `confirm_think`; otherwise `CoreError::Config`-style refusal with a `Notice` showing the price. (3) `/model <tier> <model>` and `--tier code=…` overrides for the session; `ModelSwitched` event; thinking blocks stripped after a switch. (4) Local-only mode: `--provider local` maps all tiers to the local provider. (5) 12-job table test; `think_requires_confirmation`; `never_auto_escalates` (a failing cheap call is retried on cheap, not on code).
+Check:
+```bash
+mise exec -- cargo test -p cox-core router_
+```
+
+What landed: `router.rs` (pure `Router::pick(config, job, session_tier, overrides, confirm_think) -> Route{tier, provider, model, effort, thinking, max_tokens}`; main turns use the session tier or `/model` tier, other jobs the `[jobs]` table; think gate → `NeedsConfirm` with the $10/$50 price; unknown tier provider → `UnknownProvider`; local tiers resolve the local server model; `strip_thinking` for post-switch history), session wiring (`route_for`, think gate in `run_turn` → `Notice` + `TurnDone{Refusal}`, per-call route in `step` with model override on the request and ledger row, `SwitchModel` handling with `ModelSwitched` + strip, compact summary routed as the `Compact` job), headless `--deep` (switch + confirmed) and `--provider local` (all tier providers normalized in `open()`).
+Notes / deviations:
+- **8 files, not 2.** The two listed plus `session.rs` (gate, per-call route, switch), `compact.rs` (summary route), `lib.rs` (module), `types.rs` (`Hash` on `Tier` for the override map), `run.rs` + `cli.rs` + `cox/src/session.rs` (headless `--deep`, local normalization).
+- **10 jobs, not 12.** The `Job` enum has 10 variants; the table test covers all of them (the two `/model` forms are extra assertions, not jobs).
+- **Refusal shape split:** `NeedsConfirm` → `Notice(Warn)` + `TurnDone{Refusal}` (invariant #9 test lives in `tests/router.rs`); a bad provider name → `Error` + `TurnDone{Error}` as the taxonomy demands for config errors.
+- **`strip_thinking` is currently vacuous:** the loop displays thinking deltas but never stores `Thinking` blocks in history, so there is nothing to strip yet; the function is total and unit-tested for when thinking persists.
+- **`--tier TIER=MODEL` needed no work** (already lands in `tiers.<tier>.model` via the flag layer, which the router reads).
+Check output:
+```
+cargo test -p cox-core router_ → lib 1 + integration 5 passed (job_table_pins_every_job, think_requires_confirmation, never_auto_escalates, model_override_local_and_unknown, switch_gates_and_runs_think)
+```
+

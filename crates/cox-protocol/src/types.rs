@@ -63,7 +63,7 @@ pub enum Concurrency {
 }
 
 /// A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Tier {
     /// Haiku-class or local; mechanical work, never chosen for the main coding turn.

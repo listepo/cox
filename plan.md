@@ -577,15 +577,7 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P9 — Routing and subagents (goal: D5 enforced end to end)
 
-#### T9.1 `Router`
-Model: sonnet · Status: open · Depends: T2.1, T1.4 · Size: ~150
-Goal: job → tier → provider/model/effort from config, with the think gate.
-Files: `crates/cox-core/src/router.rs`, `crates/cox-core/tests/router.rs`.
-Steps: (1) `Router::pick(job, overrides) -> (ProviderId, ModelId, Effort, Thinking)`. (2) `think` tier requires `confirm_think`; otherwise `CoreError::Config`-style refusal with a `Notice` showing the price. (3) `/model <tier> <model>` and `--tier code=…` overrides for the session; `ModelSwitched` event; thinking blocks stripped after a switch. (4) Local-only mode: `--provider local` maps all tiers to the local provider. (5) 12-job table test; `think_requires_confirmation`; `never_auto_escalates` (a failing cheap call is retried on cheap, not on code).
-Check:
-```bash
-mise exec -- cargo test -p cox-core router_
-```
+#### T9.2 Background tasks
 
 #### T9.2 Background tasks
 Model: sonnet · Status: open · Depends: T3.9, T3.7 · Size: ~150

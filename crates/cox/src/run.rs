@@ -10,7 +10,7 @@ use std::time::Duration;
 use cox_core::Session;
 use cox_protocol::Event;
 use cox_protocol::ids::{CallId, ItemId, SessionId};
-use cox_protocol::types::{ApprovalPolicy, Decision, ItemKind, StopReason, Submission};
+use cox_protocol::types::{ApprovalPolicy, Decision, ItemKind, StopReason, Submission, Tier};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -152,7 +152,7 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
     let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)
         .then(|| Duration::from_secs(u64::from(loaded.config.hooks.timeout_s)));
-    let outcome = rt.block_on(drive(session, prompt, format, approvals))?;
+    let outcome = rt.block_on(drive(session, prompt, format, approvals, args.deep))?;
     let mut out = std::io::stdout().lock();
     match format {
         Format::Text => writeln!(out, "{}", outcome.result)?,
@@ -172,6 +172,7 @@ async fn drive(
     prompt: String,
     format: Format,
     approvals: Option<Duration>,
+    deep: bool,
 ) -> anyhow::Result<Outcome> {
     let mut rx = session
         .events()
@@ -182,6 +183,16 @@ async fn drive(
             interrupter.interrupt();
         }
     });
+    // T9.1: `--deep` routes the run through think; the flag itself is the
+    // confirmation the gate requires.
+    if deep {
+        session
+            .submit(Submission::SwitchModel {
+                tier: Tier::Think,
+                model: None,
+            })
+            .await?;
+    }
     // The core runs the turn inside `submit`, so it must live on its own
     // task or nothing could answer an `ApprovalRequired` mid-turn.
     let turn = tokio::spawn({
@@ -191,7 +202,7 @@ async fn drive(
                 .submit(Submission::UserTurn {
                     text: prompt,
                     attachments: Vec::new(),
-                    confirm_think: false,
+                    confirm_think: deep,
                 })
                 .await
         }

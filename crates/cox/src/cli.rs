@@ -127,7 +127,7 @@ pub struct RunArgs {
     /// Resume a specific session by id.
     #[arg(long, value_name = "ID")]
     pub resume: Option<String>,
-    /// Route this run's `plan` job through the `think` tier.
+    /// Route this run through the `think` tier (implies confirmation).
     #[arg(long)]
     pub deep: bool,
 }

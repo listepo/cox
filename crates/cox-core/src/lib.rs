@@ -13,6 +13,7 @@ mod dedup;
 mod hooks;
 pub mod permission;
 mod rollout;
+pub mod router;
 mod session;
 pub mod subagent;
 mod truncate;
