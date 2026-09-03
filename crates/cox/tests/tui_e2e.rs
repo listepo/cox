@@ -59,6 +59,9 @@ fn tui_renders_scripted_turn_and_exits_on_double_ctrl_c() {
     ]);
     cmd.cwd(work.path());
     cmd.env("COX_HOME", home.path());
+    // The real `~/.claude.json` / `~/.claude/settings.json` must not leak
+    // MCP servers or hooks into the test (T7.5/T7.6 read `$HOME`).
+    cmd.env("HOME", home.path());
     cmd.env("COX_PROVIDER", "scripted");
     cmd.env("COX_SCENARIO", scenario);
     cmd.env("TERM", "xterm-256color");

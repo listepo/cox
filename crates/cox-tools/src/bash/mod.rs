@@ -48,11 +48,7 @@ const POLL_SLICE_MS: u8 = 50;
 const RUNNING: u8 = 0;
 const DRAINING: u8 = 1;
 const STOP: u8 = 2;
-/// The child inherits only these; everything else (API keys above all)
-/// stays in cox's own environment.
-const ENV_ALLOWLIST: &[&str] = &[
-    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "USER", "SHELL",
-];
+use cox_protocol::config::CHILD_ENV_ALLOWLIST as ENV_ALLOWLIST;
 
 /// `bash`: runs one command line and returns its stripped output.
 pub struct BashTool;

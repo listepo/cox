@@ -56,7 +56,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
-| `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`) |
+| `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4) |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3 |
@@ -572,16 +572,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 ### P6 — Headless and MCP server (goal: scripts and other agents can drive cox)
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
-
-#### T7.6 MCP client
-Model: opus · Status: open · Depends: T3.8, T2.2 · Size: ~200
-Goal: servers from `.mcp.json` and config, stdio + Streamable HTTP, OAuth, deferred namespaced tools.
-Files: `crates/cox-mcp/src/{client,discovery,auth}.rs`, `crates/cox-mcp/tests/client.rs`.
-Steps: (1) Discovery: `.mcp.json` (project), `~/.cox/config.toml [mcp.servers]`, `~/.claude.json` mcpServers (read-only); `${ENV}` expansion. (2) rmcp client: spawn stdio servers with the sandbox env allowlist; Streamable HTTP with `timeout_s`; `initialize`, `tools/list`, `tools/call`, `resources/read` (as `read mcp://server/uri`), `prompts/list` (as commands). (3) OAuth via rmcp `auth`: browser flow, token in keyring `cox/mcp/<server>`, refresh. (4) Tools registered as `mcp__<server>__<tool>`, `deferred: true` unless `mcp.deferred=false`; `Risk` from annotations (`readOnlyHint`, `destructiveHint`), default `Write`. (5) Failures: server down → `Notice(Warn)` and its tools removed (fail open). (6) Tests: an rmcp test server over stdio round-trips a call; OAuth mocked with `wiremock`; `server_crash_does_not_end_session`.
-Check:
-```bash
-mise exec -- cargo test -p cox-mcp client_
-```
 
 #### T7.7 Design doc: extensions
 Model: sonnet · Status: open · Depends: T7.6 · Size: doc

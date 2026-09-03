@@ -9,9 +9,12 @@ use std::path::Path;
 use cox_ext::{agents, commands, instructions, skills};
 
 use crate::cli::Cli;
-use crate::config_load::{cox_home, find_git_root, home_dir};
+use crate::config_load::{self, cox_home, find_git_root, home_dir};
 
 pub fn report(cli: &Cli, cwd: &Path) -> String {
+    let config = config_load::load(cwd, cli)
+        .map(|l| l.config)
+        .unwrap_or_default();
     let cox_home = cli.home.clone().unwrap_or_else(cox_home);
     let claude_home = home_dir().join(".claude");
     let git_root = find_git_root(cwd);
@@ -52,12 +55,21 @@ pub fn report(cli: &Cli, cwd: &Path) -> String {
         "agents",
         defs.agents.iter().map(|a| a.name.as_str()),
     );
+    let mcp = cox_mcp::discovery::discover(&config.mcp.servers, Some(&project), Some(&home_dir()));
+    let mut servers: Vec<String> = mcp
+        .servers
+        .keys()
+        .map(|n| format!("{n} ({})", mcp.sources[n]))
+        .collect();
+    servers.sort();
+    section(&mut out, "mcp servers", servers.iter().map(String::as_str));
     let notices: Vec<String> = loaded
         .notices
         .into_iter()
         .chain(found.notices)
         .chain(cmds.notices)
         .chain(defs.notices)
+        .chain(mcp.notices)
         .collect();
     section(&mut out, "notices", notices.iter().map(String::as_str));
     out

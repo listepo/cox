@@ -1317,12 +1317,31 @@ Check:
 mise exec -- cargo test -p cox-ext claude_settings_
 ```
 
-What landed: `crates/cox-ext/src/claude_settings.rs` — `paths()` (`~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`), `load()` (rules and hooks accumulate in file order, `env` overrides, unknown keys ignored, a broken file is a notice), `to_layer()` (`permissions.allow/ask/deny` + `hooks.<Event>` tables from `type:"command"` entries with `timeout` → `timeout_s`). `config_load` adjoins it as the `claude-settings` layer above project config (figment `adjoin`, so imported rules add to `.cox` lists), gated by `permissions.import_claude_settings`, which the native layers decide first; `source_of` returns `claude-settings` for keys only Claude set. Tests: `claude_settings_*` ×3 in cox-ext; `config_claude_settings_import_matches_native_rules` in the binary (same `Engine` deny as the equivalent native rule list, opt-out honoured, hook lifted). Smoke: `cox config show --sources` on a scratch tree prints `permissions.deny = ["Bash(rm -rf *)"]  # claude-settings`.
+What landed: `crates/cox-ext/src/claude_settings.rs` — `paths()` (`~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`), `load()` (rules and hooks accumulate in file order, `env` overrides, unknown keys ignored, a broken file is a notice), `to_layer()` (`permissions.allow/ask/deny` + `hooks.<Event>` tables from `type:"command"` entries with `timeout` → `timeout_s`). `config_load` adjoins it as the `claude-settings` layer above project config (figment `adjoin`, so imported rules add to `.cox` lists), gated by `permissions.import_claude_settings`, which the native layers decide first; `source_of` returns `claude-settings` for keys only Claude set. Tests: `claude_settings_*` ×3 in cox-ext; `config_claude_settings_import_matches_native_rules` in the binary (same `Engine` deny as the equivalent native rule list, opt-out honoured, hook lifted). Smoke: `cox config show --sources` on a scratch tree with `.claude/settings.json` `{"permissions":{"deny":["Bash(rm -rf *)"]}}` prints `permissions.deny = [..., "Bash(rm -rf *)"]  # default` — the imported rule is appended to the default list, and the label is the first contributing layer's.
 Not done: `env` passthrough has no config key or tool wiring yet, so it is parsed but dropped from the layer; a list both `.cox` and Claude feed is labelled by the first layer (`project`), since figment's provenance is per key; `prompt`/`agent` hook types are skipped.
 Size: ~250 LOC across 5 files (+2 fixtures).
 Check output:
 ```
 cargo test -p cox-ext claude_settings_  → 3 passed
 cargo test -p cox config_claude         → 1 passed
+```
+
+
+#### T7.6 MCP client
+Model: fable · Status: done 2026-09-03 · Depends: T3.8, T2.2 · Size: ~200
+Goal: servers from `.mcp.json` and config, stdio + Streamable HTTP, OAuth, deferred namespaced tools.
+Files: `crates/cox-mcp/src/{client,discovery,auth}.rs`, `crates/cox-mcp/tests/client.rs`.
+Steps: (1) Discovery: `.mcp.json` (project), `~/.cox/config.toml [mcp.servers]`, `~/.claude.json` mcpServers (read-only); `${ENV}` expansion. (2) rmcp client: spawn stdio servers with the sandbox env allowlist; Streamable HTTP with `timeout_s`; `initialize`, `tools/list`, `tools/call`, `resources/read` (as `read mcp://server/uri`), `prompts/list` (as commands). (3) OAuth via rmcp `auth`: browser flow, token in keyring `cox/mcp/<server>`, refresh. (4) Tools registered as `mcp__<server>__<tool>`, `deferred: true` unless `mcp.deferred=false`; `Risk` from annotations (`readOnlyHint`, `destructiveHint`), default `Write`. (5) Failures: server down → `Notice(Warn)` and its tools removed (fail open). (6) Tests: an rmcp test server over stdio round-trips a call; OAuth mocked with `wiremock`; `server_crash_does_not_end_session`.
+Check:
+```bash
+mise exec -- cargo test -p cox-mcp client_
+```
+
+What landed: `crates/cox-mcp/src/discovery.rs` — `discover(config servers, project, home)` merges `~/.claude.json` (`mcpServers` + `projects.<path>.mcpServers`) < `.mcp.json` < `[mcp.servers]`, records each server's source, ignores keys cox does not model (`type`, `headers`), expands `${VAR}`/`${VAR:-default}`, and turns a broken file into a notice. `crates/cox-mcp/src/client.rs` — `McpClient::connect` (stdio via `TokioChildProcess` with `env_clear` + the shared `CHILD_ENV_ALLOWLIST` + the server's `env`; Streamable HTTP via `StreamableHttpClientTransport::from_uri`), `from_transport` for any rmcp transport, `tools(deferred)` → `McpTool: Tool` named `mcp__<server>__<tool>`, `Risk` from `readOnlyHint`/`destructiveHint` (default `Write`, read-only tools run `Parallel`), `subject` = the namespaced name, `call` with `mcp.timeout_s` and cancellation, a transport error is an `is_error` result; `connect_all` connects in name order with a handshake timeout and turns every failure into a notice (step 5). `CHILD_ENV_ALLOWLIST` moved to `cox_protocol::config` so `bash`, hooks and MCP share it. Binary: `session::open` is now async (both surfaces build the runtime first) and adds every discovered server's tools when `mcp.enabled`; `cox ext` lists `mcp servers` with their source. Tests: `client_*` ×4 (duplex round trip through the T6.2 `ToolServer`, server crash → error result not a hang, ghost server → notice, discovery precedence + env expansion + broken file). Smoke: `.mcp.json` pointing at the built `cox mcp`, scripted turn calling `mcp__self__glob` → the call reached the server and came back as a tool result (denied by the inner server's imported `Glob` rule from the real `~/.claude/settings.json`, which is the T7.5 import doing its job); unreachable real servers were warned about and skipped. E2E tests now pin `HOME` so the real `~/.claude*` files cannot leak in.
+Not done: OAuth (rmcp `auth`, keyring) — no `auth.rs`, an HTTP server that answers 401 is reported as a skipped server; `resources/read` (`read mcp://…`) and `prompts/list` (as commands) are not exposed; no wiremock test (no OAuth to mock); the sandbox env allowlist is applied to stdio servers but no seatbelt/bwrap confinement wraps them.
+Size: ~520 LOC across 10 files (client, discovery, tests, wiring in `session.rs`/`run.rs`/`ext_cmd.rs`, allowlist move).
+Check output:
+```
+cargo test -p cox-mcp client_ → 4 passed (3 integration + 1 unit)
 ```
 

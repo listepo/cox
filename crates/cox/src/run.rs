@@ -141,17 +141,18 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     };
     // Headless defaults to `never`: nobody is there to answer an ask.
     let approve_default = cli.approve.is_none();
-    let (session, loaded) = session::open(cli, cwd, args.answer.clone(), |config| {
-        if approve_default {
-            config.permissions.approval = ApprovalPolicy::Never;
-        }
-    })?;
+    let rt = tokio::runtime::Runtime::new()?;
+    let (session, loaded) =
+        rt.block_on(session::open(cli, cwd, args.answer.clone(), |config| {
+            if approve_default {
+                config.permissions.approval = ApprovalPolicy::Never;
+            }
+        }))?;
     // T6.3: with any other policy a driver answers asks on stdin, within
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
     let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)
         .then(|| Duration::from_secs(u64::from(loaded.config.hooks.timeout_s)));
-    let outcome =
-        tokio::runtime::Runtime::new()?.block_on(drive(session, prompt, format, approvals))?;
+    let outcome = rt.block_on(drive(session, prompt, format, approvals))?;
     let mut out = std::io::stdout().lock();
     match format {
         Format::Text => writeln!(out, "{}", outcome.result)?,

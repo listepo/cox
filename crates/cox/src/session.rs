@@ -33,7 +33,7 @@ use crate::config_load::{self, LoadedConfig};
 /// opens the store under `COX_HOME`. `answer` is what `ask_user` returns
 /// when no one is there to ask; `tweak` lets a surface adjust the effective
 /// config before the session locks it in.
-pub fn open(
+pub async fn open(
     cli: &Cli,
     cwd: &Path,
     answer: Option<String>,
@@ -45,10 +45,14 @@ pub fn open(
     let provider = provider_for(&config)?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
+    let mut all = tools(answer);
+    if config.mcp.enabled {
+        all.extend(mcp_tools(&config, cwd).await);
+    }
     let session = Session::new(
         config,
         provider,
-        tools(answer),
+        all,
         store.clone(),
         store,
         cwd.to_path_buf(),
@@ -62,9 +66,26 @@ pub fn open(
     Ok((session, loaded))
 }
 
+/// T7.6: every discovered MCP server's tools, connected on the runtime the
+/// session will run on (the sessions live in the tools). A server that will
+/// not start is a warning and no tools (D14).
+async fn mcp_tools(config: &Config, cwd: &Path) -> Vec<Arc<dyn Tool>> {
+    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let home = config_load::home_dir();
+    let found = cox_mcp::discovery::discover(&config.mcp.servers, Some(&project), Some(&home));
+    let timeout = std::time::Duration::from_secs(u64::from(config.mcp.timeout_s));
+    let (_clients, tools, notices) =
+        cox_mcp::client::connect_all(&found.servers, timeout, config.mcp.deferred).await;
+    for notice in found.notices.iter().chain(&notices) {
+        eprintln!("cox: warning: {notice}");
+    }
+    tools
+}
+
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
-    let (session, loaded) = open(cli, cwd, None, |_| {})?;
+    let rt = tokio::runtime::Runtime::new()?;
+    let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}))?;
     let config = &loaded.config;
     let mut state = State::new(config.permissions.mode, config.sandbox.mode);
     state.files = cox_tools::glob::workspace_files(cwd);
@@ -72,7 +93,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     state.dark = config.tui.theme != "light";
     state.show_thinking = config.tui.show_thinking == "full";
     state.marks = cli.verbose > 0;
-    tokio::runtime::Runtime::new()?.block_on(cox_tui::app::run(session, state))?;
+    rt.block_on(cox_tui::app::run(session, state))?;
     Ok(())
 }
 

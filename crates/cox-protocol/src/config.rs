@@ -63,6 +63,13 @@ pub struct Config {
     pub record: RecordConfig,
 }
 
+/// What a child process cox spawns (`bash`, hooks, stdio MCP servers)
+/// inherits from cox's environment; everything else — API keys above all —
+/// stays behind (D14).
+pub const CHILD_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "USER", "SHELL",
+];
+
 /// `[core]` (plan.md §1.6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]

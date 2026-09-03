@@ -12,6 +12,7 @@ fn cox(work: &Path, home: &Path, scenario: &str) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_cox"));
     cmd.current_dir(work)
         .env("COX_HOME", home)
+        .env("HOME", home)
         .env("COX_PROVIDER", "scripted")
         .env("COX_SCENARIO", scenario)
         .args(["--cwd", work.to_str().unwrap(), "run", "-p", "hi"]);
@@ -128,6 +129,7 @@ fn interactive(work: &Path, home: &Path, extra: &[&str]) -> Child {
     std::process::Command::new(env!("CARGO_BIN_EXE_cox"))
         .current_dir(work)
         .env("COX_HOME", home)
+        .env("HOME", home)
         .env("COX_PROVIDER", "scripted")
         .env("COX_SCENARIO", WRITE)
         .args([
