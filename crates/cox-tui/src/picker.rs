@@ -115,9 +115,12 @@ impl Picker {
         )];
         lines.extend(self.matches.iter().enumerate().map(|(i, m)| {
             if i == self.selected {
-                Line::styled(format!(" ▸ {m}"), Style::default().fg(Color::Cyan))
+                Line::styled(
+                    format!(" ▸ {}", crate::text::sanitize(m)),
+                    Style::default().fg(Color::Cyan),
+                )
             } else {
-                Line::raw(format!("   {m}"))
+                Line::raw(format!("   {}", crate::text::sanitize(m)))
             }
         }));
         lines

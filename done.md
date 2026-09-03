@@ -1082,3 +1082,25 @@ test result: ok. 5 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.6 `text::sanitize`
+Model: fable · Status: done 2026-09-03 · Depends: T5.1 · Size: ~120
+Goal: nothing the model or a tool prints can escape its cell or the terminal.
+Files: `crates/cox-tui/src/text.rs`, `crates/cox-tui/tests/sanitize.rs`.
+Steps: (1) Strip ESC/CSI/OSC/DCS sequences (own state machine or `vte` parser), C0 controls except `\n`/`\t`, bidi overrides (U+202A–202E, U+2066–2069), zero-width joiners in suspicious runs; replace with `␛`-style markers when `-v`. (2) Width-safe truncation. (3) Applied at the cell boundary for every model/tool string. (4) 50 hostile strings (OSC 52 clipboard, title set, cursor moves, RTL override, overlong lines) render inside the cell in a `TestBackend` frame.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui sanitize_
+```
+
+What landed: `text.rs` — `sanitize(&str)` / `sanitize_with(&str, marks)`: a hand-written state machine (no `vte`; the grammar is four branches) that drops ESC-introduced sequences (CSI to its final byte; OSC/DCS/SOS/PM/APC to BEL or ST; two- and three-character escapes such as `ESC c`, `ESC 7`, `ESC ( 0`), their C1 8-bit forms and every other C1 byte, C0 controls except `\n`/`\t`, DEL, bidi embeddings/overrides/isolates (U+202A–202E, U+2066–2069), and zero-width characters (U+200B–200D, U+2060, U+FEFF) unless a single ZWJ/ZWNJ sits between two visible characters (emoji sequences, Persian shaping keep working). An unterminated CSI/OSC ends at the newline, so a stray `ESC ]` eats at most its own line — as a terminal would — never the next one. With `marks` (`State::marks`, the `-v` flag, carried in `Look`) each removal leaves a glyph: `␛` for a sequence, the U+24xx control picture for a C0 byte, `␡`, `⇄` for bidi, `∅` for a zero-width run. `truncate(s, width)` cuts by display width with `…`. Applied at the boundary: every string in `cells::cell_lines` (user text and attachment names, assistant markdown input, thinking, tool name/subject/output/diff, notice, error, summary), the tool header truncated to the cell width, the approval modal's tool/subject/sandbox detail, the Security banner, and picker entries (file names come from the disk). Tests: `sanitize_strips_escapes` (§1.15 invariant 14) over 56 hostile strings — OSC 52 clipboard, title sets, hyperlinks, iTerm/shell-integration OSCs, cursor moves, clears, SGR, alt-screen/mouse/DEC modes, RIS, charset, DECALN, sixel/DCS/APC/PM/SOS, C1 forms, BEL/BS/CR/VT/FF/NUL/SO/SI/DEL, RTL override, isolates, embeddings, zero-width and ZWJ runs, 400-column words, wide CJK, a combining-mark flood, an OSC inside a fence, an ESC inside an OSC — each leaves no control character and keeps the following line; `sanitize_hostile_strings_render_inside_the_cell` renders each as an assistant reply into a 40-column frame and checks the lines before and after survive; `sanitize_frame_shows_markers_when_verbose` snapshots the marker form; unit tests for joiners, the line-end cutoff and column-based truncation.
+Not done: the composer's own text is trusted input and is not sanitised; `-v` is not yet a CLI flag (`State::marks` is set by the binary when T5.8 wires it); `truncate` is used for the tool header only — everything else wraps. Size: ~170 LOC in `text.rs`, ~30 across `cells`, `modal`, `banner`, `picker`, `state`, plus tests.
+```
+$ mise exec -- cargo test -p cox-tui sanitize_
+test sanitize_strips_escapes ... ok
+test sanitize_hostile_strings_render_inside_the_cell ... ok
+test sanitize_frame_shows_markers_when_verbose ... ok
+test result: ok. 3 passed; 0 failed   (+ 3 unit tests in text.rs)
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

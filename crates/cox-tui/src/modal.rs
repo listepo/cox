@@ -9,6 +9,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
+use crate::text::sanitize;
+
 /// The bash tool's input field the `e` key rewrites.
 const COMMAND_FIELD: &str = "command";
 
@@ -88,7 +90,7 @@ impl Approval {
         let why = match &self.why {
             Why::RuleAsk { rule } => format!("rule {rule} asks"),
             Why::Risk { risk } => format!("{risk:?} risk needs approval").to_lowercase(),
-            Why::SandboxDenied { detail } => format!("sandbox denied: {detail}"),
+            Why::SandboxDenied { detail } => format!("sandbox denied: {}", sanitize(detail)),
             Why::Policy { policy } => format!("approval policy {policy:?}").to_lowercase(),
         };
         let keys = match &self.editing {
@@ -98,7 +100,11 @@ impl Approval {
         };
         vec![
             Line::styled(
-                format!(" approve {} {}?", self.call.name, self.call.subject),
+                format!(
+                    " approve {} {}?",
+                    sanitize(&self.call.name),
+                    sanitize(&self.call.subject)
+                ),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),

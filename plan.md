@@ -569,16 +569,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
 
-#### T5.6 `text::sanitize`
-Model: sonnet · Status: open · Depends: T5.1 · Size: ~120
-Goal: nothing the model or a tool prints can escape its cell or the terminal.
-Files: `crates/cox-tui/src/text.rs`, `crates/cox-tui/tests/sanitize.rs`.
-Steps: (1) Strip ESC/CSI/OSC/DCS sequences (own state machine or `vte` parser), C0 controls except `\n`/`\t`, bidi overrides (U+202A–202E, U+2066–2069), zero-width joiners in suspicious runs; replace with `␛`-style markers when `-v`. (2) Width-safe truncation. (3) Applied at the cell boundary for every model/tool string. (4) 50 hostile strings (OSC 52 clipboard, title set, cursor moves, RTL override, overlong lines) render inside the cell in a `TestBackend` frame.
-Check:
-```bash
-mise exec -- cargo test -p cox-tui sanitize_
-```
-
 #### T5.7 Vim-lite
 Model: haiku · Status: open · Depends: T5.2 · Size: ~120
 Goal: normal/insert modes in the composer behind `tui.vim`.

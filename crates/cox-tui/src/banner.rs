@@ -20,7 +20,7 @@ impl Banner {
             Event::Notice {
                 level: Level::Security,
                 text,
-            } => Some(Self(text.clone())),
+            } => Some(Self(crate::text::sanitize(text))),
             _ => None,
         }
     }

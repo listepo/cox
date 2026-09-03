@@ -13,4 +13,5 @@ pub mod modal;
 pub mod picker;
 pub mod state;
 pub mod status;
+pub mod text;
 pub mod view;

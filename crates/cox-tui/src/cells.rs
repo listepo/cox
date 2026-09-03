@@ -3,7 +3,7 @@
 //! `insert_before` and the test harness share one renderer, and from `state`
 //! so the state machine knows nothing about columns or colours.
 
-use cox_protocol::types::Level;
+use cox_protocol::types::{Diff, Level};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -11,6 +11,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::diff;
 use crate::markdown;
 use crate::state::Cell;
+use crate::text;
 
 /// What rendering needs from the state besides the cell itself.
 #[derive(Debug, Clone, Copy)]
@@ -23,6 +24,8 @@ pub struct Look {
     pub show_diffs: bool,
     /// Ticks (100 ms) since start; drives the spinner and elapsed time.
     pub tick: u64,
+    /// Leave `text::sanitize` markers where something was removed.
+    pub marks: bool,
 }
 
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -35,35 +38,43 @@ fn dim(s: impl Into<String>) -> Line<'static> {
     Line::styled(s.into(), Style::default().add_modifier(Modifier::DIM))
 }
 
-/// `cell` as wrapped lines at `look.width`.
+/// `cell` as wrapped lines at `look.width`. Every string that came from the
+/// model, a tool or a file passes `text::sanitize` here, at the boundary.
 pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
+    let clean = |s: &str| text::sanitize_with(s, look.marks);
     let lines = match cell {
         Cell::User { text, attachments } => {
             let mut lines = vec![Line::styled(
-                format!("› {text}"),
+                format!("› {}", clean(text)),
                 Style::default().add_modifier(Modifier::BOLD),
             )];
-            lines.extend(attachments.iter().map(|a| dim(format!("  📎 {a}"))));
+            lines.extend(
+                attachments
+                    .iter()
+                    .map(|a| dim(format!("  📎 {}", clean(a)))),
+            );
             lines
         }
-        Cell::Assistant { text, .. } => markdown::render(text, look.dark),
+        Cell::Assistant { text, .. } => markdown::render(&clean(text), look.dark),
         Cell::Thinking { text, done, .. } if !look.show_thinking => {
             // No tokenizer here; four bytes a token is the usual estimate.
             let tokens = text.len() / 4;
             let verb = if *done { "thought" } else { "thinking…" };
             vec![dim(format!("∴ {verb} (~{tokens} tokens · Ctrl+T)"))]
         }
-        Cell::Thinking { text, .. } => text.lines().map(|l| dim(format!("∴ {l}"))).collect(),
+        Cell::Thinking { text, .. } => clean(text).lines().map(|l| dim(format!("∴ {l}"))).collect(),
         Cell::Tool {
             call,
             output,
             result,
             started,
         } => {
+            let header = format!("⚙ {} {}", clean(&call.name), clean(&call.subject));
             let mut lines = vec![Line::styled(
-                format!("⚙ {} {}", call.name, call.subject),
+                text::truncate(&header, usize::from(look.width.max(1))),
                 Style::default().fg(Color::Cyan),
             )];
+            let output = clean(output);
             let out: Vec<&str> = output.lines().collect();
             if out.len() > HEAD + TAIL + 1 {
                 lines.extend(out[..HEAD].iter().map(|l| Line::raw(format!("  {l}"))));
@@ -80,7 +91,11 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                 lines.extend(out.iter().map(|l| Line::raw(format!("  {l}"))));
             }
             if let Some(d) = result.as_ref().and_then(|r| r.diff.as_ref()) {
-                lines.extend(diff::lines(d, look.show_diffs));
+                let d = Diff {
+                    path: d.path.clone(),
+                    unified: clean(&d.unified),
+                };
+                lines.extend(diff::lines(&d, look.show_diffs));
             }
             match result {
                 Some(r) => {
@@ -117,7 +132,8 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             };
             let tag = format!("[{}] ", format!("{level:?}").to_lowercase());
             let pad = " ".repeat(tag.width());
-            text.lines()
+            clean(text)
+                .lines()
                 .enumerate()
                 .map(|(i, l)| {
                     let prefix = if i == 0 { &tag } else { &pad };
@@ -126,12 +142,16 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                 .collect()
         }
         Cell::Error { text, fatal } => vec![Line::styled(
-            format!("✗ {text}{}", if *fatal { " (session ended)" } else { "" }),
+            format!(
+                "✗ {}{}",
+                clean(text),
+                if *fatal { " (session ended)" } else { "" }
+            ),
             Style::default().fg(Color::Red),
         )],
         Cell::Summary { text } => {
             let mut lines = vec![dim("— compacted; earlier turns summarised as —")];
-            lines.extend(text.lines().map(|l| dim(format!("  {l}"))));
+            lines.extend(clean(text).lines().map(|l| dim(format!("  {l}"))));
             lines
         }
     };

@@ -1,0 +1,9 @@
+---
+source: crates/cox-tui/tests/sanitize.rs
+expression: "buffer_to_string(&render(&state, 60, 5))"
+---
+title ␛ clip ␛ up ␛ bell ␇ rtl ⇄exe zw a∅b
+
+
+>  message · @ file · / command
+ - · ctx 0% · $0.00 · read-only · 0 tasks · [default]

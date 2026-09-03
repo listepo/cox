@@ -116,6 +116,8 @@ pub struct State {
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
     pub todo: Vec<(String, String)>,
     pub show_todo: bool,
+    /// `-v`: show a glyph where `text::sanitize` removed something.
+    pub marks: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +165,7 @@ impl State {
             show_diffs: true,
             todo: Vec::new(),
             show_todo: false,
+            marks: false,
         }
     }
 
@@ -174,6 +177,7 @@ impl State {
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,
             tick: self.tick,
+            marks: self.marks,
         }
     }
 
