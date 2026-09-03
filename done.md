@@ -1605,6 +1605,14 @@ cargo test -p cox-acp → 2 passed (scripted_prompt_completes, permission_round_
 stdio smoke: initialize/authenticate/session-new/session-load round-trips verified against the real binary
 ```
 
+#### T11.2 IDE docs and smoke
+Model: haiku · Status: done 2026-09-04 · Depends: T11.1 · Size: doc
+Goal: `docs/ide.md` with a working Zed `settings.json` snippet (`agent_servers`), JetBrains steps, neovim (via an ACP plugin) note; one recorded smoke run in `research.md` §3.
+Check: file exists; snippet validated by a JSON test.
+
+What landed: `docs/ide.md` (Zed `agent_servers` snippet verified against zed.dev/docs/ai/external-agents, JetBrains ACP-plugin steps, neovim note, troubleshooting), `crates/cox/tests/ide.rs` (snippet parses as JSON and points at `cox acp`), recorded stdio smoke in `research.md` §3.
+Check: file exists; `cargo test -p cox --test ide` green.
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

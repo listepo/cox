@@ -107,6 +107,26 @@ Nobody does well: (1) showing cache hit/miss and *why* a cache broke (D6, T8.3);
 | A2A | v1.0.1 (May 2026), agent cards | — | later |
 | Benchmarks | SWE-bench Verified; Terminal-Bench (site now shows 4.0; 2.0 task count unverified, ledger #16); aider polyglot (225 exercises) | adapter | T12.1 |
 
+### ACP stdio smoke (T11.2, 2026-09-04)
+
+Recorded against the debug binary with a scratch `COX_HOME` (no network, dummy key only for `session/new`):
+
+```
+→ {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,…},"authMethods":[]}}
+→ {"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"methodId":"none"}}
+← {"jsonrpc":"2.0","id":2,"result":{}}
+→ {"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}
+← {"jsonrpc":"2.0","id":3,"result":{"sessionId":"01M1MJRKRG6GPHGPWYRX5QAT4H"}}
+→ {"jsonrpc":"2.0","id":4,"method":"session/load","params":{"cwd":"/tmp","sessionId":"01ARZ3NDEKTSV4RRFFQ69G5FAA"}}
+← {"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Invalid params",…}}
+```
+
+Notes: `session/new` without `mcpServers` is rejected by schema validation
+(`DefaultOnError` does not apply to that field); unknown `session/load`
+ids are explicit errors, never empty sessions. Full prompt/permission
+round-trips run in-process in `crates/cox-acp/tests/conformance.rs`.
+
 ## 4. Token economy, routing, provider layer, crates
 
 ### 4.1 Prompt caching (the largest lever)

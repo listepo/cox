@@ -581,11 +581,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P11 — ACP and IDE (goal: cox inside Zed and JetBrains)
 
-#### T11.2 IDE docs and smoke
-Model: haiku · Status: open · Depends: T11.1 · Size: doc
-Goal: `docs/ide.md` with a working Zed `settings.json` snippet (`agent_servers`), JetBrains steps, neovim (via an ACP plugin) note; one recorded smoke run in `research.md` §3.
-Check: file exists; snippet validated by a JSON test.
-
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
 #### T12.1 Evals
