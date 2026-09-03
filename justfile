@@ -11,8 +11,8 @@ test:
 snap:
     mise exec -- cargo insta review
 
-eval:
-    echo "not yet"
+eval *args:
+    mise exec -- python3 evals/run.py {{args}}
 
 bench:
     mise exec -- cargo run -q -p cox --example bench

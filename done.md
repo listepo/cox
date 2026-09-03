@@ -1613,6 +1613,26 @@ Check: file exists; snippet validated by a JSON test.
 What landed: `docs/ide.md` (Zed `agent_servers` snippet verified against zed.dev/docs/ai/external-agents, JetBrains ACP-plugin steps, neovim note, troubleshooting), `crates/cox/tests/ide.rs` (snippet parses as JSON and points at `cox acp`), recorded stdio smoke in `research.md` §3.
 Check: file exists; `cargo test -p cox --test ide` green.
 
+#### T12.1 Evals
+Model: sonnet · Status: done 2026-09-04 · Depends: T6.1, T8.4 · Size: ~200
+Goal: an opt-in harness that reports pass rate and cost per task.
+Files: `evals/tasks/*.yaml` (10 tasks: prompt, setup script, check script, timeout), `evals/tbench/adapter.py` or `.rs`, `justfile` target `eval`.
+Steps: (1) Runner: for each task, fresh tempdir, `setup`, `cox run -p --output-format json --max-turns 40 --approve never --permission-mode auto`, `check` exit code, cost from the JSON. (2) Terminal-Bench adapter following the harness's agent interface (install `cox`, run headless, return trajectory). (3) `just eval` table; a scripted-provider dry run in CI to keep the harness compiling. (4) One real run recorded in `research.md` §5.3 with date, model, pass rate, cost.
+Check:
+```bash
+COX_PROVIDER=scripted just eval --dry-run
+```
+
+What landed: `evals/run.py` (fresh tempdirs + `COX_HOME`, setup, plan-literal headless command, check with `$COX_OUT`, cost/turns from JSON, pass-rate table, nonzero exit on failure; `--dry-run` embeds per-task Scripted scenarios, `--only`, `--provider/--model`, `--cox-bin` with `cargo metadata` fallback); 10 trivial file/shell tasks; `evals/tbench/adapter.py` (`CoxAgent` over the real TB `BaseAgent` contract read from the 0.2.18 wheel, harness-absent shims, `--self-test` green); `just eval *args`; `research.md` §5.3 record.
+Notes / deviations:
+- **Two drive-by fixes in the binary (no new files):** empty `workspace_roots` reached tools verbatim so every confined write failed without `--cwd` (plan §1.6 says empty means git-root-else-cwd; now resolved in `session::open`); eval runs add `--no-hooks --no-mcp` because ambient repo servers add startup noise to every task.
+- **Step 4 real run blocked, $0:** no Anthropic key; OpenAI key exhausted (429, verified by curl). Recorded as blocked in §5.3 with the reproduce command. Related precise bug noted there (OpenAI modules skip `stream_with_retry`), not fixed here.
+Check output:
+```
+COX_PROVIDER=scripted just eval --dry-run → 10/10 passed, $0.0000 (exit 0)
+adapter --self-test → ok
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

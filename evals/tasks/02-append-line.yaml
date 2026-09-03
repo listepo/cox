@@ -1,0 +1,25 @@
+name: append-line
+prompt: Append a line containing exactly bbb to base.txt
+setup: 'printf ''aaa\n'' > base.txt
+
+  '
+check: 'grep -qx bbb base.txt
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: editing it
+    calls:
+    - tool: edit
+      input:
+        path: base.txt
+        old: 'aaa
+
+          '
+        new: 'aaa
+
+          bbb
+
+          '
+    final: done

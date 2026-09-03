@@ -192,6 +192,36 @@ flagged for removal.
 4. Tools in `tempfile` trees; `proptest` on `str_replace` and V4A (`parse(print(p)) == p`, edit-then-reverse identity); fuzz targets for SSE/V4A/frontmatter parsers. [design]
 5. Evals separate from tests: Terminal-Bench adapter + 10 in-repo tasks, run on demand with the real provider, cost recorded in the ledger. §5.3 holds the first recorded run (pending T12.1).
 
+### 5.3 First eval run (T12.1, 2026-09-04)
+
+Harness `evals/run.py` (`just eval`), 10 tasks in `evals/tasks/`, TB
+adapter in `evals/tbench/adapter.py` (verified against terminal-bench
+0.2.18's `BaseAgent` contract: `name()` / `perform_task`; self-test green).
+
+Dry-run (`COX_PROVIDER=scripted just eval --dry-run`): **10/10 passed**,
+$0.0000, no network, no key.
+
+Live run: **blocked, $0 spent.** No Anthropic key in env; `OPENAI_API_KEY`
+is set but the account is exhausted (`429 credit_balance_exhausted` on
+`POST /v1/responses` with `gpt-4o-mini`, verified by direct curl the same
+day — cox surfaces it as a fast turn error, exit 1). Reproduce when funded:
+
+```bash
+python3 evals/run.py --provider openai --model gpt-4o-mini
+```
+
+Related precise bug (not fixed here, provider owner's scope): neither
+OpenAI module wraps its stream in `retry::stream_with_retry` (only the
+Anthropic one does), so a retryable 429 fails on the first attempt instead
+of backing off per §1.14. Worth a wiremock contract test (429, 429, 200)
+when touched.
+
+Two drive-by findings from building the harness (both fixed in T12.1):
+empty `workspace_roots` reached the tools verbatim so every confined
+tool failed outside `--cwd` (plan §1.6 says empty means git-root-else-cwd;
+now resolved in `session::open`); eval runs pass `--no-hooks --no-mcp`
+because ambient repo servers add startup noise to every task.
+
 ## 6. Fact-check ledger
 | # | Claim (report) | Verdict | Correction / source |
 |---|---|---|---|

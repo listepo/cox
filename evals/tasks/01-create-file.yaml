@@ -1,0 +1,22 @@
+name: create-file
+prompt: 'Create hello.txt containing exactly:
+
+  hi'
+setup: 'true
+
+  '
+check: 'test "$(cat hello.txt)" = "hi"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: creating it
+    calls:
+    - tool: write
+      input:
+        path: hello.txt
+        content: 'hi
+
+          '
+    final: done

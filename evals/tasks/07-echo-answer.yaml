@@ -1,0 +1,10 @@
+name: echo-answer
+prompt: "Reply with exactly: done"
+setup: |
+  true
+check: |
+  grep -q done "$COX_OUT"
+timeout_s: 120
+dry_run:
+  turns:
+    - text: "done"

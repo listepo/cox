@@ -1,0 +1,19 @@
+name: find-word
+prompt: Which file here contains the word zebra? Reply with just the path.
+setup: 'printf ''apple\n'' > fruit.txt
+
+  printf ''zebra crossing\n'' > notes.txt
+
+  '
+check: 'grep -q notes.txt "$COX_OUT"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: searching
+    calls:
+    - tool: grep
+      input:
+        pattern: zebra
+    final: notes.txt

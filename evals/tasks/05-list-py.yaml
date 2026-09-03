@@ -1,0 +1,21 @@
+name: list-py
+prompt: List the Python files here. Reply with just the paths.
+setup: 'printf ''x = 1\n'' > a.py
+
+  printf ''y = 2\n'' > b.py
+
+  printf ''not python\n'' > c.txt
+
+  '
+check: 'grep -q a.py "$COX_OUT" && grep -q b.py "$COX_OUT"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: globbing
+    calls:
+    - tool: glob
+      input:
+        pattern: '*.py'
+    final: a.py b.py

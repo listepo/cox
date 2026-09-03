@@ -42,6 +42,11 @@ pub async fn open(
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
+    // §1.6: empty `workspace_roots` means the git root of cwd, else cwd.
+    if loaded.config.core.workspace_roots.is_empty() {
+        loaded.config.core.workspace_roots =
+            vec![config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())];
+    }
     // T9.1 step 4: `--provider local` maps every tier to the local server;
     // the router then resolves the local model for all of them.
     if loaded.config.tiers.code.provider == "local" {

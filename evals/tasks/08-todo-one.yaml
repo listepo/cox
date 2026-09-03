@@ -1,0 +1,20 @@
+name: todo-one
+prompt: Make a todo list with one item reading ship it, then reply finished
+setup: 'true
+
+  '
+check: 'grep -qi finished "$COX_OUT"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: listing it
+    calls:
+    - tool: todo
+      input:
+        items:
+        - id: '1'
+          text: ship it
+          state: pending
+    final: finished

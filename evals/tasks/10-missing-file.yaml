@@ -1,0 +1,17 @@
+name: missing-file
+prompt: Read missing.txt and report what happened in one sentence.
+setup: 'true
+
+  '
+check: 'test -s "$COX_OUT"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: reading it
+    calls:
+    - tool: read
+      input:
+        path: missing.txt
+    final: missing.txt does not exist

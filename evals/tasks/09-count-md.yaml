@@ -1,0 +1,23 @@
+name: count-md
+prompt: How many markdown files are here? Reply with just the number.
+setup: 'printf ''a\n'' > one.md
+
+  printf ''b\n'' > two.md
+
+  printf ''c\n'' > three.md
+
+  printf ''x = 1\n'' > code.py
+
+  '
+check: 'grep -q 3 "$COX_OUT"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: counting them
+    calls:
+    - tool: glob
+      input:
+        pattern: '*.md'
+    final: '3'

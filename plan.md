@@ -583,16 +583,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
-#### T12.1 Evals
-Model: sonnet · Status: open · Depends: T6.1, T8.4 · Size: ~200
-Goal: an opt-in harness that reports pass rate and cost per task.
-Files: `evals/tasks/*.yaml` (10 tasks: prompt, setup script, check script, timeout), `evals/tbench/adapter.py` or `.rs`, `justfile` target `eval`.
-Steps: (1) Runner: for each task, fresh tempdir, `setup`, `cox run -p --output-format json --max-turns 40 --approve never --permission-mode auto`, `check` exit code, cost from the JSON. (2) Terminal-Bench adapter following the harness's agent interface (install `cox`, run headless, return trajectory). (3) `just eval` table; a scripted-provider dry run in CI to keep the harness compiling. (4) One real run recorded in `research.md` §5.3 with date, model, pass rate, cost.
-Check:
-```bash
-COX_PROVIDER=scripted just eval --dry-run
-```
-
 #### T12.2 Release
 Model: haiku · Status: open · Depends: T12.1 · Size: ~120
 Goal: installable binaries.

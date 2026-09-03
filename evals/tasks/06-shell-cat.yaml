@@ -1,0 +1,17 @@
+name: shell-cat
+prompt: Use the shell to print data.txt, then reply with its contents.
+setup: 'printf ''alpha beta\n'' > data.txt
+
+  '
+check: 'grep -q "alpha beta" "$COX_OUT"
+
+  '
+timeout_s: 120
+dry_run:
+  turns:
+  - text: printing it
+    calls:
+    - tool: bash
+      input:
+        command: cat data.txt
+    final: alpha beta
