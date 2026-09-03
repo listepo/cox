@@ -11,6 +11,7 @@ mod compact;
 mod context;
 mod dedup;
 mod hooks;
+pub mod memory_extract;
 pub mod permission;
 mod rollout;
 pub mod router;

@@ -1540,6 +1540,26 @@ Check output:
 cargo test -p cox-ext memory_ → 4 passed; cargo test -p cox-tools memory_ → 4 passed; cox-store memory_upsert_and_search_roundtrip → ok
 ```
 
+#### T10.2 End-of-session extraction
+Model: haiku · Status: done 2026-09-03 · Depends: T10.1 · Size: ~100
+Goal: optional cheap-tier extraction of durable facts, deduplicated.
+Files: `crates/cox-core/src/memory_extract.rs`, `crates/cox-core/src/prompts/memory.md`.
+Steps: on `Shutdown` with `memory.extract`, run the `memory` job over the session summary/items; candidate facts compared by FTS similarity (> 0.8 → skip); write new files; `SessionEnd` hook after.
+Check:
+```bash
+mise exec -- cargo test -p cox-core memory_extract_
+```
+
+What landed: `memory_extract.rs` (`parse_facts` JSON-array parsing, trigram-Jaccard `similarity`, `extract_memory` on the routed `memory` job with ledger row + spend, FTS recall (name-words + body-head union) with >0.8 precision skip, `memory_upsert` survivors + per-fact `Notice`, `drain_extracted` seam, `SessionEnd` after extraction, failures warn-only); `submit(Shutdown)` runs it when `memory.extract` (default off); `prompts/memory.md` pins the output shape.
+Notes / deviations:
+- **4 files, not 2.** Plus `session.rs` (`extracted` stash, `Shutdown` arm) and `lib.rs` (module) and `tests/memory_extract.rs`.
+- **"Write new files" is split at the trust boundary:** the core upserts the store (searchable at once) and stashes survivors in `drain_extracted`; the `.md` files are for surfaces to materialise (the core never touches the filesystem). Nothing reads the drain yet — that surface call is future work.
+- **Similarity is trigram Jaccard on bodies**, FTS only recalls candidates: FTS has no similarity score, so the >0.8 comparison runs against hit snippets (capped excerpts), documented in code.
+Check output:
+```
+cargo test -p cox-core memory_extract_ → lib 2 + integration 3 passed (similarity_scores_trigrams, parses_fact_json, disabled_by_default, saves_new_fact_and_skips_duplicate, fires_session_end_hook)
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

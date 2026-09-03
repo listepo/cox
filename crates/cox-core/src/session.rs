@@ -81,6 +81,8 @@ pub(crate) struct Inner {
     pub(crate) overrides: Overrides,
     /// Running background tasks: label and tier by id (T9.2).
     pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
+    /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
+    pub(crate) extracted: Vec<crate::memory_extract::Fact>,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -217,6 +219,7 @@ impl Session {
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
+                extracted: Vec::new(),
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -345,7 +348,21 @@ impl Session {
                     .await
                     .map(|_| ())
             }
-            Submission::Shutdown => Ok(()),
+            Submission::Shutdown => {
+                // T10.2: optional cheap extraction first; a failure warns but
+                // never fails the shutdown. `SessionEnd` fires after, either way.
+                if self.config.memory.extract
+                    && let Err(error) = self.extract_memory().await
+                {
+                    self.emit(Event::Notice {
+                        level: Level::Warn,
+                        text: format!("memory extraction failed: {error}"),
+                    })
+                    .await?;
+                }
+                let _ = hooks::fire(self, HookEvent::SessionEnd, serde_json::json!({})).await;
+                Ok(())
+            }
             _ => Ok(()),
         }
     }

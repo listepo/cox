@@ -579,16 +579,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P10 — Memory (goal: cross-session memory with zero model cost by default)
 
-#### T10.2 End-of-session extraction
-Model: haiku · Status: open · Depends: T10.1 · Size: ~100
-Goal: optional cheap-tier extraction of durable facts, deduplicated.
-Files: `crates/cox-core/src/memory_extract.rs`, `crates/cox-core/src/prompts/memory.md`.
-Steps: on `Shutdown` with `memory.extract`, run the `memory` job over the session summary/items; candidate facts compared by FTS similarity (> 0.8 → skip); write new files; `SessionEnd` hook after.
-Check:
-```bash
-mise exec -- cargo test -p cox-core memory_extract_
-```
-
 #### T10.3 Session search
 Model: haiku · Status: open · Depends: T2.4 · Size: ~120
 Goal: `cox sessions` and `/resume` picker with full-text search.
