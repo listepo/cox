@@ -10,5 +10,5 @@ expression: "format!(\"{scrollback}\\n----\\n{}\", buffer_to_string(&render(&sta
 It prints nothing.
 
 
->
+>  message · @ file · / command
  claude-sonnet-5 · ctx 0 · $0.00 · ReadOnly · Default · 0 ta

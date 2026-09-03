@@ -9,7 +9,13 @@ use cox_protocol::types::{
 };
 use cox_tui::state::{Cmd, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+fn keys(state: &mut State, text: &str) {
+    for c in text.chars() {
+        assert!(update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c)))).is_empty());
+    }
+}
 
 #[test]
 fn frame_empty_session() {
@@ -118,9 +124,7 @@ fn update_is_pure() {
 #[test]
 fn update_enter_submits_the_composer_as_a_user_turn() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
-    for c in "hi".chars() {
-        assert!(update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c)))).is_empty());
-    }
+    keys(&mut state, "hi");
     let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
     assert!(matches!(
         cmds.as_slice(),
@@ -128,4 +132,69 @@ fn update_enter_submits_the_composer_as_a_user_turn() {
     ));
     assert!(state.composer.is_empty());
     assert!(update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter))).is_empty());
+    // `Up` on the first row brings the last submission back.
+    assert!(update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Up))).is_empty());
+    assert_eq!(state.composer.text(), "hi");
+}
+
+#[test]
+fn update_ctrl_c_twice_quits_when_idle_and_interrupts_when_busy() {
+    let ctrl_c = Msg::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    assert!(update(&mut state, ctrl_c.clone()).is_empty());
+    assert!(state.ctrl_c_armed);
+    keys(&mut state, "x");
+    assert!(!state.ctrl_c_armed, "any other key disarms");
+    update(&mut state, ctrl_c.clone());
+    assert_eq!(update(&mut state, ctrl_c.clone()), vec![Cmd::Quit]);
+    state.status.busy = true;
+    assert_eq!(
+        update(&mut state, ctrl_c),
+        vec![Cmd::Submit(Submission::Interrupt)]
+    );
+    assert_eq!(
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc))),
+        vec![Cmd::Submit(Submission::Interrupt)]
+    );
+}
+
+#[test]
+fn composer_multiline() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    keys(&mut state, "first line");
+    update(
+        &mut state,
+        Msg::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)),
+    );
+    keys(&mut state, "second");
+    assert_eq!(state.composer.text(), "first line\nsecond");
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 40, 6)));
+}
+
+#[test]
+fn composer_at_mention_open() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    state.files = ["README.md", "src/lib.rs", "src/main.rs", "tests/frames.rs"]
+        .map(String::from)
+        .to_vec();
+    keys(&mut state, "look at @ma");
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 40, 8)));
+    assert!(update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Tab))).is_empty());
+    assert_eq!(state.composer.text(), "look at @src/main.rs ");
+    assert!(state.modal.is_none());
+}
+
+#[test]
+fn composer_slash_palette() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    keys(&mut state, "/mo");
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 40, 8)));
+    update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+    assert_eq!(state.composer.text(), "/model ");
+    // Backspacing out of an empty palette removes the `/` too.
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    keys(&mut state, "/");
+    update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Backspace)));
+    assert!(state.modal.is_none());
+    assert!(state.composer.is_empty());
 }

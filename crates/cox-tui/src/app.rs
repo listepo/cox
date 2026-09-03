@@ -35,7 +35,9 @@ pub enum TuiError {
     EventsTaken,
 }
 
-/// Runs the TUI until the user quits or the session's stream ends.
+/// Runs the TUI until the user quits or the session's stream ends. The
+/// caller fills `state.files` (the `@` picker's candidates) from
+/// `cox_tools::glob::workspace_files` — this crate never walks the disk.
 pub async fn run(session: Session, mut state: State) -> Result<(), TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;

@@ -14,12 +14,17 @@ use crate::state::{Cell, Modal, State};
 /// Draws `state` into `area`; returns where the cursor goes.
 pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let banner = u16::from(state.banner.is_some());
-    let modal = if state.modal.is_some() { 3 } else { 0 };
+    let modal = match &state.modal {
+        Some(Modal::Approval { .. }) => 3,
+        Some(Modal::Picker(p)) => p.height(),
+        None => 0,
+    };
+    let composer_rows = u16::try_from(state.composer.line_count().clamp(1, 5)).unwrap_or(5);
     let [banner_area, transcript, modal_area, composer, status] = Layout::vertical([
         Constraint::Length(banner),
         Constraint::Min(1),
         Constraint::Length(modal),
-        Constraint::Length(1),
+        Constraint::Length(composer_rows),
         Constraint::Length(1),
     ])
     .areas(area);
@@ -35,8 +40,8 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
         .render(transcript, buf);
 
-    if let Some(Modal::Approval { call, why }) = &state.modal {
-        Paragraph::new(vec![
+    match &state.modal {
+        Some(Modal::Approval { call, why }) => Paragraph::new(vec![
             Line::styled(
                 format!(" approve {} {}?", call.name, call.subject),
                 Style::default()
@@ -46,10 +51,15 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             Line::raw(format!(" {why:?}")),
             Line::raw(" [y]es  [a]lways this session  [n]o"),
         ])
-        .render(modal_area, buf);
+        .render(modal_area, buf),
+        Some(Modal::Picker(p)) => Paragraph::new(p.lines()).render(modal_area, buf),
+        None => {}
     }
 
-    Line::raw(format!("> {}", state.composer)).render(composer, buf);
+    let [prompt, text] =
+        Layout::horizontal([Constraint::Length(2), Constraint::Min(1)]).areas(composer);
+    Line::raw(">").render(prompt, buf);
+    state.composer.widget().render(text, buf);
     let s = &state.status;
     Line::styled(
         format!(
@@ -60,16 +70,22 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             s.sandbox,
             state.mode,
             state.tasks.len(),
-            if s.busy { " · working" } else { "" }
+            match (s.busy, state.ctrl_c_armed) {
+                (true, _) => " · working",
+                (false, true) => " · Ctrl+C again to quit",
+                (false, false) => "",
+            }
         ),
         Style::default().add_modifier(Modifier::DIM),
     )
     .render(status, buf);
 
-    let x = composer.x + 2 + u16::try_from(state.composer.chars().count()).unwrap_or(u16::MAX);
+    let (row, col) = state.composer.cursor();
+    let x = text.x + u16::try_from(col).unwrap_or(u16::MAX);
+    let y = text.y + u16::try_from(row).unwrap_or(u16::MAX);
     Some(Position::new(
-        x.min(composer.right().saturating_sub(1)),
-        composer.y,
+        x.min(text.right().saturating_sub(1)),
+        y.min(text.bottom().saturating_sub(1)),
     ))
 }
 

@@ -4,5 +4,7 @@
 
 pub mod app;
 pub mod banner;
+pub mod composer;
+pub mod picker;
 pub mod state;
 pub mod view;

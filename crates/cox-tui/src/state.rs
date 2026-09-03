@@ -11,6 +11,8 @@ use cox_protocol::types::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::banner::Banner;
+use crate::composer::{Composer, Edit};
+use crate::picker::{BUILTIN_COMMANDS, Kind, Pick, Picker};
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -64,12 +66,13 @@ pub struct Status {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
     Approval { call: ToolCall, why: Why },
+    Picker(Picker),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub transcript: Vec<Cell>,
-    pub composer: String,
+    pub composer: Composer,
     pub status: Status,
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
@@ -77,6 +80,12 @@ pub struct State {
     /// Lines scrolled up from the bottom of the transcript.
     pub scroll: usize,
     pub banner: Option<Banner>,
+    /// Workspace-relative paths the `@` picker offers; the runtime walks them.
+    pub files: Vec<String>,
+    /// Names the `/` palette offers; T7.3 appends markdown commands.
+    pub commands: Vec<String>,
+    /// A first idle `Ctrl+C` arms; the second quits.
+    pub ctrl_c_armed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,7 +109,7 @@ impl State {
     pub fn new(mode: PermissionMode, sandbox: SandboxMode) -> Self {
         Self {
             transcript: Vec::new(),
-            composer: String::new(),
+            composer: Composer::new(),
             status: Status {
                 model: String::new(),
                 tier: None,
@@ -114,6 +123,9 @@ impl State {
             tasks: Vec::new(),
             scroll: 0,
             banner: None,
+            files: Vec::new(),
+            commands: BUILTIN_COMMANDS.iter().map(|c| c.to_string()).collect(),
+            ctrl_c_armed: false,
         }
     }
 
@@ -143,7 +155,7 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
     match msg {
         Msg::Key(key) => on_key(state, key),
         Msg::Paste(text) => {
-            state.composer.push_str(&text);
+            state.composer.insert(&text);
             Vec::new()
         }
         Msg::Event(ev) => {
@@ -155,45 +167,94 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
-    if let Some(Modal::Approval { call, .. }) = &state.modal {
-        let decision = match key.code {
-            KeyCode::Char('y') | KeyCode::Enter => Decision::Allow,
-            KeyCode::Char('a') => Decision::AllowForSession,
-            KeyCode::Char('n') | KeyCode::Esc => Decision::Deny {
-                reason: "denied by user".into(),
-            },
-            _ => return Vec::new(),
-        };
-        let call_id = call.id;
-        state.modal = None;
-        return vec![Cmd::Submit(Submission::Approve { call_id, decision })];
-    }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    match (key.code, ctrl) {
-        (KeyCode::Char('c'), true) if state.status.busy => {
-            vec![Cmd::Submit(Submission::Interrupt)]
+    // `Ctrl+C` interrupts a running turn; when idle it must be pressed twice.
+    if ctrl && key.code == KeyCode::Char('c') {
+        if state.status.busy {
+            return vec![Cmd::Submit(Submission::Interrupt)];
         }
-        (KeyCode::Char('c' | 'd'), true) => vec![Cmd::Quit],
-        (KeyCode::Enter, _) => {
-            let text = std::mem::take(&mut state.composer);
-            if text.trim().is_empty() {
-                return Vec::new();
-            }
-            vec![Cmd::Submit(Submission::UserTurn {
-                text,
-                attachments: Vec::new(),
-                confirm_think: false,
+        if state.ctrl_c_armed {
+            return vec![Cmd::Quit];
+        }
+        state.ctrl_c_armed = true;
+        return Vec::new();
+    }
+    state.ctrl_c_armed = false;
+    if ctrl && key.code == KeyCode::Char('d') {
+        return vec![Cmd::Quit];
+    }
+    match state.modal.take() {
+        Some(Modal::Approval { call, why }) => {
+            let decision = match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => Decision::Allow,
+                KeyCode::Char('a') => Decision::AllowForSession,
+                KeyCode::Char('n') | KeyCode::Esc => Decision::Deny {
+                    reason: "denied by user".into(),
+                },
+                _ => {
+                    state.modal = Some(Modal::Approval { call, why });
+                    return Vec::new();
+                }
+            };
+            vec![Cmd::Submit(Submission::Approve {
+                call_id: call.id,
+                decision,
             })]
         }
-        (KeyCode::Backspace, _) => {
-            state.composer.pop();
+        Some(Modal::Picker(mut picker)) => {
+            match picker.key(key) {
+                Pick::Nothing => state.modal = Some(Modal::Picker(picker)),
+                // Backspacing out of the picker also removes the `@`/`/`
+                // that opened it, as the user meant.
+                Pick::Closed if key.code == KeyCode::Backspace => {
+                    state.composer.key(key);
+                }
+                Pick::Closed => {}
+                Pick::Chosen(choice) => match picker.kind {
+                    Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
+                    Kind::History => state.composer.set_text(&choice),
+                },
+            }
             Vec::new()
         }
-        (KeyCode::Char(c), false) => {
-            state.composer.push(c);
-            Vec::new()
+        None => {
+            if key.code == KeyCode::Esc {
+                return if state.status.busy {
+                    vec![Cmd::Submit(Submission::Interrupt)]
+                } else {
+                    Vec::new()
+                };
+            }
+            match state.composer.key(key) {
+                Edit::Submit(text) => vec![Cmd::Submit(Submission::UserTurn {
+                    text,
+                    attachments: Vec::new(),
+                    confirm_think: false,
+                })],
+                Edit::OpenFiles => {
+                    state.modal = Some(Modal::Picker(Picker::open(
+                        Kind::Files,
+                        state.files.clone(),
+                    )));
+                    Vec::new()
+                }
+                Edit::OpenCommands => {
+                    state.modal = Some(Modal::Picker(Picker::open(
+                        Kind::Commands,
+                        state.commands.clone(),
+                    )));
+                    Vec::new()
+                }
+                Edit::OpenHistory => {
+                    // Newest first: the entry wanted is usually the last one.
+                    let mut history = state.composer.history().to_vec();
+                    history.reverse();
+                    state.modal = Some(Modal::Picker(Picker::open(Kind::History, history)));
+                    Vec::new()
+                }
+                Edit::Nothing => Vec::new(),
+            }
         }
-        _ => Vec::new(),
     }
 }
 

@@ -8,6 +8,7 @@
 //! mtime, which is what makes "the auth handler, wherever it lives" a single
 //! call rather than a guess at the path.
 
+use std::path::Path;
 use std::time::SystemTime;
 
 use cox_protocol::{Concurrency, Risk};
@@ -183,6 +184,26 @@ fn rank_by_query(found: &mut Vec<Candidate>, query: &str) {
     // Ties broken by path so the order is stable across runs.
     scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.display.cmp(&b.1.display)));
     *found = scored.into_iter().map(|(_, c)| c).collect();
+}
+
+/// Every file under `root` the ignore rules allow, relative to it and sorted:
+/// the TUI's `@` picker candidates. Same walk as the tool, so what the picker
+/// offers is what `glob` would find. The binary calls this and hands the list
+/// to `cox-tui`, which may not depend on this crate (plan.md §1.1).
+pub fn workspace_files(root: &Path) -> Vec<String> {
+    let mut files: Vec<String> = walker(&root.to_path_buf())
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+        .filter_map(|e| {
+            e.path()
+                .strip_prefix(root)
+                .ok()
+                .map(|p| p.display().to_string())
+        })
+        .collect();
+    files.sort();
+    files
 }
 
 #[cfg(test)]

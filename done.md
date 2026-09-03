@@ -986,3 +986,26 @@ banner_* (2) · frame_* (2) · update_is_pure · update_enter_submits_the_compos
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.2 Composer
+Model: fable · Status: done 2026-09-03 · Depends: T5.1 · Size: ~200
+Goal: a multi-line composer with history, `@` picker, `/` palette, paste, interrupt and quit.
+Files: `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/picker.rs`.
+Steps: (1) `tui-textarea` wrapped; `Enter` submits, `Shift/Alt+Enter` newline, bracketed paste → single `Paste`. (2) `@` opens a nucleo-ranked picker over the workspace walk (ignore rules), `Tab/Enter` inserts the path. (3) `/` at column 0 opens the palette over built-in + markdown commands (T7.3 feeds it). (4) `Esc` → `Interrupt` when a turn runs, else clears the modal; `Ctrl+C` twice → quit; `Ctrl+R` history search. (5) Snapshots `composer_at_mention_open`, `composer_slash_palette`, `composer_multiline`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui composer_
+```
+
+What landed: `cox_tui::composer::Composer` wraps a `tui_textarea::TextArea` and decides only the keys that mean something to cox — `Enter` submits (`Edit::Submit`, pushed to history), `Shift/Alt+Enter` inserts a newline, `@` and `/`-at-column-0 insert the character and return `OpenFiles`/`OpenCommands`, `Ctrl+R` returns `OpenHistory`, `Up` on the first row and `Down` on the last browse history; everything else is `TextArea::input`. `cox_tui::picker::Picker` is one list for all three: `open(kind, candidates)`, chars narrow the query, `Up/Down` select, `Tab/Enter` choose, `Esc` closes, `Backspace` on an empty query closes (and `state` then forwards the Backspace so the `@`/`/` goes too); `BUILTIN_COMMANDS` is §1.13's list. Ranking is nucleo with the `glob` tool's path config, repeated in `picker.rs` rather than imported because the §1.1 direction test forbids `cox-tui` → `cox-tools`; the `@` candidates come from the new `cox_tools::glob::workspace_files(root)` — the same `ignore` walk as the tool, relative paths, sorted — which the binary loads into `state.files` before `app::run(session, state)`, so neither `update` nor the TUI crate touches the disk. `state`: `Modal::Picker(Picker)`, `files`, `commands`, `ctrl_c_armed`; `on_key` routes `Ctrl+C` (interrupt when busy, arm then quit when idle), `Ctrl+D`, then the open modal, then `Esc` (interrupt when busy), then the composer. `view`: the composer grows to 5 rows, the picker sits above it, the terminal cursor follows the textarea's `(row, col)`, the status line says "Ctrl+C again to quit" while armed. Tests: `composer_multiline`, `composer_at_mention_open` (typing `ma` ranks `src/main.rs` first, `Tab` inserts it and closes), `composer_slash_palette` (`/mo` → `model`, `permissions`; Enter inserts `/model `; Backspace out of an empty palette removes the `/`), `update_ctrl_c_twice_quits_when_idle_and_interrupts_when_busy`, history recall in `update_enter_submits_the_composer_as_a_user_turn`; `frame_*` snapshots updated for the placeholder. Dependency: `tui-textarea-2 0.13` (`crossterm` feature only) instead of the planned `tui-textarea 0.7`, which targets ratatui ≤ 0.29 and would not implement 0.30's `Widget`; §1.1 row updated, as is `nucleo 0.5` for the picker (already in the tree via `cox-tools`).
+Not done: markdown commands are not in the palette until T7.3 appends to `state.commands`; choosing a command inserts `/name ` rather than submitting — T5.5 parses the composer text into `Submission::Command`; `Ctrl+R` opens the history picker but the composer's own `Up`/`Down` is the usual path, so there is no dedicated test for it; `@` completion inserts the path as text only (attachments are T5.3's cells). Size: ~300 LOC over 2 new files + `state`, `view`, `app`, `glob`, tests — above the 200-line guide because the picker serves three keys at once.
+```
+$ mise exec -- cargo test -p cox-tui composer_
+test composer_multiline ... ok
+test composer_at_mention_open ... ok
+test composer_slash_palette ... ok
+test result: ok. 3 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui   (8 passed) · cargo test -p cox-tools glob (5 passed)
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```
