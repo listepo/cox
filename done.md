@@ -1354,3 +1354,24 @@ Check: file exists.
 What landed: `docs/design/extensions.md` — problem, the field (Claude Code, Codex, Gemini/Copilot, Zed/Cursor), the v0.1 table of extension kinds with their modules and the three properties that make data + processes enough (guards, fail open, nothing in-process), the v0.2 extism contract sketch (`Tool` serialised: `spec/subject/risk/call` exports, `read/archive_put/output/cancelled` imports, `wasm__<plugin>__<tool>` naming), three falsifiers, review notes.
 Check: file exists.
 
+#### T8.1 Compaction
+Model: opus · Status: done 2026-09-03 · Depends: T2.4, T7.4 · Size: ~200
+Goal: §1.10 exactly, with hooks and `/compact [focus]`.
+Files: `crates/cox-core/src/compact.rs`, `crates/cox-core/tests/compact.rs`, `crates/cox-core/src/prompts/compact.md`.
+Steps: (1) Trigger conditions; `Compacting` state; `PreCompact` hook. (2) Summariser request on the `compact` job with the fixed section template; ≤ 2 048 output tokens. (3) Append `Summary` item, emit `Compacted`, mark dropped ids; instruction files re-read and diffed. (4) Context-length error from a provider → compact then retry once. (5) Tests: `compaction_keeps_last_two_turns_verbatim`, `compaction_is_append_only_in_rollout`, `request_after_compaction_keeps_cached_prefix` (bytes before breakpoint 1 unchanged), `focus_is_passed_to_summarizer`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core compact_
+```
+
+What landed: `compact.rs` (`Trigger::Auto/Manual/ContextTooLong`, `split`/`needs_compaction`/`transcript`, `Session::compact` with Pre/PostCompact hooks, summary on the `compact` job capped at 2048 tokens, `Compacted` event, turn-mark splicing), auto-trigger at next turn start (so nothing follows `TurnDone`), `ContextTooLong` retry-once in `session.rs`, `Compacted` rebuild in `rollout.rs` (summary to front, dropped turns filtered), `Submission::Compact` + `/compact` command, fixed-section prompt template. `tests/compact.rs` ×4.
+Notes / deviations:
+- **Test names are `compact_…`, not `compaction_…`.** The Check filter `compact_` does not match a `compaction_…` prefix (`compact` + `i` ≠ `compact` + `_`), so the plan's literal names would never run under its own Check.
+- **5 files, not 3.** The plan lists 3 but the wiring needs `session.rs` (turn marks, triggers, retry), `rollout.rs` (resume skips dropped, summary-first reorder) and `lib.rs` (module decl).
+- **Instruction re-read is implicit.** `assemble` re-renders `system[2]` from current files on every call, so the post-compaction request already picks up changed instruction files; no separate diff step.
+- **Bug fix in `rollout.rs`.** The pre-scan that skips dropped user items ran before `current_turn` was set, orphaning their assistant messages to the previous turn so they survived the rebuild. Dropped user/summary items now still advance `current_turn` so the `Compacted` filter removes the whole turn.
+Check output:
+```
+cargo test -p cox-core compact_ → lib 2 passed; integration 4 passed (keeps_last_two_turns_verbatim, is_append_only_in_rollout, request_after_compaction_keeps_cached_prefix, focus_is_passed_to_summarizer)
+```
+

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
-use cox_protocol::errors::{CoreError, StoreError};
+use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
 use cox_protocol::types::{
@@ -16,6 +16,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::budget;
+use crate::compact::{self, TurnMark};
 use crate::context::assemble_with;
 use crate::dedup::Dedup;
 use crate::hooks;
@@ -49,9 +50,9 @@ enum Step {
     Done,
 }
 
-struct Inner {
-    state: State,
-    history: Vec<Message>,
+pub(crate) struct Inner {
+    pub(crate) state: State,
+    pub(crate) history: Vec<Message>,
     provider_calls: u32,
     spent_usd: f64,
     budget_warned: bool,
@@ -65,6 +66,12 @@ struct Inner {
     dedup: Dedup,
     /// Deferred tools found through `tool_search`, in discovery order.
     discovered: Vec<String>,
+    /// Where each turn starts in `history` (T8.1 compaction cuts on these).
+    pub(crate) turn_marks: Vec<TurnMark>,
+    /// Context size of the last main call, for the §1.10 auto trigger.
+    pub(crate) last_context_tokens: u32,
+    /// Whether this turn already compacted after a context-length error.
+    retried_after_too_long: bool,
 }
 
 /// One conversation: a provider, tools, a store, and an event stream.
@@ -88,7 +95,7 @@ pub struct Session {
     hook: Arc<OnceLock<Arc<dyn Hook>>>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
-    inner: Arc<Mutex<Inner>>,
+    pub(crate) inner: Arc<Mutex<Inner>>,
 }
 
 impl Session {
@@ -191,6 +198,9 @@ impl Session {
                 round: 0,
                 dedup,
                 discovered: Vec::new(),
+                turn_marks: Vec::new(),
+                last_context_tokens: 0,
+                retried_after_too_long: false,
             })),
         };
         let started = Event::SessionStarted {
@@ -306,6 +316,16 @@ impl Session {
                 })
                 .await
             }
+            Submission::Compact { focus } => self
+                .compact(compact::Trigger::Manual, focus)
+                .await
+                .map(|_| ()),
+            Submission::Command { command } if command.name == "compact" => {
+                let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
+                self.compact(compact::Trigger::Manual, focus)
+                    .await
+                    .map(|_| ())
+            }
             Submission::Shutdown => Ok(()),
             _ => Ok(()),
         }
@@ -413,14 +433,29 @@ impl Session {
             HookOutcome::Modify { input } => input.as_str().map_or(text, str::to_owned),
             _ => text,
         };
+        // §1.10 trigger, applied at the next turn's start rather than after
+        // `TurnDone` so nothing follows a turn's last event (§1.3 rule 7).
+        let (last, max_context) = (
+            self.inner.lock().await.last_context_tokens,
+            self.provider.capabilities().max_context,
+        );
+        if compact::needs_compaction(last, max_context, self.config.context.compact_at) {
+            self.compact(compact::Trigger::Auto, None).await?;
+        }
         {
             let mut inner = self.inner.lock().await;
             inner.state = State::Assembling;
+            let start = inner.history.len();
             inner.history.push(Message {
                 role: Role::User,
                 content: vec![Content::Text { text: text.clone() }],
             });
+            inner.turn_marks.push(TurnMark {
+                item: user_item,
+                start,
+            });
             inner.provider_calls = 0;
+            inner.retried_after_too_long = false;
         }
         self.emit_turn_started(turn).await?;
         self.emit(Event::ItemStarted {
@@ -534,6 +569,19 @@ impl Session {
         let usage = match join.await {
             Ok(Ok(u)) => u,
             Ok(Err(error)) => {
+                // §1.10: a too-long request compacts and retries once.
+                let too_long = matches!(error, ProviderError::ContextTooLong { .. });
+                let retried = self.inner.lock().await.retried_after_too_long;
+                if too_long && !retried {
+                    self.emit(Event::ItemDone {
+                        item: assistant_item,
+                    })
+                    .await?;
+                    self.inner.lock().await.retried_after_too_long = true;
+                    if self.compact(compact::Trigger::ContextTooLong, None).await? {
+                        return Ok(Step::Continue);
+                    }
+                }
                 self.emit(Event::Error {
                     error: CoreError::Provider { error },
                     fatal: false,
@@ -549,6 +597,11 @@ impl Session {
             }
         };
         let usage = streamed.usage.unwrap_or(usage);
+        self.inner.lock().await.last_context_tokens = usage
+            .input_tokens
+            .saturating_add(usage.cache_read_tokens)
+            .saturating_add(usage.cache_write_tokens)
+            .saturating_add(usage.output_tokens);
         self.store
             .usage_insert(&cox_protocol::UsageRow {
                 session_id: self.id,

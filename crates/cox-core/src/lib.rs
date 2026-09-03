@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 
 mod budget;
+mod compact;
 mod context;
 mod dedup;
 mod hooks;

@@ -38,6 +38,10 @@ impl History {
 
         let mut items: HashMap<ItemId, ItemKind> = HashMap::new();
         let mut messages = Vec::new();
+        // The user item each message belongs to, so `Compacted.dropped`
+        // (user item ids) removes whole turns, tool blocks included.
+        let mut turn_of: Vec<Option<ItemId>> = Vec::new();
+        let mut current_turn: Option<ItemId> = None;
         let mut pending_results: Vec<Content> = Vec::new();
         let mut calls: HashMap<CallId, ToolCall> = HashMap::new();
         let mut grants = Vec::new();
@@ -58,20 +62,33 @@ impl History {
                         continue;
                     };
                     if dropped.contains(item) {
+                        // Keep turn tracking so the dropped turn's assistant
+                        // messages still attach to it and the `Compacted`
+                        // handler filters them; otherwise they orphan to the
+                        // previous turn and survive the rebuild.
+                        if matches!(
+                            kind,
+                            ItemKind::UserMessage { .. } | ItemKind::Summary { .. }
+                        ) {
+                            current_turn = Some(*item);
+                        }
                         continue;
                     }
                     match kind {
-                        ItemKind::UserMessage { text, .. } => {
+                        ItemKind::UserMessage { text, .. } | ItemKind::Summary { text } => {
+                            current_turn = Some(*item);
                             messages.push(Message {
                                 role: Role::User,
                                 content: vec![Content::Text { text }],
                             });
+                            turn_of.push(current_turn);
                         }
                         ItemKind::AssistantMessage { text } if !text.is_empty() => {
                             messages.push(Message {
                                 role: Role::Assistant,
                                 content: vec![Content::Text { text }],
                             });
+                            turn_of.push(current_turn);
                         }
                         _ => {}
                     }
@@ -79,6 +96,29 @@ impl History {
                 Event::ToolCallRequested { call } => {
                     calls.insert(call.id, call.clone());
                     append_tool_use(&mut messages, call);
+                    turn_of.resize(messages.len(), current_turn);
+                }
+                Event::Compacted {
+                    summary, dropped, ..
+                } => {
+                    // In memory the summary sits in front of the kept turns;
+                    // in the rollout it was appended last. Mirror memory.
+                    flush_results(&mut messages, &mut pending_results);
+                    turn_of.resize(messages.len(), current_turn);
+                    let gone: HashSet<ItemId> = dropped.iter().copied().collect();
+                    let mut front = Vec::new();
+                    let mut rest = Vec::new();
+                    for (msg, turn) in messages.drain(..).zip(turn_of.drain(..)) {
+                        if turn == Some(*summary) {
+                            front.push((msg, turn));
+                        } else if !turn.is_some_and(|t| gone.contains(&t)) {
+                            rest.push((msg, turn));
+                        }
+                    }
+                    for (msg, turn) in front.into_iter().chain(rest) {
+                        messages.push(msg);
+                        turn_of.push(turn);
+                    }
                 }
                 Event::ToolCallDone { call_id, result } => {
                     pending_results.push(Content::ToolResult {
@@ -101,6 +141,7 @@ impl History {
                         pending_results.clear();
                     } else {
                         flush_results(&mut messages, &mut pending_results);
+                        turn_of.resize(messages.len(), current_turn);
                     }
                 }
                 _ => {}

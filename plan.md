@@ -575,16 +575,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P8 — Context economy (goal: measured savings, cache hit rate visible)
 
-#### T8.1 Compaction
-Model: opus · Status: open · Depends: T2.4, T7.4 · Size: ~200
-Goal: §1.10 exactly, with hooks and `/compact [focus]`.
-Files: `crates/cox-core/src/compact.rs`, `crates/cox-core/tests/compact.rs`, `crates/cox-core/src/prompts/compact.md`.
-Steps: (1) Trigger conditions; `Compacting` state; `PreCompact` hook. (2) Summariser request on the `compact` job with the fixed section template; ≤ 2 048 output tokens. (3) Append `Summary` item, emit `Compacted`, mark dropped ids; instruction files re-read and diffed. (4) Context-length error from a provider → compact then retry once. (5) Tests: `compaction_keeps_last_two_turns_verbatim`, `compaction_is_append_only_in_rollout`, `request_after_compaction_keeps_cached_prefix` (bytes before breakpoint 1 unchanged), `focus_is_passed_to_summarizer`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core compact_
-```
-
 #### T8.2 Microcompaction
 Model: sonnet · Status: open · Depends: T2.5 · Size: ~100
 Goal: old tool results become pointers in the request without a model call.
