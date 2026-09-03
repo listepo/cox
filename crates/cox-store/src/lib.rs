@@ -5,6 +5,7 @@
 //! SQL — a workspace test asserts no other crate depends on `diesel`.
 
 mod models;
+pub mod queries;
 mod rollout;
 pub mod schema;
 

@@ -575,16 +575,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P8 — Context economy (goal: measured savings, cache hit rate visible)
 
-#### T8.4 `cox stats`
-Model: haiku · Status: open · Depends: T1.7 · Size: ~150
-Goal: cost and token views over the ledger.
-Files: `crates/cox/src/stats.rs`, `crates/cox-store/src/queries.rs`.
-Steps: `--session`, `--day`, `--month` groupings by tier and job; context-token-turns per session; top tools by archived bytes; `--json` (schema snapshot) and `--csv`.
-Check:
-```bash
-mise exec -- cargo test -p cox stats_
-```
-
 #### T8.5 Bench: measured savings
 Model: sonnet · Status: open · Depends: T8.1, T8.2, T2.6, T3.8 · Size: ~180
 Goal: a table in `research.md` §4.6 with a number per D6 mechanism.

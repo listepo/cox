@@ -1415,3 +1415,23 @@ cargo test -p cox-core cache_diag_ → 3 passed (ratio_is_read_over_total, miss_
 cargo test -p cox-tui → all green (3 snapshots updated for `cache N%`)
 ```
 
+#### T8.4 `cox stats`
+Model: haiku · Status: done 2026-09-03 · Depends: T1.7 · Size: ~150
+Goal: cost and token views over the ledger.
+Files: `crates/cox/src/stats.rs`, `crates/cox-store/src/queries.rs`.
+Steps: `--session`, `--day`, `--month` groupings by tier and job; context-token-turns per session; top tools by archived bytes; `--json` (schema snapshot) and `--csv`.
+Check:
+```bash
+mise exec -- cargo test -p cox stats_
+```
+
+What landed: `queries.rs` (`TierJobRow`/`ToolBytesRow` via `sql_query` + `QueryableByName`, `Period::Day/Month/All`, `usage_by_period` grouped by period+tier+job, `top_tools` scoped per session or global); `stats.rs` reworked around `StatsArgs` (`run(home, args)`: session view keeps the T1.7 per-turn table and adds context-token-turns, by-tier/job and top-tools sections; day/month/all views print period tables; `--json`/`--csv` render the same data; T8.3 `--cache` kept and extended to both formats); `cli.rs` gains `--day/--month/--json/--csv`, `main.rs` no longer requires `--session`.
+Notes / deviations:
+- **~700 LOC across 5 files, not ~150 in 2.** Grouping queries, three output formats and 5 tests did not fit the estimate; `cli.rs` + `main.rs` plumbing was unavoidable for the new flags.
+- **Bare `cox stats` shows the all-time view** (plus global top tools) rather than erroring; `--session` + `--day/--month` is rejected, `--json` + `--csv` is rejected.
+- **JSON has no committed schema snapshot file** — the shape is pinned by `stats_json_holds_the_summary_shape` asserting keys instead.
+Check output:
+```
+cargo test -p cox stats_ → 5 passed (session_summary_groups_by_tier_and_job, json_holds_the_summary_shape, csv_starts_with_a_header_row, top_tools_orders_by_bytes, usage_by_period_buckets_one_day)
+```
+

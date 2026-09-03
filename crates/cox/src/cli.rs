@@ -141,6 +141,18 @@ pub struct StatsArgs {
     /// Only cache diagnostics: per-turn read ratio plus cache-miss turns.
     #[arg(long)]
     pub cache: bool,
+    /// Group usage by day, broken down by tier and job.
+    #[arg(long)]
+    pub day: bool,
+    /// Group usage by month, broken down by tier and job.
+    #[arg(long)]
+    pub month: bool,
+    /// Machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+    /// Machine-readable CSV output.
+    #[arg(long)]
+    pub csv: bool,
 }
 
 /// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools
