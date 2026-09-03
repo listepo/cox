@@ -7,4 +7,4 @@ expression: "buffer_to_string(&render(&state, 80, 6))"
 
 
 >  message · @ file · / command
- - · ctx 0% · $0.00 · workspace-write · 0 tasks · [default]
+ - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]

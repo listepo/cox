@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Stats(args)) => {
             if let Some(session_id) = &args.session {
                 let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
-                stats::run(home, session_id)?;
+                stats::run(home, session_id, args.cache)?;
                 Ok(())
             } else {
                 println!("error: --session <ID> is required");

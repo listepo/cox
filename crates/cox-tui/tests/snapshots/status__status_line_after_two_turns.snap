@@ -2,4 +2,4 @@
 source: crates/cox-tui/tests/status.rs
 expression: "cox_tui::status::line(&state).to_string()"
 ---
- sonnet-5 · ctx 41% · $0.83 · workspace-write · 0 tasks · [plan]
+ sonnet-5 · ctx 41% · cache 0% · $0.83 · workspace-write · 0 tasks · [plan]

@@ -22,6 +22,7 @@ pub fn line(state: &State) -> Line<'static> {
         SandboxMode::DangerFullAccess => "danger-full-access",
     };
     let pct = u64::from(s.context_tokens) * 100 / u64::from(s.context_window.max(1));
+    let cache = (s.cache_ratio * 100.0).round() as u64;
     let tail = match (s.busy, state.ctrl_c_armed) {
         (true, _) => " · working",
         (false, true) => " · Ctrl+C again to quit",
@@ -34,7 +35,7 @@ pub fn line(state: &State) -> Line<'static> {
     };
     Line::styled(
         format!(
-            " {model} · ctx {pct}% · ${:.2} · {sandbox} · {} tasks · [{}]{tail}{vim}",
+            " {model} · ctx {pct}% · cache {cache}% · ${:.2} · {sandbox} · {} tasks · [{}]{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
             format!("{:?}", state.mode).to_lowercase(),

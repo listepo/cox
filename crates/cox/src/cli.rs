@@ -138,6 +138,9 @@ pub struct StatsArgs {
     /// Print stats for a specific session by id.
     #[arg(long, value_name = "ID")]
     pub session: Option<String>,
+    /// Only cache diagnostics: per-turn read ratio plus cache-miss turns.
+    #[arg(long)]
+    pub cache: bool,
 }
 
 /// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools

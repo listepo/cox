@@ -16,6 +16,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::budget;
+use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
 use crate::context::assemble_with;
 use crate::dedup::Dedup;
@@ -71,6 +72,10 @@ pub(crate) struct Inner {
     /// `call_id` → archived payload for microcompaction (T8.2): the request
     /// replaces old results with `Pointer`s, the stored history keeps them.
     pub(crate) archives: HashMap<CallId, ArchiveRef>,
+    /// Last request's prefix hashes + whether it hit the cache (T8.3).
+    pub(crate) cache: CacheTracker,
+    /// Last call's cache share, for the status line (T8.3 step 1).
+    pub(crate) cache_ratio: f64,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -203,6 +208,8 @@ impl Session {
                 discovered: Vec::new(),
                 turn_marks: Vec::new(),
                 archives: HashMap::new(),
+                cache: CacheTracker::new(),
+                cache_ratio: 0.0,
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -529,6 +536,8 @@ impl Session {
             &self.cwd,
             "",
         );
+        // T8.3: hash the prefix before the request moves into the stream.
+        let prefix_texts: Vec<String> = req.system.iter().map(|b| b.text.clone()).collect();
         let (spent, warned) = {
             let inner = self.inner.lock().await;
             (inner.spent_usd, inner.budget_warned)
@@ -620,6 +629,20 @@ impl Session {
             .saturating_add(usage.cache_read_tokens)
             .saturating_add(usage.cache_write_tokens)
             .saturating_add(usage.output_tokens);
+        // T8.3: cache share for the status line; a 0-read after a hit diffs
+        // the prefix hashes and names the block that broke it.
+        let miss = {
+            let mut inner = self.inner.lock().await;
+            inner.cache_ratio = crate::cache_diag::ratio_of(&usage);
+            inner.cache.observe(&prefix_texts, &usage)
+        };
+        if let Some(text) = miss {
+            self.emit(Event::Notice {
+                level: Level::Info,
+                text,
+            })
+            .await?;
+        }
         self.store
             .usage_insert(&cox_protocol::UsageRow {
                 session_id: self.id,

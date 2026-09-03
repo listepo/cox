@@ -80,6 +80,8 @@ pub struct Status {
     pub cost_usd: f64,
     pub sandbox: SandboxMode,
     pub busy: bool,
+    /// Last call's cache share 0..=1 (T8.3), shown as `cache N%`.
+    pub cache_ratio: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +152,7 @@ impl State {
                 cost_usd: 0.0,
                 sandbox,
                 busy: false,
+                cache_ratio: 0.0,
             },
             modal: None,
             mode,
@@ -437,6 +440,7 @@ fn on_event(state: &mut State, ev: Event) {
             state.status.cost_usd += usage.cost_usd;
             state.status.context_tokens =
                 usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens;
+            state.status.cache_ratio = cox_core::cache_diag::ratio_of(&usage);
         }
         Event::ModelSwitched { tier, to, .. } => {
             if state.status.tier == Some(tier) {

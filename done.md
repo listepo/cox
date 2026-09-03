@@ -1394,3 +1394,24 @@ Check output:
 cargo test -p cox-core microcompact_ → integration 4 passed (old_results_become_pointers, keeps_last_keep_turns_verbatim, rollout_untouched_and_expand_works, empty_turn_info_is_noop)
 ```
 
+#### T8.3 Cache diagnostics
+Model: sonnet · Status: done 2026-09-03 · Depends: T1.7, T2.3 · Size: ~150
+Goal: a broken cache is visible and explained.
+Files: `crates/cox-core/src/cache_diag.rs`, `crates/cox/src/stats.rs` (extend).
+Steps: (1) Per call: cache read ratio = `cache_read / (input + cache_read + cache_write)`; kept in the session and shown in the status line as `cache 87%`. (2) The core keeps the previous request's prefix bytes (hash per block); when a call has `cache_read == 0` after a non-zero one, diff block hashes and emit `Notice(Info, "cache miss: system[2] changed at byte 1 203 (instruction file …)")`. (3) `cox stats --cache [--session]` lists such turns.
+Check:
+```bash
+mise exec -- cargo test -p cox-core cache_diag_
+```
+Done when: scenario with a deliberately volatile byte is flagged with the right block name.
+
+What landed: `cache_diag.rs` (`ratio`/`ratio_of`/`format_ratio`, `block_name`, `hash_block`, `first_byte_diff`, `CacheTracker::observe` returning the miss text naming the first differing block and byte, or prefix-length/identical fallbacks), session keeps the tracker + last ratio and emits `Notice(Info)` on a miss, TUI `Status.cache_ratio` updated from `Usage` and shown as `cache N%`, `cox stats --cache --session` prints per-turn ratios plus the miss notices from the rollout.
+Notes / deviations:
+- **8 files, not 2.** The two listed plus `session.rs` (tracker wiring), `lib.rs` (export), `state.rs` + `status.rs` (status line), `cli.rs` + `main.rs` (`--cache` flag plumbing). 3 snapshots updated for the intentional status-line change.
+- **Miss text names the block as `system[N] <kind>`** (`tools`, `system prompt`, `instruction files`, `volatile`, `message M`) with the byte offset, rather than the parenthetical prose in the plan example.
+Check output:
+```
+cargo test -p cox-core cache_diag_ → 3 passed (ratio_is_read_over_total, miss_names_the_changed_block, volatile_byte_is_flagged_with_block_name)
+cargo test -p cox-tui → all green (3 snapshots updated for `cache N%`)
+```
+

@@ -575,19 +575,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P8 — Context economy (goal: measured savings, cache hit rate visible)
 
-#### T8.3 Cache diagnostics
-
-#### T8.3 Cache diagnostics
-Model: sonnet · Status: open · Depends: T1.7, T2.3 · Size: ~150
-Goal: a broken cache is visible and explained.
-Files: `crates/cox-core/src/cache_diag.rs`, `crates/cox/src/stats.rs` (extend).
-Steps: (1) Per call: cache read ratio = `cache_read / (input + cache_read + cache_write)`; kept in the session and shown in the status line as `cache 87%`. (2) The core keeps the previous request's prefix bytes (hash per block); when a call has `cache_read == 0` after a non-zero one, diff block hashes and emit `Notice(Info, "cache miss: system[2] changed at byte 1 203 (instruction file …)")`. (3) `cox stats --cache [--session]` lists such turns.
-Check:
-```bash
-mise exec -- cargo test -p cox-core cache_diag_
-```
-Done when: scenario with a deliberately volatile byte is flagged with the right block name.
-
 #### T8.4 `cox stats`
 Model: haiku · Status: open · Depends: T1.7 · Size: ~150
 Goal: cost and token views over the ledger.

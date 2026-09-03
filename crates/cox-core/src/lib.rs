@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 
 mod budget;
+pub mod cache_diag;
 mod compact;
 mod context;
 mod dedup;
