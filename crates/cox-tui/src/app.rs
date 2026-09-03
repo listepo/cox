@@ -74,7 +74,15 @@ pub async fn run(session: Session, mut state: State) -> Result<(), TuiError> {
             };
             for cmd in update(&mut state, msg) {
                 match cmd {
-                    Cmd::Submit(sub) => session.submit(sub).await?,
+                    // Same reason as the headless loop: `submit` runs a whole
+                    // turn, and an approval must be answerable meanwhile.
+                    Cmd::Submit(sub) => {
+                        let session = session.clone();
+                        tokio::spawn(async move {
+                            // Failures surface as `Event::Error` on the stream.
+                            let _ = session.submit(sub).await;
+                        });
+                    }
                     Cmd::Quit => return Ok(()),
                     // Clipboard lands with the transcript cells (T5.3).
                     Cmd::Copy(_) => {}

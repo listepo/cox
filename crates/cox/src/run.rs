@@ -3,14 +3,17 @@
 //! the exit code tells a script what happened without parsing anything.
 
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::Path;
+use std::time::Duration;
 
 use cox_core::Session;
 use cox_protocol::Event;
-use cox_protocol::ids::{ItemId, SessionId};
+use cox_protocol::ids::{CallId, ItemId, SessionId};
 use cox_protocol::types::{ApprovalPolicy, Decision, ItemKind, StopReason, Submission};
 use serde_json::{Value, json};
+use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 use crate::cli::{Cli, RunArgs};
 use crate::{resume, session};
@@ -138,12 +141,17 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     };
     // Headless defaults to `never`: nobody is there to answer an ask.
     let approve_default = cli.approve.is_none();
-    let (session, _) = session::open(cli, cwd, args.answer.clone(), |config| {
+    let (session, loaded) = session::open(cli, cwd, args.answer.clone(), |config| {
         if approve_default {
             config.permissions.approval = ApprovalPolicy::Never;
         }
     })?;
-    let outcome = tokio::runtime::Runtime::new()?.block_on(drive(session, prompt, format))?;
+    // T6.3: with any other policy a driver answers asks on stdin, within
+    // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
+    let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)
+        .then(|| Duration::from_secs(u64::from(loaded.config.hooks.timeout_s)));
+    let outcome =
+        tokio::runtime::Runtime::new()?.block_on(drive(session, prompt, format, approvals))?;
     let mut out = std::io::stdout().lock();
     match format {
         Format::Text => writeln!(out, "{}", outcome.result)?,
@@ -158,7 +166,12 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     Ok(outcome.exit_code())
 }
 
-async fn drive(session: Session, prompt: String, format: Format) -> anyhow::Result<Outcome> {
+async fn drive(
+    session: Session,
+    prompt: String,
+    format: Format,
+    approvals: Option<Duration>,
+) -> anyhow::Result<Outcome> {
     let mut rx = session
         .events()
         .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
@@ -168,30 +181,70 @@ async fn drive(session: Session, prompt: String, format: Format) -> anyhow::Resu
             interrupter.interrupt();
         }
     });
-    session
-        .submit(Submission::UserTurn {
-            text: prompt,
-            attachments: Vec::new(),
-            confirm_think: false,
-        })
-        .await?;
+    // The core runs the turn inside `submit`, so it must live on its own
+    // task or nothing could answer an `ApprovalRequired` mid-turn.
+    let turn = tokio::spawn({
+        let session = session.clone();
+        async move {
+            session
+                .submit(Submission::UserTurn {
+                    text: prompt,
+                    attachments: Vec::new(),
+                    confirm_think: false,
+                })
+                .await
+        }
+    });
     let mut outcome = Outcome::default();
     let mut out = std::io::stdout().lock();
-    while let Some(ev) = rx.recv().await {
+    let mut driver = approvals.map(|_| spawn_stdin());
+    let mut pending: Vec<(CallId, Instant)> = Vec::new();
+    loop {
+        let deadline = pending.iter().map(|(_, at)| *at).min();
+        let ev = tokio::select! {
+            ev = rx.recv() => match ev {
+                Some(ev) => ev,
+                None => break,
+            },
+            line = recv_or_pend(&mut driver) => {
+                match line {
+                    Some((call_id, decision)) => {
+                        pending.retain(|(id, _)| *id != call_id);
+                        session.submit(Submission::Approve { call_id, decision }).await?;
+                    }
+                    // stdin closed: whatever is still pending times out.
+                    None => driver = None,
+                }
+                continue;
+            }
+            _ = tokio::time::sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
+                let now = Instant::now();
+                let (expired, kept): (Vec<_>, Vec<_>) = pending.drain(..).partition(|(_, at)| *at <= now);
+                pending = kept;
+                for (call_id, _) in expired {
+                    let reason = format!("no decision from the driver within {}s", approvals.unwrap_or_default().as_secs());
+                    session.submit(Submission::Approve { call_id, decision: Decision::Deny { reason } }).await?;
+                }
+                continue;
+            }
+        };
         if format == Format::StreamJson {
             writeln!(out, "{}", serde_json::to_string(&ev)?)?;
         }
-        // `on-request` approvals arrive on stdin in T6.3; until then an ask
-        // that reaches here is answered the only way a script can be safe.
         if let Event::ApprovalRequired { call, .. } = &ev {
-            session
-                .submit(Submission::Approve {
-                    call_id: call.id,
-                    decision: Decision::Deny {
-                        reason: "no approver in headless mode".into(),
-                    },
-                })
-                .await?;
+            match approvals {
+                Some(timeout) => pending.push((call.id, Instant::now() + timeout)),
+                None => {
+                    session
+                        .submit(Submission::Approve {
+                            call_id: call.id,
+                            decision: Decision::Deny {
+                                reason: "no approver in headless mode".into(),
+                            },
+                        })
+                        .await?;
+                }
+            }
         }
         let alias = outcome.fold(&ev);
         if let (Format::StreamJson, Some(alias)) = (format, alias) {
@@ -204,5 +257,51 @@ async fn drive(session: Session, prompt: String, format: Format) -> anyhow::Resu
             break;
         }
     }
+    if let Ok(Err(e)) = turn.await {
+        return Err(e.into());
+    }
     Ok(outcome)
+}
+
+/// One driver line: `{"approve":"<call_id>"}` or `{"deny":"<call_id>","reason":"…"}`.
+#[derive(serde::Deserialize)]
+struct DriverLine {
+    approve: Option<String>,
+    deny: Option<String>,
+    reason: Option<String>,
+}
+
+fn decision_line(line: &str) -> Option<(CallId, Decision)> {
+    let d: DriverLine = serde_json::from_str(line).ok()?;
+    if let Some(id) = d.approve {
+        return Some((id.parse().ok()?, Decision::Allow));
+    }
+    let id: CallId = d.deny?.parse().ok()?;
+    let reason = d.reason.unwrap_or_else(|| "denied by driver".into());
+    Some((id, Decision::Deny { reason }))
+}
+
+/// stdin is blocking; a thread turns its lines into decisions. Unparseable
+/// lines are ignored so a stray log line cannot approve anything.
+fn spawn_stdin() -> mpsc::Receiver<(CallId, Decision)> {
+    let (tx, rx) = mpsc::channel(16);
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if let Some(decision) = decision_line(&line)
+                && tx.blocking_send(decision).is_err()
+            {
+                break;
+            }
+        }
+    });
+    rx
+}
+
+/// Pends forever without a driver so `select!` never spins on a closed side.
+async fn recv_or_pend<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
+    match rx {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
 }

@@ -1,7 +1,9 @@
 //! T6.1: `cox run -p` against the real binary with the scripted provider —
 //! the three output shapes and the exit codes a script relies on.
 
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use std::process::{Child, Stdio};
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -119,4 +121,94 @@ fn predicates_str_contains(needle: &'static str) -> impl predicates::Predicate<[
     predicates::function::function(move |out: &[u8]| {
         std::str::from_utf8(out).is_ok_and(|s| s.contains(needle))
     })
+}
+
+/// The real binary with piped stdio, for the driver protocol (T6.3).
+fn interactive(work: &Path, home: &Path, extra: &[&str]) -> Child {
+    std::process::Command::new(env!("CARGO_BIN_EXE_cox"))
+        .current_dir(work)
+        .env("COX_HOME", home)
+        .env("COX_PROVIDER", "scripted")
+        .env("COX_SCENARIO", WRITE)
+        .args([
+            "--cwd",
+            work.to_str().unwrap(),
+            "run",
+            "-p",
+            "hi",
+            "--approve",
+            "on-request",
+        ])
+        .args(extra)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap()
+}
+
+/// Reads stream-json lines until the ask, answers it with `reply(call_id)`,
+/// and returns the exit code.
+fn answer_ask(child: &mut Child, reply: impl FnOnce(&str) -> String) -> i32 {
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stdin = child.stdin.take().unwrap();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        assert!(
+            stdout.read_line(&mut line).unwrap() > 0,
+            "no ask before EOF"
+        );
+        let v: Value = serde_json::from_str(&line).unwrap();
+        if v["type"] == "approval_required" {
+            writeln!(stdin, "{}", reply(v["call"]["id"].as_str().unwrap())).unwrap();
+            break;
+        }
+    }
+    let mut rest = String::new();
+    std::io::Read::read_to_string(&mut stdout, &mut rest).unwrap();
+    child.wait().unwrap().code().unwrap()
+}
+
+#[test]
+fn approve_line_on_stdin_lets_the_write_run() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let mut child = interactive(
+        work.path(),
+        home.path(),
+        &["--output-format", "stream-json"],
+    );
+    let code = answer_ask(&mut child, |id| format!(r#"{{"approve":"{id}"}}"#));
+    assert_eq!(code, 0);
+    assert_eq!(
+        std::fs::read_to_string(work.path().join("a.txt")).unwrap(),
+        "x"
+    );
+}
+
+#[test]
+fn approve_deny_line_exits_2_without_writing() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let mut child = interactive(
+        work.path(),
+        home.path(),
+        &["--output-format", "stream-json"],
+    );
+    let code = answer_ask(&mut child, |id| {
+        format!(r#"{{"deny":"{id}","reason":"nope"}}"#)
+    });
+    assert_eq!(code, 2);
+    assert!(!work.path().join("a.txt").exists());
+}
+
+#[test]
+fn approve_silence_times_out_into_a_denial() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(home.path().join("config.toml"), "[hooks]\ntimeout_s = 1\n").unwrap();
+    let mut child = interactive(work.path(), home.path(), &["--output-format", "json"]);
+    let _stdin = child.stdin.take(); // held open and silent
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["denied"], 1, "{v}");
+    assert!(!work.path().join("a.txt").exists());
 }

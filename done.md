@@ -1192,3 +1192,25 @@ test result: ok. 1 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T6.3 Headless approvals over stdin
+Model: fable · Status: done 2026-09-03 · Depends: T6.1 · Size: ~100
+Goal: a driver script can approve or deny calls.
+Files: `crates/cox/src/run.rs` (extend), `tests/run_cli.rs` (extend).
+Steps: stdin reader task parses JSON lines → `Submission::Approve`; `ApprovalRequired` printed as a stream-json line so the driver can react; timeout `hooks.timeout_s` → deny.
+Check:
+```bash
+mise exec -- cargo test --test run_cli approve_
+```
+
+What landed: `run.rs` — when the effective `permissions.approval` is anything but `never`, a thread turns stdin lines into decisions (`{"approve":"<call_id>"}` → `Allow`, `{"deny":"<call_id>","reason":"…"}` → `Deny`; anything else is ignored) and the event loop is a `select!` over events, driver lines and the oldest pending deadline. `ApprovalRequired` (already a stream-json line) is queued with a deadline of `hooks.timeout_s`; a matching line submits `Submission::Approve`; a deadline submits a deny naming the timeout; stdin EOF just leaves the pending asks to time out. The turn now runs on its own task: the core executes a whole turn inside `submit`, so awaiting it inline could never answer an ask — the same deadlock was latent in the TUI (`app.rs` `Cmd::Submit` now spawns too; failures reach the stream as `Event::Error`). Tests (`approve_`): approve line → exit 0 and the file written; deny line → exit 2 and no file; silence with `[hooks] timeout_s = 1` in `COX_HOME/config.toml` → exit 2, `denied: 1`, no file.
+Not done: no `Edit`/`AllowForSession` from the driver (approve/deny only); the TUI fix has no automated test (the PTY e2e uses a text-only scenario). Size: ~90 LOC `run.rs`, ~70 tests, 8 `app.rs`.
+```
+$ mise exec -- cargo test --test run_cli approve_
+test approve_deny_line_exits_2_without_writing ... ok
+test approve_line_on_stdin_lets_the_write_run ... ok
+test approve_silence_times_out_into_a_denial ... ok
+test result: ok. 3 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

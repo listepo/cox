@@ -571,16 +571,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P6 — Headless and MCP server (goal: scripts and other agents can drive cox)
 
-#### T6.3 Headless approvals over stdin
-Model: haiku · Status: open · Depends: T6.1 · Size: ~100
-Goal: a driver script can approve or deny calls.
-Files: `crates/cox/src/run.rs` (extend), `tests/run_cli.rs` (extend).
-Steps: stdin reader task parses JSON lines → `Submission::Approve`; `ApprovalRequired` printed as a stream-json line so the driver can react; timeout `hooks.timeout_s` → deny.
-Check:
-```bash
-mise exec -- cargo test --test run_cli approve_
-```
-
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
 
 #### T7.1 Instruction files
