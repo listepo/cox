@@ -573,16 +573,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
 
-#### T7.1 Instruction files
-Model: sonnet · Status: open · Depends: T2.3 · Size: ~180
-Goal: the `AGENTS.md`/`CLAUDE.md` chain loads in documented order under a budget, byte-stable.
-Files: `crates/cox-ext/src/instructions.rs`, `crates/cox-ext/tests/instructions.rs`.
-Steps: (1) Search order: `~/.cox/AGENTS.md`, `~/.claude/CLAUDE.md`, then from git root down to cwd: `AGENTS.md`, `CLAUDE.md`, `.cox/AGENTS.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`; each file once (symlinks deduped by canonical path). (2) `@path` includes (Claude syntax), cycle detection, depth ≤ 3. (3) Budget `instruction_budget_tokens`: files beyond it are dropped with a `Notice` naming them. (4) Output: one block `# Instructions\n## <path>\n<body>…` with paths relative to git root. (5) Fixture tree with 4 files → snapshot; `cycle_is_reported`; `order_is_stable_across_runs`.
-Check:
-```bash
-mise exec -- cargo test -p cox-ext instructions_
-```
-
 #### T7.2 Skills
 Model: sonnet · Status: open · Depends: T7.1 · Size: ~180
 Goal: Agent Skills spec: index in the prompt, body on invoke, `allowed-tools` respected.

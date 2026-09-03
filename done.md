@@ -1214,3 +1214,30 @@ test result: ok. 3 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T7.1 Instruction files
+Model: fable · Status: done 2026-09-03 · Depends: T2.3 · Size: ~180
+Goal: the `AGENTS.md`/`CLAUDE.md` chain loads in documented order under a budget, byte-stable.
+Files: `crates/cox-ext/src/instructions.rs`, `crates/cox-ext/tests/instructions.rs`.
+Steps: (1) Search order: `~/.cox/AGENTS.md`, `~/.claude/CLAUDE.md`, then from git root down to cwd: `AGENTS.md`, `CLAUDE.md`, `.cox/AGENTS.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`; each file once (symlinks deduped by canonical path). (2) `@path` includes (Claude syntax), cycle detection, depth ≤ 3. (3) Budget `instruction_budget_tokens`: files beyond it are dropped with a `Notice` naming them. (4) Output: one block `# Instructions\n## <path>\n<body>…` with paths relative to git root. (5) Fixture tree with 4 files → snapshot; `cycle_is_reported`; `order_is_stable_across_runs`.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext instructions_
+```
+
+What landed: `crates/cox-ext/src/instructions.rs` — `load(&Roots, budget_tokens) -> Loaded { block, files, notices }`. `Roots { cox_home, claude_home, git_root, cwd }` is resolved by the caller (nothing here reads env or config). Search order: `<cox_home>/AGENTS.md`, `<claude_home>/CLAUDE.md`, then for every directory from the git root down to cwd (cwd alone outside a repo): `AGENTS.md`, `CLAUDE.md`, `.cox/AGENTS.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`. Each file loads once by canonical path (symlink twins deduped). `@path` words (start of a word, resolving to a readable file relative to the including file) expand inline, recursively to depth 3; a cycle leaves the token as written and adds `instruction include cycle: a → b → a` to `notices`; words that are not files (`ops@example.com`) are untouched. Budget: sections cost ⌈bytes/4⌉ tokens; a section that would overflow is dropped with a notice naming it and the budget. Block: `# Instructions\n## <path>\n<body>` per file, paths relative to the git root, trailing whitespace normalised — byte-stable for a given tree. Tests: fixture tree of four files → snapshot; `order_is_stable_across_runs`; `cycle_is_reported`; budget drop; symlink dedupe (unix); homes first / empty tree → empty `Loaded`.
+Not done: the core still uses its stub constant — wiring `Loaded.block` into `context::assemble` and its notices into the event stream is a core/binary change outside this task's files (do it with T7.2's index, which lands in the same `system[2]` slot); token cost is the bytes/4 heuristic, not a provider count. Size: ~230 LOC incl. unit tests, ~140 test file.
+```
+$ mise exec -- cargo test -p cox-ext instructions_
+test instructions_chain_runs_from_git_root_down_to_cwd ... ok
+test instructions_cwd_outside_the_repo_searches_only_itself ... ok
+test instructions_symlinked_duplicate_loads_once ... ok
+test instructions_homes_come_first_and_missing_tree_is_empty ... ok
+test instructions_cycle_is_reported ... ok
+test instructions_budget_drops_later_files_with_a_notice ... ok
+test instructions_order_is_stable_across_runs ... ok
+test instructions_fixture_tree_renders_in_documented_order ... ok
+test result: ok. 8 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```
