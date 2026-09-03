@@ -6,18 +6,19 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cox_protocol::ArchivePut;
-use cox_protocol::errors::CoreError;
+use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, Level, Message, Risk, Role, SandboxPolicy,
-    ToolCall, ToolOutput, ToolResult, Usage,
+    Concurrency, Content, DecidedBy, Decision, Event, Level, Message, Risk, Role, SandboxMode,
+    SandboxPolicy, ToolCall, ToolOutput, ToolResult, Usage, Why,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::permission::Outcome;
+use crate::permission::policy::{ExecPath, exec_path};
 use crate::session::{Session, State};
 
 #[derive(Default)]
@@ -226,28 +227,7 @@ async fn gate(
             }
             Outcome::Ask(why) => why,
         };
-        let rx = session.await_decision(id).await;
-        session
-            .emit(Event::ApprovalRequired {
-                call: call.clone(),
-                why,
-            })
-            .await?;
-        let cancel = session.cancel_token();
-        let decision = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => Decision::Deny { reason: "interrupted".into() },
-            d = rx => d.unwrap_or(Decision::Deny { reason: "session closed".into() }),
-        };
-        session.set_state(State::RunningTools).await;
-        session
-            .emit(Event::ApprovalDecided {
-                call_id: id,
-                decision: decision.clone(),
-                by: DecidedBy::User,
-            })
-            .await?;
-        match decision {
+        match ask(session, &call, why).await? {
             Decision::Allow => return Ok(Ok(call)),
             Decision::AllowForSession => {
                 session.grant(call.name.clone(), call.subject.clone()).await;
@@ -265,6 +245,45 @@ async fn gate(
     }
 }
 
+/// Emits `ApprovalRequired`, parks until `Submission::Approve` answers it
+/// (a cancelled turn answers `Deny`), and emits `ApprovalDecided`.
+async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, CoreError> {
+    let id = call.id;
+    let rx = session.await_decision(id).await;
+    session
+        .emit(Event::ApprovalRequired {
+            call: call.clone(),
+            why,
+        })
+        .await?;
+    let cancel = session.cancel_token();
+    let decision = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Decision::Deny { reason: "interrupted".into() },
+        d = rx => d.unwrap_or(Decision::Deny { reason: "session closed".into() }),
+    };
+    session.set_state(State::RunningTools).await;
+    session
+        .emit(Event::ApprovalDecided {
+            call_id: id,
+            decision: decision.clone(),
+            by: DecidedBy::User,
+        })
+        .await?;
+    Ok(decision)
+}
+
+/// What a confined tool reports when the sandbox, not the command, made it
+/// fail (`bash` sets `structured.sandbox_denied`).
+fn sandbox_denial(output: &ToolOutput) -> Option<String> {
+    output
+        .structured
+        .as_ref()
+        .and_then(|s| s.get("sandbox_denied"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 async fn run_one(
     session: &Session,
     id: CallId,
@@ -273,7 +292,7 @@ async fn run_one(
 ) -> (CallId, ToolResult) {
     let started = Instant::now();
     let (out_tx, mut out_rx) = mpsc::channel::<String>(32);
-    let cx = ToolCx {
+    let mut cx = ToolCx {
         roots: session.config.core.workspace_roots.clone(),
         cwd: session.cwd.clone(),
         sandbox: SandboxPolicy {
@@ -304,15 +323,28 @@ async fn run_one(
     // Only read-only calls are dedup candidates; keep what the key needs.
     let read_key =
         (tool.risk(&input) == Risk::ReadOnly).then(|| (input.clone(), tool.subject(&input)));
-    let output = match tool.call(input, &cx).await {
-        Ok(o) => o,
-        Err(e) => ToolOutput {
-            text: e.to_string(),
-            is_error: true,
-            diff: None,
-            structured: None,
-        },
-    };
+    // §1.8 step 8, `on-failure`: the call ran confined without asking, so a
+    // sandbox denial is the moment to ask; only an explicit yes reruns it
+    // unconfined, anything else keeps the confined result the model can read.
+    let retry = (exec_path(session.config.permissions.approval, cx.sandbox.mode)
+        == ExecPath::Confined)
+        .then(|| input.clone());
+    let call = |input: Value| async { tool.call(input, &cx).await };
+    let mut output = call(input).await.unwrap_or_else(error_output);
+    if let (Some(input), Some(detail)) = (retry, sandbox_denial(&output)) {
+        let call = ToolCall {
+            id,
+            name: tool.spec().name,
+            risk: tool.risk(&input),
+            subject: tool.subject(&input),
+            input: input.clone(),
+        };
+        let decision = ask(session, &call, Why::SandboxDenied { detail }).await;
+        if let Ok(Decision::Allow | Decision::AllowForSession) = decision {
+            cx.sandbox.mode = SandboxMode::DangerFullAccess;
+            output = tool.call(input, &cx).await.unwrap_or_else(error_output);
+        }
+    }
     // `tool_search` names what it found in `structured.discovered`; the
     // next request carries those schemas (D6d) and the prefix changes once.
     let found: Vec<String> = output
@@ -390,6 +422,15 @@ async fn run_one(
         diff: output.diff,
     };
     (id, result)
+}
+
+fn error_output(e: ToolError) -> ToolOutput {
+    ToolOutput {
+        text: e.to_string(),
+        is_error: true,
+        diff: None,
+        structured: None,
+    }
 }
 
 fn failed_result(msg: &str) -> ToolResult {

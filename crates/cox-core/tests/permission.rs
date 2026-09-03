@@ -12,7 +12,7 @@ use cox_protocol::config::PermissionsConfig;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::CallId;
 use cox_protocol::types::{
-    ApprovalPolicy as P, DecidedBy, PermissionMode as M, Risk, ToolCall, Why,
+    ApprovalPolicy as P, DecidedBy, PermissionMode as M, Risk, SandboxMode, ToolCall, Why,
 };
 use proptest::prelude::*;
 use rstest::rstest;
@@ -114,7 +114,13 @@ fn permission_table(
         .map(|(t, s)| (t.to_string(), s.to_string()))
         .collect();
     let outcome =
-        engine(allow, ask, deny).decide(&call(tool, subject, risk), mode, policy, &grants);
+        engine(allow, ask, deny).decide(
+        &call(tool, subject, risk),
+        mode,
+        policy,
+        SandboxMode::WorkspaceWrite,
+        &grants,
+    );
     assert_eq!(want(&outcome), expected, "{outcome:?}");
 }
 
@@ -126,6 +132,7 @@ fn permission_read_ssh_denied_by_default() {
         &call("read", "/home/u/.ssh/id_rsa", Risk::ReadOnly),
         M::Bypass,
         P::OnRequest,
+        SandboxMode::WorkspaceWrite,
         &[],
     );
     match outcome {
@@ -145,6 +152,7 @@ fn permission_outcomes_name_their_source() {
             &call("bash", "ls -la", Risk::Exec),
             M::Default,
             P::OnRequest,
+            SandboxMode::WorkspaceWrite,
             &[]
         ),
         Outcome::Allow {
@@ -152,7 +160,13 @@ fn permission_outcomes_name_their_source() {
         }
     );
     assert_eq!(
-        e.decide(&call("edit", "x", Risk::Write), M::Auto, P::OnRequest, &[]),
+        e.decide(
+            &call("edit", "x", Risk::Write),
+            M::Auto,
+            P::OnRequest,
+            SandboxMode::WorkspaceWrite,
+            &[],
+        ),
         Outcome::Ask(Why::RuleAsk {
             rule: "Edit".into()
         })
@@ -162,6 +176,7 @@ fn permission_outcomes_name_their_source() {
             &call("bash", "cat x", Risk::Exec),
             M::Default,
             P::OnRequest,
+            SandboxMode::WorkspaceWrite,
             &[("bash".into(), "cat".into())]
         ),
         Outcome::Allow {
@@ -173,12 +188,19 @@ fn permission_outcomes_name_their_source() {
             &call("bash", "cat x", Risk::Exec),
             M::Default,
             P::OnRequest,
+            SandboxMode::WorkspaceWrite,
             &[]
         ),
         Outcome::Ask(Why::Risk { risk: Risk::Exec })
     ));
     assert!(matches!(
-        e.decide(&call("write", "x", Risk::Write), M::Auto, P::Untrusted, &[]),
+        e.decide(
+            &call("write", "x", Risk::Write),
+            M::Auto,
+            P::Untrusted,
+            SandboxMode::WorkspaceWrite,
+            &[],
+        ),
         Outcome::Ask(Why::Policy {
             policy: P::Untrusted
         })
@@ -245,8 +267,20 @@ proptest! {
         } else {
             vec![]
         };
-        let base = engine(allow_rules, &[], &[]).decide(&call(tool, subject, risk), mode, policy, &grants);
-        let denied = engine(allow_rules, &[], &[deny_rule]).decide(&call(tool, subject, risk), mode, policy, &grants);
+        let base = engine(allow_rules, &[], &[]).decide(
+            &call(tool, subject, risk),
+            mode,
+            policy,
+            SandboxMode::WorkspaceWrite,
+            &grants,
+        );
+        let denied = engine(allow_rules, &[], &[deny_rule]).decide(
+            &call(tool, subject, risk),
+            mode,
+            policy,
+            SandboxMode::WorkspaceWrite,
+            &grants,
+        );
         prop_assert!(want(&denied) <= want(&base), "{base:?} -> {denied:?}");
     }
 }

@@ -4,14 +4,18 @@
 //! session grants — no I/O, so the 30-row table and the proptest need no
 //! session around them. A tool never checks its own permission.
 
+pub mod policy;
 pub mod rules;
 
 use std::path::Path;
 
 use cox_protocol::config::PermissionsConfig;
 use cox_protocol::errors::CoreError;
-use cox_protocol::types::{ApprovalPolicy, DecidedBy, PermissionMode, Risk, ToolCall, Why};
+use cox_protocol::types::{
+    ApprovalPolicy, DecidedBy, PermissionMode, Risk, SandboxMode, ToolCall, Why,
+};
 
+use policy::{ExecPath, exec_path};
 use rules::{Rule, canonical_tool};
 
 /// What the engine concluded for one call.
@@ -66,12 +70,15 @@ impl Engine {
         })
     }
 
-    /// Plan.md §1.8 steps 1–9, in order.
+    /// Plan.md §1.8 steps 1–9, in order. `sandbox` only matters for `Exec`
+    /// under `on-failure`: that policy trusts the sandbox, so without one
+    /// it asks (T4.3).
     pub fn decide(
         &self,
         call: &ToolCall,
         mode: PermissionMode,
         policy: ApprovalPolicy,
+        sandbox: SandboxMode,
         grants: &[(String, String)],
     ) -> Outcome {
         let first = |rules: &[Rule]| {
@@ -121,7 +128,7 @@ impl Engine {
         } else if policy == ApprovalPolicy::Untrusted && call.risk != Risk::ReadOnly {
             Some(Why::Policy { policy })
         } else {
-            by_risk(call.risk, mode, policy)
+            by_risk(call.risk, mode, policy, sandbox)
         };
         match why {
             None => Outcome::Allow {
@@ -138,11 +145,16 @@ impl Engine {
 
 /// Step 7: what the risk alone requires. `Exec` marked safe by the T3.7
 /// classifier arrives here as `ReadOnly` (A5: risk is per call).
-fn by_risk(risk: Risk, mode: PermissionMode, policy: ApprovalPolicy) -> Option<Why> {
+fn by_risk(
+    risk: Risk,
+    mode: PermissionMode,
+    policy: ApprovalPolicy,
+    sandbox: SandboxMode,
+) -> Option<Why> {
     match risk {
         Risk::ReadOnly => None,
         Risk::Write if mode == PermissionMode::Auto => None,
-        Risk::Exec if policy == ApprovalPolicy::OnFailure => None,
+        Risk::Exec if exec_path(policy, sandbox) == ExecPath::Confined => None,
         _ => Some(Why::Risk { risk }),
     }
 }

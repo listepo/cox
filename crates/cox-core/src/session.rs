@@ -10,7 +10,7 @@ use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Provider, Store, Tool};
 use cox_protocol::types::{
     Content, Decision, Event, ItemKind, Job, Level, Message, ModelId, PermissionMode, Role,
-    StopReason, Submission, Tier, ToolCall,
+    SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -205,6 +205,14 @@ impl Session {
             .map_err(|error| CoreError::Store { error })?;
         session.store.rollout_append(&id, &started).ok();
         let _ = session.tx.try_send(started);
+        // T4.3: the sandbox being off is loud on every surface — one line
+        // after `SessionStarted` in stream-json, a pinned banner in the TUI.
+        if session.config.sandbox.mode == SandboxMode::DangerFullAccess {
+            let _ = session.tx.try_send(Event::Notice {
+                level: Level::Security,
+                text: crate::permission::policy::DANGER_FULL_ACCESS.into(),
+            });
+        }
         Ok(session)
     }
 
@@ -294,6 +302,7 @@ impl Session {
             call,
             inner.permission_mode,
             self.config.permissions.approval,
+            self.config.sandbox.mode,
             &inner.grants,
         )
     }

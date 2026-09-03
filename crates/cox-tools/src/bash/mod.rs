@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use cox_protocol::{
-    ArchivePut, Concurrency, Risk, SandboxPolicy, TaskId, Tool, ToolCx, ToolError, ToolOutput,
-    ToolSpec,
+    ArchivePut, Concurrency, Risk, SandboxMode, SandboxPolicy, TaskId, Tool, ToolCx, ToolError,
+    ToolOutput, ToolSpec,
 };
 use nix::libc;
 use nix::poll::{PollFd, PollFlags, poll};
@@ -126,13 +126,41 @@ impl Tool for BashTool {
             timeout,
         )
         .await?;
+        let text = run.render();
+        // Only a command the sandbox actually confined can have been denied
+        // by it; the loop turns this into `ApprovalRequired { SandboxDenied }`
+        // under `on-failure` (T4.3).
+        let confined = cx.sandbox.mode != SandboxMode::DangerFullAccess
+            && crate::sandbox::backend(cx.sandbox.linux_backend).is_some();
+        let structured = (confined && run.ended.is_none() && run.code != Some(0))
+            .then(|| denial(&text))
+            .flatten()
+            .map(|line| serde_json::json!({ "sandbox_denied": line }));
         Ok(ToolOutput {
             is_error: run.ended.is_some() || run.code != Some(0),
-            text: run.render(),
+            text,
             diff: None,
-            structured: None,
+            structured,
         })
     }
+}
+
+/// What Seatbelt, bwrap and Landlock denials look like from inside the
+/// shell. `Permission denied` also covers a plain mode-bit refusal — that
+/// false positive costs one question, the miss would cost a silent failure.
+const DENIAL_MARKERS: &[&str] = &[
+    "Operation not permitted",
+    "Read-only file system",
+    "Permission denied",
+    "Could not resolve host",
+    "Network is unreachable",
+];
+
+/// The first output line that reads like a sandbox denial.
+fn denial(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| DENIAL_MARKERS.iter().any(|m| line.contains(m)))
+        .map(|line| line.trim().chars().take(200).collect())
 }
 
 /// Spawns the command detached from the turn: it outlives cancellation and
