@@ -8,3 +8,7 @@ license.workspace = true
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
 cox-core = { path = "../cox-core", version = "0.1.0" }
+ratatui = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

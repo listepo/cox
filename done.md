@@ -920,3 +920,33 @@ Finished `dev` profile — 0 warnings (stub C compiler for ring/tree-sitter obje
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T4.3 Approval policy × sandbox mode matrix
+Model: fable · Status: done 2026-09-03 · Depends: T4.1, T4.2, T2.2 · Size: ~150
+Goal: the 12 combinations behave as §1.8 step 8 says; `danger-full-access` is loud.
+Files: `crates/cox-core/src/permission/policy.rs`, `crates/cox-core/tests/policy_matrix.rs`, `crates/cox-tui/src/banner.rs`.
+Steps: (1) Table `(policy, sandbox_mode) → behaviour` for `Exec` calls; `on-failure`: run sandboxed, on `SandboxDenied` emit `ApprovalRequired{SandboxDenied}`, rerun unsandboxed only on `Allow`. (2) `danger-full-access` requires the flag and shows a persistent banner in the TUI and a line in every `stream-json` `SessionStarted`. (3) 12-cell rstest matrix; TUI snapshot `banner_danger_full_access`.
+Check:
+```bash
+mise exec -- cargo test -p cox-core policy_ && mise exec -- cargo test -p cox-tui banner_
+```
+
+What landed: `permission::policy::exec_path(policy, sandbox) -> ExecPath { Confined | Ask | Deny }` is the one table both the engine and the loop consult: `on-failure` with `read-only`/`workspace-write` runs an unsettled `Exec` call confined without asking, `on-failure` with `danger-full-access` asks like `on-request`, `never` denies. `Engine::decide` takes the sandbox mode and routes `Exec` through it. `bash` sets `structured.sandbox_denied` (first output line matching a Seatbelt/bwrap/Landlock denial marker) only when a backend actually confined the run and the command failed; `turn.rs` turns that into `ApprovalRequired { SandboxDenied }` under `on-failure`, reruns the call under `danger-full-access` only on `Allow`, and keeps the confined failure as the model's result on `Deny`. `Session::new` emits `Notice { Security, DANGER_FULL_ACCESS }` right after `SessionStarted` when the sandbox is off — the one event every surface pins. `cox_tui::banner::Banner::from_event` turns that notice into the persistent red banner line (`ratatui` dependency added to `cox-tui`, first module in that crate). Tests: `tests/policy_matrix.rs` — the 12-cell rstest matrix over `exec_path`, the engine following it, and four loop tests over a `Confined` stub and the `confined_exec` scenario (denial asks then `Allow` reruns unconfined; `Deny` keeps the confined failure; full-access asks before running and a denial never runs the command; full-access is loud); `banner_danger_full_access` snapshot and `banner_ignores_non_security_notices`.
+Not done: the stream-json line is the same `Notice` event and prints when T6.1 writes that surface; the banner is pinned by `view` once T5.1 exists — `Banner` is the hook it consumes. The "requires the flag" half of step 2 is the existing `--permission-mode bypass` CLI flag. Size: ~110 LOC this commit (matrix test file, scenario, banner) on top of the loop/engine change in `7407c87`.
+```
+$ mise exec -- cargo test -p cox-core policy_
+test permission::policy::tests::policy_on_failure_is_confined_only_while_a_sandbox_exists ... ok
+test policy_matrix_exec_paths::case_01_untrusted_read_only … case_12_never_full_access (12) ... ok
+test policy_engine_follows_the_matrix ... ok
+test policy_on_failure_denial_asks_then_allow_reruns_unconfined ... ok
+test policy_on_failure_denial_denied_keeps_confined_failure ... ok
+test policy_on_failure_full_access_asks_before_running ... ok
+test policy_danger_full_access_is_loud ... ok
+test result: ok. 17 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui banner_
+test banner::tests::banner_ignores_non_security_notices ... ok
+test banner::tests::banner_danger_full_access ... ok
+test result: ok. 2 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

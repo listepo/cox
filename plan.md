@@ -567,16 +567,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
 
-#### T4.3 Approval policy × sandbox mode matrix
-Model: fable · Status: in progress · Depends: T4.1, T4.2, T2.2 · Size: ~150
-Goal: the 12 combinations behave as §1.8 step 8 says; `danger-full-access` is loud.
-Files: `crates/cox-core/src/permission/policy.rs`, `crates/cox-core/tests/policy_matrix.rs`, `crates/cox-tui/src/banner.rs`.
-Steps: (1) Table `(policy, sandbox_mode) → behaviour` for `Exec` calls; `on-failure`: run sandboxed, on `SandboxDenied` emit `ApprovalRequired{SandboxDenied}`, rerun unsandboxed only on `Allow`. (2) `danger-full-access` requires the flag and shows a persistent banner in the TUI and a line in every `stream-json` `SessionStarted`. (3) 12-cell rstest matrix; TUI snapshot `banner_danger_full_access`.
-Check:
-```bash
-mise exec -- cargo test -p cox-core policy_ && mise exec -- cargo test -p cox-tui banner_
-```
-
 #### T4.4 Design doc: sandbox
 Model: sonnet · Status: open · Depends: T4.2 · Size: doc
 Goal: `docs/design/sandbox.md`: Seatbelt vs bwrap vs Landlock vs Claude Code's socat proxy; the Windows story (none in v0.1, WSL2 recommended); falsifier = any documented escape.

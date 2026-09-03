@@ -113,8 +113,7 @@ fn permission_table(
         .iter()
         .map(|(t, s)| (t.to_string(), s.to_string()))
         .collect();
-    let outcome =
-        engine(allow, ask, deny).decide(
+    let outcome = engine(allow, ask, deny).decide(
         &call(tool, subject, risk),
         mode,
         policy,

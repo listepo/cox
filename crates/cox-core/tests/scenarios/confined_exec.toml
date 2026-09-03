@@ -1,0 +1,6 @@
+[[turn]]
+text = "building"
+tool_calls = [{ name = "confined", input = {} }]
+
+[[turn]]
+text = "done"

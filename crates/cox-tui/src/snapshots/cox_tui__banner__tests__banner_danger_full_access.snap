@@ -1,0 +1,5 @@
+---
+source: crates/cox-tui/src/banner.rs
+expression: "render(&banner, 100)"
+---
+ !  sandbox off (danger-full-access): shell commands run unconfined with your full access

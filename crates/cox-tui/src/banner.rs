@@ -1,0 +1,89 @@
+//! The pinned security banner: the one piece of TUI chrome that is not a
+//! transcript cell. It lives apart from the (later) `State`/`view` so T4.3's
+//! "`danger-full-access` is loud" has a home and a snapshot before the app
+//! exists; `view` pins whatever `Banner::from_event` yields above the composer
+//! for the rest of the session.
+
+use cox_protocol::types::{Event, Level};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+
+/// Text pinned above the composer for the whole session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Banner(String);
+
+impl Banner {
+    /// A `Security` notice becomes a persistent banner; every other notice
+    /// is an ordinary transcript cell and yields `None`.
+    pub fn from_event(event: &Event) -> Option<Self> {
+        match event {
+            Event::Notice {
+                level: Level::Security,
+                text,
+            } => Some(Self(text.clone())),
+            _ => None,
+        }
+    }
+
+    /// One red line; the marker is styled separately so it stays visible
+    /// on terminals that drop background colours.
+    pub fn line(&self) -> Line<'_> {
+        Line::from(vec![
+            Span::styled(
+                " ! ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {} ", self.0),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+        ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn render(banner: &Banner, width: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, 1)).expect("terminal");
+        terminal
+            .draw(|frame| frame.render_widget(banner.line(), frame.area()))
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn banner_danger_full_access() {
+        let event = Event::Notice {
+            level: Level::Security,
+            text: cox_core::permission::policy::DANGER_FULL_ACCESS.into(),
+        };
+        let banner = Banner::from_event(&event).expect("security notice pins a banner");
+        insta::assert_snapshot!(render(&banner, 100));
+    }
+
+    #[test]
+    fn banner_ignores_non_security_notices() {
+        let event = Event::Notice {
+            level: Level::Warn,
+            text: "hook skipped".into(),
+        };
+        assert_eq!(Banner::from_event(&event), None);
+    }
+}
