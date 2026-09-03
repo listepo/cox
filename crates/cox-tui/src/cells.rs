@@ -115,10 +115,15 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                 Level::Budget => Style::default().fg(Color::Magenta),
                 Level::Security => Style::default().fg(Color::Red),
             };
-            vec![Line::styled(
-                format!("[{}] {text}", format!("{level:?}").to_lowercase()),
-                style,
-            )]
+            let tag = format!("[{}] ", format!("{level:?}").to_lowercase());
+            let pad = " ".repeat(tag.width());
+            text.lines()
+                .enumerate()
+                .map(|(i, l)| {
+                    let prefix = if i == 0 { &tag } else { &pad };
+                    Line::styled(format!("{prefix}{l}"), style)
+                })
+                .collect()
         }
         Cell::Error { text, fatal } => vec![Line::styled(
             format!("✗ {text}{}", if *fatal { " (session ended)" } else { "" }),

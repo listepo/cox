@@ -5,10 +5,12 @@
 pub mod app;
 pub mod banner;
 pub mod cells;
+pub mod commands;
 pub mod composer;
 pub mod diff;
 pub mod markdown;
 pub mod modal;
 pub mod picker;
 pub mod state;
+pub mod status;
 pub mod view;

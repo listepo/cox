@@ -11,29 +11,6 @@ use nucleo::{Config, Matcher, Utf32String};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
-/// Slash commands the TUI knows before any markdown command file
-/// (plan.md §1.13); T7.3 appends the discovered ones.
-pub const BUILTIN_COMMANDS: &[&str] = &[
-    "model",
-    "think",
-    "compact",
-    "cost",
-    "permissions",
-    "sandbox",
-    "resume",
-    "sessions",
-    "expand",
-    "agents",
-    "skills",
-    "hooks",
-    "mcp",
-    "doctor",
-    "clear",
-    "vim",
-    "help",
-    "quit",
-];
-
 /// Rows the list takes at most; the query narrows it, not scrolling.
 const MAX_SHOWN: usize = 8;
 

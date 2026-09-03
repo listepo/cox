@@ -1057,3 +1057,28 @@ test result: ok. 4 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.5 Status line, todo panel, slash commands
+Model: fable · Status: done 2026-09-03 · Depends: T5.3 · Size: ~160
+Goal: §1.13 status line and built-in slash commands.
+Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/commands.rs`.
+Steps: (1) Status: tier model, `ctx N%` from last usage, session cost, sandbox mode, task count, permission mode tag. (2) Todo panel from the `todo` tool's structured output, toggled by `/todo`. (3) Commands from §1.13 parsed into `Submission::Command`/`SwitchModel`/`SetPermissionMode`/`Compact`; `/help` lists them. (4) Snapshot `status_line_after_two_turns`; test `slash_model_opus_emits_switch_model`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui --test status
+```
+(The plan wrote `cargo test -p cox-tui status_ command_`; cargo takes one filter, so the whole test file is the Check.)
+
+What landed: `status.rs` — `line(&State)` prints the §1.13 row exactly (`sonnet-5 · ctx 41% · $0.83 · workspace-write · 0 tasks · [plan]`; model without the `claude-` prefix, `ctx` as a share of `Status::context_window` — 200k until the binary sets it from the provider — sandbox in kebab case, the permission mode as a tag, `· working` / `· Ctrl+C again to quit` appended), `parse_todo` reads the `todo` tool's rendered `[x] id: text` lines into `State::todo` on its `ToolCallDone`, and `todo_lines` draws the panel (`/todo` toggles `State::show_todo`; it sits between the transcript and the modal; done dim, in progress bold). `commands.rs` — one `COMMANDS` table (name, usage, one-line help) feeds the `/` palette (`State::new` reads it; `picker::BUILTIN_COMMANDS` is gone), `/help` and `parse(line, tier) -> Option<Action>`: `/model [tier] [model]` → `SwitchModel` (tier defaults to the current one), `/think <prompt>` → `UserTurn { confirm_think: true }`, `/compact [focus]` → `Compact`, `/permissions <mode>` → `Action::Mode` (screen tag and `SetPermissionMode` together), `/cost`, `/todo`, `/help`, `/quit` local, every other listed name → `Submission::Command { SlashCommand }`, unknown → a warn notice. `Tab` cycles default → plan → auto through the same `set_mode`. `state`: `Edit::Submit` runs the parser before `UserTurn`; `act` turns an `Action` into cells or `Cmd`s. Notice cells now print multi-line text under one `[level]` tag. Tests in `tests/status.rs`: `status_line_after_two_turns` (snapshot of the row after two `Usage` events), `command_slash_model_opus_emits_switch_model` (the plan's `slash_model_opus_emits_switch_model`, prefixed so the Check filter runs it), `command_lines_map_to_their_submissions`, `command_help_lists_every_command_and_tab_cycles_the_mode`, `command_todo_shows_the_panel_from_the_tool_output` (frame snapshot). `frame_*` snapshots updated for the new row.
+Not done: `ToolOutput.structured` does not cross the `Event` boundary (`ToolResult` has no such field), so the panel parses the tool's rendered text; `cox-core` currently acts on `UserTurn` and `SetPermissionMode` only — `SwitchModel`, `Compact` and `Command` are emitted correctly and land when their core/ext tasks do; `/sandbox` is forwarded as a `Command` because no `Submission` variant sets the sandbox; `/vim` is T5.7; `arboard` is still unused (`Cmd::Copy` no-op). Size: ~230 LOC over `commands.rs`, `status.rs`, `state`, `view`, `cells`, `picker` plus tests.
+```
+$ mise exec -- cargo test -p cox-tui --test status
+test status_line_after_two_turns ... ok
+test command_slash_model_opus_emits_switch_model ... ok
+test command_lines_map_to_their_submissions ... ok
+test command_help_lists_every_command_and_tab_cycles_the_mode ... ok
+test command_todo_shows_the_panel_from_the_tool_output ... ok
+test result: ok. 5 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

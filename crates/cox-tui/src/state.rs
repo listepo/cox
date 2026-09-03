@@ -11,9 +11,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::banner::Banner;
 use crate::cells::Look;
+use crate::commands::{self, Action, COMMANDS};
 use crate::composer::{Composer, Edit};
 use crate::modal::Approval;
-use crate::picker::{BUILTIN_COMMANDS, Kind, Pick, Picker};
+use crate::picker::{Kind, Pick, Picker};
+use crate::status::parse_todo;
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -73,6 +75,8 @@ pub struct Status {
     pub model: String,
     pub tier: Option<Tier>,
     pub context_tokens: u32,
+    /// What `ctx N%` is a share of; the binary sets it from the provider.
+    pub context_window: u32,
     pub cost_usd: f64,
     pub sandbox: SandboxMode,
     pub busy: bool,
@@ -109,6 +113,9 @@ pub struct State {
     pub dark: bool,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
+    /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
+    pub todo: Vec<(String, String)>,
+    pub show_todo: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,6 +144,7 @@ impl State {
                 model: String::new(),
                 tier: None,
                 context_tokens: 0,
+                context_window: 200_000,
                 cost_usd: 0.0,
                 sandbox,
                 busy: false,
@@ -147,12 +155,14 @@ impl State {
             scroll: 0,
             banner: None,
             files: Vec::new(),
-            commands: BUILTIN_COMMANDS.iter().map(|c| c.to_string()).collect(),
+            commands: COMMANDS.iter().map(|(n, ..)| n.to_string()).collect(),
             ctrl_c_armed: false,
             tick: 0,
             show_thinking: false,
             dark: true,
             show_diffs: true,
+            todo: Vec::new(),
+            show_todo: false,
         }
     }
 
@@ -233,6 +243,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         state.show_diffs = !state.show_diffs;
         return Vec::new();
     }
+    if key.code == KeyCode::Tab && state.modal.is_none() {
+        return set_mode(state, commands::next_mode(state.mode));
+    }
     match state.modal.take() {
         Some(Modal::Approval(mut approval)) => match approval.key(key) {
             Some(decision) => vec![Cmd::Submit(Submission::Approve {
@@ -269,11 +282,17 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 };
             }
             match state.composer.key(key) {
-                Edit::Submit(text) => vec![Cmd::Submit(Submission::UserTurn {
-                    text,
-                    attachments: Vec::new(),
-                    confirm_think: false,
-                })],
+                Edit::Submit(text) => {
+                    let tier = state.status.tier.unwrap_or(Tier::Code);
+                    match commands::parse(&text, tier) {
+                        Some(action) => act(state, action),
+                        None => vec![Cmd::Submit(Submission::UserTurn {
+                            text,
+                            attachments: Vec::new(),
+                            confirm_think: false,
+                        })],
+                    }
+                }
                 Edit::OpenFiles => {
                     state.modal = Some(Modal::Picker(Picker::open(
                         Kind::Files,
@@ -299,6 +318,36 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             }
         }
     }
+}
+
+fn set_mode(state: &mut State, mode: PermissionMode) -> Vec<Cmd> {
+    state.mode = mode;
+    vec![Cmd::Submit(Submission::SetPermissionMode { mode })]
+}
+
+fn notice(state: &mut State, level: Level, text: String) {
+    state.transcript.push(Cell::Notice { level, text });
+}
+
+/// A slash command's effect; anything the core owns becomes a `Submit`.
+fn act(state: &mut State, action: Action) -> Vec<Cmd> {
+    match action {
+        Action::Submit(sub) => return vec![Cmd::Submit(sub)],
+        Action::Quit => return vec![Cmd::Quit],
+        Action::Mode(mode) => return set_mode(state, mode),
+        Action::Help => notice(state, Level::Info, commands::help()),
+        Action::Cost => {
+            let s = &state.status;
+            let text = format!(
+                "${:.2} this session · {} tokens in context",
+                s.cost_usd, s.context_tokens
+            );
+            notice(state, Level::Info, text);
+        }
+        Action::Todo => state.show_todo = !state.show_todo,
+        Action::Notice(text) => notice(state, Level::Warn, text),
+    }
+    Vec::new()
 }
 
 fn on_event(state: &mut State, ev: Event) {
@@ -354,8 +403,18 @@ fn on_event(state: &mut State, ev: Event) {
             }
         }
         Event::ToolCallDone { call_id, result } => {
-            if let Some(Cell::Tool { result: r, .. }) = state.tool_mut(call_id) {
+            let mut todo = None;
+            if let Some(Cell::Tool {
+                call, result: r, ..
+            }) = state.tool_mut(call_id)
+            {
+                if call.name == "todo" && result.ok {
+                    todo = Some(parse_todo(&result.visible));
+                }
                 *r = Some(result);
+            }
+            if let Some(todo) = todo {
+                state.todo = todo;
             }
         }
         Event::ApprovalRequired { call, why } => {

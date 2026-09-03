@@ -7,4 +7,4 @@ expression: "buffer_to_string(&render(&state, 40, 6))"
 
 > first line
   second
- - · ctx 0 · $0.00 · WorkspaceWrite · De
+ - · ctx 0% · $0.00 · workspace-write ·

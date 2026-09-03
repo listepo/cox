@@ -569,16 +569,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
 
-#### T5.5 Status line, todo panel, slash commands
-Model: haiku · Status: open · Depends: T5.3 · Size: ~160
-Goal: §1.13 status line and built-in slash commands.
-Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/commands.rs`.
-Steps: (1) Status: tier model, `ctx N%` from last usage, session cost, sandbox mode, task count, permission mode tag. (2) Todo panel from the `todo` tool's structured output, toggled by `/todo`. (3) Commands from §1.13 parsed into `Submission::Command`/`SwitchModel`/`SetPermissionMode`/`Compact`; `/help` lists them. (4) Snapshot `status_line_after_two_turns`; test `slash_model_opus_emits_switch_model`.
-Check:
-```bash
-mise exec -- cargo test -p cox-tui status_ command_
-```
-
 #### T5.6 `text::sanitize`
 Model: sonnet · Status: open · Depends: T5.1 · Size: ~120
 Goal: nothing the model or a tool prints can escape its cell or the terminal.

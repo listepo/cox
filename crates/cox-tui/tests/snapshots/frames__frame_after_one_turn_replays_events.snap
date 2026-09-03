@@ -11,4 +11,4 @@ It prints nothing.
 
 
 >  message · @ file · / command
- claude-sonnet-5 · ctx 0 · $0.00 · ReadOnly · Default · 0 ta
+ sonnet-5 · ctx 0% · $0.00 · read-only · 0 tasks · [default]
