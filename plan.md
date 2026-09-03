@@ -59,7 +59,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex |
-| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.10 → spans), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, arboard 3 |
+| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3 |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16; tools: cargo-nextest, cargo-deny, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
@@ -568,16 +568,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 ### P4 — Sandbox (goal: `workspace-write` enforced on macOS and Linux)
 
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
-
-#### T5.3 Transcript cells and streaming markdown
-Model: sonnet · Status: open · Depends: T5.1 · Size: ~200
-Goal: one cell type per item kind, rendered from a golden event JSONL.
-Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/markdown.rs`.
-Steps: (1) Cells: user, assistant (streaming), thinking (collapsed line with token count; `Ctrl+T`), tool call (name + subject, spinner/elapsed, head/tail output, `expand #id` hint, exit code), notice (level-coloured), error, summary (compaction). (2) Markdown: `pulldown-cmark` → `Line`/`Span` with headings, lists, emphasis, inline code, fenced code via `syntect` (theme by `tui.theme`), tables as aligned text; incremental re-render of the last open block only. (3) Width-aware wrapping via `unicode-width`. (4) Snapshots: one per cell type from `fixtures/events/transcript.jsonl`.
-Check:
-```bash
-mise exec -- cargo test -p cox-tui cell_
-```
 
 #### T5.4 Diff view and approval modal
 Model: sonnet · Status: open · Depends: T5.3, T2.2 · Size: ~180

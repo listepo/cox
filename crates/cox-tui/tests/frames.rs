@@ -103,7 +103,7 @@ fn frame_after_one_turn_replays_events() {
     assert!(!state.status.busy);
     let scrollback = finished
         .iter()
-        .flat_map(cox_tui::view::cell_lines)
+        .flat_map(|c| cox_tui::cells::cell_lines(c, &state.look(60)))
         .map(|l| l.to_string())
         .collect::<Vec<_>>()
         .join("\n");

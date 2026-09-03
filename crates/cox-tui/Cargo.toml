@@ -13,6 +13,9 @@ crossterm = { workspace = true, features = ["event-stream"] }
 tokio = { workspace = true }
 futures = { workspace = true }
 nucleo = { workspace = true }
+pulldown-cmark = { workspace = true }
+syntect = { workspace = true }
+unicode-width = { workspace = true }
 thiserror = { workspace = true }
 tui-textarea-2 = { version = "0.13", default-features = false, features = ["crossterm"] }
 

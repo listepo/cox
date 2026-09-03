@@ -19,8 +19,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::widgets::{Paragraph, Widget};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
+use crate::cells::cell_lines;
 use crate::state::{Cmd, Msg, State, update};
-use crate::view::{cell_lines, view};
+use crate::view::view;
 
 /// Rows the live viewport keeps below the scrollback.
 const VIEWPORT_ROWS: u16 = 15;
@@ -78,8 +79,9 @@ pub async fn run(session: Session, mut state: State) -> Result<(), TuiError> {
                     Cmd::Copy(_) => {}
                 }
             }
+            let look = state.look(terminal.size()?.width);
             for cell in state.take_finished() {
-                let lines = cell_lines(&cell);
+                let lines = cell_lines(&cell, &look);
                 let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
                 terminal
                     .insert_before(height, |buf| Paragraph::new(lines).render(buf.area, buf))?;

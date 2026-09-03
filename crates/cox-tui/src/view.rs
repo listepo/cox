@@ -1,7 +1,8 @@
 //! `view`: `State` → screen. Pure over the state and a `Buffer`, so the
 //! live viewport and the test harness (`render`) draw through the same
-//! function and a snapshot is the real screen. `cell_lines` is shared with
-//! the runtime's `insert_before`, so scrollback and viewport agree.
+//! function and a snapshot is the real screen. Cells print through
+//! `cells::cell_lines`, shared with the runtime's `insert_before`, so
+//! scrollback and viewport agree.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -9,7 +10,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::state::{Cell, Modal, State};
+use crate::cells::cell_lines;
+use crate::state::{Modal, State};
 
 /// Draws `state` into `area`; returns where the cursor goes.
 pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
@@ -32,7 +34,12 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if let Some(b) = &state.banner {
         b.line().render(banner_area, buf);
     }
-    let lines: Vec<Line<'static>> = state.transcript.iter().flat_map(cell_lines).collect();
+    let look = state.look(transcript.width);
+    let lines: Vec<Line<'static>> = state
+        .transcript
+        .iter()
+        .flat_map(|c| cell_lines(c, &look))
+        .collect();
     let offset = lines
         .len()
         .saturating_sub(usize::from(transcript.height) + state.scroll);
@@ -87,49 +94,6 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         x.min(text.right().saturating_sub(1)),
         y.min(text.bottom().saturating_sub(1)),
     ))
-}
-
-/// How one cell prints, in the viewport and in scrollback.
-pub fn cell_lines(cell: &Cell) -> Vec<Line<'static>> {
-    match cell {
-        Cell::User { text } => vec![Line::styled(
-            format!("› {text}"),
-            Style::default().add_modifier(Modifier::BOLD),
-        )],
-        Cell::Assistant { text, .. } => text.lines().map(|l| Line::raw(l.to_string())).collect(),
-        Cell::Thinking { text, .. } => text
-            .lines()
-            .map(|l| {
-                Line::styled(
-                    format!("∴ {l}"),
-                    Style::default().add_modifier(Modifier::DIM),
-                )
-            })
-            .collect(),
-        Cell::Tool {
-            call,
-            output,
-            result,
-        } => {
-            let mut lines = vec![Line::styled(
-                format!("⚙ {} {}", call.name, call.subject),
-                Style::default().fg(Color::Cyan),
-            )];
-            lines.extend(output.lines().map(|l| Line::raw(format!("  {l}"))));
-            if let Some(r) = result {
-                let mark = if r.ok { "✓" } else { "✗" };
-                lines.push(Line::styled(
-                    format!("  {mark} {}B {}ms", r.bytes, r.duration_ms),
-                    Style::default().add_modifier(Modifier::DIM),
-                ));
-            }
-            lines
-        }
-        Cell::Notice { level, text } => vec![Line::styled(
-            format!("[{}] {text}", format!("{level:?}").to_lowercase()),
-            Style::default().fg(Color::Yellow),
-        )],
-    }
 }
 
 /// Test harness: the screen `view` would draw at `width`×`height`.

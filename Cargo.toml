@@ -80,6 +80,11 @@ serde_yaml = "0.9"
 
 # cox-tui
 ratatui = "0.30.2"
+# T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the
+# same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine).
+pulldown-cmark = { version = "0.13", default-features = false }
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
+unicode-width = "0.2"
 crossterm = "0.29"
 arboard = "3"
 

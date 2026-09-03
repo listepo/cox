@@ -1,0 +1,16 @@
+{"type":"item_started","item":"01ARZ3NDEKTSV4RRFFQ69G5FA1","kind":{"type":"user_message","text":"explain the loop and read main","attachments":[{"name":"notes.txt","media_type":"text/plain","data_b64":"aGk="}]}}
+{"type":"item_started","item":"01ARZ3NDEKTSV4RRFFQ69G5FA2","kind":{"type":"thinking","text":"","signature":null}}
+{"type":"thinking_delta","item":"01ARZ3NDEKTSV4RRFFQ69G5FA2","text":"The user wants the turn loop explained. Read src/main.rs first, then summarise the state machine."}
+{"type":"item_done","item":"01ARZ3NDEKTSV4RRFFQ69G5FA2"}
+{"type":"tool_call_requested","call":{"id":"01ARZ3NDEKTSV4RRFFQ69G5FC1","name":"read","input":{"path":"src/main.rs"},"risk":"read_only","subject":"src/main.rs"}}
+{"type":"tool_call_output","call_id":"01ARZ3NDEKTSV4RRFFQ69G5FC1","delta":"1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n"}
+{"type":"tool_call_done","call_id":"01ARZ3NDEKTSV4RRFFQ69G5FC1","result":{"ok":true,"visible":"1\n2\n…","archive":{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAA","bytes":51},"bytes":51,"duration_ms":3,"diff":null}}
+{"type":"tool_call_requested","call":{"id":"01ARZ3NDEKTSV4RRFFQ69G5FC2","name":"bash","input":{"cmd":"sleep 30"},"risk":"exec","subject":"sleep 30"}}
+{"type":"item_started","item":"01ARZ3NDEKTSV4RRFFQ69G5FA3","kind":{"type":"assistant_message","text":""}}
+{"type":"text_delta","item":"01ARZ3NDEKTSV4RRFFQ69G5FA3","text":"## The loop\n\nEach turn is `Submission` in, **events** out. Steps:\n\n1. assemble context\n2. call the provider\n\n```rust\nfn main() {}\n```\n\n| stage | owner |\n|---|---|\n| turn | cox-core |\n| render | cox-tui |\n\nA long sentence that runs well past the sixty columns this transcript is rendered at so it has to wrap."}
+{"type":"item_done","item":"01ARZ3NDEKTSV4RRFFQ69G5FA3"}
+{"type":"notice","level":"info","text":"hook `fmt` ran"}
+{"type":"notice","level":"warn","text":"skill `deploy` skipped: bad frontmatter"}
+{"type":"notice","level":"budget","text":"80% of the session budget spent"}
+{"type":"error","error":{"type":"budget","spent":5.0,"cap":5.0},"fatal":false}
+{"type":"item_started","item":"01ARZ3NDEKTSV4RRFFQ69G5FA4","kind":{"type":"summary","text":"Earlier: the user asked for the loop; main.rs was read."}}

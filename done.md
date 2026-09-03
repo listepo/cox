@@ -1009,3 +1009,28 @@ $ mise exec -- cargo test -p cox-tui   (8 passed) · cargo test -p cox-tools glo
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.3 Transcript cells and streaming markdown
+Model: fable · Status: done 2026-09-03 · Depends: T5.1 · Size: ~200
+Goal: one cell type per item kind, rendered from a golden event JSONL.
+Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/markdown.rs`.
+Steps: (1) Cells: user, assistant (streaming), thinking (collapsed line with token count; `Ctrl+T`), tool call (name + subject, spinner/elapsed, head/tail output, `expand #id` hint, exit code), notice (level-coloured), error, summary (compaction). (2) Markdown: `pulldown-cmark` → `Line`/`Span` with headings, lists, emphasis, inline code, fenced code via `syntect` (theme by `tui.theme`), tables as aligned text; incremental re-render of the last open block only. (3) Width-aware wrapping via `unicode-width`. (4) Snapshots: one per cell type from `fixtures/events/transcript.jsonl`.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui cell_
+```
+
+What landed: `cells.rs` owns `cell_lines(&Cell, &Look)` — `Look { width, dark, show_thinking, tick }` comes from `State::look(width)` — and `wrap`, a span-preserving word wrapper on `unicode-width` that repeats a line's leading indent on continuation rows and splits over-wide words at a character boundary; `view` and the runtime's `insert_before` both render through it, so scrollback and viewport agree at the terminal's width. Cells: user (`› text` + `📎 name` per attachment), assistant (markdown), thinking (one dim line `∴ thought (~N tokens · Ctrl+T)`, N = bytes/4, `Ctrl+T` toggles `State::show_thinking` to the full dim text), tool (`⚙ name subject`; output folded to 6 head + 5 tail lines with `… N lines hidden …`; running shows a braille spinner and elapsed time from `State::tick`, which `Msg::Tick` now counts at 100 ms; done shows `✓/✗ bytes ms` and `· cox expand <archive id>` when the result was archived), notice (info dim, warn yellow, budget magenta, security red), error (new `Cell::Error { text, fatal }` from `Event::Error`, red, "(session ended)" when fatal), summary (new `Cell::Summary` from `ItemKind::Summary`, dim under a "compacted" rule). `markdown.rs`: pulldown-cmark → `Line`/`Span` — `#` headings bold, `•`/`1.` lists with nesting indent, bold/italic/strikethrough/underlined links, inline code cyan, block quotes `│ `, rules, task markers, tables padded to the widest cell with a bold header over a dim rule, fenced code through syntect (`base16-ocean.dark`/`.light` by `State::dark`, which the binary sets from `tui.theme`; unknown language or missing theme → plain text). An unterminated fence while streaming renders as code. Fixture `fixtures/events/transcript.jsonl` (one `Event` per line, ULID ids) replays through `update` in `tests/cells.rs`; six `cell_*` snapshots cover every cell kind, plus unit tests for the wrapper and the markdown mapping.
+Not done: "incremental re-render of the last open block only" is not a cache — finished cells leave the viewport for terminal scrollback via `take_finished`, so per-frame work is already bounded by the open cells, and the streaming reply re-parses its own text each frame; add a closed-block cache if a very long reply ever shows up in a profile. No exit code on the tool line: `ToolResult` has none and `bash` puts it in `visible`; `ok` drives ✓/✗. `Cmd::Copy` is still a no-op (arboard lands with T5.5's commands). Size: ~330 LOC in `cells.rs` + `markdown.rs`, ~40 in `state`/`view`/`app`, tests and fixture — over the 200-line guide because the markdown mapping and the wrapper are each a table of cases.
+```
+$ mise exec -- cargo test -p cox-tui cell_
+test cell_user_lists_attachments ... ok
+test cell_assistant_renders_markdown_wrapped ... ok
+test cell_thinking_collapses_until_ctrl_t ... ok
+test cell_tool_folds_output_and_hints_expand ... ok
+test cell_tool_running_shows_spinner_and_elapsed ... ok
+test cell_notice_error_and_summary ... ok
+test result: ok. 6 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

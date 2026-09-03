@@ -11,6 +11,7 @@ use cox_protocol::types::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::banner::Banner;
+use crate::cells::Look;
 use crate::composer::{Composer, Edit};
 use crate::picker::{BUILTIN_COMMANDS, Kind, Pick, Picker};
 
@@ -20,6 +21,8 @@ use crate::picker::{BUILTIN_COMMANDS, Kind, Pick, Picker};
 pub enum Cell {
     User {
         text: String,
+        /// Attachment names; the bytes stay with the item.
+        attachments: Vec<String>,
     },
     Assistant {
         item: ItemId,
@@ -35,9 +38,19 @@ pub enum Cell {
         call: Box<ToolCall>,
         output: String,
         result: Option<ToolResult>,
+        /// `State::tick` when the call was requested; elapsed time is ticks.
+        started: u64,
     },
     Notice {
         level: Level,
+        text: String,
+    },
+    Error {
+        text: String,
+        fatal: bool,
+    },
+    /// A compaction summary standing in for the turns it replaced.
+    Summary {
         text: String,
     },
 }
@@ -45,7 +58,9 @@ pub enum Cell {
 impl Cell {
     pub fn done(&self) -> bool {
         match self {
-            Cell::User { .. } | Cell::Notice { .. } => true,
+            Cell::User { .. } | Cell::Notice { .. } | Cell::Error { .. } | Cell::Summary { .. } => {
+                true
+            }
             Cell::Assistant { done, .. } | Cell::Thinking { done, .. } => *done,
             Cell::Tool { result, .. } => result.is_some(),
         }
@@ -86,6 +101,12 @@ pub struct State {
     pub commands: Vec<String>,
     /// A first idle `Ctrl+C` arms; the second quits.
     pub ctrl_c_armed: bool,
+    /// 100 ms ticks since start; spinners and elapsed times read it.
+    pub tick: u64,
+    /// `Ctrl+T`: thinking cells expanded rather than a one-line count.
+    pub show_thinking: bool,
+    /// `tui.theme` resolved: dark unless the user chose light.
+    pub dark: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,6 +147,19 @@ impl State {
             files: Vec::new(),
             commands: BUILTIN_COMMANDS.iter().map(|c| c.to_string()).collect(),
             ctrl_c_armed: false,
+            tick: 0,
+            show_thinking: false,
+            dark: true,
+        }
+    }
+
+    /// What `cells::cell_lines` needs for a `width`-column render.
+    pub fn look(&self, width: u16) -> Look {
+        Look {
+            width,
+            dark: self.dark,
+            show_thinking: self.show_thinking,
+            tick: self.tick,
         }
     }
 
@@ -162,7 +196,11 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             on_event(state, ev);
             Vec::new()
         }
-        Msg::Tick | Msg::Resize(..) => Vec::new(),
+        Msg::Tick => {
+            state.tick += 1;
+            Vec::new()
+        }
+        Msg::Resize(..) => Vec::new(),
     }
 }
 
@@ -182,6 +220,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     state.ctrl_c_armed = false;
     if ctrl && key.code == KeyCode::Char('d') {
         return vec![Cmd::Quit];
+    }
+    if ctrl && key.code == KeyCode::Char('t') {
+        state.show_thinking = !state.show_thinking;
+        return Vec::new();
     }
     match state.modal.take() {
         Some(Modal::Approval { call, why }) => {
@@ -265,7 +307,10 @@ fn on_event(state: &mut State, ev: Event) {
     }
     match ev {
         Event::ItemStarted { item, kind } => match kind {
-            ItemKind::UserMessage { text, .. } => state.transcript.push(Cell::User { text }),
+            ItemKind::UserMessage { text, attachments } => state.transcript.push(Cell::User {
+                text,
+                attachments: attachments.into_iter().map(|a| a.name).collect(),
+            }),
             ItemKind::AssistantMessage { text } => state.transcript.push(Cell::Assistant {
                 item,
                 text,
@@ -276,10 +321,7 @@ fn on_event(state: &mut State, ev: Event) {
                 text,
                 done: false,
             }),
-            ItemKind::Summary { text } => state.transcript.push(Cell::Notice {
-                level: Level::Info,
-                text,
-            }),
+            ItemKind::Summary { text } => state.transcript.push(Cell::Summary { text }),
             ItemKind::Notice { level, text } => state.transcript.push(Cell::Notice { level, text }),
             // Tool items arrive as `ToolCallRequested`/`ToolCallDone` too;
             // those carry the streamed output, so they own the cell.
@@ -303,6 +345,7 @@ fn on_event(state: &mut State, ev: Event) {
             call: Box::new(call),
             output: String::new(),
             result: None,
+            started: state.tick,
         }),
         Event::ToolCallOutput { call_id, delta } => {
             if let Some(Cell::Tool { output, .. }) = state.tool_mut(call_id) {
@@ -335,9 +378,9 @@ fn on_event(state: &mut State, ev: Event) {
         Event::TaskCreated { task, label, .. } => state.tasks.push((task, label)),
         Event::TaskCompleted { task, .. } => state.tasks.retain(|(t, _)| *t != task),
         Event::Notice { level, text } => state.transcript.push(Cell::Notice { level, text }),
-        Event::Error { error, .. } => state.transcript.push(Cell::Notice {
-            level: Level::Warn,
+        Event::Error { error, fatal } => state.transcript.push(Cell::Error {
             text: error.to_string(),
+            fatal,
         }),
         Event::SessionStarted { .. } | Event::Compacted { .. } => {}
     }

@@ -4,7 +4,9 @@
 
 pub mod app;
 pub mod banner;
+pub mod cells;
 pub mod composer;
+pub mod markdown;
 pub mod picker;
 pub mod state;
 pub mod view;
