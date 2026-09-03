@@ -3,4 +3,6 @@
 //! Separate because these are user- and repo-supplied extension points, not
 //! core agent logic.
 
+pub mod frontmatter;
 pub mod instructions;
+pub mod skills;

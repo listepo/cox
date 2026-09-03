@@ -573,16 +573,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
 
-#### T7.2 Skills
-Model: sonnet · Status: open · Depends: T7.1 · Size: ~180
-Goal: Agent Skills spec: index in the prompt, body on invoke, `allowed-tools` respected.
-Files: `crates/cox-ext/src/skills.rs`, `crates/cox-ext/src/frontmatter.rs`.
-Steps: (1) Discover `~/.cox/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md`, `.cox/skills`, `.claude/skills`. (2) Frontmatter parser (YAML subset: scalars, lists; `name`, `description`, `license`, `allowed-tools`, `metadata`, `compatibility`); malformed → skipped with `Notice`. (3) Index line per skill in `system[2]`: `- <name>: <description>`; a `skill` deferred tool (or `/name`) loads the body as a user-visible item; `allowed-tools` narrows the engine for that turn. (4) Test with a sample skill from `anthropics/skills` (vendored fixture): body absent from the first request, present after invoke.
-Check:
-```bash
-mise exec -- cargo test -p cox-ext skills_
-```
-
 #### T7.3 Commands and subagent definitions
 Model: sonnet · Status: open · Depends: T7.2, T3.9 · Size: ~160
 Goal: `.claude/commands/*.md` and `.claude/agents/*.md` (and `.cox/` twins) work.

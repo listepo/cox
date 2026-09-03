@@ -1241,3 +1241,27 @@ test result: ok. 8 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T7.2 Skills
+Model: fable · Status: done 2026-09-03 · Depends: T7.1 · Size: ~180
+Goal: Agent Skills spec: index in the prompt, body on invoke, `allowed-tools` respected.
+Files: `crates/cox-ext/src/skills.rs`, `crates/cox-ext/src/frontmatter.rs`.
+Steps: (1) Discover `~/.cox/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md`, `.cox/skills`, `.claude/skills`. (2) Frontmatter parser (YAML subset: scalars, lists; `name`, `description`, `license`, `allowed-tools`, `metadata`, `compatibility`); malformed → skipped with `Notice`. (3) Index line per skill in `system[2]`: `- <name>: <description>`; a `skill` deferred tool (or `/name`) loads the body as a user-visible item; `allowed-tools` narrows the engine for that turn. (4) Test with a sample skill from `anthropics/skills` (vendored fixture): body absent from the first request, present after invoke.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext skills_
+```
+
+What landed: `crates/cox-ext/src/frontmatter.rs` — `split`/`parse<T>` over the `---` header (serde_yaml; `Missing`/`Unterminated`/`Yaml` errors) and `names()` for fields Claude writes as a list or a space/comma string. `crates/cox-ext/src/skills.rs` — `skill_dirs(cox_home, claude_home, project)` → `~/.cox/skills`, `~/.claude/skills`, `.cox/skills`, `.claude/skills`; `discover(&dirs)` reads `*/SKILL.md` in sorted order, later directories overriding earlier same names (project over home), and skips malformed files with a notice (no frontmatter, bad YAML, missing `description`, name not lowercase/digits/hyphens or ≠ directory name); `Skill { name, description, license, allowed_tools, metadata, compatibility, path, body }`; `index(&skills)` is the `system[2]` text (`# Skills` + one `- name: description` line each, empty when there are none so the prefix is unchanged for users without skills); `SkillTool` is a deferred `Risk::ReadOnly` tool (`{"name"}`) returning `# Skill: <name>\n\n<body>` with `structured.allowed_tools` for the engine, `NotFound` for unknown names. Fixtures: `tests/fixtures/skills/skill-creator/SKILL.md` vendored verbatim from `anthropics/skills` (Apache-2.0, attribution in the fixtures README) and cox's `greeting` skill exercising `allowed-tools`/`metadata`/`compatibility`. Tests (`skills_`): index without bodies, invoke returns body + allowed tools + `NotFound`, vendored frontmatter fields, five malformed variants skipped with notices, project overrides home. Deps: cox-ext gains serde, serde_yaml, serde_json, async-trait, thiserror (plan §1.1 row already lists serde_yaml); dev tokio, tokio-util.
+Not done: wiring — the index into `context::assemble`'s `system[2]`, `SkillTool` into the session's tool list, `/name` in the palette, and `allowed_tools` narrowing the engine for the turn all touch cox-core/cox-tui/the binary (outside this task's files; land with T7.3's palette entries); a proprietary `anthropics/skills` sample (`pdf`) was deliberately not vendored. Size: ~80 LOC frontmatter, ~200 skills, ~150 tests.
+```
+$ mise exec -- cargo test -p cox-ext skills_
+test skills_vendored_sample_parses_its_frontmatter ... ok
+test skills_index_lists_names_and_descriptions_without_bodies ... ok
+test skills_invoke_returns_the_body_and_allowed_tools ... ok
+test skills_later_directories_override_earlier_same_names ... ok
+test skills_malformed_or_misnamed_are_skipped_with_a_notice ... ok
+test result: ok. 5 passed; 0 failed   (+ 2 frontmatter unit tests)
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```
