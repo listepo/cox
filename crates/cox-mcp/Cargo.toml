@@ -7,3 +7,12 @@ license.workspace = true
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
+# T6.2: MCP server over stdio (plan §1.1 row: rmcp 3.2 client+server).
+rmcp = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }

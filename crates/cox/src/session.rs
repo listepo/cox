@@ -111,7 +111,7 @@ fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
 }
 
 /// Every built-in tool except `agent`, which the session adds itself.
-fn tools(answer: Option<String>) -> Vec<Arc<dyn Tool>> {
+pub(crate) fn tools(answer: Option<String>) -> Vec<Arc<dyn Tool>> {
     let mut tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ReadTool),
         Arc::new(EditTool),

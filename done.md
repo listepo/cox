@@ -1171,3 +1171,24 @@ test result: ok. 6 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T6.2 `cox mcp` server
+Model: fable · Status: done 2026-09-03 · Depends: T3.3, T2.2 · Size: ~180
+Goal: cox's tools served over MCP stdio with the same permission engine.
+Files: `crates/cox-mcp/src/server.rs`, `crates/cox-mcp/tests/server.rs`.
+Steps: (1) rmcp `ServerHandler` listing non-deferred tools (`read`, `grep`, `glob`, `outline` by default; `--allow-write` adds `edit`/`write`/`apply_patch`; `bash` only with `--tools bash`). (2) Calls go through `Engine` with `policy = never` (deny instead of ask) and the sandbox policy. (3) Test: an rmcp client over an in-process duplex lists tools and calls `read`; `write` absent without the flag.
+Check:
+```bash
+mise exec -- cargo test -p cox-mcp server_
+```
+Done when: Claude Code's `.mcp.json` entry `{"cox": {"command": "cox", "args": ["mcp"]}}` works (manual smoke noted in `docs/compat.md`).
+
+What landed: `crates/cox-mcp/src/server.rs` — `ToolServer::new(tools, gate, CxTemplate)` implements rmcp `ServerHandler`: `list_tools` maps each `ToolSpec` to an MCP `Tool` (name, description, input schema), `call_tool` builds a `ToolCall` (fresh `CallId`, `risk`/`subject` from the tool), asks the `Gate`, runs the tool with a `ToolCx` (per-call output channel drained, own cancel token) and returns `CallToolResult::success`/`error` (denials and `ToolError`s are error results, unknown names are `invalid_params`); `serve_stdio()` runs on the process stdio until the client hangs up. `Gate` and `CxTemplate` keep the crate a leaf below `cox-core` (deps test): the binary supplies both. `crates/cox/src/mcp_cmd.rs` — `cox mcp [--allow-write] [--tools a,b]` (`McpArgs`): default `read`, `grep`, `glob`, `outline`; `--allow-write` adds `edit`, `write`, `apply_patch`; `--tools` names the exact set and is the only way to get `bash`; the gate is `Engine::compile(config.permissions)` decided with `ApprovalPolicy::Never` under the configured mode and sandbox (an `Ask` is a deny with its reason); `ToolCx` roots default to cwd, sandbox from `[sandbox]`, archive is the store under `COX_HOME`. Test `crates/cox-mcp/tests/server.rs`: rmcp client over `tokio::io::duplex` lists `echo`/`touch`, `echo` returns text, `touch` (Write) comes back `isError` with `denied: Write …` and never runs, unknown tool is a protocol error, client `cancel` ends the server. Unit test on flag selection. `docs/compat.md` records the `.mcp.json` entry and the manual stdio smoke (init, list, `read`, `write` unknown/denied, path escape rejected). Deps: cox-mcp gains rmcp (workspace row, `transport-io` feature added for `stdio()`), tokio, tokio-util, serde_json, thiserror; dev async-trait.
+Not done: no `outline` tool exists yet (the name is in the default list; nothing matches until one lands); streamed tool output has no MCP channel (final text only); `--tools` does not validate names (unknown ones are silently absent from the list); smoke was by hand over stdio, not from Claude Code itself. Size: ~130 LOC `server.rs`, ~110 `mcp_cmd.rs`, ~150 test.
+```
+$ mise exec -- cargo test -p cox-mcp server_
+test server_lists_tools_and_runs_a_gated_call_over_a_duplex ... ok
+test result: ok. 1 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

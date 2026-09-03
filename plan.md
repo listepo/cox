@@ -571,17 +571,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P6 — Headless and MCP server (goal: scripts and other agents can drive cox)
 
-#### T6.2 `cox mcp` server
-Model: sonnet · Status: open · Depends: T3.3, T2.2 · Size: ~180
-Goal: cox's tools served over MCP stdio with the same permission engine.
-Files: `crates/cox-mcp/src/server.rs`, `crates/cox-mcp/tests/server.rs`.
-Steps: (1) rmcp `ServerHandler` listing non-deferred tools (`read`, `grep`, `glob`, `outline` by default; `--allow-write` adds `edit`/`write`/`apply_patch`; `bash` only with `--tools bash`). (2) Calls go through `Engine` with `policy = never` (deny instead of ask) and the sandbox policy. (3) Test: an rmcp client over an in-process duplex lists tools and calls `read`; `write` absent without the flag.
-Check:
-```bash
-mise exec -- cargo test -p cox-mcp server_
-```
-Done when: Claude Code's `.mcp.json` entry `{"cox": {"command": "cox", "args": ["mcp"]}}` works (manual smoke noted in `docs/compat.md`).
-
 #### T6.3 Headless approvals over stdin
 Model: haiku · Status: open · Depends: T6.1 · Size: ~100
 Goal: a driver script can approve or deny calls.

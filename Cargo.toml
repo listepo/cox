@@ -62,7 +62,7 @@ seccompiler = "0.5"
 nix = "0.29"
 
 # cox-mcp
-rmcp = { version = "3.2", features = ["client", "server", "auth"] }
+rmcp = { version = "3.2", features = ["client", "server", "auth", "transport-io"] }
 
 # cox-store
 # diesel/diesel_migrations pinned "2.2" per plan.md D9 resolve to the latest

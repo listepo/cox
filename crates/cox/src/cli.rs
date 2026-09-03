@@ -82,7 +82,7 @@ pub enum Command {
     /// Re-record a provider cassette.
     Record(RecordArgs),
     /// Serve built-in tools over MCP stdio.
-    Mcp,
+    Mcp(McpArgs),
     /// Agent Client Protocol server on stdio.
     Acp,
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
@@ -138,6 +138,18 @@ pub struct StatsArgs {
     /// Print stats for a specific session by id.
     #[arg(long, value_name = "ID")]
     pub session: Option<String>,
+}
+
+/// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools
+/// by default; writes are opt-in and `bash` only by name.
+#[derive(Args, Debug, Default)]
+pub struct McpArgs {
+    /// Also serve `edit`, `write` and `apply_patch`.
+    #[arg(long)]
+    pub allow_write: bool,
+    /// Serve exactly these tools (comma-separated); the only way to get `bash`.
+    #[arg(long, value_name = "A,B")]
+    pub tools: Option<String>,
 }
 
 /// `cox record <name> -p <prompt> [--sse FILE] [--redact]` (plan.md T1.5).
