@@ -1633,6 +1633,29 @@ COX_PROVIDER=scripted just eval --dry-run → 10/10 passed, $0.0000 (exit 0)
 adapter --self-test → ok
 ```
 
+#### T12.2 Release
+Model: haiku · Status: done 2026-09-04 · Depends: T12.1 · Size: ~120
+Goal: installable binaries.
+Files: `Cargo.toml` (`[workspace.metadata.dist]`), `.github/workflows/release.yml`, `install.sh`, `crates/cox/src/self_update.rs`.
+Steps: `cargo-dist` targets `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`; `SHA256SUMS`; `install.sh` (curl | sh discouraged in docs; give the checksum step); `cox self update` verifies the checksum before replacing the binary.
+Check:
+```bash
+git tag v0.1.0-rc1 && git push --tags   # CI produces four archives + SHA256SUMS
+```
+
+What landed: `dist-workspace.toml` (cargo-dist 0.32, the 4 targets, shell installer) + generated `release.yml` (tag-triggered plan/build/upload); `install.sh` (triple detection, checksum-verified archive install to `~/.local/bin`, `sh -n` clean); `self_update.rs` (`cox self update [--version]`: latest-tag resolve, archive + `.sha256` download, verified replace, Windows refused); `cli.rs` `self` group; `Cargo.toml` repository + profile.
+Notes / deviations:
+- **Config lives in `dist-workspace.toml`, not `[workspace.metadata.dist]`:** that is cargo-dist 0.32's canonical layout (chosen by `cargo dist init`); same effect, tool-managed.
+- **Checksums are per-file `.sha256` sidecars** (what dist generates), not one `SHA256SUMS`: both `install.sh` and `self update` verify the downloaded bytes against the sidecar before executing/extracting anything.
+- **No new C-linked dependency for unpacking:** extraction shells out to system `tar` (BSD/GNU read `.tar.xz` on all four targets) instead of adding `tar`+`xz2`; the only new workspace deps are `reqwest` (download) and `sha2` (verify), each with its one-line reason in `Cargo.toml`.
+- **`Some(_)` dispatch arm removed:** every subcommand now has a real arm.
+- **Check NOT run:** tagging + pushing `v0.1.0-rc1` publishes a release and triggers CI — maintainer action. Verified instead: `cargo dist plan` (4 archives + checksums + installer), `sh -n install.sh`, `cox self update --help`.
+Check output:
+```
+cargo dist plan → 4 archives + .sha256 sidecars + installer; cox bin tests 25 passed
+(tag + push left for the maintainer)
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

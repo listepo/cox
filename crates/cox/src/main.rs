@@ -15,6 +15,7 @@ mod mcp_cmd;
 mod record;
 mod resume;
 mod run;
+mod self_update;
 mod session;
 mod sessions;
 mod stats;
@@ -63,8 +64,14 @@ fn main() -> anyhow::Result<()> {
             let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
             expand_cmd::run(home, &args.id, args.lines.as_deref())
         }
-        Some(_) => {
-            println!("not implemented");
+        Some(Command::SelfUpdate(args)) => {
+            let version = match &args.action {
+                Some(crate::cli::SelfUpdateAction::Update { version }) => version.clone(),
+                // Bare `cox self` updates to latest, like `update` without a tag.
+                None => None,
+            };
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(self_update::run(version))?;
             Ok(())
         }
         None => session::run_tui(&cli, &cwd),

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 clap = { workspace = true }
@@ -30,6 +31,10 @@ serde_json = { workspace = true }
 keyring = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }
+# T12.2: `cox self update` downloads releases (reqwest) and verifies their
+# sha256 checksums (sha2) before replacing the binary.
+reqwest = { workspace = true }
+sha2 = { workspace = true }
 # T5.8: the binary owns the async runtime the TUI and core loop run on.
 tokio = { workspace = true }
 

@@ -89,7 +89,25 @@ pub enum Command {
     Ext(ExtArgs),
     /// Self-update the binary.
     #[command(name = "self")]
-    SelfUpdate,
+    SelfUpdate(SelfUpdateArgs),
+}
+
+/// `cox self update [--version v]` (plan.md §1.12/T12.2).
+#[derive(Args, Debug, Clone)]
+pub struct SelfUpdateArgs {
+    #[command(subcommand)]
+    pub action: Option<SelfUpdateAction>,
+}
+
+/// `cox self` subcommands.
+#[derive(Subcommand, Debug, Clone)]
+pub enum SelfUpdateAction {
+    /// Update to the latest release (or `--version vX.Y.Z`).
+    Update {
+        /// Release tag to install (`v0.1.0`); default is latest.
+        #[arg(long, value_name = "TAG")]
+        version: Option<String>,
+    },
 }
 
 /// `cox expand <id>` (plan.md T2.5).

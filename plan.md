@@ -583,16 +583,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
-#### T12.2 Release
-Model: haiku · Status: open · Depends: T12.1 · Size: ~120
-Goal: installable binaries.
-Files: `Cargo.toml` (`[workspace.metadata.dist]`), `.github/workflows/release.yml`, `install.sh`, `crates/cox/src/self_update.rs`.
-Steps: `cargo-dist` targets `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`; `SHA256SUMS`; `install.sh` (curl | sh discouraged in docs; give the checksum step); `cox self update` verifies the checksum before replacing the binary.
-Check:
-```bash
-git tag v0.1.0-rc1 && git push --tags   # CI produces four archives + SHA256SUMS
-```
-
 #### T12.3 Docs
 Model: haiku · Status: open · Depends: T12.2 · Size: doc
 Goal: `README.md` (60-second start), `docs/config.md` (every key, generated), `docs/tools.md`, `docs/compat.md` (what is read from `.claude/` and `.codex/`, what is not), `docs/ide.md` (T11.2), `CHANGELOG.md` via git-cliff.
