@@ -10,13 +10,14 @@ use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, Level, Message, Risk, Role, SandboxMode,
-    SandboxPolicy, ToolCall, ToolOutput, ToolResult, Usage, Why,
+    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message, Risk,
+    Role, SandboxMode, SandboxPolicy, ToolCall, ToolOutput, ToolResult, Usage, Why,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
+use crate::hooks;
 use crate::permission::Outcome;
 use crate::permission::policy::{ExecPath, exec_path};
 use crate::session::{Session, State};
@@ -210,6 +211,20 @@ async fn gate(
 ) -> Result<Result<ToolCall, ToolResult>, CoreError> {
     let id = call.id;
     let denied = |reason: &str| failed_result(&format!("permission denied: {reason}"));
+    // §1.8 step i: `PreToolUse` runs before the engine so a rewritten input
+    // is what the rules judge.
+    let payload = serde_json::json!({ "tool_name": call.name, "tool_input": call.input });
+    match hooks::fire(session, HookEvent::PreToolUse, payload).await {
+        HookOutcome::Block { reason } => {
+            return Ok(Err(failed_result(&format!("blocked by hook: {reason}"))));
+        }
+        HookOutcome::Modify { input } => {
+            call.risk = tool.risk(&input);
+            call.subject = tool.subject(&input);
+            call.input = input;
+        }
+        _ => {}
+    }
     loop {
         let why = match session.decide(&call).await {
             Outcome::Allow { .. } => return Ok(Ok(call)),
@@ -329,6 +344,7 @@ async fn run_one(
     let retry = (exec_path(session.config.permissions.approval, cx.sandbox.mode)
         == ExecPath::Confined)
         .then(|| input.clone());
+    let hook_input = input.clone();
     let call = |input: Value| async { tool.call(input, &cx).await };
     let mut output = call(input).await.unwrap_or_else(error_output);
     if let (Some(input), Some(detail)) = (retry, sandbox_denial(&output)) {
@@ -345,6 +361,22 @@ async fn run_one(
             output = tool.call(input, &cx).await.unwrap_or_else(error_output);
         }
     }
+    // §1.8 step vii: informational; the verdict is not applied.
+    let event = if output.is_error {
+        HookEvent::PostToolUseFailure
+    } else {
+        HookEvent::PostToolUse
+    };
+    let _ = hooks::fire(
+        session,
+        event,
+        serde_json::json!({
+            "tool_name": tool.spec().name,
+            "tool_input": hook_input,
+            "tool_response": { "text": output.text, "is_error": output.is_error },
+        }),
+    )
+    .await;
     // `tool_search` names what it found in `structured.discovered`; the
     // next request carries those schemas (D6d) and the prefix changes once.
     let found: Vec<String> = output

@@ -6,5 +6,6 @@
 pub mod agents;
 pub mod commands;
 pub mod frontmatter;
+pub mod hooks;
 pub mod instructions;
 pub mod skills;

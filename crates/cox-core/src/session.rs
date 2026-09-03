@@ -3,14 +3,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::errors::{CoreError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
-use cox_protocol::traits::{Archive, ArchivePut, Provider, Store, Tool};
+use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
 use cox_protocol::types::{
-    Content, Decision, Event, ItemKind, Job, Level, Message, ModelId, PermissionMode, Role,
-    SandboxMode, StopReason, Submission, Tier, ToolCall,
+    Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message, ModelId,
+    PermissionMode, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::budget;
 use crate::context::assemble_with;
 use crate::dedup::Dedup;
+use crate::hooks;
 use crate::permission::{Engine, Outcome};
 use crate::turn::{consume_provider, results_message, run_tools};
 
@@ -82,6 +83,9 @@ pub struct Session {
     /// The tier every provider call in this session is routed to.
     pub(crate) tier: Tier,
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
+    /// The hook runner, installed once by the surface and shared with
+    /// children so a subagent's calls run the same hooks.
+    hook: Arc<OnceLock<Arc<dyn Hook>>>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
     inner: Arc<Mutex<Inner>>,
@@ -127,7 +131,7 @@ impl Session {
         job: Job,
         tier: Tier,
     ) -> Result<Self, CoreError> {
-        Self::build(
+        let mut child = Self::build(
             config,
             self.provider.clone(),
             tools,
@@ -137,7 +141,9 @@ impl Session {
             Some(self.id),
             job,
             tier,
-        )
+        )?;
+        child.hook = self.hook.clone();
+        Ok(child)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -170,6 +176,7 @@ impl Session {
             job,
             tier,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
+            hook: Arc::new(OnceLock::new()),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
             inner: Arc::new(Mutex::new(Inner {
@@ -251,6 +258,16 @@ impl Session {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// Installs the hook runner (T7.4); a second call is ignored so the
+    /// runner stays byte-stable for the session and its children.
+    pub fn set_hook(&self, hook: Arc<dyn Hook>) {
+        let _ = self.hook.set(hook);
+    }
+
+    pub(crate) fn hook(&self) -> Option<Arc<dyn Hook>> {
+        self.hook.get().cloned()
     }
 
     /// Feeds one submission into the state machine.
@@ -372,6 +389,30 @@ impl Session {
         }
         let turn = TurnId::new();
         let user_item = ItemId::new();
+        // §1.8 step 1: a hook may block or rewrite the prompt before it
+        // touches history; a blocked prompt is still a (refused) turn so
+        // every surface sees its `TurnDone`.
+        let text = match hooks::fire(
+            self,
+            HookEvent::UserPromptSubmit,
+            serde_json::json!({ "prompt": text }),
+        )
+        .await
+        {
+            HookOutcome::Block { reason } => {
+                self.emit_turn_started(turn).await?;
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: format!("prompt blocked by hook: {reason}"),
+                })
+                .await?;
+                return self
+                    .finish(turn, StopReason::Refusal { detail: reason })
+                    .await;
+            }
+            HookOutcome::Modify { input } => input.as_str().map_or(text, str::to_owned),
+            _ => text,
+        };
         {
             let mut inner = self.inner.lock().await;
             inner.state = State::Assembling;
@@ -381,13 +422,7 @@ impl Session {
             });
             inner.provider_calls = 0;
         }
-        self.emit(Event::TurnStarted {
-            turn,
-            job: self.job,
-            tier: self.tier,
-            model: ModelId(self.config.tiers.get(self.tier).model.clone()),
-        })
-        .await?;
+        self.emit_turn_started(turn).await?;
         self.emit(Event::ItemStarted {
             item: user_item,
             kind: ItemKind::UserMessage {
@@ -585,6 +620,16 @@ impl Session {
         Ok(Step::Continue)
     }
 
+    async fn emit_turn_started(&self, turn: TurnId) -> Result<(), CoreError> {
+        self.emit(Event::TurnStarted {
+            turn,
+            job: self.job,
+            tier: self.tier,
+            model: ModelId(self.config.tiers.get(self.tier).model.clone()),
+        })
+        .await
+    }
+
     pub(crate) async fn set_state(&self, state: State) {
         self.inner.lock().await.state = state;
     }
@@ -593,6 +638,10 @@ impl Session {
         {
             let mut inner = self.inner.lock().await;
             inner.state = State::Finishing;
+        }
+        if stop == StopReason::EndTurn {
+            // §1.8 step 4: `Stop` is informational; its verdict is not applied.
+            let _ = hooks::fire(self, HookEvent::Stop, serde_json::json!({})).await;
         }
         self.emit(Event::TurnDone { turn, stop }).await?;
         {

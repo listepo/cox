@@ -8,6 +8,7 @@
 mod budget;
 mod context;
 mod dedup;
+mod hooks;
 pub mod permission;
 mod rollout;
 mod session;

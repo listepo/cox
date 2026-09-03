@@ -53,6 +53,12 @@ pub fn open(
         store,
         cwd.to_path_buf(),
     )?;
+    if loaded.config.hooks.enabled {
+        session.set_hook(Arc::new(cox_ext::hooks::ShellHooks::new(
+            &loaded.config.hooks,
+            cwd.to_path_buf(),
+        )));
+    }
     Ok((session, loaded))
 }
 

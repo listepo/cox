@@ -58,7 +58,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
-| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex |
+| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4) |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3 |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
@@ -572,16 +572,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 ### P6 — Headless and MCP server (goal: scripts and other agents can drive cox)
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
-
-#### T7.4 Hooks
-Model: opus · Status: open · Depends: T2.1, T7.1 · Size: ~200
-Goal: Claude Code's hook protocol, fail open.
-Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-core/src/hooks.rs` (the call sites), `crates/cox-ext/tests/hooks.rs`.
-Steps: (1) Config: `[[hooks.<Event>]] matcher = "Bash" command = "…" timeout = 60` from `.cox/config.toml` and imported `.claude/settings.json`. (2) Payload JSON on stdin (`session_id`, `cwd`, `hook_event_name`, `tool_name`, `tool_input`, `tool_response`, …); stdout JSON parsed for `decision`/`reason`/`updatedInput`/`additionalContext`; exit 2 = block with stderr as reason; other non-zero = warn and continue. (3) Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Notification`. (4) Timeout kills the process group; crash/timeout → `Notice(Warn)` and continue (`fail_open`). (5) Tests with shell stubs: `pre_tool_use_exit_2_blocks_bash`, `crashing_hook_is_skipped_not_fatal`, `updated_input_is_applied`; an rtok hook fixture if `rtok` is on PATH (skipped otherwise).
-Check:
-```bash
-mise exec -- cargo test -p cox-ext hooks_
-```
 
 #### T7.5 `.claude/settings.json` import
 Model: haiku · Status: open · Depends: T2.2, T7.4 · Size: ~120

@@ -1286,3 +1286,23 @@ cargo test -p cox-ext agents_   → 4 passed (3 integration + 1 unit)
 cargo test -p cox ext_lists     → 1 passed
 ```
 
+
+#### T7.4 Hooks
+Model: fable · Status: done 2026-09-03 · Depends: T2.1, T7.1 · Size: ~200
+Goal: Claude Code's hook protocol, fail open.
+Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-core/src/hooks.rs` (the call sites), `crates/cox-ext/tests/hooks.rs`.
+Steps: (1) Config: `[[hooks.<Event>]] matcher = "Bash" command = "…" timeout = 60` from `.cox/config.toml` and imported `.claude/settings.json`. (2) Payload JSON on stdin (`session_id`, `cwd`, `hook_event_name`, `tool_name`, `tool_input`, `tool_response`, …); stdout JSON parsed for `decision`/`reason`/`updatedInput`/`additionalContext`; exit 2 = block with stderr as reason; other non-zero = warn and continue. (3) Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Notification`. (4) Timeout kills the process group; crash/timeout → `Notice(Warn)` and continue (`fail_open`). (5) Tests with shell stubs: `pre_tool_use_exit_2_blocks_bash`, `crashing_hook_is_skipped_not_fatal`, `updated_input_is_applied`; an rtok hook fixture if `rtok` is on PATH (skipped otherwise).
+Check:
+```bash
+mise exec -- cargo test -p cox-ext hooks_
+```
+
+What landed: `crates/cox-ext/src/hooks.rs` `ShellHooks: Hook` — `[[hooks.<Event>]]` by Claude event name, matcher (exact / `a|b` / `prefix*`), `sh -c` with the payload JSON on stdin, per-hook `timeout_s` else `hooks.timeout_s`, timeout kills the process group (`kill_on_drop` + `killpg`), exit 2 → `Block{stderr}`, other non-zero/spawn failure/signal → `Failed`, exit 0 stdout parsed for `continue:false`, `decision:"block"`, `hookSpecificOutput.permissionDecision:"deny"`, `updatedInput` (top level or hookSpecific); plain text continues; a `Modify` feeds the next hook's `tool_input`. `crates/cox-core/src/hooks.rs` `fire()` builds `{session_id, cwd, hook_event_name, …}` and applies D14: `Failed` → `Notice(Warn) "hook <Event> skipped: …"` and continue when `hooks.fail_open`, else block. Call sites: `UserPromptSubmit` (Block → refused turn with `TurnStarted`/Notice/`TurnDone{Refusal}`; Modify string → new prompt) in `run_turn`, `PreToolUse` before the engine in `gate` (Block → tool result `blocked by hook: …`; Modify → new input re-risked), `PostToolUse`/`PostToolUseFailure` after `run_one`, `Stop` before `TurnDone{EndTurn}`. `Session::set_hook` (OnceLock, shared with children), installed by the binary when `hooks.enabled`. `HookEvent` gained `SessionStart/SessionEnd/PermissionRequest/SubagentStart/SubagentStop/Notification` and `name()`. Tests: `hooks_*` ×6 in cox-ext (4 integration, 2 unit), `broken_hook_is_skipped_not_fatal` + 2 loop tests in cox-core. Smoke: real binary, `COX_HOME` scratch `config.toml` with a PreToolUse `exit 2` hook on `write` → `tool_call_done ok:false "blocked by hook: hooks say no"`, no file, exit 0.
+Not done: `SessionStart/SessionEnd/PermissionRequest/SubagentStart/SubagentStop/Notification/PreCompact/PostCompact` are recognised config keys but not fired yet (no compaction until T8.1; subagent sites deferred to keep the diff small); `additionalContext` is ignored (no `HookOutcome` variant for it); matchers are not regexes; `.claude/settings.json` hooks arrive with T7.5; no rtok fixture (its hook subcommand contract was not verified, so nothing was invented).
+Size: ~420 LOC across 9 files (over the 3-file guideline: runner, core call sites in two modules, protocol variants, wiring, three test files).
+Check output:
+```
+cargo test -p cox-ext hooks_            → 6 passed
+cargo test -p cox-core --test hooks     → 3 passed
+```
+

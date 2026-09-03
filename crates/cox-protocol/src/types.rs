@@ -220,6 +220,39 @@ pub enum HookEvent {
     PreCompact,
     /// After compaction runs.
     PostCompact,
+    /// A session opened.
+    SessionStart,
+    /// A session closed.
+    SessionEnd,
+    /// The engine escalated a call to the user.
+    PermissionRequest,
+    /// A subagent started.
+    SubagentStart,
+    /// A subagent finished.
+    SubagentStop,
+    /// A notice was shown.
+    Notification,
+}
+
+impl HookEvent {
+    /// Claude Code's name for the event: the config key and `hook_event_name`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::UserPromptSubmit => "UserPromptSubmit",
+            Self::PreToolUse => "PreToolUse",
+            Self::PostToolUse => "PostToolUse",
+            Self::PostToolUseFailure => "PostToolUseFailure",
+            Self::Stop => "Stop",
+            Self::PreCompact => "PreCompact",
+            Self::PostCompact => "PostCompact",
+            Self::SessionStart => "SessionStart",
+            Self::SessionEnd => "SessionEnd",
+            Self::PermissionRequest => "PermissionRequest",
+            Self::SubagentStart => "SubagentStart",
+            Self::SubagentStop => "SubagentStop",
+            Self::Notification => "Notification",
+        }
+    }
 }
 
 /// `sandbox.linux_backend` (plan.md T4.2): which Linux confinement to use.
