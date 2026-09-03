@@ -59,7 +59,7 @@ pub fn cox_home() -> PathBuf {
     }
 }
 
-fn home_dir() -> PathBuf {
+pub fn home_dir() -> PathBuf {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)

@@ -1265,3 +1265,24 @@ test result: ok. 5 passed; 0 failed   (+ 2 frontmatter unit tests)
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T7.3 Commands and subagent definitions
+Model: fable · Status: done 2026-09-03 · Depends: T7.2, T3.9 · Size: ~160
+Goal: `.claude/commands/*.md` and `.claude/agents/*.md` (and `.cox/` twins) work.
+Files: `crates/cox-ext/src/commands.rs`, `crates/cox-ext/src/agents.rs`.
+Steps: (1) Commands: frontmatter `description`, `allowed-tools`, `model` (tier name or model id → tier), `argument-hint`; body with `$ARGUMENTS`, `$1..$n`, `!`command`` shell inclusion (runs through `bash` tool with the engine), `@file` inclusion. (2) Agents: `name`, `description`, `tools`, `model` → `agent` presets. (3) Both appear in `/` palette and `cox ext list`. (4) Tests: fixture command expands; subagent def restricts tools in a loop test.
+Check:
+```bash
+mise exec -- cargo test -p cox-ext commands_ agents_
+```
+
+What landed: `crates/cox-ext/src/commands.rs` (discovery over `~/.cox|~/.claude|.cox|.claude/commands/*.md`, frontmatter `description`/`allowed-tools`/`model`/`argument-hint`, plain bodies allowed, later dirs override; `expand` handles `$ARGUMENTS`, `$1..$n`, `` !`cmd` `` and word-initial `@file` through the caller's `Includes` trait so the binary routes shell through the `bash` tool and engine; failed inclusions stay verbatim with a notice), `crates/cox-ext/src/agents.rs` (`AgentDef` with `name`/`description`/`tools`/`model`, `tier_for` mapping tier names, Claude aliases and model ids to `Tier`, `restrict` keeps only listed tools the parent has), `cox ext` report (instructions, skills, commands, agents, notices) in `crates/cox/src/ext_cmd.rs` with an e2e test. Tests: `commands_*` (4), `agents_*` (3 + 1 unit).
+Not done: the TUI `/` palette does not yet list custom commands (cox-tui cannot depend on cox-ext; needs a `State` field fed by the binary — T9.x surface wiring), the `agent` tool does not yet consume `AgentDef` (core `Preset` is `&'static`; wiring deferred with the T7.1/T7.2 context wiring), no loop test through core. The Check as written passes two filters to cargo, which rejects that; run the two filters separately.
+Size: ~350 LOC across 8 files (fixtures included).
+Check output:
+```
+cargo test -p cox-ext commands_ → 4 passed
+cargo test -p cox-ext agents_   → 4 passed (3 integration + 1 unit)
+cargo test -p cox ext_lists     → 1 passed
+```
+

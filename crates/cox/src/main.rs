@@ -9,6 +9,7 @@ mod config_cmd;
 mod config_load;
 mod doctor;
 mod expand_cmd;
+mod ext_cmd;
 mod mcp_cmd;
 mod record;
 mod resume;
@@ -44,6 +45,10 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Some(Command::Mcp(args)) => mcp_cmd::run(&cli, args, &cwd),
+        Some(Command::Ext) => {
+            print!("{}", ext_cmd::report(&cli, &cwd));
+            Ok(())
+        }
         Some(Command::Run(args)) => std::process::exit(run::run(&cli, args, &cwd)?),
         Some(Command::Expand(args)) => {
             let home = cli.home.as_deref().unwrap_or_else(|| &cwd);

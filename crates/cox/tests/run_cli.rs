@@ -212,3 +212,41 @@ fn approve_silence_times_out_into_a_denial() {
     assert_eq!(v["denied"], 1, "{v}");
     assert!(!work.path().join("a.txt").exists());
 }
+
+#[test]
+fn ext_lists_commands_and_agents_from_the_project_tree() {
+    let work = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(work.path().join(".git")).unwrap();
+    std::fs::create_dir_all(work.path().join(".claude/commands")).unwrap();
+    std::fs::create_dir_all(work.path().join(".cox/agents")).unwrap();
+    std::fs::write(
+        work.path().join(".claude/commands/review.md"),
+        "Review $ARGUMENTS",
+    )
+    .unwrap();
+    std::fs::write(
+        work.path().join(".cox/agents/scout.md"),
+        "---\nname: scout\ndescription: looks around\n---\nbody",
+    )
+    .unwrap();
+    std::fs::write(work.path().join("AGENTS.md"), "be nice").unwrap();
+    let out = assert_cmd::Command::cargo_bin("cox")
+        .unwrap()
+        .args(["--cwd", work.path().to_str().unwrap(), "ext"])
+        .env("COX_HOME", home.path())
+        .env("HOME", home.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.starts_with("instructions:\n") && text.contains("AGENTS.md\n"),
+        "{text}"
+    );
+    assert!(text.contains("commands:\n  review"), "{text}");
+    assert!(text.contains("agents:\n  scout"), "{text}");
+    assert!(text.contains("notices: none"), "{text}");
+}

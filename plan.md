@@ -573,16 +573,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P7 — Extensions (goal: a Claude Code or Codex user's setup works unchanged)
 
-#### T7.3 Commands and subagent definitions
-Model: sonnet · Status: open · Depends: T7.2, T3.9 · Size: ~160
-Goal: `.claude/commands/*.md` and `.claude/agents/*.md` (and `.cox/` twins) work.
-Files: `crates/cox-ext/src/commands.rs`, `crates/cox-ext/src/agents.rs`.
-Steps: (1) Commands: frontmatter `description`, `allowed-tools`, `model` (tier name or model id → tier), `argument-hint`; body with `$ARGUMENTS`, `$1..$n`, `!`command`` shell inclusion (runs through `bash` tool with the engine), `@file` inclusion. (2) Agents: `name`, `description`, `tools`, `model` → `agent` presets. (3) Both appear in `/` palette and `cox ext list`. (4) Tests: fixture command expands; subagent def restricts tools in a loop test.
-Check:
-```bash
-mise exec -- cargo test -p cox-ext commands_ agents_
-```
-
 #### T7.4 Hooks
 Model: opus · Status: open · Depends: T2.1, T7.1 · Size: ~200
 Goal: Claude Code's hook protocol, fail open.
