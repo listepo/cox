@@ -15,3 +15,4 @@ pub mod state;
 pub mod status;
 pub mod text;
 pub mod view;
+pub mod vim;

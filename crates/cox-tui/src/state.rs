@@ -278,12 +278,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         None => {
-            if key.code == KeyCode::Esc {
-                return if state.status.busy {
-                    vec![Cmd::Submit(Submission::Interrupt)]
-                } else {
-                    Vec::new()
-                };
+            // Esc while a turn runs interrupts it; otherwise it reaches the
+            // composer (vim's normal mode wants it).
+            if key.code == KeyCode::Esc && state.status.busy {
+                return vec![Cmd::Submit(Submission::Interrupt)];
             }
             match state.composer.key(key) {
                 Edit::Submit(text) => {
@@ -349,6 +347,10 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             notice(state, Level::Info, text);
         }
         Action::Todo => state.show_todo = !state.show_todo,
+        Action::Vim => {
+            let on = state.composer.vim_mode().is_none();
+            state.composer.set_vim(on);
+        }
         Action::Notice(text) => notice(state, Level::Warn, text),
     }
     Vec::new()

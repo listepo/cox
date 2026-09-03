@@ -60,6 +60,8 @@ pub enum Action {
     Todo,
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
+    /// Toggle vim keys in the composer.
+    Vim,
     /// Something to tell the user without leaving the TUI.
     Notice(String),
 }
@@ -101,6 +103,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
             },
         },
         "todo" => Action::Todo,
+        "vim" => Action::Vim,
         "help" => Action::Help,
         "quit" => Action::Quit,
         _ if COMMANDS.iter().any(|(n, ..)| *n == name) => Action::Submit(Submission::Command {

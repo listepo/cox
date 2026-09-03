@@ -8,6 +8,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
 use crate::state::State;
+use crate::vim::Mode;
 
 pub fn line(state: &State) -> Line<'static> {
     let s = &state.status;
@@ -26,9 +27,14 @@ pub fn line(state: &State) -> Line<'static> {
         (false, true) => " · Ctrl+C again to quit",
         (false, false) => "",
     };
+    let vim = match state.composer.vim_mode() {
+        Some(Mode::Normal) => " · NORMAL",
+        Some(Mode::Insert) => " · INSERT",
+        None => "",
+    };
     Line::styled(
         format!(
-            " {model} · ctx {pct}% · ${:.2} · {sandbox} · {} tasks · [{}]{tail}",
+            " {model} · ctx {pct}% · ${:.2} · {sandbox} · {} tasks · [{}]{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
             format!("{:?}", state.mode).to_lowercase(),

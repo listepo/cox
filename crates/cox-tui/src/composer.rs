@@ -8,6 +8,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Style;
 use tui_textarea::TextArea;
 
+use crate::vim::{Mode, Vim};
+
 /// What a key did beyond editing text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Edit {
@@ -25,6 +27,8 @@ pub struct Composer {
     history: Vec<String>,
     /// The history entry on screen while browsing with `Up`/`Down`.
     browsing: Option<usize>,
+    /// `tui.vim`: normal/insert modes over the same textarea.
+    vim: Option<Vim>,
 }
 
 fn fresh() -> TextArea<'static> {
@@ -48,7 +52,17 @@ impl Composer {
             area: fresh(),
             history: Vec::new(),
             browsing: None,
+            vim: None,
         }
+    }
+
+    pub fn set_vim(&mut self, on: bool) {
+        self.vim = on.then(Vim::default);
+    }
+
+    /// The vim mode, or `None` when vim keys are off.
+    pub fn vim_mode(&self) -> Option<Mode> {
+        self.vim.as_ref().map(|v| v.mode)
     }
 
     pub fn text(&self) -> String {
@@ -87,6 +101,11 @@ impl Composer {
     }
 
     pub fn key(&mut self, key: KeyEvent) -> Edit {
+        if let Some(vim) = &mut self.vim
+            && vim.key(key, &mut self.area)
+        {
+            return Edit::Nothing;
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let (row, col) = self.area.cursor();
         match key.code {

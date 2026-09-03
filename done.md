@@ -1104,3 +1104,24 @@ test result: ok. 3 passed; 0 failed   (+ 3 unit tests in text.rs)
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.7 Vim-lite
+Model: fable · Status: done 2026-09-03 · Depends: T5.2 · Size: ~120
+Goal: normal/insert modes in the composer behind `tui.vim`.
+Files: `crates/cox-tui/src/vim.rs`.
+Steps: `Esc`/`i`/`a`/`o`, `hjkl`, `w`/`b`/`0`/`$`, `dd`/`yy`/`p`/`x`, counts; mode shown in the status line. Keypress table test.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui vim_
+```
+
+What landed: `vim.rs` — `Vim { mode, count, pending, linewise }` with `key(&mut self, KeyEvent, &mut TextArea) -> bool` (`true` = consumed): insert mode passes everything but `Esc` to the textarea; normal mode does `i`, `a` (forward then insert), `o` (end, newline, insert), `hjkl`, `w`/`b` (`CursorMove::WordForward/WordBack`), `0`/`$`, `x`, `dd` (line and its newline; the last line takes the newline before it), `yy`, `p` (line-wise after `dd`/`yy`, character-wise otherwise), and digit counts before any of them; `Enter` and control keys fall through so submit, `Ctrl+C` and `Ctrl+R` still work; anything else in normal mode is swallowed. `Composer` holds `Option<Vim>` — `set_vim(bool)`, `vim_mode() -> Option<Mode>` — and runs it first in `key`. `/vim` is now a local `Action::Vim` toggle (the binary sets `tui.vim` through `set_vim` at start). The status line ends with `· NORMAL` / `· INSERT` while vim is on. `state`: `Esc` when idle now reaches the composer instead of being dropped, so normal mode is reachable; while a turn runs `Esc` still interrupts. Tests: `vim_keypress_table` (17 rows of keys → text, cursor, mode), `vim_off_leaves_keys_alone_and_slash_vim_toggles_it` (plain keys unchanged; `/vim` turns it on and the status line shows the mode).
+Not done: no `gg`/`G`, `u`, `.`, visual mode, `dw`/`cw` or other operator+motion pairs — the plan's list only; `Esc` during a running turn interrupts rather than entering normal mode; `@`/`/` do not open pickers from normal mode (type `i` first). Size: ~130 LOC in `vim.rs`, ~25 across `composer`, `commands`, `state`, `status`, plus tests.
+```
+$ mise exec -- cargo test -p cox-tui vim_
+test vim_keypress_table ... ok
+test vim_off_leaves_keys_alone_and_slash_vim_toggles_it ... ok
+test result: ok. 2 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

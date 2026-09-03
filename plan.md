@@ -569,16 +569,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P5 — TUI (goal: a daily-driver terminal UI with snapshots for every state)
 
-#### T5.7 Vim-lite
-Model: haiku · Status: open · Depends: T5.2 · Size: ~120
-Goal: normal/insert modes in the composer behind `tui.vim`.
-Files: `crates/cox-tui/src/vim.rs`.
-Steps: `Esc`/`i`/`a`/`o`, `hjkl`, `w`/`b`/`0`/`$`, `dd`/`yy`/`p`/`x`, counts; mode shown in the status line. Keypress table test.
-Check:
-```bash
-mise exec -- cargo test -p cox-tui vim_
-```
-
 #### T5.8 PTY end-to-end
 Model: sonnet · Status: open · Depends: T5.5, T1.5 · Size: ~150
 Goal: the real binary, under a PTY, renders a scripted turn.
