@@ -1672,6 +1672,26 @@ Check output:
 cargo test -p cox docs_config_covers_every_key → 1 passed
 ```
 
+#### T12.4 Security pass
+Model: sonnet · Status: done 2026-09-04 · Depends: T3.5, T1.2, T7.2 · Size: ~150
+Goal: supply-chain and parser hardening in CI.
+Files: `fuzz/Cargo.toml`, `fuzz/fuzz_targets/{sse,v4a,frontmatter,permission_rules}.rs`, `.github/workflows/nightly.yml`.
+Steps: `cargo deny check` and `cargo audit` on every PR; nightly `cargo fuzz run <target> -- -max_total_time=600` for the four parsers; a `SECURITY.md` naming the trust boundaries from `AGENTS.md`.
+Check:
+```bash
+mise exec -- cargo deny check && ls fuzz/fuzz_targets | wc -l | grep -q 4
+```
+
+What landed: `fuzz/Cargo.toml` (detached `cox-fuzz` crate, explicit `[[bin]]` per target) + `sse`/`frontmatter`/`permission_rules` targets beside the existing `v4a_parse`; one seed file per target in `fuzz/corpus/`; `nightly.yml` (matrix ×4, 600 s each, crash artifacts uploaded); `cargo audit` job in `ci.yml`; `SECURITY.md` (four guards + fail-open + reporting); `libfuzzer-sys` row in §1.1.
+Notes / deviations:
+- **Deny was red on arrival:** two unmaintained advisories (bincode, yaml-rust via syntect, pre-existing) now fail `cargo deny check`; scoped `ignore`s with justification in `deny.toml` instead of a version bump with no upgrade path. `cargo audit` exits 0 (warnings only).
+- **Fuzz runs need nightly + `rustup run nightly`** (mise's cargo shim bypasses rustup proxies, so `RUSTUP_TOOLCHAIN=nightly` does not reach the inner build); nightly CI installs it itself. All four targets build and ran 25 s locally with no crashes (390K–935K execs each).
+- **Corpus hygiene:** libFuzzer's grown 9 MB output is gitignored (`fuzz/artifacts/` too); only the four hand seeds are committed.
+Check output:
+```
+cargo deny check → advisories/bans/licenses/sources ok; fuzz_targets = 4
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

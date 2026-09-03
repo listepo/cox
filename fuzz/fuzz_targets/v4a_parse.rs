@@ -10,9 +10,6 @@
 //!      `Display` prints back into something `parse` accepts identically.
 //!      A patch that parsed but printed differently would silently change
 //!      files whenever cox echoed one back.
-//!
-//! No `fuzz/Cargo.toml` yet — the cargo-fuzz crate is T12.4's, and the
-//! workspace is `members = ["crates/*"]`, so this file is inert until then.
 
 #![no_main]
 

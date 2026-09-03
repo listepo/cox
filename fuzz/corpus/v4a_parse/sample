@@ -1,0 +1,4 @@
+*** Begin Patch
+*** Add File: a.txt
++hello
+*** End Patch

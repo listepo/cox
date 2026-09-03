@@ -62,7 +62,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3 |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
-Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9; tools: cargo-nextest, cargo-deny, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
+Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
 Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`; `cox-core` → `cox-protocol` only; `cox-provider`, `cox-tools`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only. No crate below `cox` depends on `cox-core`.
 
@@ -582,16 +582,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 ### P11 — ACP and IDE (goal: cox inside Zed and JetBrains)
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
-
-#### T12.4 Security pass
-Model: sonnet · Status: open · Depends: T3.5, T1.2, T7.2 · Size: ~150
-Goal: supply-chain and parser hardening in CI.
-Files: `fuzz/Cargo.toml`, `fuzz/fuzz_targets/{sse,v4a,frontmatter,permission_rules}.rs`, `.github/workflows/nightly.yml`.
-Steps: `cargo deny check` and `cargo audit` on every PR; nightly `cargo fuzz run <target> -- -max_total_time=600` for the four parsers; a `SECURITY.md` naming the trust boundaries from `AGENTS.md`.
-Check:
-```bash
-mise exec -- cargo deny check && ls fuzz/fuzz_targets | wc -l | grep -q 4
-```
 
 ## 4. Definition of done for v0.1
 

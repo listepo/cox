@@ -32,6 +32,13 @@ wildcards = "deny"
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
+# T12.4: both are unmaintained transitives of syntect 5.3 (TUI highlighting
+# dumps), with no upgrade path inside syntect 5.x and no vulnerability
+# attached; re-review when syntect changes. Everything else still fails.
+ignore = [
+    "RUSTSEC-2025-0141", # bincode 1.3.3 via syntect
+    "RUSTSEC-2024-0320", # yaml-rust 0.4.5 via syntect
+]
 
 [sources]
 unknown-registry = "deny"

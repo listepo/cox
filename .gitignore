@@ -5,3 +5,5 @@ target/
 .env
 .env.local
 __pycache__/
+# libFuzzer crash repros and grown corpora; seed files in fuzz/corpus/ are committed.
+fuzz/artifacts/

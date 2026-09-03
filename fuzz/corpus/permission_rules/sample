@@ -1,0 +1,3 @@
+Read(src/**)
+Bash(npm run test:*)
+Edit(*.rs)
