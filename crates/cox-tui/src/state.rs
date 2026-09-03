@@ -16,6 +16,7 @@ use crate::composer::{Composer, Edit};
 use crate::modal::Approval;
 use crate::picker::{Kind, Pick, Picker};
 use crate::status::parse_todo;
+use crate::tasks;
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -350,6 +351,7 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             notice(state, Level::Info, text);
         }
         Action::Todo => state.show_todo = !state.show_todo,
+        Action::Tasks => notice(state, Level::Info, tasks::list(&state.tasks)),
         Action::Vim => {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);

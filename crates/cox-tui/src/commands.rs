@@ -44,6 +44,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("doctor", "/doctor", "check the install"),
     ("clear", "/clear", "new session, same directory"),
     ("todo", "/todo", "toggle the todo panel"),
+    ("tasks", "/tasks", "list running background tasks"),
     ("vim", "/vim", "toggle vim keys"),
     ("help", "/help", "this list"),
     ("quit", "/quit", "exit"),
@@ -58,6 +59,8 @@ pub enum Action {
     Cost,
     /// Toggle the todo panel.
     Todo,
+    /// List the running background tasks.
+    Tasks,
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
@@ -103,6 +106,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
             },
         },
         "todo" => Action::Todo,
+        "tasks" => Action::Tasks,
         "vim" => Action::Vim,
         "help" => Action::Help,
         "quit" => Action::Quit,

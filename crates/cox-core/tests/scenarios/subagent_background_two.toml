@@ -1,0 +1,17 @@
+# Two background agents in one turn run concurrently; all three follow-up
+# specs are identical so the test is free of consumption-order races.
+[[turn]]
+text = "delegating twice"
+tool_calls = [
+  { name = "agent", input = { task = "first job", tools = ["echo"], background = true } },
+  { name = "agent", input = { task = "second job", tools = ["echo"], background = true } },
+]
+
+[[turn]]
+text = "ok"
+
+[[turn]]
+text = "ok"
+
+[[turn]]
+text = "done"

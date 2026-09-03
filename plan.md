@@ -577,18 +577,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P9 — Routing and subagents (goal: D5 enforced end to end)
 
-#### T9.2 Background tasks
-
-#### T9.2 Background tasks
-Model: sonnet · Status: open · Depends: T3.9, T3.7 · Size: ~150
-Goal: `agent`/`bash` with `background: true` run concurrently and report visibly.
-Files: `crates/cox-core/src/tasks.rs`, `crates/cox-tui/src/tasks.rs`.
-Steps: (1) Task registry; `TaskCreated/Completed`; results become a `Notice`-level item the user sees, and enter the model's context only as a short pointer line (never silently as a full result). (2) Hooks `SubagentStart/Stop`. (3) Status line count; `/tasks` list; TUI snapshot with two running tasks.
-Check:
-```bash
-mise exec -- cargo test -p cox-core tasks_ && mise exec -- cargo test -p cox-tui tasks_
-```
-
 #### T9.3 Subagent presets
 Model: haiku · Status: open · Depends: T7.3, T9.1 · Size: ~80
 Goal: `explore` and `shell` presets as markdown agent definitions shipped in the binary.

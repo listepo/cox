@@ -16,6 +16,7 @@ mod rollout;
 pub mod router;
 mod session;
 pub mod subagent;
+pub mod tasks;
 mod truncate;
 mod turn;
 

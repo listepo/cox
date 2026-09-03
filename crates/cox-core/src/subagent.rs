@@ -11,13 +11,15 @@ use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{ItemId, TaskId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, Event, Job, Message, ModelId, ProviderEvent, Request, Risk, Role,
-    Submission, SystemBlock, ToolOutput, ToolSpec,
+    Concurrency, Content, Event, HookEvent, HookOutcome, Job, Message, ModelId, ProviderEvent,
+    Request, Risk, Role, Submission, SystemBlock, Tier, ToolOutput, ToolSpec,
 };
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::budget;
+use crate::hooks;
 use crate::session::Session;
 
 /// A subagent shape: which job it reports as, which tools it may use, how
@@ -193,82 +195,103 @@ impl Tool for AgentTool {
             .parent
             .spawn_child(config, tools, preset.job, tier)
             .map_err(core_error)?;
-        let Some(mut events) = child.events() else {
+        let Some(events) = child.events() else {
             return Err(ToolError::Io);
         };
         let task = TaskId::new();
         let label = format!("{}: {}", preset.name, first_line(&task_text));
+        // SubagentStart gates both paths; a Block means the task never existed.
+        if let HookOutcome::Block { reason } = hooks::fire(
+            &self.parent,
+            HookEvent::SubagentStart,
+            json!({"task": task.to_string(), "label": label, "preset": preset.name}),
+        )
+        .await
+        {
+            return Err(ToolError::Denied {
+                why: format!("subagent blocked by hook: {reason}"),
+            });
+        }
         self.parent
-            .emit(Event::TaskCreated { task, label, tier })
+            .emit(Event::TaskCreated {
+                task,
+                label: label.clone(),
+                tier,
+            })
             .await
             .map_err(core_error)?;
+        self.parent.register_task(task, label.clone(), tier).await;
+        if input
+            .get("background")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            let parent = self.parent.clone();
+            let (cancel, progress) = (cx.cancel.clone(), cx.output.clone());
+            let bg_label = label.clone();
+            tokio::spawn(async move {
+                let io = RunIo {
+                    preset,
+                    tier,
+                    events,
+                    cancel,
+                    progress,
+                };
+                let outcome = run_task(&parent, child, task_text, io).await;
+                let (answer, cost_usd) = match outcome {
+                    Ok(o) => (o.answer, o.cost_usd),
+                    Err(e) => (format!("task failed: {e}"), 0.0),
+                };
+                parent.complete_task(task).await;
+                let _ = parent
+                    .emit(Event::TaskCompleted {
+                        task,
+                        result_item: ItemId::new(),
+                        cost_usd,
+                    })
+                    .await;
+                let _ = parent
+                    .publish_task_result(task, &bg_label, &answer, cost_usd)
+                    .await;
+                let _ = hooks::fire(
+                    &parent,
+                    HookEvent::SubagentStop,
+                    json!({"task": task.to_string(), "label": bg_label}),
+                )
+                .await;
+            });
+            return Ok(ToolOutput {
+                text: format!(
+                    "background task {task} started: {label}\n\
+                     its result will arrive as a notice, not in this turn"
+                ),
+                is_error: false,
+                diff: None,
+                structured: Some(json!({
+                    "task": task,
+                    "preset": preset.name,
+                    "background": true,
+                })),
+            });
+        }
 
-        let runner = child.clone();
-        let text = task_text.clone();
-        let turn = tokio::spawn(async move {
-            runner
-                .submit(Submission::UserTurn {
-                    text,
-                    attachments: vec![],
-                    confirm_think: false,
-                })
-                .await
-        });
-        let mut cost_usd = 0.0;
-        let mut turns = 0u32;
-        let mut interrupted = false;
-        // `TurnDone` is the child's last event (turn.rs: nothing follows it).
-        let outcome = loop {
-            tokio::select! {
-                _ = cx.cancel.cancelled(), if !interrupted => {
-                    interrupted = true;
-                    child.interrupt();
-                }
-                ev = events.recv() => match ev {
-                    Some(Event::Usage { usage, .. }) => {
-                        cost_usd += usage.cost_usd;
-                        turns += 1;
-                    }
-                    Some(Event::ToolCallRequested { call }) => {
-                        let _ = cx.output.send(format!("[{}] {}\n", preset.name, call.name)).await;
-                    }
-                    Some(Event::TurnDone { .. }) => break Ok(()),
-                    Some(_) => {}
-                    None => break Err(ToolError::Io),
-                },
-            }
-        };
-        if let Ok(Err(e)) = turn.await {
-            return Err(core_error(e));
-        }
-        outcome?;
-        if budget::counts(tier, self.parent.config.budget.cheap_counts) {
-            self.parent.add_spend(cost_usd).await;
-        }
-
-        let mut result = child
-            .history()
-            .await
-            .into_iter()
-            .rev()
-            .find(|m| m.role == Role::Assistant)
-            .and_then(|m| {
-                m.content.into_iter().find_map(|c| match c {
-                    Content::Text { text } => Some(text),
-                    _ => None,
-                })
-            })
-            .unwrap_or_else(|| "(the subagent produced no answer)".to_string());
-        let mut summarised = false;
-        if result.len() / 4 > preset.result_cap_tokens {
-            if let Some(short) = summarize(&self.parent, &result, preset.result_cap_tokens).await {
-                result = short;
-                summarised = true;
-            } else {
-                result.truncate(preset.result_cap_tokens * 4);
-                result.push_str("\n[cut at the result cap]");
-            }
-        }
+        let outcome = run_task(
+            &self.parent,
+            child,
+            task_text,
+            RunIo {
+                preset,
+                tier,
+                events,
+                cancel: cx.cancel.clone(),
+                progress: cx.output.clone(),
+            },
+        )
+        .await;
+        // A failed task still finished: drop the registry entry and close
+        // the Created/Completed pair so `/tasks` never shows a ghost.
+        let cost_usd = outcome.as_ref().map(|o| o.cost_usd).unwrap_or(0.0);
+        self.parent.complete_task(task).await;
         self.parent
             .emit(Event::TaskCompleted {
                 task,
@@ -277,19 +300,126 @@ impl Tool for AgentTool {
             })
             .await
             .map_err(core_error)?;
+        let _ = hooks::fire(
+            &self.parent,
+            HookEvent::SubagentStop,
+            json!({"task": task.to_string(), "label": label}),
+        )
+        .await;
+        let outcome = outcome?;
         Ok(ToolOutput {
-            text: result,
+            text: outcome.answer,
             is_error: false,
             diff: None,
             structured: Some(json!({
                 "task": task,
                 "preset": preset.name,
-                "turns": turns,
-                "cost_usd": cost_usd,
-                "summarised": summarised,
+                "turns": outcome.turns,
+                "cost_usd": outcome.cost_usd,
+                "summarised": outcome.summarised,
             })),
         })
     }
+}
+
+/// What one child run produced, foreground or background.
+struct TaskOutcome {
+    answer: String,
+    cost_usd: f64,
+    turns: u32,
+    summarised: bool,
+}
+
+/// How one child run is driven and observed.
+struct RunIo {
+    preset: Preset,
+    tier: Tier,
+    events: mpsc::Receiver<Event>,
+    cancel: CancellationToken,
+    progress: mpsc::Sender<String>,
+}
+
+/// Drives the child's turn and distills its answer (shared by the
+/// foreground call and the background task): accumulates cost, streams
+/// progress lines, charges the parent, caps the answer.
+async fn run_task(
+    parent: &Session,
+    child: Session,
+    task_text: String,
+    mut io: RunIo,
+) -> Result<TaskOutcome, ToolError> {
+    let runner = child.clone();
+    let text = task_text.clone();
+    let turn = tokio::spawn(async move {
+        runner
+            .submit(Submission::UserTurn {
+                text,
+                attachments: vec![],
+                confirm_think: false,
+            })
+            .await
+    });
+    let mut cost_usd = 0.0;
+    let mut turns = 0u32;
+    let mut interrupted = false;
+    // `TurnDone` is the child's last event (turn.rs: nothing follows it).
+    let outcome = loop {
+        tokio::select! {
+            _ = io.cancel.cancelled(), if !interrupted => {
+                interrupted = true;
+                child.interrupt();
+            }
+            ev = io.events.recv() => match ev {
+                Some(Event::Usage { usage, .. }) => {
+                    cost_usd += usage.cost_usd;
+                    turns += 1;
+                }
+                Some(Event::ToolCallRequested { call }) => {
+                    let _ = io.progress.send(format!("[{}] {}\n", io.preset.name, call.name)).await;
+                }
+                Some(Event::TurnDone { .. }) => break Ok(()),
+                Some(_) => {}
+                None => break Err(ToolError::Io),
+            },
+        }
+    };
+    if let Ok(Err(e)) = turn.await {
+        return Err(core_error(e));
+    }
+    outcome?;
+    if budget::counts(io.tier, parent.config.budget.cheap_counts) {
+        parent.add_spend(cost_usd).await;
+    }
+
+    let mut result = child
+        .history()
+        .await
+        .into_iter()
+        .rev()
+        .find(|m| m.role == Role::Assistant)
+        .and_then(|m| {
+            m.content.into_iter().find_map(|c| match c {
+                Content::Text { text } => Some(text),
+                _ => None,
+            })
+        })
+        .unwrap_or_else(|| "(the subagent produced no answer)".to_string());
+    let mut summarised = false;
+    if result.len() / 4 > io.preset.result_cap_tokens {
+        if let Some(short) = summarize(parent, &result, io.preset.result_cap_tokens).await {
+            result = short;
+            summarised = true;
+        } else {
+            result.truncate(io.preset.result_cap_tokens * 4);
+            result.push_str("\n[cut at the result cap]");
+        }
+    }
+    Ok(TaskOutcome {
+        answer: result,
+        cost_usd,
+        turns,
+        summarised,
+    })
 }
 
 /// One `Job::Summarize` call on its tier, recorded in the ledger like any

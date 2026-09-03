@@ -1479,3 +1479,24 @@ Check output:
 cargo test -p cox-core router_ → lib 1 + integration 5 passed (job_table_pins_every_job, think_requires_confirmation, never_auto_escalates, model_override_local_and_unknown, switch_gates_and_runs_think)
 ```
 
+#### T9.2 Background tasks
+Model: sonnet · Status: done 2026-09-03 · Depends: T3.9, T3.7 · Size: ~150
+Goal: `agent`/`bash` with `background: true` run concurrently and report visibly.
+Files: `crates/cox-core/src/tasks.rs`, `crates/cox-tui/src/tasks.rs`.
+Steps: (1) Task registry; `TaskCreated/Completed`; results become a `Notice`-level item the user sees, and enter the model's context only as a short pointer line (never silently as a full result). (2) Hooks `SubagentStart/Stop`. (3) Status line count; `/tasks` list; TUI snapshot with two running tasks.
+Check:
+```bash
+mise exec -- cargo test -p cox-core tasks_ && mise exec -- cargo test -p cox-tui tasks_
+```
+
+What landed: `tasks.rs` (registry on `Inner`, `register/complete_task`, `publish_task_result` pushing the bounded pointer line to history + bounded `Notice` with truncation marker; `pointer_line`/`notice_text` capped); `subagent.rs` refactored around a shared `run_task` (`RunIo` bundle): `background: true` registers, emits `TaskCreated`, spawns the child run and returns a pointer `ToolOutput` at once; completion removes the entry, emits `TaskCompleted`, publishes notice + pointer; `SubagentStart` gates both paths (`Block` aborts pre-creation), `SubagentStop` fires after; foreground path unchanged apart from the shared runner. TUI `tasks.rs` (`list`), `/tasks` command + `Action::Tasks` notice, 1 snapshot test with two running tasks.
+Notes / deviations:
+- **7 files, not 2.** Plus `session.rs` (registry state), `subagent.rs` (background branch + shared runner), `commands.rs` + `state.rs` + `lib.rs` (TUI `/tasks` wiring).
+- **`bash background` keeps its archive-pointer behavior** (T3.7): `cox-tools` cannot emit core events (dependency direction), so `TaskCreated/Completed` + notice + registry cover `agent` tasks only; a detached `bash` result still enters context only as its pointer line, and its full output stays retrievable via the archive. A `ToolCx` event sink bridging this is future work, not added here.
+- **Failed tasks now close the pair:** previously a failing foreground agent emitted `TaskCreated` with no `TaskCompleted`; both paths now complete the pair (cost 0.0 on failure) so `/tasks` never shows a ghost.
+Check output:
+```
+cargo test -p cox-core tasks_ → lib 2 + integration 2 passed (pointer_line_is_bounded, notice_truncates_with_a_marker, background_agent_reports_pointer_then_notice, two_background_agents_run_concurrently)
+cargo test -p cox-tui tasks_ → 1 passed (list_shows_two_running_tasks + snapshot)
+```
+

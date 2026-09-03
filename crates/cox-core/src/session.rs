@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
-use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
@@ -79,6 +79,8 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
+    /// Running background tasks: label and tier by id (T9.2).
+    pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -214,6 +216,7 @@ impl Session {
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
+                tasks: HashMap::new(),
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
