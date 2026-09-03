@@ -83,6 +83,8 @@ pub(crate) struct Inner {
     pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
     pub(crate) extracted: Vec<crate::memory_extract::Fact>,
+    /// Monotonic turn counter for the FTS index (T10.3).
+    turn_seq: u32,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -220,6 +222,7 @@ impl Session {
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
                 extracted: Vec::new(),
+                turn_seq: 0,
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -432,6 +435,13 @@ impl Session {
         self.emit(Event::ModelSwitched { tier, from, to }).await
     }
 
+    /// Best-effort FTS index of one model-visible text (T10.3): empty
+    /// texts are skipped by the store, and failures never fail turns.
+    pub(crate) async fn index_text(&self, text: &str) {
+        let seq = self.inner.lock().await.turn_seq;
+        let _ = self.store.rollout_index(&self.id, seq, text);
+    }
+
     /// Parks `call_id` until `Submission::Approve` answers it.
     pub(crate) async fn await_decision(&self, call_id: CallId) -> oneshot::Receiver<Decision> {
         let (tx, rx) = oneshot::channel();
@@ -567,7 +577,7 @@ impl Session {
         if compact::needs_compaction(last, max_context, self.config.context.compact_at) {
             self.compact(compact::Trigger::Auto, None).await?;
         }
-        {
+        let seq = {
             let mut inner = self.inner.lock().await;
             inner.state = State::Assembling;
             let start = inner.history.len();
@@ -581,7 +591,12 @@ impl Session {
             });
             inner.provider_calls = 0;
             inner.retried_after_too_long = false;
-        }
+            inner.turn_seq += 1;
+            inner.turn_seq
+        };
+        // T10.3: index the user text under this turn's number; best-effort,
+        // like every index write.
+        let _ = self.store.rollout_index(&self.id, seq, &text);
         self.emit_turn_started(turn, route.tier, route.model.clone())
             .await?;
         self.emit(Event::ItemStarted {
@@ -798,10 +813,11 @@ impl Session {
                 inner.history.push(Message {
                     role: Role::Assistant,
                     content: vec![Content::Text {
-                        text: streamed.text,
+                        text: streamed.text.clone(),
                     }],
                 });
             }
+            self.index_text(&streamed.text).await;
             self.finish(turn, StopReason::EndTurn).await?;
             return Ok(Step::Done);
         }
@@ -836,10 +852,21 @@ impl Session {
             return Ok(Step::Done);
         }
         let msg = results_message(results);
+        // T10.3: tool results are user-role text the user will grep for.
+        let joined: String = msg
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                Content::ToolResult { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         {
             let mut inner = self.inner.lock().await;
             inner.history.push(msg);
         }
+        self.index_text(&joined).await;
         Ok(Step::Continue)
     }
 
@@ -887,6 +914,8 @@ pub struct MemoryStore {
     archive: StdMutex<HashMap<cox_protocol::ArchiveId, Vec<u8>>>,
     /// `(project, name)` → `(path, body)` for `memory_*` (T10.1).
     memory: StdMutex<HashMap<(String, String), (String, String)>>,
+    /// `(session, turn, text)` FTS rows (T10.3).
+    index: StdMutex<Vec<(String, u32, String)>>,
 }
 
 impl MemoryStore {
@@ -897,12 +926,18 @@ impl MemoryStore {
             usage: StdMutex::new(Vec::new()),
             archive: StdMutex::new(HashMap::new()),
             memory: StdMutex::new(HashMap::new()),
+            index: StdMutex::new(Vec::new()),
         }
     }
 
     /// Ledger rows written for this session (test assertion).
     pub fn usage_rows(&self) -> Vec<cox_protocol::UsageRow> {
         self.usage.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Indexed texts (test assertion for T10.3 call sites).
+    pub fn indexed_texts(&self) -> Vec<(String, u32, String)> {
+        self.index.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -1006,6 +1041,17 @@ impl Store for MemoryStore {
                 (project.to_string(), name.to_string()),
                 (path.to_string(), body.to_string()),
             );
+        Ok(())
+    }
+    fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError> {
+        if text.trim().is_empty() {
+            return Ok(());
+        }
+        self.index.lock().unwrap_or_else(|e| e.into_inner()).push((
+            session.to_string(),
+            turn,
+            text.to_string(),
+        ));
         Ok(())
     }
 }

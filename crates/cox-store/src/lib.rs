@@ -4,6 +4,7 @@
 //! this crate implements (plan.md §1.7/D9). The only crate that contains
 //! SQL — a workspace test asserts no other crate depends on `diesel`.
 
+pub mod fts;
 mod models;
 pub mod queries;
 mod rollout;
@@ -316,6 +317,10 @@ impl StoreTrait for Store {
     fn memory_search(&self, q: &str, limit: usize) -> Result<Vec<MemoryHit>, StoreError> {
         // Both tables are written together by `memory_upsert` with a shared
         // rowid, which is what the join below lines up on.
+        let q = crate::fts::sanitize_match(q);
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
         #[derive(diesel::QueryableByName)]
         struct Hit {
             #[diesel(sql_type = diesel::sql_types::Text)]
@@ -409,6 +414,10 @@ impl StoreTrait for Store {
         .execute(&mut *conn)
         .map_err(|_| StoreError::Sqlite)?;
         Ok(())
+    }
+
+    fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError> {
+        self.rollout_index_text(session, turn, text)
     }
 }
 

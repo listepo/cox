@@ -398,3 +398,14 @@ async fn turn_every_request_has_a_usage_row() {
     assert_eq!(usage_events, store.usage_rows().len());
     assert_eq!(usage_events, 2);
 }
+
+#[tokio::test]
+async fn sessions_index_captures_user_and_assistant_text() {
+    let (_, store, _) = run("text_only").await;
+    let indexed = store.indexed_texts();
+    assert_eq!(indexed.len(), 2, "{indexed:?}");
+    assert!(indexed[0].2.contains("text_only"), "{indexed:?}");
+    assert_eq!(indexed[0].1, 1);
+    assert!(indexed[1].2.contains("hello from scripted"), "{indexed:?}");
+    assert_eq!(indexed[1].1, 1);
+}

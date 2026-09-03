@@ -579,16 +579,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P10 — Memory (goal: cross-session memory with zero model cost by default)
 
-#### T10.3 Session search
-Model: haiku · Status: open · Depends: T2.4 · Size: ~120
-Goal: `cox sessions` and `/resume` picker with full-text search.
-Files: `crates/cox/src/sessions.rs`, `crates/cox-store/src/fts.rs`, `crates/cox-tui/src/picker.rs` (extend).
-Steps: index user/assistant text into `rollout_fts` on `ItemDone`; `cox sessions --grep`; picker lists title, cwd, age, cost.
-Check:
-```bash
-mise exec -- cargo test -p cox sessions_
-```
-
 ### P11 — ACP and IDE (goal: cox inside Zed and JetBrains)
 
 #### T11.1 `cox acp`

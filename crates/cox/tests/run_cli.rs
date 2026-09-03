@@ -256,3 +256,27 @@ fn ext_lists_commands_and_agents_from_the_project_tree() {
     );
     assert!(text.contains("notices: none"), "{text}");
 }
+
+#[test]
+fn sessions_grep_finds_a_scripted_run() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    cox(work.path(), home.path(), TEXT_ONLY).assert().success();
+    let out = assert_cmd::Command::cargo_bin("cox")
+        .unwrap()
+        .args([
+            "--home",
+            home.path().to_str().unwrap(),
+            "sessions",
+            "--grep",
+            "hello",
+        ])
+        .env("COX_HOME", home.path())
+        .env("HOME", home.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("hello from scripted"), "{text}");
+}

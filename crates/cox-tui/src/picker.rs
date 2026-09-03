@@ -19,6 +19,8 @@ pub enum Kind {
     Files,
     Commands,
     History,
+    /// `/resume`: past sessions as `title · cwd · age · $cost` rows.
+    Sessions,
 }
 
 impl Kind {
@@ -27,8 +29,20 @@ impl Kind {
             Kind::Files => "@",
             Kind::Commands => "/",
             Kind::History => "history: ",
+            Kind::Sessions => "resume: ",
         }
     }
+}
+
+/// One `/resume` row: title (or `untitled`), cwd, coarse age and cost.
+pub fn session_entry(title: Option<&str>, cwd: &str, age: &str, cost_usd: f64) -> String {
+    format!(
+        "{} · {} · {} · ${:.2}",
+        title.unwrap_or("untitled"),
+        cwd,
+        age,
+        cost_usd
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,4 +157,31 @@ fn rank_by_query(found: &mut Vec<String>, query: &str) {
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     *found = scored.into_iter().map(|(_, s)| s).collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picker_session_entry_lists_title_cwd_age_cost() {
+        assert_eq!(
+            session_entry(Some("auth work"), "/tmp/work", "3h", 0.83),
+            "auth work · /tmp/work · 3h · $0.83"
+        );
+        assert_eq!(
+            session_entry(None, "/tmp/work", "now", 0.0),
+            "untitled · /tmp/work · now · $0.00"
+        );
+        assert_eq!(Kind::Sessions.prefix(), "resume: ");
+        // The entry shape ranks under a fuzzy query like any other row.
+        let picker = Picker::open(
+            Kind::Sessions,
+            vec![
+                session_entry(Some("auth work"), "/tmp/work", "3h", 0.83),
+                session_entry(Some("docs"), "/tmp/other", "9d", 0.01),
+            ],
+        );
+        assert_eq!(picker.matches.len(), 2);
+    }
 }

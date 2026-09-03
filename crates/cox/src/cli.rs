@@ -70,7 +70,7 @@ pub enum Command {
     /// Headless run: `cox run -p <prompt>`.
     Run(RunArgs),
     /// List / search rollouts.
-    Sessions,
+    Sessions(SessionsArgs),
     /// Print archived tool output by id.
     Expand(ExpandArgs),
     /// Usage and cost stats.
@@ -153,6 +153,20 @@ pub struct StatsArgs {
     /// Machine-readable CSV output.
     #[arg(long)]
     pub csv: bool,
+}
+
+/// `cox sessions [--grep <q>] [--json] [--limit N]` (plan.md §1.12/T10.3).
+#[derive(Args, Debug)]
+pub struct SessionsArgs {
+    /// Full-text search over indexed session text.
+    #[arg(long, value_name = "QUERY")]
+    pub grep: Option<String>,
+    /// Machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+    /// Max sessions listed (default 20).
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
 }
 
 /// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools

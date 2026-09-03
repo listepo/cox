@@ -15,6 +15,7 @@ mod record;
 mod resume;
 mod run;
 mod session;
+mod sessions;
 mod stats;
 
 use clap::Parser;
@@ -51,6 +52,11 @@ fn main() -> anyhow::Result<()> {
             }
         },
         Some(Command::Run(args)) => std::process::exit(run::run(&cli, args, &cwd)?),
+        Some(Command::Sessions(args)) => {
+            let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+            sessions::run(&home, args)?;
+            Ok(())
+        }
         Some(Command::Expand(args)) => {
             let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
             expand_cmd::run(home, &args.id, args.lines.as_deref())

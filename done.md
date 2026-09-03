@@ -1560,6 +1560,27 @@ Check output:
 cargo test -p cox-core memory_extract_ → lib 2 + integration 3 passed (similarity_scores_trigrams, parses_fact_json, disabled_by_default, saves_new_fact_and_skips_duplicate, fires_session_end_hook)
 ```
 
+#### T10.3 Session search
+Model: haiku · Status: done 2026-09-03 · Depends: T2.4 · Size: ~120
+Goal: `cox sessions` and `/resume` picker with full-text search.
+Files: `crates/cox/src/sessions.rs`, `crates/cox-store/src/fts.rs`, `crates/cox-tui/src/picker.rs` (extend).
+Steps: index user/assistant text into `rollout_fts` on `ItemDone`; `cox sessions --grep`; picker lists title, cwd, age, cost.
+Check:
+```bash
+mise exec -- cargo test -p cox sessions_
+```
+
+What landed: `fts.rs` (`rollout_index_text`, `rollout_search`, `list_sessions`, phrase-quoting `sanitize_match`); `Store::rollout_index` trait method (real FTS insert; `MemoryStore` keeps rows + `indexed_texts` accessor); core indexes user text in `run_turn` and assistant/tool-result text in `step` under a `turn_seq`, best-effort; `sessions.rs` (`cox sessions [--grep] [--json] [--limit]`, `age_of`, row shaping); `Kind::Sessions` picker + `session_entry` (`title · cwd · age · $cost`); binary e2e (scripted run → `sessions --grep` finds it through real SQLite FTS).
+Notes / deviations:
+- **9 files, not 3.** Plus `traits.rs` (index method), `lib.rs` (store module), `session.rs` (call sites + `MemoryStore`), `cli.rs` + `main.rs` (`Sessions` was a stub variant), `turn.rs` + `run_cli.rs` (indexing tests), `state.rs` (picker-choice arm).
+- **Indexed at history-push sites, not on `ItemDone`:** assistant text is only complete when the step pushes it, and `ItemDone` carries no text; same texts, earlier hook. Tool-result contents are indexed too (they are the user-role text people grep for).
+- **FTS query sanitizing:** raw `MATCH` input with `-`/`:`/quotes errored the whole search (`no such column`); both FTS readers now phrase-quote every term (drive-by hardening in touched code, incl. T10.1's `memory_search`).
+- **NOT done: interactive `/resume` from the picker.** The picker renders `session_entry` rows from caller-supplied candidates, but feeding live sessions into the TUI runtime (store access in `app.rs`) and resuming into a core `Session` is surface plumbing beyond these files.
+Check output:
+```
+cargo test -p cox sessions_ → 4 passed (age_buckets, list_rows_shape, list_limits_rows, grep_finds_indexed_text) + e2e sessions_grep_finds_a_scripted_run + core sessions_index_captures_user_and_assistant_text + tui picker_session_entry
+```
+
 #### T9.4 Design doc: routing
 Model: sonnet · Status: done 2026-09-03 · Depends: T9.1 · Size: doc
 Goal: `docs/design/routing.md`: vs Copilot auto, Cursor auto, aider `weak_model`, OpenCode `small_model`, Claude Code's Haiku delegation; the "never up" rule; falsifier = a job where cheap-tier quality measurably costs more in retries than it saves.

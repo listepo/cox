@@ -462,6 +462,14 @@ mod tests {
                 .insert((project.into(), name.into()), (path.into(), body.into()));
             Ok(())
         }
+        fn rollout_index(
+            &self,
+            _session: &cox_protocol::SessionId,
+            _turn: u32,
+            _text: &str,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
     }
 
     struct NoopArchive;

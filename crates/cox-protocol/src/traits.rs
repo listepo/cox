@@ -191,6 +191,10 @@ pub trait Store: Send + Sync {
         kind: &str,
         body: &str,
     ) -> Result<(), StoreError>;
+    /// Indexes one model-visible text for session search (plan.md T10.3).
+    /// Best-effort by contract: the rollout is the source of truth and the
+    /// loop ignores failures, so a broken index degrades search, never turns.
+    fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError>;
 }
 
 /// Where a tool's full, pre-truncation output is written before the model

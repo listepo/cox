@@ -275,7 +275,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 }
                 Pick::Closed => {}
                 Pick::Chosen(choice) => match picker.kind {
-                    Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
+                    Kind::Files | Kind::Commands | Kind::Sessions => {
+                        state.composer.insert(&format!("{choice} "))
+                    }
                     Kind::History => state.composer.set_text(&choice),
                 },
             }
