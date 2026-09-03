@@ -11,7 +11,6 @@ cox-core = { path = "../cox-core", version = "0.1.0" }
 ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 tokio = { workspace = true }
-futures = { workspace = true }
 nucleo = { workspace = true }
 pulldown-cmark = { workspace = true }
 syntect = { workspace = true }

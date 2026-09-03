@@ -367,7 +367,11 @@ fn build_figment(user_path: &Path, project_path: Option<&Path>, flags: &JsonValu
     }
     fig = fig.merge(named(
         "env",
-        Env::prefixed("COX_").ignore(&["home"]).split("_"),
+        // `COX_PROVIDER` / `COX_SCENARIO` / `COX_CASSETTES` select a test-double
+        // provider (cox-provider::from_env), not config keys.
+        Env::prefixed("COX_")
+            .ignore(&["home", "provider", "scenario", "cassettes"])
+            .split("_"),
     ));
     if let Ok(home) = env::var("COX_HOME") {
         fig = fig.merge(named("env", Serialized::default("core.home", home)));

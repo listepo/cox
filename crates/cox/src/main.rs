@@ -11,6 +11,7 @@ mod doctor;
 mod expand_cmd;
 mod record;
 mod resume;
+mod session;
 mod stats;
 
 use clap::Parser;
@@ -49,10 +50,7 @@ fn main() -> anyhow::Result<()> {
             println!("not implemented");
             Ok(())
         }
-        None => {
-            println!("not implemented");
-            Ok(())
-        }
+        None => session::run_tui(&cli, &cwd),
     }
 }
 

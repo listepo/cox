@@ -1125,3 +1125,24 @@ test result: ok. 2 passed; 0 failed
 $ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
 clean.
 ```
+
+#### T5.8 PTY end-to-end
+Model: fable · Status: done 2026-09-03 · Depends: T5.5, T1.5 · Size: ~150
+Goal: the real binary, under a PTY, renders a scripted turn.
+Files: `tests/tui_e2e.rs`.
+Steps: (1) `portable-pty` spawns `cox` with `COX_PROVIDER=scripted`, `COX_HOME=tempdir`, scenario env; 100×30. (2) Type a prompt + Enter; poll the `vt100` screen until the reply text appears (≤ 5 s). (3) Assert status line shows `$0.00` and `scripted`. (4) `Ctrl+C` ×2 exits 0.
+Check:
+```bash
+mise exec -- cargo test --test tui_e2e
+```
+Done when: passes on macOS and Linux CI.
+
+What landed: `crates/cox/src/session.rs` — `open(cli, cwd)` loads config, picks the provider (`COX_PROVIDER` doubles first, else `tiers.code.provider`: `anthropic` → `AnthropicProvider`, `openai`/`local` → `OpenAiChatProvider`), opens the store under `COX_HOME`, registers every built-in tool (`ask_user` answers `Fixed(None)` until the TUI grows a question surface; `tool_search` indexes the rest) and builds the `Session`; `run_tui` seeds `State` from `[tui]`/`[permissions]`/`[sandbox]`, fills the `@` picker from `workspace_files`, and drives `cox_tui::app::run` on a tokio runtime — bare `cox` now opens the TUI. `config_load`: the env layer ignores `COX_PROVIDER`/`COX_SCENARIO`/`COX_CASSETTES` (they were parsed as config keys). `cox-tui/app.rs`: crossterm input is polled on a thread (50 ms) into a channel instead of `EventStream` — the stream holds the input-reader lock while it waits and ratatui's inline `insert_before` needs it for the cursor-position query, so the second turn timed out ("cursor position could not be read"); `futures` dropped from cox-tui. `crates/cox/tests/tui_e2e.rs`: `portable-pty` 100×30 spawns the real binary with the scripted provider and `--model scripted`; a reader thread feeds `vt100` and answers `CSI 6n` cursor queries (buffered across reads); waits for whole screen states (reply visible, not `working`, `scripted · `, `$0.00`), then `Ctrl+C` → `again to quit` → `Ctrl+C` → exit 0. Deps: `tokio` in `crates/cox` (the binary owns the runtime), dev `portable-pty` 0.9 + `vt100` (plan D10).
+Not done: Linux CI run not observed from this machine (test is platform-neutral; `portable-pty` supports both); no OpenAI Responses client yet (`openai` uses the Chat client); `ask_user` has no TUI surface. Size: ~120 LOC `session.rs`, ~110 test, ~30 `app.rs`; 3 new/changed source files plus Cargo/plan.
+```
+$ mise exec -- cargo test -p cox --test tui_e2e   (×8, all green)
+test tui_renders_scripted_turn_and_exits_on_double_ctrl_c ... ok
+test result: ok. 1 passed; 0 failed
+$ cargo fmt --check · cargo clippy --workspace --all-targets -- -D warnings · cargo test --workspace
+clean.
+```

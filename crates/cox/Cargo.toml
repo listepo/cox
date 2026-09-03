@@ -30,7 +30,12 @@ serde_json = { workspace = true }
 keyring = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }
+# T5.8: the binary owns the async runtime the TUI and core loop run on.
+tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 insta = { workspace = true }
+# T5.8: PTY end-to-end of the real binary (plan D10).
+portable-pty = { workspace = true }
+vt100 = { workspace = true }
