@@ -4,3 +4,4 @@ target/
 /.serena
 .env
 .env.local
+__pycache__/
