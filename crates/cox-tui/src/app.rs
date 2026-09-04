@@ -20,7 +20,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
 use crate::cells::cell_lines;
-use crate::state::{Cmd, Msg, State, update};
+use crate::state::{Ask, Cmd, Msg, State, update};
 use crate::view::view;
 
 /// Rows the live viewport keeps below the scrollback.
@@ -40,11 +40,14 @@ pub enum TuiError {
 /// caller fills `state.files` (the `@` picker's candidates) from
 /// `cox_tools::glob::workspace_files` — this crate never walks the disk.
 /// `feed` carries what the runtime learns off-screen (the live sessions of
-/// this workspace, T16.3; git counts, T15.2) for the same reason.
+/// this workspace, T16.3; git counts, T15.2) for the same reason, and
+/// `ask` carries what the TUI wants fetched (the diff, T15.3); the answer
+/// arrives on `feed`.
 pub async fn run(
     session: Session,
     mut state: State,
     mut feed: tokio::sync::mpsc::Receiver<Msg>,
+    ask: tokio::sync::mpsc::Sender<Ask>,
 ) -> Result<(), TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
@@ -93,6 +96,11 @@ pub async fn run(
                     Cmd::Quit => return Ok(()),
                     // Clipboard lands with the transcript cells (T5.3).
                     Cmd::Copy(_) => {}
+                    // A request the runtime has not answered yet is still
+                    // pending, so a repeat is dropped rather than awaited.
+                    Cmd::Ask(what) => {
+                        let _ = ask.try_send(what);
+                    }
                 }
             }
             let look = state.look(terminal.size()?.width);

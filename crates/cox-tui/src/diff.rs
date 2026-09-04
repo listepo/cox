@@ -93,6 +93,47 @@ pub fn lines(diff: &Diff, look: &Look) -> Vec<Line<'static>> {
     out
 }
 
+/// A whole-tree patch split at its `diff --git a/x b/y` headers into the
+/// per-file `Diff`s `lines` already renders (T15.3). The path is `y`; the
+/// `index`/mode lines stay in the text, where `lines` prints them plain.
+pub fn from_unified(text: &str) -> Vec<Diff> {
+    let mut out: Vec<Diff> = Vec::new();
+    for l in text.lines() {
+        if let Some(rest) = l.strip_prefix("diff --git ") {
+            let path = rest.rsplit_once(" b/").map_or(rest, |(_, p)| p);
+            out.push(Diff {
+                path: path.into(),
+                unified: String::new(),
+            });
+        } else if let Some(d) = out.last_mut() {
+            d.unified.push_str(l);
+            d.unified.push('\n');
+        }
+    }
+    out
+}
+
+/// The `Ctrl+G` view: a key line, then every file's headed block, or
+/// `no changes`. Always expanded, whatever `Ctrl+O` last did.
+pub fn view_lines(text: &str, look: &Look) -> Vec<Line<'static>> {
+    let look = Look {
+        show_diffs: true,
+        ..*look
+    };
+    let sep = look.glyphs.sep;
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let mut out = vec![Line::styled(
+        format!(" git diff HEAD {sep} PageUp/PageDown scroll {sep} Esc closes"),
+        dim,
+    )];
+    let files = from_unified(text);
+    if files.is_empty() {
+        out.push(Line::styled("  no changes", dim));
+    }
+    out.extend(files.iter().flat_map(|d| lines(d, &look)));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +168,19 @@ mod tests {
         assert_eq!(added.spans[0].style.fg, Some(Color::Green));
         // `fn` is a keyword: syntect split the body into spans of its own.
         assert!(added.spans.len() > 2, "{:?}", added.spans);
+    }
+
+    #[test]
+    fn from_unified_splits_a_patch_at_its_headers_and_keeps_hunks() {
+        let patch = "diff --git a/src/x.rs b/src/x.rs\nindex 1..2 100644\n--- a/src/x.rs\n+++ b/src/x.rs\n@@ -1 +1 @@\n-a\n+b\ndiff --git a/new file b/new file\nnew file mode 100644\n--- /dev/null\n+++ b/new file\n@@ -0,0 +1 @@\n+hello\n";
+        let files = from_unified(patch);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path, std::path::Path::new("src/x.rs"));
+        assert!(files[0].unified.starts_with("index 1..2"));
+        assert_eq!(counts(&files[0].unified), (1, 1));
+        assert_eq!(files[1].path, std::path::Path::new("new file"));
+        assert_eq!(counts(&files[1].unified), (1, 0));
+        assert!(from_unified("").is_empty());
     }
 
     #[test]

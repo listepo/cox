@@ -26,7 +26,7 @@ use cox_tools::tool_search::ToolSearchTool;
 use cox_tools::v4a::ApplyPatchTool;
 use cox_tools::web_fetch::WebFetchTool;
 use cox_tools::write::WriteTool;
-use cox_tui::state::{GitStatus, Msg, State};
+use cox_tui::state::{Ask, GitStatus, Msg, State};
 
 use crate::cli::Cli;
 use crate::config_load::{self, LoadedConfig};
@@ -164,6 +164,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     state.show_thinking = config.tui.show_thinking == "full";
     state.marks = cli.verbose > 0;
     let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
+    let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
     // The poller lives here, not in cox-tui: the TUI never touches the disk.
     let poll = {
         let home = home.clone();
@@ -174,29 +175,42 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         rt.spawn(async move {
             let mut every = tokio::time::interval(std::time::Duration::from_secs(2));
             loop {
-                every.tick().await;
-                let now = cox_ext::presence::now_secs();
-                let agents = cox_ext::presence::others(&home, &project, &me, now);
-                if feed.send(Msg::Agents(agents)).await.is_err() {
-                    break;
-                }
-                if !git {
-                    continue;
-                }
-                // T15.2: the same poll carries the branch and counts.
-                let status = cox_tools::git::status(&dir).await.map(|s| GitStatus {
-                    branch: s.branch,
-                    added: s.added,
-                    removed: s.removed,
-                });
-                if feed.send(Msg::Git(status)).await.is_err() {
-                    break;
+                tokio::select! {
+                    _ = every.tick() => {
+                        let now = cox_ext::presence::now_secs();
+                        let agents = cox_ext::presence::others(&home, &project, &me, now);
+                        if feed.send(Msg::Agents(agents)).await.is_err() {
+                            break;
+                        }
+                        if !git {
+                            continue;
+                        }
+                        // T15.2: the same poll carries the branch and counts.
+                        let status = cox_tools::git::status(&dir).await.map(|s| GitStatus {
+                            branch: s.branch,
+                            added: s.added,
+                            removed: s.removed,
+                        });
+                        if feed.send(Msg::Git(status)).await.is_err() {
+                            break;
+                        }
+                    }
+                    // T15.3: `Ctrl+G` asks for the diff; the answer rides the feed.
+                    ask = ask_rx.recv() => match ask {
+                        Some(Ask::GitDiff) => {
+                            let diff = cox_tools::git::diff(&dir).await;
+                            if feed.send(Msg::Diff(diff)).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => break,
+                    },
                 }
             }
         })
     };
     let quit = session.clone();
-    let ran = rt.block_on(cox_tui::app::run(session, state, feed_rx));
+    let ran = rt.block_on(cox_tui::app::run(session, state, feed_rx, ask));
     poll.abort();
     ran?;
     // The TUI never shut the core down, so `SessionEnd` hooks and the

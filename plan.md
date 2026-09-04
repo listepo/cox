@@ -500,6 +500,7 @@ Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--s
 | `@` | file picker (nucleo) | `/` at line start | command palette |
 | `y` / `s` / `n` / `e` in approval modal | allow / allow for session / deny / edit command | `Ctrl+R` | prompt history search |
 | `PageUp/PageDown`, mouse wheel | scroll transcript | `Ctrl+L` | redraw |
+| `Ctrl+G` | diff view: the working tree against `HEAD`, per-file blocks; `PageUp/PageDown` scroll, `Esc` closes (T15.3) | | |
 
 Slash commands (parsed in the surface, executed as `Submission::Command`): `/model [tier] [model]`, `/effort [low|high|xhigh]` (session-wide, clamped per model, T16.4), `/think <prompt>` (confirm dialog with price), `/compact [focus]`, `/cost`, `/permissions`, `/sandbox <mode>`, `/resume`, `/sessions`, `/expand <id>`, `/agents` (live sessions in this workspace, T16.3), `/skills`, `/hooks`, `/mcp`, `/doctor`, `/clear` (new session, same cwd), `/vim`, `/help`, `/quit`. Markdown files in `.claude/commands` and `.cox/commands` appear in the same palette (T7.3).
 
@@ -591,20 +592,8 @@ Rationale in §6 A11. What already exists and is *not* redone here: syntect high
 
 Rationale in §6 A13. Not redone here: unified-diff rendering (`cox-tui/src/diff.rs`, T5.4), the nucleo picker (T5.2), running git (the `bash` tool, A12).
 
-#### T15.3 Diff view
-Model: opus · Status: in progress · Depends: T15.2 · Size: ~130
-Goal: `Ctrl+G` opens the working tree's diff full-screen and scrollable, rendered exactly like an edit tool's diff; `Esc` closes it.
-Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/diff.rs`.
-Steps:
-1. `Modal::Diff { text, scroll }`; `Ctrl+G` asks the runtime for `git::diff` over the channel T15.2 opened and stores the answer.
-2. `diff.rs` gains `from_unified(&str) -> Vec<Diff>`, splitting a worktree patch on its `diff --git` headers so it renders as the per-file `± path +n −m` blocks that already exist — one renderer, not a second one.
-3. `view` draws the modal over the transcript; `PageUp`/`PageDown` scroll, `Esc` closes.
-Check: `mise exec -- cargo test -p cox-tui diff` — a two-file worktree patch snapshots as two headed blocks; an empty diff shows `no changes`.
-Done when: the Check passes and the keymap row is in §1.13.
-Out of scope: staging or reverting hunks from the view (it is a reader); side-by-side layout.
-
 #### T15.4 Git-aware completion of a shell line
-Model: sonnet · Status: open · Depends: T15.2 · Size: ~120
+Model: opus · Status: in progress · Depends: T15.2 · Size: ~120
 Goal: completing a git command line in the composer offers subcommands, then branch names or changed paths depending on the subcommand.
 Files: `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox-tui/src/state.rs`.
 Steps:

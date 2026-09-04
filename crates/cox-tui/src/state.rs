@@ -93,7 +93,17 @@ pub struct Status {
 pub enum Modal {
     Approval(Approval),
     Picker(Picker),
+    /// `Ctrl+G` (T15.3): the working tree's `git diff HEAD`, drawn over the
+    /// transcript; `scroll` is lines from the top.
+    Diff {
+        text: String,
+        scroll: usize,
+    },
 }
+
+/// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
+/// 15 rows, so a page is a little less).
+const DIFF_PAGE: usize = 10;
 
 /// What the status line shows of the working tree; a mirror of
 /// `cox_tools::git::Status` so this crate keeps no `cox-tools` dependency
@@ -164,6 +174,15 @@ pub enum Msg {
     Agents(Vec<Presence>),
     /// The working tree's branch and counts (T15.2); `None` outside a repo.
     Git(Option<GitStatus>),
+    /// The runtime's answer to `Ask::GitDiff` (T15.3); `None` outside a repo.
+    Diff(Option<String>),
+}
+
+/// What the TUI asks the runtime to fetch off-screen; the answer comes back
+/// on the feed channel. Kept apart from `Submission`: the core never sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ask {
+    GitDiff,
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -172,6 +191,7 @@ pub enum Cmd {
     Submit(Submission),
     Quit,
     Copy(String),
+    Ask(Ask),
 }
 
 impl State {
@@ -272,6 +292,12 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.git = git;
             Vec::new()
         }
+        // git's output is a tool's: sanitised once, here at the boundary.
+        Msg::Diff(text) => {
+            let text = crate::text::sanitize(&text.unwrap_or_default());
+            state.modal = Some(Modal::Diff { text, scroll: 0 });
+            Vec::new()
+        }
     }
 }
 
@@ -299,6 +325,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     if ctrl && key.code == KeyCode::Char('o') {
         state.show_diffs = !state.show_diffs;
         return Vec::new();
+    }
+    if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {
+        return vec![Cmd::Ask(Ask::GitDiff)];
     }
     if key.code == KeyCode::Tab && state.modal.is_none() {
         return set_mode(state, commands::next_mode(state.mode));
@@ -339,6 +368,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     Kind::History => state.composer.set_text(&choice),
                 },
             }
+            Vec::new()
+        }
+        Some(Modal::Diff { text, scroll }) => {
+            let scroll = match key.code {
+                KeyCode::Esc => return Vec::new(),
+                KeyCode::Char('g') if ctrl => return Vec::new(),
+                KeyCode::PageDown => {
+                    (scroll + DIFF_PAGE).min(text.lines().count().saturating_sub(1))
+                }
+                KeyCode::PageUp => scroll.saturating_sub(DIFF_PAGE),
+                _ => scroll,
+            };
+            state.modal = Some(Modal::Diff { text, scroll });
             Vec::new()
         }
         None => {

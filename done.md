@@ -2114,3 +2114,30 @@ ok — config_docs_config_md_matches_default_toml passes with the new `tui.git` 
 $ mise exec -- cargo clippy -p cox-tui -p cox-protocol -p cox -p cox-tools --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T15.3 Diff view
+Model: opus · Status: done 2026-09-05 · Depends: T15.2 · Size: ~130
+Goal: `Ctrl+G` opens the working tree's diff full-screen and scrollable, rendered exactly like an edit tool's diff; `Esc` closes it.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/diff.rs`.
+Steps:
+1. `Modal::Diff { text, scroll }`; `Ctrl+G` asks the runtime for `git::diff` over the channel T15.2 opened and stores the answer.
+2. `diff.rs` gains `from_unified(&str) -> Vec<Diff>`, splitting a worktree patch on its `diff --git` headers so it renders as the per-file `± path +n −m` blocks that already exist — one renderer, not a second one.
+3. `view` draws the modal over the transcript; `PageUp`/`PageDown` scroll, `Esc` closes.
+Check: `mise exec -- cargo test -p cox-tui diff` — a two-file worktree patch snapshots as two headed blocks; an empty diff shows `no changes`.
+Done when: the Check passes and the keymap row is in §1.13.
+Out of scope: staging or reverting hunks from the view (it is a reader); side-by-side layout.
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-tui diff
+test diff::tests::from_unified_splits_a_patch_at_its_headers_and_keeps_hunks ... ok
+test diff_view_shows_a_two_file_patch_as_two_headed_blocks ... ok   (snapshot diff__diff_view_shows_a_two_file_patch_as_two_headed_blocks.snap: two `± path +n −m` blocks)
+test diff_view_scrolls_by_page_and_esc_closes_it ... ok
+test diff_view_says_no_changes_for_an_empty_or_absent_diff ... ok
+test result: ok — plus the four earlier diff tests (diff_two_files, counts, highlight, plain).
+$ mise exec -- cargo test -p cox-tui -p cox
+ok — no earlier snapshot changed.
+$ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

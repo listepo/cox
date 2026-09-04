@@ -19,7 +19,8 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let modal = match &state.modal {
         Some(Modal::Approval(a)) => a.height(),
         Some(Modal::Picker(p)) => p.height(),
-        None => 0,
+        // The diff view takes the transcript's rows, not a band of its own.
+        Some(Modal::Diff { .. }) | None => 0,
     };
     let composer_rows = u16::try_from(state.composer.line_count().clamp(1, 5)).unwrap_or(5);
     let todo_rows = if state.show_todo {
@@ -48,14 +49,24 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         b.line().render(banner_area, buf);
     }
     let look = state.look(transcript.width);
-    let lines: Vec<Line<'static>> = state
-        .transcript
-        .iter()
-        .flat_map(|c| cell_lines(c, &look))
-        .collect();
-    let offset = lines
-        .len()
-        .saturating_sub(usize::from(transcript.height) + state.scroll);
+    let rows = usize::from(transcript.height);
+    let (lines, offset): (Vec<Line<'static>>, usize) = match &state.modal {
+        // The transcript scrolls from its end; the diff view from its start.
+        Some(Modal::Diff { text, scroll }) => {
+            let lines = crate::diff::view_lines(text, &look);
+            let offset = (*scroll).min(lines.len().saturating_sub(rows));
+            (lines, offset)
+        }
+        _ => {
+            let lines: Vec<Line<'static>> = state
+                .transcript
+                .iter()
+                .flat_map(|c| cell_lines(c, &look))
+                .collect();
+            let offset = lines.len().saturating_sub(rows + state.scroll);
+            (lines, offset)
+        }
+    };
     Paragraph::new(lines)
         .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
         .render(transcript, buf);
@@ -66,7 +77,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     match &state.modal {
         Some(Modal::Approval(a)) => Paragraph::new(a.lines(&state.glyphs)).render(modal_area, buf),
         Some(Modal::Picker(p)) => Paragraph::new(p.lines(&state.glyphs)).render(modal_area, buf),
-        None => {}
+        Some(Modal::Diff { .. }) | None => {}
     }
 
     let [prompt, text] =
