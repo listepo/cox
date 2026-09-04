@@ -73,10 +73,21 @@ pub fn backend(linux: LinuxBackend) -> Option<Backend> {
     }
 }
 
-/// The command that runs `command` under `policy`: `/bin/sh -c` wrapped by
+/// The command that runs `command` under `policy`: `<shell> -c` wrapped by
 /// the backend, or bare for `danger-full-access` and hosts without one.
-pub fn command(policy: &SandboxPolicy, roots: &[PathBuf], command: &str) -> io::Result<Command> {
-    let shell = ["/bin/sh".to_string(), "-c".to_string(), command.to_string()];
+/// `shell` is an absolute path the caller already resolved from its own
+/// allowlist — the sandbox never looks a program up on `PATH`.
+pub fn command(
+    policy: &SandboxPolicy,
+    roots: &[PathBuf],
+    shell: &Path,
+    command: &str,
+) -> io::Result<Command> {
+    let shell = [
+        shell.to_string_lossy().into_owned(),
+        "-c".to_string(),
+        command.to_string(),
+    ];
     let backend = (policy.mode != SandboxMode::DangerFullAccess)
         .then(|| backend(policy.linux_backend))
         .flatten();
@@ -197,7 +208,13 @@ mod tests {
 
     #[test]
     fn sandbox_danger_full_access_runs_the_shell_bare() {
-        let cmd = command(&policy(SandboxMode::DangerFullAccess), &[], "echo hi").expect("command");
+        let cmd = command(
+            &policy(SandboxMode::DangerFullAccess),
+            &[],
+            Path::new("/bin/sh"),
+            "echo hi",
+        )
+        .expect("command");
         assert_eq!(argv(&cmd), ["/bin/sh", "-c", "echo hi"]);
     }
 
@@ -215,11 +232,18 @@ mod tests {
     #[test]
     fn sandbox_macos_backend_is_seatbelt_and_wraps_the_shell() {
         assert_eq!(backend(LinuxBackend::Auto), Some(Backend::Seatbelt));
-        let cmd = command(&policy(SandboxMode::WorkspaceWrite), &[], "echo hi").expect("command");
+        let cmd = command(
+            &policy(SandboxMode::WorkspaceWrite),
+            &[],
+            Path::new("/bin/zsh"),
+            "echo hi",
+        )
+        .expect("command");
         let argv = argv(&cmd);
         assert_eq!(argv[0], SANDBOX_EXEC);
         assert_eq!(argv[1], "-p");
         assert!(argv[2].starts_with("(version 1)"));
-        assert_eq!(&argv[argv.len() - 3..], ["/bin/sh", "-c", "echo hi"]);
+        // The chosen shell is what the profile wraps, not always /bin/sh.
+        assert_eq!(&argv[argv.len() - 3..], ["/bin/zsh", "-c", "echo hi"]);
     }
 }

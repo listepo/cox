@@ -55,14 +55,79 @@ pub struct BashTool;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct BashInput {
-    /// The command line, run with `sh -c` in the session's working directory.
+    /// The command line, run with `<shell> -c` in the session's working directory.
     command: String,
+    /// Which shell interprets the command line (default `sh`).
+    #[serde(default)]
+    shell: Shell,
     /// Seconds before the command is sent SIGTERM, then SIGKILL (default 120).
     #[serde(default)]
     timeout_s: Option<u64>,
     /// Run detached and return a task id; the output is archived when it finishes.
     #[serde(default)]
     background: bool,
+}
+
+/// The shells a command line may be written for. The enum *is* the
+/// allowlist: a name the model invents fails to deserialise, so nothing
+/// the model says can pick the program that gets spawned.
+#[derive(Debug, Default, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+enum Shell {
+    #[default]
+    Sh,
+    Bash,
+    Zsh,
+    Fish,
+    Dash,
+    Ksh,
+    Tcsh,
+    Nu,
+    Pwsh,
+}
+
+/// Where a shell may live. Not `PATH`: what the sandbox spawns must not
+/// depend on an environment the workspace can rewrite.
+const SHELL_DIRS: &[&str] = &["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"];
+
+impl Shell {
+    fn name(self) -> &'static str {
+        match self {
+            Shell::Sh => "sh",
+            Shell::Bash => "bash",
+            Shell::Zsh => "zsh",
+            Shell::Fish => "fish",
+            Shell::Dash => "dash",
+            Shell::Ksh => "ksh",
+            Shell::Tcsh => "tcsh",
+            Shell::Nu => "nu",
+            Shell::Pwsh => "pwsh",
+        }
+    }
+
+    /// The first installed binary for this shell; every one of them takes
+    /// the command line after `-c`.
+    fn path(self) -> Result<PathBuf, ToolError> {
+        SHELL_DIRS
+            .iter()
+            .map(|dir| Path::new(dir).join(self.name()))
+            .find(|path| path.is_file())
+            .ok_or_else(|| ToolError::Denied {
+                why: format!(
+                    "shell `{}` is not installed here (looked in {})",
+                    self.name(),
+                    SHELL_DIRS.join(", ")
+                ),
+            })
+    }
+}
+
+/// A command line and the shell that runs it, kept together so every hop
+/// down to the sandbox carries both.
+#[derive(Clone)]
+struct Cmd {
+    line: String,
+    shell: PathBuf,
 }
 
 #[async_trait]
@@ -76,7 +141,10 @@ impl Tool for BashTool {
                 <ms>]`. Output streams while the command runs; a long-running command is \
                 stopped after `timeout_s` seconds (default 120). Prefer the dedicated `read`, \
                 `grep`, `glob` and `edit` tools for file work; use `bash` for builds, tests, \
-                git and anything that needs a process. Pass `background: true` for a server \
+                git and anything that needs a process. `shell` picks the interpreter \
+                (`sh` by default, or `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `nu`, \
+                `pwsh` when the command line needs that shell's syntax); it errors if the \
+                shell is not installed. Pass `background: true` for a server \
                 or watcher you do not want to wait for."
                 .to_string(),
             input_schema,
@@ -109,11 +177,15 @@ impl Tool for BashTool {
             .timeout_s
             .filter(|s| *s > 0)
             .map_or(DEFAULT_TIMEOUT, Duration::from_secs);
+        let cmd = Cmd {
+            line: input.command,
+            shell: input.shell.path()?,
+        };
         if input.background {
-            return Ok(background(input.command, timeout, cx));
+            return Ok(background(cmd, timeout, cx));
         }
         let run = run(
-            &input.command,
+            &cmd,
             &cx.cwd,
             &cx.roots,
             &cx.sandbox,
@@ -162,18 +234,18 @@ fn denial(text: &str) -> Option<String> {
 /// Spawns the command detached from the turn: it outlives cancellation and
 /// its full output lands in the archive under this call. `TaskCreated`/
 /// `TaskCompleted` and a way to fetch the row by task id arrive with T9.2.
-fn background(command: String, timeout: Duration, cx: &ToolCx) -> ToolOutput {
+fn background(cmd: Cmd, timeout: Duration, cx: &ToolCx) -> ToolOutput {
     let task = TaskId::new();
     let (cwd, roots, sandbox) = (cx.cwd.clone(), cx.roots.clone(), cx.sandbox.clone());
     let archive = cx.archive.clone();
     let (session, call) = (cx.session, cx.call);
-    let subject = command.clone();
+    let subject = cmd.line.clone();
     tokio::spawn(async move {
         // The turn's output channel closes when this call returns, so the
         // background run streams into a sink nobody reads.
         let (sink, _) = mpsc::channel(1);
         if let Ok(run) = run(
-            &command,
+            &cmd,
             &cwd,
             &roots,
             &sandbox,
@@ -188,7 +260,7 @@ fn background(command: String, timeout: Duration, cx: &ToolCx) -> ToolOutput {
                     session,
                     call,
                     tool: "bash".into(),
-                    subject: Some(command),
+                    subject: Some(cmd.line),
                     bytes: run.render().into_bytes(),
                 })
                 .await;
@@ -234,12 +306,13 @@ impl Run {
 /// `bwrap` or the bare shell) and any pre-exec hook, this only adds cwd and
 /// the environment.
 fn command_for(
-    command: &str,
+    cmd: &Cmd,
     cwd: &Path,
     roots: &[PathBuf],
     sandbox: &SandboxPolicy,
 ) -> Result<Command, ToolError> {
-    let mut cmd = crate::sandbox::command(sandbox, roots, command).map_err(|_| ToolError::Io)?;
+    let mut cmd = crate::sandbox::command(sandbox, roots, &cmd.shell, &cmd.line)
+        .map_err(|_| ToolError::Io)?;
     cmd.current_dir(cwd);
     cmd.env_clear();
     for key in ENV_ALLOWLIST {
@@ -281,7 +354,7 @@ fn signal(pid: u32, sig: Signal) {
 }
 
 async fn run(
-    command: &str,
+    cmd: &Cmd,
     cwd: &Path,
     roots: &[PathBuf],
     sandbox: &SandboxPolicy,
@@ -297,9 +370,9 @@ async fn run(
         ws_ypixel: 0,
     };
     let pty = openpty(&size, None::<&Termios>).map_err(|_| ToolError::Io)?;
-    let mut cmd = command_for(command, cwd, roots, sandbox)?;
-    attach_pty(&mut cmd, &pty.slave)?;
-    let mut child = cmd.spawn().map_err(|_| ToolError::Io)?;
+    let mut child = command_for(cmd, cwd, roots, sandbox)?;
+    attach_pty(&mut child, &pty.slave)?;
+    let mut child = child.spawn().map_err(|_| ToolError::Io)?;
     let pid = child.id();
     let mut reader = File::from(pty.master.try_clone().map_err(|_| ToolError::Io)?);
     let fd = pty.master.as_raw_fd();
@@ -500,5 +573,31 @@ mod tests {
         );
         assert_eq!(tool.risk(&serde_json::json!({})), Risk::Exec);
         assert_eq!(tool.subject(&serde_json::json!({"command": "ls"})), "ls");
+    }
+
+    #[test]
+    fn bash_shell_defaults_to_sh_and_only_accepts_known_names() {
+        let parse = |v| serde_json::from_value::<BashInput>(v);
+        let input = parse(serde_json::json!({"command": "ls"})).expect("default");
+        assert_eq!(input.shell.name(), "sh");
+        let input = parse(serde_json::json!({"command": "ls", "shell": "fish"})).expect("fish");
+        assert_eq!(input.shell.name(), "fish");
+        // Anything outside the enum never reaches a spawn.
+        assert!(parse(serde_json::json!({"command": "ls", "shell": "/tmp/evil"})).is_err());
+        assert!(parse(serde_json::json!({"command": "ls", "shell": "bash -lc x"})).is_err());
+    }
+
+    #[test]
+    fn bash_shell_resolves_to_an_absolute_path_or_says_it_is_missing() {
+        let sh = Shell::Sh.path().expect("sh exists everywhere");
+        assert!(sh.is_absolute() && sh.ends_with("sh"));
+        // A shell that is installed nowhere we look is a Denied, not a spawn.
+        if Shell::Nu.path().is_err() {
+            let why = match Shell::Nu.path() {
+                Err(ToolError::Denied { why }) => why,
+                other => panic!("expected Denied, got {other:?}"),
+            };
+            assert!(why.contains("`nu` is not installed"), "{why}");
+        }
     }
 }

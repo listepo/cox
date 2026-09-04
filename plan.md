@@ -454,7 +454,7 @@ Microcompaction (no model call): when building a request, tool results older tha
 | `edit` | `path`, `old`, `new`; `replace_all: bool` | Write | unified diff | exact → whitespace-insensitive; ambiguity is an error listing match lines |
 | `apply_patch` | `patch` (V4A text) | Write | per-file diff summary | Add/Update/Delete/Move; `Destructive` if it deletes > 5 files |
 | `write` | `path`, `content` | Write | bytes written | existing file > 200 lines → error "use edit" |
-| `bash` | `command`; `timeout_s` (120); `background: bool` | Exec / Destructive (classified) | streamed stdout+stderr, exit code | sandboxed; env allowlist; cwd = workspace |
+| `bash` | `command`; `shell` (`sh`\|`bash`\|`zsh`\|`fish`\|`dash`\|`ksh`\|`tcsh`\|`nu`\|`pwsh`, default `sh`); `timeout_s` (120); `background: bool` | Exec / Destructive (classified) | streamed stdout+stderr, exit code | sandboxed; env allowlist; cwd = workspace; the shell enum is the allowlist and resolves in fixed dirs, never `PATH` |
 | `todo` | `items: [{id, text, state}]` | ReadOnly | rendered list | state drives the TUI todo panel |
 | `expand` | `id` (archive id); `lines: "a-b"` | ReadOnly | archived bytes (capped, further pointers) | deferred: false (always present, tiny schema) |
 | `ask_user` | `question`; `options: [..]` | ReadOnly | the answer | blocks the turn; headless → error unless `--answer` |
@@ -583,6 +583,46 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
+### P14 — TUI presentation (goal: the TUI renders correctly on any terminal font, glyph set, colour depth and language)
+
+Rationale in §6 A11. What already exists and is *not* redone here: syntect highlighting of fenced code blocks (T5.3), `unicode-width` wrapping/truncation of wide and combining text (T5.3, T5.6), `tui.theme = auto|dark|light` resolved in `crates/cox/src/session.rs`.
+
+#### T14.1 Glyph table with ASCII fallback and user overrides
+Model: sonnet · Status: open · Depends: — · Size: ~150
+Goal: every non-ASCII glyph the TUI prints comes from one table, and `COX_TUI_GLYPHS=ascii` (or a font that lacks them) renders the whole UI in ASCII with identical layout.
+Files: `crates/cox-tui/src/glyph.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-protocol/src/config.rs`.
+Steps:
+1. `glyph::Set` — one struct of named glyphs (spinner frames, user `›`, tool `⚙`, ok `✓`, fail `✗`, thinking `∴`, attachment `📎`, diff `±`/`−`, quote `│`, rule `─`, bullet `•`, cursor `▸`, separator `·`), with `unicode()` and `ascii()` constructors; `ascii()` is ASCII-only and each glyph is one column wide.
+2. `tui.glyphs = "auto" | "unicode" | "ascii"` in config (default `auto`: `ascii` when `TERM=dumb`/`LANG` is not UTF-8, else `unicode`), plus `[tui.icons]` — a `name = "glyph"` map that overrides individual entries so a Nerd Font user can substitute their own.
+3. Replace every hardcoded literal in `cells.rs`, `diff.rs`, `picker.rs`, `status.rs`, `markdown.rs`, `modal.rs`, `composer.rs` with a lookup on `State::glyphs`; overrides are width-clamped through `text::truncate` so a two-column icon cannot break alignment.
+Check: `mise exec -- cargo test -p cox-tui glyph` — a snapshot pair renders the same frame under `unicode()` and `ascii()` with equal line widths; `LC_ALL=C grep -n '[^ -~\t]' crates/cox-tui/src/*.rs` matches only `glyph.rs` and `//!`/doc comments.
+Done when: the Check passes and `docs/config.md` documents `tui.glyphs` and `[tui.icons]`.
+Out of scope: colour (T14.2), highlighting (T14.3).
+
+#### T14.2 Colour depth and `NO_COLOR`
+Model: sonnet · Status: open · Depends: — · Size: ~120
+Goal: truecolor styles degrade to 256- or 16-colour terminals instead of being emitted blindly, and `NO_COLOR=1` renders the TUI with no colour at all.
+Files: `crates/cox-tui/src/color.rs` (new), `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/src/state.rs`.
+Steps:
+1. `color::Depth` — `None | Ansi16 | Ansi256 | True`, detected once from `NO_COLOR`, `COLORTERM`, `TERM` (`FORCE_COLOR` and `tui.color = auto|none|16|256|true` override).
+2. `Depth::map(Color) -> Color` — `Rgb` quantised to the xterm cube for `Ansi256`, to the nearest named colour for `Ansi16`, dropped for `None`; named colours pass through except under `None`.
+3. `markdown::highlight` and the styled spans in `cells.rs`/`diff.rs`/`banner.rs` map their colours through `State::depth` at the one place each style is built.
+Check: `mise exec -- cargo test -p cox-tui color` — `NO_COLOR` yields a frame whose spans all carry `Style::default()`; an `Ansi256` frame contains no `Color::Rgb`.
+Done when: the Check passes; `tui.color` is documented.
+Out of scope: theme selection, which `tui.theme` already covers.
+
+#### T14.3 Syntax highlighting for file-shaped tool output and diffs
+Model: sonnet · Status: open · Depends: T14.2 · Size: ~140
+Goal: `read`/`edit`/`write` tool output and diff hunk bodies are highlighted by the file's extension, with the syntect theme configurable.
+Files: `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/cells.rs`.
+Steps:
+1. Lift `markdown::highlight` to `pub(crate) fn highlight(token: &str, body: &str, theme: &str)` resolving the syntect syntax by language token *or* file extension — one helper, no second highlighter.
+2. `cells.rs` passes the tool call's subject extension for file-shaped tools; `diff.rs` highlights the hunk body and keeps the add/remove colour on the line prefix only.
+3. `tui.syntax_theme = ""` (empty = the `tui.theme`-derived default) selects any theme in syntect's bundled set; an unknown name warns once and falls back.
+Check: `mise exec -- cargo test -p cox-tui` — snapshots show a highlighted `read` of a `.rs` file and a highlighted diff hunk; an unknown theme name renders plain instead of panicking.
+Done when: the Check passes; `docs/config.md` documents `tui.syntax_theme`.
+Out of scope: tree-sitter highlighting; syntect stays the engine.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -618,6 +658,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A8 2026-09-02 `website/`, `.github/workflows/deploy-pages.yml` — deploy the Hugo site to GitHub Pages from `main`, building within `website/` and publishing `website/public`. Why: user request. Effect: the deploy workflow installs the pinned Tailwind dependencies and runs only when site/workflow files change.
 - A9 2026-09-04 §1.1, §1.6, D3 — provider registry in two types (`docs/design/providers.md`). Type-1 (native `Provider` impl per *wire protocol*): `AnthropicProvider`, new `OpenAiResponsesProvider` (`POST /responses`, bearer-optional), `OpenAiChatProvider` (+`models` list, `from_parts`). Type-2 (compatible, zero code): any `[providers.<name>]` table (`CompatibleProviderConfig`: `base_url`, `api_key_env`, `api`, `model`, `context_window`, `models`) served by the shared Chat/Responses clients; seed `deepseek`, `openrouter` (curated), `moonshot`, `z-ai` with per-model `{id, context_window, efforts}` from models.dev and matching `prices.toml` rows (20 rows; `qwen3-coder` costed 0). Why: user request — adding DeepSeek/OpenRouter must be config lines, never a `DeepseekProvider` struct duplicating the Chat client. Effect: `ProvidersConfig` loses `deny_unknown_fields` (flattened `custom` map, Hooks/Mcp precedent — a typo'd table parses but fails closed in router/session); `Router::pick` accepts custom names (Local family id, section-model pin, per-model effort clamp to greatest-supported-≤-request); `provider_for` builds Responses-or-Chat per `api` (unknown `api` bails at startup); `--provider <name>` propagates to all tiers for any non-first-party name; `cox-provider::http` unifies key resolve/error mapping (5xx is now `Overloaded` on every backend); `Effort` gains `Ord`; `figment` becomes a `cox-protocol` dev-dep for the default.toml shape test. Deferred: per-model effort *enforcement* beyond the clamp (gateway models pass through), keyring fallback for custom keys (env-only), shared retry policy for OpenAI-shaped clients, `cox doctor` prices-age check.
 - A10 2026-09-04 D16, P13 — implement vendor-neutral OpenTelemetry observability as three bounded tasks: OTLP/HTTP traces+logs exporter, GenAI semantic instrumentation, then backend documentation/smoke stack. Why: user requested full AI-agent telemetry visible in Maple, SigNoz, Jaeger and Grafana. Effect: standard OTEL environment variables remain the portability contract; raw prompt/completion/tool content is opt-in only because it can contain source code and secrets; operational metadata, usage, costs and errors are always exported when telemetry is enabled.
+- A11 2026-09-04 §1.6, P14 — the TUI must render on any terminal font, glyph set, colour depth and language: one glyph table with an ASCII fallback and `[tui.icons]` overrides (T14.1), colour-depth downgrade plus `NO_COLOR` (T14.2), and syntect highlighting extended from markdown fences to file-shaped tool output and diff hunks with a configurable theme (T14.3). Why: user request. Effect: adds `tui.glyphs`, `[tui.icons]`, `tui.color`, `tui.syntax_theme` to §1.6; no new dependency (syntect and unicode-width are already in the tree); a font is the terminal's to choose, so cox's contract is width-correct, degradable output rather than font selection. Already covered and not redone: fenced-code highlighting (T5.3), wide/combining width handling (T5.3, T5.6), `tui.theme` (T5.1).
+- A12 2026-09-04 §1.11, T3.7 — `bash` gains an optional `shell` input (`sh` default, plus `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `nu`, `pwsh`); `cox_tools::sandbox::command` takes the shell path instead of hardcoding `/bin/sh`. Why: user request — command lines written for a specific shell (fish substitution, zsh globs) failed under `sh`. Effect: the schema enum *is* the allowlist, so a name the model invents is a deserialisation error and never reaches a spawn; the binary is resolved in `/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew/bin` and never on `PATH`; a missing shell is `ToolError::Denied`. Risk classification stays tree-sitter-bash, which rates an unparseable (e.g. fish-only) line `Exec` — fails closed, never lower.
 
 ## 7. Risk register
 

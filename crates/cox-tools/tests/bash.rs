@@ -220,3 +220,49 @@ async fn bash_cancel_stops_the_command() {
     assert!(out.is_error);
     assert!(out.text.contains("go\n[cancelled after"), "{}", out.text);
 }
+
+/// The shells `bash` may pick, and where they can live; mirrors the tool's
+/// own allowlist so the test can skip one this host does not have.
+fn installed(shell: &str) -> bool {
+    ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"]
+        .iter()
+        .any(|dir| PathBuf::from(dir).join(shell).is_file())
+}
+
+#[tokio::test]
+async fn bash_runs_the_command_line_under_the_shell_it_was_written_for() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // fish command substitution is `(cmd)`; under `sh` this is a syntax error.
+    for (shell, command, want) in [
+        ("zsh", "echo ${ZSH_VERSION:+zsh}", "zsh"),
+        ("fish", "echo (echo fish)", "fish"),
+    ] {
+        if !installed(shell) {
+            continue;
+        }
+        let (out, _) = run(
+            dir.path().to_path_buf(),
+            SandboxMode::WorkspaceWrite,
+            CancellationToken::new(),
+            json!({"command": command, "shell": shell}),
+        )
+        .await;
+        assert!(!out.is_error, "{shell}: {}", out.text);
+        assert!(out.text.starts_with(want), "{shell}: {}", out.text);
+    }
+}
+
+#[tokio::test]
+async fn bash_refuses_a_shell_that_is_not_on_the_allowlist() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (cx, _rx) = common::cx(
+        dir.path().to_path_buf(),
+        common::policy(SandboxMode::WorkspaceWrite),
+        CancellationToken::new(),
+    );
+    let err = BashTool
+        .call(json!({"command": "id", "shell": "/tmp/evil"}), &cx)
+        .await
+        .expect_err("unknown shell is refused");
+    assert!(format!("{err:?}").contains("invalid bash input"), "{err:?}");
+}
