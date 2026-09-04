@@ -1943,3 +1943,36 @@ test config::tests::config_docs_config_md_matches_default_toml ... ok
 $ mise exec -- cargo clippy -p cox-tui -p cox-protocol --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T16.1 Presence records and the presence hook
+Model: opus · Status: done 2026-09-05 · Depends: — · Size: ~180
+Goal: a session's liveness, status and last-edited paths are on disk while it runs, and a turn's prompt carries the other live sessions of the same project as extra context.
+Files: `crates/cox-protocol/src/types.rs`, `crates/cox-ext/src/presence.rs` (new), `crates/cox-ext/src/hooks.rs` (+ the module line in `lib.rs`).
+Steps:
+1. `types::Presence { session, pid, cwd, project, status, turn, touched, updated }` and `PresenceStatus = Active | Waiting | Idle | Stopped`.
+2. `presence::{write, remove, others(home, project, me, now)}` over `COX_HOME/presence/<session>.json` (tmp + rename, so a reader never sees half a file); a record silent for `STALE_SECS` reads back as `Stopped`, one silent for a day is swept; `describe(&[Presence], now)` renders the warning and one line per agent for the model.
+3. `PresenceHook: Hook`, wrapping the optional `ShellHooks`: `UserPromptSubmit` → `Active`, turn + 1, then the others as `Modify { input: {"additional_context": …} }` merged with the inner verdict (`with_context`); `PreToolUse`/`PostToolUse` → heartbeat, `edit`/`write` paths → `touched` (last 12); `PermissionRequest` → `Waiting`; `Stop` → `Idle`; `SessionEnd` and `Drop` → the record is removed.
+4. `ShellHooks::verdict` maps Claude Code's `additionalContext` (top level or `hookSpecificOutput`) through the same `with_context`.
+Check: `mise exec -- cargo test -p cox-ext -- presence hooks` — two records in one project describe each other, a stale one reads `stopped`, the session's own record and another project's are excluded, `SessionEnd` removes the file; `hooks_verdict_reads_claude_shapes` covers `additionalContext`.
+Done when: the Check passes.
+Out of scope: the core applying `additional_context` (T16.2); the TUI (T16.3); `apply_patch` paths (they are inside the patch text; add a parse when a real session needs them).
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-ext -- presence hooks
+test hooks::tests::hooks_matcher_is_exact_or_prefix_glob ... ok
+test hooks::tests::hooks_verdict_reads_claude_shapes ... ok
+test presence::tests::presence_with_context_keeps_a_rewritten_prompt_and_joins_context ... ok
+test presence::tests::presence_hook_adds_the_others_as_context_on_prompt ... ok
+test presence::tests::presence_others_excludes_me_and_other_projects_and_marks_stale_stopped ... ok
+test presence::tests::presence_hook_tracks_status_and_files_and_removes_on_session_end ... ok
+test result: ok. 16 passed; 0 failed   (unit)
+test hooks_unconfigured_event_and_plain_stdout_continue ... ok
+test hooks_pre_tool_use_exit_2_blocks_bash ... ok
+test hooks_updated_input_is_applied ... ok
+test hooks_crashing_hook_is_skipped_not_fatal ... ok
+test result: ok. 4 passed; 0 failed    (tests/hooks.rs)
+$ mise exec -- cargo clippy -p cox-ext -p cox-protocol --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

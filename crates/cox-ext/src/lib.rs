@@ -10,4 +10,5 @@ pub mod frontmatter;
 pub mod hooks;
 pub mod instructions;
 pub mod memory;
+pub mod presence;
 pub mod skills;

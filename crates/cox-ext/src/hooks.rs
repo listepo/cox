@@ -128,8 +128,8 @@ async fn run_one(command: &str, payload: &Value, limit: Duration, cwd: &PathBuf)
 }
 
 /// Exit 0 stdout: JSON with `continue:false`, `decision:"block"`,
-/// `hookSpecificOutput.permissionDecision:"deny"` or `updatedInput`;
-/// anything else (including plain text) means continue.
+/// `hookSpecificOutput.permissionDecision:"deny"`, `updatedInput` or
+/// `additionalContext`; anything else (including plain text) means continue.
 fn verdict(stdout: &str) -> HookOutcome {
     let Ok(v) = serde_json::from_str::<Value>(stdout.trim()) else {
         return HookOutcome::Continue;
@@ -153,15 +153,21 @@ fn verdict(stdout: &str) -> HookOutcome {
             reason: reason(&["/reason", "/hookSpecificOutput/permissionDecisionReason"]),
         };
     }
-    if let Some(input) = specific
+    let verdict = match specific
         .get("updatedInput")
         .or_else(|| v.get("updatedInput"))
     {
-        return HookOutcome::Modify {
+        Some(input) => HookOutcome::Modify {
             input: input.clone(),
-        };
-    }
-    HookOutcome::Continue
+        },
+        None => HookOutcome::Continue,
+    };
+    let context = specific
+        .get("additionalContext")
+        .or_else(|| v.get("additionalContext"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    crate::presence::with_context(verdict, context)
 }
 
 #[cfg(test)]
@@ -204,6 +210,12 @@ mod tests {
             verdict(r#"{"hookSpecificOutput":{"updatedInput":{"command":"ls"}}}"#),
             HookOutcome::Modify {
                 input: serde_json::json!({"command":"ls"})
+            }
+        );
+        assert_eq!(
+            verdict(r#"{"hookSpecificOutput":{"additionalContext":"remember x"}}"#),
+            HookOutcome::Modify {
+                input: serde_json::json!({"additional_context":"remember x"})
             }
         );
     }

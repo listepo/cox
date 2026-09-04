@@ -631,21 +631,8 @@ Out of scope: real shell completion (bash/zsh completion specs need a hosted she
 
 Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).
 
-#### T16.1 Presence records and the presence hook
-Model: opus · Status: in progress · Depends: — · Size: ~180
-Goal: a session's liveness, status and last-edited paths are on disk while it runs, and a turn's prompt carries the other live sessions of the same project as extra context.
-Files: `crates/cox-protocol/src/types.rs`, `crates/cox-ext/src/presence.rs` (new), `crates/cox-ext/src/hooks.rs` (+ the module line in `lib.rs`).
-Steps:
-1. `types::Presence { session, pid, cwd, project, status, turn, touched, updated }` and `PresenceStatus = Active | Waiting | Idle | Stopped`.
-2. `presence::{write, remove, others(home, project, me, now)}` over `COX_HOME/presence/<session>.json` (tmp + rename, so a reader never sees half a file); a record silent for `STALE_SECS` reads back as `Stopped`, one silent for a day is swept; `describe(&[Presence], now)` renders the warning and one line per agent for the model.
-3. `PresenceHook: Hook`, wrapping the optional `ShellHooks`: `UserPromptSubmit` → `Active`, turn + 1, then the others as `Modify { input: {"additional_context": …} }` merged with the inner verdict (`with_context`); `PreToolUse`/`PostToolUse` → heartbeat, `edit`/`write` paths → `touched` (last 12); `PermissionRequest` → `Waiting`; `Stop` → `Idle`; `SessionEnd` and `Drop` → the record is removed.
-4. `ShellHooks::verdict` maps Claude Code's `additionalContext` (top level or `hookSpecificOutput`) through the same `with_context`.
-Check: `mise exec -- cargo test -p cox-ext -- presence hooks` — two records in one project describe each other, a stale one reads `stopped`, the session's own record and another project's are excluded, `SessionEnd` removes the file; `hooks_verdict_reads_claude_shapes` covers `additionalContext`.
-Done when: the Check passes.
-Out of scope: the core applying `additional_context` (T16.2); the TUI (T16.3); `apply_patch` paths (they are inside the patch text; add a parse when a real session needs them).
-
 #### T16.2 The core applies `additional_context`, fires `PermissionRequest`, and the binary installs the hook
-Model: opus · Status: open · Depends: T16.1 · Size: ~70
+Model: opus · Status: in progress · Depends: T16.1 · Size: ~70
 Goal: extra context from a `UserPromptSubmit` hook reaches the model without changing what the user sees, a pending approval is observable by hooks, and every surface writes a presence record.
 Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox/src/session.rs`.
 Steps:

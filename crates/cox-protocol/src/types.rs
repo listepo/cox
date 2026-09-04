@@ -527,6 +527,56 @@ pub enum HookOutcome {
     },
 }
 
+/// What one cox process on a workspace is doing right now (plan.md A14).
+/// Written by `cox_ext::presence` from the hook seam, read by every other
+/// session of the same project and by the TUI's `/agents`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Presence {
+    /// The session writing the record.
+    pub session: SessionId,
+    /// Its process id; informational — the heartbeat decides liveness.
+    pub pid: u32,
+    /// Where it started.
+    pub cwd: PathBuf,
+    /// The workspace root it shares with the others (git root, else cwd).
+    pub project: PathBuf,
+    /// What it is doing.
+    pub status: PresenceStatus,
+    /// Turns started so far.
+    pub turn: u32,
+    /// Paths its `edit`/`write` calls changed, newest last.
+    pub touched: Vec<String>,
+    /// Unix seconds of the last heartbeat.
+    pub updated: u64,
+}
+
+/// A session's state as the other sessions see it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PresenceStatus {
+    /// A turn is running.
+    Active,
+    /// Parked on an approval the user has not answered.
+    Waiting,
+    /// Between turns.
+    Idle,
+    /// No heartbeat for `presence::STALE_SECS`: the process probably died
+    /// mid-work, with whatever it was editing left as it was.
+    Stopped,
+}
+
+impl PresenceStatus {
+    /// The lowercase word the model and the status line print.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Waiting => "waiting",
+            Self::Idle => "idle",
+            Self::Stopped => "stopped",
+        }
+    }
+}
+
 /// A submission into the core state machine: everything a surface can ask
 /// `cox-core` to do (plan.md §1.2/§1.3).
 ///
