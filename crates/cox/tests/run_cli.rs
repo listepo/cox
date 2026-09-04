@@ -257,6 +257,31 @@ fn ext_lists_commands_and_agents_from_the_project_tree() {
     assert!(text.contains("notices: none"), "{text}");
 }
 
+/// `cox stats` reads the store under `COX_HOME`, not one it creates in the
+/// working directory — the latter made every session look unbilled.
+#[test]
+fn stats_reads_the_cox_home_store_not_the_working_directory() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    cox(work.path(), home.path(), TEXT_ONLY).assert().success();
+    let out = assert_cmd::Command::cargo_bin("cox")
+        .unwrap()
+        .current_dir(work.path())
+        .args(["stats", "--csv"])
+        .env("COX_HOME", home.path())
+        .env("HOME", home.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("main"), "{text}");
+    assert!(
+        !work.path().join("cox.db").exists(),
+        "stats created a store in the working directory"
+    );
+}
+
 #[test]
 fn sessions_grep_finds_a_scripted_run() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());

@@ -44,8 +44,11 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Command::Record(args)) => record::run(&cli, args),
         Some(Command::Stats(args)) => {
-            let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
-            stats::run(home, args)?;
+            // The store lives under `COX_HOME`, never the working directory:
+            // defaulting to `cwd` opened (and created) an empty `cox.db`
+            // wherever the command ran, so every read came back empty.
+            let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+            stats::run(&home, args)?;
             Ok(())
         }
         Some(Command::Mcp(args)) => mcp_cmd::run(&cli, args, &cwd),
@@ -71,8 +74,8 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Expand(args)) => {
-            let home = cli.home.as_deref().unwrap_or_else(|| &cwd);
-            expand_cmd::run(home, &args.id, args.lines.as_deref())
+            let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+            expand_cmd::run(&home, &args.id, args.lines.as_deref())
         }
         Some(Command::SelfUpdate(args)) => {
             let version = match &args.action {
