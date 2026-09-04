@@ -111,6 +111,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     state.composer.set_vim(config.tui.vim);
     state.dark = config.tui.theme != "light";
     state.glyphs = cox_tui::glyph::resolve(&config.tui);
+    state.depth = cox_tui::color::resolve(&config.tui);
     state.show_thinking = config.tui.show_thinking == "full";
     state.marks = cli.verbose > 0;
     rt.block_on(cox_tui::app::run(session, state))?;

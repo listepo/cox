@@ -4,17 +4,76 @@
 
 use cox_protocol::ids::{CallId, ItemId, TurnId};
 use cox_protocol::types::{
-    Event, ItemKind, Job, ModelId, PermissionMode, Risk, SandboxMode, StopReason, Submission, Tier,
-    ToolCall, ToolResult,
+    Event, ItemKind, Job, Level, ModelId, PermissionMode, Risk, SandboxMode, StopReason,
+    Submission, Tier, ToolCall, ToolResult,
 };
-use cox_tui::state::{Cmd, Msg, State, update};
+use cox_tui::color::Depth;
+use cox_tui::state::{Cell, Cmd, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::buffer::Buffer;
+use ratatui::style::Color;
 
 fn keys(state: &mut State, text: &str) {
     for c in text.chars() {
         assert!(update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c)))).is_empty());
     }
+}
+
+/// Every foreground and background colour on the screen.
+fn colours(buf: &Buffer) -> Vec<Color> {
+    let a = buf.area;
+    (a.top()..a.bottom())
+        .flat_map(|y| (a.left()..a.right()).flat_map(move |x| [(x, y, true), (x, y, false)]))
+        .map(|(x, y, fg)| {
+            let cell = &buf[(x, y)];
+            if fg { cell.fg } else { cell.bg }
+        })
+        .collect()
+}
+
+/// T14.2: a 24-bit colour reaches the screen only where the terminal can
+/// show it; `NO_COLOR` (`Depth::None`) leaves no colour at all.
+#[test]
+fn colour_depth_maps_every_colour_in_the_frame() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    state.transcript.push(Cell::Assistant {
+        item: ItemId::new(),
+        // syntect colours a fenced block in 24-bit.
+        text: "```rust\nfn main() {}\n```".into(),
+        done: true,
+    });
+    state.transcript.push(Cell::Notice {
+        level: Level::Warn,
+        text: "careful".into(),
+    });
+
+    let frame = render(&state, 40, 8);
+    assert!(
+        colours(&frame).iter().any(|c| matches!(c, Color::Rgb(..))),
+        "the fenced block is highlighted in 24-bit to begin with"
+    );
+
+    state.depth = Depth::Ansi256;
+    let frame = render(&state, 40, 8);
+    assert!(
+        !colours(&frame).iter().any(|c| matches!(c, Color::Rgb(..))),
+        "a 256-colour terminal never sees an Rgb colour"
+    );
+    assert!(
+        colours(&frame)
+            .iter()
+            .any(|c| matches!(c, Color::Indexed(_))),
+        "the 24-bit colours landed in the cube"
+    );
+
+    state.depth = Depth::None;
+    assert!(
+        colours(&render(&state, 40, 8))
+            .iter()
+            .all(|c| *c == Color::Reset),
+        "NO_COLOR leaves the terminal's own colours"
+    );
 }
 
 #[test]

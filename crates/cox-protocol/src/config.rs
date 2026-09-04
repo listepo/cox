@@ -594,6 +594,8 @@ pub struct TuiConfig {
     pub glyphs: String,
     /// `[tui.icons]`: one glyph replaced by name (`tool = "\u{f085}"`).
     pub icons: HashMap<String, String>,
+    /// `auto` | `none` | `16` | `256` | `true`: the colour depth to print.
+    pub color: String,
 }
 
 impl Default for TuiConfig {
@@ -606,6 +608,7 @@ impl Default for TuiConfig {
             mouse: true,
             glyphs: "auto".to_string(),
             icons: HashMap::new(),
+            color: "auto".to_string(),
         }
     }
 }

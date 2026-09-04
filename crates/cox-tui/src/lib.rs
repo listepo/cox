@@ -5,6 +5,7 @@
 pub mod app;
 pub mod banner;
 pub mod cells;
+pub mod color;
 pub mod commands;
 pub mod composer;
 pub mod diff;

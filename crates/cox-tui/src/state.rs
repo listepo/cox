@@ -11,6 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::banner::Banner;
 use crate::cells::Look;
+use crate::color::Depth;
 use crate::commands::{self, Action, COMMANDS};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
@@ -117,6 +118,9 @@ pub struct State {
     pub dark: bool,
     /// `tui.glyphs`/`[tui.icons]` resolved; the binary sets it from config.
     pub glyphs: Glyphs,
+    /// `tui.color` resolved: what the terminal can show, applied to the
+    /// finished buffer rather than at each render site.
+    pub depth: Depth,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
@@ -170,6 +174,7 @@ impl State {
             show_thinking: false,
             dark: true,
             glyphs: glyph::UNICODE,
+            depth: Depth::True,
             show_diffs: true,
             todo: Vec::new(),
             show_todo: false,

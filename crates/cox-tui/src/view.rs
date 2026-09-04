@@ -75,6 +75,10 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     state.composer.widget().render(text, buf);
     status::line(state).render(status, buf);
 
+    // One place for every colour on the screen, the composer widget and the
+    // syntect spans included.
+    crate::color::map_buffer(buf, state.depth);
+
     let (row, col) = state.composer.cursor();
     let x = text.x + u16::try_from(col).unwrap_or(u16::MAX);
     let y = text.y + u16::try_from(row).unwrap_or(u16::MAX);

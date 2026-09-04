@@ -89,11 +89,16 @@ pub async fn run(session: Session, mut state: State) -> Result<(), TuiError> {
                 }
             }
             let look = state.look(terminal.size()?.width);
+            let depth = state.depth;
             for cell in state.take_finished() {
                 let lines = cell_lines(&cell, &look);
                 let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-                terminal
-                    .insert_before(height, |buf| Paragraph::new(lines).render(buf.area, buf))?;
+                // Scrollback goes through the same colour mapping as the
+                // viewport; it is written straight to the terminal.
+                terminal.insert_before(height, |buf| {
+                    Paragraph::new(lines).render(buf.area, buf);
+                    crate::color::map_buffer(buf, depth);
+                })?;
             }
             terminal.draw(|frame| {
                 if let Some(pos) = view(&state, frame.area(), frame.buffer_mut()) {

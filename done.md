@@ -1866,3 +1866,52 @@ $ mise exec -- cargo test -p cox-tui   → 19 unit + 17 integration tests, 0 fai
 $ mise exec -- cargo clippy -p cox-tui -p cox-protocol --all-targets -- -D warnings · cargo fmt --all
 clean.
 ```
+
+#### T15.1 `cox_tools::git` — the git facts a surface needs
+Model: opus · Status: done 2026-09-04 · Depends: — · Size: ~120
+Goal: one place that answers "what branch, how many lines changed, what does the diff look like, what branches exist" for the TUI, without `cox-tui` spawning a process.
+Files: `crates/cox-tools/src/git.rs` (new), `crates/cox-tools/src/lib.rs`.
+Steps: (1) `Status { branch, added, removed }` from `rev-parse --abbrev-ref HEAD` + `diff --numstat HEAD`. (2) `diff()` = `git diff HEAD`. (3) `branches()` = `for-each-ref refs/heads` sorted by commit date. (4) One private `git()` runner: `None` on a non-zero exit or a missing binary.
+Check:
+```bash
+mise exec -- cargo test -p cox-tools --lib git::
+```
+
+What landed: `git.rs` shells to the `git` binary — no `git2`/`gix` dependency, four commands total. Every function returns `Option`/empty rather than an error, so no repository, no `git` on `PATH` or a broken `HEAD` costs a status segment and never a session (the fail-open rule). `GIT_OPTIONAL_LOCKS=0` on every run because the status line polls and must not take the index lock from the user's own git. `numstat` sums the two columns and treats a binary file's `-` as nothing.
+Not done: the surfaces that consume it (T15.2–T15.4) — the TUI files they touch were mid-edit by a concurrent session. No `git` tool for the model: A13 records why (`bash` already runs git). Untracked files are outside the counts and the diff by design; ahead/behind is not collected yet.
+```
+$ mise exec -- cargo test -p cox-tools --lib git::
+test git::tests::numstat_sums_columns_and_ignores_binary_dashes ... ok
+test git::tests::status_is_none_outside_a_repository ... ok
+test git::tests::status_reports_branch_and_worktree_line_counts ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 74 filtered out
+$ mise exec -- cargo clippy -p cox-tools --all-targets -- -D warnings · cargo fmt --check -p cox-tools
+clean.
+```
+
+#### T14.2 Colour depth and `NO_COLOR`
+Model: opus · Status: done 2026-09-04 · Depends: — · Size: ~120
+Goal: truecolor styles degrade to 256- or 16-colour terminals instead of being emitted blindly, and `NO_COLOR=1` renders the TUI with no colour at all.
+Files: `crates/cox-tui/src/color.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/app.rs` (+ `state`, `lib`, `crates/cox-protocol/src/config.rs`, `config/default.toml`, `docs/config.md`, `crates/cox/src/session.rs`, `tests/frames.rs`).
+Steps: (1) `color::Depth` detected from the environment. (2) `Depth::map` quantises. (3) One mapping pass over the finished buffer.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui color && mise exec -- cargo test -p cox-tui --test frames
+```
+
+What landed: `color.rs` — `Depth::{None, Ansi16, Ansi256, True}`, resolved by `color::resolve(&TuiConfig)` from `tui.color = auto|none|16|256|true`. `auto` reads the environment conservatively: `NO_COLOR` (any non-empty value) or `TERM=dumb` → `None`; `COLORTERM` naming `truecolor`/`24bit` → `True`; a `TERM` containing `256`/`direct` → `Ansi256`; any other `TERM` → `Ansi16`; no `TERM` at all → `Ansi256`. Claiming 24-bit only when the terminal says so is the safe direction: guessing low prints a near colour, guessing high prints escape noise — which is what the TUI did until now, since `markdown::highlight` emitted syntect's `Color::Rgb` unconditionally. `Depth::map` sends an `Rgb` into the xterm cube (grey ramp when the channels agree within 8) or onto the nearest of the sixteen named colours (hue from the channels at half the brightest, bright form above 192), and `None` resets every colour while leaving `BOLD`/`DIM` alone — `NO_COLOR` asks for no colour, not for no emphasis. Rather than threading the depth through every style, `color::map_buffer` rewrites the finished buffer, at the two places anything reaches the terminal: the end of `view::view` (screen, composer widget and syntect spans included) and `app`'s `insert_before` (scrollback). Tests: `no_color_beats_every_other_signal`, `truecolor_is_claimed_only_when_the_terminal_says_so`, `rgb_maps_into_the_cube_and_onto_a_named_colour`, `a_grey_becomes_a_grey_not_a_cube_corner`, and `colour_depth_maps_every_colour_in_the_frame` — a frame with a highlighted fenced block carries `Rgb` at `True`, none at `Ansi256` (and gains `Indexed`), and nothing but `Reset` at `None`.
+Not done: `tui.theme` still resolves to one of syntect's two base16 themes (T14.3 makes it configurable); the mapping is per-cell over the whole buffer each frame (a 200×60 screen is 12 000 cheap matches — profile before caching); a 16-colour terminal gets a hue-and-brightness approximation, not a CIE-nearest match; `Depth` is not exposed to the `stream-json` or ACP surfaces, which emit no colour.
+```
+$ mise exec -- cargo test -p cox-tui color
+test color::tests::a_grey_becomes_a_grey_not_a_cube_corner ... ok
+test color::tests::rgb_maps_into_the_cube_and_onto_a_named_colour ... ok
+test color::tests::truecolor_is_claimed_only_when_the_terminal_says_so ... ok
+test color::tests::no_color_beats_every_other_signal ... ok
+test result: ok. 4 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui --test frames
+test colour_depth_maps_every_colour_in_the_frame ... ok
+test result: ok. 9 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui   → 23 unit + 24 integration tests, 0 failed
+$ mise exec -- cargo clippy -p cox-tui -p cox-protocol -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```
