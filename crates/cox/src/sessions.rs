@@ -1,16 +1,19 @@
-//! `cox sessions` (T10.3): list past sessions and grep them through
-//! `rollout_fts`. Pure row shaping (`list_rows`, `age_of`) stays testable
-//! without printing; `run` only formats.
+//! `cox sessions` (T10.3): list past sessions, grep them through
+//! `rollout_fts`, and print one session's record (A13). Pure row shaping
+//! (`list_rows`, `age_of`, `detail_of`) stays testable without printing;
+//! `run` only formats.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cox_protocol::Store as _;
+use cox_protocol::{Store as _, UsageRow};
 use cox_store::Store;
 use cox_store::fts::{RolloutHit, SessionInfo};
 use serde::Serialize;
 
 use crate::cli::SessionsArgs;
+use crate::stats::effort_tag;
 
 /// One listed session for humans and `--json`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -27,6 +30,99 @@ pub struct Row {
     pub turns: i64,
     /// Ledger cost in USD.
     pub cost_usd: f64,
+}
+
+/// One session's stored record: the `sessions` row plus what the ledger
+/// says about the calls it paid for (A13).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Detail {
+    /// Session id.
+    pub id: String,
+    /// Generated title or `untitled`.
+    pub title: String,
+    /// Starting directory.
+    pub cwd: String,
+    /// RFC 3339 timestamp of `session_create`.
+    pub started_at: String,
+    /// RFC 3339 timestamp of the last finished turn — a session cox is
+    /// still running has no other end.
+    pub ended_at: String,
+    /// Whole seconds between the two, or `None` if either is unparseable.
+    pub duration_secs: Option<u64>,
+    /// Finished turns.
+    pub turns: i64,
+    /// Ledger cost in USD.
+    pub cost_usd: f64,
+    /// One entry per distinct `(provider, model, effort)` the session used.
+    pub by_model: Vec<ModelTotal>,
+}
+
+/// What one `(provider, model, effort)` combination cost and consumed.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ModelTotal {
+    /// Provider tag (`anthropic`, `openai`, a custom section name).
+    pub provider: String,
+    /// Model id as the provider named it.
+    pub model: String,
+    /// Effort tag, or `-` for a call recorded before effort was stored.
+    pub effort: String,
+    /// Provider calls aggregated here.
+    pub calls: u64,
+    /// Summed usage.
+    pub input_tokens: u64,
+    /// Summed usage.
+    pub output_tokens: u64,
+    /// Summed usage.
+    pub cache_read_tokens: u64,
+    /// Summed usage.
+    pub cache_write_tokens: u64,
+    /// Summed cost.
+    pub cost_usd: f64,
+}
+
+/// Joins a session row with its ledger rows; pure, so tests pin the shape.
+pub fn detail_of(info: &SessionInfo, usage: &[UsageRow]) -> Detail {
+    let mut groups: BTreeMap<(String, String, String), ModelTotal> = BTreeMap::new();
+    for row in usage {
+        let key = (
+            serde_json::to_value(row.provider)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_default(),
+            row.model.0.clone(),
+            effort_tag(&row.effort),
+        );
+        let total = groups.entry(key.clone()).or_insert(ModelTotal {
+            provider: key.0,
+            model: key.1,
+            effort: key.2,
+            calls: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: 0.0,
+        });
+        total.calls += 1;
+        total.input_tokens += u64::from(row.usage.input_tokens);
+        total.output_tokens += u64::from(row.usage.output_tokens);
+        total.cache_read_tokens += u64::from(row.usage.cache_read_tokens);
+        total.cache_write_tokens += u64::from(row.usage.cache_write_tokens);
+        total.cost_usd += row.usage.cost_usd;
+    }
+    Detail {
+        id: info.id.clone(),
+        title: info.title.clone().unwrap_or_else(|| "untitled".into()),
+        cwd: info.cwd.clone(),
+        started_at: info.created_at.clone(),
+        ended_at: info.updated_at.clone(),
+        duration_secs: unix_of_rfc3339(&info.updated_at)
+            .zip(unix_of_rfc3339(&info.created_at))
+            .map(|(end, start)| end.saturating_sub(start)),
+        turns: info.turns,
+        cost_usd: info.cost_usd,
+        by_model: groups.into_values().collect(),
+    }
 }
 
 /// Shapes listing rows with `now_secs` injected, so tests pin time.
@@ -102,6 +198,14 @@ fn now_secs() -> u64 {
 pub fn run(home: &Path, args: &SessionsArgs) -> anyhow::Result<()> {
     let store = Store::open(home)?;
     let limit = args.limit.unwrap_or(20).max(1) as i64;
+    if let Some(id) = args.id.as_deref() {
+        let session = id.parse()?;
+        let detail = detail_of(
+            &store.session_info(&session)?,
+            &store.usage_for_session(&session)?,
+        );
+        return print_detail(&detail, args.json);
+    }
     if let Some(q) = args.grep.as_deref() {
         let hits = store.rollout_search(q, limit * 5)?;
         let ids: Vec<String> = {
@@ -122,6 +226,56 @@ pub fn run(home: &Path, args: &SessionsArgs) -> anyhow::Result<()> {
         return Ok(());
     }
     print_sessions(&list_rows(&infos, now_secs()), None, args.json)
+}
+
+fn print_detail(detail: &Detail, json: bool) -> anyhow::Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(detail).unwrap_or_else(|_| "{}".into())
+        );
+        return Ok(());
+    }
+    println!("{:<12} {}", "id", detail.id);
+    println!("{:<12} {}", "title", detail.title);
+    println!("{:<12} {}", "cwd", detail.cwd);
+    println!("{:<12} {}", "started", detail.started_at);
+    println!("{:<12} {}", "ended", detail.ended_at);
+    if let Some(secs) = detail.duration_secs {
+        println!(
+            "{:<12} {}h{:02}m{:02}s",
+            "duration",
+            secs / 3600,
+            (secs % 3600) / 60,
+            secs % 60
+        );
+    }
+    println!("{:<12} {}", "turns", detail.turns);
+    println!("{:<12} ${:.4}", "cost", detail.cost_usd);
+    if detail.by_model.is_empty() {
+        println!("\nNo usage recorded for this session");
+        return Ok(());
+    }
+    println!(
+        "\n{:<12} {:<24} {:<7} {:<6} {:<10} {:<10} {:<10} {:<10} COST",
+        "PROVIDER", "MODEL", "EFFORT", "CALLS", "INPUT", "OUTPUT", "CACHE R", "CACHE W"
+    );
+    println!("{}", "-".repeat(110));
+    for total in &detail.by_model {
+        println!(
+            "{:<12} {:<24} {:<7} {:<6} {:<10} {:<10} {:<10} {:<10} ${:.4}",
+            truncate(&total.provider, 12),
+            truncate(&total.model, 24),
+            total.effort,
+            total.calls,
+            total.input_tokens,
+            total.output_tokens,
+            total.cache_read_tokens,
+            total.cache_write_tokens,
+            total.cost_usd,
+        );
+    }
+    Ok(())
 }
 
 fn print_sessions(rows: &[Row], hits: Option<&[RolloutHit]>, json: bool) -> anyhow::Result<()> {
@@ -200,6 +354,58 @@ mod tests {
         assert_eq!(age_of("2026-08-25T12:00:00Z", now), "9d");
         assert_eq!(age_of("2026-06-01T00:00:00Z", now), "2026-06-01");
         assert_eq!(age_of("garbage", now), "?");
+    }
+
+    #[test]
+    fn sessions_detail_groups_by_provider_model_effort() {
+        use cox_protocol::{Effort, Job, ModelId, ProviderId, Tier, Usage};
+
+        let mut info = info("abc", "2026-09-03T11:00:00Z");
+        info.created_at = "2026-09-03T10:30:00Z".into();
+        let usage_row = |effort, input| UsageRow {
+            session_id: SessionId::new(),
+            turn: 1,
+            job: Job::Main,
+            tier: Tier::Code,
+            provider: ProviderId::Anthropic,
+            model: ModelId("claude-sonnet-5".into()),
+            effort,
+            usage: Usage {
+                input_tokens: input,
+                output_tokens: 5,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                estimated: false,
+                cost_usd: 0.01,
+                latency_ms: 1,
+            },
+        };
+        let detail = detail_of(
+            &info,
+            &[
+                usage_row(Some(Effort::High), 100),
+                usage_row(Some(Effort::High), 200),
+                usage_row(None, 7),
+            ],
+        );
+        assert_eq!(detail.duration_secs, Some(1800));
+        // Two effort values, so two groups: the untracked row keeps its own.
+        assert_eq!(detail.by_model.len(), 2);
+        let high = detail
+            .by_model
+            .iter()
+            .find(|t| t.effort == "high")
+            .expect("high group");
+        assert_eq!((high.calls, high.input_tokens), (2, 300));
+        assert_eq!(
+            detail
+                .by_model
+                .iter()
+                .find(|t| t.effort == "-")
+                .unwrap()
+                .calls,
+            1
+        );
     }
 
     #[test]

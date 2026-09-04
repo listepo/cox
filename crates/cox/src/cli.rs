@@ -173,9 +173,13 @@ pub struct StatsArgs {
     pub csv: bool,
 }
 
-/// `cox sessions [--grep <q>] [--json] [--limit N]` (plan.md §1.12/T10.3).
+/// `cox sessions [ID] [--grep <q>] [--json] [--limit N]` (plan.md §1.12/T10.3,
+/// A13). A bare id prints that one session's record instead of the list.
 #[derive(Args, Debug, Clone)]
 pub struct SessionsArgs {
+    /// Print one session's record (times, provider, model, effort, tokens).
+    #[arg(value_name = "ID", conflicts_with = "grep")]
+    pub id: Option<String>,
     /// Full-text search over indexed session text.
     #[arg(long, value_name = "QUERY")]
     pub grep: Option<String>,

@@ -119,6 +119,57 @@ endpoint plus its API-key header, for example
 `OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io` and
 `OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=<key>`.
 
+## What the database records about a session
+
+Traces are optional and expire; `~/.cox/cox.db` is the durable record and is
+always written. Two tables describe a session, and no cost exists outside
+them ("a cost that is not a `usage` row in the ledger does not exist").
+
+`sessions` — one row per session, written at start and updated after every
+finished turn:
+
+| Column | Meaning |
+| --- | --- |
+| `id` | ULID; also the rollout filename and the FTS key |
+| `created_at` | **start time**, RFC 3339 UTC with milliseconds |
+| `updated_at` | **end time**: the last finished turn. A session still running is indistinguishable from one that stopped — cox records when work last happened, not an intent to close |
+| `cwd`, `project_slug` | where the session ran |
+| `title` | generated summary, `NULL` until one exists |
+| `parent_id` | the session that spawned this one (subagents) |
+| `rollout_path` | the JSONL event log — the full transcript |
+| `turns` | finished turns |
+| `cost_usd` | sum of the session's `usage.cost_usd`, recomputed per turn |
+| `state` | `open` \| `closed` \| `error` |
+
+`usage` — one row per provider call, the ledger `cox stats` reads:
+
+| Column | Meaning |
+| --- | --- |
+| `session_id`, `turn` | which session and turn paid for the call |
+| `job` | `main`, `compact`, `summarize`, `memory`, … |
+| `tier` | `cheap` \| `code` \| `think` — what the router was asked for |
+| `provider`, `model` | what actually served it |
+| `effort` | `low` \| `high` \| `xhigh` after clamping to what the model supports. `NULL` on rows written before this column existed — the ledger reports what it observed, never a default, and both `cox stats` and `cox sessions <id>` print such a row as `-` |
+| `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | **tokens**, as the provider reported them |
+| `context_tokens` | what the model saw on this call (the context-token-turns metric) |
+| `estimated` | the model had no price row: costed 0 rather than dropped |
+| `cost_usd`, `latency_ms` | what the call cost and how long it took |
+| `created_at` | when the call was recorded |
+
+Reading them back:
+
+```bash
+cox sessions                 # every session: id, title, cwd, age, turns, cost
+cox sessions <id>            # one session: start, end, duration, turns, cost,
+                             # then tokens per provider/model/effort
+cox sessions <id> --json     # the same record, machine-readable
+cox stats --session <id>     # per-call rows, then tier/job totals and top tools
+cox stats --day --csv        # the ledger grouped by day
+```
+
+`archive` (tool output by id, read with `cox expand <id>`) and `memory` are
+the other two tables; they are per-call and per-project rather than per-session.
+
 ## Reading a trace
 
 A session is one trace; open it and you see the turn, under it one span per

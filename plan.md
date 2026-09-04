@@ -587,6 +587,112 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 Rationale in §6 A11. What already exists and is *not* redone here: syntect highlighting of fenced code blocks (T5.3), `unicode-width` wrapping/truncation of wide and combining text (T5.3, T5.6), `tui.theme = auto|dark|light` resolved in `crates/cox/src/session.rs`.
 
+### P15 — Git in the surfaces (goal: the branch, what changed and the diff are visible without leaving cox)
+
+Rationale in §6 A13. Not redone here: unified-diff rendering (`cox-tui/src/diff.rs`, T5.4), the nucleo picker (T5.2), running git (the `bash` tool, A12).
+
+#### T15.2 Branch and worktree counts in the status line
+Model: sonnet · Status: open · Depends: T15.1 · Size: ~90
+Goal: the status line carries a `main +12 −3` segment that follows the working tree while the model edits it, and disappears outside a repository.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/status.rs`, `crates/cox/src/session.rs` (one file over the guide: the poller must be spawned where process I/O is allowed, and its receiver must reach `app::run`).
+Steps:
+1. `State.git: Option<GitStatus>` (branch, added, removed — mirrored in `cox-tui` so the crate keeps no `cox-tools` dependency) and `Msg::Git(..)`.
+2. `app::run` takes an `mpsc::Receiver<GitStatus>` as a fourth `select!` arm; `crates/cox/src/session.rs` spawns a 2 s poll of `cox_tools::git::status` when `tui.git` is on.
+3. `status::line` prepends `{branch} +{added} {minus}{removed}` with the branch `text::sanitize`d, using a new `glyphs.branch` (ASCII fallback `#`).
+Check: `mise exec -- cargo test -p cox-tui status` — a frame with a `GitStatus` shows the segment; one without it is byte-identical to today's status line.
+Done when: the Check passes; `tui.git` is in `docs/config.md`.
+Out of scope: ahead/behind counts, stash and conflict markers, untracked files (A13).
+
+#### T15.3 Diff view
+Model: sonnet · Status: open · Depends: T15.2 · Size: ~130
+Goal: `Ctrl+G` opens the working tree's diff full-screen and scrollable, rendered exactly like an edit tool's diff; `Esc` closes it.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/diff.rs`.
+Steps:
+1. `Modal::Diff { text, scroll }`; `Ctrl+G` asks the runtime for `git::diff` over the channel T15.2 opened and stores the answer.
+2. `diff.rs` gains `from_unified(&str) -> Vec<Diff>`, splitting a worktree patch on its `diff --git` headers so it renders as the per-file `± path +n −m` blocks that already exist — one renderer, not a second one.
+3. `view` draws the modal over the transcript; `PageUp`/`PageDown` scroll, `Esc` closes.
+Check: `mise exec -- cargo test -p cox-tui diff` — a two-file worktree patch snapshots as two headed blocks; an empty diff shows `no changes`.
+Done when: the Check passes and the keymap row is in §1.13.
+Out of scope: staging or reverting hunks from the view (it is a reader); side-by-side layout.
+
+#### T15.4 Git-aware completion of a shell line
+Model: sonnet · Status: open · Depends: T15.2 · Size: ~120
+Goal: completing a git command line in the composer offers subcommands, then branch names or changed paths depending on the subcommand.
+Files: `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox-tui/src/state.rs`.
+Steps:
+1. `picker::Kind::Shell`; `Tab` on a line starting with `git ` opens the picker instead of inserting a tab.
+2. A pure `candidates(line, &State) -> Vec<String>`: no subcommand yet → the ~20 porcelain command names; `checkout|switch|merge|rebase|branch` → `state.git_branches`; anything else → `state.files`, already filled for `@`. Nucleo ranks them as it ranks everything else.
+3. The chosen candidate replaces the last word.
+Check: `mise exec -- cargo test -p cox-tui shell` — `git ch` offers `checkout`, `git checkout ma` offers a branch, `git add sr` offers a path, `ls ` offers nothing.
+Done when: the Check passes.
+Out of scope: real shell completion (bash/zsh completion specs need a hosted shell to evaluate); completing any command but `git`.
+
+### P16 — Concurrent sessions on one workspace (goal: every cox process on a workspace knows what the others are doing, and the TUI shows it)
+
+Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).
+
+#### T16.1 Presence records and the presence hook
+Model: opus · Status: in progress · Depends: — · Size: ~180
+Goal: a session's liveness, status and last-edited paths are on disk while it runs, and a turn's prompt carries the other live sessions of the same project as extra context.
+Files: `crates/cox-protocol/src/types.rs`, `crates/cox-ext/src/presence.rs` (new), `crates/cox-ext/src/hooks.rs` (+ the module line in `lib.rs`).
+Steps:
+1. `types::Presence { session, pid, cwd, project, status, turn, touched, updated }` and `PresenceStatus = Active | Waiting | Idle | Stopped`.
+2. `presence::{write, remove, others(home, project, me, now)}` over `COX_HOME/presence/<session>.json` (tmp + rename, so a reader never sees half a file); a record silent for `STALE_SECS` reads back as `Stopped`, one silent for a day is swept; `describe(&[Presence], now)` renders the warning and one line per agent for the model.
+3. `PresenceHook: Hook`, wrapping the optional `ShellHooks`: `UserPromptSubmit` → `Active`, turn + 1, then the others as `Modify { input: {"additional_context": …} }` merged with the inner verdict (`with_context`); `PreToolUse`/`PostToolUse` → heartbeat, `edit`/`write` paths → `touched` (last 12); `PermissionRequest` → `Waiting`; `Stop` → `Idle`; `SessionEnd` and `Drop` → the record is removed.
+4. `ShellHooks::verdict` maps Claude Code's `additionalContext` (top level or `hookSpecificOutput`) through the same `with_context`.
+Check: `mise exec -- cargo test -p cox-ext -- presence hooks` — two records in one project describe each other, a stale one reads `stopped`, the session's own record and another project's are excluded, `SessionEnd` removes the file; `hooks_verdict_reads_claude_shapes` covers `additionalContext`.
+Done when: the Check passes.
+Out of scope: the core applying `additional_context` (T16.2); the TUI (T16.3); `apply_patch` paths (they are inside the patch text; add a parse when a real session needs them).
+
+#### T16.2 The core applies `additional_context`, fires `PermissionRequest`, and the binary installs the hook
+Model: opus · Status: open · Depends: T16.1 · Size: ~70
+Goal: extra context from a `UserPromptSubmit` hook reaches the model without changing what the user sees, a pending approval is observable by hooks, and every surface writes a presence record.
+Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox/src/session.rs`.
+Steps:
+1. `run_turn_inner`: `Modify { input }` accepts a string (the rewritten prompt, as today) or an object with `prompt` and/or `additional_context`; the context becomes a second `Content::Text` block on the user message, while the `UserMessage` item, the FTS index and telemetry keep the prompt only. It sits after breakpoint 2, so `system[0..=2]` is untouched (§1.9).
+2. `turn::ask` fires `PermissionRequest { tool_name, tool_input }` before parking; informational, verdict ignored like `Stop`.
+3. `session::open` installs `PresenceHook::new(home, id, cwd, project root, inner)` with `inner = ShellHooks` when `hooks.enabled`, else `None` — the TUI, `run -p` and ACP all become visible; `run_tui` submits `Shutdown` after `app::run` returns so `SessionEnd` fires on quit.
+Check: `mise exec -- cargo test -p cox-core hooks` — a stub returning `additional_context` on `UserPromptSubmit` yields a user message with two text blocks and a `UserMessage` item with the prompt only; `PermissionRequest` appears in the stub's event list when the engine asks.
+Done when: the Check passes and a `COX_HOME` scratch run leaves `presence/<id>.json` while running and none after quit.
+Out of scope: the TUI (T16.3).
+
+#### T16.3 Agents in the TUI: feed channel, `/agents`, status-line count
+Model: opus · Status: open · Depends: T16.2 · Size: ~130
+Goal: `/agents` lists the other live sessions of this project with `active`/`waiting`/`idle`/`stopped`, their turn and last-edited paths; the status line shows `2 agents` while any exist.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/status.rs` (+ the `agents` arm in `commands.rs` and the 2 s poller in `crates/cox/src/session.rs` — over the guide for T15.2's reason: the poller lives where file I/O is allowed).
+Steps:
+1. `app::run(session, state, feed: mpsc::Receiver<Msg>)` — a fourth `select!` arm; `Msg::Agents(Vec<Presence>)` sets `state.agents`. T15.2 sends `Msg::Git` on the same channel instead of adding an arm.
+2. `commands`: `agents` → `Action::Agents`; `state::act` renders one line per agent, paths and cwd through `text::sanitize` (they are another process's input).
+3. `status::line` appends `N agents` (`N agents!` when one is `waiting`) only when `state.agents` is non-empty, so today's frames are byte-identical.
+4. `run_tui` spawns the poller: every 2 s `presence::others(..)` → `feed.send(Msg::Agents(..))`.
+Check: `mise exec -- cargo test -p cox-tui agents` — `/agents` on two fed records snapshots their statuses; the status line shows `2 agents`; an empty list leaves the line unchanged.
+Done when: the Check passes; §1.13 describes `/agents` as "live sessions in this workspace".
+Out of scope: subagent *definitions* (`cox ext list`); git counts (T15.2).
+
+#### T16.4 `/effort` — session-wide effort override
+Model: sonnet · Status: open · Depends: — · Size: ~80
+Goal: `/effort low|high|xhigh` sets the effort every main-turn call runs at for the rest of the session; `/effort` alone restores the tier default.
+Files: `crates/cox-protocol/src/types.rs`, `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs` (+ the parse arm in `cox-tui/src/commands.rs`).
+Steps:
+1. `Submission::SetEffort { effort: Option<Effort> }`.
+2. `Overrides.effort`; `Router::pick` applies it to `Job::Main` before `clamp_effort`, so a model without `xhigh` still gets its greatest supported level.
+3. `Session::submit` stores it and emits `Notice(Info, "effort: xhigh")`; the ledger already records the routed effort (A13).
+4. `commands::parse`: `effort` → `SetEffort`; an unknown level is a `Notice` naming the three.
+Check: `mise exec -- cargo test -p cox-core router` — `pick` with `effort: Some(Xhigh)` on a model whose greatest is `high` returns `high`; a `SetEffort` submission changes the next request's effort in a scripted loop test.
+Done when: the Check passes; §1.13 lists `/effort`.
+Out of scope: per-tier effort (`/model` picks the tier; effort follows the session).
+
+#### T16.5 `/sessions` in the TUI and the `/resume` picker
+Model: sonnet · Status: open · Depends: T16.3 · Size: ~90
+Goal: `/sessions` lists this project's recent sessions (id, title, age, cost) without leaving the TUI; `/resume` opens the existing `Kind::Sessions` picker over them.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`.
+Steps:
+1. `state.sessions: Vec<(String, String)>` (id, `picker::session_entry` row), filled by `run_tui` from `Store::list_sessions` filtered to this project, like `state.files`.
+2. `sessions` → `Action::Sessions` (one notice line per row); `resume` → `Action::Resume` opens the picker; a chosen row prints `cox --resume <id>` as a notice.
+Check: `mise exec -- cargo test -p cox-tui sessions` — `/sessions` on two preloaded rows snapshots them; `/resume` opens a picker whose first row is the newest session.
+Done when: the Check passes.
+Out of scope: restarting the session in place (needs `app::run` to return a resume request; amend when wanted).
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -624,6 +730,10 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A10 2026-09-04 D16, P13 — implement vendor-neutral OpenTelemetry observability as three bounded tasks: OTLP/HTTP traces+logs exporter, GenAI semantic instrumentation, then backend documentation/smoke stack. Why: user requested full AI-agent telemetry visible in Maple, SigNoz, Jaeger and Grafana. Effect: standard OTEL environment variables remain the portability contract; raw prompt/completion/tool content is opt-in only because it can contain source code and secrets; operational metadata, usage, costs and errors are always exported when telemetry is enabled.
 - A11 2026-09-04 §1.6, P14 — the TUI must render on any terminal font, glyph set, colour depth and language: one glyph table with an ASCII fallback and `[tui.icons]` overrides (T14.1), colour-depth downgrade plus `NO_COLOR` (T14.2), and syntect highlighting extended from markdown fences to file-shaped tool output and diff hunks with a configurable theme (T14.3). Why: user request. Effect: adds `tui.glyphs`, `[tui.icons]`, `tui.color`, `tui.syntax_theme` to §1.6; no new dependency (syntect and unicode-width are already in the tree); a font is the terminal's to choose, so cox's contract is width-correct, degradable output rather than font selection. Already covered and not redone: fenced-code highlighting (T5.3), wide/combining width handling (T5.3, T5.6), `tui.theme` (T5.1).
 - A12 2026-09-04 §1.11, T3.7 — `bash` gains an optional `shell` input (`sh` default, plus `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `nu`, `pwsh`); `cox_tools::sandbox::command` takes the shell path instead of hardcoding `/bin/sh`. Why: user request — command lines written for a specific shell (fish substitution, zsh globs) failed under `sh`. Effect: the schema enum *is* the allowlist, so a name the model invents is a deserialisation error and never reaches a spawn; the binary is resolved in `/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew/bin` and never on `PATH`; a missing shell is `ToolError::Denied`. Risk classification stays tree-sitter-bash, which rates an unparseable (e.g. fish-only) line `Exec` — fails closed, never lower.
+- A13 2026-09-04 §1.1, §1.6, §1.13, P15 — git belongs to the *surfaces*, not to the tool catalogue: a `cox_tools::git` module (branch, worktree `+n −m`, worktree diff, local branch names) feeds a status-line segment (T15.2), a `Ctrl+G` Diff view that renders the worktree diff through the existing `cox_tui::diff` (T15.3), and git-aware completion of a shell line in the composer (T15.4). Why: user request. Effect: **no `git` tool** — `bash` (A12) already runs git, and a second exec path would need its own risk classification, permission rules and sandbox story to say what `Bash(git:*)` already says; `cox-tui` still never spawns a process, so `crates/cox` polls `cox_tools::git` and pushes the result in exactly as it already fills the `@` picker's file list; adds `tui.git = true|false` to §1.6 and `Ctrl+G` to the §1.13 keymap; no new dependency — git is shelled to, not linked. Untracked files are outside the counts and the diff, because including them means writing to the index and a status line is a reader (`GIT_OPTIONAL_LOCKS=0` for the same reason). A branch name and a diff body are repository input, so both reach the terminal through `text::sanitize` like any other untrusted string.
+
+- A13 2026-09-04 §1.7, §1.9, §1.12, T1.7, T10.3 — the ledger records the routed `effort` (migration `00000000000002_usage_effort`, `usage.effort TEXT` nullable, `UsageRow.effort: Option<Effort>`), and `cox sessions <ID>` prints one session's stored record: start, end, duration, turns, cost, then tokens and cost grouped by `(provider, model, effort)`. Why: user request — the database held every other dimension of a call but not the effort it ran at, and nothing joined the `sessions` row to its ledger rows in one view. Effect: the column is nullable rather than defaulted so pre-migration rows stay honest (printed `-`, never guessed `high`); `cox stats` gains an `effort` column in its table and CSV (the CSV header changed); `ledger_row` takes an effort argument; `cox sessions` gains a positional id that conflicts with `--grep`. Documented in `docs/observability.md` ("What the database records about a session").
+- A14 2026-09-05 §1.7, §1.9, §1.13, T7.4, P16 — concurrent sessions on one workspace see each other. Every session keeps a presence record `COX_HOME/presence/<session>.json` (pid, cwd, project root, `active|waiting|idle|stopped`, turn, last-edited paths, heartbeat) written by a built-in `Hook` (`cox_ext::presence::PresenceHook`, wrapping `ShellHooks`) — the seam the surface already installs, so the core still spawns nothing and opens no file. On `UserPromptSubmit` the hook reads the other records of the same project and returns them as `additional_context`; the core appends that as a second text block on the user message (never shown as the user's words, never in `system[0..=2]`, so the cache prefix is untouched), and `ShellHooks` maps Claude Code's `additionalContext` the same way, so Claude Code hooks that add context now work too. `PermissionRequest` fires when the engine escalates, so "waiting for approval" is observable. The TUI gets a `Msg` feed channel from the binary (`app::run(session, state, feed)`), which polls presence every 2 s; `/agents` lists live agents with status and the status line counts them; `/effort` is a session-wide override the router clamps like a tier effort; `/sessions` lists this project's recent sessions preloaded by the binary. Why: user request — several agents share this worktree and none knows the others' files are mid-edit. Effect: no new dependency; presence is a directory of small files rather than a table because it is process liveness, not history (a crashed process leaves a record whose stale heartbeat *is* the signal; `SessionEnd`/`Drop` remove it); the feed channel is the receiver T15.2 planned, so T15.2 sends `Msg::Git` on it instead of adding its own `select!` arm; in-place `/resume` stays out (T16.5 prints the command).
 
 ## 7. Risk register
 

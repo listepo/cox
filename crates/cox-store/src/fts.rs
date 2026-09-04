@@ -116,6 +116,22 @@ impl Store {
             .collect())
     }
 
+    /// One session's ledger row, for `cox sessions <id>`.
+    pub fn session_info(&self, id: &SessionId) -> Result<SessionInfo, StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let rows: Vec<SessionRowLite> = diesel::sql_query(
+            "SELECT id, title, cwd, created_at, updated_at, turns, cost_usd \
+             FROM sessions WHERE id = ?",
+        )
+        .bind::<Text, _>(id.to_string())
+        .load(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        rows.into_iter()
+            .next()
+            .map(into_info)
+            .ok_or(StoreError::NotFound)
+    }
+
     /// Every session, most recently written first.
     pub fn list_sessions(&self, limit: i64) -> Result<Vec<SessionInfo>, StoreError> {
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
@@ -126,18 +142,19 @@ impl Store {
         .bind::<BigInt, _>(limit)
         .load(&mut *conn)
         .map_err(|_| StoreError::Sqlite)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| SessionInfo {
-                id: r.id,
-                title: r.title,
-                cwd: r.cwd,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-                turns: i64::from(r.turns),
-                cost_usd: r.cost_usd,
-            })
-            .collect())
+        Ok(rows.into_iter().map(into_info).collect())
+    }
+}
+
+fn into_info(r: SessionRowLite) -> SessionInfo {
+    SessionInfo {
+        id: r.id,
+        title: r.title,
+        cwd: r.cwd,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        turns: i64::from(r.turns),
+        cost_usd: r.cost_usd,
     }
 }
 
