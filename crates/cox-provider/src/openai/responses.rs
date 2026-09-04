@@ -37,12 +37,18 @@
 //! ponytail: reasoning-item replay unimplemented; add an `OpenAi`-specific
 //! `Content` field (or a lookaside) when a task needs it end to end.
 
+use async_trait::async_trait;
+use cox_protocol::config::ProviderModel;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::CallId;
+use cox_protocol::traits::Provider;
 use cox_protocol::types::{
-    Content, Effort, Message, ProviderEvent, Request, Role, StopReason, Usage,
+    Caps, Content, Effort, Message, ProviderEvent, ProviderId, Request, Role, StopReason, Usage,
 };
+use futures::StreamExt;
 use serde_json::{Value, json};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 /// Translates a `Request` into the JSON body for `POST /v1/responses`.
 /// Errors only when history carries a signed thinking block (see module
@@ -318,6 +324,150 @@ fn str_field(v: &Value, key: &str) -> String {
         .to_string()
 }
 
+/// A configured Responses-API client (`POST /v1/responses`): what OpenAI's
+/// own models use, and what any gateway passing `api = "responses"` speaks.
+/// Same thin-client shape as `chat::OpenAiChatProvider`: [`build_body`]
+/// translates, [`OpenAiResponsesStream`] parses, this sends one and drives
+/// the other over the shared `sse` framing.
+pub struct OpenAiResponsesProvider {
+    /// `providers.openai.base_url`, without a trailing slash.
+    pub base_url: String,
+    /// `None` means no `Authorization` header at all; `Some` is a bearer token.
+    pub api_key: Option<String>,
+    /// Known models with their context windows; the roomiest bounds
+    /// [`Caps::max_context`] (which drives the compaction trigger).
+    pub models: Vec<ProviderModel>,
+    /// Fallback context window when `models` names nothing.
+    pub context_window: u32,
+    /// The shared connection pool.
+    pub http: reqwest::Client,
+}
+
+impl OpenAiResponsesProvider {
+    /// Builds a provider from the `[providers.openai]` section (or any
+    /// compatible section passing `api = "responses"`).
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: Option<String>,
+        models: Vec<ProviderModel>,
+        context_window: u32,
+    ) -> Self {
+        Self {
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+            api_key,
+            models,
+            context_window,
+            http: reqwest::Client::new(),
+        }
+    }
+
+    /// The roomiest known context window: a listed model if the request
+    /// names one, else the section fallback.
+    pub fn context_for(&self, model: &str) -> u32 {
+        self.models
+            .iter()
+            .find(|m| m.id == model)
+            .map(|m| m.context_window)
+            .filter(|c| *c > 0)
+            .unwrap_or(self.context_window)
+    }
+}
+
+#[async_trait]
+impl Provider for OpenAiResponsesProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::OpenAi
+    }
+
+    fn capabilities(&self) -> Caps {
+        Caps {
+            cache: false,
+            // `reasoning.effort` is sent, but reasoning summaries are not
+            // surfaced as `ThinkingDelta` (see the module header), so this
+            // stays false until replay/surface lands.
+            thinking: false,
+            server_tools: false,
+            count_tokens: false,
+            max_context: self
+                .models
+                .iter()
+                .map(|m| m.context_window)
+                .max()
+                .filter(|c| *c > 0)
+                .unwrap_or(self.context_window),
+        }
+    }
+
+    async fn stream(
+        &self,
+        req: Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
+        let started = std::time::Instant::now();
+        let body = build_body(&req)?;
+
+        let mut request = self
+            .http
+            .post(format!("{}/responses", self.base_url))
+            .header("content-type", "application/json")
+            .json(&body);
+        if let Some(key) = &self.api_key {
+            request = request.header("authorization", crate::http::bearer(key)?);
+        }
+
+        let response = request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                ProviderError::Timeout
+            } else {
+                ProviderError::Network
+            }
+        })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let retry_after = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok());
+            let body_text = response.text().await.unwrap_or_default();
+            return Err(crate::http::map_http_error(status, &body_text, retry_after));
+        }
+
+        let mut frames = std::pin::pin!(crate::sse::sse_stream(response.bytes_stream()));
+        let mut machine = OpenAiResponsesStream::new();
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+                frame = frames.next() => frame,
+            };
+            let Some(frame) = next else {
+                break;
+            };
+            let (event, data) = frame.map_err(|_| ProviderError::Network)?;
+            for provider_event in machine.feed(event.as_deref(), &data)? {
+                // The receiving end hung up: unwind as a cancellation
+                // rather than silently dropping the rest of the call.
+                if sink.send(provider_event).await.is_err() {
+                    return Err(ProviderError::Cancelled);
+                }
+            }
+        }
+
+        let mut usage = machine.usage();
+        usage.latency_ms = started.elapsed().as_millis() as u64;
+        Ok(usage)
+    }
+
+    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
+        Err(ProviderError::Unsupported {
+            feature: "count_tokens".into(),
+        })
+    }
+}
+
 /// Test-only: normalizes freshly minted `ToolUseStart` ids into stable,
 /// counter-derived ones, same purpose (and same reasoning) as
 /// `anthropic::stream::normalize_tool_ids` — kept as its own copy rather than
@@ -583,5 +733,74 @@ mod tests {
         req.effort = Effort::Xhigh;
         let body = build_body(&req).expect("no thinking blocks, never fails");
         assert_eq!(body["reasoning"]["effort"], "xhigh");
+    }
+
+    /// "Done when": a wiremock shaped like `POST /responses` completes a
+    /// tool-call turn end to end through the live client, with the bearer
+    /// header the key implies.
+    #[tokio::test]
+    async fn responses_over_http() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/responses"))
+            .and(wiremock::matchers::header(
+                "authorization",
+                "Bearer sk-test",
+            ))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_raw(fixture("one_tool_call"), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let client =
+            OpenAiResponsesProvider::new(server.uri(), Some("sk-test".into()), vec![], 400_000);
+        let mut req = base("gpt-5.1");
+        req.messages = vec![user_text("read a.rs")];
+
+        let (tx, mut rx) = mpsc::channel(64);
+        let usage = client
+            .stream(req, tx, CancellationToken::new())
+            .await
+            .expect("mock matched, so the header was sent");
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::ToolUseStart { .. }))
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::Stop {
+                stop: StopReason::EndTurn
+            }
+        )));
+        assert_eq!(usage.input_tokens, 512);
+        assert_eq!(usage.output_tokens, 24);
+        assert_eq!(usage.cache_read_tokens, 50);
+    }
+
+    #[test]
+    fn responses_context_for_prefers_listed_model() {
+        use cox_protocol::config::ProviderModel;
+        let client = OpenAiResponsesProvider::new(
+            "https://api.openai.com/v1",
+            None,
+            vec![ProviderModel {
+                id: "gpt-5.5".into(),
+                context_window: 1_050_000,
+                efforts: vec![],
+            }],
+            400_000,
+        );
+        assert_eq!(client.context_for("gpt-5.5"), 1_050_000);
+        assert_eq!(client.context_for("gpt-unknown"), 400_000);
+        assert_eq!(client.capabilities().max_context, 1_050_000);
+        let bare = OpenAiResponsesProvider::new("https://x", None, vec![], 400_000);
+        assert_eq!(bare.capabilities().max_context, 400_000);
     }
 }

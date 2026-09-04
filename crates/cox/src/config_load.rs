@@ -383,9 +383,19 @@ fn build_figment(
     fig = fig.merge(named(
         "env",
         // `COX_PROVIDER` / `COX_SCENARIO` / `COX_CASSETTES` select a test-double
-        // provider (cox-provider::from_env), not config keys.
+        // provider (cox-provider::from_env), not config keys. `COX_HOME`
+        // overrides `core.home` directly below. `COX_EXPECT_SANDBOX` pins the
+        // backend a sandbox test asserts (CI sets it globally), so it must
+        // not leak into the config tree as `expect.sandbox` either. The
+        // ignore list matches pre-split keys (`EXPECT_SANDBOX`, not dotted).
         Env::prefixed("COX_")
-            .ignore(&["home", "provider", "scenario", "cassettes"])
+            .ignore(&[
+                "home",
+                "provider",
+                "scenario",
+                "cassettes",
+                "expect_sandbox",
+            ])
             .split("_"),
     ));
     if let Ok(home) = env::var("COX_HOME") {
@@ -542,10 +552,15 @@ mod tests {
     #[test]
     fn config_defaults_parse() {
         // The embedded default.toml alone, through the same struct tree the
-        // full loader uses, with no unknown fields.
+        // full loader uses, with no unknown fields. `Config::default()` is
+        // the neutral fallback *beneath* this layer (empty model lists, no
+        // custom providers), so this spot-checks the registry it cannot
+        // carry instead of asserting full equality with it.
         let fig = Figment::new().merge(Toml::string(DEFAULT_CONFIG_TOML));
         let cfg: Config = fig.extract().expect("default.toml deserializes cleanly");
-        assert_eq!(cfg, Config::default());
+        assert_eq!(cfg.tiers.code.model, "claude-sonnet-5");
+        assert!(cfg.providers.custom.contains_key("deepseek"));
+        assert!(!cfg.providers.anthropic.models.is_empty());
     }
 
     #[test]
@@ -578,6 +593,39 @@ mod tests {
             );
             assert_eq!(loaded.source_of("budget.session_usd"), "default");
         });
+    }
+
+    #[test]
+    fn config_ignores_test_only_cox_env_vars() {
+        // `COX_EXPECT_SANDBOX` (set globally in CI) and the provider
+        // selectors are not config keys; they must not fail the load as
+        // `expect.sandbox` / unknown fields.
+        let home = tempdir().expect("tempdir");
+        let cwd = tempdir().expect("tempdir");
+        temp_env(
+            &[
+                ("COX_HOME", Some(home.path().to_str().unwrap())),
+                // Isolate from the real ~/.claude/settings.json import.
+                ("HOME", Some(home.path().to_str().unwrap())),
+                ("COX_EXPECT_SANDBOX", Some("bwrap")),
+                ("COX_PROVIDER", Some("scripted")),
+                ("COX_SCENARIO", Some("/tmp/scenario.toml")),
+            ],
+            || {
+                let cli = parse(&[]);
+                let loaded = load(cwd.path(), &cli).expect("load succeeds");
+                // `COX_HOME` still overrides `core.home`; everything else
+                // must be the embedded default layer (no `expect` layer
+                // leaked in).
+                assert_eq!(loaded.config.core.home, home.path().to_str().unwrap());
+                let mut expected: Config = Figment::new()
+                    .merge(Toml::string(DEFAULT_CONFIG_TOML))
+                    .extract()
+                    .expect("defaults parse");
+                expected.core.home = loaded.config.core.home.clone();
+                assert_eq!(loaded.config, expected);
+            },
+        );
     }
 
     #[test]

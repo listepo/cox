@@ -10,12 +10,14 @@
 //! what `cache_control` or `output_config` are.
 //!
 //! - [`anthropic`] — Messages API: cache breakpoints, adaptive thinking, effort, refusal fallbacks.
+//! - [`http`] — credential lookup, auth headers and error mapping shared by every network backend.
 //! - [`sse`] — generic Server-Sent-Events framing shared by every SSE-based provider.
 //! - [`retry`] — backoff before the first byte, shared by every network backend.
 
 #![warn(missing_docs)]
 
 pub mod anthropic;
+pub mod http;
 pub mod openai;
 pub mod replay;
 pub mod retry;

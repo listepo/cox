@@ -23,3 +23,6 @@ tokio-util = { workspace = true }
 rstest = { workspace = true }
 insta = { workspace = true }
 pretty_assertions = { workspace = true }
+# P-providers: the default.toml shape test parses TOML the same way
+# cox's config loader does (figment Toml provider, already workspace-pinned).
+figment = { workspace = true }

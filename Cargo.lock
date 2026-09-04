@@ -805,6 +805,7 @@ name = "cox-protocol"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "figment",
  "insta",
  "pretty_assertions",
  "rstest",

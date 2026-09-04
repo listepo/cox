@@ -101,7 +101,12 @@ pub enum Job {
 }
 
 /// Reasoning effort passed to the provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+///
+/// Ordered `Low < High < Xhigh` so the router can clamp a tier's effort to
+/// the greatest level a model supports (`docs/design/providers.md`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Effort {
     /// Cheapest, fastest; used for `cheap`-tier jobs.
@@ -524,6 +529,23 @@ pub enum HookOutcome {
 
 /// A submission into the core state machine: everything a surface can ask
 /// `cox-core` to do (plan.md §1.2/§1.3).
+///
+/// # Example
+///
+/// ```rust
+/// use cox_protocol::types::Submission;
+///
+/// // Pressing Enter in the TUI sends this:
+/// let sub = Submission::UserTurn {
+///     text: "create hello.txt containing hi".into(),
+///     attachments: vec![],
+///     confirm_think: false,
+/// };
+/// // It serialises to the same snake_case JSON the rollout and
+/// // `cox run -p --output-format stream-json` use:
+/// let json = serde_json::to_value(&sub).unwrap();
+/// assert_eq!(json["type"], "user_turn");
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Submission {

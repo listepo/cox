@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn usage_prices_toml_parses_and_has_all_tier_models() {
         let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
-        assert_eq!(table.prices.len(), 4);
+        assert_eq!(table.prices.len(), 20);
         // `price_for` is a linear find, so row order carries no meaning and
         // is not asserted on.
         // Verify all required tier models are present.
@@ -166,6 +166,45 @@ mod tests {
         assert!(ids.contains(&"claude-sonnet-5"));
         assert!(ids.contains(&"claude-opus-5"));
         assert!(ids.contains(&"claude-fable-5-1"));
+    }
+
+    #[test]
+    fn usage_prices_cover_every_configured_model() {
+        // The ledger must price every model a user can route to without
+        // touching a price file: all `[tiers.*].model` defaults, every
+        // `[providers.*]` default `model`, and every `models` list entry.
+        // A missing row is not fatal at runtime (costed 0, `estimated`), so
+        // this test is the sync check between default.toml and prices.toml.
+        use cox_protocol::Config;
+        let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
+        let cfg: Config = Figment::from(Toml::string(cox_protocol::config::DEFAULT_CONFIG_TOML))
+            .extract()
+            .expect("default.toml parses");
+        let mut want = vec![
+            cfg.tiers.cheap.model.clone(),
+            cfg.tiers.code.model.clone(),
+            cfg.tiers.think.model.clone(),
+            cfg.providers.local.model.clone(),
+        ];
+        for section in [
+            &cfg.providers.anthropic.models,
+            &cfg.providers.openai.models,
+            &cfg.providers.local.models,
+        ] {
+            want.extend(section.iter().map(|m| m.id.clone()));
+        }
+        for custom in cfg.providers.custom.values() {
+            want.push(custom.model.clone());
+            want.extend(custom.models.iter().map(|m| m.id.clone()));
+        }
+        want.sort();
+        want.dedup();
+        for id in &want {
+            assert!(
+                table.price_for(&ModelId(id.clone())).is_some(),
+                "prices.toml has no row for configured model `{id}`"
+            );
+        }
     }
 
     #[test]

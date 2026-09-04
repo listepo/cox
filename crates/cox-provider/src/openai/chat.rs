@@ -430,6 +430,9 @@ pub struct OpenAiChatProvider {
     /// `None` means no `Authorization` header at all (module header: local
     /// servers ignore or warn on it); `Some` is sent as a bearer token.
     pub api_key: Option<String>,
+    /// Known models with their context windows; the roomiest bounds
+    /// [`Caps::max_context`] (which drives the compaction trigger).
+    pub models: Vec<cox_protocol::config::ProviderModel>,
     /// `providers.local.context_window` (local servers don't report it).
     pub context_window: u32,
     /// The shared connection pool.
@@ -437,22 +440,40 @@ pub struct OpenAiChatProvider {
 }
 
 impl OpenAiChatProvider {
-    /// Builds a provider from the `[providers.local]` config section.
-    pub fn new(cfg: &cox_protocol::config::LocalProviderConfig) -> Self {
+    /// Builds a provider from parts; `base_url` loses a trailing slash.
+    pub fn from_parts(
+        base_url: impl Into<String>,
+        api_key: Option<String>,
+        models: Vec<cox_protocol::config::ProviderModel>,
+        context_window: u32,
+    ) -> Self {
         Self {
-            base_url: cfg.base_url.trim_end_matches('/').to_string(),
-            api_key: None,
-            context_window: cfg.context_window,
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+            api_key,
+            models,
+            context_window,
             http: reqwest::Client::new(),
         }
     }
 
+    /// Builds a provider from the `[providers.local]` config section.
+    pub fn new(cfg: &cox_protocol::config::LocalProviderConfig) -> Self {
+        Self::from_parts(
+            cfg.base_url.clone(),
+            None,
+            cfg.models.clone(),
+            cfg.context_window,
+        )
+    }
+
     /// Builds one with an API key (OpenRouter-shaped servers).
     pub fn with_key(cfg: &cox_protocol::config::LocalProviderConfig, api_key: String) -> Self {
-        Self {
-            api_key: Some(api_key),
-            ..Self::new(cfg)
-        }
+        Self::from_parts(
+            cfg.base_url.clone(),
+            Some(api_key),
+            cfg.models.clone(),
+            cfg.context_window,
+        )
     }
 }
 
@@ -468,7 +489,13 @@ impl Provider for OpenAiChatProvider {
             thinking: true,
             server_tools: false,
             count_tokens: false,
-            max_context: self.context_window,
+            max_context: self
+                .models
+                .iter()
+                .map(|m| m.context_window)
+                .max()
+                .filter(|c| *c > 0)
+                .unwrap_or(self.context_window),
         }
     }
 
@@ -488,10 +515,7 @@ impl Provider for OpenAiChatProvider {
             .json(&body);
         if let Some(key) = &self.api_key {
             // OpenAI-compatible servers expect `Authorization: Bearer <key>`.
-            let mut v = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}"))
-                .map_err(|_| ProviderError::Auth)?;
-            v.set_sensitive(true);
-            request = request.header("authorization", v);
+            request = request.header("authorization", crate::http::bearer(key)?);
         }
 
         let response = request.send().await.map_err(|e| {
@@ -548,48 +572,10 @@ impl Provider for OpenAiChatProvider {
 }
 
 /// Maps a non-2xx `/chat/completions` response to a `ProviderError` (plan.md
-/// §1.14), same shape as `anthropic::http_error`.
+/// §1.14). One shared mapping lives in [`crate::http`]; this stays as the
+/// module's named entry point for it.
 fn http_error(status: reqwest::StatusCode, body: &str, retry_after: Option<u64>) -> ProviderError {
-    let message = error_message(body);
-    match status.as_u16() {
-        401 | 403 => ProviderError::Auth,
-        429 => ProviderError::RateLimited { retry_after },
-        500 | 502 | 503 | 504 => ProviderError::Overloaded,
-        400 | 413 => match parse_context_too_long(&message) {
-            Some((got, max)) => ProviderError::ContextTooLong { max, got },
-            None => ProviderError::BadRequest { message },
-        },
-        _ => ProviderError::BadRequest { message },
-    }
-}
-
-/// The Chat error envelope is `{"error": {"message": ..., "type": ...}}`
-/// (Ollama's is the same shape); falls back to the raw body so a proxy's
-/// plain-text error is not lost.
-fn error_message(body: &str) -> String {
-    serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v.get("error")?.get("message")?.as_str().map(str::to_string))
-        .unwrap_or_else(|| body.to_string())
-}
-
-/// Best-effort `(got, max)` extraction from a "context length exceeded …
-/// N tokens … M maximum"-shaped message; local servers phrase it wildly
-/// differently (Ollama: "input length exceeds context length"), so this is
-/// read-only best effort: no "exceed"/"too long"/"context" mention or
-/// fewer than two numbers falls back to `BadRequest`.
-fn parse_context_too_long(message: &str) -> Option<(u32, u32)> {
-    let lower = message.to_ascii_lowercase();
-    if !(lower.contains("too long") || lower.contains("exceed")) {
-        return None;
-    }
-    let mut numbers = message
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse::<u32>().ok());
-    let got = numbers.next()?;
-    let max = numbers.next()?;
-    Some((got, max))
+    crate::http::map_http_error(status, body, retry_after)
 }
 
 #[cfg(test)]
@@ -929,6 +915,7 @@ mod tests {
         let client = OpenAiChatProvider {
             base_url: server.uri(),
             api_key: None,
+            models: vec![],
             context_window: 32_768,
             http: reqwest::Client::new(),
         };
@@ -982,6 +969,7 @@ mod tests {
         let client = OpenAiChatProvider {
             base_url: server.uri(),
             api_key: Some("sk-or-test".into()),
+            models: vec![],
             context_window: 128_000,
             http: reqwest::Client::new(),
         };
@@ -1004,5 +992,24 @@ mod tests {
             }
         )));
         assert_eq!(usage.output_tokens, 34);
+    }
+
+    #[test]
+    fn chat_capabilities_span_listed_models() {
+        use cox_protocol::config::ProviderModel;
+        let client = OpenAiChatProvider::from_parts(
+            "https://api.deepseek.com",
+            None,
+            vec![ProviderModel {
+                id: "deepseek-v4-pro".into(),
+                context_window: 1_000_000,
+                efforts: vec![],
+            }],
+            32_768,
+        );
+        assert_eq!(client.capabilities().max_context, 1_000_000);
+        let bare =
+            OpenAiChatProvider::from_parts("http://localhost:11434/v1", None, vec![], 32_768);
+        assert_eq!(bare.capabilities().max_context, 32_768);
     }
 }

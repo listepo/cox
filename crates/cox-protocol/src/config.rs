@@ -251,9 +251,36 @@ impl Default for JobsConfig {
     }
 }
 
-/// `[providers]` (plan.md §1.6).
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+/// One model entry in a provider section's `models` list (the opencode
+/// `provider.<id>.models` shape, `docs/design/providers.md`): the model id
+/// as sent on the wire, its context window, and the efforts it understands
+/// (models.dev `reasoning_options.effort` mapped to [`Effort`]: `low`→`Low`,
+/// `medium`/`high`→`High`, `xhigh`/`max`→`Xhigh`). An empty `efforts` means
+/// unconstrained — any tier effort passes through unclamped.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
+pub struct ProviderModel {
+    /// The model id sent on the wire (e.g. `"deepseek-v4-pro"`; for
+    /// gateways the full `"vendor/model"` id, e.g.
+    /// `"anthropic/claude-sonnet-5"`).
+    pub id: String,
+    /// Context window in tokens (local servers do not report it; gateways
+    /// vary it per model, so the section default is only a fallback).
+    pub context_window: u32,
+    /// Efforts this model supports; empty means "any".
+    pub efforts: Vec<Effort>,
+}
+
+/// `[providers]` (plan.md §1.6).
+///
+/// `deny_unknown_fields` is intentionally *not* set here (same reason as
+/// `HooksConfig`/`McpConfig`): the flattened `custom` map is exactly what
+/// would otherwise be "unknown fields". A typo'd `[providers.*]` table
+/// therefore parses, but it can only take effect when a `[tiers.*]` names
+/// it — anything else fails closed in the router (`UnknownProvider`) and
+/// in session startup (`unknown provider`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
 pub struct ProvidersConfig {
     /// `[providers.anthropic]`
     pub anthropic: AnthropicProviderConfig,
@@ -261,6 +288,29 @@ pub struct ProvidersConfig {
     pub openai: OpenAiProviderConfig,
     /// `[providers.local]`
     pub local: LocalProviderConfig,
+    /// Every other `[providers.<name>]` table: an OpenAI-compatible
+    /// (Type-2) provider — DeepSeek, OpenRouter, Moonshot, Z.AI, or a
+    /// hand-rolled one. No code change needed to add a name here.
+    #[serde(flatten)]
+    pub custom: HashMap<String, CompatibleProviderConfig>,
+}
+
+impl ProvidersConfig {
+    /// The `models` list of the named provider section: one of the three
+    /// native tables, or a `custom` entry. Empty when the name is unknown
+    /// (the router rejects unknown names separately).
+    pub fn models_for(&self, name: &str) -> &[ProviderModel] {
+        match name {
+            "anthropic" => &self.anthropic.models,
+            "openai" => &self.openai.models,
+            "local" => &self.local.models,
+            other => self
+                .custom
+                .get(other)
+                .map(|c| c.models.as_slice())
+                .unwrap_or(&[]),
+        }
+    }
 }
 
 /// `[providers.anthropic]`.
@@ -279,6 +329,9 @@ pub struct AnthropicProviderConfig {
     pub timeout_s: u32,
     /// Max retries for retryable errors.
     pub max_retries: u32,
+    /// Known models with their context windows and supported efforts (used
+    /// to clamp the tier effort to what the model understands).
+    pub models: Vec<ProviderModel>,
 }
 
 impl Default for AnthropicProviderConfig {
@@ -290,6 +343,7 @@ impl Default for AnthropicProviderConfig {
             fallbacks: true,
             timeout_s: 120,
             max_retries: 4,
+            models: Vec::new(),
         }
     }
 }
@@ -304,6 +358,8 @@ pub struct OpenAiProviderConfig {
     pub api_key_env: String,
     /// Which OpenAI API shape to use: `"responses"` or `"chat"`.
     pub api: String,
+    /// Known models with their context windows and supported efforts.
+    pub models: Vec<ProviderModel>,
 }
 
 impl Default for OpenAiProviderConfig {
@@ -312,6 +368,7 @@ impl Default for OpenAiProviderConfig {
             base_url: "https://api.openai.com/v1".to_string(),
             api_key_env: "OPENAI_API_KEY".to_string(),
             api: "responses".to_string(),
+            models: Vec::new(),
         }
     }
 }
@@ -328,6 +385,8 @@ pub struct LocalProviderConfig {
     pub model: String,
     /// Context window, since local servers usually don't report it.
     pub context_window: u32,
+    /// Known models with their context windows and supported efforts.
+    pub models: Vec<ProviderModel>,
 }
 
 impl Default for LocalProviderConfig {
@@ -337,6 +396,42 @@ impl Default for LocalProviderConfig {
             api: "chat".to_string(),
             model: "qwen3-coder".to_string(),
             context_window: 32768,
+            models: Vec::new(),
+        }
+    }
+}
+
+/// Any other `[providers.<name>]` table: an OpenAI-compatible (Type-2)
+/// provider in the opencode custom-provider shape
+/// (`docs/design/providers.md`). Same wire client as `local`, different
+/// base URL, key and model list — adding DeepSeek took zero new Rust.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct CompatibleProviderConfig {
+    /// API base URL (the client appends `/chat/completions` or `/responses`
+    /// per `api`, so this is the models.dev `api` root verbatim).
+    pub base_url: String,
+    /// Env var holding the API key; no key means no `Authorization` header.
+    pub api_key_env: String,
+    /// Which shape to speak: `"chat"` (default) or `"responses"`.
+    pub api: String,
+    /// Default model id sent when a tier names this provider without a model.
+    pub model: String,
+    /// Fallback context window for models absent from `models`.
+    pub context_window: u32,
+    /// Known models with their context windows and supported efforts.
+    pub models: Vec<ProviderModel>,
+}
+
+impl Default for CompatibleProviderConfig {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            api_key_env: String::new(),
+            api: "chat".to_string(),
+            model: String::new(),
+            context_window: 32768,
+            models: Vec::new(),
         }
     }
 }
@@ -734,6 +829,34 @@ mod tests {
         let json = serde_json::to_string(&cfg).expect("serialize");
         let back: Config = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn config_default_toml_carries_compatible_providers_with_models() {
+        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the four
+        // Type-2 sections land in `custom` (not rejected as unknown fields),
+        // each with a models list the router can clamp efforts against.
+        use figment::providers::Format as _;
+        let cfg: Config =
+            figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
+                .extract()
+                .expect("default.toml parses");
+        for name in ["deepseek", "openrouter", "moonshot", "z-ai"] {
+            let section = cfg.providers.custom.get(name).expect("section present");
+            assert_eq!(section.api, "chat");
+            assert!(!section.models.is_empty(), "{name} lists models");
+        }
+        let deepseek = &cfg.providers.custom["deepseek"];
+        assert_eq!(deepseek.model, "deepseek-v4-pro");
+        // `models_for` resolves native sections and custom entries alike;
+        // unknown names yield an empty slice (the router rejects them).
+        assert_eq!(cfg.providers.models_for("deepseek").len(), 3);
+        assert_eq!(cfg.providers.models_for("anthropic").len(), 4);
+        assert!(cfg.providers.models_for("weird").is_empty());
+        let pro = cfg.providers.models_for("deepseek")[1].clone();
+        assert_eq!(pro.id, "deepseek-v4-pro");
+        assert_eq!(pro.context_window, 1_000_000);
+        assert_eq!(pro.efforts, vec![Effort::High, Effort::Xhigh]);
     }
 
     #[test]

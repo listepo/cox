@@ -17,7 +17,6 @@ use cox_protocol::traits::Provider;
 use cox_protocol::types::{Caps, ProviderEvent, ProviderId, Request, Usage};
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -116,9 +115,7 @@ impl AnthropicProvider {
         );
         // An api key with non-ASCII bytes is a misconfigured credential, not
         // a transport failure: report it as an auth problem.
-        let mut key = HeaderValue::from_str(&self.api_key).map_err(|_| ProviderError::Auth)?;
-        key.set_sensitive(true);
-        h.insert("x-api-key", key);
+        h.insert("x-api-key", crate::http::api_key(&self.api_key)?);
 
         let betas = self.betas();
         if !betas.is_empty() {
@@ -160,16 +157,7 @@ impl AnthropicProvider {
 /// called on every provider construction, including in `cox doctor`, so it
 /// must never panic.
 pub fn resolve_api_key() -> Result<String, ProviderError> {
-    match std::env::var("ANTHROPIC_API_KEY") {
-        Ok(k) if !k.trim().is_empty() => return Ok(k),
-        _ => {}
-    }
-    // `keyring`'s default features carry the native store for each platform
-    // (Keychain, Credential Manager, Secret Service over zbus), so this is
-    // the real system store, not a mock.
-    keyring::Entry::new("cox", "anthropic")
-        .and_then(|e| e.get_password())
-        .map_err(|_| ProviderError::Auth)
+    crate::http::resolve_key_env_or_keyring("ANTHROPIC_API_KEY", "cox", "anthropic")
 }
 
 #[async_trait]
@@ -282,50 +270,10 @@ impl AnthropicProvider {
 
 /// Maps a non-2xx `/v1/messages` response to a `ProviderError` (plan.md
 /// §1.14). `retry_after` comes from the `retry-after` header, read before
-/// the body is consumed.
+/// the body is consumed. One shared mapping lives in [`crate::http`]; this
+/// stays as the module's named entry point for it.
 fn http_error(status: reqwest::StatusCode, body: &str, retry_after: Option<u64>) -> ProviderError {
-    let message = error_message(body);
-    match status.as_u16() {
-        401 => ProviderError::Auth,
-        429 => ProviderError::RateLimited { retry_after },
-        503 | 529 => ProviderError::Overloaded,
-        // A too-long prompt is a 400 `invalid_request_error` in practice
-        // (413 is reserved for raw request-body size); handled the same way
-        // regardless of which status carried it.
-        400 | 413 => match parse_context_too_long(&message) {
-            Some((got, max)) => ProviderError::ContextTooLong { max, got },
-            None => ProviderError::BadRequest { message },
-        },
-        _ => ProviderError::BadRequest { message },
-    }
-}
-
-/// Anthropic's error envelope is `{"error": {"type": ..., "message": ...}}`
-/// (claude-api skill, `shared/error-codes.md`); falls back to the raw body
-/// when it is not that shape, so a proxy's plain-text error is not lost.
-fn error_message(body: &str) -> String {
-    serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v.get("error")?.get("message")?.as_str().map(str::to_string))
-        .unwrap_or_else(|| body.to_string())
-}
-
-/// Best-effort extraction of `(got, max)` from a "prompt is too long: N
-/// tokens > M maximum"-shaped message. No fixed wire schema is documented
-/// for this case, so this is read-only best effort: a message that does not
-/// mention "too long", or that carries fewer than two numbers, falls back
-/// to a plain `BadRequest` in [`http_error`] rather than guessing.
-fn parse_context_too_long(message: &str) -> Option<(u32, u32)> {
-    if !message.to_ascii_lowercase().contains("too long") {
-        return None;
-    }
-    let mut numbers = message
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse::<u32>().ok());
-    let got = numbers.next()?;
-    let max = numbers.next()?;
-    Some((got, max))
+    crate::http::map_http_error(status, body, retry_after)
 }
 
 #[cfg(test)]

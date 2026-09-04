@@ -1926,7 +1926,7 @@
   "submission": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "Submission",
-    "description": "A submission into the core state machine: everything a surface can ask\n`cox-core` to do (plan.md §1.2/§1.3).",
+    "description": "A submission into the core state machine: everything a surface can ask\n`cox-core` to do (plan.md §1.2/§1.3).\n\n# Example\n\n```rust\nuse cox_protocol::types::Submission;\n\n// Pressing Enter in the TUI sends this:\nlet sub = Submission::UserTurn {\n    text: \"create hello.txt containing hi\".into(),\n    attachments: vec![],\n    confirm_think: false,\n};\n// It serialises to the same snake_case JSON the rollout and\n// `cox run -p --output-format stream-json` use:\nlet json = serde_json::to_value(&sub).unwrap();\nassert_eq!(json[\"type\"], \"user_turn\");\n```",
     "oneOf": [
       {
         "description": "Start (or continue) a turn with user text.",

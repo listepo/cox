@@ -7,10 +7,10 @@ use std::sync::Arc;
 
 use cox_core::Session;
 use cox_protocol::Config;
-use cox_protocol::config::LocalProviderConfig;
 use cox_protocol::traits::{Provider, Store as _, Tool};
 use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
 use cox_provider::openai::chat::OpenAiChatProvider;
+use cox_provider::openai::responses::OpenAiResponsesProvider;
 use cox_store::Store;
 use cox_tools::ask_user::{Answers, AskUserTool};
 use cox_tools::bash::BashTool;
@@ -47,14 +47,16 @@ pub async fn open(
         loaded.config.core.workspace_roots =
             vec![config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())];
     }
-    // T9.1 step 4: `--provider local` maps every tier to the local server;
-    // the router then resolves the local model for all of them.
-    if loaded.config.tiers.code.provider == "local" {
+    // T9.1 step 4 (generalised): a non-first-party `tiers.code.provider`
+    // maps every tier to the same server; the router then pins each tier to
+    // that provider's section model, so a `--provider deepseek` flip works
+    // without editing every tier model.
+    if !["anthropic", "openai"].contains(&loaded.config.tiers.code.provider.as_str()) {
         for tier in [
             &mut loaded.config.tiers.cheap,
             &mut loaded.config.tiers.think,
         ] {
-            tier.provider = "local".into();
+            tier.provider = loaded.config.tiers.code.provider.clone();
         }
     }
     let config = loaded.config.clone();
@@ -136,21 +138,66 @@ pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>>
             )?;
             Ok(Arc::new(provider))
         }
-        // No OpenAI Responses client exists yet; the Chat client speaks to
-        // the same endpoint family and takes the key from the configured env.
         "openai" => {
             let o = &config.providers.openai;
-            let cfg = LocalProviderConfig {
-                base_url: o.base_url.clone(),
-                ..LocalProviderConfig::default()
-            };
-            Ok(Arc::new(match std::env::var(&o.api_key_env) {
-                Ok(key) => OpenAiChatProvider::with_key(&cfg, key),
-                Err(_) => OpenAiChatProvider::new(&cfg),
-            }))
+            Ok(openai_shaped(
+                "openai",
+                &o.base_url,
+                std::env::var(&o.api_key_env).ok(),
+                o.models.clone(),
+                400_000,
+                &o.api,
+            )?)
         }
         "local" => Ok(Arc::new(OpenAiChatProvider::new(&config.providers.local))),
-        other => anyhow::bail!("unknown provider `{other}` in tiers.code"),
+        // Type-2 providers: no code per vendor — the section's `api` picks
+        // the wire client, the section's base URL/key/models configure it.
+        other => {
+            let c = config
+                .providers
+                .custom
+                .get(other)
+                .ok_or_else(|| anyhow::anyhow!("unknown provider `{other}` in tiers.code"))?;
+            Ok(openai_shaped(
+                other,
+                &c.base_url,
+                std::env::var(&c.api_key_env).ok(),
+                c.models.clone(),
+                c.context_window,
+                &c.api,
+            )?)
+        }
+    }
+}
+
+/// Builds the OpenAI-shaped client the `api` string names for `owner`:
+/// `"responses"` speaks the Responses API, `"chat"` the Chat Completions
+/// subset every compatible vendor speaks. Anything else is a config error
+/// at startup, not a mid-turn 404.
+fn openai_shaped(
+    owner: &str,
+    base_url: &str,
+    api_key: Option<String>,
+    models: Vec<cox_protocol::config::ProviderModel>,
+    context_window: u32,
+    api: &str,
+) -> anyhow::Result<Arc<dyn Provider>> {
+    match api {
+        "responses" => Ok(Arc::new(OpenAiResponsesProvider::new(
+            base_url,
+            api_key,
+            models,
+            context_window,
+        ))),
+        "chat" => Ok(Arc::new(OpenAiChatProvider::from_parts(
+            base_url,
+            api_key,
+            models,
+            context_window,
+        ))),
+        _ => anyhow::bail!(
+            "unknown api `{api}` for provider `{owner}` (want \"chat\" or \"responses\")"
+        ),
     }
 }
 
@@ -211,5 +258,56 @@ pub(crate) fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBu
         cox_ext::memory::memory_dir(home, cwd)
     } else {
         PathBuf::from(&config.memory.dir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cox_protocol::config::CompatibleProviderConfig;
+    use cox_protocol::types::ProviderId;
+
+    use super::*;
+
+    fn deepseek_config(api: &str) -> Config {
+        let mut cfg = Config::default();
+        cfg.tiers.code.provider = "deepseek".into();
+        cfg.providers.custom.insert(
+            "deepseek".into(),
+            CompatibleProviderConfig {
+                base_url: "https://api.deepseek.com".into(),
+                // Deliberately unset in the test environment: the client
+                // builds keyless without touching the network.
+                api_key_env: "COX_TEST_MISSING_KEY_DEEPSEEK".into(),
+                api: api.into(),
+                model: "deepseek-v4-pro".into(),
+                context_window: 1_000_000,
+                models: vec![],
+            },
+        );
+        cfg
+    }
+
+    #[test]
+    fn provider_for_custom_builds_chat_client_without_a_key() {
+        let p = provider_for(&deepseek_config("chat")).expect("builds");
+        assert_eq!(p.id(), ProviderId::Local);
+        assert_eq!(p.capabilities().max_context, 1_000_000);
+    }
+
+    #[test]
+    fn provider_for_custom_responses_builds_responses_client() {
+        let p = provider_for(&deepseek_config("responses")).expect("builds");
+        assert_eq!(p.id(), ProviderId::OpenAi);
+    }
+
+    #[test]
+    fn provider_for_rejects_unknown_names_and_shapes() {
+        let mut bad = Config::default();
+        bad.tiers.code.provider = "weird".into();
+        assert!(provider_for(&bad).is_err(), "unknown name bails");
+        assert!(
+            provider_for(&deepseek_config("smoke-signals")).is_err(),
+            "unknown api bails at startup, not mid-turn"
+        );
     }
 }

@@ -50,17 +50,52 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `fallbacks` = `true` — fallbacks: "default" + beta header
 - `timeout_s` = `120`
 - `max_retries` = `4`
+- `models` = `[{id="claude-haiku-4-5", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", context_window=1000000, efforts=["low", "high"]}, {id="claude-opus-5", context_window=1000000, efforts=["high", "xhigh"]}, {id="claude-fable-5-1", context_window=1000000, efforts=["high"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openai]`
 
 - `base_url` = `"https://api.openai.com/v1"`
 - `api_key_env` = `"OPENAI_API_KEY"`
 - `api` = `"responses"` — "responses" | "chat"
+- `models` = `[{id="gpt-5.1", context_window=400000, efforts=["low", "high"]}, {id="gpt-5.5", context_window=1050000, efforts=["low", "high", "xhigh"]}, {id="gpt-5.6-sol", context_window=1050000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.local]`
 
 - `base_url` = `"http://localhost:11434/v1"`
 - `api` = `"chat"`
 - `model` = `"qwen3-coder"`
 - `context_window` = `32768` — local servers do not report it
+- `models` = `[{id="qwen3-coder", context_window=32768, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.deepseek]`
+
+- `base_url` = `"https://api.deepseek.com"` — client appends /chat/completions
+- `api_key_env` = `"DEEPSEEK_API_KEY"`
+- `api` = `"chat"`
+- `model` = `"deepseek-v4-pro"`
+- `context_window` = `1000000`
+- `models` = `[{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+## `[providers.openrouter]`
+
+- `base_url` = `"https://openrouter.ai/api/v1"`
+- `api_key_env` = `"OPENROUTER_API_KEY"`
+- `api` = `"chat"`
+- `model` = `"anthropic/claude-sonnet-5"`
+- `context_window` = `1000000`
+- `models` = `[{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["low", "high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — curated coding subset; the full 359-model list lives in models.dev
+## `[providers.moonshot]`
+
+- `base_url` = `"https://api.moonshot.ai/v1"`
+- `api_key_env` = `"MOONSHOT_API_KEY"`
+- `api` = `"chat"`
+- `model` = `"kimi-k2.6"`
+- `context_window` = `262144`
+- `models` = `[{id="kimi-k2.6", context_window=262144, efforts=["low", "high", "xhigh"]}, {id="kimi-k2.7-code", context_window=262144, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.z-ai]`
+
+- `base_url` = `"https://api.z.ai/api/paas/v4"`
+- `api_key_env` = `"ZHIPU_API_KEY"`
+- `api` = `"chat"`
+- `model` = `"glm-5.2"`
+- `context_window` = `1000000`
+- `models` = `[{id="glm-5.2", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context

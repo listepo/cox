@@ -104,6 +104,11 @@ impl Router {
             "anthropic" => ProviderId::Anthropic,
             "openai" => ProviderId::OpenAi,
             "local" => ProviderId::Local,
+            // Type-2 (compatible) providers are OpenAI-Chat-shaped by
+            // construction, so they ride the `Local` family id — the
+            // ledger's "OpenAI-compatible" bucket, where the model string
+            // disambiguates the row (precedent: Scripted/Replay already do).
+            other if config.providers.custom.contains_key(other) => ProviderId::Local,
             other => {
                 return Err(RouteError::UnknownProvider {
                     tier,
@@ -111,26 +116,56 @@ impl Router {
                 });
             }
         };
-        // Local-only mode pins the local server's model: a Claude id would
-        // be meaningless to Ollama/vLLM and may 404.
-        let model = if provider == ProviderId::Local {
-            ModelId(config.providers.local.model.clone())
-        } else {
-            overrides
-                .models
-                .get(&tier)
-                .cloned()
-                .unwrap_or(ModelId(tc.model.clone()))
+        // The model the wire carries: a session override (`/model`,
+        // `--tier TIER=MODEL`) wins; otherwise a Local-family tier pins its
+        // section's default model — a Claude id would 404 against Ollama,
+        // and a bare `tiers.code.provider = "deepseek"` flip must work
+        // without also editing every tier model. Native tiers carry their
+        // own configured model. An empty section default falls back to the
+        // tier model rather than sending an empty id.
+        let pinned = match tc.provider.as_str() {
+            "local" => Some(config.providers.local.model.clone()),
+            other => config.providers.custom.get(other).map(|c| c.model.clone()),
         };
+        let model = overrides.models.get(&tier).cloned().unwrap_or_else(|| {
+            pinned
+                .filter(|m| !m.is_empty())
+                .map(ModelId)
+                .unwrap_or_else(|| ModelId(tc.model.clone()))
+        });
         Ok(Route {
             tier,
             provider,
-            model,
-            effort: tc.effort,
+            model: model.clone(),
+            effort: clamp_effort(config, &tc.provider, &model, tc.effort),
             thinking: tc.thinking,
             max_tokens: tc.max_tokens,
         })
     }
+}
+
+/// Clamps the tier's effort to what the routed model supports: the greatest
+/// supported level at or below the request, else the lowest supported one.
+/// Models absent from the section list — or an empty list — pass through
+/// untouched, so a gateway can serve models cox never catalogued.
+fn clamp_effort(config: &Config, provider: &str, model: &ModelId, want: Effort) -> Effort {
+    let supported: Vec<Effort> = config
+        .providers
+        .models_for(provider)
+        .iter()
+        .find(|m| m.id == model.0)
+        .map(|m| m.efforts.clone())
+        .unwrap_or_default();
+    if supported.is_empty() || supported.contains(&want) {
+        return want;
+    }
+    supported
+        .iter()
+        .filter(|e| **e <= want)
+        .max()
+        .or_else(|| supported.iter().min())
+        .copied()
+        .unwrap_or(want)
 }
 
 /// Drops `Thinking` blocks after a model switch: a signature binds its block
@@ -158,7 +193,97 @@ pub fn strip_thinking(messages: &[Message]) -> Vec<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cox_protocol::config::CompatibleProviderConfig;
     use cox_protocol::types::Role;
+
+    fn custom_config() -> Config {
+        let mut cfg = Config::default();
+        cfg.tiers.code.provider = "deepseek".into();
+        cfg.providers.custom.insert(
+            "deepseek".into(),
+            CompatibleProviderConfig {
+                base_url: "https://api.deepseek.com".into(),
+                api_key_env: "DEEPSEEK_API_KEY".into(),
+                api: "chat".into(),
+                model: "deepseek-v4-pro".into(),
+                context_window: 1_000_000,
+                models: vec![
+                    cox_protocol::config::ProviderModel {
+                        id: "deepseek-v4-flash".into(),
+                        context_window: 1_000_000,
+                        efforts: vec![Effort::Low, Effort::High, Effort::Xhigh],
+                    },
+                    cox_protocol::config::ProviderModel {
+                        id: "deepseek-v4-pro".into(),
+                        context_window: 1_000_000,
+                        efforts: vec![Effort::High, Effort::Xhigh],
+                    },
+                ],
+            },
+        );
+        cfg
+    }
+
+    #[test]
+    fn router_custom_provider_pins_section_model_and_clamps_effort() {
+        let cfg = custom_config();
+        // A bare provider flip routes without touching tier models: the
+        // section default pins the wire id (a Claude id would 404).
+        let route = Router::pick(&cfg, Job::Main, Tier::Code, &Overrides::default(), true)
+            .expect("custom routes");
+        assert_eq!(route.provider, ProviderId::Local);
+        assert_eq!(route.model.0, "deepseek-v4-pro");
+        // Code tier asks High, pro supports it: unchanged.
+        assert_eq!(route.effort, Effort::High);
+        // An override still wins over the pin (gateway escape hatch).
+        let mut overrides = Overrides::default();
+        overrides
+            .models
+            .insert(Tier::Code, ModelId("deepseek-v4-flash".into()));
+        let route = Router::pick(&cfg, Job::Main, Tier::Code, &overrides, true).expect("routes");
+        assert_eq!(route.model.0, "deepseek-v4-flash");
+        assert_eq!(route.effort, Effort::High);
+    }
+
+    #[test]
+    fn router_clamp_effort_never_upgrades_past_the_request() {
+        let cfg = custom_config();
+        // Xhigh on flash (supports all three): passes through.
+        assert_eq!(
+            clamp_effort(
+                &cfg,
+                "deepseek",
+                &ModelId("deepseek-v4-flash".into()),
+                Effort::Xhigh
+            ),
+            Effort::Xhigh
+        );
+        // Low on pro (supports high/xhigh): raised to the floor, the only
+        // direction that keeps the call valid.
+        assert_eq!(
+            clamp_effort(
+                &cfg,
+                "deepseek",
+                &ModelId("deepseek-v4-pro".into()),
+                Effort::Low
+            ),
+            Effort::High
+        );
+        // Unlisted models and unknown providers pass through untouched.
+        assert_eq!(
+            clamp_effort(
+                &cfg,
+                "deepseek",
+                &ModelId("deepseek-future-1".into()),
+                Effort::Xhigh
+            ),
+            Effort::Xhigh
+        );
+        assert_eq!(
+            clamp_effort(&cfg, "local", &ModelId("qwen3-coder".into()), Effort::High),
+            Effort::High
+        );
+    }
 
     #[test]
     fn router_strip_thinking_keeps_everything_else_verbatim() {
