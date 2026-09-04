@@ -5,7 +5,9 @@ use cox_protocol::ids::TaskId;
 use cox_protocol::types::{Event, PermissionMode, SandboxMode, Tier};
 use cox_tui::commands;
 use cox_tui::state::{Cell, Msg, State, update};
-use crossterm::event::{KeyCode, KeyEvent};
+
+mod common;
+use common::type_line;
 
 fn running(state: &mut State) {
     for label in ["explore: find x", "shell: cargo test"] {
@@ -18,22 +20,6 @@ fn running(state: &mut State) {
             }),
         );
     }
-}
-
-fn type_line(state: &mut State, line: &str) {
-    let mut chars = line.chars();
-    if let Some(c) = chars.next() {
-        update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
-        // A `/` at column 0 opened the palette; Esc closes it and the rest
-        // is typed as text.
-        if c == '/' {
-            update(state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
-        }
-    }
-    for c in chars {
-        update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
-    }
-    update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
 }
 
 #[test]

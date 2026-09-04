@@ -1,0 +1,7 @@
+---
+source: crates/cox-tui/tests/agents.rs
+assertion_line: 52
+expression: text
+---
+01ARZ3NDEKTSV4RRFFQ69G5FAV pid 41 · active · turn 3 · /w · editing crates/cox-tui/src/state.rs, plan.md
+01BX5ZZKBKACTAV9WEVGEMMVRZ pid 42 · waiting · turn 3 · /w · no files edited yet

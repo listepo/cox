@@ -39,7 +39,13 @@ pub enum TuiError {
 /// Runs the TUI until the user quits or the session's stream ends. The
 /// caller fills `state.files` (the `@` picker's candidates) from
 /// `cox_tools::glob::workspace_files` — this crate never walks the disk.
-pub async fn run(session: Session, mut state: State) -> Result<(), TuiError> {
+/// `feed` carries what the runtime learns off-screen (the live sessions of
+/// this workspace, T16.3; git counts, T15.2) for the same reason.
+pub async fn run(
+    session: Session,
+    mut state: State,
+    mut feed: tokio::sync::mpsc::Receiver<Msg>,
+) -> Result<(), TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
     execute!(io::stdout(), EnableBracketedPaste)?;
@@ -71,6 +77,7 @@ pub async fn run(session: Session, mut state: State) -> Result<(), TuiError> {
                     None => return Ok(()),
                 },
                 _ = tick.tick() => Msg::Tick,
+                Some(msg) = feed.recv() => msg,
             };
             for cmd in update(&mut state, msg) {
                 match cmd {

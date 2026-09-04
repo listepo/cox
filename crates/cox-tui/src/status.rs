@@ -3,7 +3,7 @@
 //! [plan]`, and the panel the `todo` tool's list appears in. Separate from
 //! `view` so both are plain text a test can compare without a buffer.
 
-use cox_protocol::types::SandboxMode;
+use cox_protocol::types::{PresenceStatus, SandboxMode};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
@@ -34,9 +34,23 @@ pub fn line(state: &State) -> Line<'static> {
         Some(Mode::Insert) => format!(" {sep} INSERT"),
         None => String::new(),
     };
+    // Only when there are any, so a lone session's line is unchanged; `!`
+    // when one of them is waiting for its user (T16.3).
+    let agents = match state.agents.len() {
+        0 => String::new(),
+        n => {
+            let s = if n == 1 { "" } else { "s" };
+            let waiting = state
+                .agents
+                .iter()
+                .any(|a| a.status == PresenceStatus::Waiting);
+            let bang = if waiting { "!" } else { "" };
+            format!(" {sep} {n} agent{s}{bang}")
+        }
+    };
     Line::styled(
         format!(
-            " {model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{tail}{vim}",
+            " {model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{agents}{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
             format!("{:?}", state.mode).to_lowercase(),

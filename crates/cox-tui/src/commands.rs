@@ -37,7 +37,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "/expand <id>",
         "show an archived tool output in full",
     ),
-    ("agents", "/agents", "list subagent definitions"),
+    ("agents", "/agents", "live cox sessions in this workspace"),
     ("skills", "/skills", "list skills"),
     ("hooks", "/hooks", "list hooks"),
     ("mcp", "/mcp", "MCP servers and their tools"),
@@ -61,6 +61,8 @@ pub enum Action {
     Todo,
     /// List the running background tasks.
     Tasks,
+    /// List the other live sessions of this workspace.
+    Agents,
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
@@ -107,6 +109,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         },
         "todo" => Action::Todo,
         "tasks" => Action::Tasks,
+        "agents" => Action::Agents,
         "vim" => Action::Vim,
         "help" => Action::Help,
         "quit" => Action::Quit,

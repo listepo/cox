@@ -26,7 +26,7 @@ use cox_tools::tool_search::ToolSearchTool;
 use cox_tools::v4a::ApplyPatchTool;
 use cox_tools::web_fetch::WebFetchTool;
 use cox_tools::write::WriteTool;
-use cox_tui::state::State;
+use cox_tui::state::{Msg, State};
 
 use crate::cli::Cli;
 use crate::config_load::{self, LoadedConfig};
@@ -139,8 +139,28 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     }
     state.show_thinking = config.tui.show_thinking == "full";
     state.marks = cli.verbose > 0;
+    let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
+    // The poller lives here, not in cox-tui: the TUI never touches the disk.
+    let poll = {
+        let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+        let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+        let me = session.id();
+        rt.spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(2));
+            loop {
+                every.tick().await;
+                let now = cox_ext::presence::now_secs();
+                let agents = cox_ext::presence::others(&home, &project, &me, now);
+                if feed.send(Msg::Agents(agents)).await.is_err() {
+                    break;
+                }
+            }
+        })
+    };
     let quit = session.clone();
-    rt.block_on(cox_tui::app::run(session, state))?;
+    let ran = rt.block_on(cox_tui::app::run(session, state, feed_rx));
+    poll.abort();
+    ran?;
     // The TUI never shut the core down, so `SessionEnd` hooks and the
     // presence record outlived the window (T16.2).
     rt.block_on(quit.submit(Submission::Shutdown))?;

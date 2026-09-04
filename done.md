@@ -2003,3 +2003,30 @@ test result: ok. 5 passed; 0 failed    (tests/hooks.rs; broken_hook_is_skipped_n
 $ mise exec -- cargo clippy -p cox-core -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T16.3 Agents in the TUI: feed channel, `/agents`, status-line count
+Model: opus · Status: done 2026-09-05 · Depends: T16.2 · Size: ~130
+Goal: `/agents` lists the other live sessions of this project with `active`/`waiting`/`idle`/`stopped`, their turn and last-edited paths; the status line shows `2 agents` while any exist.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/status.rs` (+ the `agents` arm in `commands.rs` and the 2 s poller in `crates/cox/src/session.rs` — over the guide for T15.2's reason: the poller lives where file I/O is allowed).
+Steps:
+1. `app::run(session, state, feed: mpsc::Receiver<Msg>)` — a fourth `select!` arm; `Msg::Agents(Vec<Presence>)` sets `state.agents`. T15.2 sends `Msg::Git` on the same channel instead of adding an arm.
+2. `commands`: `agents` → `Action::Agents`; `state::act` renders one line per agent, paths and cwd through `text::sanitize` (they are another process's input).
+3. `status::line` appends `N agents` (`N agents!` when one is `waiting`) only when `state.agents` is non-empty, so today's frames are byte-identical.
+4. `run_tui` spawns the poller: every 2 s `presence::others(..)` → `feed.send(Msg::Agents(..))`.
+Check: `mise exec -- cargo test -p cox-tui agents` — `/agents` on two fed records snapshots their statuses; the status line shows `2 agents`; an empty list leaves the line unchanged.
+Done when: the Check passes; §1.13 describes `/agents` as "live sessions in this workspace".
+Out of scope: subagent *definitions* (`cox ext list`); git counts (T15.2).
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-tui agents
+test agents_command_says_so_when_alone ... ok
+test status_line_counts_agents_and_flags_one_waiting ... ok
+test agents_command_lists_the_fed_records_snapshot ... ok
+test result: ok. 3 passed; 0 failed    (tests/agents.rs; snapshot agents__agents_command_lists_the_fed_records_snapshot.snap)
+$ mise exec -- cargo test -p cox-tui
+all ok — every earlier frame/status snapshot unchanged (the status line only grows when agents exist).
+$ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

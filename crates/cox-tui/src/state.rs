@@ -5,7 +5,8 @@
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Event, ItemKind, Level, PermissionMode, SandboxMode, Submission, Tier, ToolCall, ToolResult,
+    Event, ItemKind, Level, PermissionMode, Presence, SandboxMode, Submission, Tier, ToolCall,
+    ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -132,6 +133,8 @@ pub struct State {
     pub show_todo: bool,
     /// `-v`: show a glyph where `text::sanitize` removed something.
     pub marks: bool,
+    /// The other live sessions of this project (T16.3); the runtime feeds them.
+    pub agents: Vec<Presence>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -141,6 +144,8 @@ pub enum Msg {
     Event(Event),
     Tick,
     Resize(u16, u16),
+    /// The live sessions of this project, polled by the runtime (T16.3).
+    Agents(Vec<Presence>),
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -184,6 +189,7 @@ impl State {
             todo: Vec::new(),
             show_todo: false,
             marks: false,
+            agents: Vec::new(),
         }
     }
 
@@ -238,6 +244,10 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Resize(..) => Vec::new(),
+        Msg::Agents(agents) => {
+            state.agents = agents;
+            Vec::new()
+        }
     }
 }
 
@@ -352,6 +362,34 @@ fn notice(state: &mut State, level: Level, text: String) {
     state.transcript.push(Cell::Notice { level, text });
 }
 
+/// `/agents`: one line per live session of this workspace. Its cwd and
+/// paths are another process's input, so they go through `text::sanitize`.
+fn agents_list(agents: &[Presence]) -> String {
+    if agents.is_empty() {
+        return "no other cox sessions in this workspace".into();
+    }
+    agents
+        .iter()
+        .map(|a| {
+            let files = if a.touched.is_empty() {
+                "no files edited yet".to_string()
+            } else {
+                format!("editing {}", a.touched.join(", "))
+            };
+            crate::text::sanitize(&format!(
+                "{} pid {} · {} · turn {} · {} · {}",
+                a.session,
+                a.pid,
+                a.status.name(),
+                a.turn,
+                a.cwd.display(),
+                files
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A slash command's effect; anything the core owns becomes a `Submit`.
 fn act(state: &mut State, action: Action) -> Vec<Cmd> {
     match action {
@@ -373,6 +411,7 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);
         }
+        Action::Agents => notice(state, Level::Info, agents_list(&state.agents)),
         Action::Notice(text) => notice(state, Level::Warn, text),
     }
     Vec::new()
