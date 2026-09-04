@@ -26,7 +26,7 @@ use cox_tools::tool_search::ToolSearchTool;
 use cox_tools::v4a::ApplyPatchTool;
 use cox_tools::web_fetch::WebFetchTool;
 use cox_tools::write::WriteTool;
-use cox_tui::state::{Msg, State};
+use cox_tui::state::{GitStatus, Msg, State};
 
 use crate::cli::Cli;
 use crate::config_load::{self, LoadedConfig};
@@ -169,6 +169,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         let home = home.clone();
         let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
         let me = session.id();
+        let git = config.tui.git;
+        let dir = cwd.to_path_buf();
         rt.spawn(async move {
             let mut every = tokio::time::interval(std::time::Duration::from_secs(2));
             loop {
@@ -176,6 +178,18 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                 let now = cox_ext::presence::now_secs();
                 let agents = cox_ext::presence::others(&home, &project, &me, now);
                 if feed.send(Msg::Agents(agents)).await.is_err() {
+                    break;
+                }
+                if !git {
+                    continue;
+                }
+                // T15.2: the same poll carries the branch and counts.
+                let status = cox_tools::git::status(&dir).await.map(|s| GitStatus {
+                    branch: s.branch,
+                    added: s.added,
+                    removed: s.removed,
+                });
+                if feed.send(Msg::Git(status)).await.is_err() {
                     break;
                 }
             }

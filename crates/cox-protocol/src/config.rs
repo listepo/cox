@@ -599,6 +599,8 @@ pub struct TuiConfig {
     /// A syntect theme name for code, diffs and file output; empty follows
     /// `theme`, and an unknown name warns and follows `theme` too.
     pub syntax_theme: String,
+    /// Whether the status line polls git for the branch and `+n −m` (T15.2).
+    pub git: bool,
 }
 
 impl Default for TuiConfig {
@@ -613,6 +615,7 @@ impl Default for TuiConfig {
             icons: HashMap::new(),
             color: "auto".to_string(),
             syntax_theme: String::new(),
+            git: true,
         }
     }
 }

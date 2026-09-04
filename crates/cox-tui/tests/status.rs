@@ -8,7 +8,7 @@ use cox_protocol::types::{
     ToolResult, Usage,
 };
 use cox_tui::commands::{self, Action, COMMANDS};
-use cox_tui::state::{Cell, Cmd, Msg, State, update};
+use cox_tui::state::{Cell, Cmd, GitStatus, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -182,4 +182,26 @@ fn command_slash_effort_sets_or_clears_the_session_effort() {
         commands::parse("/effort max", Tier::Code),
         Some(Action::Notice(text)) if text.contains("xhigh")
     ));
+}
+
+#[test]
+fn status_line_shows_the_git_segment_only_inside_a_repository() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 0.1, 10);
+    let plain = cox_tui::status::line(&state).to_string();
+    update(
+        &mut state,
+        Msg::Git(Some(GitStatus {
+            branch: "main".into(),
+            added: 12,
+            removed: 3,
+        })),
+    );
+    let with = cox_tui::status::line(&state).to_string();
+    let g = state.glyphs;
+    let head = format!(" {} main +12 {}3 {} ", g.branch, g.minus, g.sep);
+    assert!(with.starts_with(&head), "{with}");
+    assert!(with.ends_with(plain.trim_start()), "{with}");
+    update(&mut state, Msg::Git(None));
+    assert_eq!(cox_tui::status::line(&state).to_string(), plain);
 }

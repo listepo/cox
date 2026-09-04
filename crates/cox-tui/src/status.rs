@@ -24,6 +24,18 @@ pub fn line(state: &State) -> Line<'static> {
     let pct = u64::from(s.context_tokens) * 100 / u64::from(s.context_window.max(1));
     let cache = (s.cache_ratio * 100.0).round() as u64;
     let sep = state.glyphs.sep;
+    // Inside a repository the line starts with `⎇ main +12 −3`; outside one
+    // it is exactly what it was (T15.2). The branch is git's text: sanitised.
+    let git = state.git.as_ref().map_or(String::new(), |g| {
+        format!(
+            "{} {} +{} {}{} {sep} ",
+            state.glyphs.branch,
+            crate::text::sanitize(&g.branch),
+            g.added,
+            state.glyphs.minus,
+            g.removed
+        )
+    });
     let tail = match (s.busy, state.ctrl_c_armed) {
         (true, _) => format!(" {sep} working"),
         (false, true) => format!(" {sep} Ctrl+C again to quit"),
@@ -50,7 +62,7 @@ pub fn line(state: &State) -> Line<'static> {
     };
     Line::styled(
         format!(
-            " {model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{agents}{tail}{vim}",
+            " {git}{model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{agents}{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
             format!("{:?}", state.mode).to_lowercase(),

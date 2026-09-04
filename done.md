@@ -2088,3 +2088,29 @@ ok — no earlier snapshot changed.
 $ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T15.2 Branch and worktree counts in the status line
+Model: opus · Status: done 2026-09-05 · Depends: T15.1 · Size: ~90
+Goal: the status line carries a `main +12 −3` segment that follows the working tree while the model edits it, and disappears outside a repository.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/status.rs`, `crates/cox/src/session.rs` (one file over the guide: the poller must be spawned where process I/O is allowed, and its receiver must reach `app::run`).
+Steps:
+1. `State.git: Option<GitStatus>` (branch, added, removed — mirrored in `cox-tui` so the crate keeps no `cox-tools` dependency) and `Msg::Git(..)`.
+2. `app::run` takes an `mpsc::Receiver<GitStatus>` as a fourth `select!` arm; `crates/cox/src/session.rs` spawns a 2 s poll of `cox_tools::git::status` when `tui.git` is on.
+3. `status::line` prepends `{branch} +{added} {minus}{removed}` with the branch `text::sanitize`d, using a new `glyphs.branch` (ASCII fallback `#`).
+Check: `mise exec -- cargo test -p cox-tui status` — a frame with a `GitStatus` shows the segment; one without it is byte-identical to today's status line.
+Done when: the Check passes; `tui.git` is in `docs/config.md`.
+Out of scope: ahead/behind counts, stash and conflict markers, untracked files (A13).
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-tui status
+test status_line_shows_the_git_segment_only_inside_a_repository ... ok
+test status_line_after_two_turns ... ok
+test status_line_counts_agents_and_flags_one_waiting ... ok
+test result: ok — the git segment appears only after Msg::Git(Some(..)); Msg::Git(None) gives the byte-identical plain line.
+$ mise exec -- cargo test -p cox-tui -p cox-protocol -p cox-tools
+ok — config_docs_config_md_matches_default_toml passes with the new `tui.git` row.
+$ mise exec -- cargo clippy -p cox-tui -p cox-protocol -p cox -p cox-tools --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

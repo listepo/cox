@@ -95,6 +95,16 @@ pub enum Modal {
     Picker(Picker),
 }
 
+/// What the status line shows of the working tree; a mirror of
+/// `cox_tools::git::Status` so this crate keeps no `cox-tools` dependency
+/// (T15.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitStatus {
+    pub branch: String,
+    pub added: usize,
+    pub removed: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct State {
     pub transcript: Vec<Cell>,
@@ -138,6 +148,9 @@ pub struct State {
     /// This project's recent sessions as `(id, picker row)`, newest first;
     /// the runtime fills them like `files` (T16.5).
     pub sessions: Vec<(String, String)>,
+    /// The branch and line counts the runtime polls; `None` outside a
+    /// repository, so the line is unchanged there.
+    pub git: Option<GitStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,6 +162,8 @@ pub enum Msg {
     Resize(u16, u16),
     /// The live sessions of this project, polled by the runtime (T16.3).
     Agents(Vec<Presence>),
+    /// The working tree's branch and counts (T15.2); `None` outside a repo.
+    Git(Option<GitStatus>),
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -194,6 +209,7 @@ impl State {
             marks: false,
             agents: Vec::new(),
             sessions: Vec::new(),
+            git: None,
         }
     }
 
@@ -250,6 +266,10 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
         Msg::Resize(..) => Vec::new(),
         Msg::Agents(agents) => {
             state.agents = agents;
+            Vec::new()
+        }
+        Msg::Git(git) => {
+            state.git = git;
             Vec::new()
         }
     }

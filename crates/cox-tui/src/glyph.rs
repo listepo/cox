@@ -29,6 +29,8 @@ pub struct Glyphs {
     pub fail: &'static str,
     /// Prefix of a diff header.
     pub diff: &'static str,
+    /// Before the branch name in the status line (T15.2).
+    pub branch: &'static str,
     /// The removed-lines sign in `+n −m`.
     pub minus: &'static str,
     /// Unordered list marker.
@@ -61,6 +63,7 @@ pub const UNICODE: Glyphs = Glyphs {
     ok: "✓",
     fail: "✗",
     diff: "±",
+    branch: "⎇",
     minus: "−",
     bullet: "•",
     quote: "│",
@@ -83,6 +86,7 @@ pub const ASCII: Glyphs = Glyphs {
     ok: "+",
     fail: "x",
     diff: "*",
+    branch: "#",
     minus: "-",
     bullet: "-",
     quote: "|",
@@ -139,6 +143,7 @@ impl Glyphs {
             "ok" => &mut self.ok,
             "fail" => &mut self.fail,
             "diff" => &mut self.diff,
+            "branch" => &mut self.branch,
             "minus" => &mut self.minus,
             "bullet" => &mut self.bullet,
             "quote" => &mut self.quote,
@@ -208,8 +213,8 @@ mod tests {
     fn ascii_set_is_ascii_only() {
         let g = ASCII;
         let all: Vec<&str> = vec![
-            g.user, g.attach, g.tool, g.think, g.ok, g.fail, g.diff, g.minus, g.bullet, g.quote,
-            g.rule, g.sep, g.cursor, g.caret, g.ellipsis, g.dash,
+            g.user, g.attach, g.tool, g.think, g.ok, g.fail, g.diff, g.branch, g.minus, g.bullet,
+            g.quote, g.rule, g.sep, g.cursor, g.caret, g.ellipsis, g.dash,
         ];
         for s in all.iter().chain(g.spinner) {
             assert!(s.is_ascii(), "{s:?} is not ASCII");
