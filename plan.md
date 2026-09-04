@@ -631,17 +631,6 @@ Out of scope: real shell completion (bash/zsh completion specs need a hosted she
 
 Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).
 
-#### T16.5 `/sessions` in the TUI and the `/resume` picker
-Model: opus · Status: in progress · Depends: T16.3 · Size: ~90
-Goal: `/sessions` lists this project's recent sessions (id, title, age, cost) without leaving the TUI; `/resume` opens the existing `Kind::Sessions` picker over them.
-Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`.
-Steps:
-1. `state.sessions: Vec<(String, String)>` (id, `picker::session_entry` row), filled by `run_tui` from `Store::list_sessions` filtered to this project, like `state.files`.
-2. `sessions` → `Action::Sessions` (one notice line per row); `resume` → `Action::Resume` opens the picker; a chosen row prints `cox --resume <id>` as a notice.
-Check: `mise exec -- cargo test -p cox-tui sessions` — `/sessions` on two preloaded rows snapshots them; `/resume` opens a picker whose first row is the newest session.
-Done when: the Check passes.
-Out of scope: restarting the session in place (needs `app::run` to return a resume request; amend when wanted).
-
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.

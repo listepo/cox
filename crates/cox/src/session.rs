@@ -111,6 +111,28 @@ async fn mcp_tools(config: &Config, cwd: &Path) -> Vec<Arc<dyn Tool>> {
     tools
 }
 
+/// `/sessions` and `/resume` rows: this project's sessions, newest first.
+/// A store that will not open is an empty list, not a failed start.
+fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
+    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let now = crate::sessions::now_secs();
+    Store::open(home)
+        .and_then(|store| store.list_sessions(200))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|info| Path::new(&info.cwd).starts_with(&project))
+        .map(|info| {
+            let row = cox_tui::picker::session_entry(
+                info.title.as_deref(),
+                &info.cwd,
+                &crate::sessions::age_of(&info.updated_at, now),
+                info.cost_usd,
+            );
+            (info.id, row)
+        })
+        .collect()
+}
+
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
@@ -118,6 +140,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let config = &loaded.config;
     let mut state = State::new(config.permissions.mode, config.sandbox.mode);
     state.files = cox_tools::glob::workspace_files(cwd);
+    let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    state.sessions = project_sessions(&home, cwd);
     state.composer.set_vim(config.tui.vim);
     state.dark = config.tui.theme != "light";
     state.glyphs = cox_tui::glyph::resolve(&config.tui);
@@ -142,7 +166,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
     // The poller lives here, not in cox-tui: the TUI never touches the disk.
     let poll = {
-        let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+        let home = home.clone();
         let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
         let me = session.id();
         rt.spawn(async move {

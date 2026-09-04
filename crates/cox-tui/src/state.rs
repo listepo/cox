@@ -135,6 +135,9 @@ pub struct State {
     pub marks: bool,
     /// The other live sessions of this project (T16.3); the runtime feeds them.
     pub agents: Vec<Presence>,
+    /// This project's recent sessions as `(id, picker row)`, newest first;
+    /// the runtime fills them like `files` (T16.5).
+    pub sessions: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -190,6 +193,7 @@ impl State {
             show_todo: false,
             marks: false,
             agents: Vec::new(),
+            sessions: Vec::new(),
         }
     }
 
@@ -300,8 +304,17 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 }
                 Pick::Closed => {}
                 Pick::Chosen(choice) => match picker.kind {
-                    Kind::Files | Kind::Commands | Kind::Sessions => {
-                        state.composer.insert(&format!("{choice} "))
+                    Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
+                    // Resuming in place needs `app::run` to return a request;
+                    // until then the command is the answer (T16.5).
+                    Kind::Sessions => {
+                        let id = state
+                            .sessions
+                            .iter()
+                            .find(|(_, row)| *row == choice)
+                            .map_or(choice.as_str(), |(id, _)| id.as_str());
+                        let text = format!("to resume: cox --resume {id}");
+                        notice(state, Level::Info, text);
                     }
                     Kind::History => state.composer.set_text(&choice),
                 },
@@ -412,6 +425,23 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             state.composer.set_vim(on);
         }
         Action::Agents => notice(state, Level::Info, agents_list(&state.agents)),
+        Action::Sessions => {
+            let text = if state.sessions.is_empty() {
+                "no sessions for this project yet".to_string()
+            } else {
+                state
+                    .sessions
+                    .iter()
+                    .map(|(id, row)| format!("{id} · {row}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            notice(state, Level::Info, text);
+        }
+        Action::Resume => {
+            let rows = state.sessions.iter().map(|(_, row)| row.clone()).collect();
+            state.modal = Some(Modal::Picker(Picker::open(Kind::Sessions, rows)));
+        }
         Action::Notice(text) => notice(state, Level::Warn, text),
     }
     Vec::new()

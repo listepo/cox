@@ -2063,3 +2063,28 @@ ok — docs/protocol.jsonschema regenerated for the new SetEffort variant; the t
 $ mise exec -- cargo clippy -p cox-protocol -p cox-core -p cox-tui -p cox-provider -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T16.5 `/sessions` in the TUI and the `/resume` picker
+Model: opus · Status: done 2026-09-05 · Depends: T16.3 · Size: ~90
+Goal: `/sessions` lists this project's recent sessions (id, title, age, cost) without leaving the TUI; `/resume` opens the existing `Kind::Sessions` picker over them.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`.
+Steps:
+1. `state.sessions: Vec<(String, String)>` (id, `picker::session_entry` row), filled by `run_tui` from `Store::list_sessions` filtered to this project, like `state.files`.
+2. `sessions` → `Action::Sessions` (one notice line per row); `resume` → `Action::Resume` opens the picker; a chosen row prints `cox --resume <id>` as a notice.
+Check: `mise exec -- cargo test -p cox-tui sessions` — `/sessions` on two preloaded rows snapshots them; `/resume` opens a picker whose first row is the newest session.
+Done when: the Check passes.
+Out of scope: restarting the session in place (needs `app::run` to return a resume request; amend when wanted).
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-tui sessions
+test sessions_resume_opens_the_picker_newest_first_and_a_choice_names_the_command ... ok
+test sessions_command_says_so_when_there_are_none ... ok
+test sessions_command_lists_the_preloaded_rows_snapshot ... ok
+test result: ok. 3 passed; 0 failed   (tests/sessions.rs; snapshot sessions__sessions_command_lists_the_preloaded_rows_snapshot.snap)
+$ mise exec -- cargo test -p cox-tui
+ok — no earlier snapshot changed.
+$ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

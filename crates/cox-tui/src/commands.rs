@@ -35,8 +35,8 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "/sandbox <read-only|workspace-write|danger-full-access>",
         "set the sandbox mode",
     ),
-    ("resume", "/resume", "pick an earlier session"),
-    ("sessions", "/sessions", "list sessions"),
+    ("resume", "/resume", "pick an earlier session to resume"),
+    ("sessions", "/sessions", "this project's recent sessions"),
     (
         "expand",
         "/expand <id>",
@@ -68,6 +68,10 @@ pub enum Action {
     Tasks,
     /// List the other live sessions of this workspace.
     Agents,
+    /// List this project's recent sessions.
+    Sessions,
+    /// Open the session picker.
+    Resume,
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
@@ -124,6 +128,8 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "todo" => Action::Todo,
         "tasks" => Action::Tasks,
         "agents" => Action::Agents,
+        "sessions" => Action::Sessions,
+        "resume" => Action::Resume,
         "vim" => Action::Vim,
         "help" => Action::Help,
         "quit" => Action::Quit,
