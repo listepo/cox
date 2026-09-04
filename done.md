@@ -1771,3 +1771,71 @@ Check: file exists; reviewed by `think`.
 What landed: `docs/design/routing.md` (56 lines: the 5–10× bill question, the field, pinned job→tier + never-up + think gate + ledger tags, falsifier = cheap-tier retries costing more than they save, measurable with the bench harness).
 Note: `think`-tier review pending (same standing as T0.6).
 Check: file exists.
+
+#### T13.3 Observability documentation and smoke stack
+Model: opus · Status: done 2026-09-04 · Depends: T13.2 · Size: ~120
+Goal: a user can view cox data in SigNoz, Jaeger, Grafana/Tempo, or any OTLP-compatible service without code changes.
+Files: `docs/observability.md`, `website/content/docs/observability.md`, `docker-compose.telemetry.yml`.
+Steps: (1) Document standard OTEL variables, secure content capture, resource naming and backend endpoint examples. (2) Provide a local Collector + Jaeger + Grafana/Tempo smoke stack. (3) Link from README and Hugo navigation. (4) Verify emitted spans with the stack and record the commands.
+Check:
+```bash
+docker compose -f docker-compose.telemetry.yml config && test -f docs/observability.md
+```
+Done when: one scripted cox run appears in Jaeger and Grafana with its session → provider → tool hierarchy.
+
+What landed: `docs/observability.md` (the reference: local JSON logs, how to turn OTLP on, the
+standard `OTEL_*` variables cox honours, why content capture is opt-in, the span/attribute table
+as T13.2 actually emits it, four backend configurations, how to read a trace),
+`website/content/docs/observability.md` (same text with Hugo front matter, `weight: 4`), a
+`Observability` entry in the site menu, a README link, and `docker-compose.telemetry.yml` — an
+OpenTelemetry Collector fanning traces out to Jaeger and Grafana Tempo with logs to its own
+stdout, all four services configured inline so the file is the whole stack.
+
+Notes / deviations:
+- 5 files instead of the 3 the task names: step 3 also asks for the README link and the Hugo
+  navigation entry, which live in `README.md` and `website/hugo.toml`.
+- Verified against the real stack, not just `compose config`: a scripted `cox run` (the
+  `scripted` provider reading a file in a scratch workspace) produced one trace of 5 spans in
+  Jaeger with the full `invoke_agent cox` → `invoke_agent cox.turn` → {`chat`, `execute_tool`,
+  `chat`} hierarchy, carrying provider usage, cost and tool subject, and with the four content
+  attributes absent by default. The same trace was searchable in Tempo (`rootServiceName: cox`)
+  through Grafana's provisioned datasource.
+- That run exposed a T13.2 defect fixed in the following commit: finish reasons exported as
+  `Some(EndTurn)` rather than `end_turn`.
+- `cox.tool.risk` still exports Rust's `Debug` spelling (`ReadOnly`). Left as is: unlike
+  `gen_ai.response.finish_reasons` it is cox's own namespace, not a semantic-convention
+  attribute, and the value is a single readable word.
+
+Check:
+```text
+$ docker compose -f docker-compose.telemetry.yml config && test -f docs/observability.md
+exit 0
+
+$ docker compose -f docker-compose.telemetry.yml up -d
+Container cox-jaeger-1 Started / cox-tempo-1 Started / cox-otel-collector-1 Started / cox-grafana-1 Started
+
+$ COX_PROVIDER=scripted COX_SCENARIO=... cox run --cwd <scratch> -p "read hello.txt and tell me what it says"
+It says: hello from cox
+
+$ curl -s localhost:16686/api/services
+{"data": ["cox"]}
+
+$ curl -s "localhost:16686/api/traces?service=cox"   # 1 trace, 5 spans
+- invoke_agent cox
+  - invoke_agent cox.turn
+    - chat            gen_ai.request.model=claude-sonnet-5 gen_ai.usage.input_tokens=3473 cox.cost.usd=0
+    - execute_tool    gen_ai.tool.name=read cox.tool.subject=hello.txt
+    - chat            gen_ai.usage.output_tokens=6
+  (gen_ai.input.messages / output.messages / tool.call.arguments / tool.call.result all absent)
+
+$ curl -s "localhost:3200/api/search?tags=service.name%3Dcox"
+tempo traces: 1 — cox / invoke_agent cox
+
+$ curl -s localhost:3000/api/datasources
+[('Tempo', 'tempo', 'http://tempo:3200')]   # grafana http 200
+
+$ mise exec -- cargo fmt --check          → exit 0
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings → exit 0
+$ mise exec -- cargo test --workspace     → exit 0, 530 passed, 0 failed
+```
+

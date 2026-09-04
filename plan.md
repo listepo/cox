@@ -583,19 +583,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
-### P13 — Observability (goal: agent traces and logs in any OTLP backend)
-
-#### T13.3 Observability documentation and smoke stack
-Model: haiku · Status: open · Depends: T13.2 · Size: ~120
-Goal: a user can view cox data in SigNoz, Jaeger, Grafana/Tempo, or any OTLP-compatible service without code changes.
-Files: `docs/observability.md`, `website/content/docs/observability.md`, `docker-compose.telemetry.yml`.
-Steps: (1) Document standard OTEL variables, secure content capture, resource naming and backend endpoint examples. (2) Provide a local Collector + Jaeger + Grafana/Tempo smoke stack. (3) Link from README and Hugo navigation. (4) Verify emitted spans with the stack and record the commands.
-Check:
-```bash
-docker compose -f docker-compose.telemetry.yml config && test -f docs/observability.md
-```
-Done when: one scripted cox run appears in Jaeger and Grafana with its session → provider → tool hierarchy.
-
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.

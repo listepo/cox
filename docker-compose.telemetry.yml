@@ -1,0 +1,112 @@
+# T13.3: a local OTLP smoke stack for cox. One collector fans out to Jaeger
+# and Grafana Tempo so the same `cox` run is visible in both UIs; logs go
+# to the collector's debug exporter (stdout). Needs Docker Compose >= 2.23
+# for inline `configs:`; nothing else is written outside the containers.
+#
+#   docker compose -f docker-compose.telemetry.yml up -d
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 cox --set telemetry.otel=true -p "..."
+#   open http://localhost:16686   # Jaeger
+#   open http://localhost:3000    # Grafana → Explore → Tempo
+#   docker compose -f docker-compose.telemetry.yml down -v
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ["--config=/etc/otelcol/config.yaml"]
+    configs:
+      - source: otel_collector
+        target: /etc/otelcol/config.yaml
+    ports:
+      - "4317:4317" # OTLP/gRPC
+      - "4318:4318" # OTLP/HTTP (what cox sends)
+    depends_on:
+      - jaeger
+      - tempo
+
+  jaeger:
+    image: jaegertracing/jaeger:2.2.0
+    ports:
+      - "16686:16686" # UI
+
+  tempo:
+    image: grafana/tempo:2.7.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    configs:
+      - source: tempo
+        target: /etc/tempo.yaml
+    ports:
+      - "3200:3200" # Tempo API (Grafana datasource)
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/tempo.yaml
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+
+configs:
+  otel_collector:
+    content: |
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+      processors:
+        batch: {}
+      exporters:
+        otlp/jaeger:
+          endpoint: jaeger:4317
+          tls:
+            insecure: true
+        otlp/tempo:
+          endpoint: tempo:4317
+          tls:
+            insecure: true
+        debug:
+          verbosity: normal
+      service:
+        pipelines:
+          traces:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [otlp/jaeger, otlp/tempo]
+          logs:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [debug]
+  tempo:
+    content: |
+      server:
+        http_listen_port: 3200
+      distributor:
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+      storage:
+        trace:
+          backend: local
+          local:
+            path: /tmp/tempo/blocks
+          wal:
+            path: /tmp/tempo/wal
+  grafana_datasource:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Tempo
+          type: tempo
+          uid: tempo
+          url: http://tempo:3200
+          isDefault: true

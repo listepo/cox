@@ -20,8 +20,10 @@ export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
 `y`/`s`/`n` answers approval prompts, `/model` switches tiers,
 `/compact` compacts now, `cox run -p` drives headless scripts, `cox acp`
 serves Zed and JetBrains. Costs land in `cox stats`; see
-[`docs/config.md`](docs/config.md) for every key and
-[`docs/tools.md`](docs/tools.md) for the tool catalogue.
+[`docs/config.md`](docs/config.md) for every key,
+[`docs/tools.md`](docs/tools.md) for the tool catalogue and
+[`docs/observability.md`](docs/observability.md) to send traces to Jaeger,
+Grafana, SigNoz or any OTLP backend.
 
 ## Status
 
