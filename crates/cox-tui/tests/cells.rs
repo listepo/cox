@@ -60,6 +60,23 @@ fn ascii_glyphs_leave_no_unicode_in_any_cell() {
 }
 
 #[test]
+fn a_read_of_a_rust_file_is_highlighted_by_its_extension() {
+    let s = replay();
+    let c = cell(
+        &s,
+        |c| matches!(c, Cell::Tool { call, .. } if call.name == "read"),
+    );
+    let lines = cell_lines(c, &s.look(WIDTH));
+    // The header is styled as a whole; a highlighted body line is split into
+    // spans of its own, so more than one span means syntect ran.
+    let painted = lines.iter().skip(1).any(|l| l.spans.len() > 2);
+    assert!(
+        painted,
+        "read of src/main.rs was not highlighted: {lines:?}"
+    );
+}
+
+#[test]
 fn cell_user_lists_attachments() {
     let s = replay();
     insta::assert_snapshot!(text(&s, cell(&s, |c| matches!(c, Cell::User { .. }))));

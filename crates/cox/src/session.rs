@@ -112,6 +112,21 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     state.dark = config.tui.theme != "light";
     state.glyphs = cox_tui::glyph::resolve(&config.tui);
     state.depth = cox_tui::color::resolve(&config.tui);
+    // The theme name outlives every render; one leak per process buys a
+    // `Copy` `Look` instead of a clone on each line.
+    state.syntax_theme = String::leak(config.tui.syntax_theme.clone());
+    if !state.syntax_theme.is_empty()
+        && cox_tui::markdown::theme_name(state.dark, state.syntax_theme) != state.syntax_theme
+    {
+        state.transcript.push(cox_tui::state::Cell::Notice {
+            level: cox_protocol::types::Level::Warn,
+            text: format!(
+                "unknown tui.syntax_theme {:?}; using the default. Available: {}",
+                config.tui.syntax_theme,
+                cox_tui::markdown::themes().join(", ")
+            ),
+        });
+    }
     state.show_thinking = config.tui.show_thinking == "full";
     state.marks = cli.verbose > 0;
     rt.block_on(cox_tui::app::run(session, state))?;

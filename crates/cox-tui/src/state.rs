@@ -15,6 +15,7 @@ use crate::color::Depth;
 use crate::commands::{self, Action, COMMANDS};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
+use crate::markdown;
 use crate::modal::Approval;
 use crate::picker::{Kind, Pick, Picker};
 use crate::status::parse_todo;
@@ -118,6 +119,9 @@ pub struct State {
     pub dark: bool,
     /// `tui.glyphs`/`[tui.icons]` resolved; the binary sets it from config.
     pub glyphs: Glyphs,
+    /// `tui.syntax_theme`; empty, or a name syntect does not know, means the
+    /// default for `dark`.
+    pub syntax_theme: &'static str,
     /// `tui.color` resolved: what the terminal can show, applied to the
     /// finished buffer rather than at each render site.
     pub depth: Depth,
@@ -174,6 +178,7 @@ impl State {
             show_thinking: false,
             dark: true,
             glyphs: glyph::UNICODE,
+            syntax_theme: "",
             depth: Depth::True,
             show_diffs: true,
             todo: Vec::new(),
@@ -186,7 +191,7 @@ impl State {
     pub fn look(&self, width: u16) -> Look {
         Look {
             width,
-            dark: self.dark,
+            theme: markdown::theme_name(self.dark, self.syntax_theme),
             glyphs: self.glyphs,
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,

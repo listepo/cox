@@ -140,6 +140,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `glyphs` = `"auto"` — auto | unicode | ascii
 - `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 - `color` = `"auto"` — auto | none | 16 | 256 | true (NO_COLOR forces none)
+- `syntax_theme` = `""` — syntect theme for code, diffs and file output ("" follows theme)
 ## `[hooks]`
 
 - `timeout_s` = `60`

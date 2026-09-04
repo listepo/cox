@@ -1915,3 +1915,31 @@ $ mise exec -- cargo test -p cox-tui   → 23 unit + 24 integration tests, 0 fai
 $ mise exec -- cargo clippy -p cox-tui -p cox-protocol -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T14.3 Syntax highlighting for file-shaped tool output and diffs
+Model: opus · Status: done 2026-09-05 · Depends: T14.2 · Size: ~140
+Goal: `read`/`edit`/`write` tool output and diff hunk bodies are highlighted by the file's extension, with the syntect theme configurable.
+Files: `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/cells.rs` (+ `state`, `crates/cox-protocol/src/config.rs`, `config/default.toml`, `docs/config.md`, `crates/cox/src/session.rs`, `tests/cells.rs`).
+Steps: (1) One `markdown::highlight(token, rows, theme)` for fences, files and hunks. (2) `cells.rs` passes the subject's extension; `diff.rs` highlights bodies under coloured markers. (3) `tui.syntax_theme` selects a bundled theme, unknown names warn and fall back.
+Check:
+```bash
+mise exec -- cargo test -p cox-tui
+```
+
+What landed: `markdown::highlight` is now `pub fn highlight(token: &str, rows: &[&str], theme: &str)` — `token` goes through syntect's `find_syntax_by_token`, which resolves a language name (`rust`) and a file extension (`rs`) alike, so one helper serves fenced blocks, file output and diff hunks; taking `rows` rather than a body string lets a caller highlight a slice of a file as a single run, keeping a multi-line string or comment in state across the lines. `theme_name(dark, chosen)` resolves `tui.syntax_theme` against the bundled set and falls back to the `tui.theme` default when it is empty or unknown; the resolved name rides in `Look.theme` (which replaced `Look.dark`, the only thing `dark` was for), so a `Copy` `Look` carries it to every renderer. `cells.rs` highlights the output of a tool whose subject is the file it printed (`read`, `write`, `edit`, `apply_patch`), by the subject's extension, keeping the two-column indent as a span of its own; every other tool's output stays plain, because it is not source. `diff.rs` collects the `+`/`-`/context payloads of a hunk, highlights them in one pass by the patched file's extension, and re-attaches each body under a marker span that keeps the green/red — a theme can never hide what a line does. An unknown `tui.syntax_theme` is a warning cell at session start listing the bundled names, not an error: a bad theme name degrades to the default the way a broken extension is skipped. Tests: `a_file_extension_highlights_like_a_language_token`, `an_unknown_theme_renders_plain_instead_of_failing`, `a_hunk_body_is_highlighted_under_a_coloured_marker`, `a_diff_of_an_unknown_file_type_stays_plain`, `a_read_of_a_rust_file_is_highlighted_by_its_extension`.
+Not done: the fold marker inside long tool output splits the head and tail into two syntect runs, so a string opened in the hidden middle does not carry over — the hidden lines are the reason it cannot; a diff hunk is highlighted as if its `+`/`-` lines were consecutive source, which is what a diff shows, not what either file contains; `bash` output (often source too) stays plain because its subject is a command, not a path; the theme list in the warning is unsorted (syntect's map order); `stream-json` and ACP emit no colour, so nothing there changed.
+```
+$ mise exec -- cargo test -p cox-tui
+test markdown::tests::a_file_extension_highlights_like_a_language_token ... ok
+test markdown::tests::an_unknown_theme_renders_plain_instead_of_failing ... ok
+test diff::tests::a_hunk_body_is_highlighted_under_a_coloured_marker ... ok
+test diff::tests::a_diff_of_an_unknown_file_type_stays_plain ... ok
+test a_read_of_a_rust_file_is_highlighted_by_its_extension ... ok
+test result: ok. 27 passed; 0 failed   (unit)
+test result: ok. 8 passed; 0 failed    (tests/cells.rs — snapshots unchanged)
+   + frames 9, keys 4, sanitize 3, status 5, tasks 1, vim 2 — all ok
+$ mise exec -- cargo test -p cox-protocol config_docs
+test config::tests::config_docs_config_md_matches_default_toml ... ok
+$ mise exec -- cargo clippy -p cox-tui -p cox-protocol --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

@@ -596,6 +596,9 @@ pub struct TuiConfig {
     pub icons: HashMap<String, String>,
     /// `auto` | `none` | `16` | `256` | `true`: the colour depth to print.
     pub color: String,
+    /// A syntect theme name for code, diffs and file output; empty follows
+    /// `theme`, and an unknown name warns and follows `theme` too.
+    pub syntax_theme: String,
 }
 
 impl Default for TuiConfig {
@@ -609,6 +612,7 @@ impl Default for TuiConfig {
             glyphs: "auto".to_string(),
             icons: HashMap::new(),
             color: "auto".to_string(),
+            syntax_theme: String::new(),
         }
     }
 }

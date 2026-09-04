@@ -13,13 +13,19 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use unicode_width::UnicodeWidthStr;
 
+use crate::cells::Look;
 use crate::glyph::Glyphs;
 
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
-/// `tui.theme` → syntect theme; `auto` reads as dark because most terminals are.
-fn theme_name(dark: bool) -> &'static str {
+/// The syntect theme to highlight with: `tui.syntax_theme` when it names one
+/// of syntect's bundled themes, otherwise the `tui.theme` default (`auto`
+/// reads as dark because most terminals are).
+pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
+    if THEMES.themes.contains_key(chosen) {
+        return chosen;
+    }
     if dark {
         "base16-ocean.dark"
     } else {
@@ -27,12 +33,18 @@ fn theme_name(dark: bool) -> &'static str {
     }
 }
 
+/// The bundled theme names, for `cox`'s startup warning about an unknown
+/// `tui.syntax_theme` — a bad name falls back, it never fails the session.
+pub fn themes() -> Vec<String> {
+    THEMES.themes.keys().cloned().collect()
+}
+
 /// Renders `text` as lines, unwrapped; trailing blank lines are dropped so a
 /// streaming reply never shows a gap under its last paragraph.
-pub fn render(text: &str, dark: bool, glyphs: &Glyphs) -> Vec<Line<'static>> {
+pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
     let mut r = Renderer {
-        dark,
-        glyphs: *glyphs,
+        theme: look.theme,
+        glyphs: look.glyphs,
         ..Renderer::default()
     };
     let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
@@ -48,7 +60,7 @@ pub fn render(text: &str, dark: bool, glyphs: &Glyphs) -> Vec<Line<'static>> {
 
 #[derive(Default)]
 struct Renderer {
-    dark: bool,
+    theme: &'static str,
     glyphs: Glyphs,
     lines: Vec<Line<'static>>,
     cur: Vec<Span<'static>>,
@@ -204,7 +216,8 @@ impl Renderer {
             }
             TagEnd::CodeBlock => {
                 if let Some((lang, body)) = self.code.take() {
-                    self.lines.extend(highlight(&lang, &body, self.dark));
+                    let rows: Vec<&str> = body.lines().collect();
+                    self.lines.extend(highlight(&lang, &rows, self.theme));
                     self.lines.push(Line::default());
                 }
             }
@@ -237,17 +250,20 @@ impl Renderer {
     }
 }
 
-/// One fenced block through syntect; an unknown language or a theme that is
-/// missing from the bundle falls back to plain text rather than failing.
-fn highlight(lang: &str, body: &str, dark: bool) -> Vec<Line<'static>> {
+/// `rows` through syntect, as one run so a multi-line string or comment
+/// keeps its state. `token` is a language name or a file extension; an
+/// unknown one, or a theme missing from the bundle, falls back to plain text
+/// rather than failing. Shared by fenced blocks, file-shaped tool output and
+/// diff hunks, so all three highlight identically.
+pub fn highlight(token: &str, rows: &[&str], theme: &str) -> Vec<Line<'static>> {
     let syntax = SYNTAXES
-        .find_syntax_by_token(lang)
+        .find_syntax_by_token(token)
         .unwrap_or_else(|| SYNTAXES.find_syntax_plain_text());
-    let Some(theme) = THEMES.themes.get(theme_name(dark)) else {
-        return body.lines().map(|l| Line::raw(l.to_string())).collect();
+    let Some(theme) = THEMES.themes.get(theme) else {
+        return rows.iter().map(|l| Line::raw((*l).to_string())).collect();
     };
     let mut h = HighlightLines::new(syntax, theme);
-    body.lines()
+    rows.iter()
         .map(|l| {
             // The newline-aware syntaxes want the terminator to close scopes.
             let with_nl = format!("{l}\n");
@@ -325,12 +341,23 @@ mod tests {
         lines.iter().map(ToString::to_string).collect()
     }
 
+    fn look(glyphs: Glyphs) -> Look {
+        Look {
+            width: 80,
+            theme: theme_name(true, ""),
+            glyphs,
+            show_thinking: false,
+            show_diffs: true,
+            tick: 0,
+            marks: false,
+        }
+    }
+
     #[test]
     fn headings_lists_and_inline_code_keep_their_markers() {
         let lines = render(
             "# Title\n\nSome `code` here\n\n- one\n- two\n  - nested\n\n1. a\n2. b",
-            true,
-            &crate::glyph::UNICODE,
+            &look(crate::glyph::UNICODE),
         );
         assert_eq!(
             text(&lines),
@@ -359,8 +386,7 @@ mod tests {
     fn fenced_code_is_highlighted_per_line() {
         let lines = render(
             "```rust\nfn main() {}\nlet x = 1;\n```",
-            true,
-            &crate::glyph::UNICODE,
+            &look(crate::glyph::UNICODE),
         );
         assert_eq!(text(&lines), ["fn main() {}", "let x = 1;"]);
         // `fn` is a keyword, so syntect gave it a colour of its own.
@@ -371,8 +397,7 @@ mod tests {
     fn tables_align_columns_under_a_bold_header() {
         let lines = render(
             "| a | bb |\n|---|---|\n| ccc | d |",
-            true,
-            &crate::glyph::UNICODE,
+            &look(crate::glyph::UNICODE),
         );
         assert_eq!(text(&lines), ["a    bb", "───  ──", "ccc  d"]);
     }
@@ -381,8 +406,7 @@ mod tests {
     fn the_ascii_set_replaces_every_markdown_glyph() {
         let lines = render(
             "- one\n\n---\n\n> quoted\n\n| a | bb |\n|---|---|\n| ccc | d |",
-            true,
-            &crate::glyph::ASCII,
+            &look(crate::glyph::ASCII),
         );
         let rendered = text(&lines).join("\n");
         assert!(rendered.is_ascii(), "{rendered:?}");
@@ -393,7 +417,25 @@ mod tests {
 
     #[test]
     fn open_fence_while_streaming_still_renders_as_code() {
-        let lines = render("text\n\n```sh\necho hi", true, &crate::glyph::UNICODE);
+        let lines = render("text\n\n```sh\necho hi", &look(crate::glyph::UNICODE));
         assert_eq!(text(&lines), ["text", "", "echo hi"]);
+    }
+
+    #[test]
+    fn a_file_extension_highlights_like_a_language_token() {
+        let by_ext = highlight("rs", &["fn main() {}"], theme_name(true, ""));
+        let by_lang = highlight("rust", &["fn main() {}"], theme_name(true, ""));
+        assert!(by_ext[0].spans.len() > 1);
+        assert_eq!(by_ext[0].spans[0].style, by_lang[0].spans[0].style);
+    }
+
+    #[test]
+    fn an_unknown_theme_renders_plain_instead_of_failing() {
+        assert_eq!(theme_name(true, "no-such-theme"), "base16-ocean.dark");
+        assert_eq!(theme_name(false, "no-such-theme"), "base16-ocean.light");
+        assert_eq!(theme_name(true, "InspiredGitHub"), "InspiredGitHub");
+        let lines = highlight("rs", &["fn main() {}"], "no-such-theme");
+        assert_eq!(text(&lines), ["fn main() {}"]);
+        assert_eq!(lines[0].spans.len(), 1);
     }
 }

@@ -18,7 +18,9 @@ use crate::text;
 #[derive(Debug, Clone, Copy)]
 pub struct Look {
     pub width: u16,
-    pub dark: bool,
+    /// The syntect theme every highlighted span uses, already resolved from
+    /// `tui.syntax_theme` and `tui.theme`.
+    pub theme: &'static str,
     /// What the terminal can print; `glyph::resolve` decided it.
     pub glyphs: Glyphs,
     /// `Ctrl+T`: thinking expanded rather than a one-line count.
@@ -40,6 +42,23 @@ fn dim(s: impl Into<String>) -> Line<'static> {
     Line::styled(s.into(), Style::default().add_modifier(Modifier::DIM))
 }
 
+/// Tool output is indented two columns; a highlighted line keeps its spans,
+/// so the indent is a span of its own rather than a reformat.
+fn indent(mut line: Line<'static>) -> Line<'static> {
+    line.spans.insert(0, Span::raw("  "));
+    line
+}
+
+/// The syntect token for a tool whose output is the file named by its
+/// subject; `None` for every other tool, whose output is not source text.
+fn file_token(name: &str, subject: &str) -> Option<String> {
+    const FILE_TOOLS: [&str; 4] = ["read", "write", "edit", "apply_patch"];
+    if !FILE_TOOLS.contains(&name) {
+        return None;
+    }
+    Some(std::path::Path::new(subject).extension()?.to_str()?.into())
+}
+
 /// `cell` as wrapped lines at `look.width`. Every string that came from the
 /// model, a tool or a file passes `text::sanitize` here, at the boundary.
 pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
@@ -58,7 +77,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             );
             lines
         }
-        Cell::Assistant { text, .. } => markdown::render(&clean(text), look.dark, &g),
+        Cell::Assistant { text, .. } => markdown::render(&clean(text), look),
         Cell::Thinking { text, done, .. } if !look.show_thinking => {
             // No tokenizer here; four bytes a token is the usual estimate.
             let tokens = text.len() / 4;
@@ -88,28 +107,36 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             )];
             let output = clean(output);
             let out: Vec<&str> = output.lines().collect();
+            // A tool that prints a file prints source: highlight it by the
+            // subject's extension, indented like plain output.
+            let token = file_token(&call.name, &call.subject);
+            let body = |rows: &[&str]| -> Vec<Line<'static>> {
+                match token.as_deref() {
+                    Some(t) => markdown::highlight(t, rows, look.theme)
+                        .into_iter()
+                        .map(indent)
+                        .collect(),
+                    None => rows.iter().map(|l| Line::raw(format!("  {l}"))).collect(),
+                }
+            };
             if out.len() > HEAD + TAIL + 1 {
-                lines.extend(out[..HEAD].iter().map(|l| Line::raw(format!("  {l}"))));
+                lines.extend(body(&out[..HEAD]));
                 lines.push(dim(format!(
                     "  {} {} lines hidden {}",
                     g.ellipsis,
                     out.len() - HEAD - TAIL,
                     g.ellipsis
                 )));
-                lines.extend(
-                    out[out.len() - TAIL..]
-                        .iter()
-                        .map(|l| Line::raw(format!("  {l}"))),
-                );
+                lines.extend(body(&out[out.len() - TAIL..]));
             } else {
-                lines.extend(out.iter().map(|l| Line::raw(format!("  {l}"))));
+                lines.extend(body(&out));
             }
             if let Some(d) = result.as_ref().and_then(|r| r.diff.as_ref()) {
                 let d = Diff {
                     path: d.path.clone(),
                     unified: clean(&d.unified),
                 };
-                lines.extend(diff::lines(&d, look.show_diffs, &g));
+                lines.extend(diff::lines(&d, look));
             }
             match result {
                 Some(r) => {

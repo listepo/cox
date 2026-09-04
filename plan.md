@@ -587,30 +587,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 Rationale in §6 A11. What already exists and is *not* redone here: syntect highlighting of fenced code blocks (T5.3), `unicode-width` wrapping/truncation of wide and combining text (T5.3, T5.6), `tui.theme = auto|dark|light` resolved in `crates/cox/src/session.rs`.
 
-#### T14.2 Colour depth and `NO_COLOR`
-Model: sonnet · Status: open · Depends: — · Size: ~120
-Goal: truecolor styles degrade to 256- or 16-colour terminals instead of being emitted blindly, and `NO_COLOR=1` renders the TUI with no colour at all.
-Files: `crates/cox-tui/src/color.rs` (new), `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/src/state.rs`.
-Steps:
-1. `color::Depth` — `None | Ansi16 | Ansi256 | True`, detected once from `NO_COLOR`, `COLORTERM`, `TERM` (`FORCE_COLOR` and `tui.color = auto|none|16|256|true` override).
-2. `Depth::map(Color) -> Color` — `Rgb` quantised to the xterm cube for `Ansi256`, to the nearest named colour for `Ansi16`, dropped for `None`; named colours pass through except under `None`.
-3. `markdown::highlight` and the styled spans in `cells.rs`/`diff.rs`/`banner.rs` map their colours through `State::depth` at the one place each style is built.
-Check: `mise exec -- cargo test -p cox-tui color` — `NO_COLOR` yields a frame whose spans all carry `Style::default()`; an `Ansi256` frame contains no `Color::Rgb`.
-Done when: the Check passes; `tui.color` is documented.
-Out of scope: theme selection, which `tui.theme` already covers.
-
-#### T14.3 Syntax highlighting for file-shaped tool output and diffs
-Model: sonnet · Status: open · Depends: T14.2 · Size: ~140
-Goal: `read`/`edit`/`write` tool output and diff hunk bodies are highlighted by the file's extension, with the syntect theme configurable.
-Files: `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/cells.rs`.
-Steps:
-1. Lift `markdown::highlight` to `pub(crate) fn highlight(token: &str, body: &str, theme: &str)` resolving the syntect syntax by language token *or* file extension — one helper, no second highlighter.
-2. `cells.rs` passes the tool call's subject extension for file-shaped tools; `diff.rs` highlights the hunk body and keeps the add/remove colour on the line prefix only.
-3. `tui.syntax_theme = ""` (empty = the `tui.theme`-derived default) selects any theme in syntect's bundled set; an unknown name warns once and falls back.
-Check: `mise exec -- cargo test -p cox-tui` — snapshots show a highlighted `read` of a `.rs` file and a highlighted diff hunk; an unknown theme name renders plain instead of panicking.
-Done when: the Check passes; `docs/config.md` documents `tui.syntax_theme`.
-Out of scope: tree-sitter highlighting; syntect stays the engine.
-
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
