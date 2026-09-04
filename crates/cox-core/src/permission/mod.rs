@@ -73,6 +73,36 @@ impl Engine {
     /// Plan.md §1.8 steps 1–9, in order. `sandbox` only matters for `Exec`
     /// under `on-failure`: that policy trusts the sandbox, so without one
     /// it asks (T4.3).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use std::path::Path;
+    /// use cox_core::permission::{Engine, Outcome};
+    /// use cox_protocol::{CallId, config::PermissionsConfig, types::*};
+    /// use serde_json::json;
+    ///
+    /// let home = Path::new("/home/alice");
+    /// let engine = Engine::compile(&PermissionsConfig::default(), Some(home), Path::new("/repo"))?;
+    /// // A deny rule beats the ReadOnly default: the default config denies
+    /// // `Read(~/.ssh/**)`, so this never runs, whatever else matches.
+    /// let ssh = ToolCall {
+    ///     id: CallId::new(),
+    ///     name: "read".into(),
+    ///     input: json!({"path": "/home/alice/.ssh/id_ed25519"}),
+    ///     risk: Risk::ReadOnly,
+    ///     subject: "/home/alice/.ssh/id_ed25519".into(),
+    /// };
+    /// let outcome = engine.decide(
+    ///     &ssh,
+    ///     PermissionMode::Default,
+    ///     ApprovalPolicy::OnRequest,
+    ///     SandboxMode::WorkspaceWrite,
+    ///     &[],
+    /// );
+    /// assert!(matches!(outcome, Outcome::Deny { .. }));
+    /// # Ok::<(), cox_protocol::CoreError>(())
+    /// ```
     pub fn decide(
         &self,
         call: &ToolCall,
