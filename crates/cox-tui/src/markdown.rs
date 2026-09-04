@@ -13,6 +13,8 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use unicode_width::UnicodeWidthStr;
 
+use crate::glyph::Glyphs;
+
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
@@ -27,9 +29,10 @@ fn theme_name(dark: bool) -> &'static str {
 
 /// Renders `text` as lines, unwrapped; trailing blank lines are dropped so a
 /// streaming reply never shows a gap under its last paragraph.
-pub fn render(text: &str, dark: bool) -> Vec<Line<'static>> {
+pub fn render(text: &str, dark: bool, glyphs: &Glyphs) -> Vec<Line<'static>> {
     let mut r = Renderer {
         dark,
+        glyphs: *glyphs,
         ..Renderer::default()
     };
     let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
@@ -46,6 +49,7 @@ pub fn render(text: &str, dark: bool) -> Vec<Line<'static>> {
 #[derive(Default)]
 struct Renderer {
     dark: bool,
+    glyphs: Glyphs,
     lines: Vec<Line<'static>>,
     cur: Vec<Span<'static>>,
     styles: Vec<Style>,
@@ -86,7 +90,7 @@ impl Renderer {
             spans.insert(
                 0,
                 Span::styled(
-                    "│ ".repeat(self.quote),
+                    format!("{} ", self.glyphs.quote).repeat(self.quote),
                     Style::default().add_modifier(Modifier::DIM),
                 ),
             );
@@ -116,7 +120,7 @@ impl Renderer {
             Event::Rule => {
                 self.blank();
                 self.lines.push(Line::styled(
-                    "───",
+                    self.glyphs.rule.repeat(3),
                     Style::default().add_modifier(Modifier::DIM),
                 ));
                 self.lines.push(Line::default());
@@ -162,7 +166,7 @@ impl Renderer {
                         *n += 1;
                         m
                     }
-                    _ => "• ".to_string(),
+                    _ => format!("{} ", self.glyphs.bullet),
                 };
                 self.cur
                     .push(Span::raw(format!("{}{marker}", "  ".repeat(depth))));
@@ -224,7 +228,7 @@ impl Renderer {
             }
             TagEnd::Table => {
                 if let Some((rows, _)) = self.table.take() {
-                    self.lines.extend(table_lines(&rows));
+                    self.lines.extend(table_lines(&rows, &self.glyphs));
                     self.lines.push(Line::default());
                 }
             }
@@ -267,7 +271,7 @@ fn highlight(lang: &str, body: &str, dark: bool) -> Vec<Line<'static>> {
 }
 
 /// Columns padded to their widest cell, header bold over a rule.
-fn table_lines(rows: &[Vec<String>]) -> Vec<Line<'static>> {
+fn table_lines(rows: &[Vec<String>], g: &Glyphs) -> Vec<Line<'static>> {
     let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
     let widths: Vec<usize> = (0..cols)
         .map(|c| {
@@ -299,7 +303,9 @@ fn table_lines(rows: &[Vec<String>]) -> Vec<Line<'static>> {
             out.push(Line::styled(
                 widths
                     .iter()
-                    .map(|w| "─".repeat(*w))
+                    // Repeated to the column width, not past it: an
+                    // overridden rule glyph may be two columns wide.
+                    .map(|w| g.rule.repeat(w / g.rule.width().max(1)))
                     .collect::<Vec<_>>()
                     .join("  "),
                 Style::default().add_modifier(Modifier::DIM),
@@ -324,6 +330,7 @@ mod tests {
         let lines = render(
             "# Title\n\nSome `code` here\n\n- one\n- two\n  - nested\n\n1. a\n2. b",
             true,
+            &crate::glyph::UNICODE,
         );
         assert_eq!(
             text(&lines),
@@ -350,7 +357,11 @@ mod tests {
 
     #[test]
     fn fenced_code_is_highlighted_per_line() {
-        let lines = render("```rust\nfn main() {}\nlet x = 1;\n```", true);
+        let lines = render(
+            "```rust\nfn main() {}\nlet x = 1;\n```",
+            true,
+            &crate::glyph::UNICODE,
+        );
         assert_eq!(text(&lines), ["fn main() {}", "let x = 1;"]);
         // `fn` is a keyword, so syntect gave it a colour of its own.
         assert!(lines[0].spans.len() > 1);
@@ -358,13 +369,31 @@ mod tests {
 
     #[test]
     fn tables_align_columns_under_a_bold_header() {
-        let lines = render("| a | bb |\n|---|---|\n| ccc | d |", true);
+        let lines = render(
+            "| a | bb |\n|---|---|\n| ccc | d |",
+            true,
+            &crate::glyph::UNICODE,
+        );
         assert_eq!(text(&lines), ["a    bb", "───  ──", "ccc  d"]);
     }
 
     #[test]
+    fn the_ascii_set_replaces_every_markdown_glyph() {
+        let lines = render(
+            "- one\n\n---\n\n> quoted\n\n| a | bb |\n|---|---|\n| ccc | d |",
+            true,
+            &crate::glyph::ASCII,
+        );
+        let rendered = text(&lines).join("\n");
+        assert!(rendered.is_ascii(), "{rendered:?}");
+        assert!(rendered.contains("- one"), "{rendered:?}");
+        assert!(rendered.contains("| quoted"), "{rendered:?}");
+        assert!(rendered.contains("---  --"), "{rendered:?}");
+    }
+
+    #[test]
     fn open_fence_while_streaming_still_renders_as_code() {
-        let lines = render("text\n\n```sh\necho hi", true);
+        let lines = render("text\n\n```sh\necho hi", true, &crate::glyph::UNICODE);
         assert_eq!(text(&lines), ["text", "", "echo hi"]);
     }
 }

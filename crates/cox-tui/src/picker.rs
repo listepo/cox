@@ -11,6 +11,8 @@ use nucleo::{Config, Matcher, Utf32String};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
+use crate::glyph::Glyphs;
+
 /// Rows the list takes at most; the query narrows it, not scrolling.
 const MAX_SHOWN: usize = 8;
 
@@ -122,7 +124,7 @@ impl Picker {
         u16::try_from(1 + self.matches.len()).unwrap_or(u16::MAX)
     }
 
-    pub fn lines(&self) -> Vec<Line<'static>> {
+    pub fn lines(&self, g: &Glyphs) -> Vec<Line<'static>> {
         let mut lines = vec![Line::styled(
             format!(" {}{}", self.kind.prefix(), self.query),
             Style::default().add_modifier(Modifier::BOLD),
@@ -130,7 +132,7 @@ impl Picker {
         lines.extend(self.matches.iter().enumerate().map(|(i, m)| {
             if i == self.selected {
                 Line::styled(
-                    format!(" ▸ {}", crate::text::sanitize(m)),
+                    format!(" {} {}", g.cursor, crate::text::sanitize(m)),
                     Style::default().fg(Color::Cyan),
                 )
             } else {

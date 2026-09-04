@@ -9,6 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
+use crate::glyph::Glyphs;
 use crate::text::sanitize;
 
 /// The bash tool's input field the `e` key rewrites.
@@ -86,7 +87,7 @@ impl Approval {
         3
     }
 
-    pub fn lines(&self) -> Vec<Line<'static>> {
+    pub fn lines(&self, g: &Glyphs) -> Vec<Line<'static>> {
         let why = match &self.why {
             Why::RuleAsk { rule } => format!("rule {rule} asks"),
             Why::Risk { risk } => format!("{risk:?} risk needs approval").to_lowercase(),
@@ -94,7 +95,10 @@ impl Approval {
             Why::Policy { policy } => format!("approval policy {policy:?}").to_lowercase(),
         };
         let keys = match &self.editing {
-            Some(text) => format!(" edit> {text}▏   Enter runs · Esc cancels"),
+            Some(text) => format!(
+                " edit> {text}{}   Enter runs {} Esc cancels",
+                g.caret, g.sep
+            ),
             None if self.editable() => " [y]es  [s]ession  [n]o  [e]dit".to_string(),
             None => " [y]es  [s]ession  [n]o".to_string(),
         };

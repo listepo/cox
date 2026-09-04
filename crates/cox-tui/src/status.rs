@@ -23,19 +23,20 @@ pub fn line(state: &State) -> Line<'static> {
     };
     let pct = u64::from(s.context_tokens) * 100 / u64::from(s.context_window.max(1));
     let cache = (s.cache_ratio * 100.0).round() as u64;
+    let sep = state.glyphs.sep;
     let tail = match (s.busy, state.ctrl_c_armed) {
-        (true, _) => " · working",
-        (false, true) => " · Ctrl+C again to quit",
-        (false, false) => "",
+        (true, _) => format!(" {sep} working"),
+        (false, true) => format!(" {sep} Ctrl+C again to quit"),
+        (false, false) => String::new(),
     };
     let vim = match state.composer.vim_mode() {
-        Some(Mode::Normal) => " · NORMAL",
-        Some(Mode::Insert) => " · INSERT",
-        None => "",
+        Some(Mode::Normal) => format!(" {sep} NORMAL"),
+        Some(Mode::Insert) => format!(" {sep} INSERT"),
+        None => String::new(),
     };
     Line::styled(
         format!(
-            " {model} · ctx {pct}% · cache {cache}% · ${:.2} · {sandbox} · {} tasks · [{}]{tail}{vim}",
+            " {model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
             format!("{:?}", state.mode).to_lowercase(),

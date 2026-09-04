@@ -8,6 +8,8 @@ use cox_protocol::types::Diff;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
+use crate::glyph::Glyphs;
+
 /// Added and removed line counts of a unified diff; file markers do not count.
 pub fn counts(unified: &str) -> (usize, usize) {
     unified.lines().fold((0, 0), |(a, r), l| {
@@ -24,10 +26,15 @@ pub fn counts(unified: &str) -> (usize, usize) {
 }
 
 /// The header, plus the hunks when `expanded`.
-pub fn lines(diff: &Diff, expanded: bool) -> Vec<Line<'static>> {
+pub fn lines(diff: &Diff, expanded: bool, g: &Glyphs) -> Vec<Line<'static>> {
     let (added, removed) = counts(&diff.unified);
     let mut out = vec![Line::styled(
-        format!("  ± {}  +{added} −{removed}", diff.path.display()),
+        format!(
+            "  {} {}  +{added} {}{removed}",
+            g.diff,
+            diff.path.display(),
+            g.minus
+        ),
         Style::default().add_modifier(Modifier::BOLD),
     )];
     if !expanded {

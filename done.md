@@ -1839,3 +1839,30 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings → exit 0
 $ mise exec -- cargo test --workspace     → exit 0, 530 passed, 0 failed
 ```
 
+#### T14.1 Glyph table with ASCII fallback and user overrides
+Model: opus · Status: done 2026-09-04 · Depends: — · Size: ~150
+Goal: every non-ASCII glyph the TUI prints comes from one table, and a terminal that cannot show it renders the whole UI in ASCII.
+Files: `crates/cox-tui/src/glyph.rs`, `crates/cox-protocol/src/config.rs`, `config/default.toml` (+ mechanical literal→lookup edits in `cells`, `diff`, `markdown`, `status`, `picker`, `modal`, `view`, `state`, `lib`, `crates/cox/src/session.rs`, `docs/config.md`).
+Steps: (1) `glyph::Glyphs` with `UNICODE`/`ASCII` sets. (2) `tui.glyphs` + `[tui.icons]` in config. (3) Every render module reads `State::glyphs` (carried into cells through `Look`).
+Check:
+```bash
+mise exec -- cargo test -p cox-tui glyph && mise exec -- cargo test -p cox-tui ascii
+```
+
+What landed: `glyph.rs` — a `Copy` struct of 16 named glyphs plus the spinner frames, in two constants: `UNICODE` (the set the TUI used to hardcode: `› 📎 ⚙ ∴ ✓ ✗ ± − • │ ─ · ▸ ▏ … —` and the braille spinner) and `ASCII` (`> @ * : + x * - - | - | > _ ... -`, spinner `|/-\`). `glyph::resolve(&TuiConfig)` reads `tui.glyphs = auto|unicode|ascii`; `auto` picks ASCII for `TERM=dumb` or a locale (`LC_ALL`/`LC_CTYPE`/`LANG`) that names a non-UTF-8 encoding, and UNICODE when no locale is set at all. `[tui.icons]` overrides one glyph by name (`tool = "󰅱"`) — project config is repository input, so each override is `text::sanitize`d and refused if wider than two columns, and an unknown name is ignored rather than fatal. `State::glyphs` carries the resolved set; `Look` carries it into `cells::cell_lines`, and `markdown::render`, `diff::lines`, `Picker::lines` and `Approval::lines` take it as a parameter. `crates/cox/src/session.rs` sets it from config next to `state.dark`. Tests: `ascii_set_is_ascii_only`, `a_non_utf8_locale_falls_back_to_ascii`, `an_icon_override_replaces_one_glyph_and_keeps_the_rest`, `an_override_is_sanitised_and_a_wide_one_is_refused`, `the_ascii_set_replaces_every_markdown_glyph`, and `ascii_glyphs_leave_no_unicode_in_any_cell` (the golden transcript rendered in ASCII mode carries no non-ASCII byte).
+Not done: the composer placeholder's `·` and `picker::session_entry`'s `·` still print verbatim (`session_entry` has no caller yet, and U+00B7 is in every font we care about); `text::sanitize`'s `-v` markers (`␛ ⇄ ∅`) are deliberate diagnostics and stay Unicode; the spinner cannot be overridden by `[tui.icons]` (it is a sequence, not a glyph); an override string leaks for the process lifetime, which is what a config value costs. Deviation from the plan's Check: no `unicode`/`ascii` snapshot pair with equal line widths — ASCII `…`→`...` and `📎`→`@` change widths by design, so the assertion is "nothing non-ASCII survives" instead. Over the file guide (11 files touched) because the literals were scattered; every edit outside `glyph.rs`/config is a one-line substitution.
+```
+$ mise exec -- cargo test -p cox-tui glyph
+test glyph::tests::a_non_utf8_locale_falls_back_to_ascii ... ok
+test glyph::tests::ascii_set_is_ascii_only ... ok
+test glyph::tests::an_override_is_sanitised_and_a_wide_one_is_refused ... ok
+test glyph::tests::an_icon_override_replaces_one_glyph_and_keeps_the_rest ... ok
+test markdown::tests::the_ascii_set_replaces_every_markdown_glyph ... ok
+test result: ok. 5 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui ascii
+test ascii_glyphs_leave_no_unicode_in_any_cell ... ok
+test result: ok. 1 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui   → 19 unit + 17 integration tests, 0 failed
+$ mise exec -- cargo clippy -p cox-tui -p cox-protocol --all-targets -- -D warnings · cargo fmt --all
+clean.
+```

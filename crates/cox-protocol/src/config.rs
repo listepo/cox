@@ -590,6 +590,10 @@ pub struct TuiConfig {
     pub show_thinking: String,
     /// Whether mouse input (scroll, click) is enabled.
     pub mouse: bool,
+    /// `auto` | `unicode` | `ascii`: the glyph set the TUI prints.
+    pub glyphs: String,
+    /// `[tui.icons]`: one glyph replaced by name (`tool = "\u{f085}"`).
+    pub icons: HashMap<String, String>,
 }
 
 impl Default for TuiConfig {
@@ -600,6 +604,8 @@ impl Default for TuiConfig {
             inline: true,
             show_thinking: "collapsed".to_string(),
             mouse: true,
+            glyphs: "auto".to_string(),
+            icons: HashMap::new(),
         }
     }
 }

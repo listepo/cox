@@ -137,6 +137,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `inline` = `true`
 - `show_thinking` = `"collapsed"` — collapsed | hidden | full
 - `mouse` = `true`
+- `glyphs` = `"auto"` — auto | unicode | ascii
+- `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 ## `[hooks]`
 
 - `timeout_s` = `60`

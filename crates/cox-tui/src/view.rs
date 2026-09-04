@@ -64,8 +64,8 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Paragraph::new(status::todo_lines(state)).render(todo_area, buf);
     }
     match &state.modal {
-        Some(Modal::Approval(a)) => Paragraph::new(a.lines()).render(modal_area, buf),
-        Some(Modal::Picker(p)) => Paragraph::new(p.lines()).render(modal_area, buf),
+        Some(Modal::Approval(a)) => Paragraph::new(a.lines(&state.glyphs)).render(modal_area, buf),
+        Some(Modal::Picker(p)) => Paragraph::new(p.lines(&state.glyphs)).render(modal_area, buf),
         None => {}
     }
 

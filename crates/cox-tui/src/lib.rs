@@ -8,6 +8,7 @@ pub mod cells;
 pub mod commands;
 pub mod composer;
 pub mod diff;
+pub mod glyph;
 pub mod markdown;
 pub mod modal;
 pub mod picker;

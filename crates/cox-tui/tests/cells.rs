@@ -43,6 +43,23 @@ fn text(state: &State, cell: &Cell) -> String {
 }
 
 #[test]
+fn ascii_glyphs_leave_no_unicode_in_any_cell() {
+    let mut s = replay();
+    s.glyphs = cox_tui::glyph::ASCII;
+    s.show_thinking = true;
+    let rendered = s
+        .transcript
+        .iter()
+        .map(|c| text(&s, c))
+        .collect::<Vec<_>>()
+        .join("\n")
+        // The fixture's own tool output contains a `…`, which the TUI must
+        // print as the tool wrote it; only cox's own glyphs are under test.
+        .replace('…', "");
+    assert!(rendered.is_ascii(), "non-ASCII in ascii mode:\n{rendered}");
+}
+
+#[test]
 fn cell_user_lists_attachments() {
     let s = replay();
     insta::assert_snapshot!(text(&s, cell(&s, |c| matches!(c, Cell::User { .. }))));

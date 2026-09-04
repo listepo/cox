@@ -13,6 +13,7 @@ use crate::banner::Banner;
 use crate::cells::Look;
 use crate::commands::{self, Action, COMMANDS};
 use crate::composer::{Composer, Edit};
+use crate::glyph::{self, Glyphs};
 use crate::modal::Approval;
 use crate::picker::{Kind, Pick, Picker};
 use crate::status::parse_todo;
@@ -114,6 +115,8 @@ pub struct State {
     pub show_thinking: bool,
     /// `tui.theme` resolved: dark unless the user chose light.
     pub dark: bool,
+    /// `tui.glyphs`/`[tui.icons]` resolved; the binary sets it from config.
+    pub glyphs: Glyphs,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
@@ -166,6 +169,7 @@ impl State {
             tick: 0,
             show_thinking: false,
             dark: true,
+            glyphs: glyph::UNICODE,
             show_diffs: true,
             todo: Vec::new(),
             show_todo: false,
@@ -178,6 +182,7 @@ impl State {
         Look {
             width,
             dark: self.dark,
+            glyphs: self.glyphs,
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,
             tick: self.tick,

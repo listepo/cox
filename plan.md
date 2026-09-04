@@ -587,18 +587,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 Rationale in §6 A11. What already exists and is *not* redone here: syntect highlighting of fenced code blocks (T5.3), `unicode-width` wrapping/truncation of wide and combining text (T5.3, T5.6), `tui.theme = auto|dark|light` resolved in `crates/cox/src/session.rs`.
 
-#### T14.1 Glyph table with ASCII fallback and user overrides
-Model: sonnet · Status: open · Depends: — · Size: ~150
-Goal: every non-ASCII glyph the TUI prints comes from one table, and `COX_TUI_GLYPHS=ascii` (or a font that lacks them) renders the whole UI in ASCII with identical layout.
-Files: `crates/cox-tui/src/glyph.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-protocol/src/config.rs`.
-Steps:
-1. `glyph::Set` — one struct of named glyphs (spinner frames, user `›`, tool `⚙`, ok `✓`, fail `✗`, thinking `∴`, attachment `📎`, diff `±`/`−`, quote `│`, rule `─`, bullet `•`, cursor `▸`, separator `·`), with `unicode()` and `ascii()` constructors; `ascii()` is ASCII-only and each glyph is one column wide.
-2. `tui.glyphs = "auto" | "unicode" | "ascii"` in config (default `auto`: `ascii` when `TERM=dumb`/`LANG` is not UTF-8, else `unicode`), plus `[tui.icons]` — a `name = "glyph"` map that overrides individual entries so a Nerd Font user can substitute their own.
-3. Replace every hardcoded literal in `cells.rs`, `diff.rs`, `picker.rs`, `status.rs`, `markdown.rs`, `modal.rs`, `composer.rs` with a lookup on `State::glyphs`; overrides are width-clamped through `text::truncate` so a two-column icon cannot break alignment.
-Check: `mise exec -- cargo test -p cox-tui glyph` — a snapshot pair renders the same frame under `unicode()` and `ascii()` with equal line widths; `LC_ALL=C grep -n '[^ -~\t]' crates/cox-tui/src/*.rs` matches only `glyph.rs` and `//!`/doc comments.
-Done when: the Check passes and `docs/config.md` documents `tui.glyphs` and `[tui.icons]`.
-Out of scope: colour (T14.2), highlighting (T14.3).
-
 #### T14.2 Colour depth and `NO_COLOR`
 Model: sonnet · Status: open · Depends: — · Size: ~120
 Goal: truecolor styles degrade to 256- or 16-colour terminals instead of being emitted blindly, and `NO_COLOR=1` renders the TUI with no colour at all.

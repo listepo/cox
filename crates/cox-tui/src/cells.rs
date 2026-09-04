@@ -9,6 +9,7 @@ use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::diff;
+use crate::glyph::Glyphs;
 use crate::markdown;
 use crate::state::Cell;
 use crate::text;
@@ -18,6 +19,8 @@ use crate::text;
 pub struct Look {
     pub width: u16,
     pub dark: bool,
+    /// What the terminal can print; `glyph::resolve` decided it.
+    pub glyphs: Glyphs,
     /// `Ctrl+T`: thinking expanded rather than a one-line count.
     pub show_thinking: bool,
     /// `Ctrl+O`: diffs in full rather than their `+n −m` header.
@@ -28,7 +31,6 @@ pub struct Look {
     pub marks: bool,
 }
 
-const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 /// Output longer than head + tail + 1 lines is folded in the middle; the
 /// archive keeps the rest (`cox expand <id>`).
 const HEAD: usize = 6;
@@ -42,34 +44,44 @@ fn dim(s: impl Into<String>) -> Line<'static> {
 /// model, a tool or a file passes `text::sanitize` here, at the boundary.
 pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
     let clean = |s: &str| text::sanitize_with(s, look.marks);
+    let g = look.glyphs;
     let lines = match cell {
         Cell::User { text, attachments } => {
             let mut lines = vec![Line::styled(
-                format!("› {}", clean(text)),
+                format!("{} {}", g.user, clean(text)),
                 Style::default().add_modifier(Modifier::BOLD),
             )];
             lines.extend(
                 attachments
                     .iter()
-                    .map(|a| dim(format!("  📎 {}", clean(a)))),
+                    .map(|a| dim(format!("  {} {}", g.attach, clean(a)))),
             );
             lines
         }
-        Cell::Assistant { text, .. } => markdown::render(&clean(text), look.dark),
+        Cell::Assistant { text, .. } => markdown::render(&clean(text), look.dark, &g),
         Cell::Thinking { text, done, .. } if !look.show_thinking => {
             // No tokenizer here; four bytes a token is the usual estimate.
             let tokens = text.len() / 4;
-            let verb = if *done { "thought" } else { "thinking…" };
-            vec![dim(format!("∴ {verb} (~{tokens} tokens · Ctrl+T)"))]
+            let verb = match *done {
+                true => "thought".to_string(),
+                false => format!("thinking{}", g.ellipsis),
+            };
+            vec![dim(format!(
+                "{} {verb} (~{tokens} tokens {} Ctrl+T)",
+                g.think, g.sep
+            ))]
         }
-        Cell::Thinking { text, .. } => clean(text).lines().map(|l| dim(format!("∴ {l}"))).collect(),
+        Cell::Thinking { text, .. } => clean(text)
+            .lines()
+            .map(|l| dim(format!("{} {l}", g.think)))
+            .collect(),
         Cell::Tool {
             call,
             output,
             result,
             started,
         } => {
-            let header = format!("⚙ {} {}", clean(&call.name), clean(&call.subject));
+            let header = format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject));
             let mut lines = vec![Line::styled(
                 text::truncate(&header, usize::from(look.width.max(1))),
                 Style::default().fg(Color::Cyan),
@@ -79,8 +91,10 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             if out.len() > HEAD + TAIL + 1 {
                 lines.extend(out[..HEAD].iter().map(|l| Line::raw(format!("  {l}"))));
                 lines.push(dim(format!(
-                    "  … {} lines hidden …",
-                    out.len() - HEAD - TAIL
+                    "  {} {} lines hidden {}",
+                    g.ellipsis,
+                    out.len() - HEAD - TAIL,
+                    g.ellipsis
                 )));
                 lines.extend(
                     out[out.len() - TAIL..]
@@ -95,15 +109,15 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                     path: d.path.clone(),
                     unified: clean(&d.unified),
                 };
-                lines.extend(diff::lines(&d, look.show_diffs));
+                lines.extend(diff::lines(&d, look.show_diffs, &g));
             }
             match result {
                 Some(r) => {
-                    let mark = if r.ok { "✓" } else { "✗" };
+                    let mark = if r.ok { g.ok } else { g.fail };
                     let expand = r
                         .archive
                         .as_ref()
-                        .map(|a| format!(" · cox expand {}", a.id))
+                        .map(|a| format!(" {} cox expand {}", g.sep, a.id))
                         .unwrap_or_default();
                     lines.push(dim(format!(
                         "  {mark} {}B {}ms{expand}",
@@ -111,11 +125,10 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                     )));
                 }
                 None => {
-                    let i = usize::try_from(look.tick % 10).unwrap_or(0);
                     let elapsed = look.tick.saturating_sub(*started);
                     lines.push(dim(format!(
                         "  {} {}.{}s",
-                        SPINNER[i],
+                        g.spin(look.tick),
                         elapsed / 10,
                         elapsed % 10
                     )));
@@ -143,14 +156,18 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
         }
         Cell::Error { text, fatal } => vec![Line::styled(
             format!(
-                "✗ {}{}",
+                "{} {}{}",
+                g.fail,
                 clean(text),
                 if *fatal { " (session ended)" } else { "" }
             ),
             Style::default().fg(Color::Red),
         )],
         Cell::Summary { text } => {
-            let mut lines = vec![dim("— compacted; earlier turns summarised as —")];
+            let mut lines = vec![dim(format!(
+                "{d} compacted; earlier turns summarised as {d}",
+                d = g.dash
+            ))];
             lines.extend(clean(text).lines().map(|l| dim(format!("  {l}"))));
             lines
         }
