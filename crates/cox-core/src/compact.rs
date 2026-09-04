@@ -261,6 +261,7 @@ impl Session {
                 tier: route.tier,
                 provider: self.provider.id(),
                 model,
+                effort: Some(route.effort),
                 usage,
             })
             .ok()?;

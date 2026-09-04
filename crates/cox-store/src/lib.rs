@@ -235,6 +235,7 @@ impl StoreTrait for Store {
             latency_ms: row.usage.latency_ms as i64,
             context_tokens: row.usage.context_tokens() as i64,
             created_at: now_rfc3339(),
+            effort: row.effort.as_ref().map(to_tag),
         };
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
         diesel::insert_into(schema::usage::table)
@@ -514,6 +515,11 @@ impl Store {
                     tier: from_tag(&r.tier).ok_or_else(corrupt)?,
                     provider: from_tag(&r.provider).ok_or_else(corrupt)?,
                     model: ModelId(r.model),
+                    effort: r
+                        .effort
+                        .as_deref()
+                        .map(|tag| from_tag(tag).ok_or_else(corrupt))
+                        .transpose()?,
                     usage: Usage {
                         input_tokens: r.input_tokens as u32,
                         output_tokens: r.output_tokens as u32,
@@ -543,6 +549,7 @@ mod tests {
             tier: Tier::Code,
             provider: ProviderId::Anthropic,
             model: ModelId("claude-sonnet-5".into()),
+            effort: Some(cox_protocol::types::Effort::High),
             usage: Usage {
                 input_tokens,
                 output_tokens: 10,

@@ -128,6 +128,7 @@ pub fn ledger_row(
     tier: Tier,
     provider: ProviderId,
     model: ModelId,
+    effort: Option<cox_protocol::types::Effort>,
     usage: Usage,
     prices: &PriceTable,
 ) -> UsageRow {
@@ -146,6 +147,7 @@ pub fn ledger_row(
         tier,
         provider,
         model,
+        effort,
         usage,
     }
 }
@@ -267,6 +269,7 @@ mod tests {
             Tier::Code,
             ProviderId::Anthropic,
             ModelId("claude-haiku-4-5".into()),
+            Some(cox_protocol::types::Effort::Low),
             sample_usage(),
             &table,
         );
@@ -291,6 +294,7 @@ mod tests {
             Tier::Code,
             ProviderId::Local,
             ModelId("some-local-model".into()),
+            Some(cox_protocol::types::Effort::High),
             sample_usage(),
             &table,
         );

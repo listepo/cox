@@ -54,6 +54,7 @@ diesel::table! {
         latency_ms -> BigInt,
         context_tokens -> BigInt,
         created_at -> Text,
+        effort -> Nullable<Text>,
     }
 }
 

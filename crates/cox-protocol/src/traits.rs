@@ -57,6 +57,10 @@ pub struct UsageRow {
     pub provider: ProviderId,
     /// The specific model used.
     pub model: crate::types::ModelId,
+    /// The reasoning effort the router settled on, after clamping to what
+    /// the model supports. `None` only for rows written before the ledger
+    /// recorded effort — never a stand-in for "default".
+    pub effort: Option<crate::types::Effort>,
     /// The recorded usage (tokens, cost, latency).
     pub usage: Usage,
 }

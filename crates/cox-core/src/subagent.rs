@@ -473,6 +473,7 @@ async fn summarize(parent: &Session, text: &str, cap_tokens: usize) -> Option<St
             tier,
             provider: parent.provider.id(),
             model,
+            effort: Some(tc.effort),
             usage,
         })
         .ok()?;

@@ -159,6 +159,7 @@ impl Session {
                 tier: route.tier,
                 provider: self.provider.id(),
                 model: route.model,
+                effort: Some(route.effort),
                 usage,
             })
             .map_err(|error| CoreError::Store { error })?;

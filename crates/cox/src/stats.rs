@@ -21,6 +21,12 @@ fn tag<T: serde::Serialize>(value: &T) -> String {
         .unwrap_or_default()
 }
 
+/// Effort tag, or `-` for a row the ledger recorded before effort was
+/// stored — never guessed into a default (`plan.md` A13).
+pub fn effort_tag(effort: &Option<cox_protocol::types::Effort>) -> String {
+    effort.as_ref().map(tag).unwrap_or_else(|| "-".into())
+}
+
 /// One `(tier, job)` total: the grouping every stats view reports.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TierJobTotal {
@@ -102,15 +108,16 @@ pub fn render_json(value: &impl Serialize) -> String {
 /// CSV of one session's per-turn rows.
 pub fn render_csv_session(rows: &[UsageRow]) -> String {
     let mut out = String::from(
-        "turn,job,tier,model,input,output,cache_read,cache_write,cost_usd,latency_ms\n",
+        "turn,job,tier,model,effort,input,output,cache_read,cache_write,cost_usd,latency_ms\n",
     );
     for row in rows {
         out.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{:.4},{}\n",
+            "{},{},{},{},{},{},{},{},{},{:.4},{}\n",
             row.turn,
             tag(&row.job),
             tag(&row.tier),
             row.model.0,
+            effort_tag(&row.effort),
             row.usage.input_tokens,
             row.usage.output_tokens,
             row.usage.cache_read_tokens,
@@ -200,17 +207,18 @@ fn run_session(
     }
     // Print a header.
     println!(
-        "{:<5} {:<20} {:<12} {:<12} {:<12} {:<12} {:<12} {:<10}",
-        "Turn", "Model", "Input", "Output", "Cache R", "Cache W", "Cost", "Latency"
+        "{:<5} {:<20} {:<7} {:<12} {:<12} {:<12} {:<12} {:<12} {:<10}",
+        "Turn", "Model", "Effort", "Input", "Output", "Cache R", "Cache W", "Cost", "Latency"
     );
-    println!("{}", "-".repeat(105));
+    println!("{}", "-".repeat(113));
 
     // Print each row.
     for row in rows {
         println!(
-            "{:<5} {:<20} {:<12} {:<12} {:<12} {:<12} ${:<11.4} {:<10}ms",
+            "{:<5} {:<20} {:<7} {:<12} {:<12} {:<12} {:<12} ${:<11.4} {:<10}ms",
             row.turn,
             row.model.0,
+            effort_tag(&row.effort),
             row.usage.input_tokens,
             row.usage.output_tokens,
             row.usage.cache_read_tokens,
@@ -227,10 +235,10 @@ fn run_session(
     let total_cache_read: u32 = rows.iter().map(|r| r.usage.cache_read_tokens).sum();
     let total_cache_write: u32 = rows.iter().map(|r| r.usage.cache_write_tokens).sum();
 
-    println!("{}", "-".repeat(105));
+    println!("{}", "-".repeat(113));
     println!(
-        "{:<5} {:<20} {:<12} {:<12} {:<12} {:<12} ${:<11.4}",
-        "TOTAL", "", total_input, total_output, total_cache_read, total_cache_write, total_cost,
+        "{:<5} {:<20} {:<7} {:<12} {:<12} {:<12} {:<12} ${:<11.4}",
+        "TOTAL", "", "", total_input, total_output, total_cache_read, total_cache_write, total_cost,
     );
     println!("context-token-turns: {}", summary.context_token_turns);
     print_tier_job(&summary.by_tier_job);
@@ -409,6 +417,7 @@ mod tests {
             tier,
             provider: ProviderId::Anthropic,
             model: ModelId("claude-sonnet-5".into()),
+            effort: Some(cox_protocol::types::Effort::High),
             usage: Usage {
                 input_tokens: input,
                 output_tokens: 10,
@@ -459,9 +468,11 @@ mod tests {
         let mut lines = out.lines();
         assert_eq!(
             lines.next().unwrap(),
-            "turn,job,tier,model,input,output,cache_read,cache_write,cost_usd,latency_ms"
+            "turn,job,tier,model,effort,input,output,cache_read,cache_write,cost_usd,latency_ms"
         );
-        assert_eq!(lines.count(), 1);
+        // The effort column carries the recorded tag, not a guessed default.
+        assert_eq!(lines.next().unwrap().split(',').nth(4), Some("high"));
+        assert_eq!(lines.count(), 0);
         let periods = render_csv_periods(&[]);
         assert!(periods.starts_with("period,tier,job,calls,"));
     }

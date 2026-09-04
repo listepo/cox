@@ -1,6 +1,5 @@
 ---
 source: crates/cox-store/src/lib.rs
-assertion_line: 412
 expression: rendered
 ---
 -- archive
@@ -73,7 +72,7 @@ CREATE TABLE usage (
   estimated INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL, latency_ms INTEGER NOT NULL,
   context_tokens INTEGER NOT NULL,            -- what the model saw this call (for context-token-turns)
   created_at TEXT NOT NULL
-);
+, effort TEXT);
 
 -- usage_day
 CREATE INDEX usage_day ON usage(created_at);

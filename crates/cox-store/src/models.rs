@@ -45,6 +45,8 @@ pub(crate) struct UsageDbRow {
     pub latency_ms: i64,
     pub context_tokens: i64,
     pub created_at: String,
+    /// `NULL` on rows written before `00000000000002_usage_effort`.
+    pub effort: Option<String>,
 }
 
 #[derive(Insertable)]
