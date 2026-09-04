@@ -7,6 +7,7 @@ pub mod ask_user;
 pub mod bash;
 pub mod edit;
 pub mod expand;
+pub mod git;
 pub mod glob;
 pub mod grep;
 pub mod memory;
