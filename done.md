@@ -1351,6 +1351,29 @@ Model: fable · Status: done 2026-09-03 · Depends: T7.6 · Size: doc
 Goal: `docs/design/extensions.md`: why data + processes (not in-process plugins) in v0.1; the v0.2 WASM contract sketch (`Tool` over extism with the same `ToolSpec`); falsifier = an extension users need that cannot be expressed as markdown, hook or MCP.
 Check: file exists.
 
+#### T13.1 OTLP traces and logs exporter
+Model: terra · Status: done 2026-09-04 · Depends: T0.3 · Size: ~180
+Goal: `telemetry.otel = true` exports structured traces and logs through standard OTLP/HTTP to any compatible collector.
+Files: `crates/cox/src/telemetry.rs`, `crates/cox/src/main.rs`, Cargo manifests.
+Steps: (1) Initialise `tracing` once at startup with local rolling JSON logs. (2) When enabled, attach OpenTelemetry trace and log layers using the standard OTEL endpoint/header/resource environment variables, with `telemetry.endpoint` as a convenience override. (3) Flush providers on shutdown and fail startup with a useful configuration error rather than silently losing telemetry. (4) Test disabled setup and endpoint resolution without network.
+Check:
+```text
+$ mise exec -- cargo test -p cox telemetry_ -- --nocapture
+running 2 tests
+test telemetry::tests::telemetry_signal_endpoints_are_otlp_http_paths ... ok
+test telemetry::tests::telemetry_otlp_collector_receives_span_and_log ... ok
+test result: ok. 2 passed; 0 failed
+
+$ mise exec -- cargo fmt --check
+exit 0
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+exit 0
+$ mise exec -- cargo test --workspace
+unrelated existing failure: cox-core/tests/compact.rs expected a `nothing to compact` notice
+```
+Done when: an in-process OTLP test collector receives both one span and one log record.
+Out of scope: GenAI semantic attributes (T13.2) and backend setup documentation (T13.3).
+
 What landed: `docs/design/extensions.md` — problem, the field (Claude Code, Codex, Gemini/Copilot, Zed/Cursor), the v0.1 table of extension kinds with their modules and the three properties that make data + processes enough (guards, fail open, nothing in-process), the v0.2 extism contract sketch (`Tool` serialised: `spec/subject/risk/call` exports, `read/archive_put/output/cancelled` imports, `wasm__<plugin>__<tool>` naming), three falsifiers, review notes.
 Check: file exists.
 
@@ -1700,4 +1723,3 @@ Check: file exists; reviewed by `think`.
 What landed: `docs/design/routing.md` (56 lines: the 5–10× bill question, the field, pinned job→tier + never-up + think gate + ledger tags, falsifier = cheap-tier retries costing more than they save, measurable with the bench harness).
 Note: `think`-tier review pending (same standing as T0.6).
 Check: file exists.
-

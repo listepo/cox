@@ -6,6 +6,16 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["otel"]
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry-appender-tracing",
+]
+
 [dependencies]
 clap = { workspace = true }
 cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
@@ -31,6 +41,14 @@ serde_json = { workspace = true }
 keyring = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+opentelemetry-appender-tracing = { workspace = true, optional = true }
 # T12.2: `cox self update` downloads releases (reqwest) and verifies their
 # sha256 checksums (sha2) before replacing the binary.
 reqwest = { workspace = true }

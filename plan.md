@@ -583,6 +583,30 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P12 — Quality and release (goal: v0.1 installable and measured)
 
+### P13 — Observability (goal: agent traces and logs in any OTLP backend)
+
+#### T13.2 GenAI agent instrumentation
+Model: sonnet · Status: open · Depends: T13.1 · Size: ~180
+Goal: every provider round and tool execution is correlated to session/turn and carries OpenTelemetry GenAI semantic attributes, usage, latency, outcome, and cost.
+Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-core/tests/telemetry.rs`.
+Steps: (1) Session and turn spans carry stable ids, job and tier. (2) Provider spans carry `gen_ai.operation.name`, provider, requested/response model, input/output/cache tokens, latency, cost and stop reason. (3) Tool spans carry call id, tool, subject, risk, duration, bytes, success and archive id. (4) Prompt, completion, tool input and output content are recorded only when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, because they may contain secrets.
+Check:
+```bash
+mise exec -- cargo test -p cox-core telemetry_
+```
+Done when: an in-memory exporter snapshot proves one correlated agent turn with provider usage and tool attributes; content is absent by default and present only after opt-in.
+
+#### T13.3 Observability documentation and smoke stack
+Model: haiku · Status: open · Depends: T13.2 · Size: ~120
+Goal: a user can view cox data in SigNoz, Jaeger, Grafana/Tempo, or any OTLP-compatible service without code changes.
+Files: `docs/observability.md`, `website/content/docs/observability.md`, `docker-compose.telemetry.yml`.
+Steps: (1) Document standard OTEL variables, secure content capture, resource naming and backend endpoint examples. (2) Provide a local Collector + Jaeger + Grafana/Tempo smoke stack. (3) Link from README and Hugo navigation. (4) Verify emitted spans with the stack and record the commands.
+Check:
+```bash
+docker compose -f docker-compose.telemetry.yml config && test -f docs/observability.md
+```
+Done when: one scripted cox run appears in Jaeger and Grafana with its session → provider → tool hierarchy.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -617,6 +641,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A7 2026-09-02 `website/` — added a standalone Hugo documentation site using Tailwind CSS (modern home page plus architecture and configuration references). Why: user request. Effect: no runtime crate or release behaviour changes; publish with `hugo --source website`.
 - A8 2026-09-02 `website/`, `.github/workflows/deploy-pages.yml` — deploy the Hugo site to GitHub Pages from `main`, building within `website/` and publishing `website/public`. Why: user request. Effect: the deploy workflow installs the pinned Tailwind dependencies and runs only when site/workflow files change.
 - A9 2026-09-04 §1.1, §1.6, D3 — provider registry in two types (`docs/design/providers.md`). Type-1 (native `Provider` impl per *wire protocol*): `AnthropicProvider`, new `OpenAiResponsesProvider` (`POST /responses`, bearer-optional), `OpenAiChatProvider` (+`models` list, `from_parts`). Type-2 (compatible, zero code): any `[providers.<name>]` table (`CompatibleProviderConfig`: `base_url`, `api_key_env`, `api`, `model`, `context_window`, `models`) served by the shared Chat/Responses clients; seed `deepseek`, `openrouter` (curated), `moonshot`, `z-ai` with per-model `{id, context_window, efforts}` from models.dev and matching `prices.toml` rows (20 rows; `qwen3-coder` costed 0). Why: user request — adding DeepSeek/OpenRouter must be config lines, never a `DeepseekProvider` struct duplicating the Chat client. Effect: `ProvidersConfig` loses `deny_unknown_fields` (flattened `custom` map, Hooks/Mcp precedent — a typo'd table parses but fails closed in router/session); `Router::pick` accepts custom names (Local family id, section-model pin, per-model effort clamp to greatest-supported-≤-request); `provider_for` builds Responses-or-Chat per `api` (unknown `api` bails at startup); `--provider <name>` propagates to all tiers for any non-first-party name; `cox-provider::http` unifies key resolve/error mapping (5xx is now `Overloaded` on every backend); `Effort` gains `Ord`; `figment` becomes a `cox-protocol` dev-dep for the default.toml shape test. Deferred: per-model effort *enforcement* beyond the clamp (gateway models pass through), keyring fallback for custom keys (env-only), shared retry policy for OpenAI-shaped clients, `cox doctor` prices-age check.
+- A10 2026-09-04 D16, P13 — implement vendor-neutral OpenTelemetry observability as three bounded tasks: OTLP/HTTP traces+logs exporter, GenAI semantic instrumentation, then backend documentation/smoke stack. Why: user requested full AI-agent telemetry visible in Maple, SigNoz, Jaeger and Grafana. Effect: standard OTEL environment variables remain the portability contract; raw prompt/completion/tool content is opt-in only because it can contain source code and secrets; operational metadata, usage, costs and errors are always exported when telemetry is enabled.
 
 ## 7. Risk register
 

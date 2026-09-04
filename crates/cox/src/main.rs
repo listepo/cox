@@ -19,6 +19,7 @@ mod self_update;
 mod session;
 mod sessions;
 mod stats;
+mod telemetry;
 
 use clap::Parser;
 use cli::{Cli, Command, ConfigAction};
@@ -30,11 +31,16 @@ fn main() -> anyhow::Result<()> {
         Some(dir) => dir.clone(),
         None => std::env::current_dir().unwrap_or_default(),
     };
+    let loaded = config_load::load(&cwd, &cli)?;
+    let telemetry_home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    let telemetry = telemetry::init(&loaded.config, &telemetry_home)?;
 
     match &cli.command {
         Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),
         Some(Command::Doctor) => {
-            std::process::exit(doctor::run(cli.json));
+            let code = doctor::run(cli.json);
+            drop(telemetry);
+            std::process::exit(code);
         }
         Some(Command::Record(args)) => record::run(&cli, args),
         Some(Command::Stats(args)) => {
@@ -53,7 +59,11 @@ fn main() -> anyhow::Result<()> {
                 Ok(())
             }
         },
-        Some(Command::Run(args)) => std::process::exit(run::run(&cli, args, &cwd)?),
+        Some(Command::Run(args)) => {
+            let code = run::run(&cli, args, &cwd)?;
+            drop(telemetry);
+            std::process::exit(code);
+        }
         Some(Command::Acp) => acp_cmd::run(&cli, &cwd),
         Some(Command::Sessions(args)) => {
             let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
