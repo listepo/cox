@@ -12,6 +12,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
 use crate::glyph::Glyphs;
+use crate::state::State;
 
 /// Rows the list takes at most; the query narrows it, not scrolling.
 const MAX_SHOWN: usize = 8;
@@ -23,6 +24,70 @@ pub enum Kind {
     History,
     /// `/resume`: past sessions as `title · cwd · age · $cost` rows.
     Sessions,
+    /// `Tab` on a `git` line (T15.4): a subcommand, a branch or a path.
+    Shell,
+}
+
+/// Git's porcelain, offered where the subcommand goes.
+const GIT_COMMANDS: [&str; 28] = [
+    "add",
+    "bisect",
+    "blame",
+    "branch",
+    "checkout",
+    "cherry-pick",
+    "clone",
+    "commit",
+    "diff",
+    "fetch",
+    "grep",
+    "init",
+    "log",
+    "merge",
+    "mv",
+    "pull",
+    "push",
+    "rebase",
+    "reset",
+    "restore",
+    "revert",
+    "rm",
+    "show",
+    "stash",
+    "status",
+    "switch",
+    "tag",
+    "worktree",
+];
+/// Subcommands whose next word names a branch; every other takes a path.
+const BRANCH_COMMANDS: [&str; 5] = ["checkout", "switch", "merge", "rebase", "branch"];
+
+/// What `Tab` completes on a shell line: nothing unless it is a `git` line,
+/// then the subcommand, a branch or a path by what stands before the word
+/// being typed. Pure: the branches and files were fed into `State`.
+pub fn candidates(line: &str, state: &State) -> Vec<String> {
+    let Some(rest) = line.strip_prefix("git ") else {
+        return Vec::new();
+    };
+    let mut words = rest.split_whitespace();
+    let sub = words.next();
+    // The subcommand counts only once the user has moved past it.
+    let past_sub = words.next().is_some() || rest.ends_with(char::is_whitespace);
+    match sub {
+        Some(sub) if past_sub => {
+            if BRANCH_COMMANDS.contains(&sub) {
+                state.git_branches.clone()
+            } else {
+                state.files.clone()
+            }
+        }
+        _ => GIT_COMMANDS.iter().map(|s| (*s).to_string()).collect(),
+    }
+}
+
+/// The word being typed: empty after a space.
+pub fn last_word(line: &str) -> &str {
+    line.rsplit(char::is_whitespace).next().unwrap_or("")
 }
 
 impl Kind {
@@ -32,6 +97,7 @@ impl Kind {
             Kind::Commands => "/",
             Kind::History => "history: ",
             Kind::Sessions => "resume: ",
+            Kind::Shell => "complete: ",
         }
     }
 }
@@ -74,6 +140,14 @@ impl Picker {
         };
         picker.refilter();
         picker
+    }
+
+    /// Starts from a query the user already typed (the last word of a
+    /// shell line).
+    pub fn with_query(mut self, query: &str) -> Self {
+        self.query = query.to_string();
+        self.refilter();
+        self
     }
 
     fn refilter(&mut self) {
@@ -164,6 +238,24 @@ fn rank_by_query(found: &mut Vec<String>, query: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_candidates_follow_the_word_before_the_cursor() {
+        let mut state = State::new(
+            cox_protocol::types::PermissionMode::Default,
+            cox_protocol::types::SandboxMode::WorkspaceWrite,
+        );
+        state.files = vec!["src/lib.rs".into()];
+        state.git_branches = vec!["main".into()];
+        assert!(candidates("ls ", &state).is_empty());
+        assert!(candidates("git ch", &state).contains(&"checkout".to_string()));
+        assert_eq!(candidates("git ", &state).len(), GIT_COMMANDS.len());
+        assert_eq!(candidates("git checkout ma", &state), ["main"]);
+        assert_eq!(candidates("git switch ", &state), ["main"]);
+        assert_eq!(candidates("git add sr", &state), ["src/lib.rs"]);
+        assert_eq!(last_word("git add sr"), "sr");
+        assert_eq!(last_word("git add "), "");
+    }
 
     #[test]
     fn picker_session_entry_lists_title_cwd_age_cost() {

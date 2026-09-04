@@ -2141,3 +2141,30 @@ ok — no earlier snapshot changed.
 $ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T15.4 Git-aware completion of a shell line
+Model: opus · Status: done 2026-09-05 · Depends: T15.2 · Size: ~120
+Goal: completing a git command line in the composer offers subcommands, then branch names or changed paths depending on the subcommand.
+Files: `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox-tui/src/state.rs`.
+Steps:
+1. `picker::Kind::Shell`; `Tab` on a line starting with `git ` opens the picker instead of inserting a tab.
+2. A pure `candidates(line, &State) -> Vec<String>`: no subcommand yet → the ~20 porcelain command names; `checkout|switch|merge|rebase|branch` → `state.git_branches`; anything else → `state.files`, already filled for `@`. Nucleo ranks them as it ranks everything else.
+3. The chosen candidate replaces the last word.
+Check: `mise exec -- cargo test -p cox-tui shell` — `git ch` offers `checkout`, `git checkout ma` offers a branch, `git add sr` offers a path, `ls ` offers nothing.
+Done when: the Check passes.
+Out of scope: real shell completion (bash/zsh completion specs need a hosted shell to evaluate); completing any command but `git`.
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-tui shell
+test picker::tests::shell_candidates_follow_the_word_before_the_cursor ... ok
+test shell_tab_offers_a_subcommand_a_branch_or_a_path_by_position ... ok   (`git ch` → checkout; `git checkout ma` → main; `git add sr` → src/lib.rs)
+test shell_tab_on_another_command_opens_nothing ... ok                     (`ls ` → no picker, Tab keeps cycling the mode)
+test shell_choice_replaces_the_word_being_typed ... ok                     (Enter → `git checkout main `)
+test result: ok. 4 passed; 0 failed
+$ mise exec -- cargo test -p cox-tui -p cox
+ok — no snapshot changed.
+$ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

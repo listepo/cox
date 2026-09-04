@@ -140,6 +140,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let config = &loaded.config;
     let mut state = State::new(config.permissions.mode, config.sandbox.mode);
     state.files = cox_tools::glob::workspace_files(cwd);
+    state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     state.sessions = project_sessions(&home, cwd);
     state.composer.set_vim(config.tui.vim);

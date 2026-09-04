@@ -592,18 +592,6 @@ Rationale in §6 A11. What already exists and is *not* redone here: syntect high
 
 Rationale in §6 A13. Not redone here: unified-diff rendering (`cox-tui/src/diff.rs`, T5.4), the nucleo picker (T5.2), running git (the `bash` tool, A12).
 
-#### T15.4 Git-aware completion of a shell line
-Model: opus · Status: in progress · Depends: T15.2 · Size: ~120
-Goal: completing a git command line in the composer offers subcommands, then branch names or changed paths depending on the subcommand.
-Files: `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox-tui/src/state.rs`.
-Steps:
-1. `picker::Kind::Shell`; `Tab` on a line starting with `git ` opens the picker instead of inserting a tab.
-2. A pure `candidates(line, &State) -> Vec<String>`: no subcommand yet → the ~20 porcelain command names; `checkout|switch|merge|rebase|branch` → `state.git_branches`; anything else → `state.files`, already filled for `@`. Nucleo ranks them as it ranks everything else.
-3. The chosen candidate replaces the last word.
-Check: `mise exec -- cargo test -p cox-tui shell` — `git ch` offers `checkout`, `git checkout ma` offers a branch, `git add sr` offers a path, `ls ` offers nothing.
-Done when: the Check passes.
-Out of scope: real shell completion (bash/zsh completion specs need a hosted shell to evaluate); completing any command but `git`.
-
 ### P16 — Concurrent sessions on one workspace (goal: every cox process on a workspace knows what the others are doing, and the TUI shows it)
 
 Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).

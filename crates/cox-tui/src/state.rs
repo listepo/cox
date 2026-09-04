@@ -18,7 +18,7 @@ use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
 use crate::markdown;
 use crate::modal::Approval;
-use crate::picker::{Kind, Pick, Picker};
+use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
 
@@ -128,6 +128,9 @@ pub struct State {
     pub banner: Option<Banner>,
     /// Workspace-relative paths the `@` picker offers; the runtime walks them.
     pub files: Vec<String>,
+    /// Local branch names for `git checkout <Tab>` (T15.4); the runtime
+    /// lists them at start, like `files`.
+    pub git_branches: Vec<String>,
     /// Names the `/` palette offers; T7.3 appends markdown commands.
     pub commands: Vec<String>,
     /// A first idle `Ctrl+C` arms; the second quits.
@@ -215,6 +218,7 @@ impl State {
             scroll: 0,
             banner: None,
             files: Vec::new(),
+            git_branches: Vec::new(),
             commands: COMMANDS.iter().map(|(n, ..)| n.to_string()).collect(),
             ctrl_c_armed: false,
             tick: 0,
@@ -330,7 +334,15 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         return vec![Cmd::Ask(Ask::GitDiff)];
     }
     if key.code == KeyCode::Tab && state.modal.is_none() {
-        return set_mode(state, commands::next_mode(state.mode));
+        // A `git` line completes (T15.4); any other Tab cycles the mode.
+        let line = state.composer.text();
+        let found = picker::candidates(&line, state);
+        if found.is_empty() {
+            return set_mode(state, commands::next_mode(state.mode));
+        }
+        let picker = Picker::open(Kind::Shell, found).with_query(picker::last_word(&line));
+        state.modal = Some(Modal::Picker(picker));
+        return Vec::new();
     }
     match state.modal.take() {
         Some(Modal::Approval(mut approval)) => match approval.key(key) {
@@ -348,7 +360,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 Pick::Nothing => state.modal = Some(Modal::Picker(picker)),
                 // Backspacing out of the picker also removes the `@`/`/`
                 // that opened it, as the user meant.
-                Pick::Closed if key.code == KeyCode::Backspace => {
+                Pick::Closed if key.code == KeyCode::Backspace && picker.kind != Kind::Shell => {
                     state.composer.key(key);
                 }
                 Pick::Closed => {}
@@ -366,6 +378,14 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         notice(state, Level::Info, text);
                     }
                     Kind::History => state.composer.set_text(&choice),
+                    Kind::Shell => {
+                        let mut line = state.composer.text();
+                        let keep = line.len() - picker::last_word(&line).len();
+                        line.truncate(keep);
+                        line.push_str(&choice);
+                        line.push(' ');
+                        state.composer.set_text(&line);
+                    }
                 },
             }
             Vec::new()
