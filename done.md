@@ -1976,3 +1976,30 @@ test result: ok. 4 passed; 0 failed    (tests/hooks.rs)
 $ mise exec -- cargo clippy -p cox-ext -p cox-protocol --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T16.2 The core applies `additional_context`, fires `PermissionRequest`, and the binary installs the hook
+Model: opus · Status: done 2026-09-05 · Depends: T16.1 · Size: ~70
+Goal: extra context from a `UserPromptSubmit` hook reaches the model without changing what the user sees, a pending approval is observable by hooks, and every surface writes a presence record.
+Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox/src/session.rs`.
+Steps:
+1. `run_turn_inner`: `Modify { input }` accepts a string (the rewritten prompt, as today) or an object with `prompt` and/or `additional_context`; the context becomes a second `Content::Text` block on the user message, while the `UserMessage` item, the FTS index and telemetry keep the prompt only. It sits after breakpoint 2, so `system[0..=2]` is untouched (§1.9).
+2. `turn::ask` fires `PermissionRequest { tool_name, tool_input }` before parking; informational, verdict ignored like `Stop`.
+3. `session::open` installs `PresenceHook::new(home, id, cwd, project root, inner)` with `inner = ShellHooks` when `hooks.enabled`, else `None` — the TUI, `run -p` and ACP all become visible; `run_tui` submits `Shutdown` after `app::run` returns so `SessionEnd` fires on quit.
+Check: `mise exec -- cargo test -p cox-core hooks` — a stub returning `additional_context` on `UserPromptSubmit` yields a user message with two text blocks and a `UserMessage` item with the prompt only; `PermissionRequest` appears in the stub's event list when the engine asks.
+Done when: the Check passes and a `COX_HOME` scratch run leaves `presence/<id>.json` while running and none after quit.
+Out of scope: the TUI (T16.3).
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-core hooks
+test hooks::tests::prompt_rewrite_accepts_a_string_or_a_prompt_and_context_object ... ok
+test hooks_pre_tool_use_block_fails_the_call_with_the_reason ... ok
+test hooks_permission_request_fires_while_the_turn_waits_for_the_user ... ok
+test hooks_pre_tool_use_modify_rewrites_the_input ... ok
+test hooks_additional_context_reaches_the_model_after_the_prompt ... ok
+test hooks_additional_context_rides_as_a_second_block_not_as_the_prompt ... ok
+test result: ok. 5 passed; 0 failed    (tests/hooks.rs; broken_hook_is_skipped_not_fatal filtered, passes in the full run)
+$ mise exec -- cargo clippy -p cox-core -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

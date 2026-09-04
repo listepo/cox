@@ -290,6 +290,14 @@ async fn gate(
 async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, CoreError> {
     let id = call.id;
     let rx = session.await_decision(id).await;
+    // Informational like `Stop`: a hook may record that we are waiting, it
+    // cannot answer for the user (§1.8).
+    let _ = hooks::fire(
+        session,
+        HookEvent::PermissionRequest,
+        serde_json::json!({ "tool_name": call.name, "tool_input": call.input }),
+    )
+    .await;
     session
         .emit(Event::ApprovalRequired {
             call: call.clone(),

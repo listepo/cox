@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use cox_core::Session;
 use cox_protocol::Config;
-use cox_protocol::traits::{Provider, Store as _, Tool};
+use cox_protocol::traits::{Hook, Provider, Store as _, Tool};
+use cox_protocol::types::Submission;
 use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
 use cox_provider::openai::chat::OpenAiChatProvider;
 use cox_provider::openai::responses::OpenAiResponsesProvider;
@@ -76,12 +77,21 @@ pub async fn open(
         store,
         cwd.to_path_buf(),
     )?;
-    if loaded.config.hooks.enabled {
-        session.set_hook(Arc::new(cox_ext::hooks::ShellHooks::new(
+    // A14: the presence hook wraps the user's shell hooks so the other
+    // sessions of this workspace see every surface, `--no-hooks` or not.
+    let shell: Option<Arc<dyn Hook>> = loaded.config.hooks.enabled.then(|| {
+        Arc::new(cox_ext::hooks::ShellHooks::new(
             &loaded.config.hooks,
             cwd.to_path_buf(),
-        )));
-    }
+        )) as Arc<dyn Hook>
+    });
+    session.set_hook(Arc::new(cox_ext::presence::PresenceHook::new(
+        home.clone(),
+        session.id(),
+        cwd.to_path_buf(),
+        config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()),
+        shell,
+    )));
     Ok((session, loaded))
 }
 
@@ -129,7 +139,11 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     }
     state.show_thinking = config.tui.show_thinking == "full";
     state.marks = cli.verbose > 0;
+    let quit = session.clone();
     rt.block_on(cox_tui::app::run(session, state))?;
+    // The TUI never shut the core down, so `SessionEnd` hooks and the
+    // presence record outlived the window (T16.2).
+    rt.block_on(quit.submit(Submission::Shutdown))?;
     Ok(())
 }
 

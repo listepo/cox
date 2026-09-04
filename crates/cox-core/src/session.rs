@@ -280,6 +280,12 @@ impl Session {
         Ok(session)
     }
 
+    /// The id a surface needs to name this session to the outside (the
+    /// presence record, `cox --resume`).
+    pub fn id(&self) -> SessionId {
+        self.id
+    }
+
     /// Takes the event receiver once.
     pub fn events(&self) -> Option<mpsc::Receiver<Event>> {
         self.rx.lock().unwrap_or_else(|e| e.into_inner()).take()
@@ -576,7 +582,7 @@ impl Session {
         // §1.8 step 1: a hook may block or rewrite the prompt before it
         // touches history; a blocked prompt is still a (refused) turn so
         // every surface sees its `TurnDone`.
-        let text = match hooks::fire(
+        let (text, context) = match hooks::fire(
             self,
             HookEvent::UserPromptSubmit,
             serde_json::json!({ "prompt": text }),
@@ -596,8 +602,8 @@ impl Session {
                     .finish(turn, StopReason::Refusal { detail: reason })
                     .await;
             }
-            HookOutcome::Modify { input } => input.as_str().map_or(text, str::to_owned),
-            _ => text,
+            HookOutcome::Modify { input } => hooks::prompt_rewrite(text, input),
+            _ => (text, None),
         };
         record_content(
             "gen_ai.input.messages",
@@ -648,7 +654,10 @@ impl Session {
             let start = inner.history.len();
             inner.history.push(Message {
                 role: Role::User,
-                content: vec![Content::Text { text: text.clone() }],
+                content: std::iter::once(text.clone())
+                    .chain(context)
+                    .map(|text| Content::Text { text })
+                    .collect(),
             });
             inner.turn_marks.push(TurnMark {
                 item: user_item,

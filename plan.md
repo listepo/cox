@@ -631,20 +631,8 @@ Out of scope: real shell completion (bash/zsh completion specs need a hosted she
 
 Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).
 
-#### T16.2 The core applies `additional_context`, fires `PermissionRequest`, and the binary installs the hook
-Model: opus · Status: in progress · Depends: T16.1 · Size: ~70
-Goal: extra context from a `UserPromptSubmit` hook reaches the model without changing what the user sees, a pending approval is observable by hooks, and every surface writes a presence record.
-Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox/src/session.rs`.
-Steps:
-1. `run_turn_inner`: `Modify { input }` accepts a string (the rewritten prompt, as today) or an object with `prompt` and/or `additional_context`; the context becomes a second `Content::Text` block on the user message, while the `UserMessage` item, the FTS index and telemetry keep the prompt only. It sits after breakpoint 2, so `system[0..=2]` is untouched (§1.9).
-2. `turn::ask` fires `PermissionRequest { tool_name, tool_input }` before parking; informational, verdict ignored like `Stop`.
-3. `session::open` installs `PresenceHook::new(home, id, cwd, project root, inner)` with `inner = ShellHooks` when `hooks.enabled`, else `None` — the TUI, `run -p` and ACP all become visible; `run_tui` submits `Shutdown` after `app::run` returns so `SessionEnd` fires on quit.
-Check: `mise exec -- cargo test -p cox-core hooks` — a stub returning `additional_context` on `UserPromptSubmit` yields a user message with two text blocks and a `UserMessage` item with the prompt only; `PermissionRequest` appears in the stub's event list when the engine asks.
-Done when: the Check passes and a `COX_HOME` scratch run leaves `presence/<id>.json` while running and none after quit.
-Out of scope: the TUI (T16.3).
-
 #### T16.3 Agents in the TUI: feed channel, `/agents`, status-line count
-Model: opus · Status: open · Depends: T16.2 · Size: ~130
+Model: opus · Status: in progress · Depends: T16.2 · Size: ~130
 Goal: `/agents` lists the other live sessions of this project with `active`/`waiting`/`idle`/`stopped`, their turn and last-edited paths; the status line shows `2 agents` while any exist.
 Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/status.rs` (+ the `agents` arm in `commands.rs` and the 2 s poller in `crates/cox/src/session.rs` — over the guide for T15.2's reason: the poller lives where file I/O is allowed).
 Steps:

@@ -9,19 +9,27 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cox_protocol::traits::Hook;
-use cox_protocol::types::{Event, HookEvent, HookOutcome, Level, StopReason};
+use cox_protocol::types::{
+    Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Level, Role, StopReason, Submission,
+};
 use serde_json::{Value, json};
 
-/// Answers `PreToolUse` with `verdict`, everything else with `Continue`,
+/// Answers `on` (`PreToolUse` by default) with `verdict`, everything else with `Continue`,
 /// and records every event it saw.
 struct Stub {
+    on: HookEvent,
     verdict: HookOutcome,
     seen: Mutex<Vec<(HookEvent, Value)>>,
 }
 
 impl Stub {
     fn new(verdict: HookOutcome) -> Arc<Self> {
+        Self::on(HookEvent::PreToolUse, verdict)
+    }
+
+    fn on(on: HookEvent, verdict: HookOutcome) -> Arc<Self> {
         Arc::new(Self {
+            on,
             verdict,
             seen: Mutex::new(Vec::new()),
         })
@@ -32,7 +40,7 @@ impl Stub {
 impl Hook for Stub {
     async fn run(&self, event: HookEvent, payload: Value, _timeout: Duration) -> HookOutcome {
         self.seen.lock().unwrap().push((event, payload));
-        if event == HookEvent::PreToolUse {
+        if event == self.on {
             self.verdict.clone()
         } else {
             HookOutcome::Continue
@@ -120,4 +128,86 @@ async fn hooks_pre_tool_use_modify_rewrites_the_input() {
         .unwrap();
     assert_eq!(post["tool_input"], json!({ "text": "rewritten" }));
     assert_eq!(post["tool_response"]["is_error"], false);
+}
+
+#[tokio::test]
+async fn hooks_additional_context_rides_as_a_second_block_not_as_the_prompt() {
+    let stub = Stub::on(
+        HookEvent::UserPromptSubmit,
+        HookOutcome::Modify {
+            input: json!({ "additional_context": "peer editing x.rs" }),
+        },
+    );
+    let events = run_one_tool(stub).await;
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::ItemStarted {
+            kind: ItemKind::UserMessage { text, .. },
+            ..
+        } if text == "one_tool"
+    )));
+}
+
+#[tokio::test]
+async fn hooks_additional_context_reaches_the_model_after_the_prompt() {
+    let stub = Stub::on(
+        HookEvent::UserPromptSubmit,
+        HookOutcome::Modify {
+            input: json!({ "prompt": "rewritten", "additional_context": "peer editing x.rs" }),
+        },
+    );
+    let (session, _store, mut rx) = common::open(
+        &common::scenario("one_tool"),
+        cox_protocol::Config::default(),
+    );
+    session.set_hook(stub);
+    let running = common::spawn_turn(&session, "one_tool");
+    common::drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let history = session.history().await;
+    assert_eq!(history[0].role, Role::User);
+    assert_eq!(
+        history[0].content,
+        [
+            Content::Text {
+                text: "rewritten".into()
+            },
+            Content::Text {
+                text: "peer editing x.rs".into()
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn hooks_permission_request_fires_while_the_turn_waits_for_the_user() {
+    let stub = Stub::new(HookOutcome::Continue);
+    let (session, _store, mut rx) = common::open(
+        &common::scenario("ask_then_approve"),
+        cox_protocol::Config::default(),
+    );
+    session.set_hook(stub.clone());
+    let running = common::spawn_turn(&session, "write");
+    let call_id = loop {
+        if let Event::ApprovalRequired { call, .. } = rx.recv().await.expect("event stream closed")
+        {
+            break call.id;
+        }
+    };
+    session
+        .submit(Submission::Approve {
+            call_id,
+            decision: Decision::Allow,
+        })
+        .await
+        .expect("approve");
+    common::drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let seen = stub.seen.lock().unwrap();
+    let (_, payload) = seen
+        .iter()
+        .find(|(e, _)| *e == HookEvent::PermissionRequest)
+        .expect("PermissionRequest fired");
+    assert_eq!(payload["tool_name"], "touch");
+    assert_eq!(payload["tool_input"]["path"], "a");
 }
