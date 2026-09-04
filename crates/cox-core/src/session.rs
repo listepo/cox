@@ -361,6 +361,18 @@ impl Session {
                     }
                 }
             }
+            Submission::SetEffort { effort } => {
+                self.inner.lock().await.overrides.effort = effort;
+                let text = match effort {
+                    Some(e) => format!("effort: {}", e.name()),
+                    None => "effort: tier default".to_string(),
+                };
+                self.emit(Event::Notice {
+                    level: Level::Info,
+                    text,
+                })
+                .await
+            }
             Submission::SetPermissionMode { mode } => {
                 self.inner.lock().await.permission_mode = mode;
                 self.emit(Event::Notice {

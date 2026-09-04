@@ -2045,6 +2045,30 @@
         ]
       },
       {
+        "description": "`/effort`: the effort every main-turn call runs at for the rest of\nthe session, clamped to what the routed model supports; `None`\nrestores the tier default (T16.4).",
+        "type": "object",
+        "properties": {
+          "effort": {
+            "description": "The level, or `None` for the tier default.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effort"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "set_effort"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      {
         "description": "Change the active permission mode.",
         "type": "object",
         "properties": {
@@ -2235,6 +2259,26 @@
       "ModelId": {
         "description": "A newtype around a provider's model identifier (e.g. `\"claude-sonnet-5\"`).\nDeliberately a bare string, not an enum: models are configured, not\ncompiled in (`config/default.toml` [tiers.*].model).",
         "type": "string"
+      },
+      "Effort": {
+        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < High < Xhigh` so the router can clamp a tier's effort to\nthe greatest level a model supports (`docs/design/providers.md`).",
+        "oneOf": [
+          {
+            "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
+            "type": "string",
+            "const": "low"
+          },
+          {
+            "description": "Default for `code`/`think` tiers.",
+            "type": "string",
+            "const": "high"
+          },
+          {
+            "description": "User-selected for a flagged large refactor.",
+            "type": "string",
+            "const": "xhigh"
+          }
+        ]
       },
       "PermissionMode": {
         "description": "`permissions.mode` (plan.md §1.6/§1.8).",

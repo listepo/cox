@@ -199,11 +199,7 @@ fn content_blocks(m: &Message, req: &Request, cfg: &BuildCfg<'_>) -> Vec<Value> 
 }
 
 fn effort(e: Effort) -> &'static str {
-    match e {
-        Effort::Low => "low",
-        Effort::High => "high",
-        Effort::Xhigh => "xhigh",
-    }
+    e.name()
 }
 
 fn supports_adaptive_thinking(model: &ModelId) -> bool {

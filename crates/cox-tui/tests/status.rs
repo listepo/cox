@@ -2,6 +2,7 @@
 //! real usage events, and what each command line turns into.
 
 use cox_protocol::ids::{CallId, TurnId};
+use cox_protocol::types::Effort;
 use cox_protocol::types::{
     Event, Job, ModelId, PermissionMode, Risk, SandboxMode, StopReason, Submission, Tier, ToolCall,
     ToolResult, Usage,
@@ -163,4 +164,22 @@ fn command_todo_shows_the_panel_from_the_tool_output() {
     );
     assert!(submit(&mut state, "/todo").is_empty());
     insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 8)));
+}
+
+#[test]
+fn command_slash_effort_sets_or_clears_the_session_effort() {
+    assert_eq!(
+        commands::parse("/effort xhigh", Tier::Code),
+        Some(Action::Submit(Submission::SetEffort {
+            effort: Some(Effort::Xhigh)
+        }))
+    );
+    assert_eq!(
+        commands::parse("/effort", Tier::Code),
+        Some(Action::Submit(Submission::SetEffort { effort: None }))
+    );
+    assert!(matches!(
+        commands::parse("/effort max", Tier::Code),
+        Some(Action::Notice(text)) if text.contains("xhigh")
+    ));
 }

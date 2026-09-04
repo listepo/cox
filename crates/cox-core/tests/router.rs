@@ -6,7 +6,7 @@ mod common;
 use common::{drain, open, spawn_turn};
 use cox_core::Session;
 use cox_core::router::{Overrides, RouteError, Router};
-use cox_protocol::types::{Event, Job, ModelId, StopReason, Submission, Tier};
+use cox_protocol::types::{Effort, Event, Job, ModelId, StopReason, Submission, Tier};
 use cox_protocol::{Config, ProviderId};
 
 fn table() -> Vec<(Job, Tier)> {
@@ -181,4 +181,32 @@ fn spawn_turn_confirmed(
             })
             .await
     })
+}
+
+#[tokio::test]
+async fn router_set_effort_changes_the_next_request_and_is_clamped() {
+    let toml = "[[turn]]\ntext = \"a\"\n[[turn]]\ntext = \"b\"\n[[turn]]\ntext = \"c\"\n";
+    let (session, store, mut rx) = open(toml, Config::default());
+    // `Config::default()` carries no model catalogue, so nothing clamps here
+    // (the router unit test covers that); `None` restores the tier's high.
+    for (set, want) in [
+        (Some(Effort::Low), Effort::Low),
+        (Some(Effort::Xhigh), Effort::Xhigh),
+        (None, Effort::High),
+    ] {
+        session
+            .submit(Submission::SetEffort { effort: set })
+            .await
+            .expect("set effort");
+        let running = spawn_turn(&session, "go");
+        let events = drain(&mut rx).await;
+        running.await.expect("join").expect("turn");
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Notice { text, .. } if text.starts_with("effort:")))
+        );
+        let rows = store.usage_rows();
+        assert_eq!(rows.last().expect("a usage row").effort, Some(want));
+    }
 }

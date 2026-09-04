@@ -4,7 +4,7 @@
 //! they cannot disagree. Separate from `state` so a test checks a line of
 //! text against an `Action` without a terminal.
 
-use cox_protocol::types::{ModelId, PermissionMode, SlashCommand, Submission, Tier};
+use cox_protocol::types::{Effort, ModelId, PermissionMode, SlashCommand, Submission, Tier};
 
 /// `(name, usage, what it does)`; the palette lists the names in this order.
 pub const COMMANDS: &[(&str, &str, &str)] = &[
@@ -17,6 +17,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "think",
         "/think <prompt>",
         "one turn on the think tier, price confirmed first",
+    ),
+    (
+        "effort",
+        "/effort [low|high|xhigh]",
+        "effort for the rest of the session; bare restores the tier default",
     ),
     ("compact", "/compact [focus]", "compact the context now"),
     ("cost", "/cost", "what this session has spent"),
@@ -97,6 +102,15 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
                 confirm_think: true,
             }),
             None => Action::Notice("/think needs a prompt".into()),
+        },
+        "effort" => match args.first().map(String::as_str) {
+            None => Action::Submit(Submission::SetEffort { effort: None }),
+            Some(level) => match Effort::parse(level) {
+                Some(effort) => Action::Submit(Submission::SetEffort {
+                    effort: Some(effort),
+                }),
+                None => Action::Notice(format!("unknown effort `{level}`; low, high or xhigh")),
+            },
         },
         "compact" => Action::Submit(Submission::Compact { focus: joined() }),
         "cost" => Action::Cost,

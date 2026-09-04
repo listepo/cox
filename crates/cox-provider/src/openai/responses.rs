@@ -164,11 +164,7 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
 }
 
 fn effort(e: Effort) -> &'static str {
-    match e {
-        Effort::Low => "low",
-        Effort::High => "high",
-        Effort::Xhigh => "xhigh",
-    }
+    e.name()
 }
 
 /// The state carried across one `POST /v1/responses` SSE body: just the

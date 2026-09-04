@@ -37,6 +37,9 @@ pub struct Overrides {
     pub models: HashMap<Tier, ModelId>,
     /// `/model <tier>`: main turns run on this tier instead of `jobs.main`.
     pub main_tier: Option<Tier>,
+    /// `/effort`: main turns ask for this effort instead of the tier's;
+    /// `clamp_effort` still bounds it per model (T16.4).
+    pub effort: Option<Effort>,
 }
 
 /// Why `pick` refused to route.
@@ -133,11 +136,15 @@ impl Router {
                 .map(ModelId)
                 .unwrap_or_else(|| ModelId(tc.model.clone()))
         });
+        let want = match job {
+            Job::Main => overrides.effort.unwrap_or(tc.effort),
+            _ => tc.effort,
+        };
         Ok(Route {
             tier,
             provider,
             model: model.clone(),
-            effort: clamp_effort(config, &tc.provider, &model, tc.effort),
+            effort: clamp_effort(config, &tc.provider, &model, want),
             thinking: tc.thinking,
             max_tokens: tc.max_tokens,
         })
@@ -243,6 +250,28 @@ mod tests {
         let route = Router::pick(&cfg, Job::Main, Tier::Code, &overrides, true).expect("routes");
         assert_eq!(route.model.0, "deepseek-v4-flash");
         assert_eq!(route.effort, Effort::High);
+    }
+
+    #[test]
+    fn router_session_effort_applies_to_main_turns_and_is_clamped() {
+        let cfg = custom_config();
+        let low = Overrides {
+            effort: Some(Effort::Low),
+            ..Overrides::default()
+        };
+        // pro has no `low`: the floor it does support.
+        let route = Router::pick(&cfg, Job::Main, Tier::Code, &low, true).expect("routes");
+        assert_eq!(route.effort, Effort::High);
+        let xhigh = Overrides {
+            effort: Some(Effort::Xhigh),
+            ..Overrides::default()
+        };
+        let route = Router::pick(&cfg, Job::Main, Tier::Code, &xhigh, true).expect("routes");
+        assert_eq!(route.effort, Effort::Xhigh);
+        // Background jobs keep their tier's effort.
+        let route = Router::pick(&cfg, Job::Compact, Tier::Code, &xhigh, true).expect("routes");
+        let tier = cfg.jobs.tier_for(Job::Compact);
+        assert_eq!(route.effort, cfg.tiers.get(tier).effort);
     }
 
     #[test]

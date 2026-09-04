@@ -2030,3 +2030,36 @@ all ok — every earlier frame/status snapshot unchanged (the status line only g
 $ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T16.4 `/effort` — session-wide effort override
+Model: opus · Status: done 2026-09-05 · Depends: — · Size: ~80
+Goal: `/effort low|high|xhigh` sets the effort every main-turn call runs at for the rest of the session; `/effort` alone restores the tier default.
+Files: `crates/cox-protocol/src/types.rs`, `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs` (+ the parse arm in `cox-tui/src/commands.rs`).
+Steps:
+1. `Submission::SetEffort { effort: Option<Effort> }`.
+2. `Overrides.effort`; `Router::pick` applies it to `Job::Main` before `clamp_effort`, so a model without `xhigh` still gets its greatest supported level.
+3. `Session::submit` stores it and emits `Notice(Info, "effort: xhigh")`; the ledger already records the routed effort (A13).
+4. `commands::parse`: `effort` → `SetEffort`; an unknown level is a `Notice` naming the three.
+Check: `mise exec -- cargo test -p cox-core router` — `pick` with `effort: Some(Xhigh)` on a model whose greatest is `high` returns `high`; a `SetEffort` submission changes the next request's effort in a scripted loop test.
+Done when: the Check passes; §1.13 lists `/effort`.
+Out of scope: per-tier effort (`/model` picks the tier; effort follows the session).
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox-core router
+test router::tests::router_session_effort_applies_to_main_turns_and_is_clamped ... ok
+test router::tests::router_custom_provider_pins_section_model_and_clamps_effort ... ok
+test router::tests::router_clamp_effort_never_upgrades_past_the_request ... ok
+test router::tests::router_strip_thinking_keeps_everything_else_verbatim ... ok
+test result: ok. 4 passed; 0 failed   (unit)
+test router_set_effort_changes_the_next_request_and_is_clamped ... ok
+test router_switch_gates_and_runs_think ... ok
+test result: ok. 6 passed; 0 failed   (tests/router.rs)
+$ mise exec -- cargo test -p cox-tui status
+test command_slash_effort_sets_or_clears_the_session_effort ... ok
+$ mise exec -- cargo test -p cox-protocol · cargo test -p cox-provider
+ok — docs/protocol.jsonschema regenerated for the new SetEffort variant; the two provider `effort` helpers now delegate to Effort::name.
+$ mise exec -- cargo clippy -p cox-protocol -p cox-core -p cox-tui -p cox-provider -p cox --all-targets -- -D warnings · cargo fmt --check
+clean.
+```

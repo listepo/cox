@@ -501,7 +501,7 @@ Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--s
 | `y` / `s` / `n` / `e` in approval modal | allow / allow for session / deny / edit command | `Ctrl+R` | prompt history search |
 | `PageUp/PageDown`, mouse wheel | scroll transcript | `Ctrl+L` | redraw |
 
-Slash commands (parsed in the surface, executed as `Submission::Command`): `/model [tier] [model]`, `/think <prompt>` (confirm dialog with price), `/compact [focus]`, `/cost`, `/permissions`, `/sandbox <mode>`, `/resume`, `/sessions`, `/expand <id>`, `/agents` (live sessions in this workspace, T16.3), `/skills`, `/hooks`, `/mcp`, `/doctor`, `/clear` (new session, same cwd), `/vim`, `/help`, `/quit`. Markdown files in `.claude/commands` and `.cox/commands` appear in the same palette (T7.3).
+Slash commands (parsed in the surface, executed as `Submission::Command`): `/model [tier] [model]`, `/effort [low|high|xhigh]` (session-wide, clamped per model, T16.4), `/think <prompt>` (confirm dialog with price), `/compact [focus]`, `/cost`, `/permissions`, `/sandbox <mode>`, `/resume`, `/sessions`, `/expand <id>`, `/agents` (live sessions in this workspace, T16.3), `/skills`, `/hooks`, `/mcp`, `/doctor`, `/clear` (new session, same cwd), `/vim`, `/help`, `/quit`. Markdown files in `.claude/commands` and `.cox/commands` appear in the same palette (T7.3).
 
 Status line (one row): `sonnet-5 · ctx 41% · $0.83 · workspace-write · 2 tasks · [plan]`.
 
@@ -631,21 +631,8 @@ Out of scope: real shell completion (bash/zsh completion specs need a hosted she
 
 Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).
 
-#### T16.4 `/effort` — session-wide effort override
-Model: opus · Status: in progress · Depends: — · Size: ~80
-Goal: `/effort low|high|xhigh` sets the effort every main-turn call runs at for the rest of the session; `/effort` alone restores the tier default.
-Files: `crates/cox-protocol/src/types.rs`, `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs` (+ the parse arm in `cox-tui/src/commands.rs`).
-Steps:
-1. `Submission::SetEffort { effort: Option<Effort> }`.
-2. `Overrides.effort`; `Router::pick` applies it to `Job::Main` before `clamp_effort`, so a model without `xhigh` still gets its greatest supported level.
-3. `Session::submit` stores it and emits `Notice(Info, "effort: xhigh")`; the ledger already records the routed effort (A13).
-4. `commands::parse`: `effort` → `SetEffort`; an unknown level is a `Notice` naming the three.
-Check: `mise exec -- cargo test -p cox-core router` — `pick` with `effort: Some(Xhigh)` on a model whose greatest is `high` returns `high`; a `SetEffort` submission changes the next request's effort in a scripted loop test.
-Done when: the Check passes; §1.13 lists `/effort`.
-Out of scope: per-tier effort (`/model` picks the tier; effort follows the session).
-
 #### T16.5 `/sessions` in the TUI and the `/resume` picker
-Model: sonnet · Status: open · Depends: T16.3 · Size: ~90
+Model: opus · Status: in progress · Depends: T16.3 · Size: ~90
 Goal: `/sessions` lists this project's recent sessions (id, title, age, cost) without leaving the TUI; `/resume` opens the existing `Kind::Sessions` picker over them.
 Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`.
 Steps:

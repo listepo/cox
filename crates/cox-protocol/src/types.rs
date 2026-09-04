@@ -117,6 +117,27 @@ pub enum Effort {
     Xhigh,
 }
 
+impl Effort {
+    /// The lowercase name the config, the wire and `/effort` share.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+        }
+    }
+
+    /// The inverse of `name`; anything else is `None`.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "low" => Some(Self::Low),
+            "high" => Some(Self::High),
+            "xhigh" => Some(Self::Xhigh),
+            _ => None,
+        }
+    }
+}
+
 /// Extended/adaptive thinking mode for a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -629,6 +650,13 @@ pub enum Submission {
         /// The model to switch to; `None` restores the tier's configured default.
         model: Option<ModelId>,
     },
+    /// `/effort`: the effort every main-turn call runs at for the rest of
+    /// the session, clamped to what the routed model supports; `None`
+    /// restores the tier default (T16.4).
+    SetEffort {
+        /// The level, or `None` for the tier default.
+        effort: Option<Effort>,
+    },
     /// Change the active permission mode.
     SetPermissionMode {
         /// The new mode.
@@ -1100,6 +1128,7 @@ mod tests {
     #[case::interrupt(Submission::Interrupt)]
     #[case::compact(Submission::Compact { focus: Some("auth flow".into()) })]
     #[case::switch_model(Submission::SwitchModel { tier: Tier::Code, model: Some(ModelId("claude-opus-5".into())) })]
+    #[case::set_effort(Submission::SetEffort { effort: Some(Effort::Xhigh) })]
     #[case::set_permission_mode(Submission::SetPermissionMode { mode: PermissionMode::Plan })]
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
