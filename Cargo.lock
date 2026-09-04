@@ -769,12 +769,17 @@ dependencies = [
  "cox-tools",
  "globset",
  "insta",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "proptest",
  "rstest",
  "serde",
  "serde_json",
  "tokio",
  "tokio-util",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2935,6 +2940,8 @@ dependencies = [
  "percent-encoding",
  "rand 0.9.5",
  "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

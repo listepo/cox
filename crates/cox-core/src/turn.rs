@@ -10,12 +10,14 @@ use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message, Risk,
-    Role, SandboxMode, SandboxPolicy, ToolCall, ToolOutput, ToolResult, Usage, Why,
+    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
+    ModelId, Risk, Role, SandboxMode, SandboxPolicy, StopReason, ToolCall, ToolOutput, ToolResult,
+    Usage, Why,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tracing::Instrument as _;
 
 use crate::hooks;
 use crate::permission::Outcome;
@@ -25,8 +27,13 @@ use crate::session::{Session, State};
 #[derive(Default)]
 pub(crate) struct Streamed {
     pub text: String,
+    pub thinking: String,
     pub calls: Vec<(CallId, String, Value)>,
     pub usage: Option<Usage>,
+    pub response_model: Option<ModelId>,
+    pub stop: Option<StopReason>,
+    pub retries: u32,
+    pub retry_delay_ms: u64,
 }
 
 struct Acc {
@@ -46,7 +53,7 @@ pub(crate) async fn consume_provider(
     let mut current: Option<Acc> = None;
     while let Some(ev) = rx.recv().await {
         match ev {
-            P::MessageStart { .. } => {}
+            P::MessageStart { model } => out.response_model = Some(model),
             P::TextDelta { text } => {
                 out.text.push_str(&text);
                 session
@@ -57,6 +64,9 @@ pub(crate) async fn consume_provider(
                     .await?;
             }
             P::ThinkingDelta { text } => {
+                if crate::session::capture_message_content() {
+                    out.thinking.push_str(&text);
+                }
                 session
                     .emit(Event::ThinkingDelta {
                         item: assistant_item,
@@ -82,10 +92,24 @@ pub(crate) async fn consume_provider(
                     out.calls.push((acc.id, acc.name, input));
                 }
             }
-            P::Stop { .. } => {}
+            P::Stop { stop } => out.stop = Some(stop),
             P::Usage { usage } => out.usage = Some(usage),
-            P::Retrying { .. } => {}
+            P::Retrying { attempt, after_ms } => {
+                out.retries = out.retries.max(attempt);
+                out.retry_delay_ms = out.retry_delay_ms.saturating_add(after_ms);
+                tracing::warn!(
+                    event.name = "cox.provider.retrying",
+                    retry.attempt = attempt,
+                    retry.after_ms = after_ms,
+                    "provider request retrying"
+                );
+            }
             P::Error { error } => {
+                tracing::error!(
+                    event.name = "cox.provider.stream_error",
+                    error = %error,
+                    "provider stream failed"
+                );
                 return Err(CoreError::Provider { error });
             }
         }
@@ -166,7 +190,8 @@ pub(crate) async fn run_tools(
                 break;
             };
             let session = session.clone_handle();
-            set.spawn(async move { run_one(&session, id, tool, input).await });
+            let parent = tracing::Span::current();
+            set.spawn(async move { run_one(&session, id, tool, input).await }.instrument(parent));
             inflight += 1;
         }
         let Some(joined) = set.join_next().await else {
@@ -299,6 +324,26 @@ fn sandbox_denial(output: &ToolOutput) -> Option<String> {
         .map(str::to_string)
 }
 
+#[tracing::instrument(
+    name = "execute_tool",
+    skip_all,
+    fields(
+        gen_ai.operation.name = "execute_tool",
+        gen_ai.tool.name = tool.spec().name,
+        gen_ai.tool.call.id = %id,
+        gen_ai.tool.call.arguments = tracing::field::Empty,
+        gen_ai.tool.call.result = tracing::field::Empty,
+        cox.session.id = %session.id,
+        cox.tool.risk = ?tool.risk(&input),
+        cox.tool.subject = %tool.subject(&input),
+        cox.tool.success = tracing::field::Empty,
+        cox.tool.duration_ms = tracing::field::Empty,
+        cox.tool.output_bytes = tracing::field::Empty,
+        cox.archive.id = tracing::field::Empty,
+        error.type = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+    )
+)]
 async fn run_one(
     session: &Session,
     id: CallId,
@@ -306,6 +351,9 @@ async fn run_one(
     input: Value,
 ) -> (CallId, ToolResult) {
     let started = Instant::now();
+    if let Some(content) = crate::session::captured_json(&input) {
+        tracing::Span::current().record("gen_ai.tool.call.arguments", content);
+    }
     let (out_tx, mut out_rx) = mpsc::channel::<String>(32);
     let mut cx = ToolCx {
         roots: session.config.core.workspace_roots.clone(),
@@ -377,6 +425,9 @@ async fn run_one(
         }),
     )
     .await;
+    if crate::session::capture_message_content() {
+        tracing::Span::current().record("gen_ai.tool.call.result", output.text.as_str());
+    }
     // `tool_search` names what it found in `structured.discovered`; the
     // next request carries those schemas (D6d) and the prefix changes once.
     let found: Vec<String> = output
@@ -457,7 +508,27 @@ async fn run_one(
     // history keeps the visible text, so remember the handle here.
     if let Some(arch) = &archive {
         session.remember_archive(id, arch.clone()).await;
+        tracing::Span::current().record("cox.archive.id", arch.id.to_string());
     }
+    let span = tracing::Span::current();
+    span.record("cox.tool.success", result.ok);
+    span.record("cox.tool.duration_ms", result.duration_ms);
+    span.record("cox.tool.output_bytes", result.bytes);
+    span.record("otel.status_code", if result.ok { "OK" } else { "ERROR" });
+    if !result.ok {
+        span.record("error.type", "tool_error");
+    }
+    tracing::info!(
+        event.name = "cox.tool.completed",
+        cox.session.id = %session.id,
+        gen_ai.tool.name = tool.spec().name,
+        gen_ai.tool.call.id = %id,
+        success = result.ok,
+        duration_ms = result.duration_ms,
+        output_bytes = result.bytes,
+        archive.id = archive.as_ref().map(|value| value.id.to_string()).unwrap_or_default(),
+        "tool call completed"
+    );
     (id, result)
 }
 

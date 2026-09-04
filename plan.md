@@ -585,17 +585,6 @@ Critical path to M1 ("talks"): T0.1 → T0.2 → T0.3 → T0.4 → T1.1 → T1.2
 
 ### P13 — Observability (goal: agent traces and logs in any OTLP backend)
 
-#### T13.2 GenAI agent instrumentation
-Model: sonnet · Status: open · Depends: T13.1 · Size: ~180
-Goal: every provider round and tool execution is correlated to session/turn and carries OpenTelemetry GenAI semantic attributes, usage, latency, outcome, and cost.
-Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-core/tests/telemetry.rs`.
-Steps: (1) Session and turn spans carry stable ids, job and tier. (2) Provider spans carry `gen_ai.operation.name`, provider, requested/response model, input/output/cache tokens, latency, cost and stop reason. (3) Tool spans carry call id, tool, subject, risk, duration, bytes, success and archive id. (4) Prompt, completion, tool input and output content are recorded only when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, because they may contain secrets.
-Check:
-```bash
-mise exec -- cargo test -p cox-core telemetry_
-```
-Done when: an in-memory exporter snapshot proves one correlated agent turn with provider usage and tool attributes; content is absent by default and present only after opt-in.
-
 #### T13.3 Observability documentation and smoke stack
 Model: haiku · Status: open · Depends: T13.2 · Size: ~120
 Goal: a user can view cox data in SigNoz, Jaeger, Grafana/Tempo, or any OTLP-compatible service without code changes.

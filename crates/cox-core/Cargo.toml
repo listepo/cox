@@ -11,6 +11,7 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+tracing = { workspace = true }
 # T2.2: permission rules compile path globs (`Read(~/.ssh/**)`) once.
 globset = { workspace = true }
 
@@ -22,3 +23,7 @@ insta = { workspace = true }
 serde = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }

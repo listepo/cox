@@ -10,10 +10,11 @@ use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
-    ModelId, PermissionMode, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
+    ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument as _;
 
 use crate::budget;
 use crate::cache_diag::CacheTracker;
@@ -106,6 +107,8 @@ pub struct Session {
     pub(crate) job: Job,
     /// The tier every provider call in this session is routed to.
     pub(crate) tier: Tier,
+    /// Root of every turn/provider/tool span emitted by this session.
+    pub(crate) telemetry_span: tracing::Span,
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
     /// The hook runner, installed once by the surface and shared with
     /// children so a subagent's calls run the same hooks.
@@ -188,6 +191,20 @@ impl Session {
         let engine = Engine::compile(&config.permissions, home.as_deref(), &cwd)?;
         let permission_mode = config.permissions.mode;
         let dedup = Dedup::new(config.context.dedup_window_turns);
+        let parent = parent_id
+            .map(|parent| parent.to_string())
+            .unwrap_or_default();
+        let telemetry_span = tracing::info_span!(
+            "invoke_agent cox",
+            gen_ai.operation.name = "invoke_agent",
+            gen_ai.agent.name = "cox",
+            gen_ai.conversation.id = %id,
+            cox.session.id = %id,
+            cox.session.parent_id = %parent,
+            cox.job = ?job,
+            cox.tier = ?tier,
+            cox.cwd = %cwd.display(),
+        );
         let session = Self {
             id,
             config,
@@ -199,6 +216,7 @@ impl Session {
             cwd: cwd.clone(),
             job,
             tier,
+            telemetry_span,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),
             tx,
@@ -246,6 +264,11 @@ impl Session {
             .map_err(|error| CoreError::Store { error })?;
         session.store.rollout_append(&id, &started).ok();
         let _ = session.tx.try_send(started);
+        tracing::info!(
+            parent: &session.telemetry_span,
+            event.name = "cox.session.started",
+            "agent session started"
+        );
         // T4.3: the sandbox being off is loud on every surface — one line
         // after `SessionStarted` in stream-json, a pinned banner in the TUI.
         if session.config.sandbox.mode == SandboxMode::DangerFullAccess {
@@ -506,11 +529,49 @@ impl Session {
     }
 
     async fn run_turn(&self, text: String, confirm_think: bool) -> Result<(), CoreError> {
+        let turn = TurnId::new();
+        let span = tracing::info_span!(
+            parent: &self.telemetry_span,
+            "invoke_agent cox.turn",
+            gen_ai.operation.name = "invoke_agent",
+            gen_ai.agent.name = "cox",
+            gen_ai.conversation.id = %self.id,
+            gen_ai.input.messages = tracing::field::Empty,
+            cox.session.id = %self.id,
+            cox.turn.id = %turn,
+            cox.job = ?self.job,
+            cox.tier = ?self.tier,
+            cox.turn.stop_reason = tracing::field::Empty,
+            error.type = tracing::field::Empty,
+            otel.status_code = tracing::field::Empty,
+        );
+        let result = self
+            .run_turn_inner(turn, text, confirm_think)
+            .instrument(span.clone())
+            .await;
+        if let Err(error) = &result {
+            span.record("error.type", error.to_string());
+            span.record("otel.status_code", "ERROR");
+            tracing::error!(
+                parent: &span,
+                event.name = "cox.turn.failed",
+                error = %error,
+                "agent turn failed"
+            );
+        }
+        result
+    }
+
+    async fn run_turn_inner(
+        &self,
+        turn: TurnId,
+        text: String,
+        confirm_think: bool,
+    ) -> Result<(), CoreError> {
         {
             let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
             *c = CancellationToken::new();
         }
-        let turn = TurnId::new();
         let user_item = ItemId::new();
         // §1.8 step 1: a hook may block or rewrite the prompt before it
         // touches history; a blocked prompt is still a (refused) turn so
@@ -538,6 +599,10 @@ impl Session {
             HookOutcome::Modify { input } => input.as_str().map_or(text, str::to_owned),
             _ => text,
         };
+        record_content(
+            "gen_ai.input.messages",
+            &serde_json::json!([{"role": "user", "content": &text}]),
+        );
         // T9.1: the think tier needs `confirm_think`; without it the turn is
         // refused before any provider call, with the price in the notice.
         // An unknown provider name is a turn-fatal config error instead.
@@ -680,6 +745,34 @@ impl Session {
             "",
         );
         req.model = route.model.clone();
+        let provider_span = tracing::info_span!(
+            parent: &tracing::Span::current(),
+            "chat",
+            gen_ai.operation.name = "chat",
+            gen_ai.provider.name = provider_name(route.provider),
+            gen_ai.request.model = %route.model,
+            gen_ai.response.model = tracing::field::Empty,
+            gen_ai.response.finish_reasons = tracing::field::Empty,
+            gen_ai.usage.input_tokens = tracing::field::Empty,
+            gen_ai.usage.output_tokens = tracing::field::Empty,
+            gen_ai.input.messages = tracing::field::Empty,
+            gen_ai.output.messages = tracing::field::Empty,
+            cox.session.id = %self.id,
+            cox.turn.id = %turn,
+            cox.provider.call.ordinal = calls_so_far + 1,
+            cox.usage.cache_read_tokens = tracing::field::Empty,
+            cox.usage.cache_write_tokens = tracing::field::Empty,
+            cox.usage.estimated = tracing::field::Empty,
+            cox.cost.usd = tracing::field::Empty,
+            cox.duration_ms = tracing::field::Empty,
+            cox.retry.count = tracing::field::Empty,
+            cox.retry.delay_ms = tracing::field::Empty,
+            error.type = tracing::field::Empty,
+            otel.status_code = tracing::field::Empty,
+        );
+        if let Some(content) = captured_json(&serde_json::json!(&req.messages)) {
+            provider_span.record("gen_ai.input.messages", content);
+        }
         // T8.3: hash the prefix before the request moves into the stream.
         let prefix_texts: Vec<String> = req.system.iter().map(|b| b.text.clone()).collect();
         let (spent, warned) = {
@@ -723,10 +816,18 @@ impl Session {
         let (ptx, mut prx) = mpsc::channel(64);
         let provider = self.provider.clone();
         let cancel = self.cancel_token();
-        let join = tokio::spawn(async move { provider.stream(req, ptx, cancel).await });
-        let streamed = match consume_provider(self, &mut prx, assistant_item).await {
+        let join = tokio::spawn(
+            async move { provider.stream(req, ptx, cancel).await }
+                .instrument(provider_span.clone()),
+        );
+        let streamed = match consume_provider(self, &mut prx, assistant_item)
+            .instrument(provider_span.clone())
+            .await
+        {
             Ok(s) => s,
             Err(e) => {
+                provider_span.record("error.type", e.to_string());
+                provider_span.record("otel.status_code", "ERROR");
                 let _ = join.await;
                 self.emit(Event::Error {
                     error: e.clone(),
@@ -740,6 +841,8 @@ impl Session {
         let usage = match join.await {
             Ok(Ok(u)) => u,
             Ok(Err(error)) => {
+                provider_span.record("error.type", error.to_string());
+                provider_span.record("otel.status_code", "ERROR");
                 // §1.10: a too-long request compacts and retries once.
                 let too_long = matches!(error, ProviderError::ContextTooLong { .. });
                 let retried = self.inner.lock().await.retried_after_too_long;
@@ -762,12 +865,59 @@ impl Session {
                 return Ok(Step::Done);
             }
             Err(_) => {
+                provider_span.record("error.type", "provider_task_join");
+                provider_span.record("otel.status_code", "ERROR");
                 self.set_state(State::Interrupted).await;
                 self.finish(turn, StopReason::Interrupted).await?;
                 return Ok(Step::Done);
             }
         };
         let usage = streamed.usage.unwrap_or(usage);
+        let response_model = streamed.response_model.as_ref().unwrap_or(&route.model);
+        provider_span.record("gen_ai.response.model", response_model.to_string());
+        provider_span.record(
+            "gen_ai.response.finish_reasons",
+            format!("{:?}", streamed.stop),
+        );
+        provider_span.record("gen_ai.usage.input_tokens", usage.input_tokens as u64);
+        provider_span.record("gen_ai.usage.output_tokens", usage.output_tokens as u64);
+        provider_span.record(
+            "cox.usage.cache_read_tokens",
+            usage.cache_read_tokens as u64,
+        );
+        provider_span.record(
+            "cox.usage.cache_write_tokens",
+            usage.cache_write_tokens as u64,
+        );
+        provider_span.record("cox.usage.estimated", usage.estimated);
+        provider_span.record("cox.cost.usd", usage.cost_usd);
+        provider_span.record("cox.duration_ms", usage.latency_ms);
+        provider_span.record("cox.retry.count", streamed.retries as u64);
+        provider_span.record("cox.retry.delay_ms", streamed.retry_delay_ms);
+        provider_span.record("otel.status_code", "OK");
+        if let Some(content) = captured_json(&serde_json::json!({
+            "role": "assistant",
+            "content": &streamed.text,
+            "thinking": &streamed.thinking,
+            "tool_calls": &streamed.calls,
+        })) {
+            provider_span.record("gen_ai.output.messages", content);
+        }
+        tracing::info!(
+            parent: &provider_span,
+            event.name = "cox.provider.completed",
+            gen_ai.provider.name = provider_name(route.provider),
+            gen_ai.request.model = %route.model,
+            gen_ai.response.model = %response_model,
+            input_tokens = usage.input_tokens,
+            output_tokens = usage.output_tokens,
+            cache_read_tokens = usage.cache_read_tokens,
+            cache_write_tokens = usage.cache_write_tokens,
+            cost_usd = usage.cost_usd,
+            latency_ms = usage.latency_ms,
+            retry_count = streamed.retries,
+            "provider request completed"
+        );
         self.inner.lock().await.last_context_tokens = usage
             .input_tokens
             .saturating_add(usage.cache_read_tokens)
@@ -898,12 +1048,58 @@ impl Session {
             // §1.8 step 4: `Stop` is informational; its verdict is not applied.
             let _ = hooks::fire(self, HookEvent::Stop, serde_json::json!({})).await;
         }
-        self.emit(Event::TurnDone { turn, stop }).await?;
+        self.emit(Event::TurnDone {
+            turn,
+            stop: stop.clone(),
+        })
+        .await?;
+        let span = tracing::Span::current();
+        span.record("cox.turn.stop_reason", format!("{stop:?}"));
+        span.record(
+            "otel.status_code",
+            if stop == StopReason::Error {
+                "ERROR"
+            } else {
+                "OK"
+            },
+        );
+        tracing::info!(
+            event.name = "cox.turn.completed",
+            cox.session.id = %self.id,
+            cox.turn.id = %turn,
+            stop.reason = ?stop,
+            "agent turn completed"
+        );
         {
             let mut inner = self.inner.lock().await;
             inner.state = State::Idle;
         }
         Ok(())
+    }
+}
+
+/// Raw model/tool content may contain source and secrets, so standard GenAI
+/// content attributes are populated only under the OpenTelemetry opt-in.
+pub(crate) fn capture_message_content() -> bool {
+    std::env::var("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
+        .is_ok_and(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true"))
+}
+
+pub(crate) fn record_content(field: &'static str, value: &serde_json::Value) {
+    if let Some(content) = captured_json(value) {
+        tracing::Span::current().record(field, content);
+    }
+}
+
+pub(crate) fn captured_json(value: &serde_json::Value) -> Option<String> {
+    capture_message_content().then(|| value.to_string())
+}
+
+fn provider_name(provider: ProviderId) -> &'static str {
+    match provider {
+        ProviderId::Anthropic => "anthropic",
+        ProviderId::OpenAi => "openai",
+        ProviderId::Local => "local",
     }
 }
 
