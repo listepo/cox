@@ -66,6 +66,16 @@ async fn telemetry_correlates_agent_provider_and_tool_without_content_by_default
     assert_eq!(turn.parent_span_id, session.span_context.span_id());
     assert_eq!(provider.parent_span_id, turn.span_context.span_id());
     assert_eq!(tool.parent_span_id, turn.span_context.span_id());
+    // A finish reason is a stable identifier, never Rust's `Debug` spelling
+    // of the enum (which would export as `Some(EndTurn)`).
+    assert_eq!(
+        attr(provider, "gen_ai.response.finish_reasons").map(ToString::to_string),
+        Some("end_turn".to_string())
+    );
+    assert_eq!(
+        attr(turn, "cox.turn.stop_reason").map(ToString::to_string),
+        Some("end_turn".to_string())
+    );
     assert!(attr(provider, "gen_ai.usage.input_tokens").is_some());
     assert!(attr(provider, "cox.cost.usd").is_some());
     assert!(attr(tool, "cox.tool.output_bytes").is_some());

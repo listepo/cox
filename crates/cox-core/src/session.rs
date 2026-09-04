@@ -875,10 +875,9 @@ impl Session {
         let usage = streamed.usage.unwrap_or(usage);
         let response_model = streamed.response_model.as_ref().unwrap_or(&route.model);
         provider_span.record("gen_ai.response.model", response_model.to_string());
-        provider_span.record(
-            "gen_ai.response.finish_reasons",
-            format!("{:?}", streamed.stop),
-        );
+        if let Some(stop) = &streamed.stop {
+            provider_span.record("gen_ai.response.finish_reasons", stop_reason_name(stop));
+        }
         provider_span.record("gen_ai.usage.input_tokens", usage.input_tokens as u64);
         provider_span.record("gen_ai.usage.output_tokens", usage.output_tokens as u64);
         provider_span.record(
@@ -1054,7 +1053,7 @@ impl Session {
         })
         .await?;
         let span = tracing::Span::current();
-        span.record("cox.turn.stop_reason", format!("{stop:?}"));
+        span.record("cox.turn.stop_reason", stop_reason_name(&stop));
         span.record(
             "otel.status_code",
             if stop == StopReason::Error {
@@ -1093,6 +1092,21 @@ pub(crate) fn record_content(field: &'static str, value: &serde_json::Value) {
 
 pub(crate) fn captured_json(value: &serde_json::Value) -> Option<String> {
     capture_message_content().then(|| value.to_string())
+}
+
+/// The `snake_case` name of a stop reason, matching its serde tag. The
+/// OpenTelemetry GenAI convention wants `gen_ai.response.finish_reasons` to
+/// be a stable identifier, so this never uses `Debug`, whose output would
+/// leak Rust spelling (`Some(EndTurn)`) and change with the enum.
+fn stop_reason_name(stop: &StopReason) -> &'static str {
+    match stop {
+        StopReason::EndTurn => "end_turn",
+        StopReason::MaxTurns => "max_turns",
+        StopReason::Interrupted => "interrupted",
+        StopReason::Budget => "budget",
+        StopReason::Refusal { .. } => "refusal",
+        StopReason::Error => "error",
+    }
 }
 
 fn provider_name(provider: ProviderId) -> &'static str {
