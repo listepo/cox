@@ -18,6 +18,11 @@ const COLS: u16 = 100;
 
 /// Polls the screen until `ok` holds; a snapshot can land between
 /// `insert_before` and the next draw, so callers check whole states.
+///
+/// The deadline is generous on purpose: a passing run never waits for it,
+/// and the debug binary's first paint (SQLite, syntax themes, the workspace
+/// walk) takes well over a second on a box that is also running two other
+/// cargo builds — 5 s made this the one flaky test in the suite.
 fn wait_until(screen: &Screen, what: &str, ok: impl Fn(&str) -> bool) -> String {
     let start = Instant::now();
     loop {
@@ -26,8 +31,8 @@ fn wait_until(screen: &Screen, what: &str, ok: impl Fn(&str) -> bool) -> String 
             return text;
         }
         assert!(
-            start.elapsed() < Duration::from_secs(5),
-            "{what} never appeared within 5s; screen was:\n{text}"
+            start.elapsed() < Duration::from_secs(30),
+            "{what} never appeared within 30s; screen was:\n{text}"
         );
         thread::sleep(Duration::from_millis(50));
     }
