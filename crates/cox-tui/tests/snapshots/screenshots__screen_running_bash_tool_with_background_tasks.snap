@@ -1,0 +1,20 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"running_tool\", &mut state)"
+---
+› build it
+⚙ bash cargo build --workspace
+     Compiling cox-protocol v0.1.0
+     Compiling cox-core v0.1.0
+     Compiling cox-tui v0.1.0
+  ⠸ 2.3s
+
+
+
+
+
+
+
+
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 2 tasks · [default] · work

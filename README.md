@@ -29,6 +29,10 @@ Grafana, SigNoz or any OTLP backend.
 
 cox is under active development. APIs, configuration, and installation instructions are not yet stable. The Rust workspace already contains the protocol, core turn loop, provider adapters, tools, storage, extension loading, TUI, ACP, and MCP crates; features are completed incrementally against the project plan.
 
+What the TUI looks like: [docs/screenshots](docs/screenshots) holds one SVG per screen state (a streaming reply, an approval prompt, the diff view, …). They are rendered from the same frames the snapshot tests compare, so `just screenshots` regenerates them after a change.
+
+![A streamed reply after a read tool](docs/screenshots/streaming_reply.svg)
+
 ## Design principles
 
 - **One event stream.** `Submission` values enter a pure core state machine and typed `Event` values leave it. Every surface consumes the same events.

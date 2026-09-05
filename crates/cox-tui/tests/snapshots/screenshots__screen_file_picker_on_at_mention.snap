@@ -1,0 +1,19 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"file_picker\", &mut state)"
+---
+
+
+
+
+
+
+
+
+
+
+ @loop
+ ▸ src/loop.rs
+   tests/loop.rs
+> look at @
+ ⎇ main +12 −3 · - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]

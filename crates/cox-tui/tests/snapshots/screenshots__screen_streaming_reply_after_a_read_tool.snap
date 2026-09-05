@@ -1,0 +1,28 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"streaming_reply\", &mut state)"
+---
+› read src/loop.rs and summarize it
+⚙ read src/loop.rs
+  //! The agent loop as a state machine.
+
+  pub fn step(&mut self, sub: Submission) -> Vec<Event> {
+      self.turns.push(Turn::from(sub));
+      self.assemble_context()
+  }
+  ✓ 164B 12ms
+The loop is a state machine: Submission in, Event out.
+
+• context is assembled per turn from the instruction files and the last two turns verbatim
+• compaction never edits earlier turns in place
+
+let events = session.step(Submission::UserTurn { text, .. });
+
+Nothing in this file touches the network
+
+
+
+
+
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 15% · cache 39% · $0.07 · workspace-write · 0 tasks · [default] · wo

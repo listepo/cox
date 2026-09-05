@@ -1,0 +1,22 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"banner_and_error\", &mut state)"
+---
+› append the host to /etc/hosts
+[warn] hook `lint` exited 1; skipped
+✗ budget exceeded: spent $4.20 of $4.00
+ !  sandbox denied a write outside the workspace: /etc/hosts
+
+
+
+
+
+
+
+
+
+
+
+
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]

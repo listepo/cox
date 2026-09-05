@@ -1,0 +1,23 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"finished_turn\", &mut state)"
+---
+› why does compaction keep the last two turns?
+∴ thought (~34 tokens · Ctrl+T)
+Because the model refers back to them most: a summary of the turn it is answering would change the
+answer. Everything older is replaced by one summary item.
+
+
+
+
+
+
+
+
+
+
+
+
+
+> now add a test for it
+ ⎇ main +12 −3 · sonnet-5 · ctx 19% · cache 46% · $0.05 · workspace-write · 0 tasks · [default]

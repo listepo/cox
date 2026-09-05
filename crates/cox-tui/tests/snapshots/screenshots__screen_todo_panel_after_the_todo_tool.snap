@@ -1,0 +1,23 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"todo_panel\", &mut state)"
+---
+› plan the ledger work
+⚙ todo 3 items
+  ✓ 93B 12ms
+Three steps; starting the second.
+
+
+
+
+
+
+
+
+
+ todo
+ [x] read the cost ledger
+ [~] add the cache-write column
+ [ ] snapshot the status line
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]

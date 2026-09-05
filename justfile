@@ -33,3 +33,8 @@ cache:
 # drop extracted crate/git checkouts; keep archives
 cache-autoclean:
     mise exec -- cargo-cache --autoclean
+
+# Re-render docs/screenshots/*.svg from the whole-screen snapshot tests
+# (crates/cox-tui/tests/screenshots.rs); the same frames insta compares.
+screenshots:
+    COX_SCREENSHOTS="{{justfile_directory()}}/docs/screenshots" mise exec -- cargo test -p cox-tui --test screenshots

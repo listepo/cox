@@ -1,0 +1,20 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"approval_modal\", &mut state)"
+---
+› run the tests
+
+
+
+
+
+
+
+
+
+
+ approve bash cargo test --workspace?
+ exec risk needs approval
+ [y]es  [s]ession  [n]o  [e]dit
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default] · work

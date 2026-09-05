@@ -1,0 +1,19 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"slash_palette\", &mut state)"
+---
+
+
+
+
+
+
+
+
+
+
+ /mo
+ ▸ model
+   permissions
+> /
+ ⎇ main +12 −3 · - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]

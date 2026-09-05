@@ -1,0 +1,19 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"diff_view\", &mut state)"
+---
+ git diff HEAD · PageUp/PageDown scroll · Esc closes
+  ± src/loop.rs  +2 −1
+  --- a/src/loop.rs
+  +++ b/src/loop.rs
+  @@ -12,4 +12,5 @@
+   fn step(&mut self) {
+  -    let ev = self.next();
+  +    let ev = self.next_event();
+  +    self.ledger.record(&ev);
+       self.emit(ev);
+   }
+  ± README.md  +2 −0
+  --- a/README.md
+>  message · @ file · / command
+ ⎇ main +12 −3 · - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]

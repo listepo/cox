@@ -1,0 +1,28 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"light_theme\", &mut state)"
+---
+› show me the provider trait
+Every provider implements one trait:
+
+#[async_trait]
+pub trait Provider: Send + Sync {
+    async fn stream(&self, req: Request) -> Result<EventStream, ProviderError>;
+}
+
+The Replay and Scripted providers are what the tests use.
+
+
+
+
+
+
+
+
+
+
+
+
+
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 9% · cache 48% · $0.02 · workspace-write · 0 tasks · [default]
