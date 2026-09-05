@@ -161,7 +161,11 @@ fn bad(line: usize, why: &str) -> ToolError {
 /// is a sign the model wrapped it in commentary, and silently accepting
 /// that trains the failure in.
 pub fn parse(src: &str) -> Result<Patch, ToolError> {
-    let lines: Vec<&str> = src.lines().collect();
+    // `split('\n')`, not `str::lines`: `lines` also eats one trailing `\r`,
+    // so a content line ending in `\r` lost one on every print/parse pass
+    // (nightly fuzz, 2026-09-05). `apply` splits files the same way, and the
+    // trailing-whitespace match level absorbs a CRLF patch against an LF file.
+    let lines: Vec<&str> = src.split('\n').collect();
     let mut i = 0;
     // A trailing newline in the tool argument is not a syntax error.
     while lines.get(i).is_some_and(|l| l.trim().is_empty()) {
@@ -327,6 +331,20 @@ mod tests {
     }
 
     #[test]
+    fn v4a_trailing_carriage_returns_survive_the_round_trip() {
+        let src = "*** Begin Patch\n*** Add File: a\n+x\r\r\n*** Update File: b\n@@\n y\r\n*** End Patch\r\n";
+        let patch = p(src);
+        assert_eq!(
+            patch.ops[0],
+            Op::Add {
+                path: "a".into(),
+                lines: vec!["x\r\r".into()],
+            }
+        );
+        assert_eq!(parse(&patch.to_string()).ok(), Some(patch));
+    }
+
+    #[test]
     fn v4a_rejects_prose_around_the_patch() {
         for src in [
             "here you go:\n*** Begin Patch\n*** Delete File: a\n*** End Patch",
@@ -409,8 +427,8 @@ mod tests {
                     "\\*\\*\\* (Add|Delete|Update) File: [a-z ]{0,4}",
                     "\\*\\*\\* Move to: [a-z ]{0,4}",
                     "@@[ a-z]{0,4}",
-                    "[ +-][a-z@* ]{0,4}",
-                    "[a-z*@ ]{0,4}",
+                    "[ +-][a-z@*\\r ]{0,4}",
+                    "[a-z*@\\r ]{0,4}",
                 ],
                 0..8,
             ).prop_map(|l| l.join("\n")),
