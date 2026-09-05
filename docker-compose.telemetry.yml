@@ -4,7 +4,7 @@
 # for inline `configs:`; nothing else is written outside the containers.
 #
 #   docker compose -f docker-compose.telemetry.yml up -d
-#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 cox --set telemetry.otel=true -p "..."
+#   COX_TELEMETRY_OTEL=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 cox run -p "..."
 #   open http://localhost:16686   # Jaeger
 #   open http://localhost:3000    # Grafana → Explore → Tempo
 #   docker compose -f docker-compose.telemetry.yml down -v
@@ -17,8 +17,8 @@ services:
       - source: otel_collector
         target: /etc/otelcol/config.yaml
     ports:
-      - "4317:4317" # OTLP/gRPC
-      - "4318:4318" # OTLP/HTTP (what cox sends)
+      - "127.0.0.1:4317:4317" # OTLP/gRPC
+      - "127.0.0.1:4318:4318" # OTLP/HTTP (what cox sends)
     depends_on:
       - jaeger
       - tempo
@@ -26,7 +26,7 @@ services:
   jaeger:
     image: jaegertracing/jaeger:2.2.0
     ports:
-      - "16686:16686" # UI
+      - "127.0.0.1:16686:16686" # UI
 
   tempo:
     image: grafana/tempo:2.7.0
@@ -35,7 +35,7 @@ services:
       - source: tempo
         target: /etc/tempo.yaml
     ports:
-      - "3200:3200" # Tempo API (Grafana datasource)
+      - "127.0.0.1:3200:3200" # Tempo API (Grafana datasource)
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -47,7 +47,7 @@ services:
       - source: grafana_datasource
         target: /etc/grafana/provisioning/datasources/tempo.yaml
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - tempo
 

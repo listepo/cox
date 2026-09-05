@@ -2168,3 +2168,64 @@ ok — no snapshot changed.
 $ mise exec -- cargo clippy -p cox-tui -p cox --all-targets -- -D warnings · cargo fmt --check
 clean.
 ```
+
+#### T13.4 Honour resource service-name overrides
+Model: code · Status: done 2026-09-05 · Depends: T13.1 · Size: ~80
+Goal: OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES service.name survive exporter initialization; cox remains the fallback.
+Files: `crates/cox/src/telemetry.rs`.
+Check: `mise exec -- cargo test -p cox telemetry_resource` proves default, attribute override and explicit service-name precedence in isolated processes.
+
+What landed: `telemetry::resource()` builds the SDK resource as fallback `cox` → `EnvResourceDetector`
+(`OTEL_RESOURCE_ATTRIBUTES`, so `service.name=…` and any other attribute land) → an explicit non-empty
+`OTEL_SERVICE_NAME` last, which is the precedence the OTel spec gives those two variables. A code-set
+service name would otherwise beat the detectors, which is why the fallback goes in first. The
+precedence test spawns the test binary once per case (`--exact telemetry_resource_child --ignored`)
+because the SDK reads the process environment, and three cases in one process would race.
+
+Check output:
+
+```
+$ mise exec -- cargo test -p cox telemetry_resource
+test telemetry::tests::telemetry_resource_child ... ignored, isolated resource environment; run by precedence test
+test telemetry::tests::telemetry_resource_service_name_precedence ... ok   (cox / from-attributes / from-service; deployment.environment=test kept)
+test result: ok. 1 passed; 0 failed; 1 ignored
+```
+
+#### T13.5 Repair observability smoke commands
+Model: code · Status: done 2026-09-05 · Depends: T13.3 · Size: ~80
+Goal: documented commands use supported CLI flags and the local anonymous smoke stack binds only to loopback.
+Files: `docs/observability.md`, `website/content/docs/observability.md`, `docker-compose.telemetry.yml`.
+Check: run the documented headless command with a scripted provider and scratch COX_HOME; validate Compose if Docker is available, otherwise record the unavailable gate.
+
+What landed: the documented one-off command was `cox --set telemetry.otel=true -p "..."`, which no
+clap surface accepts; it is now `COX_TELEMETRY_OTEL=true cox run -p "..."` in both copies of the doc
+and in the compose file's header. Every host port in `docker-compose.telemetry.yml` (4317, 4318,
+16686, 3200, 3000) binds `127.0.0.1` — Grafana runs with anonymous admin and the stack is for a
+laptop, not a shared host; the "Jaeger alone" `docker run` line gets the same binding. The docs
+gain a repeatable smoke recipe that needs no API key: the `scripted` provider on
+`crates/cox/tests/scenarios/write_then_done.toml` under a scratch `COX_HOME`, with
+`OTEL_SERVICE_NAME=cox-smoke` so the run is distinguishable in a backend that already has `cox`
+traces. "Reading a trace" now describes what T13.2 actually emits (tool spans are siblings of the
+provider rounds, not children; `Notice` events are not log records on the trace).
+
+Check output (run against the already-running `cox-otel-verify` stack from the T13.3 verification,
+same compose file, loopback ports):
+
+```
+$ docker compose -f docker-compose.telemetry.yml config >/dev/null && echo ok
+ok
+$ COX_HOME=<scratch> COX_PROVIDER=scripted COX_SCENARIO=$PWD/crates/cox/tests/scenarios/write_then_done.toml \
+  COX_TELEMETRY_OTEL=true OTEL_SERVICE_NAME=cox-smoke OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+  cox --no-hooks --no-mcp --cwd <scratch> --permission-mode auto run -p "write a test file"
+done                      # exit 0; <scratch>/a.txt written
+$ curl -s localhost:16686/api/services
+{"data":["cox-smoke","jaeger","cox-smoke-isolated"]}
+$ curl -s "localhost:16686/api/traces?service=cox-smoke&limit=1"   # 1 trace, 5 spans
+  - invoke_agent cox
+  - invoke_agent cox.turn
+  - chat            gen_ai.request.model=claude-sonnet-5
+  - execute_tool    gen_ai.tool.name=write
+  - chat            gen_ai.request.model=claude-sonnet-5
+$ curl -s "localhost:3200/api/search?tags=service.name%3Dcox-smoke"
+{"traces":1,"root":"cox-smoke","name":"invoke_agent cox"}
+```

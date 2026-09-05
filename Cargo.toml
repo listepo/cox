@@ -119,7 +119,25 @@ vt100 = "0.16"
 portable-pty = "0.9"
 async-trait = "0.1"
 
+# Dev builds: debug info for our own crates only. The bulk of a debug target/
+# tree is DWARF for dependencies nobody steps through; line tables still give
+# file:line in backtraces.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+# Fat LTO + one codegen unit lets the linker drop cross-crate dead code (tree-
+# sitter grammars, syntect, the provider matrix); strip removes symbols and
+# debug info. Slower to build, which is why it is the dist profile and not
+# `release`.
+# `panic = "abort"` is deliberately absent: cox-mcp turns a panicking task into
+# a JoinError and keeps going (fail open on extensions), which abort removes.
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

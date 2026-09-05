@@ -92,9 +92,7 @@ where
         log_builder =
             log_builder.with_endpoint(signal_endpoint(&config.telemetry.endpoint, "v1/logs"));
     }
-    let resource = opentelemetry_sdk::Resource::builder()
-        .with_service_name("cox")
-        .build();
+    let resource = resource();
     let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
         .with_batch_exporter(span_builder.build()?)
         .with_resource(resource.clone())
@@ -125,6 +123,24 @@ where
 }
 
 #[cfg(feature = "otel")]
+fn resource() -> opentelemetry_sdk::Resource {
+    // A code-set service name overrides detectors. Apply the fallback first,
+    // then resource attributes, then the explicit OTEL_SERVICE_NAME override.
+    let builder = opentelemetry_sdk::Resource::builder()
+        .with_service_name("cox")
+        .with_detector(Box::new(
+            opentelemetry_sdk::resource::EnvResourceDetector::new(),
+        ));
+    match std::env::var("OTEL_SERVICE_NAME")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        Some(name) => builder.with_service_name(name).build(),
+        None => builder.build(),
+    }
+}
+
+#[cfg(feature = "otel")]
 fn signal_endpoint(base: &str, signal: &str) -> String {
     format!("{}/{signal}", base.trim_end_matches('/'))
 }
@@ -133,6 +149,62 @@ fn signal_endpoint(base: &str, signal: &str) -> String {
 mod tests {
     #[cfg(feature = "otel")]
     use std::io::{Read as _, Write as _};
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn telemetry_resource_service_name_precedence() {
+        for (attributes, service, expected) in [
+            ("deployment.environment=test", "", "cox"),
+            (
+                "service.name=from-attributes,deployment.environment=test",
+                "",
+                "from-attributes",
+            ),
+            (
+                "service.name=from-attributes,deployment.environment=test",
+                "from-service",
+                "from-service",
+            ),
+        ] {
+            let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+                .args([
+                    "--exact",
+                    "telemetry::tests::telemetry_resource_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("OTEL_RESOURCE_ATTRIBUTES", attributes)
+                .env("OTEL_SERVICE_NAME", service)
+                .env("COX_TEST_SERVICE_NAME", expected)
+                .output()
+                .expect("resource child");
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    #[ignore = "isolated resource environment; run by precedence test"]
+    fn telemetry_resource_child() {
+        let resource = super::resource();
+        assert_eq!(
+            resource
+                .get(&opentelemetry::Key::new("service.name"))
+                .map(|v| v.to_string()),
+            Some(std::env::var("COX_TEST_SERVICE_NAME").expect("expected name")),
+        );
+        assert_eq!(
+            resource
+                .get(&opentelemetry::Key::new("deployment.environment"))
+                .map(|v| v.to_string()),
+            Some("test".into()),
+        );
+    }
 
     #[cfg(feature = "otel")]
     #[test]

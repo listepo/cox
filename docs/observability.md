@@ -25,7 +25,7 @@ otel = true
 endpoint = "http://localhost:4318"
 ```
 
-or, for one run: `cox --set telemetry.otel=true -p "..."`.
+or, for one headless run: `COX_TELEMETRY_OTEL=true cox run -p "..."`.
 
 Standard variables the exporter honours (the `opentelemetry-otlp` defaults):
 
@@ -90,20 +90,40 @@ Every backend below speaks OTLP/HTTP; only the endpoint and headers change.
 
 ```bash
 docker compose -f docker-compose.telemetry.yml up -d
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
-  cox --set telemetry.otel=true -p "list the files in this repository"
+COX_TELEMETRY_OTEL=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+  cox run -p "list the files in this repository"
 open http://localhost:16686           # Jaeger: service "cox"
 open http://localhost:3000/explore    # Grafana → Tempo → search service.name=cox
 docker compose -f docker-compose.telemetry.yml logs otel-collector | grep -A3 LogRecord
 docker compose -f docker-compose.telemetry.yml down -v
 ```
 
-The collector receives on 4317/4318, fans traces out to Jaeger and Tempo
+Host ports bind to loopback only: Grafana's anonymous admin access is for
+local development, not a shared deployment. The collector receives on
+4317/4318, fans traces out to Jaeger and Tempo
 and prints log records to its own stdout; nothing is persisted after
 `down -v`.
 
+For a repeatable smoke run from this repository without an AI API key,
+start the stack above, then run:
+
+```bash
+scratch=$(mktemp -d)
+COX_HOME="$scratch" COX_PROVIDER=scripted \
+  COX_SCENARIO="$PWD/crates/cox/tests/scenarios/write_then_done.toml" \
+  COX_TELEMETRY_OTEL=true OTEL_SERVICE_NAME=cox-smoke \
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+  mise exec -- cargo run -p cox -- --no-hooks --no-mcp \
+    --cwd "$scratch" --permission-mode auto run -p "write a test file"
+```
+
+The fixture writes only `$scratch/a.txt` and replies `done`. Allow a few
+seconds for collector batching, then search for service `cox-smoke` in
+Jaeger or Grafana. Expect a session, a turn, two `chat` spans and one
+`execute_tool` span. The same trace ID is available in both backends.
+
 **Jaeger alone** (v2 accepts OTLP directly):
-`docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:2.2.0`,
+`docker run --rm -p 127.0.0.1:16686:16686 -p 127.0.0.1:4318:4318 jaegertracing/jaeger:2.2.0`,
 then the same `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`.
 
 **SigNoz** (self-hosted or cloud): point at the SigNoz collector,
@@ -173,8 +193,7 @@ the other two tables; they are per-call and per-project rather than per-session.
 ## Reading a trace
 
 A session is one trace; open it and you see the turn, under it one span per
-provider round with the model, token counts and cost, and under each round
-the tool calls it made with their subjects, durations and outcomes. Errors
-mark the span status; the `Notice` events cox shows in the TUI are log
-records attached to the same trace, so a permission refusal or a budget
-warning sits next to the round that caused it.
+provider round with the model, token counts and cost, alongside the tool
+calls with their subjects, durations and outcomes. Errors mark the span
+status. Provider completion, retry and tool completion logs can be correlated
+with those spans; the rollout remains the complete source for TUI events.
