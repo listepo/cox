@@ -339,11 +339,24 @@ mod tests {
         }
     }
 
+    /// The files `fixtures/grep/.gitignore` lists are written here rather
+    /// than committed: a file that is both tracked and ignored reads as a
+    /// dirty tree to release-plz (A17), which then commits its deletion.
     fn fixtures_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/grep")
             .canonicalize()
-            .expect("fixtures/grep exists")
+            .expect("fixtures/grep exists");
+        for (name, text) in [
+            (
+                "ignored.txt",
+                "TODO: this file is gitignored and must never appear\n",
+            ),
+            ("build.log", "TODO: build noise, also gitignored\n"),
+        ] {
+            std::fs::write(root.join(name), text).expect("write gitignored fixture");
+        }
+        root
     }
 
     fn cx(root: PathBuf) -> ToolCx {

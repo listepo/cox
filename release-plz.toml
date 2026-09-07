@@ -23,9 +23,6 @@ release_always = false
 dependencies_update = false
 # Ten crates, one changelog: only the `cox` package writes it (below).
 changelog_update = false
-# `fixtures/grep/` commits files its own .gitignore ignores (the grep tool's
-# ignore-handling test); release-plz reads that as a dirty tree and refuses.
-allow_dirty = true
 
 [[package]]
 name = "cox"
