@@ -14,8 +14,8 @@ use crate::frontmatter;
 /// The `explore` and `shell` presets shipped in the binary (T9.3): the same
 /// names, tools and models as the core's `agent` presets, so `cox ext list`
 /// shows them with no config files present.
-const EXPLORE_MD: &str = include_str!("../../../config/agents/explore.md");
-const SHELL_MD: &str = include_str!("../../../config/agents/shell.md");
+const EXPLORE_MD: &str = include_str!("../agents/explore.md");
+const SHELL_MD: &str = include_str!("../agents/shell.md");
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentDef {

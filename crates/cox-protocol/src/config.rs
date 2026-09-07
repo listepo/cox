@@ -26,7 +26,7 @@ use crate::types::{
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
 /// `crates/cox/src/config_load.rs` merges this beneath the user, project,
 /// env and flag layers via `figment::providers::Toml::string`.
-pub const DEFAULT_CONFIG_TOML: &str = include_str!("../../../config/default.toml");
+pub const DEFAULT_CONFIG_TOML: &str = include_str!("../default.toml");
 
 /// The full configuration tree (plan.md §1.6), one field per top-level
 /// `default.toml` table.

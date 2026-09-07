@@ -18,7 +18,7 @@ use cox_protocol::ids::SessionId;
 use cox_protocol::traits::UsageRow;
 use cox_protocol::types::{Job, ModelId, ProviderId, Tier, Usage};
 
-const DEFAULT_PRICES: &str = include_str!("../../../config/prices.toml");
+const DEFAULT_PRICES: &str = include_str!("../prices.toml");
 
 /// One `[[model]]` row of `config/prices.toml`: the four per-MTok rates a
 /// call is billed at, plus the provenance that lets `cox doctor` flag a

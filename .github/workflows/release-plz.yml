@@ -1,0 +1,52 @@
+# release-plz (A17, `release-plz.toml`): on every push to main, open or refresh
+# the release PR; when that PR merges, push the `v<version>` tag. The tag then
+# triggers `release.yml` (cargo-dist), which builds the binaries and creates
+# the GitHub Release.
+#
+# RELEASE_PLZ_TOKEN is a fine-grained PAT (contents: write, pull requests:
+# write) stored as a repository secret. It cannot be the default GITHUB_TOKEN:
+# a tag or PR made with GITHUB_TOKEN never triggers another workflow, so CI
+# would not run on the release PR and cargo-dist would never see the tag.
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Tag the merged release PR
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+  release-pr:
+    name: Open or refresh the release PR
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
