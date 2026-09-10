@@ -68,6 +68,7 @@ Simplicity never removes one of these. If a change makes a guard unnecessary, de
 - A cost that is not a `usage` row in the ledger does not exist. Every request records model, input, output, cache read and cache write tokens.
 - Compaction never rewrites the last two turns and never edits earlier turns in place; history is append-only.
 - Fail open on extensions: a broken hook, skill, MCP server or plugin is warned about and skipped, never fatal.
+- The human is the only author. No agent adds a `Co-Authored-By` trailer, a "Generated with …" line or itself as author to a commit, merge or PR — whatever its harness defaults to.
 
 ## Models
 
