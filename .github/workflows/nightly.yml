@@ -16,7 +16,7 @@ jobs:
       matrix:
         target: [sse, v4a_parse, frontmatter, permission_rules]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - name: install cargo-fuzz
         run: cargo install cargo-fuzz --locked
@@ -25,7 +25,7 @@ jobs:
         run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=600
       - name: upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: fuzz/artifacts/
