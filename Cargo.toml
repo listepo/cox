@@ -84,7 +84,7 @@ rmcp = { version = "3.2", features = ["client", "server", "auth", "transport-io"
 # semver-breaking API change vs. 2.2 for the sqlite backend used here.
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = "2.2"
-libsqlite3-sys = { version = "0.30", features = ["bundled"] }
+libsqlite3-sys = { version = "0.38", features = ["bundled"] }
 directories = "6"
 keyring = "4"
 sha2 = "0.10"
