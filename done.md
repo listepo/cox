@@ -2229,3 +2229,85 @@ $ curl -s "localhost:16686/api/traces?service=cox-smoke&limit=1"   # 1 trace, 5 
 $ curl -s "localhost:3200/api/search?tags=service.name%3Dcox-smoke"
 {"traces":1,"root":"cox-smoke","name":"invoke_agent cox"}
 ```
+
+#### T17.1 `Session::resume` reuses the session id and injects history
+Model: composer · Status: done 2026-09-12 · Depends: T2.4 · Size: ~180
+Goal: a reconstructed [`History`] becomes a live `Session` with the same id, so later events append to the same rollout.
+Files: `crates/cox-core/src/session.rs`, `crates/cox-core/tests/resume.rs`.
+What landed: `Session::resume` reuses the id, skips `session_create` and the persisted `SessionStarted`, still emits `SessionStarted` (and a truncation `Notice`) on the live channel, and restores messages, grants, permission mode and per-user `turn_marks`. `build` takes `resume: Option<(SessionId, History)>`. Test `resume_session_reuses_id_and_history`. Clippy `too_many_arguments` allowed on `resume` like `build`.
+Check output:
+```
+$ mise exec -- cargo test -p cox-core resume_
+resume_builds_identical_request ... ok
+resume_session_reuses_id_and_history ... ok
+(+ 3 rollout::tests::resume_*)
+$ mise exec -- cargo clippy -p cox-core --all-targets -- -D warnings
+ok
+```
+
+#### T17.2 `cox run -p --resume` / `--continue` injects that history
+Model: composer · Status: done 2026-09-12 · Depends: T17.1 · Size: ~120
+Goal: headless `-p` continues an existing session instead of starting a new one.
+Files: `crates/cox/src/run.rs`, `crates/cox/src/resume.rs`, `crates/cox/src/session.rs`, `crates/cox/tests/run_cli.rs`.
+What landed: `session::open` takes `resume: Option<(SessionId, History)>` and calls `Session::resume`. `cox run -p --resume`/`--continue` load `resume::from_home` and reuse the id. Bare `cox run` errors instead of printing `not implemented`. Test `resume_followup_prompt_reuses_session_id`. Over the 3-file guide (4 files: open path + run + resume error + integration test).
+Check output:
+```
+$ mise exec -- cargo test -p cox --test run_cli resume_followup_prompt_reuses_session_id
+ok
+```
+
+#### T17.3 TUI first-turn `PROMPT`
+Model: composer · Status: done 2026-09-12 · Depends: T5.8 · Size: ~80
+Goal: `cox "hello"` starts the TUI and submits that text as the first turn (§1.12).
+Files: `crates/cox/src/session.rs`, `crates/cox/src/cli.rs`.
+What landed: `Cli.prompt` is no longer a stub. `run_tui` spawns (does not await) `UserTurn` when the positional prompt is non-empty. Test `positional_prompt_is_the_first_turn`. Not done: global `cox --resume` / `--continue` for the TUI (still `cox run` flags only).
+Check output:
+```
+$ mise exec -- cargo test -p cox positional_prompt_is_the_first_turn
+test cli::tests::positional_prompt_is_the_first_turn ... ok
+```
+
+#### T17.4 OpenAI Chat Completions retry
+Model: composer · Status: done 2026-09-12 · Depends: T2.6 · Size: ~80
+Goal: the Chat client retries before the first byte, same policy as Anthropic.
+Files: `crates/cox-provider/src/openai/chat.rs`.
+What landed: `OpenAiChatProvider.retry` defaults via `Policy::default()` in `from_parts`; `stream` wraps `stream_once` with `stream_with_retry`. Constructors unchanged. Test `chat_provider_defaults_retry_policy`.
+Check output:
+```
+$ mise exec -- cargo test -p cox-provider chat_provider_defaults_retry_policy
+ok
+```
+
+#### T17.5 OpenAI Responses retry
+Model: composer · Status: done 2026-09-12 · Depends: T2.6 · Size: ~80
+Goal: the Responses client retries before the first byte, same policy as Anthropic.
+Files: `crates/cox-provider/src/openai/responses.rs`.
+What landed: same wrap as T17.4 on `OpenAiResponsesProvider`. Test `responses_provider_defaults_retry_policy`.
+Check output:
+```
+$ mise exec -- cargo test -p cox-provider responses_provider_defaults_retry_policy
+ok
+```
+
+#### T17.6 `cox doctor` prices-age check
+Model: composer · Status: done 2026-09-12 · Depends: T1.7 · Size: ~100
+Goal: doctor warns when any `prices.toml` `verified_on` is older than 90 days (A9 deferred).
+Files: `crates/cox-provider/src/usage.rs`, `crates/cox/src/doctor.rs`.
+What landed: `PriceTable::prices()`. Stub `check_prices` replaced: embedded table via missing-path `load`, ISO date without a new crate, warn if any row is >90 days old, fail-open on parse errors. Tests `doctor_prices_embedded_table_is_ok` and `doctor_prices_older_than_90_days_warns`.
+Check output:
+```
+$ mise exec -- cargo test -p cox doctor_prices
+doctor_prices_embedded_table_is_ok ... ok
+doctor_prices_older_than_90_days_warns ... ok
+```
+
+#### T17.7 Website matches the shipped binary
+Model: composer · Status: done 2026-09-12 · Depends: T12.3 · Size: doc
+Goal: the Hugo site no longer describes cox as unfinished design docs.
+Files: `website/content/docs/_index.md`, `website/content/docs/configuration.md`, `website/content/_index.md`.
+What landed: landing page names v0.1 and the four surfaces; docs index is present tense; configuration states real precedence and sandbox defaults.
+Check output:
+```
+$ hugo --gc --minify   # in website/
+Pages │ 13 · Total in 171 ms
+```
