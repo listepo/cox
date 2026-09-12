@@ -437,6 +437,8 @@ pub struct OpenAiChatProvider {
     pub context_window: u32,
     /// The shared connection pool.
     pub http: reqwest::Client,
+    /// Backoff for transient failures before the first byte (T17.4).
+    pub retry: crate::retry::Policy,
 }
 
 impl OpenAiChatProvider {
@@ -453,6 +455,7 @@ impl OpenAiChatProvider {
             models,
             context_window,
             http: reqwest::Client::new(),
+            retry: crate::retry::Policy::default(),
         }
     }
 
@@ -505,8 +508,30 @@ impl Provider for OpenAiChatProvider {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
+        crate::retry::stream_with_retry(self.retry, sink, cancel, |sink, cancel| {
+            self.stream_once(&req, sink, cancel)
+        })
+        .await
+    }
+
+    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
+        // No dedicated endpoint on local servers; T1.8's estimate covers it.
+        Err(ProviderError::Unsupported {
+            feature: "count_tokens".into(),
+        })
+    }
+}
+
+impl OpenAiChatProvider {
+    /// One HTTP attempt; `stream` wraps it in the retry policy.
+    async fn stream_once(
+        &self,
+        req: &Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
         let started = std::time::Instant::now();
-        let body = build_body(&req)?;
+        let body = build_body(req)?;
 
         let mut request = self
             .http
@@ -561,13 +586,6 @@ impl Provider for OpenAiChatProvider {
         let mut usage = machine.usage();
         usage.latency_ms = started.elapsed().as_millis() as u64;
         Ok(usage)
-    }
-
-    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
-        // No dedicated endpoint on local servers; T1.8's estimate covers it.
-        Err(ProviderError::Unsupported {
-            feature: "count_tokens".into(),
-        })
     }
 }
 
@@ -918,6 +936,7 @@ mod tests {
             models: vec![],
             context_window: 32_768,
             http: reqwest::Client::new(),
+            retry: crate::retry::Policy::default(),
         };
         let mut req = base("qwen3-coder");
         req.messages = vec![user_text("read a.rs")];
@@ -972,6 +991,7 @@ mod tests {
             models: vec![],
             context_window: 128_000,
             http: reqwest::Client::new(),
+            retry: crate::retry::Policy::default(),
         };
         let mut req = base("qwen3-coder");
         req.messages = vec![user_text("hello")];
@@ -1011,5 +1031,12 @@ mod tests {
         let bare =
             OpenAiChatProvider::from_parts("http://localhost:11434/v1", None, vec![], 32_768);
         assert_eq!(bare.capabilities().max_context, 32_768);
+    }
+
+    #[test]
+    fn chat_provider_defaults_retry_policy() {
+        let client =
+            OpenAiChatProvider::from_parts("http://localhost:11434/v1", None, vec![], 32_768);
+        assert_eq!(client.retry.max_retries, 4);
     }
 }
