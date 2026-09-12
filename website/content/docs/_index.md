@@ -34,6 +34,10 @@ The documentation site itself lives in `website/`. Install its Node dependencies
 - [Architecture]({{< relref "architecture" >}}) explains the core event model and crate boundaries.
 - [Configuration]({{< relref "configuration" >}}) describes precedence, sandbox defaults, and model routing.
 - [Observability]({{< relref "observability" >}}) covers traces, metrics, and the usage ledger.
+- [Tools]({{< relref "tools" >}}) lists built-in tools, risks, and how permission decisions are centralized.
+- [Compat]({{< relref "compat" >}}) describes what cox reads from `.claude/` and `.codex/` setups.
+- [IDE]({{< relref "ide" >}}) covers connecting Zed, JetBrains, and other editors via ACP.
+- [How it works]({{< relref "how-it-works" >}}) walks through one user turn on the event stream.
 
 ## Design principles
 
