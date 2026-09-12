@@ -337,6 +337,8 @@ pub struct OpenAiResponsesProvider {
     pub context_window: u32,
     /// The shared connection pool.
     pub http: reqwest::Client,
+    /// Backoff for transient failures before the first byte.
+    pub retry: crate::retry::Policy,
 }
 
 impl OpenAiResponsesProvider {
@@ -354,6 +356,7 @@ impl OpenAiResponsesProvider {
             models,
             context_window,
             http: reqwest::Client::new(),
+            retry: crate::retry::Policy::default(),
         }
     }
 
@@ -400,8 +403,29 @@ impl Provider for OpenAiResponsesProvider {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
+        crate::retry::stream_with_retry(self.retry, sink, cancel, |sink, cancel| {
+            self.stream_once(&req, sink, cancel)
+        })
+        .await
+    }
+
+    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
+        Err(ProviderError::Unsupported {
+            feature: "count_tokens".into(),
+        })
+    }
+}
+
+impl OpenAiResponsesProvider {
+    /// One HTTP attempt; `stream` wraps it in the retry policy.
+    async fn stream_once(
+        &self,
+        req: &Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
         let started = std::time::Instant::now();
-        let body = build_body(&req)?;
+        let body = build_body(req)?;
 
         let mut request = self
             .http
@@ -455,12 +479,6 @@ impl Provider for OpenAiResponsesProvider {
         let mut usage = machine.usage();
         usage.latency_ms = started.elapsed().as_millis() as u64;
         Ok(usage)
-    }
-
-    async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
-        Err(ProviderError::Unsupported {
-            feature: "count_tokens".into(),
-        })
     }
 }
 
@@ -798,5 +816,12 @@ mod tests {
         assert_eq!(client.capabilities().max_context, 1_050_000);
         let bare = OpenAiResponsesProvider::new("https://x", None, vec![], 400_000);
         assert_eq!(bare.capabilities().max_context, 400_000);
+    }
+
+    #[test]
+    fn responses_provider_defaults_retry_policy() {
+        let provider =
+            OpenAiResponsesProvider::new("https://api.openai.com/v1", None, vec![], 400_000);
+        assert_eq!(provider.retry.max_retries, 4);
     }
 }
