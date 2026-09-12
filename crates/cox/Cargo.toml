@@ -18,15 +18,15 @@ otel = [
 
 [dependencies]
 clap = { workspace = true }
-cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
-cox-core = { path = "../cox-core", version = "0.1.0" }
-cox-provider = { path = "../cox-provider", version = "0.1.0" }
-cox-tools = { path = "../cox-tools", version = "0.1.0" }
-cox-mcp = { path = "../cox-mcp", version = "0.1.0" }
-cox-store = { path = "../cox-store", version = "0.1.0" }
-cox-ext = { path = "../cox-ext", version = "0.1.0" }
-cox-tui = { path = "../cox-tui", version = "0.1.0" }
-cox-acp = { path = "../cox-acp", version = "0.1.0" }
+cox-protocol = { path = "../cox-protocol", version = "0.1.1" }
+cox-core = { path = "../cox-core", version = "0.1.1" }
+cox-provider = { path = "../cox-provider", version = "0.1.1" }
+cox-tools = { path = "../cox-tools", version = "0.1.1" }
+cox-mcp = { path = "../cox-mcp", version = "0.1.1" }
+cox-store = { path = "../cox-store", version = "0.1.1" }
+cox-ext = { path = "../cox-ext", version = "0.1.1" }
+cox-tui = { path = "../cox-tui", version = "0.1.1" }
+cox-acp = { path = "../cox-acp", version = "0.1.1" }
 # T0.3: config loading (figment layers default/user/project/env/flag),
 # `cox config set` (toml_edit, preserves comments), anyhow at the cox-crate
 # boundary (AGENTS.md: "anyhow only in crates/cox"), serde_json to build
