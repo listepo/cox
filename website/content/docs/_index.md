@@ -5,9 +5,7 @@ weight: 1
 
 ## Welcome aboard
 
-**cox is currently under active development.** Its goal is a dependable coding agent that stays useful across an interactive terminal, CI scripts, editors, and other agents—without changing the core behavior underneath.
-
-### What cox is building
+**cox** is a modular Rust terminal coding agent: submissions enter a pure core state machine and typed events leave it. The same stream powers an interactive TUI, headless automation, editor clients, and MCP consumers—so behavior stays consistent wherever you run cox.
 
 - **A terminal-first experience** with an inline, scrollback-friendly TUI.
 - **Automation surfaces** for headless prompts, stream-JSON output, ACP editor clients, and MCP consumers.
@@ -17,7 +15,7 @@ weight: 1
 
 ## Project status
 
-The Rust workspace and foundational protocol, provider, tool, storage, and configuration work are in progress. The public API and installation flow are not yet stable; treat this site as design documentation rather than a release manual.
+cox **v0.1** ships the full CLI surface, configuration layers, sandbox, and all four entry points (`cox`, `cox run -p`, `cox acp`, `cox mcp`). Treat these pages as the manual for the current tree.
 
 ## Develop cox
 
@@ -34,7 +32,8 @@ The documentation site itself lives in `website/`. Install its Node dependencies
 ## Documentation map
 
 - [Architecture]({{< relref "architecture" >}}) explains the core event model and crate boundaries.
-- [Configuration]({{< relref "configuration" >}}) describes the planned precedence and safety defaults.
+- [Configuration]({{< relref "configuration" >}}) describes precedence, sandbox defaults, and model routing.
+- [Observability]({{< relref "observability" >}}) covers traces, metrics, and the usage ledger.
 
 ## Design principles
 
