@@ -17,6 +17,13 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
+    /// Resume a specific session in the interactive TUI.
+    #[arg(long, value_name = "ID", conflicts_with = "continue")]
+    pub resume: Option<String>,
+    /// Continue the latest session for this cwd in the interactive TUI.
+    #[arg(long, conflicts_with = "resume")]
+    pub r#continue: bool,
+
     // ---- Global flags (plan.md §1.12 "Global:" row) ----
     /// Override the `code` tier's provider.
     #[arg(long, global = true, value_name = "NAME")]
@@ -302,5 +309,18 @@ mod tests {
         // ids, conflicting short/long names, ...) that only surface when the
         // `Command` is actually built.
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn resume_opens_the_tui_cli() {
+        let cli = Cli::parse_from(["cox", "--resume", "01BX5ZZKBKACTAV9WEVGEMMVRZ"]);
+        assert_eq!(cli.resume.as_deref(), Some("01BX5ZZKBKACTAV9WEVGEMMVRZ"));
+        assert!(!cli.r#continue);
+        assert!(cli.command.is_none());
+
+        let cli = Cli::parse_from(["cox", "--continue"]);
+        assert!(cli.r#continue);
+        assert!(cli.resume.is_none());
+        assert!(cli.command.is_none());
     }
 }

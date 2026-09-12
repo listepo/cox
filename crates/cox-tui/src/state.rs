@@ -5,8 +5,8 @@
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Event, ItemKind, Level, PermissionMode, Presence, SandboxMode, Submission, Tier, ToolCall,
-    ToolResult,
+    Content, Event, ItemKind, Level, Message, PermissionMode, Presence, Role, SandboxMode,
+    Submission, Tier, ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -193,6 +193,7 @@ pub enum Ask {
 pub enum Cmd {
     Submit(Submission),
     Quit,
+    Clear,
     Copy(String),
     Ask(Ask),
 }
@@ -234,6 +235,52 @@ impl State {
             agents: Vec::new(),
             sessions: Vec::new(),
             git: None,
+        }
+    }
+
+    /// Seeds the transcript from reconstructed session history so resume is not blank.
+    pub fn transcript_from_history(&mut self, messages: &[Message]) {
+        for message in messages {
+            match message.role {
+                Role::User => {
+                    let text = message
+                        .content
+                        .iter()
+                        .filter_map(|block| match block {
+                            Content::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    if !text.is_empty() {
+                        self.transcript.push(Cell::User {
+                            text,
+                            attachments: vec![],
+                        });
+                    }
+                }
+                Role::Assistant => {
+                    for block in &message.content {
+                        match block {
+                            Content::Text { text } => {
+                                self.transcript.push(Cell::Assistant {
+                                    item: ItemId::new(),
+                                    text: text.clone(),
+                                    done: true,
+                                });
+                            }
+                            Content::Thinking { text, .. } => {
+                                self.transcript.push(Cell::Thinking {
+                                    item: ItemId::new(),
+                                    text: text.clone(),
+                                    done: true,
+                                });
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -488,7 +535,14 @@ fn agents_list(agents: &[Presence]) -> String {
 /// A slash command's effect; anything the core owns becomes a `Submit`.
 fn act(state: &mut State, action: Action) -> Vec<Cmd> {
     match action {
-        Action::Submit(sub) => return vec![Cmd::Submit(sub)],
+        Action::Submit(sub) => {
+            if let Submission::Command { command } = &sub
+                && command.name == "clear"
+            {
+                return vec![Cmd::Clear];
+            }
+            return vec![Cmd::Submit(sub)];
+        }
         Action::Quit => return vec![Cmd::Quit],
         Action::Mode(mode) => return set_mode(state, mode),
         Action::Help => notice(state, Level::Info, commands::help()),
@@ -625,5 +679,54 @@ fn on_event(state: &mut State, ev: Event) {
             fatal,
         }),
         Event::SessionStarted { .. } | Event::Compacted { .. } => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cox_protocol::types::{Content, Message, PermissionMode, Role, SandboxMode};
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    #[test]
+    fn transcript_from_history_seeds_user_and_assistant() {
+        let messages = [
+            Message {
+                role: Role::User,
+                content: vec![Content::Text {
+                    text: "hello".into(),
+                }],
+            },
+            Message {
+                role: Role::Assistant,
+                content: vec![Content::Text {
+                    text: "hi there".into(),
+                }],
+            },
+        ];
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.transcript_from_history(&messages);
+        assert_eq!(state.transcript.len(), 2);
+        assert!(matches!(
+            &state.transcript[0],
+            Cell::User { text, .. } if text == "hello"
+        ));
+        assert!(matches!(
+            &state.transcript[1],
+            Cell::Assistant { text, done: true, .. } if text == "hi there"
+        ));
+    }
+
+    #[test]
+    fn clear_command_emits_cmd_clear() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        // `/` at column 0 opens the palette; Esc leaves `/` in the composer.
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        for c in "clear".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert_eq!(cmds, vec![Cmd::Clear]);
     }
 }

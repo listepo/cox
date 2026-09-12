@@ -26,6 +26,13 @@ use crate::view::view;
 /// Rows the live viewport keeps below the scrollback.
 const VIEWPORT_ROWS: u16 = 15;
 
+/// Why the TUI stopped; the binary uses this to quit or start a fresh session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TuiOutcome {
+    Quit,
+    Clear,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TuiError {
     #[error("terminal: {0}")]
@@ -48,7 +55,7 @@ pub async fn run(
     mut state: State,
     mut feed: tokio::sync::mpsc::Receiver<Msg>,
     ask: tokio::sync::mpsc::Sender<Ask>,
-) -> Result<(), TuiError> {
+) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
     execute!(io::stdout(), EnableBracketedPaste)?;
@@ -77,7 +84,7 @@ pub async fn run(
                 },
                 ev = rx.recv() => match ev {
                     Some(ev) => Msg::Event(ev),
-                    None => return Ok(()),
+                    None => return Ok(TuiOutcome::Quit),
                 },
                 _ = tick.tick() => Msg::Tick,
                 Some(msg) = feed.recv() => msg,
@@ -93,7 +100,8 @@ pub async fn run(
                             let _ = session.submit(sub).await;
                         });
                     }
-                    Cmd::Quit => return Ok(()),
+                    Cmd::Quit => return Ok(TuiOutcome::Quit),
+                    Cmd::Clear => return Ok(TuiOutcome::Clear),
                     // Clipboard lands with the transcript cells (T5.3).
                     Cmd::Copy(_) => {}
                     // A request the runtime has not answered yet is still

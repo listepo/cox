@@ -31,6 +31,7 @@ use cox_tui::state::{Ask, GitStatus, Msg, State};
 
 use crate::cli::Cli;
 use crate::config_load::{self, LoadedConfig};
+use crate::resume;
 
 /// Loads config, picks the provider (`COX_PROVIDER` test doubles first) and
 /// opens the store under `COX_HOME`. `answer` is what `ask_user` returns
@@ -150,99 +151,125 @@ fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
-    let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}, None))?;
-    let config = &loaded.config;
-    let mut state = State::new(config.permissions.mode, config.sandbox.mode);
-    state.files = cox_tools::glob::workspace_files(cwd);
-    state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
-    state.sessions = project_sessions(&home, cwd);
-    state.composer.set_vim(config.tui.vim);
-    state.dark = config.tui.theme != "light";
-    state.glyphs = cox_tui::glyph::resolve(&config.tui);
-    state.depth = cox_tui::color::resolve(&config.tui);
-    // The theme name outlives every render; one leak per process buys a
-    // `Copy` `Look` instead of a clone on each line.
-    state.syntax_theme = String::leak(config.tui.syntax_theme.clone());
-    if !state.syntax_theme.is_empty()
-        && cox_tui::markdown::theme_name(state.dark, state.syntax_theme) != state.syntax_theme
-    {
-        state.transcript.push(cox_tui::state::Cell::Notice {
-            level: cox_protocol::types::Level::Warn,
-            text: format!(
-                "unknown tui.syntax_theme {:?}; using the default. Available: {}",
-                config.tui.syntax_theme,
-                cox_tui::markdown::themes().join(", ")
-            ),
-        });
-    }
-    state.show_thinking = config.tui.show_thinking == "full";
-    state.marks = cli.verbose > 0;
-    let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
-    let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
-    // The poller lives here, not in cox-tui: the TUI never touches the disk.
-    let poll = {
-        let home = home.clone();
-        let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
-        let me = session.id();
-        let git = config.tui.git;
-        let dir = cwd.to_path_buf();
-        rt.spawn(async move {
-            let mut every = tokio::time::interval(std::time::Duration::from_secs(2));
-            loop {
-                tokio::select! {
-                    _ = every.tick() => {
-                        let now = cox_ext::presence::now_secs();
-                        let agents = cox_ext::presence::others(&home, &project, &me, now);
-                        if feed.send(Msg::Agents(agents)).await.is_err() {
-                            break;
-                        }
-                        if !git {
-                            continue;
-                        }
-                        // T15.2: the same poll carries the branch and counts.
-                        let status = cox_tools::git::status(&dir).await.map(|s| GitStatus {
-                            branch: s.branch,
-                            added: s.added,
-                            removed: s.removed,
-                        });
-                        if feed.send(Msg::Git(status)).await.is_err() {
-                            break;
-                        }
-                    }
-                    // T15.3: `Ctrl+G` asks for the diff; the answer rides the feed.
-                    ask = ask_rx.recv() => match ask {
-                        Some(Ask::GitDiff) => {
-                            let diff = cox_tools::git::diff(&dir).await;
-                            if feed.send(Msg::Diff(diff)).await.is_err() {
+    let mut resume_spec = if cli.r#continue {
+        let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
+        let history = resume::from_home(&home, &id.to_string())?;
+        Some((id, history))
+    } else if let Some(id_str) = &cli.resume {
+        let id: SessionId = id_str.parse()?;
+        let history = resume::from_home(&home, id_str)?;
+        Some((id, history))
+    } else {
+        None
+    };
+    let mut first = true;
+    loop {
+        let seed = resume_spec
+            .as_ref()
+            .map(|(_, history)| history.messages.clone());
+        let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take()))?;
+        let config = &loaded.config;
+        let mut state = State::new(config.permissions.mode, config.sandbox.mode);
+        if let Some(messages) = seed {
+            state.transcript_from_history(&messages);
+        }
+        state.files = cox_tools::glob::workspace_files(cwd);
+        state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
+        state.sessions = project_sessions(&home, cwd);
+        state.composer.set_vim(config.tui.vim);
+        state.dark = config.tui.theme != "light";
+        state.glyphs = cox_tui::glyph::resolve(&config.tui);
+        state.depth = cox_tui::color::resolve(&config.tui);
+        // The theme name outlives every render; one leak per process buys a
+        // `Copy` `Look` instead of a clone on each line.
+        state.syntax_theme = String::leak(config.tui.syntax_theme.clone());
+        if !state.syntax_theme.is_empty()
+            && cox_tui::markdown::theme_name(state.dark, state.syntax_theme) != state.syntax_theme
+        {
+            state.transcript.push(cox_tui::state::Cell::Notice {
+                level: cox_protocol::types::Level::Warn,
+                text: format!(
+                    "unknown tui.syntax_theme {:?}; using the default. Available: {}",
+                    config.tui.syntax_theme,
+                    cox_tui::markdown::themes().join(", ")
+                ),
+            });
+        }
+        state.show_thinking = config.tui.show_thinking == "full";
+        state.marks = cli.verbose > 0;
+        let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
+        let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
+        // The poller lives here, not in cox-tui: the TUI never touches the disk.
+        let poll = {
+            let home = home.clone();
+            let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+            let me = session.id();
+            let git = config.tui.git;
+            let dir = cwd.to_path_buf();
+            rt.spawn(async move {
+                let mut every = tokio::time::interval(std::time::Duration::from_secs(2));
+                loop {
+                    tokio::select! {
+                        _ = every.tick() => {
+                            let now = cox_ext::presence::now_secs();
+                            let agents = cox_ext::presence::others(&home, &project, &me, now);
+                            if feed.send(Msg::Agents(agents)).await.is_err() {
+                                break;
+                            }
+                            if !git {
+                                continue;
+                            }
+                            // T15.2: the same poll carries the branch and counts.
+                            let status = cox_tools::git::status(&dir).await.map(|s| GitStatus {
+                                branch: s.branch,
+                                added: s.added,
+                                removed: s.removed,
+                            });
+                            if feed.send(Msg::Git(status)).await.is_err() {
                                 break;
                             }
                         }
-                        None => break,
-                    },
+                        // T15.3: `Ctrl+G` asks for the diff; the answer rides the feed.
+                        ask = ask_rx.recv() => match ask {
+                            Some(Ask::GitDiff) => {
+                                let diff = cox_tools::git::diff(&dir).await;
+                                if feed.send(Msg::Diff(diff)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            None => break,
+                        },
+                    }
                 }
+            })
+        };
+        if first {
+            if let Some(prompt) = cli.prompt.clone().filter(|p| !p.is_empty()) {
+                let starter = session.clone();
+                rt.spawn(async move {
+                    let _ = starter
+                        .submit(Submission::UserTurn {
+                            text: prompt,
+                            attachments: vec![],
+                            confirm_think: false,
+                        })
+                        .await;
+                });
             }
-        })
-    };
-    if let Some(prompt) = cli.prompt.clone().filter(|p| !p.is_empty()) {
-        let starter = session.clone();
-        rt.spawn(async move {
-            let _ = starter
-                .submit(Submission::UserTurn {
-                    text: prompt,
-                    attachments: vec![],
-                    confirm_think: false,
-                })
-                .await;
-        });
+            first = false;
+        }
+        let quit = session.clone();
+        let outcome = rt.block_on(cox_tui::app::run(session, state, feed_rx, ask))?;
+        poll.abort();
+        // The TUI never shut the core down, so `SessionEnd` hooks and the
+        // presence record outlived the window (T16.2).
+        rt.block_on(quit.submit(Submission::Shutdown))?;
+        match outcome {
+            cox_tui::app::TuiOutcome::Clear => continue,
+            cox_tui::app::TuiOutcome::Quit => break,
+        }
     }
-    let quit = session.clone();
-    let ran = rt.block_on(cox_tui::app::run(session, state, feed_rx, ask));
-    poll.abort();
-    ran?;
-    // The TUI never shut the core down, so `SessionEnd` hooks and the
-    // presence record outlived the window (T16.2).
-    rt.block_on(quit.submit(Submission::Shutdown))?;
     Ok(())
 }
 
