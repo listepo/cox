@@ -87,6 +87,11 @@ impl PriceTable {
         })
     }
 
+    /// All `[[model]]` rows, for staleness checks and diagnostics.
+    pub fn prices(&self) -> &[Price] {
+        &self.prices
+    }
+
     /// Get the price for a model id, or None if not found.
     pub fn price_for(&self, model: &ModelId) -> Option<&Price> {
         self.prices.iter().find(|p| p.id == model.0)

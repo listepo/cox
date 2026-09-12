@@ -11,6 +11,7 @@ use std::process::Command as ProcessCommand;
 use serde::{Deserialize, Serialize};
 
 use cox_protocol::Store as _;
+use cox_provider::usage::{Price, PriceTable};
 
 /// One check result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -240,14 +241,119 @@ fn check_terminal() -> CheckResult {
     CheckResult::ok("terminal", details.join(", "))
 }
 
+const PRICES_STALE_DAYS: u32 = 90;
+const PRICES_FIX: &str = "update crates/cox-provider/prices.toml from the official page";
+
+fn parse_iso_date(s: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = s.split('-');
+    let y = parts.next()?.parse().ok()?;
+    let m = parts.next()?.parse().ok()?;
+    let d = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some((y, m, d))
+}
+
+fn ymd_to_days(date: (u32, u32, u32)) -> Option<u32> {
+    let (y, m, d) = date;
+    let m = m as i64;
+    let y = y as i64;
+    let d = d as i64;
+    let y_adj = y - if m <= 2 { 1 } else { 0 };
+    let era = y_adj / 400;
+    let yoe = y_adj - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    if days < 0 {
+        return None;
+    }
+    Some(days as u32)
+}
+
+fn days_between(from: &str, to: (u32, u32, u32)) -> Option<u32> {
+    let from_days = ymd_to_days(parse_iso_date(from)?)?;
+    let to_days = ymd_to_days(to)?;
+    Some(to_days - from_days)
+}
+
+fn today_ymd() -> (u32, u32, u32) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let days = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / 86_400)
+        .unwrap_or(0);
+    civil_from_days(days as i64)
+}
+
+fn civil_from_days(z: i64) -> (u32, u32, u32) {
+    let z = z + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + (era * 400) as u32;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mp < 10 { y } else { y + 1 };
+    (y, m, d)
+}
+
+fn prices_status(prices: &[Price], today: (u32, u32, u32)) -> CheckResult {
+    let mut oldest_date = None;
+    let mut oldest_age = None;
+
+    for price in prices {
+        let age = days_between(&price.verified_on, today);
+        match age {
+            Some(age) if age > PRICES_STALE_DAYS => {
+                return CheckResult::warn(
+                    "prices",
+                    format!(
+                        "{} verified_on {} is {} days old",
+                        price.id, price.verified_on, age
+                    ),
+                    PRICES_FIX.to_string(),
+                );
+            }
+            Some(age) => {
+                if oldest_age.is_none_or(|current| age > current) {
+                    oldest_age = Some(age);
+                    oldest_date = Some(price.verified_on.as_str());
+                }
+            }
+            None => {
+                return CheckResult::warn(
+                    "prices",
+                    format!("invalid verified_on date: {}", price.verified_on),
+                    PRICES_FIX.to_string(),
+                );
+            }
+        }
+    }
+
+    let detail = match oldest_date {
+        Some(date) => format!("oldest verified_on {}", date),
+        None => "no price rows".to_string(),
+    };
+    CheckResult::ok("prices", detail)
+}
+
 fn check_prices() -> CheckResult {
-    // The prices table is in config.toml under [prices] if it exists.
-    // For now, we warn since default.toml doesn't yet have a prices section.
-    CheckResult::warn(
-        "prices",
-        "prices table not found in configuration".to_string(),
-        "prices will be added in a future version".to_string(),
-    )
+    let table = match PriceTable::load("/nonexistent/cox-doctor-prices.toml") {
+        Ok(table) => table,
+        Err(err) => {
+            return CheckResult::warn(
+                "prices",
+                format!("could not load price table: {}", err),
+                PRICES_FIX.to_string(),
+            );
+        }
+    };
+    prices_status(table.prices(), today_ymd())
 }
 
 fn check_claude_settings() -> CheckResult {
@@ -366,5 +472,30 @@ mod tests {
         }
 
         insta::assert_snapshot!(output);
+    }
+
+    #[test]
+    fn doctor_prices_embedded_table_is_ok() {
+        let result = check_prices();
+        assert_eq!(result.status, "ok");
+        assert!(result.detail.starts_with("oldest verified_on "));
+    }
+
+    #[test]
+    fn doctor_prices_older_than_90_days_warns() {
+        let stale = Price {
+            id: "claude-haiku-4-5".to_string(),
+            input: 1.0,
+            output: 5.0,
+            cache_write: 1.25,
+            cache_read: 0.1,
+            verified_on: "2020-01-01".to_string(),
+            source_url: "https://example.com".to_string(),
+        };
+        let result = prices_status(&[stale], (2026, 9, 12));
+        assert_eq!(result.status, "warn");
+        assert!(result.detail.contains("2020-01-01"));
+        assert!(result.detail.contains("days old"));
+        assert_eq!(result.fix, PRICES_FIX);
     }
 }
