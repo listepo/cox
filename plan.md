@@ -605,6 +605,12 @@ Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2
 
 Rationale in §6 A20. T17.1–T17.7 are in `done.md`.
 
+
+### P18 — TUI resume and the remaining website pages (goal: `cox --resume` opens the TUI; the site covers tools, compat, IDE and the walkthrough)
+
+Rationale in §6 A21. T18.1–T18.6 are in `done.md`.
+
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -653,6 +659,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A19 2026-09-11 `.github/dependabot.yml` — Dependabot, weekly: cargo for the workspace and `fuzz/` (its own workspace and lockfile), GitHub Actions, npm for `website/`; minor and patch bumps grouped into one PR per ecosystem, a major bump on its own. Why: user request. Effect: `dependencies_update` stays off in `release-plz.toml` (Dependabot owns bumps, release-plz owns releases); a merged bump touches only root files, so it never appears in the changelog and never forces a release on its own; `deny.toml` in CI still gates every bump.
 
 - A20 2026-09-12 §1.12, T2.4, T2.6, T0.5, T12.3 — P17 closes leftovers that sat in `done.md` as "Not done": `Session::resume` so `--resume`/`--continue` reuse the rollout id; TUI positional `PROMPT`; OpenAI Chat/Responses `stream_with_retry`; `cox doctor` prices-age; website copy matches the shipped binary. Why: user request to finish remaining work after every §3 task was moved to `done.md`. Effect: no new crates; OpenAI constructors keep their signatures (default `retry::Policy`).
+
+- A21 2026-09-12 §1.12, T12.3, T17.3 — P18: TUI `--resume`/`--continue`, `/clear`, and Hugo pages for tools/compat/ide/how-it-works. Why: user request to finish remaining work after P17. Effect: `--resume` on `Cli` is not `global`, so `cox run --resume` stays on `RunArgs`.
 
 ## 7. Risk register
 

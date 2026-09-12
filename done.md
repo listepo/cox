@@ -2311,3 +2311,65 @@ Check output:
 $ hugo --gc --minify   # in website/
 Pages │ 13 · Total in 171 ms
 ```
+
+#### T18.1 `cox --resume` / `--continue` open the TUI
+Model: composer · Status: done 2026-09-12 · Depends: T17.1, T17.3 · Size: ~150
+Goal: `cox --resume <id>` and `cox --continue` start the interactive TUI on that session (§1.12), and the transcript shows the reconstructed history.
+Files: `crates/cox/src/cli.rs`, `crates/cox/src/session.rs`, `crates/cox-tui/src/state.rs`.
+What landed: `--resume`/`--continue` on `Cli` (not `global`, so they do not clash with `RunArgs`). `run_tui` loads `resume::from_home`, calls `open(..., Some((id, history)))`, and seeds `State::transcript_from_history` (User/Assistant/Thinking text cells; ToolUse/ToolResult skipped). Resume spec is taken so a later `/clear` starts fresh. Tests `resume_opens_the_tui_cli` and `transcript_from_history_seeds_user_and_assistant`. Not done: PTY end-to-end of TUI resume.
+Check output:
+```
+$ mise exec -- cargo test -p cox resume_opens_the_tui_cli
+test cli::tests::resume_opens_the_tui_cli ... ok
+$ mise exec -- cargo test -p cox-tui -- transcript_from_history
+test state::tests::transcript_from_history_seeds_user_and_assistant ... ok
+```
+
+#### T18.2 `/clear` starts a new session in the TUI
+Model: composer · Status: done 2026-09-12 · Depends: T16.5 · Size: ~120
+Goal: `/clear` is a new session in the same cwd, not a no-op `Submission::Command`.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/app.rs`, `crates/cox/src/session.rs`.
+What landed: `act` intercepts `Submission::Command { name: "clear" }` as `Cmd::Clear` (core never sees it). `app::run` returns `TuiOutcome::{Quit, Clear}`. `run_tui` loops: Shutdown then Clear → new `Session::new`; Quit → break. Fourth file (`session.rs`) shared with T18.1. Test `clear_command_emits_cmd_clear` types `/` then Esc so the palette does not swallow Enter.
+Check output:
+```
+$ mise exec -- cargo test -p cox-tui -- clear_command
+test state::tests::clear_command_emits_cmd_clear ... ok
+$ mise exec -- cargo clippy -p cox -p cox-tui --all-targets -- -D warnings
+ok
+```
+
+#### T18.3 Website: tools
+Model: composer · Status: done 2026-09-12 · Depends: T12.3 · Size: doc
+Goal: `website/content/docs/tools.md` summarises the built-in tools from `docs/tools.md`.
+Files: `website/content/docs/tools.md`.
+What landed: present-tense table of core tools (read/edit/write/bash/grep/glob/outline) and deferred tools (agent, web_fetch, memory, tool_search, ask_user, todo, expand); permission/confine/sandbox called out. Weight 5.
+Check output:
+```
+$ hugo --gc --minify   # in website/
+Pages │ 17
+```
+
+#### T18.4 Website: compat
+Model: composer · Status: done 2026-09-12 · Depends: T12.3 · Size: doc
+Goal: `website/content/docs/compat.md` describes what cox reads from `.claude/` and `.codex/` trees.
+Files: `website/content/docs/compat.md`.
+What landed: weight 6; import of instruction files, skills, settings, MCP — fail-open, no silent rewrite of foreign configs.
+Check output: built with T18.6 (`Pages │ 17`).
+
+#### T18.5 Website: IDE
+Model: composer · Status: done 2026-09-12 · Depends: T12.3 · Size: doc
+Goal: `website/content/docs/ide.md` covers ACP (`cox acp`) for Zed/JetBrains.
+Files: `website/content/docs/ide.md`.
+What landed: weight 7; same Event stream as the TUI; editor is another consumer, not a second agent.
+Check output: built with T18.6 (`Pages │ 17`).
+
+#### T18.6 Website: how it works + docs map
+Model: composer · Status: done 2026-09-12 · Depends: T18.3 · Size: doc
+Goal: `website/content/docs/how-it-works.md` walkthrough and the docs index lists every public page.
+Files: `website/content/docs/how-it-works.md`, `website/content/docs/_index.md`.
+What landed: one-event-stream walkthrough (weight 8); documentation map links architecture, configuration, observability, tools, compat, ide, how-it-works.
+Check output:
+```
+$ hugo --gc --minify   # in website/
+Pages │ 17 · Total in 33 ms
+```
