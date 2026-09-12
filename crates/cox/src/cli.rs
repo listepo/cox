@@ -11,7 +11,7 @@ use clap::{ArgAction, Args, Parser, Subcommand};
 #[derive(Parser, Debug, Clone)]
 #[command(name = "cox", version, about = "cox — a modular terminal coding agent")]
 pub struct Cli {
-    /// First-turn prompt for the interactive TUI (stub: ignored for now).
+    /// First-turn prompt for the interactive TUI.
     pub prompt: Option<String>,
 
     #[command(subcommand)]
@@ -287,6 +287,13 @@ mod tests {
             }
             other => panic!("expected Run, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn positional_prompt_is_the_first_turn() {
+        let cli = Cli::parse_from(["cox", "hello"]);
+        assert_eq!(cli.prompt.as_deref(), Some("hello"));
+        assert!(cli.command.is_none());
     }
 
     #[test]

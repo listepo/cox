@@ -10,12 +10,15 @@ use std::time::Duration;
 use cox_core::Session;
 use cox_protocol::Event;
 use cox_protocol::ids::{CallId, ItemId, SessionId};
+use cox_protocol::traits::Store as _;
 use cox_protocol::types::{ApprovalPolicy, Decision, ItemKind, StopReason, Submission, Tier};
+use cox_store::Store;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::cli::{Cli, RunArgs};
+use crate::config_load;
 use crate::{resume, session};
 
 /// Exit codes from §1.12: `0 ok · 1 error · 2 denied · 3 budget · 4 interrupted`.
@@ -142,12 +145,33 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     // Headless defaults to `never`: nobody is there to answer an ask.
     let approve_default = cli.approve.is_none();
     let rt = tokio::runtime::Runtime::new()?;
-    let (session, loaded) =
-        rt.block_on(session::open(cli, cwd, args.answer.clone(), |config| {
+    let resume_spec = if args.r#continue || args.resume.is_some() {
+        let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+        let id = if args.r#continue {
+            Store::open(&home)?.latest_session_for_cwd(cwd)?
+        } else {
+            let raw = args
+                .resume
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("--resume requires a session id"))?;
+            raw.parse()?
+        };
+        let history = resume::from_home(&home, &id.to_string())?;
+        Some((id, history))
+    } else {
+        None
+    };
+    let (session, loaded) = rt.block_on(session::open(
+        cli,
+        cwd,
+        args.answer.clone(),
+        |config| {
             if approve_default {
                 config.permissions.approval = ApprovalPolicy::Never;
             }
-        }))?;
+        },
+        resume_spec,
+    ))?;
     // T6.3: with any other policy a driver answers asks on stdin, within
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
     let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)

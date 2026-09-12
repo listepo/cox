@@ -305,3 +305,41 @@ fn sessions_grep_finds_a_scripted_run() {
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("hello from scripted"), "{text}");
 }
+
+#[test]
+fn resume_followup_prompt_reuses_session_id() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let out1 = cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v1: Value = serde_json::from_slice(&out1).unwrap();
+    let session_id = v1["session"].as_str().unwrap();
+    let out2 = assert_cmd::Command::new(env!("CARGO_BIN_EXE_cox"))
+        .current_dir(work.path())
+        .env("COX_HOME", home.path())
+        .env("HOME", home.path())
+        .env("COX_PROVIDER", "scripted")
+        .env("COX_SCENARIO", TEXT_ONLY)
+        .args([
+            "--cwd",
+            work.path().to_str().unwrap(),
+            "run",
+            "-p",
+            "followup",
+            "--resume",
+            session_id,
+            "--output-format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v2: Value = serde_json::from_slice(&out2).unwrap();
+    assert_eq!(v2["session"].as_str(), Some(session_id));
+}

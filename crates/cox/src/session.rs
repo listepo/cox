@@ -5,8 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use cox_core::Session;
+use cox_core::{History, Session};
 use cox_protocol::Config;
+use cox_protocol::ids::SessionId;
 use cox_protocol::traits::{Hook, Provider, Store as _, Tool};
 use cox_protocol::types::Submission;
 use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
@@ -40,6 +41,7 @@ pub async fn open(
     cwd: &Path,
     answer: Option<String>,
     tweak: impl FnOnce(&mut Config),
+    resume: Option<(SessionId, History)>,
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
@@ -69,14 +71,26 @@ pub async fn open(
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd).await);
     }
-    let session = Session::new(
-        config,
-        provider,
-        all,
-        store.clone(),
-        store,
-        cwd.to_path_buf(),
-    )?;
+    let session = match resume {
+        Some((id, history)) => Session::resume(
+            config,
+            provider,
+            all,
+            store.clone(),
+            store,
+            cwd.to_path_buf(),
+            id,
+            history,
+        )?,
+        None => Session::new(
+            config,
+            provider,
+            all,
+            store.clone(),
+            store,
+            cwd.to_path_buf(),
+        )?,
+    };
     // A14: the presence hook wraps the user's shell hooks so the other
     // sessions of this workspace see every surface, `--no-hooks` or not.
     let shell: Option<Arc<dyn Hook>> = loaded.config.hooks.enabled.then(|| {
@@ -136,7 +150,7 @@ fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
-    let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}))?;
+    let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}, None))?;
     let config = &loaded.config;
     let mut state = State::new(config.permissions.mode, config.sandbox.mode);
     state.files = cox_tools::glob::workspace_files(cwd);
@@ -210,6 +224,18 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             }
         })
     };
+    if let Some(prompt) = cli.prompt.clone().filter(|p| !p.is_empty()) {
+        let starter = session.clone();
+        rt.spawn(async move {
+            let _ = starter
+                .submit(Submission::UserTurn {
+                    text: prompt,
+                    attachments: vec![],
+                    confirm_think: false,
+                })
+                .await;
+        });
+    }
     let quit = session.clone();
     let ran = rt.block_on(cox_tui::app::run(session, state, feed_rx, ask));
     poll.abort();

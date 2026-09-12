@@ -22,8 +22,7 @@ pub fn run(cli: &Cli, args: &RunArgs) -> anyhow::Result<()> {
             .to_string()
     } else {
         let Some(id) = args.resume.as_deref() else {
-            println!("not implemented");
-            return Ok(());
+            anyhow::bail!("cox run requires -p <prompt>, --resume <id>, or --continue");
         };
         id.to_string()
     };
