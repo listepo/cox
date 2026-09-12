@@ -23,6 +23,7 @@ use crate::context::assemble_with;
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
+use crate::rollout::History;
 use crate::router::{Overrides, Route, RouteError, Router};
 use crate::turn::{consume_provider, results_message, run_tools};
 
@@ -139,6 +140,40 @@ impl Session {
             archive,
             cwd,
             None,
+            None,
+            Job::Main,
+            Tier::Code,
+        )?;
+        let parent = session.clone();
+        session
+            .tools
+            .push(Arc::new(crate::subagent::AgentTool::new(parent)));
+        Ok(session)
+    }
+
+    /// Restores a session from a reconstructed [`History`] (T17.1). Reuses
+    /// `id`, skips store creation and the persisted `SessionStarted`, and
+    /// wires the `agent` tool like [`new`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn resume(
+        config: cox_protocol::Config,
+        provider: Arc<dyn Provider>,
+        tools: Vec<Arc<dyn Tool>>,
+        store: Arc<dyn Store>,
+        archive: Arc<dyn Archive>,
+        cwd: PathBuf,
+        id: SessionId,
+        history: History,
+    ) -> Result<Self, CoreError> {
+        let mut session = Self::build(
+            config,
+            provider,
+            tools,
+            store,
+            archive,
+            cwd,
+            Some((id, history)),
+            None,
             Job::Main,
             Tier::Code,
         )?;
@@ -165,6 +200,7 @@ impl Session {
             self.store.clone(),
             self.archive.clone(),
             self.cwd.clone(),
+            None,
             Some(self.id),
             job,
             tier,
@@ -181,15 +217,47 @@ impl Session {
         store: Arc<dyn Store>,
         archive: Arc<dyn Archive>,
         cwd: PathBuf,
+        resume: Option<(SessionId, History)>,
         parent_id: Option<SessionId>,
         job: Job,
         tier: Tier,
     ) -> Result<Self, CoreError> {
-        let id = SessionId::new();
+        let is_resume = resume.is_some();
+        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice) =
+            match resume {
+                Some((id, history)) => {
+                    let truncated_notice = history.truncated_notice();
+                    let turn_marks = history
+                        .messages
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.role == Role::User)
+                        .map(|(start, _)| TurnMark {
+                            item: ItemId::new(),
+                            start,
+                        })
+                        .collect();
+                    (
+                        id,
+                        history.messages,
+                        history.permission_mode,
+                        history.grants,
+                        turn_marks,
+                        truncated_notice,
+                    )
+                }
+                None => (
+                    SessionId::new(),
+                    Vec::new(),
+                    config.permissions.mode,
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                ),
+            };
         let (tx, rx) = mpsc::channel(256);
         let home = std::env::home_dir();
         let engine = Engine::compile(&config.permissions, home.as_deref(), &cwd)?;
-        let permission_mode = config.permissions.mode;
         let dedup = Dedup::new(config.context.dedup_window_turns);
         let parent = parent_id
             .map(|parent| parent.to_string())
@@ -223,17 +291,17 @@ impl Session {
             rx: Arc::new(StdMutex::new(Some(rx))),
             inner: Arc::new(Mutex::new(Inner {
                 state: State::Idle,
-                history: Vec::new(),
+                history: history_messages,
                 provider_calls: 0,
                 spent_usd: 0.0,
                 budget_warned: false,
                 permission_mode,
-                grants: Vec::new(),
+                grants,
                 pending: HashMap::new(),
                 round: 0,
                 dedup,
                 discovered: Vec::new(),
-                turn_marks: Vec::new(),
+                turn_marks,
                 archives: HashMap::new(),
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
@@ -248,22 +316,27 @@ impl Session {
         let started = Event::SessionStarted {
             session: id,
             config_digest: String::new(),
-            cwd,
+            cwd: session.cwd.clone(),
         };
-        session
-            .store
-            .session_create(&cox_protocol::SessionRow {
-                id,
-                created_at: String::new(),
-                cwd: session.cwd.clone(),
-                project_slug: String::new(),
-                title: None,
-                parent_id,
-                rollout_path: PathBuf::new(),
-            })
-            .map_err(|error| CoreError::Store { error })?;
-        session.store.rollout_append(&id, &started).ok();
+        if !is_resume {
+            session
+                .store
+                .session_create(&cox_protocol::SessionRow {
+                    id,
+                    created_at: String::new(),
+                    cwd: session.cwd.clone(),
+                    project_slug: String::new(),
+                    title: None,
+                    parent_id,
+                    rollout_path: PathBuf::new(),
+                })
+                .map_err(|error| CoreError::Store { error })?;
+            session.store.rollout_append(&id, &started).ok();
+        }
         let _ = session.tx.try_send(started);
+        if let Some(notice) = truncated_notice {
+            let _ = session.tx.try_send(notice);
+        }
         tracing::info!(
             parent: &session.telemetry_span,
             event.name = "cox.session.started",

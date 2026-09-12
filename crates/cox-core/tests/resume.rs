@@ -90,3 +90,59 @@ async fn resume_builds_identical_request() {
     let resume_req = assemble(&rebuilt.messages, &config, &tools, &cwd, "");
     assert_eq!(live_req, resume_req);
 }
+
+#[tokio::test]
+async fn resume_session_reuses_id_and_history() {
+    let toml = scenario();
+    let mut config = cox_protocol::Config::default();
+    config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
+    let provider = Arc::new(Scripted::from_toml(&toml, "").expect("scenario"));
+    let store = Arc::new(MemoryStore::new());
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
+    let cwd = PathBuf::from("/tmp/cox-turn");
+    let session = Session::new(
+        config.clone(),
+        provider.clone(),
+        tools.clone(),
+        store.clone(),
+        store.clone(),
+        cwd.clone(),
+    )
+    .expect("session");
+    session
+        .submit(Submission::UserTurn {
+            text: "one_tool".into(),
+            attachments: vec![],
+            confirm_think: false,
+        })
+        .await
+        .expect("submit");
+    let id = session.id();
+    let live = session.history().await;
+    let events = store.rollout_read(&id).expect("rollout");
+    let history = History::from_events(&events);
+    let expected_grants = history.grants.clone();
+
+    let resumed = Session::resume(
+        config.clone(),
+        provider,
+        tools.clone(),
+        store.clone(),
+        store.clone(),
+        cwd.clone(),
+        id,
+        history,
+    )
+    .expect("resume");
+
+    assert_eq!(resumed.id(), id);
+    assert_eq!(resumed.history().await, live);
+
+    let roundtrip = History::from_events(&store.rollout_read(&id).expect("rollout"));
+    assert_eq!(roundtrip.grants, expected_grants);
+
+    let resumed_history = resumed.history().await;
+    let live_req = assemble(&live, &config, &tools, &cwd, "");
+    let resume_req = assemble(&resumed_history, &config, &tools, &cwd, "");
+    assert_eq!(live_req, resume_req);
+}
