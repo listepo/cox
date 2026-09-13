@@ -80,3 +80,9 @@ Any provider. Runtime routing (`plan.md` D5) and agent work follow the same rule
 2. Non-trivial logic left a test behind that fails if the logic breaks.
 3. You ran the real binary against a `COX_HOME` scratch tree if the change touches sessions, tools, the sandbox or config.
 4. You reported what you did *not* do, if anything was skipped.
+
+## Host agents
+
+Save tokens. If anything is unclear, ask the creator first. Write a short execution plan into that task's card in `plan.md`, then claim and work. Default cap: **5** parallel agents per project unless the creator says otherwise. Never use max effort or fast mode without permission. Cheapest model for scripts, commands, repo scans, web, file moves, tests. On Cursor: **grok 4.6** (no fast) for planning, refactoring, bug hunts; **composer 2.5** (no fast) for file moves, tests, commands, scans, web. Before writing code, decide whether a ready library or framework should be used. A new dependency is allowed only if it is current (not abandoned) and the creator approved it. Packages already in `toolchain.md` may be reused without asking again. Prefer the latest versions of tools and packages, but bump already-installed ones only with the creator’s permission. Rust: reuse crates already used by sibling projects in this workspace (workspace-root `rust.md`). If this repo lacks one it should use, add a `plan.md` task — do not add the dependency silently. Extract duplicated helpers into `packages/` and depend via local `{ path = "..." }`. No version bumps without permission.
+
+If a directory above this repository contains an `AGENTS.md` or `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
