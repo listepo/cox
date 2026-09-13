@@ -6,8 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-cox-protocol = { path = "../cox-protocol", version = "0.1.0" }
-cox-core = { path = "../cox-core", version = "0.1.0" }
+cox-protocol = { path = "../cox-protocol", version = "0.1.1" }
+cox-core = { path = "../cox-core", version = "0.1.1" }
 ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 tokio = { workspace = true }
