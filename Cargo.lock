@@ -705,7 +705,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -746,7 +746,7 @@ dependencies = [
 
 [[package]]
 name = "cox-acp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -761,7 +761,7 @@ dependencies = [
 
 [[package]]
 name = "cox-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "cox-protocol",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "cox-ext"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "cox-protocol",
@@ -801,7 +801,7 @@ dependencies = [
 
 [[package]]
 name = "cox-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "cox-protocol",
@@ -815,7 +815,7 @@ dependencies = [
 
 [[package]]
 name = "cox-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "figment",
@@ -833,7 +833,7 @@ dependencies = [
 
 [[package]]
 name = "cox-provider"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "cox-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "cox-protocol",
@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "cox-tools"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "cox-protocol",
@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "cox-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cox-core",
  "cox-protocol",
