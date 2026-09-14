@@ -667,6 +667,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A20 §1.12, T2.4, T2.6, T0.5, T12.3 — P17 closes leftovers that sat in `done.md` as "Not done": `Session::resume` so `--resume`/`--continue` reuse the rollout id; TUI positional `PROMPT`; OpenAI Chat/Responses `stream_with_retry`; `cox doctor` prices-age; website copy matches the shipped binary. Why: user request to finish remaining work after every §3 task was moved to `done.md`. Effect: no new crates; OpenAI constructors keep their signatures (default `retry::Policy`).
 
 - A21 §1.12, T12.3, T17.3 — P18: TUI `--resume`/`--continue`, `/clear`, and Hugo pages for tools/compat/ide/how-it-works. Why: user request to finish remaining work after P17. Effect: `--resume` on `Cli` is not `global`, so `cox run --resume` stays on `RunArgs`.
+- A22 `.github/workflows/ci.yml`, `release-plz.yml` — the `dtolnay/rust-toolchain@<version>` pin names the *toolchain*, and `1.120.0` does not exist (CI failed downloading it), so both workflows pin `@1.97.1`, the version `mise.toml` already pins and `mise exec -- rustc --version` reports. Why: red CI on every push. Effect: no floating toolchain; bump the five pins together with `mise.toml` when Rust moves. The `revert-on-failure` job skips pushes touching `.github/` (least privilege instead of granting `workflows: write`).
 
 ## 7. Risk register
 
