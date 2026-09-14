@@ -1,0 +1,18 @@
+# `--permission-mode auto` lets the scripted write run: exit 0 and the
+# result on stdout. That `a.txt` lands with the written bytes stays an
+# `assert_cmd` filesystem predicate in `run_cli.rs`.
+bin.name = "cox"
+args = ["--cwd", "target/trycmd/run_auto/work", "run", "-p", "hi", "--permission-mode", "auto"]
+status = "success"
+stdout = """
+done
+"""
+stderr = ""
+
+[env.add]
+COX_HOME = "target/trycmd/run_auto/home"
+HOME = "target/trycmd/run_auto/home"
+COX_PROVIDER = "scripted"
+COX_SCENARIO = "tests/scenarios/write_then_done.toml"
+
+timeout = "120s"

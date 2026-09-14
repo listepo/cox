@@ -1,0 +1,17 @@
+# `cox run -p` json format: result/stop/cost pinned; the session id and the
+# usage counters vary per run (and per instruction-file tree), so they elide.
+bin.name = "cox"
+args = ["--cwd", "target/trycmd/run_json/work", "run", "-p", "hi", "--output-format", "json"]
+status = "success"
+stdout = """
+{"session":"[..]","result":"hello from scripted","usage":{"input_tokens":[..],"output_tokens":[..],"cache_read_tokens":[..],"cache_write_tokens":[..]},"cost_usd":0.0,"turns":1,"stop":{"type":"end_turn"},"denied":0,"exit_code":0}
+"""
+stderr = ""
+
+[env.add]
+COX_HOME = "target/trycmd/run_json/home"
+HOME = "target/trycmd/run_json/home"
+COX_PROVIDER = "scripted"
+COX_SCENARIO = "../cox-core/tests/scenarios/text_only.toml"
+
+timeout = "120s"

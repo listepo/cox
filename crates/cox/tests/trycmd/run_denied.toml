@@ -1,0 +1,18 @@
+# A denied write exits 2 with a json summary counting the denial. The
+# session id and usage counters vary per run, so they elide. That the file
+# is *not* written stays an `assert_cmd` predicate in `run_cli.rs`.
+bin.name = "cox"
+args = ["--cwd", "target/trycmd/run_denied/work", "run", "-p", "hi", "--output-format", "json"]
+status = { code = 2 }
+stdout = """
+{"session":"[..]","result":"done","usage":{"input_tokens":[..],"output_tokens":[..],"cache_read_tokens":[..],"cache_write_tokens":[..]},"cost_usd":0.0,"turns":2,"stop":{"type":"end_turn"},"denied":1,"exit_code":2}
+"""
+stderr = ""
+
+[env.add]
+COX_HOME = "target/trycmd/run_denied/home"
+HOME = "target/trycmd/run_denied/home"
+COX_PROVIDER = "scripted"
+COX_SCENARIO = "tests/scenarios/write_then_done.toml"
+
+timeout = "120s"

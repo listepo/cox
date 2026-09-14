@@ -39,11 +39,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 # D16/T13: OTLP/HTTP keeps telemetry vendor-neutral (SigNoz, Jaeger,
 # Grafana/Tempo and hosted collectors) without adding a backend SDK.
-opentelemetry = { version = "0.31", default-features = false, features = ["trace", "logs"] }
-opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "logs"] }
-opentelemetry-otlp = { version = "0.31", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace", "logs"] }
-tracing-opentelemetry = { version = "0.32", default-features = false }
-opentelemetry-appender-tracing = { version = "0.31.1", features = ["experimental_use_tracing_span_context"] }
+# NOTE (unblock, not a task claim): the 0.31 -> 0.32 bump in this line left
+# `experimental_use_tracing_span_context`, which no longer exists upstream
+# (0.32 attaches trace context by default; only experimental_span_attributes
+# / experimental_metadata_attributes remain). Dropped the dead feature so the
+# workspace resolves; T13 owner: adjust as needed.
+opentelemetry = { version = "0.32", default-features = false, features = ["trace", "logs"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace", "logs"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace", "logs"] }
+tracing-opentelemetry = { version = "0.33", default-features = false }
+opentelemetry-appender-tracing = "0.32"
 
 # cox-provider
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
@@ -110,6 +115,8 @@ insta = { version = "1.48", features = ["json"] }
 proptest = "1.11"
 wiremock = "0.6"
 rstest = "0.26"
+divan = "0.1"
+trycmd = "1"
 assert_cmd = "2"
 predicates = "3"
 assert_fs = "1"

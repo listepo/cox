@@ -1,0 +1,16 @@
+# `cox run -p` text format: the final assistant text on stdout, nothing else.
+bin.name = "cox"
+args = ["--cwd", "target/trycmd/run_text/work", "run", "-p", "hi"]
+status = "success"
+stdout = """
+hello from scripted
+"""
+stderr = ""
+
+[env.add]
+COX_HOME = "target/trycmd/run_text/home"
+HOME = "target/trycmd/run_text/home"
+COX_PROVIDER = "scripted"
+COX_SCENARIO = "../cox-core/tests/scenarios/text_only.toml"
+
+timeout = "120s"

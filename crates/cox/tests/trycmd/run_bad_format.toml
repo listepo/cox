@@ -1,0 +1,17 @@
+# An unknown `--output-format` is exit 1 with the usage error on stderr and
+# nothing on stdout.
+bin.name = "cox"
+args = ["--cwd", "target/trycmd/run_bad_format/work", "run", "-p", "hi", "--output-format", "yaml"]
+status = { code = 1 }
+stdout = ""
+stderr = """
+Error: unknown --output-format `yaml` (text | json | stream-json)
+"""
+
+[env.add]
+COX_HOME = "target/trycmd/run_bad_format/home"
+HOME = "target/trycmd/run_bad_format/home"
+COX_PROVIDER = "scripted"
+COX_SCENARIO = "../cox-core/tests/scenarios/text_only.toml"
+
+timeout = "120s"

@@ -60,6 +60,9 @@ tokio = { workspace = true }
 tempfile = { workspace = true }
 # T6.1: `cox run -p` per output format against the real binary.
 assert_cmd = { workspace = true }
+# trycmd herd for headless `cox run -p` full-output fixtures
+# (`tests/trycmd/*.toml`); insta stays for TUI/transcripts per D10.
+trycmd = { workspace = true }
 predicates = { workspace = true }
 insta = { workspace = true }
 # T5.8: PTY end-to-end of the real binary (plan D10).
