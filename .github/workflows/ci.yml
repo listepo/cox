@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.120.0
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
 
@@ -60,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.120.0
+      - uses: dtolnay/rust-toolchain@1.97.1
 
       - uses: Swatinem/rust-cache@v2
 
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.120.0
+      - uses: dtolnay/rust-toolchain@1.97.1
       - name: cargo audit
         run: |
           cargo install cargo-audit --locked
@@ -113,6 +113,18 @@ jobs:
           set -euo pipefail
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             echo "No parent (new branch); skip revert"
+            exit 0
+          fi
+          # The GITHUB_TOKEN cannot push workflow files without the
+          # `workflows` permission, so a revert of a push that touched
+          # .github/ would fail the push. Skip instead (least privilege:
+          # no `workflows: write` granted); a human reverts those pushes.
+          if ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            echo "Base $BEFORE not present locally; skip revert"
+            exit 0
+          fi
+          if git diff --name-only "$BEFORE".."$AFTER" | grep -q '^\.github/'; then
+            echo "Push touches .github/; auto-revert cannot push workflow files — skip"
             exit 0
           fi
           subject=$(git log -1 --format=%s "$AFTER")
