@@ -87,10 +87,13 @@ fn directory_chain(roots: &Roots) -> Vec<PathBuf> {
 /// Path as the block names it: relative to the git root when under it.
 fn display(path: &Path, roots: &Roots) -> String {
     match &roots.git_root {
-        Some(root) => path
-            .strip_prefix(root)
+        Some(root) => pathdiff::diff_paths(path, root)
+            .filter(|p| {
+                !p.components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            })
             .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| path.display().to_string()),
+            .unwrap_or_else(|| path.display().to_string()),
         None => path.display().to_string(),
     }
 }

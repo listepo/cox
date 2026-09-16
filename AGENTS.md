@@ -11,7 +11,7 @@
 ## Commands
 
 ```bash
-mise exec -- cargo test --workspace          # unit, snapshot and e2e; no network, no API key
+mise exec -- cargo nextest run --workspace   # unit, snapshot and e2e; no network, no API key
 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 mise exec -- cargo fmt --check
 mise exec -- cargo insta review              # after an intentional TUI/transcript change
@@ -76,7 +76,7 @@ Any provider. Runtime routing (`plan.md` D5) and agent work follow the same rule
 
 ## Before you call it done
 
-1. `cargo test`, `cargo clippy`, `cargo fmt --check` clean under `mise exec`.
+1. `cargo nextest run`, `cargo clippy`, `cargo fmt --check` clean under `mise exec`.
 2. Non-trivial logic left a test behind that fails if the logic breaks.
 3. You ran the real binary against a `COX_HOME` scratch tree if the change touches sessions, tools, the sandbox or config.
 4. You reported what you did *not* do, if anything was skipped.

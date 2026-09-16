@@ -11,6 +11,7 @@
 | rust | mise | Компилятор и std | https://github.com/rust-lang/rust |
 | rustc | mise (pin rust) | Компилятор Rust | https://github.com/rust-lang/rust |
 | cargo | mise (pin rust) | Сборка и зависимости Rust | https://github.com/rust-lang/cargo |
+| cargo-nextest | global | https://github.com/nextest-rs/nextest | Параллельный прогон тестов |
 | just | cargo install just / brew | Рецепты команд | https://github.com/casey/just |
 
 ## cargo
@@ -49,6 +50,7 @@
 | opentelemetry-appender-tracing | локально | https://crates.io/crates/opentelemetry-appender-tracing | Зависимость Rust |
 | opentelemetry-otlp | локально | https://crates.io/crates/opentelemetry-otlp | Зависимость Rust |
 | opentelemetry_sdk | локально | https://crates.io/crates/opentelemetry_sdk | Зависимость Rust |
+| pathdiff | локально | https://crates.io/crates/pathdiff | Относительный путь между двумя путями |
 | portable-pty | локально | https://crates.io/crates/portable-pty | Зависимость Rust |
 | predicates | локально | https://crates.io/crates/predicates | Зависимость Rust |
 | pretty_assertions | локально | https://crates.io/crates/pretty_assertions | Зависимость Rust |

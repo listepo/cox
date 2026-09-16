@@ -18,6 +18,7 @@ thiserror = { workspace = true }
 # process group (nix, as in cox-tools).
 tokio = { workspace = true }
 nix = { workspace = true, features = ["signal"] }
+pathdiff = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
