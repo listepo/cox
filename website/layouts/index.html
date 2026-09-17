@@ -1,10 +1,13 @@
 {{ define "main" }}
 <section class="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:px-7 sm:py-20 lg:grid-cols-2 lg:items-center lg:gap-14">
   <div>
-    <p class="mb-4 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-accent">
-      <span class="mr-2 inline-block size-2 rounded-sm bg-accent shadow-[0_0_0_3px_var(--accent-soft)]" aria-hidden="true"></span>
-      Terminal coding agent · Rust
-    </p>
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <p class="m-0 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-accent">
+        <span class="mr-2 inline-block size-2 rounded-sm bg-accent accent-glow" aria-hidden="true"></span>
+        Terminal coding agent · Rust
+      </p>
+      <span class="status-chip">agent ready</span>
+    </div>
     <h1 class="text-[clamp(2.1rem,5vw,3.4rem)] font-semibold leading-[1.08] tracking-tight text-fg">
       Steer the work.<br>
       <span class="text-accent">Keep control.</span>
@@ -35,19 +38,19 @@
 </section>
 
 <section class="mx-auto max-w-6xl px-5 pb-16 sm:px-7 sm:pb-24">
-  <p class="font-mono text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-accent">Designed for the real work</p>
+  <p class="hairline-grad pb-3 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-accent">Designed for the real work</p>
   <div class="mt-6 grid gap-6 md:grid-cols-3 md:gap-8">
-    <article class="rounded-[10px] border border-line bg-elevated p-5 shadow-[var(--shadow)]">
+    <article class="glass-card p-5">
       <p class="font-mono text-[0.68rem] font-semibold tracking-[0.08em] text-subtle uppercase">01 / core</p>
       <h2 class="mt-3 text-xl font-semibold tracking-tight text-fg">One core, every surface</h2>
       <p class="mt-2 text-sm leading-relaxed text-muted">The same event stream powers interactive sessions, scripts, MCP clients, and editor adapters—so behavior stays consistent wherever cox runs.</p>
     </article>
-    <article class="rounded-[10px] border border-line bg-elevated p-5 shadow-[var(--shadow)]">
+    <article class="glass-card p-5">
       <p class="font-mono text-[0.68rem] font-semibold tracking-[0.08em] text-subtle uppercase">02 / safety</p>
       <h2 class="mt-3 text-xl font-semibold tracking-tight text-fg">Safe by default</h2>
       <p class="mt-2 text-sm leading-relaxed text-muted">Tools run through a centralized permission engine and a workspace sandbox. Untrusted text never gets a free pass.</p>
     </article>
-    <article class="rounded-[10px] border border-line bg-elevated p-5 shadow-[var(--shadow)]">
+    <article class="glass-card p-5">
       <p class="font-mono text-[0.68rem] font-semibold tracking-[0.08em] text-subtle uppercase">03 / cost</p>
       <h2 class="mt-3 text-xl font-semibold tracking-tight text-fg">Costs you can see</h2>
       <p class="mt-2 text-sm leading-relaxed text-muted">Every request records token usage and cost. Cached context is stable, tool output is archived, and model routing never silently upgrades.</p>

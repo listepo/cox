@@ -23,6 +23,9 @@
   --cox-code-bg: #0F1A14;
   --cox-code-fg: #C8F08A;
   --cox-shadow: 0 1px 2px rgba(15, 26, 20, 0.06), 0 4px 12px rgba(15, 26, 20, 0.04);
+  --cox-glass-fill: rgba(255, 255, 255, 0.72);
+  --cox-glass-border: rgba(208, 219, 200, 0.9);
+  --cox-accent-glow: 0 0 0 3px var(--cox-accent-soft), 0 0 18px rgba(61, 139, 58, 0.22);
   --cox-radius: 8px;
   --cox-radius-lg: 12px;
   --cox-font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -52,4 +55,7 @@
   --cox-code-bg: #060A08;
   --cox-code-fg: #C8F08A;
   --cox-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.28);
+  --cox-glass-fill: rgba(15, 26, 20, 0.72);
+  --cox-glass-border: rgba(28, 40, 32, 0.9);
+  --cox-accent-glow: 0 0 0 3px var(--cox-accent-soft), 0 0 20px rgba(168, 224, 108, 0.28);
 }
