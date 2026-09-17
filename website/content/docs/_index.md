@@ -3,15 +3,15 @@ title: "Documentation"
 weight: 1
 ---
 
-## Welcome aboard
+## What cox is
 
-**cox** is a modular Rust terminal coding agent: submissions enter a pure core state machine and typed events leave it. The same stream powers an interactive TUI, headless automation, editor clients, and MCP consumers—so behavior stays consistent wherever you run cox.
+**cox** is a modular Rust terminal coding agent. Submissions enter a pure core state machine; typed events leave it. The same stream powers the TUI, headless runs, ACP editors, and MCP consumers.
 
-- **A terminal-first experience** with an inline, scrollback-friendly TUI.
-- **Automation surfaces** for headless prompts, stream-JSON output, ACP editor clients, and MCP consumers.
-- **A pure core**: submissions go in and typed events come out, making agent behavior replayable and testable.
-- **Visible economics**: request usage and cost are recorded; tool output is archived before it is shortened for context.
-- **Practical safety**: permission decisions live in one engine, paths are confined to the workspace, and shell execution is sandboxed by default.
+- **TUI first** — inline, scrollback-friendly terminal UI.
+- **Four surfaces** — `cox`, `cox run -p`, `cox acp`, `cox mcp`.
+- **Pure core** — replayable, testable turn loop.
+- **Visible costs** — usage recorded per request; long tool output archived before it is shortened.
+- **Safe by default** — one permission engine, workspace path confinement, sandboxed shell unless you opt out.
 
 ## Project status
 
@@ -31,6 +31,7 @@ The documentation site itself lives in `website/`. Install its Node dependencies
 
 ## Documentation map
 
+- [Getting started]({{< relref "getting-started" >}}) is the 60-second path from clone to first prompt.
 - [Architecture]({{< relref "architecture" >}}) explains the core event model and crate boundaries.
 - [Configuration]({{< relref "configuration" >}}) describes precedence, sandbox defaults, and model routing.
 - [Observability]({{< relref "observability" >}}) covers traces, metrics, and the usage ledger.
