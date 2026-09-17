@@ -682,3 +682,24 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 | R7 | Bash classifier misses a destructive command | a destructive command runs without asking | classifier is an allowlist for `ReadOnly` (unknown → `Exec` → ask); sandbox is the second guard; fuzz the parser | T3.7, T12.4 |
 | R8 | Task size limits force half-finished features | many §6 amendments | split by design at planning time; a phase gate reviews before the next phase starts | §2 |
 | R9 | Third-party prices and thresholds in research were unverifiable | ledger cost wrong | `prices.toml` verified from official pages before the ledger goes live; doctor warns when stale | T1.7 |
+
+
+---
+
+## Note 2026-09-17 — testing library candidates
+
+Shared catalog: [`listepo/rust.md`](../../rust.md) → *Testing candidates*.
+Do not auto-add to workspace `Cargo.toml`.
+
+Fits for cox (1–3):
+
+1. `mockall` — Provider / Tool / MCP trait unit mocks (HTTP stays on `wiremock`).
+2. `tokio-test` — async helpers for core loop / provider stream unit tests.
+3. `serial_test` — only if P16 concurrent-session or global-env tests cannot
+   isolate with temp roots (prefer isolation first).
+
+Already covered: `assert_cmd`, `assert_fs`, `insta`, `predicates`, `pretty_assertions`,
+`proptest`, `rstest`, `tempfile`, `wiremock`, `libfuzzer-sys` (`fuzz/`). Skip
+`bolero`/`honggfuzz` unless fuzz gaps beyond libfuzzer; `vfs` optional for
+tools FS unit tests (compare with rtok T56 pattern); `testcontainers` YAGNI
+unless Docker e2e is required.
