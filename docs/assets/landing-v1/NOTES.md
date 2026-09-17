@@ -4,12 +4,13 @@ Captured from local static builds with Chrome/puppeteer (desktop 1440×900, mobi
 
 | File | Theme | Viewport / notes |
 |------|-------|------------------|
-| `home-light.png` / `home-dark.png` | light/dark | desktop hero |
-| `features-light.png` / `features-dark.png` | light/dark | features/pipeline scrolled into view |
+| `home-light.png` / `home-dark.png` | light/dark | desktop hero — full-width TUI frame |
+| `features-light.png` / `features-dark.png` | light/dark | feature panes + CTA scrolled into view |
 | `mobile-light.png` / `mobile-dark.png` | light/dark | ~390×844 |
-| `icon-logo.png` | — | from `docs/brand/logo.svg` (~512) |
+| `icon-logo.png` | — | from `docs/brand/logo.svg` (~512) — TUI pane + cursor |
 | `icon-favicon.png` | — | from `docs/brand/favicon.svg` (~256) |
 | `icon-wordmark.png` | — | from `docs/brand/logo-wordmark.svg` |
 
 Theme storage key: `cox-theme`.
 Brand source of truth: `docs/brand/` (`DESIGN.md`, `tokens.css`, SVGs).
+Metaphor: terminal TUI / status pane (forest + chartreuse).
