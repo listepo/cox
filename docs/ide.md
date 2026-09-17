@@ -1,7 +1,7 @@
-# cox in editors (T11.2)
+# cox in editors
 
 `cox acp` serves cox over the Agent Client Protocol on stdio: the same
-`Event` stream as the TUI, so prompts, tool calls, approvals and diffs show
+`Event` stream as the TUI, so prompts, tool calls, approvals, and diffs show
 up in the editor instead of the terminal. It needs no API key to start (only
 to call a model), and answers `initialize` / `session/new` with no config.
 
@@ -59,5 +59,3 @@ for scripted editor integrations; `cox acp` is for interactive threads.
   offers the v2 draft; clients fall back automatically.
 - **Sessions die with the server**: `session/load` resumes sessions the
   running server still holds; restarting `cox acp` drops them.
-EOF
-echo written

@@ -4,7 +4,7 @@
 
 **cox** is named for the coxswain: it steers the work while models, tools, and extensions row. It is being built as one reliable, testable agent core with several ways to use it: an interactive terminal UI, headless automation, editor integration through ACP, and MCP tools for other agents.
 
-[Documentation](https://listepo.github.io/cox/) · [Architecture](https://listepo.github.io/cox/docs/architecture/) · [Configuration](https://listepo.github.io/cox/docs/configuration/)
+[Documentation](https://listepo.github.io/cox/) · [Getting started](docs/getting-started.md) · [Architecture](https://listepo.github.io/cox/docs/architecture/) · [Configuration](https://listepo.github.io/cox/docs/configuration/)
 
 ## 60-second start
 
@@ -27,7 +27,7 @@ Grafana, SigNoz or any OTLP backend.
 
 ## Status
 
-cox is under active development. APIs, configuration, and installation instructions are not yet stable. The Rust workspace already contains the protocol, core turn loop, provider adapters, tools, storage, extension loading, TUI, ACP, and MCP crates; features are completed incrementally against the project plan.
+cox is under active development. APIs, configuration, and installation instructions are not yet stable. The Rust workspace already contains the protocol, core turn loop, provider adapters, tools, storage, extension loading, TUI, ACP, and MCP crates; features land incrementally against the project plan.
 
 What the TUI looks like: [docs/screenshots](docs/screenshots) holds one SVG per screen state (a streaming reply, an approval prompt, the diff view, …). They are rendered from the same frames the snapshot tests compare, so `just screenshots` regenerates them after a change.
 
@@ -40,8 +40,9 @@ What the TUI looks like: [docs/screenshots](docs/screenshots) holds one SVG per 
 - **Lossless context.** Full tool output is archived before it is shortened for model context, so it remains retrievable by ID.
 - **Visible costs.** Provider usage is recorded per request; routing between cheap, code, and think tiers is explicit.
 
-## Develop
+## Development
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the short checklist.
 Rust is pinned through [mise](https://mise.jdx.dev/). Run Cargo through mise rather than a global toolchain:
 
 ```bash
