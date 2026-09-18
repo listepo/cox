@@ -113,7 +113,7 @@ agent-client-protocol = "2.0"
 insta = { version = "1.48", features = ["json"] }
 proptest = "1.11"
 wiremock = "0.6"
-rstest = "0.26"
+rstest = "0.27"
 assert_cmd = "2"
 predicates = "3"
 assert_fs = "1"
