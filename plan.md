@@ -617,6 +617,21 @@ Rationale in §6 A20. T17.1–T17.7 are in `done.md`.
 
 Rationale in §6 A21. T18.1–T18.6 are in `done.md`.
 
+### P19 — v0.2 scoping gates (goal: each roadmap v0.2 line gets a phase-gate design doc; no runtime code yet)
+
+Rationale in §6 A23. Branch `plan/v0.2-scoping`, one commit per task, one draft PR into `main`.
+Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-*.md`,
+`plan.md`, and `roadmap.md` move here.
+
+#### T19.1 WASM plugins scope gate
+Model: opus · Status: open · Depends: - · Size: ~60
+Goal: the extism host contract is fixed on paper before any code.
+Files: `docs/design/v0.2-wasm.md`, `plan.md`, `roadmap.md`.
+Steps: 1. write the guest/host contract sketch; 2. name the falsifier that moves it up; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md`.
+Done when: the doc exists and the roadmap line is struck through in this branch.
+Out of scope: any `extism` dependency (that is the implementation task).
+
 
 ## 4. Definition of done for v0.1
 
@@ -668,6 +683,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 
 - A21 §1.12, T12.3, T17.3 — P18: TUI `--resume`/`--continue`, `/clear`, and Hugo pages for tools/compat/ide/how-it-works. Why: user request to finish remaining work after P17. Effect: `--resume` on `Cli` is not `global`, so `cox run --resume` stays on `RunArgs`.
 - A22 `.github/workflows/ci.yml`, `release-plz.yml` — the `dtolnay/rust-toolchain@<version>` pin names the *toolchain*, and `1.120.0` does not exist (CI failed downloading it), so both workflows pin `@1.97.1`, the version `mise.toml` already pins and `mise exec -- rustc --version` reports. Why: red CI on every push. Effect: no floating toolchain; bump the five pins together with `mise.toml` when Rust moves. The `revert-on-failure` job skips pushes touching `.github/` (least privilege instead of granting `workflows: write`).
+- A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `Работай по плану в отдельной ветке каждую задачу в коммит и создай PR draft`, which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main`; A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
 
 ## 7. Risk register
 
