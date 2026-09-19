@@ -617,6 +617,117 @@ Rationale in §6 A20. T17.1–T17.7 are in `done.md`.
 
 Rationale in §6 A21. T18.1–T18.6 are in `done.md`.
 
+### P19 — v0.2 scoping gates (goal: each roadmap v0.2 line gets a phase-gate design doc; no runtime code yet)
+
+Rationale in §6 A23. Branch `plan/v0.2-scoping`, one commit per task, one draft PR into `main`.
+Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-*.md`,
+`plan.md`, and `roadmap.md` move here.
+
+#### T19.1 WASM plugins scope gate
+Model: opus · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: the extism host contract is fixed on paper before any code.
+Files: `docs/design/v0.2-wasm.md`, `plan.md`, `roadmap.md`.
+Steps: 1. write the guest/host contract sketch; 2. name the falsifier that moves it up; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md`.
+Done when: the doc exists and the roadmap line is struck through in this branch.
+Out of scope: any `extism` dependency (that is the implementation task).
+
+Check output:
+```
+$ test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md && echo ok
+ok
+```
+
+#### T19.2 LSP diagnostics scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: fix where LSP diagnostics enter the loop (tool vs hook vs core) on paper.
+Files: `docs/design/v0.2-lsp.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the diagnostics source and its trust boundary; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md`.
+Done when: the doc exists and states the entry point.
+Out of scope: any LSP client code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md && echo ok
+ok
+```
+
+#### T19.3 Gemini provider scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: decide whether Gemini is a native wire protocol or a compatible preset (A9 type-1 vs type-2) on paper.
+Files: `docs/design/v0.2-gemini.md`, `plan.md`, `roadmap.md`.
+Steps: 1. compare Gemini API against Anthropic/OpenAI shapes; 2. pick type-1 vs type-2 with reason; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md`.
+Done when: the doc names the integration type and its falsifier.
+Out of scope: any provider code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md && echo ok
+ok
+```
+
+#### T19.4 Images scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: fix how image inputs travel Submission → provider (and what v0.1 refuses) on paper.
+Files: `docs/design/v0.2-images.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the content-block shape per wire format; 2. name the refusal behaviour; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md`.
+Done when: the doc states the block shape and the v0.1 refusal.
+Out of scope: any multimodal code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md && echo ok
+ok
+```
+
+#### T19.5 Worktrees scope gate
+Model: haiku · Status: done 2026-09-19 · Depends: - · Size: ~40
+Goal: fix the worktree↔session mapping (one session per worktree?) on paper.
+Files: `docs/design/v0.2-worktrees.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch session→worktree mapping and git tooling reuse; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md`.
+Done when: the doc states the mapping.
+Out of scope: any worktree automation.
+
+Check output:
+```
+$ test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md && echo ok
+ok
+```
+
+#### T19.6 Repo map scope gate
+Model: haiku · Status: done 2026-09-19 · Depends: - · Size: ~40
+Goal: fix what a repo map contains and where it sits in context assembly on paper.
+Files: `docs/design/v0.2-repomap.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch map contents and budget; 2. place it relative to cache breakpoints; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md`.
+Done when: the doc states contents and placement.
+Out of scope: any map builder code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md && echo ok
+ok
+```
+
+#### T19.7 Architect/editor mode scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~40
+Goal: fix what architect/editor mode changes (tiers, tools, approvals) on paper.
+Files: `docs/design/v0.2-modes.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the two modes as router/tool presets; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md`.
+Done when: the doc states the mode table.
+Out of scope: any mode switching code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md && echo ok
+ok
+```
+
 
 ## 4. Definition of done for v0.1
 
@@ -668,6 +779,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 
 - A21 §1.12, T12.3, T17.3 — P18: TUI `--resume`/`--continue`, `/clear`, and Hugo pages for tools/compat/ide/how-it-works. Why: user request to finish remaining work after P17. Effect: `--resume` on `Cli` is not `global`, so `cox run --resume` stays on `RunArgs`.
 - A22 `.github/workflows/ci.yml`, `release-plz.yml` — the `dtolnay/rust-toolchain@<version>` pin names the *toolchain*, and `1.120.0` does not exist (CI failed downloading it), so both workflows pin `@1.97.1`, the version `mise.toml` already pins and `mise exec -- rustc --version` reports. Why: red CI on every push. Effect: no floating toolchain; bump the five pins together with `mise.toml` when Rust moves. The `revert-on-failure` job skips pushes touching `.github/` (least privilege instead of granting `workflows: write`).
+- A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `Работай по плану в отдельной ветке каждую задачу в коммит и создай PR draft`, which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main`; A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
 
 ## 7. Risk register
 
