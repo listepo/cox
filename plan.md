@@ -713,6 +713,15 @@ $ test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repo
 ok
 ```
 
+#### T19.7 Architect/editor mode scope gate
+Model: sonnet · Status: open · Depends: - · Size: ~40
+Goal: fix what architect/editor mode changes (tiers, tools, approvals) on paper.
+Files: `docs/design/v0.2-modes.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the two modes as router/tool presets; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md`.
+Done when: the doc states the mode table.
+Out of scope: any mode switching code.
+
 
 ## 4. Definition of done for v0.1
 
