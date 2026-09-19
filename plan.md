@@ -624,13 +624,19 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 `plan.md`, and `roadmap.md` move here.
 
 #### T19.1 WASM plugins scope gate
-Model: opus · Status: open · Depends: - · Size: ~60
+Model: opus · Status: done 2026-09-19 · Depends: - · Size: ~60
 Goal: the extism host contract is fixed on paper before any code.
 Files: `docs/design/v0.2-wasm.md`, `plan.md`, `roadmap.md`.
 Steps: 1. write the guest/host contract sketch; 2. name the falsifier that moves it up; 3. move the roadmap line into the P19 card.
 Check: `test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md`.
 Done when: the doc exists and the roadmap line is struck through in this branch.
 Out of scope: any `extism` dependency (that is the implementation task).
+
+Check output:
+```
+$ test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md && echo ok
+ok
+```
 
 
 ## 4. Definition of done for v0.1
