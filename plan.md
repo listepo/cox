@@ -698,6 +698,15 @@ $ test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-wo
 ok
 ```
 
+#### T19.6 Repo map scope gate
+Model: haiku · Status: open · Depends: - · Size: ~40
+Goal: fix what a repo map contains and where it sits in context assembly on paper.
+Files: `docs/design/v0.2-repomap.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch map contents and budget; 2. place it relative to cache breakpoints; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md`.
+Done when: the doc states contents and placement.
+Out of scope: any map builder code.
+
 
 ## 4. Definition of done for v0.1
 
