@@ -1,12 +1,11 @@
-# release-plz (A17). Every crate inherits `[workspace.package].version`, so a
-# release is one version, one tag `v<version>`, one CHANGELOG.md. release-plz
-# opens the release PR (bumps the version, rewrites the changelog) and pushes
-# the tag when it merges; the cargo-dist workflow (`release.yml`) builds the
-# binaries and creates the GitHub Release from that tag, so release-plz never
-# creates one itself.
+# release-plz proposes, never tags (ketch model, T20.1): opens the release
+# PR (bumps the version, rewrites the changelog); release.yml builds the
+# binaries first and creates `v<version>` last by publishing the release,
+# so release-plz never creates a tag or a GitHub Release itself.
 [workspace]
-# cox is a binary shipped by cargo-dist, not a crates.io crate: versions come
-# from git tags, nothing is published, and cargo-semver-checks has no baseline.
+# cox is a binary shipped as tarballs by release.yml, not a crates.io crate:
+# versions come from git tags, nothing is published, and cargo-semver-checks
+# has no baseline.
 git_only = true
 publish = false
 semver_check = false
