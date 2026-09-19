@@ -653,6 +653,15 @@ $ test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md &
 ok
 ```
 
+#### T19.3 Gemini provider scope gate
+Model: sonnet · Status: open · Depends: - · Size: ~60
+Goal: decide whether Gemini is a native wire protocol or a compatible preset (A9 type-1 vs type-2) on paper.
+Files: `docs/design/v0.2-gemini.md`, `plan.md`, `roadmap.md`.
+Steps: 1. compare Gemini API against Anthropic/OpenAI shapes; 2. pick type-1 vs type-2 with reason; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md`.
+Done when: the doc names the integration type and its falsifier.
+Out of scope: any provider code.
+
 
 ## 4. Definition of done for v0.1
 
