@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  pull_request:
+    branches: [main]
+    # Draft PRs get standard CI: docs-only changes finish in ~2 min and the
+    # signal (fmt/clippy/nextest green) is what promotes a draft to ready.
   workflow_dispatch:
 
 env:
