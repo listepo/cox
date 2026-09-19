@@ -683,6 +683,15 @@ $ test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-image
 ok
 ```
 
+#### T19.5 Worktrees scope gate
+Model: haiku · Status: open · Depends: - · Size: ~40
+Goal: fix the worktree↔session mapping (one session per worktree?) on paper.
+Files: `docs/design/v0.2-worktrees.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch session→worktree mapping and git tooling reuse; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md`.
+Done when: the doc states the mapping.
+Out of scope: any worktree automation.
+
 
 ## 4. Definition of done for v0.1
 
