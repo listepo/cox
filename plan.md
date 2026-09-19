@@ -669,13 +669,19 @@ ok
 ```
 
 #### T19.4 Images scope gate
-Model: sonnet · Status: open · Depends: - · Size: ~60
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
 Goal: fix how image inputs travel Submission → provider (and what v0.1 refuses) on paper.
 Files: `docs/design/v0.2-images.md`, `plan.md`, `roadmap.md`.
 Steps: 1. sketch the content-block shape per wire format; 2. name the refusal behaviour; 3. move the roadmap line into the P19 card.
 Check: `test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md`.
 Done when: the doc states the block shape and the v0.1 refusal.
 Out of scope: any multimodal code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md && echo ok
+ok
+```
 
 
 ## 4. Definition of done for v0.1
