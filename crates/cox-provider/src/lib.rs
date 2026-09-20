@@ -1,7 +1,8 @@
 //! The `Provider` trait implementations: the Anthropic Messages API, the
-//! OpenAI Responses/Chat APIs (also Ollama, vLLM, LM Studio, OpenRouter) and
-//! the `Replay`/`Scripted` fakes used by tests. Separate from `cox-core` so
-//! the agent loop never talks to the network directly (AGENTS.md, D3).
+//! OpenAI Responses/Chat APIs (also Ollama, vLLM, LM Studio, OpenRouter),
+//! the TypeSafe Jev System One API, and the `Replay`/`Scripted` fakes used
+//! by tests. Separate from `cox-core` so the agent loop never talks to the
+//! network directly (AGENTS.md, D3).
 //!
 //! Each backend is split the same way: a *pure* request translator (a
 //! `Request` in, a `serde_json::Value` body out — no I/O, so it snapshot
@@ -18,6 +19,7 @@
 
 pub mod anthropic;
 pub mod http;
+pub mod jev;
 pub mod openai;
 pub mod replay;
 pub mod retry;

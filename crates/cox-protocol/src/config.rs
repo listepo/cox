@@ -288,6 +288,8 @@ pub struct ProvidersConfig {
     pub openai: OpenAiProviderConfig,
     /// `[providers.local]`
     pub local: LocalProviderConfig,
+    /// `[providers.typesafe]` (Jev System One, type-1 native)
+    pub typesafe: JevProviderConfig,
     /// Every other `[providers.<name>]` table: an OpenAI-compatible
     /// (Type-2) provider — DeepSeek, OpenRouter, Moonshot, Z.AI, or a
     /// hand-rolled one. No code change needed to add a name here.
@@ -304,6 +306,9 @@ impl ProvidersConfig {
             "anthropic" => &self.anthropic.models,
             "openai" => &self.openai.models,
             "local" => &self.local.models,
+            // Jev has one model family; the section default names it, and
+            // the router pins it the same way it pins `local`'s.
+            "typesafe" => &self.typesafe.models,
             other => self
                 .custom
                 .get(other)
@@ -396,6 +401,38 @@ impl Default for LocalProviderConfig {
             api: "chat".to_string(),
             model: "qwen3-coder".to_string(),
             context_window: 32768,
+            models: Vec::new(),
+        }
+    }
+}
+
+/// `[providers.typesafe]` (TypeSafe Jev System One, type-1 native, T21.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct JevProviderConfig {
+    /// API base URL; the client appends `/v1/systemone`.
+    pub base_url: String,
+    /// Env var holding the API key (`TYPESAFE_API_KEY`); falls back to the
+    /// keyring entry `cox/typesafe`. Absent key is `Auth` (fail-open path).
+    pub api_key_env: String,
+    /// Default model id sent as `model` (`jev-latest`).
+    pub model: String,
+    /// Request timeout, in seconds.
+    pub timeout_s: u32,
+    /// Max retries for retryable errors.
+    pub max_retries: u32,
+    /// Known models with their context windows and supported efforts.
+    pub models: Vec<ProviderModel>,
+}
+
+impl Default for JevProviderConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "https://api.typesafe.ai".to_string(),
+            api_key_env: "TYPESAFE_API_KEY".to_string(),
+            model: "jev-latest".to_string(),
+            timeout_s: 30,
+            max_retries: 2,
             models: Vec::new(),
         }
     }

@@ -860,6 +860,8 @@ pub enum ProviderId {
     OpenAi,
     /// A local OpenAI-compatible server (Ollama, vLLM, LM Studio, …).
     Local,
+    /// TypeSafe System One API (Jev decision model, T21.1).
+    Jev,
 }
 
 /// One block of the system prompt, with its own cache eligibility (plan.md §1.9).

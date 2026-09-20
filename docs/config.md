@@ -64,6 +64,14 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `model` = `"qwen3-coder"`
 - `context_window` = `32768` — local servers do not report it
 - `models` = `[{id="qwen3-coder", context_window=32768, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.typesafe]`
+
+- `base_url` = `"https://api.typesafe.ai"` — client appends /v1/systemone
+- `api_key_env` = `"TYPESAFE_API_KEY"` — else keyring entry "cox/typesafe"
+- `model` = `"jev-latest"`
+- `timeout_s` = `30`
+- `max_retries` = `2`
+- `models` = `[{id="jev-latest", context_window=128000, efforts=["low"]}]` — decisions are cheap-tier only
 ## `[providers.deepseek]`
 
 - `base_url` = `"https://api.deepseek.com"` — client appends /chat/completions
