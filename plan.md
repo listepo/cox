@@ -634,7 +634,7 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 
 #### T21.0 Jev integration scope gate
 
-Model: - · Status: open · Depends: - · Size: ~60
+Model: - · Status: done 2026-09-20 · Depends: - · Size: ~100
 Goal: fix what Jev is, where it plugs into cox, and what kills the idea — on paper, before any provider code or dependency.
 Files: `docs/design/v0.2-jev.md`, `plan.md`, `roadmap.md`.
 Steps: 1. write the guest/host contract sketch (own System One JSON over `POST /v1/systemone`, Python/JS SDKs, no OpenAPI; keys via waitlist at `console.typesafe.ai`); 2. map the candidate call sites (router `pick`, permission classification, compaction/memory salience, skill suggestion) against Jev's three primitives (Choice / Score / Noul) and the cookbook patterns (intent routing, confidence-gated routing, hierarchical classification, skill suggestion, LLM guardrails); 3. name the falsifier that moves it up; 4. move the roadmap line into this card.
