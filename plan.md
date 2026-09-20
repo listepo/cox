@@ -619,9 +619,129 @@ Rationale in §6 A21. T18.1–T18.6 are in `done.md`.
 
 ### P19 — v0.2 scoping gates (goal: each roadmap v0.2 line gets a phase-gate design doc; no runtime code yet)
 
-Rationale in §6 A23. Branch `plan/v0.2-scoping`, one commit per task, one draft PR into `main`.
+Rationale in §6 A23. Branch `plan/v0.2-scoping`, one commit per task, one draft PR into `main` (PR #24).
 Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-*.md`,
 `plan.md`, and `roadmap.md` move here.
+
+### P20 — ketch-model release (goal: releases publish first, tag last, installable via ketch and Homebrew)
+
+Rationale in §6 A24. Branch `release/ketch-model`, one commit per task, PR #26 into `main`; P19 (PR #24) stays untouched.
+
+#### T19.8 Run CI on pull requests
+
+Model: - · Status: done 2026-09-19 · Depends: - · Size: small
+Goal: CI runs on `pull_request` to `main`, so release and scoping branches get the signal before merge.
+Files: `.github/workflows/ci.yml`.
+Steps: 1. add the `pull_request` trigger; 2. keep `workflow_dispatch`; 3. confirm CI green on the branch PR.
+Check: `grep -q 'pull_request' .github/workflows/ci.yml`.
+Done when: draft PRs show the CI signal that promotes them to ready.
+Out of scope: any release workflow change (that is T20.4).
+
+Check output:
+```
+$ grep -q 'pull_request' .github/workflows/ci.yml && echo ok
+ok
+```
+
+#### T20.1 release-plz proposes, never tags
+
+Model: - · Status: done 2026-09-19 · Depends: - · Size: small
+Goal: `release-plz.yml` runs only `release-pr`; tagging is `release.yml`'s job (publish first, tag last).
+Files: `.github/workflows/release-plz.yml`, `release-plz.toml`.
+Steps: 1. drop the `release` job, keep `release-pr` with the loud token check; 2. add the pending-release gate; 3. align header comments to the ketch model.
+Check: `grep -q 'command: release-pr' .github/workflows/release-plz.yml && ! grep -q 'command: release$' .github/workflows/release-plz.yml`.
+Done when: merging to `main` opens or refreshes the release PR and never creates a tag.
+Out of scope: building or publishing binaries (that is T20.2–T20.4).
+
+Check output:
+```
+$ grep -q 'command: release-pr' .github/workflows/release-plz.yml && ! grep -q 'command: release$' .github/workflows/release-plz.yml && echo ok
+ok
+```
+
+#### T20.2 scripts/package.sh builds the release tarball
+
+Model: - · Status: done 2026-09-19 · Depends: - · Size: ~75 LOC
+Goal: one script builds `cox-<target>.tar.xz` per target, used by CI and release alike.
+Files: `scripts/package.sh`.
+Steps: 1. `cargo build --profile dist --locked --target`; 2. stage binary + README, optional sign; 3. pack with sha256 print.
+Check: `bash -n scripts/package.sh`.
+Done when: the release `build` job packages through this script.
+Out of scope: the cask (that is T20.3).
+
+Check output:
+```
+$ bash -n scripts/package.sh && echo ok
+ok
+```
+
+#### T20.3 scripts/cask.sh generates the Homebrew cask
+
+Model: - · Status: done 2026-09-19 · Depends: T20.2 · Size: ~60 LOC
+Goal: `Casks/cox.rb` in `listepo/homebrew-tap` is generated, never hand-edited.
+Files: `scripts/cask.sh`.
+Steps: 1. take `<version> <sha256-aarch64> <sha256-intel>`; 2. validate shas; 3. print the cask.
+Check: `bash -n scripts/cask.sh && scripts/cask.sh 0.0.0 $(printf '%064d' 0) $(printf '%064d' 1) | grep -q 'cask "cox"'`.
+Done when: the release `tap` job writes the tap file from this script.
+Out of scope: the publish itself (that is T20.4).
+
+Check output:
+```
+$ bash -n scripts/cask.sh && scripts/cask.sh 0.0.0 $(printf '%064d' 0) $(printf '%064d' 1) | grep -q 'cask "cox"' && echo ok
+ok
+```
+
+#### T20.4 release.yml publishes first, tags last
+
+Model: - · Status: done 2026-09-19 · Depends: T20.1–T20.3 · Size: large
+Goal: merging to `main` with an untagged version runs verify → 4-target build → draft release → publish (creates `v<version>`) → tap cask.
+Files: `.github/workflows/release.yml`.
+Steps: 1. `version` gate; 2. `verify` (same gate as CI); 3. `build` matrix via `scripts/package.sh`; 4. `publish` draft-then-undraft; 5. `tap` cask after publish.
+Check: `ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"` prints `build, publish, tap, verify, version`.
+Done when: a tag exists iff a release completed; `install.sh` and `cox self update` find only complete releases.
+Out of scope: the ketch registry entry (that is T20.5).
+
+Check output:
+```
+$ ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"
+build, publish, tap, verify, version
+```
+
+#### T20.5 ketch.toml for cox, dist tail removed
+
+Model: - · Status: done 2026-09-20 · Depends: T20.4 · Size: small
+Goal: cox installs via ketch; no dead cargo-dist jobs remain in `release.yml`.
+Files: `ketch.toml`, `.github/workflows/release.yml`, `release-plz.toml`, `crates/cox/src/self_update.rs`.
+Steps: 1. cut the leftover dist block (252 lines); 2. add `ketch.toml`; 3. copy it to `cox/` in `listepo/ketch-registry`; 4. reword cargo-dist comments.
+Check: release jobs list plus `ketch registry validate` passes 5 packages.
+Done when: `ketch install cox` picks the platform tarball; registry validates.
+Out of scope: merging PR #26 (merge starts the first ketch-model release).
+
+Check output:
+```
+$ ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"
+build, publish, tap, verify, version
+$ ketch registry validate /Users/listepo/GitHub/listepo/packages/ketch-registry
+validated 5 packages
+$ KETCH_ROOT=/tmp/ketch-cox-test ketch install cox --verbose
+installed cox v0.1.0
+```
+
+#### T20.6 Pin CI toolchain back to 1.97.1
+
+Model: - · Status: done 2026-09-20 · Depends: - · Size: tiny
+Goal: CI green after Dependabot #16 bumped the pin to nonexistent `1.120.0` (same class as A22).
+Files: `.github/workflows/ci.yml`, `.github/workflows/release-plz.yml`.
+Steps: 1. revert four `1.120.0` pins to `1.97.1` (the `mise.toml` pin); 2. push; 3. confirm CI green on PR #26.
+Check: `! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolchain@1.97.1' .github/workflows/ci.yml`.
+Done when: the CI run on `release/ketch-model` is green.
+Out of scope: bumping the real toolchain (moves `mise.toml` + pins together per A22).
+
+Check output:
+```
+$ ! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolchain@1.97.1' .github/workflows/ci.yml && echo ok
+ok
+```
 
 #### T19.1 WASM plugins scope gate
 Model: opus · Status: done 2026-09-19 · Depends: - · Size: ~60
@@ -779,7 +899,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 
 - A21 §1.12, T12.3, T17.3 — P18: TUI `--resume`/`--continue`, `/clear`, and Hugo pages for tools/compat/ide/how-it-works. Why: user request to finish remaining work after P17. Effect: `--resume` on `Cli` is not `global`, so `cox run --resume` stays on `RunArgs`.
 - A22 `.github/workflows/ci.yml`, `release-plz.yml` — the `dtolnay/rust-toolchain@<version>` pin names the *toolchain*, and `1.120.0` does not exist (CI failed downloading it), so both workflows pin `@1.97.1`, the version `mise.toml` already pins and `mise exec -- rustc --version` reports. Why: red CI on every push. Effect: no floating toolchain; bump the five pins together with `mise.toml` when Rust moves. The `revert-on-failure` job skips pushes touching `.github/` (least privilege instead of granting `workflows: write`).
-- A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `Работай по плану в отдельной ветке каждую задачу в коммит и создай PR draft`, which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main`; A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
+- A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `Работай по плану в отдельной ветке каждую задачу в коммит и создай PR draft`, which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main` (PR #24); A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
+- A24 §3 P20 — ketch-model release for cox (T19.8, T20.1–T20.6). Why: user request `Подготовь релиз в ketch и на github как в listrepo/ketch listepo/rtok`. Effect: work happens on branch `release/ketch-model`, one commit per task, PR #26 into `main`; release-plz only proposes (no tags), `release.yml` builds `cox-<target>.tar.xz` via `scripts/package.sh` and creates `v<version>` by publishing (tag iff release completed), `scripts/cask.sh` generates the Homebrew cask, `ketch.toml` + registry entry `cox/` make `ketch install cox` work. T20.6 repins the CI toolchain to `1.97.1` after Dependabot #16 broke it with nonexistent `1.120.0` (same class as A22).
 
 ## 7. Risk register
 
