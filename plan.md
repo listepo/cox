@@ -743,6 +743,40 @@ $ ! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolch
 ok
 ```
 
+#### T20.7 P20 cards and A24 in plan.md
+
+Model: - · Status: done 2026-09-20 · Depends: T20.1–T20.6 · Size: small
+Goal: the ketch-model release work is recorded as P20 cards (T19.8, T20.1–T20.6) with amendment A24, so `main` carries its own history.
+Files: `plan.md`.
+Steps: 1. add P20 section with per-task cards and Check outputs; 2. add A24; 3. verify every Check passes on the branch.
+Check: `grep -q '#### T20.6' plan.md && grep -q '^- A24' plan.md`.
+Done when: PR #26 merges with the plan describing what it did.
+Out of scope: runtime code (P20 is release plumbing + plan records).
+
+Check output:
+```
+$ grep -q '#### T20.6' plan.md && grep -q '^- A24' plan.md && echo ok
+ok
+```
+
+#### T20.8 Ulid::generate after Dependabot #18
+
+Model: - · Status: done 2026-09-20 · Depends: - · Size: tiny
+Goal: workspace compiles after Dependabot #18 bumped `ulid` 1.2.1 → 3.0.0, which renamed `Ulid::new()` to `Ulid::generate()`.
+Files: `crates/cox-protocol/src/ids.rs`.
+Steps: 1. call `Ulid::generate()` in the `ulid_id!` macro (wrapper keeps `new()`); 2. clippy + `cox-protocol` tests; 3. push.
+Check: `mise exec -- cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+Done when: CI `verify`/`Test` pass on the release run.
+Out of scope: any id-type rename (callers keep `SessionId::new()`).
+
+Check output:
+```
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s)
+$ mise exec -- cargo nextest run -p cox-protocol
+49 tests run: 49 passed, 0 skipped
+```
+
 #### T19.1 WASM plugins scope gate
 Model: opus · Status: done 2026-09-19 · Depends: - · Size: ~60
 Goal: the extism host contract is fixed on paper before any code.
