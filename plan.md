@@ -630,7 +630,39 @@ Rationale in §6 A24. Branch `release/ketch-model`, one commit per task, PR #26 
 ### P21 — TypeSafe Jev as a decision model (goal: typed choice/score/boolean calls with probabilities where cox routes, classifies and gates — design doc first, no runtime code yet)
 
 Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding agent: state + typed questions in, choice/score/boolean with probabilities and confidence out. It fits cox at the exact points where cox already reduces a turn to a narrow judgment — router tier pick, permission risk, compaction triggers, memory salience, skill/command matching. No new dependency lands until the design doc fixes the boundary: Jev answers never bypass the permission engine, never touch the filesystem, and lose to the local default whenever the key, the network or the confidence is missing (fail open on extensions, same as hooks/skills/MCP).
-Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape.
+Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape. T21.1–T21.2 (below) are the implementation the gate allowed: provider wiring only, no call sites yet.
+
+#### T21.1 JevProvider type-1 native
+
+Model: - · Status: done 2026-09-20 · Depends: T21.0 · Size: ~550
+Goal: the System One wire format behind the `Provider` trait: `build_body` (Request → `{state, model, questions}`), `parse_response` (one `{answers, usage}` body → JSON TextDelta + Stop + Usage), `http_error` (shared taxonomy), `JevProvider` client (bearer key, retry, cancel).
+Files: `crates/cox-provider/src/jev.rs`, `crates/cox-provider/src/lib.rs`, `crates/cox-protocol/src/types.rs` (`ProviderId::Jev`), `crates/cox-protocol/src/config.rs` (`JevProviderConfig` + `providers.typesafe`), `crates/cox-protocol/default.toml`, `crates/cox-provider/prices.toml` (`jev-latest` $0.042/0), `docs/config.md` (regenerated).
+Steps: 1. pure translator + parsers with 7 unit tests (choice/score/noul, empty-answers-is-Parse, unknown-kind-is-Parse, error taxonomy); 2. thin non-SSE client over `retry::stream_with_retry`; 3. config section + prices row + regenerated docs.
+Check: `mise exec -- cargo nextest run -p cox-provider jev` — 7 passed.
+Done when: the wire shape is proven without a key; no caller routes to it yet (that is T21.2).
+Out of scope: any `cox-core`/`cox` call site (judge layer is T21.3).
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-provider jev
+7 tests run: 7 passed, 0 skipped
+```
+
+#### T21.2 Route and build the typesafe provider
+
+Model: - · Status: done 2026-09-20 · Depends: T21.1 · Size: ~30
+Goal: `tiers.<t>.provider = "typesafe"` routes (`ProviderId::Jev`, section-model pin like `local`) and builds (`JevProvider::with_key` via the shared key-resolve helper); the ledger names the row `typesafe`.
+Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs` (`provider_name`), `crates/cox/src/session.rs` (`provider_for`).
+Steps: 1. router match arm + pin; 2. ledger name; 3. session builder via `http::resolve_key_env_or_keyring` (missing key is `Auth`, the fail-open path).
+Check: `mise exec -- cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+Done when: a tier can name `typesafe` end to end; nothing names it by default (all tiers keep their models).
+Out of scope: the judge layer that would actually call it (T21.3).
+
+Check output:
+```
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile
+```
 
 #### T21.0 Jev integration scope gate
 
