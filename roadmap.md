@@ -11,3 +11,4 @@ Approved work that is not yet in the active plan.
 - worktrees
 - repo map
 - architect/editor mode
+- TypeSafe Jev decision model (System One: Choice/Score/Noul) — scope gate T21.0

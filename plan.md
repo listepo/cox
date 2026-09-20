@@ -627,6 +627,27 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 
 Rationale in §6 A24. Branch `release/ketch-model`, one commit per task, PR #26 into `main`; P19 (PR #24) stays untouched.
 
+### P21 — TypeSafe Jev as a decision model (goal: typed choice/score/boolean calls with probabilities where cox routes, classifies and gates — design doc first, no runtime code yet)
+
+Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding agent: state + typed questions in, choice/score/boolean with probabilities and confidence out. It fits cox at the exact points where cox already reduces a turn to a narrow judgment — router tier pick, permission risk, compaction triggers, memory salience, skill/command matching. No new dependency lands until the design doc fixes the boundary: Jev answers never bypass the permission engine, never touch the filesystem, and lose to the local default whenever the key, the network or the confidence is missing (fail open on extensions, same as hooks/skills/MCP).
+Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape.
+
+#### T21.0 Jev integration scope gate
+
+Model: - · Status: open · Depends: - · Size: ~60
+Goal: fix what Jev is, where it plugs into cox, and what kills the idea — on paper, before any provider code or dependency.
+Files: `docs/design/v0.2-jev.md`, `plan.md`, `roadmap.md`.
+Steps: 1. write the guest/host contract sketch (own System One JSON over `POST /v1/systemone`, Python/JS SDKs, no OpenAPI; keys via waitlist at `console.typesafe.ai`); 2. map the candidate call sites (router `pick`, permission classification, compaction/memory salience, skill suggestion) against Jev's three primitives (Choice / Score / Noul) and the cookbook patterns (intent routing, confidence-gated routing, hierarchical classification, skill suggestion, LLM guardrails); 3. name the falsifier that moves it up; 4. move the roadmap line into this card.
+Check: `test -f docs/design/v0.2-jev.md && grep -q Falsifier docs/design/v0.2-jev.md`.
+Done when: the doc exists (Problem / The field / cox / Falsifiers / Review), states the integration type from §1 (type-1 native wire vs type-2 compatible preset vs data-only like skills/hooks), and the roadmap line is struck through in the branch.
+Out of scope: any `cox-provider` code, any new dependency row in §1.1, any key handling (that is the implementation task).
+
+Check output:
+```
+$ test -f docs/design/v0.2-jev.md && grep -q Falsifier docs/design/v0.2-jev.md && echo ok
+ok
+```
+
 #### T19.8 Run CI on pull requests
 
 Model: - · Status: done 2026-09-19 · Depends: - · Size: small
@@ -935,6 +956,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A22 `.github/workflows/ci.yml`, `release-plz.yml` — the `dtolnay/rust-toolchain@<version>` pin names the *toolchain*, and `1.120.0` does not exist (CI failed downloading it), so both workflows pin `@1.97.1`, the version `mise.toml` already pins and `mise exec -- rustc --version` reports. Why: red CI on every push. Effect: no floating toolchain; bump the five pins together with `mise.toml` when Rust moves. The `revert-on-failure` job skips pushes touching `.github/` (least privilege instead of granting `workflows: write`).
 - A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `Работай по плану в отдельной ветке каждую задачу в коммит и создай PR draft`, which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main` (PR #24); A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
 - A24 §3 P20 — ketch-model release for cox (T19.8, T20.1–T20.6). Why: user request `Подготовь релиз в ketch и на github как в listrepo/ketch listepo/rtok`. Effect: work happens on branch `release/ketch-model`, one commit per task, PR #26 into `main`; release-plz only proposes (no tags), `release.yml` builds `cox-<target>.tar.xz` via `scripts/package.sh` and creates `v<version>` by publishing (tag iff release completed), `scripts/cask.sh` generates the Homebrew cask, `ketch.toml` + registry entry `cox/` make `ketch install cox` work. T20.6 repins the CI toolchain to `1.97.1` after Dependabot #16 broke it with nonexistent `1.120.0` (same class as A22).
+- A25 §3 P21 — TypeSafe Jev as a decision model (T21.0 scope gate). Why: user request to restore and improve the Jev note that was lost in an uncommitted working-copy overwrite of `plan.md`. Effect: new phase P21 with one `open` scope-gate task T21.0 (`docs/design/v0.2-jev.md`, Problem / The field / cox / Falsifiers / Review), mirroring the P19 gate shape: design doc first, no `crates/` changes, no new §1.1 dependency until the doc fixes the boundary (Jev answers never bypass the permission engine; fail open like hooks/skills/MCP). Restores the lost facts in their correct form — Jev is TypeSafe's System One decision model (state + Choice/Score/Noul questions in, probabilities + confidence out, `POST /v1/systemone` in its own JSON format, Python/JS SDKs, no OpenAPI; LangChain middleware and Vercel AI Gateway integrations; keys via waitlist at `console.typesafe.ai`; docs index at `docs.typesafe.ai/llms.txt`) — and maps the candidate call sites (router pick, permission classification, compaction/memory salience, skill suggestion) to the cookbook patterns (intent routing, confidence-gated routing, skill suggestion, LLM guardrails).
 
 ## 7. Risk register
 
