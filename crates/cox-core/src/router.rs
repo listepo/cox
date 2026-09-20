@@ -107,6 +107,9 @@ impl Router {
             "anthropic" => ProviderId::Anthropic,
             "openai" => ProviderId::OpenAi,
             "local" => ProviderId::Local,
+            // Jev is type-1 native (System One wire, T21.1): its own id so
+            // the ledger row reads as a decision call, not an LLM turn.
+            "typesafe" => ProviderId::Jev,
             // Type-2 (compatible) providers are OpenAI-Chat-shaped by
             // construction, so they ride the `Local` family id — the
             // ledger's "OpenAI-compatible" bucket, where the model string
@@ -128,6 +131,9 @@ impl Router {
         // tier model rather than sending an empty id.
         let pinned = match tc.provider.as_str() {
             "local" => Some(config.providers.local.model.clone()),
+            // Same pin rule as `local`: a bare `tiers.<t>.provider =
+            // "typesafe"` flip works without editing every tier model.
+            "typesafe" => Some(config.providers.typesafe.model.clone()),
             other => config.providers.custom.get(other).map(|c| c.model.clone()),
         };
         let model = overrides.models.get(&tier).cloned().unwrap_or_else(|| {

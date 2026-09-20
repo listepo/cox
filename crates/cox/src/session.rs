@@ -307,6 +307,29 @@ pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>>
             )?)
         }
         "local" => Ok(Arc::new(OpenAiChatProvider::new(&config.providers.local))),
+        // Jev is type-1 native (System One wire, T21.1): its own client,
+        // not an OpenAI shape. The constructor resolves the key itself
+        // (TYPESAFE_API_KEY env, else keyring `cox/typesafe`) and fails
+        // `Auth` when neither has one — that is the fail-open path, read
+        // as auth, not transport. A renamed `api_key_env` is honoured the
+        // same way every other section honours it: read the env here and
+        // pass the value down; Jev's client takes it directly.
+        "typesafe" => {
+            let t = &config.providers.typesafe;
+            // Same resolve rule as every other section: `api_key_env` first,
+            // else the keyring entry — via the shared `http` helper so a
+            // missing key reads as `Auth` (the fail-open path), not I/O.
+            let key =
+                cox_provider::http::resolve_key_env_or_keyring(&t.api_key_env, "cox", "typesafe")
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(Arc::new(cox_provider::jev::JevProvider::with_key(
+                t.base_url.clone(),
+                key,
+                t.model.clone(),
+                u64::from(t.timeout_s),
+                t.max_retries,
+            )))
+        }
         // Type-2 providers: no code per vendor — the section's `api` picks
         // the wire client, the section's base URL/key/models configure it.
         other => {

@@ -1209,6 +1209,7 @@ fn provider_name(provider: ProviderId) -> &'static str {
         ProviderId::Anthropic => "anthropic",
         ProviderId::OpenAi => "openai",
         ProviderId::Local => "local",
+        ProviderId::Jev => "typesafe",
     }
 }
 
