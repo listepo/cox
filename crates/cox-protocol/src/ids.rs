@@ -24,7 +24,9 @@ macro_rules! ulid_id {
         impl $name {
             /// Generates a fresh, time-sortable id.
             pub fn new() -> Self {
-                Self(Ulid::new())
+                // ulid 3.x renamed `Ulid::new()` to `Ulid::generate()`; the
+                // wrapper keeps its name so callers do not churn with the dep.
+                Self(Ulid::generate())
             }
         }
 
