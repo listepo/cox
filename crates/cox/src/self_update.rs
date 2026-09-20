@@ -8,10 +8,11 @@ use std::path::PathBuf;
 
 use sha2::{Digest, Sha256};
 
-/// `listepo/cox` releases carry `cox-<target>.tar.xz` built by cargo-dist.
+/// `listepo/cox` releases carry `cox-<target>.tar.xz` built by
+/// `scripts/package.sh` and published by `.github/workflows/release.yml`.
 const REPO: &str = "listepo/cox";
 
-/// This platform's cargo-dist target triple, if releases build it.
+/// This platform's release target triple, if releases build it.
 fn target() -> anyhow::Result<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => Ok("aarch64-apple-darwin"),
@@ -93,7 +94,7 @@ pub async fn run(version: Option<String>) -> anyhow::Result<()> {
     if got != want {
         anyhow::bail!("checksum mismatch for {base}: expected {want}, got {got}");
     }
-    // cargo-dist archives hold the binary at the top level; unpack it.
+    // Release archives hold the binary at the top level; unpack it.
     let exe = std::env::current_exe()?;
     let dir: PathBuf = exe
         .parent()

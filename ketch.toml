@@ -1,0 +1,18 @@
+# cox as a ketch package.
+#
+# Inference from github:listepo/cox already picks the `cox-<target>.tar.xz`
+# assets scripts/package.sh publishes; this file is what `ketch push` sends
+# to the registry (listepo/ketch-registry, folder `cox/`) and what docs /
+# `ketch info` show. Schema: listepo/ketch docs/MANIFESTS.md.
+
+name = "cox"
+source = "github:listepo/cox"
+description = "Modular terminal coding agent"
+homepage = "https://github.com/listepo/cox"
+
+# Prefer the platform .tar.xz archives the release workflow publishes; skip
+# the per-archive .sha256 sidecars and the aggregate SHA256SUMS so scoring
+# cannot pick those by mistake.
+[asset]
+include = ["*-apple-darwin.tar.xz", "*-linux-gnu.tar.xz"]
+exclude = ["*.sha256", "SHA256SUMS"]
