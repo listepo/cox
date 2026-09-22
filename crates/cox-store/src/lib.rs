@@ -429,7 +429,6 @@ impl StoreTrait for Store {
             path: row.path.to_string_lossy().into_owned(),
             kind: to_tag(&row.kind),
             archive_id: row.archive.map(|a| a.to_string()),
-            sha256: row.sha256.clone(),
             created_at: now_rfc3339(),
         };
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
@@ -472,7 +471,6 @@ impl StoreTrait for Store {
                         .as_deref()
                         .map(|a| a.parse().map_err(|_| corrupt()))
                         .transpose()?,
-                    sha256: r.sha256,
                 })
             })
             .collect()
@@ -888,7 +886,6 @@ mod tests {
                 path: PathBuf::new(),
                 kind: cox_protocol::CheckpointKind::Turn,
                 archive: None,
-                sha256: String::new(),
             },
             CheckpointRow {
                 session,
@@ -897,7 +894,6 @@ mod tests {
                 path: PathBuf::from("/w/a.rs"),
                 kind: cox_protocol::CheckpointKind::Pre,
                 archive: Some(archive),
-                sha256: sha256_hex(b"before"),
             },
         ];
         for row in &rows {

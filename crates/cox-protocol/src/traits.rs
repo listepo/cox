@@ -111,19 +111,30 @@ pub struct CheckpointRow {
     /// What was recorded.
     pub kind: CheckpointKind,
     /// Where the pre-image bytes live; `None` for `Created`/`Turn` and for a
-    /// file too large to archive (then `sha256` alone identifies it).
+    /// file too large to archive (recorded so `/rewind` can say so).
     pub archive: Option<ArchiveId>,
-    /// SHA-256 of the pre-image, empty when there is none.
-    pub sha256: String,
 }
 
-/// A file's bytes before a call that names its path (`Checkpointer::preimages`).
+/// What a file held before a call touched it. Three states, not an
+/// `Option`: a file too large to keep must not be mistaken for one that did
+/// not exist, or a rewind would delete it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Before {
+    /// No file at that path.
+    Absent,
+    /// The full bytes.
+    Bytes(Vec<u8>),
+    /// A file over the implementation's size cap; only its existence is kept.
+    TooLarge,
+}
+
+/// A file's state before a call that names its path (`Checkpointer::preimages`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreImage {
     /// The confined absolute path.
     pub path: PathBuf,
-    /// `None` when the file does not exist yet.
-    pub bytes: Option<Vec<u8>>,
+    /// What was there.
+    pub before: Before,
 }
 
 /// An opaque fingerprint of the workspace roots (`Checkpointer::snapshot`):
@@ -139,10 +150,10 @@ pub struct Snapshot {
 pub struct Change {
     /// The confined absolute path.
     pub path: PathBuf,
-    /// `Pre` (modified), `Created` or `Deleted`.
-    pub kind: CheckpointKind,
-    /// The bytes before the change, when there were any and they fit.
-    pub before: Option<Vec<u8>>,
+    /// The file is gone in the later snapshot.
+    pub deleted: bool,
+    /// What the earlier snapshot held (`Absent` for a created file).
+    pub before: Before,
 }
 
 /// A model provider: turns a `Request` into a stream of `ProviderEvent`s.

@@ -98,6 +98,5 @@ pub(crate) struct CheckpointDbRow {
     pub path: String,
     pub kind: String,
     pub archive_id: Option<String>,
-    pub sha256: String,
     pub created_at: String,
 }
