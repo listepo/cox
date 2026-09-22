@@ -3,9 +3,9 @@ source: crates/cox-tui/tests/frames.rs
 expression: "format!(\"{scrollback}\\n----\\n{}\", buffer_to_string(&render(&state, 60, 5)))"
 ---
 › read main
-⚙ read src/main.rs
-  fn main() {}
-  ✓ 12B 3ms
+⚙ read src/main.rs · 3ms
+│ fn main() {}
+│ ✓ 12B 3ms
 ----
 It prints nothing.
 

@@ -45,3 +45,109 @@ fn shell_choice_replaces_the_word_being_typed() {
     assert!(state.modal.is_none());
     assert_eq!(state.composer.text(), "git checkout main ");
 }
+
+/// T23.1: `cox-tui` has no binary of its own to spawn under a PTY (unlike
+/// `crates/cox/tests/tui_e2e.rs`, which spawns the real `cox`), so
+/// `src/bin/kitty_probe.rs` — which exists purely for this test — stands
+/// in: it drives `cox_tui::app::run` for real and quits itself a moment
+/// after start.
+mod kitty_pty {
+    use std::io::{Read, Write};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+
+    /// Spawns `kitty_probe` with `COX_KITTY_PROBE_KITTY` set, answers its
+    /// `CSI 6n` cursor queries the same way `tui_e2e.rs` does for the real
+    /// binary (the inline viewport needs an answer or it stalls), waits for
+    /// it to quit itself, and returns every raw byte the PTY saw.
+    pub fn run_probe(kitty: bool) -> Vec<u8> {
+        let pty = NativePtySystem::default()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_kitty_probe"));
+        cmd.env("COX_KITTY_PROBE_KITTY", if kitty { "1" } else { "0" });
+        cmd.env("TERM", "xterm-256color");
+        let mut child = pty.slave.spawn_command(cmd).expect("spawn kitty_probe");
+        drop(pty.slave);
+
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let mut reader = pty.master.try_clone_reader().expect("clone reader");
+        let writer = Arc::new(Mutex::new(pty.master.take_writer().expect("writer")));
+        let sink = captured.clone();
+        let replier = writer.clone();
+        thread::spawn(move || {
+            let mut parser = vt100::Parser::new(24, 80, 0);
+            let mut buf = [0u8; 4096];
+            // Carries the tail of the previous read so a query split across
+            // two reads is still seen, like `tui_e2e.rs`.
+            let mut tail: Vec<u8> = Vec::new();
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                parser.process(&buf[..n]);
+                sink.lock().unwrap().extend_from_slice(&buf[..n]);
+                tail.extend_from_slice(&buf[..n]);
+                let queries = tail.windows(4).filter(|w| *w == b"\x1b[6n").count();
+                if queries > 0 {
+                    let (row, col) = parser.screen().cursor_position();
+                    let reply = format!("\x1b[{};{}R", row + 1, col + 1).repeat(queries);
+                    let _ = replier.lock().unwrap().write_all(reply.as_bytes());
+                }
+                let keep = tail.len().saturating_sub(3);
+                tail.drain(..keep);
+            }
+        });
+
+        let start = Instant::now();
+        loop {
+            if child.try_wait().expect("try_wait").is_some() {
+                break;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "kitty_probe did not exit"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        // `restore()` writes the pop sequence right as the process exits;
+        // give the reader thread a moment to drain it.
+        thread::sleep(Duration::from_millis(100));
+        captured.lock().unwrap().clone()
+    }
+}
+
+#[test]
+fn pty_pops_keyboard_flags_on_exit() {
+    let with = kitty_pty::run_probe(true);
+    assert!(
+        with.windows(5).any(|w| w == b"\x1b[>3u"),
+        "push flags missing: {:?}",
+        String::from_utf8_lossy(&with)
+    );
+    assert!(
+        with.windows(5).any(|w| w == b"\x1b[<1u"),
+        "pop flags missing: {:?}",
+        String::from_utf8_lossy(&with)
+    );
+
+    let without = kitty_pty::run_probe(false);
+    assert!(
+        !without.windows(5).any(|w| w == b"\x1b[>3u"),
+        "push flags present without the capability: {:?}",
+        String::from_utf8_lossy(&without)
+    );
+    assert!(
+        !without.windows(5).any(|w| w == b"\x1b[<1u"),
+        "pop flags present without the capability: {:?}",
+        String::from_utf8_lossy(&without)
+    );
+}

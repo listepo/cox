@@ -5,6 +5,13 @@
 //! once, on the finished buffer — the single place both the live screen
 //! (`view`) and the scrollback (`app`'s `insert_before`) pass through — so
 //! no render site has to know what the terminal supports.
+//!
+//! Also owns background detection for `tui.theme = "auto"` (T22.6):
+//! `detect_dark` queries OSC 11 once, before raw mode, and hands the caller
+//! a fail-open `Option<bool>` — the same "ask the environment, never block
+//! or guess wrong" shape `resolve` already uses for colour depth.
+
+use std::time::Duration;
 
 use cox_protocol::config::TuiConfig;
 use ratatui::buffer::Buffer;
@@ -95,6 +102,41 @@ pub fn map_buffer(buf: &mut Buffer, depth: Depth) {
     }
 }
 
+/// `tui.theme = "auto"` (T22.6): how long to wait for the terminal's OSC 11
+/// reply before giving up. Short enough that a terminal which never answers
+/// (no support, or a pipe with no tty) never delays startup noticeably.
+pub const OSC11_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// Below this normalised luma the background reads as dark.
+const DARK_LUMA: f32 = 0.5;
+
+/// `tui.theme = "auto"`: query the terminal's background colour over OSC 11
+/// and classify it as dark or light. `None` means "could not tell" — tmux
+/// does not forward OSC 11 reliably to the outer terminal so it is skipped
+/// outright, and any query error (unsupported terminal, no reply within
+/// `timeout`, not a tty) is treated the same way. The caller falls back to
+/// dark, the same default `tui.theme` had before this query existed.
+pub fn detect_dark(timeout: Duration) -> Option<bool> {
+    if std::env::var("TMUX").is_ok() {
+        return None;
+    }
+    // `QueryOptions` is `#[non_exhaustive]`: build the default, then set the
+    // one field this crate cares about, rather than a struct literal.
+    let mut options = terminal_colorsaurus::QueryOptions::default();
+    options.timeout = timeout;
+    let bg = terminal_colorsaurus::background_color(options).ok()?;
+    let (r, g, b) = bg.scale_to_8bit();
+    Some(is_dark(r, g, b))
+}
+
+/// ITU-R BT.601 luma of an 8-bit RGB colour, normalised to `0.0..=1.0`,
+/// compared against the perceptual midpoint.
+fn is_dark(r: u8, g: u8, b: u8) -> bool {
+    let luma =
+        (0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b)) / f32::from(u8::MAX);
+    luma <= DARK_LUMA
+}
+
 /// The xterm index for an RGB triple: the 24-step grey ramp for a colour
 /// whose channels agree, the 6×6×6 cube otherwise.
 fn cube(r: u8, g: u8, b: u8) -> u8 {
@@ -181,5 +223,32 @@ mod tests {
     fn a_grey_becomes_a_grey_not_a_cube_corner() {
         // 128,128,128 is on the grey ramp, not in the 6×6×6 cube.
         assert!(matches!(cube(128, 128, 128), 232..=255));
+    }
+
+    #[test]
+    fn luminance_threshold_maps_known_backgrounds() {
+        // (terminal/theme default background, expected `is_dark`).
+        let cases: &[(&str, (u8, u8, u8), bool)] = &[
+            ("xterm default (black)", (0x00, 0x00, 0x00), true),
+            ("Solarized Dark", (0x00, 0x2b, 0x36), true),
+            ("Solarized Light", (0xfd, 0xf6, 0xe3), false),
+            ("Dracula", (0x28, 0x2a, 0x36), true),
+            ("Gruvbox Dark", (0x28, 0x28, 0x28), true),
+            ("Gruvbox Light", (0xfb, 0xf1, 0xc7), false),
+            ("One Dark", (0x28, 0x2c, 0x34), true),
+            ("Terminal.app Basic (white)", (0xff, 0xff, 0xff), false),
+        ];
+        for (name, (r, g, b), expected_dark) in cases.iter().copied() {
+            assert_eq!(is_dark(r, g, b), expected_dark, "{name}");
+        }
+    }
+
+    #[test]
+    fn tmux_skips_the_query_without_touching_the_terminal() {
+        // SAFETY: test-only env mutation, no other test in this module reads TMUX.
+        unsafe { std::env::set_var("TMUX", "/tmp/tmux-1000/default,1234,0") };
+        let result = detect_dark(Duration::from_millis(1));
+        unsafe { std::env::remove_var("TMUX") };
+        assert_eq!(result, None);
     }
 }

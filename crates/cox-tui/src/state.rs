@@ -8,7 +8,7 @@ use cox_protocol::types::{
     Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, Submission, Tier,
     ToolCall, ToolResult,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::banner::Banner;
 use crate::cells::Look;
@@ -17,10 +17,12 @@ use crate::commands::{self, Action, COMMANDS};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
 use crate::markdown;
-use crate::modal::Approval;
+use crate::modal::{Approval, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
+use crate::term::Caps;
+use crate::theme::{Theme, ThemeFile};
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -92,6 +94,8 @@ pub struct Status {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
     Approval(Approval),
+    /// `ask_user` (T22.1): blocks the turn until a key answers or dismisses it.
+    Question(Question),
     Picker(Picker),
     /// `Ctrl+G` (T15.3): the working tree's `git diff HEAD`, drawn over the
     /// transcript; `scroll` is lines from the top.
@@ -149,8 +153,19 @@ pub struct State {
     /// `tui.color` resolved: what the terminal can show, applied to the
     /// finished buffer rather than at each render site.
     pub depth: Depth,
+    /// `cox_tui::term::Caps` (T23.0) resolved once at startup; `app.rs`
+    /// reads `kitty_keyboard` to push/pop the Kitty keyboard protocol
+    /// (T23.1), and later P23 tasks read the rest.
+    pub caps: Caps,
+    /// The semantic colour tokens (T24.1) every styled span picks from;
+    /// `dark`/`light` by `tui.theme`, `mono` when `depth` is `NO_COLOR`.
+    pub theme: Theme,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
+    /// `Ctrl+E` (T24.4): the last tool cell still in the viewport, expanded
+    /// past its fold rather than head/tail. `view.rs` is the only reader
+    /// that knows which cell is last, so it turns this into `Look.expand_last`.
+    pub expanded_last: bool,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
     pub todo: Vec<(String, String)>,
     pub show_todo: bool,
@@ -176,6 +191,19 @@ pub struct State {
     /// The tick of a first `Esc` on an empty composer; a second within
     /// `ESC_ESC_TICKS` opens the rewind timeline.
     pub esc_armed: Option<u64>,
+    /// `/theme` candidates (T24.2), in picker order: every `theme_catalog`
+    /// name, then every `syntax_names` entry under a `syntax: ` row prefix.
+    /// The runtime builds it once at startup, like `files`.
+    pub theme_rows: Vec<String>,
+    /// Every colour theme `/theme` can preview or apply, `(name, parsed
+    /// file)`; built-ins first, so a user file cannot shadow one.
+    pub theme_catalog: Vec<(String, ThemeFile)>,
+    /// `.tmTheme` names (T24.2 step 4), leaked once at startup like
+    /// `syntax_theme` itself so a picker preview never leaks on a keystroke.
+    pub syntax_names: Vec<&'static str>,
+    /// `(dark, theme, syntax_theme)` saved when `/theme` opens the picker;
+    /// `Esc` restores it, a chosen row drops it.
+    pub theme_prev: Option<(bool, Theme, &'static str)>,
 }
 
 /// Ticks (100 ms each) two `Esc`s may be apart to count as `Esc Esc`.
@@ -207,6 +235,15 @@ pub enum Msg {
     Git(Option<GitStatus>),
     /// The runtime's answer to `Ask::GitDiff` (T15.3); `None` outside a repo.
     Diff(Option<String>),
+    /// A model's `ask_user` call, surfaced by the runtime (T22.1). The
+    /// reply's `oneshot` sender stays in `app.rs`, not here: `State` and
+    /// `Modal` must stay `Clone`/`PartialEq` for tests and snapshots, and a
+    /// `oneshot::Sender` is neither.
+    Question {
+        call: CallId,
+        question: String,
+        options: Vec<String>,
+    },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -224,6 +261,19 @@ pub enum Cmd {
     Clear,
     Copy(String),
     Ask(Ask),
+    /// `ask_user`'s answer for `call`; `None` is `Esc` (dismissed). The
+    /// runtime looks up the matching reply sender itself — it drops it
+    /// rather than sending empty text, so the tool call fails instead of
+    /// succeeding silently.
+    Answer(CallId, Option<String>),
+    /// `/theme` (T24.2): a picker choice writes `key` in the user config
+    /// with `cox config set` semantics. `cox-tui` has no `toml_edit`-editing
+    /// path of its own (only `crates/cox` owns the config file); the
+    /// runtime carries this to `config_cmd::set`.
+    PersistConfig {
+        key: String,
+        value: String,
+    },
 }
 
 impl State {
@@ -260,7 +310,10 @@ impl State {
             glyphs: glyph::UNICODE,
             syntax_theme: "",
             depth: Depth::True,
+            caps: Caps::default(),
+            theme: Theme::dark(),
             show_diffs: true,
+            expanded_last: false,
             todo: Vec::new(),
             show_todo: false,
             marks: false,
@@ -268,6 +321,10 @@ impl State {
             sessions: Vec::new(),
             git: None,
             worktree: None,
+            theme_rows: Vec::new(),
+            theme_catalog: Vec::new(),
+            syntax_names: Vec::new(),
+            theme_prev: None,
         }
     }
 
@@ -340,6 +397,10 @@ impl State {
             show_diffs: self.show_diffs,
             tick: self.tick,
             marks: self.marks,
+            colors: self.theme,
+            // The generic look shared by a whole render pass does not know
+            // which cell is last; `view.rs` overrides it for that one index.
+            expand_last: None,
         }
     }
 
@@ -398,10 +459,24 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll: 0 });
             Vec::new()
         }
+        Msg::Question {
+            call,
+            question,
+            options,
+        } => {
+            state.modal = Some(Modal::Question(Question::new(call, question, options)));
+            Vec::new()
+        }
     }
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+    // A held `Enter`/`Esc` must not repeat-submit or repeat-dismiss under the
+    // Kitty keyboard protocol (T23.1); `Release` is already filtered in
+    // `app.rs`'s select loop, before a `Msg::Key` ever reaches here.
+    if key.kind == KeyEventKind::Repeat && matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
+        return Vec::new();
+    }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     // `Ctrl+C` interrupts a running turn; when idle it must be pressed twice.
     if ctrl && key.code == KeyCode::Char('c') {
@@ -424,6 +499,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     }
     if ctrl && key.code == KeyCode::Char('o') {
         state.show_diffs = !state.show_diffs;
+        return Vec::new();
+    }
+    if ctrl && key.code == KeyCode::Char('e') {
+        state.expanded_last = !state.expanded_last;
         return Vec::new();
     }
     if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {
@@ -451,6 +530,38 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 Vec::new()
             }
         },
+        Some(Modal::Question(mut question)) => match question.key(key) {
+            Some(QuestionAnswer::Text(text)) => vec![Cmd::Answer(question.call, Some(text))],
+            Some(QuestionAnswer::Dismissed) => vec![Cmd::Answer(question.call, None)],
+            None => {
+                state.modal = Some(Modal::Question(question));
+                Vec::new()
+            }
+        },
+        // T24.2: every key that changes the selection previews the row
+        // immediately, not only `Enter` — the same live-apply the picker's
+        // other kinds do not need, since none of them redraws the screen
+        // they came from.
+        Some(Modal::Picker(mut picker)) if picker.kind == Kind::Themes => {
+            match picker.key(key) {
+                Pick::Closed => {
+                    if let Some((dark, theme, syntax_theme)) = state.theme_prev.take() {
+                        state.dark = dark;
+                        state.theme = theme;
+                        state.syntax_theme = syntax_theme;
+                    }
+                }
+                Pick::Chosen(row) => {
+                    state.theme_prev = None;
+                    return apply_theme_choice(state, &row);
+                }
+                Pick::Nothing => {
+                    preview_theme(state, &picker);
+                    state.modal = Some(Modal::Picker(picker));
+                }
+            }
+            Vec::new()
+        }
         Some(Modal::Picker(mut picker)) => {
             match picker.key(key) {
                 Pick::Nothing => state.modal = Some(Modal::Picker(picker)),
@@ -491,7 +602,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         notice(state, Level::Info, text);
                     }
                     Kind::History => state.composer.set_text(&choice),
-                    Kind::Rewind | Kind::RewindWhat => {}
+                    // `Themes` is intercepted by its own guarded arm above
+                    // and never reaches this generic one.
+                    Kind::Rewind | Kind::RewindWhat | Kind::Themes => {}
                     Kind::Shell => {
                         let mut line = state.composer.text();
                         let keep = line.len() - picker::last_word(&line).len();
@@ -576,6 +689,50 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
 fn set_mode(state: &mut State, mode: PermissionMode) -> Vec<Cmd> {
     state.mode = mode;
     vec![Cmd::Submit(Submission::SetPermissionMode { mode })]
+}
+
+/// T24.2: applies one `/theme` row to `State` without persisting it — the
+/// live preview `Esc` (via `theme_prev`) can still undo. A `syntax: <name>`
+/// row only ever touches `syntax_theme`; a bare name looks it up in
+/// `theme_catalog` and follows the current background unless the file
+/// itself pins one.
+fn apply_row(state: &mut State, row: &str) {
+    if let Some(name) = row.strip_prefix("syntax: ") {
+        if let Some(&s) = state.syntax_names.iter().find(|n| **n == name) {
+            state.syntax_theme = s;
+        }
+        return;
+    }
+    if let Some((_, file)) = state.theme_catalog.iter().find(|(n, _)| n == row) {
+        let dark = file.variant.unwrap_or(state.dark);
+        state.dark = dark;
+        state.theme = file.theme(dark);
+    }
+}
+
+/// Every key that moves the `/theme` picker's selection previews that row.
+fn preview_theme(state: &mut State, picker: &Picker) {
+    if let Some(row) = picker.matches.get(picker.selected).cloned() {
+        apply_row(state, &row);
+    }
+}
+
+/// `Enter` on a `/theme` row: applies it (in case `Enter` came before any
+/// navigation ever previewed it) and persists it with `cox config set`
+/// semantics — `Cmd::PersistConfig` carries the write to the runtime, which
+/// alone has `config_cmd::set`.
+fn apply_theme_choice(state: &mut State, row: &str) -> Vec<Cmd> {
+    apply_row(state, row);
+    let key = if row.starts_with("syntax: ") {
+        "tui.syntax_theme"
+    } else {
+        "tui.theme"
+    };
+    let value = row.strip_prefix("syntax: ").unwrap_or(row).to_string();
+    vec![Cmd::PersistConfig {
+        key: key.into(),
+        value,
+    }]
 }
 
 fn notice(state: &mut State, level: Level, text: String) {
@@ -682,6 +839,23 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         }
         Action::Notice(text) => notice(state, Level::Warn, text),
         Action::Rewind => return open_rewind(state),
+        Action::Theme(Some(name)) => {
+            if state.theme_rows.contains(&name) {
+                return apply_theme_choice(state, &name);
+            }
+            notice(
+                state,
+                Level::Warn,
+                format!("unknown theme {name:?}; /theme lists them"),
+            );
+        }
+        Action::Theme(None) => {
+            state.theme_prev = Some((state.dark, state.theme, state.syntax_theme));
+            state.modal = Some(Modal::Picker(Picker::open(
+                Kind::Themes,
+                state.theme_rows.clone(),
+            )));
+        }
     }
     Vec::new()
 }
@@ -815,6 +989,7 @@ fn on_event(state: &mut State, ev: Event) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme;
     use cox_core::{History, HistoryTurn};
     use cox_protocol::types::{Content, Message, PermissionMode, Role, SandboxMode};
     use crossterm::event::{KeyCode, KeyEvent};
@@ -905,5 +1080,46 @@ mod tests {
         }
         let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
         assert_eq!(cmds, vec![Cmd::Clear]);
+    }
+
+    /// T24.2 step 3: moving the `/theme` picker's cursor previews a theme
+    /// immediately, and `Esc` restores whatever was active before it opened
+    /// — a browse that changes nothing must be free to abandon.
+    #[test]
+    fn theme_picker_preview_reverts_on_esc() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.theme_rows = vec!["cox-dark".into(), "cox-light".into()];
+        state.theme_catalog = theme::BUILT_IN_THEMES[..2]
+            .iter()
+            .map(|(name, src)| ((*name).to_string(), theme::parse_theme_file(src).unwrap()))
+            .collect();
+        let before = (state.dark, state.theme, state.syntax_theme);
+
+        // `/theme` submitted from the composer, same as `clear_command_emits_cmd_clear`.
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        for c in "theme".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert!(
+            matches!(&state.modal, Some(Modal::Picker(p)) if p.kind == Kind::Themes),
+            "/theme with no argument opens the picker"
+        );
+
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Down)));
+        assert_ne!(
+            (state.dark, state.theme, state.syntax_theme),
+            before,
+            "moving the cursor previews the selected theme"
+        );
+
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert_eq!(
+            (state.dark, state.theme, state.syntax_theme),
+            before,
+            "Esc restores the theme active before the picker opened"
+        );
+        assert!(state.modal.is_none());
     }
 }

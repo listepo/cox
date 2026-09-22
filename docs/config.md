@@ -141,15 +141,16 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[tui]`
 
 - `vim` = `false`
-- `theme` = `"auto"` — auto | dark | light
+- `theme` = `"auto"` — auto | dark | light | a built-in (cox-dark, cox-light, system) or a `~/.cox/themes/<name>.toml` file's stem; `auto` queries the terminal's OSC 11 background colour once, before raw mode, with a 100 ms timeout (T22.6) — tmux, a query error, or no reply within the timeout falls back to `dark`, same as before this query existed. An explicit `dark`/`light` (config file or `COX_TUI_THEME`) always wins over detection; a named theme follows the same read unless its file pins a `variant`. `cox doctor` reports what `auto` resolved to. `/theme` previews and writes this (T24.2).
 - `inline` = `true`
 - `show_thinking` = `"collapsed"` — collapsed | hidden | full
 - `mouse` = `true`
 - `glyphs` = `"auto"` — auto | unicode | ascii
 - `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 - `color` = `"auto"` — auto | none | 16 | 256 | true (NO_COLOR forces none)
-- `syntax_theme` = `""` — syntect theme for code, diffs and file output ("" follows theme)
+- `syntax_theme` = `""` — syntect theme for code, diffs and file output ("" follows theme); a `.tmTheme` file in `~/.cox/themes/` is merged in at startup and offered by `/theme` under a `syntax: ` prefix (T24.2)
 - `git` = `true` — branch and +n -m in the status line, polled every 2 s
+- `caps` = `{}` — [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
 ## `[hooks]`
 
 - `timeout_s` = `60`

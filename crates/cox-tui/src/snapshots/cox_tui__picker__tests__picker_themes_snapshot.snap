@@ -1,0 +1,10 @@
+---
+source: crates/cox-tui/src/picker.rs
+expression: "crate::view::buffer_to_string(&buf)"
+---
+ theme:
+ ▸ cox-dark
+   cox-light
+   system
+   nord
+   syntax: Solarized (dark)

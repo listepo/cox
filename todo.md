@@ -1,23 +1,16 @@
 # Todo
 
-- T22.1. `ask_user` answered in the TUI
 - T22.2. Skills index and file commands reach the session
 - T22.3. `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
 - T22.4. Mouse: wire `tui.mouse` or delete the key
-- T22.6. `tui.theme = "auto"` detects the terminal background
 - T22.7. Leftover audit
-- T23.0. `cox_tui::term::Caps`
-- T23.1. Kitty keyboard protocol
 - T23.2. Flicker-free scrollback (`scrolling-regions`)
 - T23.3. OSC 8 hyperlinks
 - T23.4. OSC 52 clipboard
 - T23.5. Notifications
 - T23.6. OSC 9;4 progress
 - T23.7. Resize hardening
-- T24.1. Semantic colour tokens
-- T24.2. Theme files and `/theme`
 - T24.3. `two-face` syntax set
-- T24.4. Tool cards
 - T24.5. Word-level and side-by-side diffs
 - T24.6. Footer hints and `?` help
 - T24.7. Motion and narrow-width polish

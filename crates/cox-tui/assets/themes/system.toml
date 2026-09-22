@@ -1,0 +1,21 @@
+# T24.2 built-in: every token names an ANSI colour index (0-15) so the
+# terminal's own configured palette shows through, whatever the user set it
+# to (OpenCode's approach, plan.md T24.2). No `variant`: it follows the
+# terminal's own light/dark switch the same way `tui.theme = "auto"` does.
+[tokens]
+dim = { dark = "8", light = "7" }
+accent = { dark = "5", light = "5" }
+user = { dark = "4", light = "4" }
+agent = { dark = "2", light = "2" }
+tool = { dark = "6", light = "6" }
+ok = { dark = "2", light = "2" }
+warn = { dark = "3", light = "3" }
+error = { dark = "1", light = "1" }
+diff_add = { dark = "2", light = "2" }
+diff_del = { dark = "1", light = "1" }
+diff_hunk = { dark = "6", light = "6" }
+border = { dark = "8", light = "7" }
+selection = { dark = "6", light = "6" }
+mode_plan = { dark = "4", light = "4" }
+mode_auto = { dark = "2", light = "2" }
+mode_bypass = { dark = "1", light = "1" }

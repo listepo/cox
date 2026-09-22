@@ -1,0 +1,23 @@
+# T24.2 built-in: a fixed truecolor palette for a dark background. `variant`
+# pins the theme to dark rather than following the terminal's own OSC 11
+# background — that is what picking a *named* dark theme means, unlike
+# `tui.theme = "auto"`. Only `light` values a token also carries are used if
+# the same file is ever forced light; every token not listed here falls
+# back to `Theme::dark()`'s ANSI-16 default.
+variant = "dark"
+syntax = "base16-ocean.dark"
+
+[tokens]
+accent = { dark = "#7aa2f7", light = "#2e5aac" }
+user = { dark = "#7aa2f7", light = "#2e5aac" }
+agent = { dark = "#9ece6a", light = "#385f0d" }
+tool = { dark = "#7dcfff", light = "#0f4b6e" }
+ok = { dark = "#9ece6a", light = "#385f0d" }
+warn = { dark = "#e0af68", light = "#8f5e02" }
+error = { dark = "#f7768e", light = "#a5254e" }
+diff_add = { dark = "#9ece6a", light = "#385f0d" }
+diff_del = { dark = "#f7768e", light = "#a5254e" }
+diff_hunk = { dark = "#7dcfff", light = "#0f4b6e" }
+selection = { dark = "#7dcfff", light = "#0f4b6e" }
+border = { dark = "#3b4261", light = "#c0c6e8" }
+dim = { dark = "#565f89", light = "#8991b8" }

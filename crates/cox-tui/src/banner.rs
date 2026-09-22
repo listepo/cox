@@ -5,8 +5,10 @@
 //! for the rest of the session.
 
 use cox_protocol::types::{Event, Level};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+
+use crate::theme::{self, Theme};
 
 /// Text pinned above the composer for the whole session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,18 +29,20 @@ impl Banner {
 
     /// One red line; the marker is styled separately so it stays visible
     /// on terminals that drop background colours.
-    pub fn line(&self) -> Line<'_> {
+    pub fn line(&self, theme: &Theme) -> Line<'_> {
         Line::from(vec![
             Span::styled(
                 " ! ",
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Red)
+                    .fg(theme::ALERT_FG)
+                    .bg(theme.error)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" {} ", self.0),
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.error)
+                    .add_modifier(Modifier::BOLD),
             ),
         ])
     }
@@ -54,7 +58,7 @@ mod tests {
     fn render(banner: &Banner, width: u16) -> String {
         let area = Rect::new(0, 0, width, 1);
         let mut buf = Buffer::empty(area);
-        banner.line().render(area, &mut buf);
+        banner.line(&Theme::dark()).render(area, &mut buf);
         crate::view::buffer_to_string(&buf)
     }
 

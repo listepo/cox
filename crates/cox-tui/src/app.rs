@@ -12,7 +12,11 @@ use std::time::Duration;
 
 use cox_core::Session;
 use cox_protocol::errors::CoreError;
-use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event as Input, KeyEventKind};
+use cox_protocol::ids::CallId;
+use crossterm::event::{
+    DisableBracketedPaste, EnableBracketedPaste, Event as Input, KeyEventKind,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
@@ -33,6 +37,19 @@ pub enum TuiOutcome {
     Clear,
 }
 
+/// One `ask_user` call surfaced by the binary (T22.1), mirroring
+/// `cox_tools::ask_user::Question` without this crate taking a `cox-tools`
+/// dependency (same reason `state::GitStatus` mirrors `cox_tools::git::Status`).
+/// `reply` never reaches `State`: a `Modal` must stay `Clone`/`PartialEq` for
+/// tests and snapshots, and a `oneshot::Sender` is neither, so `run` keeps
+/// it in `pending` and answers it once `update` turns a key into `Cmd::Answer`.
+pub struct Question {
+    pub call: CallId,
+    pub question: String,
+    pub options: Vec<String>,
+    pub reply: tokio::sync::oneshot::Sender<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TuiError {
     #[error("terminal: {0}")]
@@ -49,19 +66,37 @@ pub enum TuiError {
 /// `feed` carries what the runtime learns off-screen (the live sessions of
 /// this workspace, T16.3; git counts, T15.2) for the same reason, and
 /// `ask` carries what the TUI wants fetched (the diff, T15.3); the answer
-/// arrives on `feed`.
+/// arrives on `feed`. `questions` carries each `ask_user` call (T22.1); its
+/// reply sender is answered from here, never from `state::update`. `persist`
+/// carries a `/theme` choice's `(key, value)` (T24.2) out to `config_cmd::set`
+/// — this crate has no `toml_edit`-editing path of its own.
 pub async fn run(
     session: Session,
     mut state: State,
     mut feed: tokio::sync::mpsc::Receiver<Msg>,
     ask: tokio::sync::mpsc::Sender<Ask>,
+    mut questions: tokio::sync::mpsc::Receiver<Question>,
+    persist: tokio::sync::mpsc::Sender<(String, String)>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
     execute!(io::stdout(), EnableBracketedPaste)?;
+    // T23.1: only a terminal `cox_tui::term::Caps::query` already found to
+    // report `CSI ?u` support gets the push — everything else keeps the
+    // plain `Esc`-prefixed encoding it always had.
+    let kitty = state.caps.kitty_keyboard;
+    if kitty {
+        execute!(
+            io::stdout(),
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            )
+        )?;
+    }
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore();
+        restore(kitty);
         hook(info);
     }));
     let mut terminal = Terminal::with_options(
@@ -73,6 +108,9 @@ pub async fn run(
     let stop = Arc::new(AtomicBool::new(false));
     let mut input = spawn_input(stop.clone());
     let mut tick = tokio::time::interval(Duration::from_millis(100));
+    // The reply sender for whichever `ask_user` call the modal shows now;
+    // `Cmd::Answer` looks it up here instead of carrying it through `State`.
+    let mut pending: Option<(CallId, tokio::sync::oneshot::Sender<String>)> = None;
     let result = async {
         loop {
             let msg = tokio::select! {
@@ -88,6 +126,14 @@ pub async fn run(
                 },
                 _ = tick.tick() => Msg::Tick,
                 Some(msg) = feed.recv() => msg,
+                Some(q) = questions.recv() => {
+                    pending = Some((q.call, q.reply));
+                    Msg::Question {
+                        call: q.call,
+                        question: q.question,
+                        options: q.options,
+                    }
+                }
             };
             for cmd in update(&mut state, msg) {
                 match cmd {
@@ -108,6 +154,26 @@ pub async fn run(
                     // pending, so a repeat is dropped rather than awaited.
                     Cmd::Ask(what) => {
                         let _ = ask.try_send(what);
+                    }
+                    // `None` (Esc) drops `reply` instead of sending it, so
+                    // `ask_user` sees the call as dismissed, not answered
+                    // with empty text.
+                    Cmd::Answer(call, answer) => {
+                        if let Some((pending_call, reply)) = pending.take() {
+                            if pending_call == call {
+                                if let Some(text) = answer {
+                                    let _ = reply.send(text);
+                                }
+                            } else {
+                                pending = Some((pending_call, reply));
+                            }
+                        }
+                    }
+                    // Best-effort: a full channel or a closed receiver just
+                    // means this one preview is not persisted; the picker
+                    // already applied it to `state` either way.
+                    Cmd::PersistConfig { key, value } => {
+                        let _ = persist.try_send((key, value));
                     }
                 }
             }
@@ -132,7 +198,7 @@ pub async fn run(
     }
     .await;
     stop.store(true, Ordering::Relaxed);
-    restore();
+    restore(kitty);
     result
 }
 
@@ -158,8 +224,14 @@ fn spawn_input(stop: Arc<AtomicBool>) -> tokio::sync::mpsc::Receiver<io::Result<
     rx
 }
 
-/// Leaves the terminal usable whatever happened; safe to call twice.
-fn restore() {
+/// Leaves the terminal usable whatever happened; safe to call twice. `kitty`
+/// pops the Kitty keyboard protocol flags first — popping when nothing was
+/// pushed is a no-op on every terminal that implements the spec, but `run`
+/// only pays for the round trip when its own push actually happened.
+fn restore(kitty: bool) {
+    if kitty {
+        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+    }
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     let _ = disable_raw_mode();
 }

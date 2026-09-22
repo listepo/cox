@@ -8,11 +8,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32String};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
 use crate::glyph::Glyphs;
 use crate::state::State;
+use crate::theme::Theme;
 
 /// Rows the list takes at most; the query narrows it, not scrolling.
 const MAX_SHOWN: usize = 8;
@@ -30,6 +31,10 @@ pub enum Kind {
     Rewind,
     /// After a rewind row: what to restore.
     RewindWhat,
+    /// `/theme` (T24.2): built-ins, `~/.cox/themes/*.toml` stems, and every
+    /// `.tmTheme` under a `syntax: ` row prefix; moving the cursor previews
+    /// the row live, `Esc` reverts it.
+    Themes,
 }
 
 /// The `RewindWhat` rows; the first word is what `Submission::Rewind` gets.
@@ -127,6 +132,7 @@ impl Kind {
             Kind::Shell => "complete: ",
             Kind::Rewind => "rewind to: ",
             Kind::RewindWhat => "restore: ",
+            Kind::Themes => "theme: ",
         }
     }
 }
@@ -227,7 +233,7 @@ impl Picker {
         u16::try_from(1 + self.matches.len()).unwrap_or(u16::MAX)
     }
 
-    pub fn lines(&self, g: &Glyphs) -> Vec<Line<'static>> {
+    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
         let mut lines = vec![Line::styled(
             format!(" {}{}", self.kind.prefix(), self.query),
             Style::default().add_modifier(Modifier::BOLD),
@@ -236,7 +242,7 @@ impl Picker {
             if i == self.selected {
                 Line::styled(
                     format!(" {} {}", g.cursor, crate::text::sanitize(m)),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(theme.selection),
                 )
             } else {
                 Line::raw(format!("   {}", crate::text::sanitize(m)))
@@ -320,5 +326,26 @@ mod tests {
             ],
         );
         assert_eq!(picker.matches.len(), 2);
+    }
+
+    /// T24.2's Done-when: a picker snapshot exists for `/theme` — built-ins,
+    /// a user file, and a `.tmTheme` row share one list.
+    #[test]
+    fn picker_themes_snapshot() {
+        let picker = Picker::open(
+            Kind::Themes,
+            vec![
+                "cox-dark".into(),
+                "cox-light".into(),
+                "system".into(),
+                "nord".into(),
+                "syntax: Solarized (dark)".into(),
+            ],
+        );
+        let lines = picker.lines(&Glyphs::default(), &Theme::dark());
+        let area = ratatui::layout::Rect::new(0, 0, 40, lines.len() as u16);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(ratatui::widgets::Paragraph::new(lines), area, &mut buf);
+        insta::assert_snapshot!(crate::view::buffer_to_string(&buf));
     }
 }

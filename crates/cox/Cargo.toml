@@ -65,3 +65,8 @@ insta = { workspace = true }
 # T5.8: PTY end-to-end of the real binary (plan D10).
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
+# T22.1: the `ask_user` surface-wiring test builds a `ToolCx` by hand,
+# which needs a stub `Archive` (`#[async_trait]`, like cox-tools' own) and
+# a `CancellationToken`; both already ship in the workspace.
+async-trait = { workspace = true }
+tokio-util = { workspace = true }

@@ -58,7 +58,15 @@ impl CheckResult {
 }
 
 /// Run all doctor checks. Returns exit code 0 when no `fail`, 1 otherwise.
-pub fn run(json: bool, mcp: &HashMap<String, McpServerConfig>) -> i32 {
+/// `tui_theme` is `config.tui.theme`, shown (and queried when `"auto"`) by
+/// `check_terminal`; `tui_caps` is `config.tui.caps` (T23.0), the `[tui.caps]`
+/// overrides `check_terminal` reports alongside the detected/queried value.
+pub fn run(
+    json: bool,
+    mcp: &HashMap<String, McpServerConfig>,
+    tui_theme: &str,
+    tui_caps: &HashMap<String, bool>,
+) -> i32 {
     let mut results = Vec::new();
 
     // Get COX_HOME early for reuse.
@@ -84,8 +92,9 @@ pub fn run(json: bool, mcp: &HashMap<String, McpServerConfig>) -> i32 {
     // git on PATH.
     results.push(check_git());
 
-    // Terminal capabilities.
-    results.push(check_terminal());
+    // Terminal capabilities, including `tui.theme = "auto"` (T22.6) and
+    // `cox_tui::term::Caps` (T23.0).
+    results.push(check_terminal(tui_theme, tui_caps));
 
     // Prices table age.
     results.push(check_prices());
@@ -223,7 +232,7 @@ fn check_git() -> CheckResult {
     }
 }
 
-fn check_terminal() -> CheckResult {
+fn check_terminal(tui_theme: &str, tui_caps: &HashMap<String, bool>) -> CheckResult {
     let mut details = Vec::new();
 
     // Check TERM variable.
@@ -249,6 +258,43 @@ fn check_terminal() -> CheckResult {
     if let Ok((cols, rows)) = crossterm::terminal::size() {
         details.push(format!("size {}x{}", cols, rows));
     }
+
+    // `tui.theme = "auto"` (T22.6): same OSC 11 query `run_tui` makes,
+    // reported here so `doctor` explains what a session will resolve to
+    // without opening one.
+    details.push(match tui_theme {
+        "auto" => match cox_tui::color::detect_dark(cox_tui::color::OSC11_TIMEOUT) {
+            Some(true) => "theme: auto → dark (OSC 11 reply)".to_string(),
+            Some(false) => "theme: auto → light (OSC 11 reply)".to_string(),
+            None => "theme: auto → dark (no OSC 11 reply)".to_string(),
+        },
+        other => format!("theme: {other}"),
+    });
+
+    // `cox_tui::term::Caps` (T23.0): one row per field with the source that
+    // decided it — `config` (`[tui.caps]`) beats `query` (the real
+    // keyboard-protocol probe, tty only) beats `env` (the base guess).
+    let env_fn = |key: &str| env::var(key).ok();
+    let mut caps = cox_tui::term::Caps::detect(&env_fn);
+    let queried = caps.query(cox_tui::term::KITTY_QUERY_TIMEOUT);
+    let before_config = caps;
+    caps.apply(tui_caps);
+    let caps_report: Vec<String> = caps
+        .fields()
+        .into_iter()
+        .zip(before_config.fields())
+        .map(|((name, value), (_, pre_config))| {
+            let source = if value != pre_config {
+                "config"
+            } else if name == "kitty_keyboard" && queried {
+                "query"
+            } else {
+                "env"
+            };
+            format!("{name}={value} ({source})")
+        })
+        .collect();
+    details.push(caps_report.join(", "));
 
     CheckResult::ok("terminal", details.join(", "))
 }

@@ -10,7 +10,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::cells::cell_lines;
-use crate::state::{Modal, State};
+use crate::state::{Cell, Modal, State};
 use crate::status;
 
 /// Draws `state` into `area`; returns where the cursor goes.
@@ -18,6 +18,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let banner = u16::from(state.banner.is_some());
     let modal = match &state.modal {
         Some(Modal::Approval(a)) => a.height(),
+        Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
         // The diff view takes the transcript's rows, not a band of its own.
         Some(Modal::Diff { .. }) | None => 0,
@@ -46,7 +47,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     .areas(area);
 
     if let Some(b) = &state.banner {
-        b.line().render(banner_area, buf);
+        b.line(&state.theme).render(banner_area, buf);
     }
     let look = state.look(transcript.width);
     let rows = usize::from(transcript.height);
@@ -58,10 +59,23 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             (lines, offset)
         }
         _ => {
+            // `Ctrl+E` (T24.4) can only reach the last tool cell still in
+            // the viewport; every other cell renders with the plain `look`.
+            let last_tool = state
+                .transcript
+                .iter()
+                .rposition(|c| matches!(c, Cell::Tool { .. }));
             let lines: Vec<Line<'static>> = state
                 .transcript
                 .iter()
-                .flat_map(|c| cell_lines(c, &look))
+                .enumerate()
+                .flat_map(|(i, c)| {
+                    let mut look = look;
+                    if Some(i) == last_tool {
+                        look.expand_last = Some(state.expanded_last);
+                    }
+                    cell_lines(c, &look)
+                })
                 .collect();
             let offset = lines.len().saturating_sub(rows + state.scroll);
             (lines, offset)
@@ -75,8 +89,15 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Paragraph::new(status::todo_lines(state)).render(todo_area, buf);
     }
     match &state.modal {
-        Some(Modal::Approval(a)) => Paragraph::new(a.lines(&state.glyphs)).render(modal_area, buf),
-        Some(Modal::Picker(p)) => Paragraph::new(p.lines(&state.glyphs)).render(modal_area, buf),
+        Some(Modal::Approval(a)) => {
+            Paragraph::new(a.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
+        Some(Modal::Question(q)) => {
+            Paragraph::new(q.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
+        Some(Modal::Picker(p)) => {
+            Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
         Some(Modal::Diff { .. }) | None => {}
     }
 

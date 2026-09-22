@@ -5,7 +5,7 @@
 //! prints a diff.
 
 use cox_protocol::types::Diff;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::cells::Look;
@@ -71,11 +71,11 @@ pub fn lines(diff: &Diff, look: &Look) -> Vec<Line<'static>> {
         let style = if l.starts_with("+++") || l.starts_with("---") || l.starts_with('\\') {
             Style::default().add_modifier(Modifier::DIM)
         } else if l.starts_with("@@") {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(look.colors.diff_hunk)
         } else if l.starts_with('+') {
-            Style::default().fg(Color::Green)
+            Style::default().fg(look.colors.diff_add)
         } else if l.starts_with('-') {
-            Style::default().fg(Color::Red)
+            Style::default().fg(look.colors.diff_del)
         } else {
             Style::default()
         };
@@ -153,6 +153,8 @@ mod tests {
             show_diffs: true,
             tick: 0,
             marks: false,
+            colors: crate::theme::Theme::dark(),
+            expand_last: None,
         }
     }
 
@@ -165,7 +167,7 @@ mod tests {
         let out = lines(&d, &look());
         let added = &out[3];
         assert_eq!(added.to_string(), "  +fn main() {}");
-        assert_eq!(added.spans[0].style.fg, Some(Color::Green));
+        assert_eq!(added.spans[0].style.fg, Some(look().colors.diff_add));
         // `fn` is a keyword: syntect split the body into spans of its own.
         assert!(added.spans.len() > 2, "{:?}", added.spans);
     }

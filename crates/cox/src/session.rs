@@ -14,7 +14,7 @@ use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
 use cox_provider::openai::chat::OpenAiChatProvider;
 use cox_provider::openai::responses::OpenAiResponsesProvider;
 use cox_store::Store;
-use cox_tools::ask_user::{Answers, AskUserTool};
+use cox_tools::ask_user::{Answers, AskUserTool, Question as AskUserQuestion};
 use cox_tools::bash::BashTool;
 use cox_tools::edit::EditTool;
 use cox_tools::expand::ExpandTool;
@@ -30,18 +30,23 @@ use cox_tools::write::WriteTool;
 use cox_tui::state::{Ask, GitStatus, Msg, State};
 
 use crate::cli::Cli;
+use crate::config_cmd;
 use crate::config_load::{self, LoadedConfig};
 use crate::resume;
 
 /// Loads config, picks the provider (`COX_PROVIDER` test doubles first) and
 /// opens the store under `COX_HOME`. `answer` is what `ask_user` returns
-/// when no one is there to ask; `tweak` lets a surface adjust the effective
-/// config before the session locks it in; `interactive` says a person is at
-/// the terminal, so an MCP server's 401 may open a browser login (T22.5).
+/// when no one is there to ask; `questions` (T22.1) lets a surface — only
+/// `run_tui` has one — take `ask_user` over instead, answering each call
+/// interactively rather than with `answer`. `tweak` lets a surface adjust
+/// the effective config before the session locks it in; `interactive` says
+/// a person is at the terminal, so an MCP server's 401 may open a browser
+/// login (T22.5).
 pub async fn open(
     cli: &Cli,
     cwd: &Path,
     answer: Option<String>,
+    questions: Option<tokio::sync::mpsc::Sender<AskUserQuestion>>,
     tweak: impl FnOnce(&mut Config),
     resume: Option<(SessionId, History)>,
     interactive: bool,
@@ -78,6 +83,9 @@ pub async fn open(
     let store = Arc::new(Store::open(&home)?);
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
     let mut all = tools(answer, &store, mdir);
+    if let Some(tx) = questions {
+        all = with_question_surface(all, tx);
+    }
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd, interactive).await);
     }
@@ -265,6 +273,17 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let project = rt.block_on(project_root(cwd));
+    let themes_dir = home.join("themes");
+    // T24.2: a `/theme` picker choice reaches here as `(key, value)`
+    // because only `crates/cox` owns `config_cmd::set`; a write failing
+    // (a full disk, a bad permission) is not fatal, just not persisted —
+    // the picker already applied the theme to `state` either way.
+    let (persist_tx, mut persist_rx) = tokio::sync::mpsc::channel::<(String, String)>(4);
+    rt.spawn(async move {
+        while let Some((key, value)) = persist_rx.recv().await {
+            let _ = config_cmd::set(&key, &value);
+        }
+    });
     let mut resume_spec = if cli.r#continue {
         let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
         let history = resume::from_home(&home, &id.to_string())?;
@@ -279,8 +298,18 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let mut first = true;
     loop {
         let seed = resume_spec.as_ref().map(|(_, history)| history.clone());
-        let (session, loaded) =
-            rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take(), true))?;
+        // T22.1: the TUI is the only surface with somewhere to show a
+        // question, so it is the only `open` caller that passes one.
+        let (question_tx, mut question_rx) = tokio::sync::mpsc::channel::<AskUserQuestion>(1);
+        let (session, loaded) = rt.block_on(open(
+            cli,
+            cwd,
+            None,
+            Some(question_tx),
+            |_| {},
+            resume_spec.take(),
+            true,
+        ))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
         if let Some(history) = seed {
@@ -291,12 +320,55 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.worktree = cli.worktree.clone();
         state.sessions = project_sessions(&home, cwd);
         state.composer.set_vim(config.tui.vim);
-        state.dark = config.tui.theme != "light";
+        // T22.6/T24.2: `"auto"` and a named theme both query the terminal's
+        // OSC 11 background once, before raw mode; `"light"`/`"dark"` are
+        // an explicit choice and skip it, same as before T24.2 existed.
+        let needs_background = !matches!(config.tui.theme.as_str(), "light" | "dark");
+        let background_dark = needs_background
+            .then(|| cox_tui::color::detect_dark(cox_tui::color::OSC11_TIMEOUT))
+            .flatten();
+        let catalog = cox_tui::theme::catalog(&themes_dir);
+        let resolved = cox_tui::theme::resolve(&config.tui.theme, background_dark, &catalog);
+        state.dark = resolved.dark;
         state.glyphs = cox_tui::glyph::resolve(&config.tui);
         state.depth = cox_tui::color::resolve(&config.tui);
+        // T23.1: the env heuristic only, not `query()` — a live `CSI ?u`
+        // round trip needs exclusive use of stdin for its reply, and
+        // `app.rs`'s own input thread starts reading it moments later; the
+        // two racing is exactly how `doctor` (which owns the terminal
+        // outright and prints the query's own verdict) gets away with
+        // `query()` and an interactive session should not risk it. A
+        // heuristic miss is what `[tui.caps]` (surfaced by `doctor`) is for.
+        let env_fn = |key: &str| std::env::var(key).ok();
+        let mut caps = cox_tui::term::Caps::detect(&env_fn);
+        caps.apply(&config.tui.caps);
+        state.caps = caps;
+        // `NO_COLOR` (T24.1) wins over whatever `tui.theme` picked: every
+        // token resets so only `Modifier::BOLD`/`DIM` carry hierarchy.
+        state.theme = match state.depth {
+            cox_tui::color::Depth::None => cox_tui::theme::Theme::mono(),
+            _ => resolved.theme,
+        };
+        if let Some(warning) = resolved.warning {
+            state.transcript.push(cox_tui::state::Cell::Notice {
+                level: cox_protocol::types::Level::Warn,
+                text: warning,
+            });
+        }
+        // T24.2 step 4: `.tmTheme` files merge into the bundled syntect set
+        // once per process, like the theme name leak below.
+        cox_tui::markdown::load_user_themes(&themes_dir);
+        let syntax_names: Vec<&'static str> = cox_tui::theme::tm_theme_names(&themes_dir)
+            .into_iter()
+            .map(|name| -> &'static str { String::leak(name) })
+            .collect();
         // The theme name outlives every render; one leak per process buys a
-        // `Copy` `Look` instead of a clone on each line.
-        state.syntax_theme = String::leak(config.tui.syntax_theme.clone());
+        // `Copy` `Look` instead of a clone on each line. A theme file's own
+        // `syntax` wins over `tui.syntax_theme` when it names one.
+        let syntax_theme_cfg = resolved
+            .syntax
+            .unwrap_or_else(|| config.tui.syntax_theme.clone());
+        state.syntax_theme = String::leak(syntax_theme_cfg);
         if !state.syntax_theme.is_empty()
             && cox_tui::markdown::theme_name(state.dark, state.syntax_theme) != state.syntax_theme
         {
@@ -309,10 +381,20 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                 ),
             });
         }
+        // `/theme` (T24.2 step 3): built-ins and user files, then every
+        // `.tmTheme` under a `syntax: ` row.
+        state.theme_rows = catalog
+            .iter()
+            .map(|(name, _)| name.clone())
+            .chain(syntax_names.iter().map(|name| format!("syntax: {name}")))
+            .collect();
+        state.theme_catalog = catalog;
+        state.syntax_names = syntax_names;
         state.show_thinking = config.tui.show_thinking == "full";
         state.marks = cli.verbose > 0;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
+        let (surfaced, surfaced_rx) = tokio::sync::mpsc::channel(1);
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
         let poll = {
             let home = home.clone();
@@ -353,6 +435,20 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                             }
                             None => break,
                         },
+                        // T22.1: `ask_user`'s surface; the reply sender rides
+                        // along so `cox_tui::app::run` can answer it once the
+                        // modal resolves the question.
+                        Some(q) = question_rx.recv() => {
+                            let forwarded = cox_tui::app::Question {
+                                call: q.call,
+                                question: q.question,
+                                options: q.options,
+                                reply: q.reply,
+                            };
+                            if surfaced.send(forwarded).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                 }
             })
@@ -373,7 +469,14 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             first = false;
         }
         let quit = session.clone();
-        let outcome = rt.block_on(cox_tui::app::run(session, state, feed_rx, ask))?;
+        let outcome = rt.block_on(cox_tui::app::run(
+            session,
+            state,
+            feed_rx,
+            ask,
+            surfaced_rx,
+            persist_tx.clone(),
+        ))?;
         poll.abort();
         // The TUI never shut the core down, so `SessionEnd` hooks and the
         // presence record outlived the window (T16.2).
@@ -515,7 +618,8 @@ pub(crate) fn tools(
         Arc::new(TodoTool),
         Arc::new(ExpandTool),
         Arc::new(WebFetchTool::new()),
-        // ponytail: the TUI has no question surface yet; `--answer` or nothing.
+        // Headless/ACP/MCP: `--answer` or nothing. `open` swaps this for
+        // `Answers::Surface` when a caller passes `questions` (T22.1).
         Arc::new(AskUserTool::new(Answers::Fixed(answer))),
         Arc::new(MemorySaveTool::new(mem.clone(), mdir.clone())),
         Arc::new(MemorySearchTool::new(mem, mdir)),
@@ -547,6 +651,24 @@ pub(crate) fn with_client_tools(
         })
         .collect()
 }
+/// Swaps the fixed-answer `ask_user` `tools()` built for one that surfaces
+/// each question instead (T22.1): only `run_tui` has somewhere to show it.
+/// Same swap-by-name shape as `with_client_tools`; the spec is unchanged
+/// (`AskUserTool::spec` never reads `answers`), so `tool_search`'s cached
+/// schema, built from the pre-swap tools, still matches.
+fn with_question_surface(
+    tools: Vec<Arc<dyn Tool>>,
+    tx: tokio::sync::mpsc::Sender<AskUserQuestion>,
+) -> Vec<Arc<dyn Tool>> {
+    tools
+        .into_iter()
+        .map(|t| match t.spec().name.as_str() {
+            "ask_user" => Arc::new(AskUserTool::new(Answers::Surface(tx.clone()))) as Arc<dyn Tool>,
+            _ => t,
+        })
+        .collect()
+}
+
 /// Where a session's memory facts live: `config.memory.dir` wins, else
 /// `<home>/projects/<slug>/memory` (T10.1).
 pub(crate) fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBuf {
@@ -658,5 +780,77 @@ mod tests {
             provider_for(&deepseek_config("smoke-signals")).is_err(),
             "unknown api bails at startup, not mid-turn"
         );
+    }
+
+    struct NoopArchive;
+
+    #[async_trait::async_trait]
+    impl cox_protocol::Archive for NoopArchive {
+        async fn put(
+            &self,
+            _put: cox_protocol::ArchivePut,
+        ) -> Result<cox_protocol::ArchiveId, cox_protocol::StoreError> {
+            Ok(cox_protocol::ArchiveId::new())
+        }
+        async fn get(
+            &self,
+            _id: &cox_protocol::ArchiveId,
+        ) -> Result<Vec<u8>, cox_protocol::StoreError> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// T22.1: `run_tui`'s `open` swaps `tools()`'s fixed-answer `ask_user`
+    /// for one whose answers surface on the channel it is given, so a
+    /// question the tool asks reaches whoever is listening on `tx` and the
+    /// reply they send back is what the call returns.
+    #[tokio::test]
+    async fn tui_question_surface_is_wired() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(Store::open(tmp.path()).expect("open store"));
+        let mdir = tmp.path().join("memory");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let built = with_question_surface(tools(None, &store, mdir), tx);
+        let ask_user = built
+            .iter()
+            .find(|t| t.spec().name == "ask_user")
+            .expect("ask_user tool present")
+            .clone();
+
+        let (out_tx, _out_rx) = tokio::sync::mpsc::channel(1);
+        let cx = cox_tools::tool_cx(
+            vec![tmp.path().to_path_buf()],
+            tmp.path().to_path_buf(),
+            cox_protocol::SandboxPolicy {
+                mode: cox_protocol::types::SandboxMode::ReadOnly,
+                network: false,
+                writable: vec![],
+                readonly_in_workspace: vec![],
+                linux_backend: Default::default(),
+            },
+            Arc::new(NoopArchive) as Arc<dyn cox_protocol::Archive>,
+            tokio_util::sync::CancellationToken::new(),
+            out_tx,
+            SessionId::new(),
+            cox_protocol::ids::CallId::new(),
+        );
+
+        let surface = tokio::spawn(async move {
+            let q = rx
+                .recv()
+                .await
+                .expect("question surfaced on the swapped channel");
+            assert_eq!(q.question, "pick one");
+            let _ = q.reply.send("b".into());
+        });
+        let out = ask_user
+            .call(
+                serde_json::json!({"question": "pick one", "options": ["a", "b"]}),
+                &cx,
+            )
+            .await
+            .expect("answered through the surface");
+        assert_eq!(out.text, "b");
+        surface.await.expect("surface task");
     }
 }

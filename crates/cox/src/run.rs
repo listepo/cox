@@ -165,6 +165,7 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         cli,
         cwd,
         args.answer.clone(),
+        None,
         |config| {
             if approve_default {
                 config.permissions.approval = ApprovalPolicy::Never;

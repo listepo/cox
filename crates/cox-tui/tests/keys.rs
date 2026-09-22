@@ -175,6 +175,49 @@ fn security_notice_pins_a_banner_but_a_warning_is_a_cell() {
     assert!(frame.contains("hook skipped"));
 }
 
+/// `type_line` presses `Enter` at the end (it submits), so these tests type
+/// the letters themselves and hold the modified `Enter` back for the case
+/// under test.
+fn type_chars(state: &mut State, text: &str) {
+    for c in text.chars() {
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+    }
+}
+
+#[test]
+fn shift_enter_inserts_newline() {
+    let mut state = state();
+    type_chars(&mut state, "first");
+    let cmds = update(
+        &mut state,
+        Msg::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT)),
+    );
+    assert!(cmds.is_empty(), "no submit: {cmds:?}");
+    assert_eq!(state.composer.line_count(), 2);
+    assert_eq!(state.composer.text(), "first\n");
+}
+
+// T23.1: reserved for send-now (T25.1); until then it is the same newline
+// fallback as `Shift+Enter`/`Alt+Enter`, distinct only from a bare `Enter`.
+#[test]
+fn ctrl_enter_is_distinct() {
+    let mut state = state();
+    type_chars(&mut state, "first");
+    let cmds = update(
+        &mut state,
+        Msg::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)),
+    );
+    assert!(cmds.is_empty(), "no submit: {cmds:?}");
+    assert_eq!(state.composer.line_count(), 2);
+    assert_eq!(state.composer.text(), "first\n");
+
+    let submitted = key(&mut state, KeyCode::Enter);
+    assert!(
+        matches!(submitted.as_slice(), [Cmd::Submit(_)]),
+        "bare Enter still submits: {submitted:?}"
+    );
+}
+
 #[test]
 fn tick_advances_the_clock_and_resize_asks_nothing() {
     let mut state = state();

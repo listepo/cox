@@ -4,26 +4,19 @@ https://github.com/listepo/cox
 
 A modular terminal coding agent in Rust (coxswain: steers work while models, tools, and extensions row). TUI, headless, ACP, MCP.
 
-| # | Статус | Приоритет | Сложность | Готовность | Агент |
+| # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.1 | todo | P0 | 3 | 0% | |
 | T22.2 | todo | P0 | 2 | 0% | |
 | T22.3 | todo | P0 | 2 | 0% | |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.6 | todo | P1 | 2 | 0% | |
 | T22.7 | todo | P1 | 1 | 0% | |
-| T23.0 | todo | P1 | 2 | 0% | |
-| T23.1 | todo | P1 | 2 | 0% | |
 | T23.2 | todo | P1 | 2 | 0% | |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
 | T23.7 | todo | P2 | 3 | 0% | |
-| T24.1 | todo | P0 | 3 | 0% | |
-| T24.2 | todo | P0 | 3 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.4 | todo | P0 | 3 | 0% | |
 | T24.5 | todo | P1 | 3 | 0% | |
 | T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
@@ -110,7 +103,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4) |
-| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3 |
+| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25 |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
@@ -544,7 +537,7 @@ Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--s
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
-| `Enter` | send | `Shift+Enter` / `Alt+Enter` | newline |
+| `Enter` | send | `Shift+Enter` / `Alt+Enter` / `Ctrl+Enter` | newline (`Ctrl+Enter` reserved for send-now, T25.1) |
 | `Esc` | interrupt turn / close modal | `Ctrl+C` ×2 within 1 s | quit |
 | `Tab` | cycle permission mode default → plan → auto | `Ctrl+O` | transcript overlay (full scrollback, search `/`) |
 | `Ctrl+T` | toggle thinking visibility | `Ctrl+E` | expand last tool output |
@@ -984,20 +977,6 @@ ok
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
 
-#### T22.1 `ask_user` answered in the TUI
-
-Model: sonnet · Status: open · Depends: — · Size: ~170 · Priority: P0 · Complexity: 3
-Goal: a model call to `ask_user` blocks the turn until the user picks an option or types an answer in a modal; headless keeps `--answer`.
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `AskUserTool` already has `Answers::Surface(mpsc::Sender<Question>)` with `Question { call, question, options, reply: oneshot::Sender<String> }`; the binary constructs the TUI tool with `Answers::Fixed` (line ~403) — replace with `Surface(tx)` for `run_tui` only and forward each `Question` into the app loop as `Msg::Question(Question)`. (2) `modal.rs`: add `Question` beside `Approval`: numbered options (`1`–`9` select), a free-text row (`Enter` sends), `Esc` replies the empty string (the tool returns `is_error` "no answer"). (3) `state.rs`: `Msg::Question` sets `state.modal`; the answer goes through `reply.send` in `update` (a `Cmd::Answer` if `update` must stay pure — keep the sender in the modal struct and send in `app.rs`). (4) Status line shows `question` in the mode slot while the modal is open.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui question_
-mise exec -- cargo nextest run -p cox tui_question_surface_is_wired
-```
-Done when: a scripted scenario with an `ask_user` call shows the modal frame (snapshot `modal_question_with_options`), `2⏎` returns the second option to the model, `Esc` returns an error result; `docs/tools.md` row for `ask_user` says "TUI: modal".
-Out of scope: ACP elicitation, MCP elicitation (both map onto the same modal later).
-
 #### T22.2 Skills index and file commands reach the session
 
 Model: sonnet · Status: open · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
@@ -1040,20 +1019,6 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
 
-#### T22.6 `tui.theme = "auto"` detects the terminal background
-
-Model: sonnet · Status: open · Depends: — · Size: ~90 · New dependency: `terminal-colorsaurus` (needs the creator's approval and a §1.1 row) · Priority: P1 · Complexity: 2
-Goal: OSC 11 query with a 100 ms timeout → luminance → dark/light; tmux or timeout → `dark`; `COX_TUI_THEME` and the config value still win.
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/color.rs`, `Cargo.toml`.
-Steps: (1) `color::detect_dark(timeout) -> Option<bool>`: `terminal_colorsaurus::color_scheme(QueryOptions { timeout })`, luminance `0.299R+0.587G+0.114B` with threshold 0.5 (the crate's `ColorScheme` already does this; keep the formula in a unit test with eight known terminal defaults). (2) The query runs before raw mode, once, in `run_tui`; result feeds `state.dark` and `markdown::theme_name`. (3) `TMUX` set or query error → `None` → `dark`, and `doctor`'s `check_terminal` prints `theme: auto → dark (no OSC 11 reply)`. (4) `docs/config.md`: document the resolution order.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui luminance_threshold_maps_known_backgrounds
-COX_HOME=/tmp/cox-scratch mise exec -- cargo run -q -- doctor | grep -E 'theme: auto'
-```
-Done when: on a light terminal (`COLORFGBG` or a real OSC 11 reply) the syntax theme is the light one without configuration; the query never delays startup by more than the timeout.
-Out of scope: live re-detection when the terminal theme changes (T24.2's `/theme` covers the manual case).
-
 #### T22.7 Leftover audit
 
 Model: haiku · Status: open · Depends: T22.1, T22.2, T22.3, T22.4, T22.5, T22.6 · Size: docs · Priority: P1 · Complexity: 1
@@ -1068,34 +1033,6 @@ Done when: the script exits 0 and `docs/compat.md` lists every remaining leftove
 Out of scope: fixing any leftover — that is a card, not this audit.
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
-
-#### T23.0 `cox_tui::term::Caps`
-
-Model: sonnet · Status: open · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
-Goal: one struct decides which terminal features the TUI may use; every later P23 task reads it and nothing else.
-Files: `crates/cox-tui/src/term.rs` (new), `crates/cox/src/doctor.rs`, `docs/config.md`.
-Steps: (1) `pub struct Caps { truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images, inside_tmux, inside_ssh }` with `Caps::detect(env: &dyn Fn(&str) -> Option<String>) -> Caps` (pure, testable): `COLORTERM`, `TERM`, `TERM_PROGRAM` (`iTerm.app`, `WezTerm`, `ghostty`, `kitty`, `Apple_Terminal`, `vscode`), `KITTY_WINDOW_ID`, `WT_SESSION`, `TMUX`, `SSH_TTY`, `NO_COLOR`; inside tmux OSC 8/52 stay on (tmux forwards), Kitty keyboard off. (2) `Caps::query(timeout)` (in `app.rs`, not pure) asks the terminal for keyboard-protocol support (`CSI ? u`) once and updates `kitty_keyboard`. (3) `[tui.caps]` config table overrides any field (`osc8 = false`), documented. (4) `doctor::check_terminal` prints one row per field with its source (`env`, `query`, `config`).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui caps_table_of_twelve_environments
-COX_HOME=/tmp/cox-scratch mise exec -- cargo run -q -- doctor | grep -E 'osc8|kitty_keyboard'
-```
-Done when: the table test covers Ghostty, Kitty, WezTerm, iTerm2, Terminal.app, Alacritty, Windows Terminal, VS Code, foot, tmux-inside-Ghostty, SSH, and `NO_COLOR`, and `doctor` shows the row.
-Out of scope: using any capability (T23.1–T23.6).
-
-#### T23.1 Kitty keyboard protocol
-
-Model: sonnet · Status: open · Depends: T23.0 · Size: ~80 · Priority: P1 · Complexity: 2
-Goal: `Shift+Enter` and `Ctrl+Enter` are distinct keys where the terminal supports it; `Alt+Enter` stays the fallback everywhere.
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `app.rs`: when `caps.kitty_keyboard`, `PushKeyboardEnhancementFlags(DISAMBIGUATE_ESC_CODES | REPORT_EVENT_TYPES)` after raw mode; `PopKeyboardEnhancementFlags` in the restore path and the panic hook. (2) `state.rs`: ignore `KeyEventKind::Release`/`Repeat` for bindings that must not repeat (`Enter`, `Esc`); `Shift+Enter` → newline, `Ctrl+Enter` → reserved for T25.1 send-now (until then, newline). (3) Keymap docs (§1.13) gain the row.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test keys shift_enter_inserts_newline ctrl_enter_is_distinct
-mise exec -- cargo nextest run -p cox-tui --test shell pty_pops_keyboard_flags_on_exit
-```
-Done when: the PTY e2e sees `CSI > 1 u` … `CSI < u` bracket the session when the vt100 fixture advertises support, and nothing when it does not.
-Out of scope: the send-now behaviour (T25.1).
 
 #### T23.2 Flicker-free scrollback (`scrolling-regions`)
 
@@ -1179,33 +1116,6 @@ Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
-#### T24.1 Semantic colour tokens
-
-Model: sonnet · Status: open · Depends: — · Size: ~180 · Priority: P0 · Complexity: 3
-Goal: every colour on screen comes from a named token; ANSI-16 first, truecolor as an overlay; `NO_COLOR` keeps bold/dim only.
-Files: `crates/cox-tui/src/theme.rs` (new), `crates/cox-tui/src/color.rs`, `crates/cox-tui/src/view.rs`.
-Steps: (1) `pub struct Theme { text, dim, accent, user, agent, tool, ok, warn, error, diff_add, diff_del, diff_hunk, border, selection, mode_plan, mode_auto, mode_bypass }` of `ratatui::style::Color`; `Theme::dark()`, `Theme::light()` built from ANSI-16 names; `Theme::apply_truecolor(&TrueColorOverrides)` for the 24-bit variant. (2) Replace every `Color::` literal in `cells.rs`, `status.rs`, `modal.rs`, `picker.rs`, `banner.rs`, `diff.rs`, `composer.rs` with `state.theme.<token>` (the existing `color::Depth` downgrade keeps working on top). (3) `NO_COLOR` → `Theme::mono()` (all `Reset`, hierarchy through `BOLD`/`DIM`). (4) A grep test asserts no `Color::` literal outside `theme.rs` and `color.rs`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui no_color_literal_outside_theme
-mise exec -- cargo insta test -p cox-tui --accept-unseen
-```
-Done when: default dark snapshots are byte-identical to before (the mapping is 1:1), the grep test passes, and `Theme::mono` has its own frame snapshot.
-Out of scope: theme files (T24.2).
-
-#### T24.2 Theme files and `/theme`
-
-Model: sonnet · Status: open · Depends: T24.1, T22.6 · Size: ~200 · Priority: P0 · Complexity: 3
-Goal: themes are TOML files with dark/light variants, `/theme` previews live, `.tmTheme` files become syntax themes.
-Files: `crates/cox-tui/src/theme.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/picker.rs`.
-Steps: (1) `~/.cox/themes/<name>.toml`: `[tokens] accent = { dark = "#7aa2f7", light = "#2e5aac" } …`, `syntax = "<tmTheme name or built-in>"`, `[glyphs]` optional overrides; parse with the workspace `toml`; missing tokens fall back to the built-in of the same variant. (2) Built-ins embedded with `include_str!`: `cox-dark`, `cox-light`, `system` (tokens named by ANSI index so the terminal palette shows through — OpenCode's approach). (3) `/theme [name]`: `Kind::Themes` picker over built-ins + files; moving the cursor applies the theme to `State` immediately (live preview), `Enter` writes `tui.theme` with `cox config set` semantics (`toml_edit`), `Esc` restores the previous theme. (4) `.tmTheme` in the same directory: `syntect::highlighting::ThemeSet::load_from_folder` at startup; names appear in the same picker under a `syntax:` prefix and set `tui.syntax_theme`. (5) `docs/config.md`: theme file schema.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui theme_file_round_trips theme_picker_preview_reverts_on_esc tmtheme_in_themes_dir_is_listed
-```
-Done when: picker snapshot exists, a fixture `.tmTheme` is listed and applied, and `cox config show` reports the chosen theme with source `user`.
-Out of scope: a theme *editor* (Crush's `Ctrl+E`); daltonized variants (T29.2).
-
 #### T24.3 `two-face` syntax set
 
 Model: haiku · Status: open · Depends: — · Size: ~40 · New dependency: `two-face` (needs the creator's approval and a §1.1 row) · Priority: P1 · Complexity: 1
@@ -1219,19 +1129,6 @@ mise exec -- cargo build --release -p cox && ls -l target/release/cox
 ```
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
-
-#### T24.4 Tool cards
-
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~180 · Priority: P0 · Complexity: 3
-Goal: a tool cell is a card with a phase-tinted rail, a one-line header, a folded body and `Ctrl+E` to expand the last one in place.
-Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/glyph.rs`.
-Steps: (1) Header: `⚙ edit src/lib.rs · +3 −1 · 12 ms · exit 0` — tool glyph, subject (sanitised, T23.3 link), diff counts when `ToolResult.diff` is present, elapsed, exit code for `bash` (parsed from the trailer the tool already writes). (2) Left rail glyph per phase from the glyph table: `pending` (spinner), `ok` (`│` in `theme.tool`), `error` (`│` in `theme.error`); the header line takes the same tint. (3) Body: head/tail from `truncate` with one fold line `… 48 more lines · Ctrl+E`; errors render unfolded; `Ctrl+E` toggles `state.expanded_last` (the §1.13 key that was never implemented) and re-renders the last tool cell only (it is still in the viewport; finished cells in scrollback cannot change — say so in the fold line: `… 48 more lines · /expand <id>`). (4) `show_diffs` keeps hiding diff bodies when off.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test cells card_pending card_ok_folded card_error_unfolded ctrl_e_expands_last_card
-```
-Done when: three snapshots exist and `docs/screenshots/running_tool.svg` is regenerated from the new frame.
-Out of scope: side-by-side diffs (T24.5).
 
 #### T24.5 Word-level and side-by-side diffs
 
@@ -1640,8 +1537,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 
 - A21 §1.12, T12.3, T17.3 — P18: TUI `--resume`/`--continue`, `/clear`, and Hugo pages for tools/compat/ide/how-it-works. Why: user request to finish remaining work after P17. Effect: `--resume` on `Cli` is not `global`, so `cox run --resume` stays on `RunArgs`.
 - A22 `.github/workflows/ci.yml`, `release-plz.yml` — the `dtolnay/rust-toolchain@<version>` pin names the *toolchain*, and `1.120.0` does not exist (CI failed downloading it), so both workflows pin `@1.97.1`, the version `mise.toml` already pins and `mise exec -- rustc --version` reports. Why: red CI on every push. Effect: no floating toolchain; bump the five pins together with `mise.toml` when Rust moves. The `revert-on-failure` job skips pushes touching `.github/` (least privilege instead of granting `workflows: write`).
-- A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `Работай по плану в отдельной ветке каждую задачу в коммит и создай PR draft`, which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main` (PR #24); A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
-- A24 §3 P20 — ketch-model release for cox (T19.8, T20.1–T20.6). Why: user request `Подготовь релиз в ketch и на github как в listrepo/ketch listepo/rtok`. Effect: work happens on branch `release/ketch-model`, one commit per task, PR #26 into `main`; release-plz only proposes (no tags), `release.yml` builds `cox-<target>.tar.xz` via `scripts/package.sh` and creates `v<version>` by publishing (tag iff release completed), `scripts/cask.sh` generates the Homebrew cask, `ketch.toml` + registry entry `cox/` make `ketch install cox` work. T20.6 repins the CI toolchain to `1.97.1` after Dependabot #16 broke it with nonexistent `1.120.0` (same class as A22).
+- A23 §2, §3 P19 — per-task branches and one draft PR for the v0.2 scoping slice. Why: user request `work through the plan on a separate branch, one commit per task, and open a draft PR` (translated), which overrides A2 (`main`-only) for this slice only. Effect: work happens on branch `plan/v0.2-scoping`, one commit per task (`T19.1`–`T19.7`: each commit touches ≤ 3 files, ≤ 200 LOC, message `<task-id>: <title>`), pushed as a single draft PR into `main` (PR #24); A2 stays in force for everything outside P19. Each T19 task writes its phase-gate design doc (`docs/design/v0.2-<slug>.md`, Problem / The field / cox / Falsifiers / Review) and moves its `roadmap.md` v0.2 line into the P19 card; no runtime crate changes in this slice.
+- A24 §3 P20 — ketch-model release for cox (T19.8, T20.1–T20.6). Why: user request `prepare a release in ketch and on GitHub like listrepo/ketch and listepo/rtok` (translated). Effect: work happens on branch `release/ketch-model`, one commit per task, PR #26 into `main`; release-plz only proposes (no tags), `release.yml` builds `cox-<target>.tar.xz` via `scripts/package.sh` and creates `v<version>` by publishing (tag iff release completed), `scripts/cask.sh` generates the Homebrew cask, `ketch.toml` + registry entry `cox/` make `ketch install cox` work. T20.6 repins the CI toolchain to `1.97.1` after Dependabot #16 broke it with nonexistent `1.120.0` (same class as A22).
 - A25 §3 P21 — TypeSafe Jev as a decision model (T21.0 scope gate). Why: user request to restore and improve the Jev note that was lost in an uncommitted working-copy overwrite of `plan.md`. Effect: new phase P21 with one `open` scope-gate task T21.0 (`docs/design/v0.2-jev.md`, Problem / The field / cox / Falsifiers / Review), mirroring the P19 gate shape: design doc first, no `crates/` changes, no new §1.1 dependency until the doc fixes the boundary (Jev answers never bypass the permission engine; fail open like hooks/skills/MCP). Restores the lost facts in their correct form — Jev is TypeSafe's System One decision model (state + Choice/Score/Noul questions in, probabilities + confidence out, `POST /v1/systemone` in its own JSON format, Python/JS SDKs, no OpenAPI; LangChain middleware and Vercel AI Gateway integrations; keys via waitlist at `console.typesafe.ai`; docs index at `docs.typesafe.ai/llms.txt`) — and maps the candidate call sites (router pick, permission classification, compaction/memory salience, skill suggestion) to the cookbook patterns (intent routing, confidence-gated routing, skill suggestion, LLM guardrails).
 - A26 `research.md` §8, `docs/design/improvement-plan-2026.md`, `ideas.md` — field survey of terminal coding agents (2026-09-22) and a proposed improvement plan. Why: user request to research what agent CLIs/TUIs ship in 2026, compare with cox and plan how to be more convenient and better-looking than the field. Effect: research §8 records the survey (four research agents, author-verified cox column and crate facts, ledger #29–36); the design doc holds nine proposed phases P22–P30 (trust fixes for dead config keys and the fixed-answer `ask_user`; terminal capabilities; themes and tool cards; message queue and `Shift+Tab`; checkpoints and `/rewind`; visible agents; context and cost visibility; `--plain`; lean profile and footprint) as task cards in the §2 format, with priorities, dependencies needing approval (§7 of the doc) and falsifiers; `ideas.md` lists the phases. No task is added to the §3 table or `todo.md`; no decision in §0 changes; nothing moves until the creator approves a phase.
 - A27 §3 P22–P30, top table, `todo.md`, `ideas.md`, §3.0, §5 M6 — the improvement plan approved and moved into the plan (2026-09-22). Why: the creator approved the A26 proposal and asked for every task in `plan.md` with concrete step-by-step instructions and a complexity rating. Effect: 48 tasks total: 44 open and 4 done (T22.5, T26.1, T26.2, T27.3); the cards use the §2 format (Model, Depends, Size, Priority, Complexity, Goal, Files, numbered Steps, bash Check, Done when, Out of scope), and the same ids appear in the top table and `todo.md`; `ideas.md` keeps only the unapproved later gates; `docs/design/improvement-plan-2026.md` keeps the survey, principles, pitch, non-goals and falsifiers and points to §3 for the cards. Cards were corrected against the code before the move: `ask_user` already has `Answers::Surface` (T22.1 wires it), background agents are already concurrent (T9.2) so T27.1 is about `bash` tasks and `Ctrl+B`, `SessionStart`/`Notification` already exist in `HookEvent` (T22.3 fires them), `similar` is already a workspace dependency (T24.5). Four new dependencies still need approval before their task starts: ratatui `scrolling-regions` feature (T23.2), crossterm `osc52` feature (T23.4), `terminal-colorsaurus` (T22.6), `two-face` (T24.3); each card names it. No decision in §0 changes; §1.13 keymap rows and §1.2 protocol variants that a card adds (`Submission::UserShell`, `Rewind`, `Background`; `Event::Checkpoint`, `Rewound`) are amended in that task's commit.
