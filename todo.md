@@ -4,7 +4,6 @@
 - T22.3. `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
 - T22.4. Mouse: wire `tui.mouse` or delete the key
 - T22.7. Leftover audit
-- T23.0. `cox_tui::term::Caps`
 - T23.1. Kitty keyboard protocol
 - T23.2. Flicker-free scrollback (`scrolling-regions`)
 - T23.3. OSC 8 hyperlinks
