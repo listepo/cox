@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.2 | todo | P0 | 2 | 0% | |
 | T22.3 | todo | P0 | 2 | 0% | |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.6 | in progress | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.7 | todo | P1 | 1 | 0% | |
 | T23.0 | todo | P1 | 2 | 0% | |
 | T23.1 | todo | P1 | 2 | 0% | |
@@ -1022,21 +1021,6 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 ```
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
-
-#### T22.6 `tui.theme = "auto"` detects the terminal background
-
-Model: claude-sonnet-5 · Status: in progress · Depends: — · Size: ~90 · New dependency: `terminal-colorsaurus` (needs the creator's approval and a §1.1 row) · Priority: P1 · Complexity: 2
-Goal: OSC 11 query with a 100 ms timeout → luminance → dark/light; tmux or timeout → `dark`; `COX_TUI_THEME` and the config value still win.
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/color.rs`, `Cargo.toml`.
-Steps: (1) `color::detect_dark(timeout) -> Option<bool>`: `terminal_colorsaurus::color_scheme(QueryOptions { timeout })`, luminance `0.299R+0.587G+0.114B` with threshold 0.5 (the crate's `ColorScheme` already does this; keep the formula in a unit test with eight known terminal defaults). (2) The query runs before raw mode, once, in `run_tui`; result feeds `state.dark` and `markdown::theme_name`. (3) `TMUX` set or query error → `None` → `dark`, and `doctor`'s `check_terminal` prints `theme: auto → dark (no OSC 11 reply)`. (4) `docs/config.md`: document the resolution order.
-Execution plan: the crate's actual 1.0.3 API dropped `color_scheme`/`ColorScheme` for `background_color(QueryOptions) -> Result<Color>` (`QueryOptions` is `#[non_exhaustive]` with one `timeout: Duration` field, built via `{ timeout, ..Default::default() }`) plus `Color::scale_to_8bit() -> (u8,u8,u8)`; `color.rs` gets `pub fn detect_dark(timeout: Duration) -> Option<bool>` (`TMUX` set or any `Err` → `None`) and a private `is_dark(r,g,b)` implementing the literal `0.299R+0.587G+0.114B`/0.5 formula the card specifies, so `luminance_threshold_maps_known_backgrounds` tests plain integers against eight real theme backgrounds (xterm black, Solarized Dark/Light, Dracula, Gruvbox Dark/Light, One Dark, white) without touching the network. `session.rs`'s `state.dark = config.tui.theme != "light"` becomes a three-way match: `"light"` → false, `"auto"` → `detect_dark(OSC11_TIMEOUT).unwrap_or(true)`, anything else → true (unchanged fallback). `doctor::run` gains a `tui_theme: &str` parameter (from `loaded.config.tui.theme` in `main.rs`) so `check_terminal` can append the `theme: auto → dark/light (…)` detail; non-auto themes print `theme: <value>` with no query. `Cargo.toml` (workspace deps + `cox-tui/Cargo.toml`) adds `terminal-colorsaurus = "1.0"` (latest, MIT/Apache-2.0, actively maintained — release 2025-12-28). Verify with the Check below, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and a `COX_HOME` scratch `doctor` run.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui luminance_threshold_maps_known_backgrounds
-COX_HOME=/tmp/cox-scratch mise exec -- cargo run -q -- doctor | grep -E 'theme: auto'
-```
-Done when: on a light terminal (`COLORFGBG` or a real OSC 11 reply) the syntax theme is the light one without configuration; the query never delays startup by more than the timeout.
-Out of scope: live re-detection when the terminal theme changes (T24.2's `/theme` covers the manual case).
 
 #### T22.7 Leftover audit
 

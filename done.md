@@ -2563,3 +2563,32 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exe
 $ COX_HOME=<scratch tmpdir> mise exec -- cargo run -q -p cox -- doctor
      ran successfully
 ```
+
+#### T22.6 `tui.theme = "auto"` detects the terminal background
+
+Model: claude-sonnet-5 · Status: done 2026-09-22 · Depends: — · Size: ~90 · New dependency: `terminal-colorsaurus` (landed; rust.md + toolchain.md rows added) · Priority: P1 · Complexity: 2
+Goal: OSC 11 query with a 100 ms timeout → luminance → dark/light; tmux or timeout → `dark`; `COX_TUI_THEME` and the config value still win.
+Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/color.rs`, `Cargo.toml`.
+Steps: (1) `color::detect_dark(timeout) -> Option<bool>`: `terminal_colorsaurus::color_scheme(QueryOptions { timeout })`, luminance `0.299R+0.587G+0.114B` with threshold 0.5 (the crate's `ColorScheme` already does this; keep the formula in a unit test with eight known terminal defaults). (2) The query runs before raw mode, once, in `run_tui`; result feeds `state.dark` and `markdown::theme_name`. (3) `TMUX` set or query error → `None` → `dark`, and `doctor`'s `check_terminal` prints `theme: auto → dark (no OSC 11 reply)`. (4) `docs/config.md`: document the resolution order.
+Execution plan: the crate's actual 1.0.3 API dropped `color_scheme`/`ColorScheme` for `background_color(QueryOptions) -> Result<Color>` (`QueryOptions` is `#[non_exhaustive]` with one `timeout: Duration` field, built via `{ timeout, ..Default::default() }`) plus `Color::scale_to_8bit() -> (u8,u8,u8)`; `color.rs` gets `pub fn detect_dark(timeout: Duration) -> Option<bool>` (`TMUX` set or any `Err` → `None`) and a private `is_dark(r,g,b)` implementing the literal `0.299R+0.587G+0.114B`/0.5 formula the card specifies, so `luminance_threshold_maps_known_backgrounds` tests plain integers against eight real theme backgrounds (xterm black, Solarized Dark/Light, Dracula, Gruvbox Dark/Light, One Dark, white) without touching the network. `session.rs`'s `state.dark = config.tui.theme != "light"` becomes a three-way match: `"light"` → false, `"auto"` → `detect_dark(OSC11_TIMEOUT).unwrap_or(true)`, anything else → true (unchanged fallback). `doctor::run` gains a `tui_theme: &str` parameter (from `loaded.config.tui.theme` in `main.rs`) so `check_terminal` can append the `theme: auto → dark/light (…)` detail; non-auto themes print `theme: <value>` with no query. `Cargo.toml` (workspace deps + `cox-tui/Cargo.toml`) adds `terminal-colorsaurus = "1.0"` (latest, MIT/Apache-2.0, actively maintained — release 2025-12-28). Verify with the Check below, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and a `COX_HOME` scratch `doctor` run.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui luminance_threshold_maps_known_backgrounds
+COX_HOME=/tmp/cox-scratch mise exec -- cargo run -q -- doctor | grep -E 'theme: auto'
+```
+Done when: on a light terminal (`COLORFGBG` or a real OSC 11 reply) the syntax theme is the light one without configuration; the query never delays startup by more than the timeout.
+Out of scope: live re-detection when the terminal theme changes (T24.2's `/theme` covers the manual case).
+What landed (commit `T22.6: tui.theme = "auto" detects the terminal background`): `crates/cox-tui/src/color.rs` gained `OSC11_TIMEOUT` (100 ms), `detect_dark(timeout) -> Option<bool>` (skips the query outright when `TMUX` is set, since tmux does not forward OSC 11 reliably; otherwise builds `terminal_colorsaurus::QueryOptions` with that one field and maps any `Err` to `None`) and a private `is_dark(r, g, b)` implementing the literal ITU-R BT.601 luma formula against a 0.5 threshold, covered by `luminance_threshold_maps_known_backgrounds` (eight real theme backgrounds) and `tmux_skips_the_query_without_touching_the_terminal`. `session.rs`'s `run_tui` resolves `state.dark` with a three-way match on `config.tui.theme`: `"light"` → `false`, `"auto"` → `detect_dark(OSC11_TIMEOUT).unwrap_or(true)`, anything else → `true`, run once before raw mode. `doctor.rs`'s `run`/`check_terminal` gained a `tui_theme: &str` parameter (threaded from `main.rs`'s `loaded.config.tui.theme`) so the terminal check reports `theme: auto → dark/light (…)` for `"auto"` and `theme: <value>` otherwise — skipped only on the pre-existing early return when `TERM` is unset. `docs/config.md`'s `theme` line documents the resolution order (query timing, tmux/error/timeout fallback, that an explicit `dark`/`light` always wins, that `cox doctor` reports the resolution); the same prose is now the TOML comment on `crates/cox-protocol/default.toml`'s `theme` key, since `docs/config.md` is generated verbatim from it by `config_docs_config_md_matches_default_toml` and hand-editing only the Markdown file would leave that test failing. `Cargo.toml` (workspace) and `crates/cox-tui/Cargo.toml` add `terminal-colorsaurus = "1.0"` (MIT/Apache-2.0, actively maintained, release 2025-12-28); rows added to this repo's `toolchain.md` and the workspace-root `rust.md` (`CLI and TUI` table) and to `plan.md` §1.1's `cox-tui` key-deps cell.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui luminance_threshold_maps_known_backgrounds
+     Summary [ 0.010s] 1 test run: 1 passed, 119 skipped
+$ COX_HOME=/tmp/cox-scratch TERM=xterm-256color mise exec -- cargo run -q -- doctor | grep -E 'theme: auto'
+terminal: ✓ TERM=xterm-256color, true colour unknown, size 80x24, theme: auto → dark (no OSC 11 reply)
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     667 tests run: 666 passed, 1 failed, 3 skipped — the 1 failure is the pre-existing, unrelated cox-provider usage_prices_toml_parses_and_has_all_tier_models
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
