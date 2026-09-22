@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::errors::{ProviderError, StoreError, ToolError};
+use crate::errors::{ProviderError, StoreError, ToolError, WorktreeError};
 use crate::ids::{ArchiveId, CallId, SessionId};
 use crate::types::{
     Caps, CheckpointKind, ProviderEvent, ProviderId, Request, Risk, SandboxPolicy, ToolOutput,
@@ -313,6 +313,29 @@ pub trait Checkpointer: Send + Sync {
         path: &Path,
         bytes: Option<&[u8]>,
     ) -> Result<(), ToolError>;
+}
+
+/// A worktree a session or a subagent works in (T27.3), as
+/// `Worktrees::add` reports it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Worktree {
+    /// The worktree's checkout: `<root>/_worktrees/<repo>-<name>`.
+    pub path: PathBuf,
+    /// The branch checked out there: `<name>`.
+    pub branch: String,
+    /// The main checkout the worktree belongs to.
+    pub main: PathBuf,
+}
+
+/// Where the loop gets a worktree for `agent(isolation: "worktree")`
+/// (T27.3). Implemented by `cox-tools` (`git::GitWorktrees`), the crate
+/// allowed to run git; `cox-core` only decides which task gets one.
+#[async_trait]
+pub trait Worktrees: Send + Sync {
+    /// The worktree named `name` of the repository around `from`, created
+    /// per the workspace `worktrees` skill and locked for `owner`, or the
+    /// existing one when it is already registered under a cox owner.
+    async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError>;
 }
 
 /// A hook runner (`cox-ext`): executes one hook subprocess against the

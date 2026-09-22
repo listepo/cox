@@ -21,6 +21,7 @@ fn record(id: &str, pid: u32, status: PresenceStatus, touched: &[&str]) -> Prese
         turn: 3,
         touched: touched.iter().map(|s| (*s).to_string()).collect(),
         updated: 0,
+        worktree: None,
     }
 }
 

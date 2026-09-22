@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
-use cox_protocol::traits::{Archive, ArchivePut, Checkpointer, Hook, Provider, Store, Tool};
+use cox_protocol::traits::{
+    Archive, ArchivePut, Checkpointer, Hook, Provider, Store, Tool, Worktrees,
+};
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
     ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
@@ -119,6 +121,9 @@ pub struct Session {
     /// Where pre-images come from (T26.1); installed by the surface like
     /// the hook, shared with children. Absent in tests and in `cox mcp`.
     checkpointer: Arc<OnceLock<Arc<dyn Checkpointer>>>,
+    /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
+    /// installed by the surface, shared with children. Absent in tests.
+    worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
     /// The one "checkpoints off" warning per session has been emitted.
     pub(crate) checkpoint_warned: Arc<AtomicBool>,
     tx: mpsc::Sender<Event>,
@@ -192,13 +197,15 @@ impl Session {
     }
 
     /// A child session sharing this one's provider, store and archive
-    /// (plan.md T3.9): its own rollout and budget, `parent_id` set.
+    /// (plan.md T3.9): its own rollout and budget, `parent_id` set. `cwd`
+    /// is the parent's unless the child runs in a worktree (T27.3).
     pub(crate) fn spawn_child(
         &self,
         config: cox_protocol::Config,
         tools: Vec<Arc<dyn Tool>>,
         job: Job,
         tier: Tier,
+        cwd: Option<PathBuf>,
     ) -> Result<Self, CoreError> {
         let mut child = Self::build(
             config,
@@ -206,7 +213,7 @@ impl Session {
             tools,
             self.store.clone(),
             self.archive.clone(),
-            self.cwd.clone(),
+            cwd.unwrap_or_else(|| self.cwd.clone()),
             None,
             Some(self.id),
             job,
@@ -214,6 +221,7 @@ impl Session {
         )?;
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
+        child.worktrees = self.worktrees.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
         Ok(child)
     }
@@ -301,6 +309,7 @@ impl Session {
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),
             checkpointer: Arc::new(OnceLock::new()),
+            worktrees: Arc::new(OnceLock::new()),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
@@ -429,6 +438,16 @@ impl Session {
 
     pub(crate) fn checkpointer(&self) -> Option<Arc<dyn Checkpointer>> {
         self.checkpointer.get().cloned()
+    }
+
+    /// Installs the worktree provider (T27.3); a second call is ignored
+    /// like `set_checkpointer`.
+    pub fn set_worktrees(&self, worktrees: Arc<dyn Worktrees>) {
+        let _ = self.worktrees.set(worktrees);
+    }
+
+    pub(crate) fn worktrees(&self) -> Option<Arc<dyn Worktrees>> {
+        self.worktrees.get().cloned()
     }
 
     /// Feeds one submission into the state machine.

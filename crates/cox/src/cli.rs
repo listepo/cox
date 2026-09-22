@@ -52,6 +52,10 @@ pub struct Cli {
     /// Add an extra workspace root (repeatable).
     #[arg(long = "add-dir", global = true, value_name = "DIR")]
     pub add_dir: Vec<PathBuf>,
+    /// Work in the git worktree `_worktrees/<repo>-<NAME>` on branch `NAME`,
+    /// created if missing; the main checkout stays readable as a second root.
+    #[arg(long, global = true, value_name = "NAME")]
+    pub worktree: Option<String>,
     /// Override `core.home` (same effect as the `COX_HOME` env var).
     #[arg(long, global = true, value_name = "DIR")]
     pub home: Option<PathBuf>,

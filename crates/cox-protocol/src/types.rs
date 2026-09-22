@@ -594,6 +594,10 @@ pub struct Presence {
     pub touched: Vec<String>,
     /// Unix seconds of the last heartbeat.
     pub updated: u64,
+    /// The worktree it runs in (`cox --worktree`, T27.3); absent for a
+    /// session on the main checkout, and in records older than the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<PathBuf>,
 }
 
 /// A session's state as the other sessions see it.

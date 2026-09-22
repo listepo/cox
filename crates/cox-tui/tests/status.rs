@@ -206,3 +206,28 @@ fn status_line_shows_the_git_segment_only_inside_a_repository() {
     update(&mut state, Msg::Git(None));
     assert_eq!(cox_tui::status::line(&state).to_string(), plain);
 }
+
+/// T27.3: a worktree session shows `⧉ <name>` right after the branch
+/// segment; a session on the main tree shows nothing extra.
+#[test]
+fn status_line_names_the_worktree_after_the_branch() {
+    let mut state = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
+    let plain = cox_tui::status::line(&state).to_string();
+    assert!(!plain.contains('⧉'));
+    state.git = Some(cox_tui::state::GitStatus {
+        branch: "t42".into(),
+        added: 1,
+        removed: 0,
+    });
+    state.worktree = Some("t42".into());
+    let line = cox_tui::status::line(&state).to_string();
+    assert!(line.contains("⎇ t42 +1 −0 · ⧉ t42 · "), "{line}");
+    state.glyphs = cox_tui::glyph::ASCII;
+    assert!(
+        cox_tui::status::line(&state)
+            .to_string()
+            .contains("# t42 +1 -0 | wt t42 | "),
+        "{}",
+        cox_tui::status::line(&state)
+    );
+}

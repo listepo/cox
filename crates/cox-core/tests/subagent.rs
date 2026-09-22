@@ -6,8 +6,87 @@ mod common;
 
 use std::time::Duration;
 
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
 use common::{drain, open, run_with, scenario, spawn_turn, tool_results};
+use cox_protocol::errors::WorktreeError;
+use cox_protocol::traits::{Worktree, Worktrees};
 use cox_protocol::types::{Content, Event, Job, Tier};
+
+/// A `Worktrees` that records what the loop asked for and answers with a
+/// fixed path, so no git runs in this test.
+struct Fake(Mutex<Vec<(PathBuf, String, String)>>);
+
+#[async_trait]
+impl Worktrees for Fake {
+    async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError> {
+        self.0.lock().expect("lock").push((
+            from.to_path_buf(),
+            name.to_string(),
+            owner.to_string(),
+        ));
+        Ok(Worktree {
+            path: PathBuf::from(format!("/tmp/_worktrees/cox-turn-{name}")),
+            branch: name.to_string(),
+            main: from.to_path_buf(),
+        })
+    }
+}
+
+/// T27.3: `isolation: "worktree"` asks the provider for a worktree named
+/// after the task id and owned by the parent session, and the answer ends
+/// with its path and branch. Without a provider the call is refused.
+#[tokio::test]
+async fn subagent_worktree_isolation_runs_child_in_its_worktree() {
+    let (session, _store, mut rx) = open(
+        &scenario("subagent_worktree"),
+        cox_protocol::Config::default(),
+    );
+    let fake = Arc::new(Fake(Mutex::new(Vec::new())));
+    session.set_worktrees(fake.clone());
+    let running = spawn_turn(&session, "subagent_worktree");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+
+    let asked = fake.0.lock().expect("lock").clone();
+    assert_eq!(asked.len(), 1);
+    let (from, name, owner) = &asked[0];
+    assert_eq!(from, &PathBuf::from("/tmp/cox-turn"));
+    assert_eq!(owner, &format!("cox / {}", session.id()));
+    let task = events
+        .iter()
+        .find_map(|e| match e {
+            Event::TaskCreated { task, .. } => Some(task.to_string()),
+            _ => None,
+        })
+        .expect("task created");
+    assert_eq!(name, &task, "the worktree is named after the task id");
+    assert_eq!(
+        tool_results(&events),
+        [(
+            true,
+            format!("edited\n[worktree /tmp/_worktrees/cox-turn-{task}, branch {task}]")
+        )]
+    );
+
+    let (session, _store, mut rx) = open(
+        &scenario("subagent_worktree"),
+        cox_protocol::Config::default(),
+    );
+    let running = spawn_turn(&session, "no provider");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let results = tool_results(&events);
+    assert_eq!(results.len(), 1);
+    assert!(!results[0].0);
+    assert!(
+        results[0].1.contains("worktree isolation is not available"),
+        "{}",
+        results[0].1
+    );
+}
 
 #[tokio::test]
 async fn subagent_explore_uses_cheap_tier_and_read_only_tools() {

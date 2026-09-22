@@ -1,0 +1,13 @@
+# Parent delegates with `isolation: "worktree"`; the child runs in the
+# worktree the `Worktrees` provider hands out and its answer names it.
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "edit in isolation", preset = "shell", isolation = "worktree" } }]
+
+# child: answer
+[[turn]]
+text = "edited"
+
+# parent
+[[turn]]
+text = "done"

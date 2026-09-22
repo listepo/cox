@@ -33,6 +33,8 @@ pub struct Glyphs {
     pub branch: &'static str,
     /// The removed-lines sign in `+n −m`.
     pub minus: &'static str,
+    /// Before the worktree name in the status line (T27.3).
+    pub worktree: &'static str,
     /// Unordered list marker.
     pub bullet: &'static str,
     /// Block quote rail.
@@ -65,6 +67,7 @@ pub const UNICODE: Glyphs = Glyphs {
     diff: "±",
     branch: "⎇",
     minus: "−",
+    worktree: "⧉",
     bullet: "•",
     quote: "│",
     rule: "─",
@@ -88,6 +91,7 @@ pub const ASCII: Glyphs = Glyphs {
     diff: "*",
     branch: "#",
     minus: "-",
+    worktree: "wt",
     bullet: "-",
     quote: "|",
     rule: "-",
@@ -145,6 +149,7 @@ impl Glyphs {
             "diff" => &mut self.diff,
             "branch" => &mut self.branch,
             "minus" => &mut self.minus,
+            "worktree" => &mut self.worktree,
             "bullet" => &mut self.bullet,
             "quote" => &mut self.quote,
             "rule" => &mut self.rule,
