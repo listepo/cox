@@ -2542,3 +2542,24 @@ $ mise exec -- cargo nextest run -p cox-tui --test cells card_pending card_ok_fo
 $ mise exec -- cargo nextest run --workspace --no-fail-fast # 658 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
 ```
+
+#### T22.1 `ask_user` answered in the TUI
+Model: claude-sonnet-5 · Status: done 2026-09-22
+Goal: a model call to `ask_user` blocks the turn until the user picks an option or types an answer in a modal; headless keeps `--answer`.
+Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/state.rs`, plus `crates/cox-tui/src/{view,status,app}.rs`, `crates/cox/src/run.rs`, `crates/cox/Cargo.toml`, `docs/tools.md`, `crates/cox-tui/tests/{question.rs,status.rs}`.
+Steps: (1) `AskUserTool` already has `Answers::Surface(mpsc::Sender<Question>)` with `Question { call, question, options, reply: oneshot::Sender<String> }`; the binary constructs the TUI tool with `Answers::Fixed` — replaced with `Surface(tx)` for `run_tui` only and forwards each `Question` into the app loop as `Msg::Question`. (2) `modal.rs`: added `Question` beside `Approval`: numbered options (`1`–`9` select), a free-text row (`Enter` sends), `Esc` replies with no answer. (3) `state.rs`: `Msg::Question` sets `state.modal`; the answer is a `Cmd::Answer(CallId, Option<String>)` — `update` stays pure, the reply `oneshot::Sender` is kept in `app.rs`'s own runtime loop, not in `State`. (4) Status line shows `question` in the mode slot while the modal is open.
+What landed (commits `T22.1: ask_user answered in the TUI`): `session.rs` gained `with_question_surface()` (mirrors the existing `with_client_tools()` swap-by-name pattern) that replaces the `ask_user` tool with `Answers::Surface(tx)`; `open()` takes a new `questions: Option<mpsc::Sender<AskUserQuestion>>` parameter so `acp_cmd.rs`/`mcp_cmd.rs` (which call `tools()` directly) stay untouched, and `run.rs`'s headless path passes `None`. `run_tui()` opens a `question_tx`/`question_rx` channel, forwards each surfaced `Question` through the existing `poll` task's `tokio::select!` into a `cox_tui::app::Question` (a local mirror of `cox_tools::ask_user::Question`, matching the precedent set by `state::GitStatus`, so `cox-tui` gains no `cox-tools` dependency), and passes the receiver as `app::run`'s new 5th argument. `app.rs` keeps `pending: Option<(CallId, oneshot::Sender<String>)>` as a local variable in its async loop: a new `select!` arm turns each incoming `Question` into `Msg::Question` (stashing the sender), and a new match arm on `Cmd::Answer` looks it up and sends the reply, or drops it silently on `Esc` — reusing the tool's existing "dismissed without an answer" `ToolError::Denied` path in `ask_user.rs` untouched. `modal.rs` added a `Question` struct (`key`/`height`/`lines`, same shape as `Approval`) with digit-select active only as the first keystroke, free-text `Enter`, and `Esc` → `Dismissed`. `state.rs`/`view.rs`/`status.rs` wired the new `Modal::Question`/`Msg::Question`/`Cmd::Answer` variants through `update`, rendering and the status line's mode slot (`[question]`). `docs/tools.md`'s `ask_user` row gained "TUI: modal". New `crates/cox-tui/tests/question.rs` covers the `modal_question_with_options` snapshot, digit-select, free-text Enter and Esc-dismissal; `status.rs` gained one assertion for the mode slot; `session.rs` gained `tui_question_surface_is_wired`, which builds a `ToolCx` by hand (a local `NoopArchive` stub, `tokio_util::sync::CancellationToken`) and proves the swapped tool round-trips an answer sent on the `oneshot` channel.
+Deviations from the card: touched more files than the card's stated three (`view.rs`, `status.rs`, `app.rs`, `run.rs`, `docs/tools.md`, `crates/cox/Cargo.toml`, two new test files) — unavoidable given the card's own steps 2–4 (rendering, status line, headless wiring) live in those files. `crates/cox/Cargo.toml`'s `[dev-dependencies]` gained `async-trait` and `tokio-util`, both already defined at the workspace root and used elsewhere in the workspace, needed only by the new `tui_question_surface_is_wired` test's hand-built `ToolCx`/`Archive` stub.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui question_
+     Summary [ 0.031s] 5 tests run: 5 passed, 113 skipped
+$ mise exec -- cargo nextest run -p cox tui_question_surface_is_wired
+     Summary [ 0.053s] 1 test run: 1 passed, 57 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     664/665 passed; 1 pre-existing unrelated failure: cox-provider usage_prices_toml_parses_and_has_all_tier_models
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check
+     clean
+$ COX_HOME=<scratch tmpdir> mise exec -- cargo run -q -p cox -- doctor
+     ran successfully
+```
