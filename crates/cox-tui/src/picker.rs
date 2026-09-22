@@ -8,11 +8,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32String};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
 use crate::glyph::Glyphs;
 use crate::state::State;
+use crate::theme::Theme;
 
 /// Rows the list takes at most; the query narrows it, not scrolling.
 const MAX_SHOWN: usize = 8;
@@ -226,7 +227,7 @@ impl Picker {
         u16::try_from(1 + self.matches.len()).unwrap_or(u16::MAX)
     }
 
-    pub fn lines(&self, g: &Glyphs) -> Vec<Line<'static>> {
+    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
         let mut lines = vec![Line::styled(
             format!(" {}{}", self.kind.prefix(), self.query),
             Style::default().add_modifier(Modifier::BOLD),
@@ -235,7 +236,7 @@ impl Picker {
             if i == self.selected {
                 Line::styled(
                     format!(" {} {}", g.cursor, crate::text::sanitize(m)),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(theme.selection),
                 )
             } else {
                 Line::raw(format!("   {}", crate::text::sanitize(m)))

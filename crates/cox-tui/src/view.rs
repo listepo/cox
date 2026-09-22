@@ -46,7 +46,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     .areas(area);
 
     if let Some(b) = &state.banner {
-        b.line().render(banner_area, buf);
+        b.line(&state.theme).render(banner_area, buf);
     }
     let look = state.look(transcript.width);
     let rows = usize::from(transcript.height);
@@ -75,8 +75,12 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Paragraph::new(status::todo_lines(state)).render(todo_area, buf);
     }
     match &state.modal {
-        Some(Modal::Approval(a)) => Paragraph::new(a.lines(&state.glyphs)).render(modal_area, buf),
-        Some(Modal::Picker(p)) => Paragraph::new(p.lines(&state.glyphs)).render(modal_area, buf),
+        Some(Modal::Approval(a)) => {
+            Paragraph::new(a.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
+        Some(Modal::Picker(p)) => {
+            Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
         Some(Modal::Diff { .. }) | None => {}
     }
 

@@ -9,6 +9,7 @@ use cox_protocol::types::{
 };
 use cox_tui::color::Depth;
 use cox_tui::state::{Cell, Cmd, Msg, State, update};
+use cox_tui::theme::Theme;
 use cox_tui::view::{buffer_to_string, render};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
@@ -74,6 +75,32 @@ fn colour_depth_maps_every_colour_in_the_frame() {
             .all(|c| *c == Color::Reset),
         "NO_COLOR leaves the terminal's own colours"
     );
+}
+
+/// `Theme::mono()` (T24.1's `NO_COLOR` answer) must still render a security
+/// notice and a tool card without panicking or dropping content — colour is
+/// gone but the text (what `buffer_to_string` snapshots) is unchanged.
+#[test]
+fn frame_mono_theme_renders_notices_and_a_tool_card() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    state.theme = Theme::mono();
+    state.transcript.push(Cell::Notice {
+        level: Level::Security,
+        text: "danger-full-access is on".into(),
+    });
+    state.transcript.push(Cell::Tool {
+        call: Box::new(ToolCall {
+            id: CallId::new(),
+            name: "bash".into(),
+            input: serde_json::json!({"command": "ls"}),
+            risk: Risk::Exec,
+            subject: "ls".into(),
+        }),
+        output: "README.md\n".into(),
+        result: None,
+        started: 0,
+    });
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 8)));
 }
 
 #[test]

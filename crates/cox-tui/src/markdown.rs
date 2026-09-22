@@ -350,6 +350,7 @@ mod tests {
             show_diffs: true,
             tick: 0,
             marks: false,
+            colors: crate::theme::Theme::dark(),
         }
     }
 

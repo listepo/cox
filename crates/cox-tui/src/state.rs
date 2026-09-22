@@ -21,6 +21,7 @@ use crate::modal::Approval;
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
+use crate::theme::Theme;
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -149,6 +150,9 @@ pub struct State {
     /// `tui.color` resolved: what the terminal can show, applied to the
     /// finished buffer rather than at each render site.
     pub depth: Depth,
+    /// The semantic colour tokens (T24.1) every styled span picks from;
+    /// `dark`/`light` by `tui.theme`, `mono` when `depth` is `NO_COLOR`.
+    pub theme: Theme,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
@@ -260,6 +264,7 @@ impl State {
             glyphs: glyph::UNICODE,
             syntax_theme: "",
             depth: Depth::True,
+            theme: Theme::dark(),
             show_diffs: true,
             todo: Vec::new(),
             show_todo: false,
@@ -327,6 +332,7 @@ impl State {
             show_diffs: self.show_diffs,
             tick: self.tick,
             marks: self.marks,
+            colors: self.theme,
         }
     }
 

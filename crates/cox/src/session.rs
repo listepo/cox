@@ -280,6 +280,13 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.dark = config.tui.theme != "light";
         state.glyphs = cox_tui::glyph::resolve(&config.tui);
         state.depth = cox_tui::color::resolve(&config.tui);
+        // `NO_COLOR` (T24.1) wins over `dark`/`light`: every token resets so
+        // only `Modifier::BOLD`/`DIM` carry hierarchy.
+        state.theme = match (state.depth, state.dark) {
+            (cox_tui::color::Depth::None, _) => cox_tui::theme::Theme::mono(),
+            (_, true) => cox_tui::theme::Theme::dark(),
+            (_, false) => cox_tui::theme::Theme::light(),
+        };
         // The theme name outlives every render; one leak per process buys a
         // `Copy` `Look` instead of a clone on each line.
         state.syntax_theme = String::leak(config.tui.syntax_theme.clone());

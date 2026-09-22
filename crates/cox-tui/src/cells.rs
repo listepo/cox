@@ -4,7 +4,7 @@
 //! so the state machine knows nothing about columns or colours.
 
 use cox_protocol::types::{Diff, Level};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -13,6 +13,7 @@ use crate::glyph::Glyphs;
 use crate::markdown;
 use crate::state::Cell;
 use crate::text;
+use crate::theme::Theme;
 
 /// What rendering needs from the state besides the cell itself.
 #[derive(Debug, Clone, Copy)]
@@ -31,6 +32,9 @@ pub struct Look {
     pub tick: u64,
     /// Leave `text::sanitize` markers where something was removed.
     pub marks: bool,
+    /// The semantic colour tokens (T24.1) every styled span picks from,
+    /// resolved from `tui.theme`/`NO_COLOR`; never a bare colour literal.
+    pub colors: Theme,
 }
 
 /// Output longer than head + tail + 1 lines is folded in the middle; the
@@ -103,7 +107,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             let header = format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject));
             let mut lines = vec![Line::styled(
                 text::truncate(&header, usize::from(look.width.max(1))),
-                Style::default().fg(Color::Cyan),
+                Style::default().fg(look.colors.tool),
             )];
             let output = clean(output);
             let out: Vec<&str> = output.lines().collect();
@@ -166,9 +170,9 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
         Cell::Notice { level, text } => {
             let style = match level {
                 Level::Info => Style::default().add_modifier(Modifier::DIM),
-                Level::Warn => Style::default().fg(Color::Yellow),
-                Level::Budget => Style::default().fg(Color::Magenta),
-                Level::Security => Style::default().fg(Color::Red),
+                Level::Warn => Style::default().fg(look.colors.warn),
+                Level::Budget => Style::default().fg(look.colors.accent),
+                Level::Security => Style::default().fg(look.colors.error),
             };
             let tag = format!("[{}] ", format!("{level:?}").to_lowercase());
             let pad = " ".repeat(tag.width());
@@ -188,7 +192,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                 clean(text),
                 if *fatal { " (session ended)" } else { "" }
             ),
-            Style::default().fg(Color::Red),
+            Style::default().fg(look.colors.error),
         )],
         Cell::Summary { text } => {
             let mut lines = vec![dim(format!(
