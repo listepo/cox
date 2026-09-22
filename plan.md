@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T27.4 | todo | P3 | 2 | 0% | |
 | T28.1 | todo | P1 | 2 | 0% | |
 | T28.2 | todo | P2 | 1 | 0% | |
-| T28.3 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.1 | todo | P2 | 3 | 0% | |
 | T29.2 | todo | P2 | 1 | 0% | |
@@ -1333,25 +1332,6 @@ mise exec -- cargo nextest run -p cox-store project_totals_match_sum_of_sessions
 Done when: the picker snapshot has the header and `cox stats --project` prints it.
 Out of scope: budgets per project (config already caps per session and month).
 
-#### T28.3 Pre-emptive compaction
-
-Model: opus · Status: in progress · Depends: — · Size: ~150 · Priority: P1 · Complexity: 3
-Goal: a request that would exceed the threshold is compacted *before* the provider call inside a turn, not after `TurnDone`; the last two turns stay verbatim.
-Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/compact.rs`, `crates/cox-core/tests/scenarios/`.
-Steps: (1) In the turn loop after `assemble` (step 3a) and before `provider.stream`: `estimate(req)` (or `count_tokens` when `Caps.count_tokens` and the estimate is within 10 % of the threshold) compared with `compact_at × max_context`. (2) Over → run microcompaction first (older tool results → pointers, T8.2); still over → full compaction on the `cheap` tier with `keep_turns` (D6f), then re-assemble once; still over → `TurnDone{Budget}` with a `Notice` naming the size. (3) `Event::Compacted` carries `reason: "pre-call"|"post-turn"`. (4) Scenario `big_tool_output_mid_turn_compacts_before_call`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core big_tool_output_mid_turn_compacts_before_call compaction_keeps_last_two_turns_verbatim
-```
-Done when: the scenario passes, invariant 5 passes, and `research.md` §4.6 gets a row for the mechanism from `just bench`.
-Out of scope: changing the compaction summary prompt.
-
-Execution plan:
-- `cox-protocol/src/types.rs`: `CompactReason { PreCall, PostTurn, Manual, ContextTooLong }` (kebab-case) and `Event::Compacted.reason` (`#[serde(default)]` = `post-turn`, so pre-T28.3 rollouts still parse); regenerate `docs/protocol.jsonschema`; §1.2 listing and §1.10 trigger line in `plan.md`. Consumers (TUI, stream-json, ACP, rollout) match `Compacted { .. }` or serialise the event, so only struct literals change.
-- `cox-core/src/compact.rs`: `Trigger::PreCall` (maps to `CompactReason::PreCall`; hook `trigger` stays `auto`), request estimate = the same ⌈bytes/4⌉ heuristic over the whole `Request`, refined by `Provider::count_tokens` when `Caps.count_tokens` and the estimate is within 10 % of `compact_at × max_context` (cox-core cannot call `cox_provider::tokens::estimate`, `crates/cox/tests/deps.rs`); `Session::fit_request(req, build)` → fits / microcompact everything outside `keep_turns` (request-only, T8.2) / full compaction with `Trigger::PreCall` then re-assemble once / `TooBig(tokens)`.
-- `cox-core/src/session.rs` `step`: assembly becomes a local `build(history, marks, microcompact_after)` closure; after it and before the budget gate and `provider.stream`, call `fit_request`; `TooBig` → `Notice(Budget)` naming the size + `TurnDone{Budget}`.
-- Tests (`cox-core/tests/compact.rs` + `tests/scenarios/big_tool_output_mid_turn.toml`): a `Capped` provider wrapping `Scripted` with a finite `max_context`; `big_tool_output_mid_turn_compacts_before_call` (the `Compacted{reason: PreCall}` lands between `ToolCallDone` and the next call's assistant item, the request sent keeps the last two turns verbatim), plus the too-big-after-compaction → `Budget` branch.
-- Verify: the card's Check, `compact_keeps_last_two_turns_verbatim` (invariant 5's actual test name), the three workspace commands; `just bench` only if it runs offline.
 
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 
