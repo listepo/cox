@@ -1191,6 +1191,7 @@ mise exec -- cargo nextest run -p cox-tui --test vim
 ```
 Done when: a 20-row table test (`rstest`) covers every item above and `docs/getting-started.md` lists the vim keys.
 Out of scope: `.` repeat, macros, registers.
+Execution plan: (1) `vim.rs`: `Mode` gains `Visual`/`VisualLine`; the normal-mode handler becomes count → optional `g`/`i`/`a` prefix → operator-pending → motion/command; motions move the textarea cursor (so visual mode extends the selection for free) and report linewise/inclusive; one `apply(op, from, to, linewise)` does `d c y` for motions, text objects, `dd cc yy` and visual selections through a single `cut`/`copy` (one undo step); text objects are computed on the flattened text (brackets may span lines, quotes stay on one line); `u`/`Ctrl+R` call `undo`/`redo`, insert runs coalesce into one undo step. (2) `state.rs`: `Esc` while a turn runs interrupts only outside normal/visual mode. (3) `status.rs`: `-- NORMAL --`/`-- INSERT --`/`-- VISUAL --`/`-- VISUAL LINE --`. (4) `tests/vim.rs`: `rstest` table (≥20 cases, one per item) plus the existing tests; `rstest` wired into cox-tui's dev-dependencies from the workspace table (already used by cox-core/cox-protocol/cox-tools; no version change). (5) `docs/getting-started.md`: vim key table. Verify: the card's Check, then nextest/clippy/fmt on the workspace.
 
 #### T25.5 Keybindings file
 
