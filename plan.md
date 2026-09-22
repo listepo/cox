@@ -1234,6 +1234,14 @@ mise exec -- cargo nextest run -p cox-store sessions_tree_nests_children
 Done when: both commands work in the PTY e2e with the scripted provider and the sessions picker snapshot shows nesting.
 Out of scope: merging a fork back.
 
+Execution plan:
+- `sessions.parent_id` already exists (init migration, `schema.rs`, `NewSession`), so no migration. `cox-store/src/queries.rs`: `Store::sessions_tree(limit) -> Vec<TreeRow { info, depth }>` over Diesel's typed DSL (newest `limit` rows; children under their parent, newest first; a child whose parent is outside the page is a root; a cycle guard) + `sessions_tree_nests_children`.
+- `cox-core/src/compact.rs`: `Session::handoff_summary(objective)` = the private `summarise` over the whole history with the focus `hand off: <objective>` (the `compact` job, so the cheap tier, and a ledger row on the parent).
+- `cox-tui`: `commands.rs` rows + `Action::Fork(Option<u32>)`/`Action::Handoff(String)`; `state.rs` refuses both while a turn runs (and an unknown turn) and returns `Cmd::Fork`/`Cmd::Handoff`; `app.rs` turns them into `TuiOutcome::Fork { turn }`/`Handoff { objective }` like `/clear`; `picker.rs` `tree_prefix(depth)` + `session_entry` takes a depth, with a nesting picker snapshot.
+- `crates/cox/src/session.rs`: `seed_child(store, cwd, parent, events)` creates the row with `parent_id`, writes a fresh `SessionStarted` then `events` into the child's own rollout (so a later `--resume` of the child rebuilds the same history), returns `History::from_events`; `fork` = the parent's rollout minus `SessionStarted`, cut before the first main `TurnStarted` with `seq > turn`; handoff = one `Summary` item (summary + objective). `run_tui` asks for the summary before `Shutdown`, then resumes into the child like `/clear` restarts, with a notice; a failure is a warning and resumes the parent. `project_sessions` and `cox sessions` (`sessions.rs`) list `sessions_tree` with indented children.
+- Tests: `fork_creates_child_with_truncated_history`, `handoff_seeds_summary` (real `Session` + `Scripted`), `sessions_tree_nests_children`, picker snapshot, PTY e2e `tui_fork_and_handoff_start_child_sessions` in `crates/cox/tests/tui_e2e.rs`.
+- Verify: the Check commands, then the three workspace commands, then the real binary against a scratch `COX_HOME`.
+
 #### T26.4 `/undo`, `/redo`
 
 Model: haiku · Status: open · Depends: T26.2 · Size: ~60 · Priority: P2 · Complexity: 1
