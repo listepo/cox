@@ -1,0 +1,20 @@
+# T24.2 built-in: the same palette as `cox-dark.toml`, `variant`-pinned to
+# light instead — each token already carries the hex to use on a light
+# background, so picking either name only decides which half is forced.
+variant = "light"
+syntax = "base16-ocean.light"
+
+[tokens]
+accent = { dark = "#7aa2f7", light = "#2e5aac" }
+user = { dark = "#7aa2f7", light = "#2e5aac" }
+agent = { dark = "#9ece6a", light = "#385f0d" }
+tool = { dark = "#7dcfff", light = "#0f4b6e" }
+ok = { dark = "#9ece6a", light = "#385f0d" }
+warn = { dark = "#e0af68", light = "#8f5e02" }
+error = { dark = "#f7768e", light = "#a5254e" }
+diff_add = { dark = "#9ece6a", light = "#385f0d" }
+diff_del = { dark = "#f7768e", light = "#a5254e" }
+diff_hunk = { dark = "#7dcfff", light = "#0f4b6e" }
+selection = { dark = "#7dcfff", light = "#0f4b6e" }
+border = { dark = "#3b4261", light = "#c0c6e8" }
+dim = { dark = "#565f89", light = "#8991b8" }
