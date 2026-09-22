@@ -16,7 +16,6 @@
 - T23.7. Resize hardening
 - T24.2. Theme files and `/theme`
 - T24.3. `two-face` syntax set
-- T24.4. Tool cards
 - T24.5. Word-level and side-by-side diffs
 - T24.6. Footer hints and `?` help
 - T24.7. Motion and narrow-width polish
