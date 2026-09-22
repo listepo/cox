@@ -105,6 +105,8 @@ syntect = { version = "5.3", default-features = false, features = ["default-fanc
 unicode-width = "0.2"
 crossterm = "0.29"
 arboard = "3"
+# T22.6: OSC 11 background query for `tui.theme = "auto"`.
+terminal-colorsaurus = "1.0"
 
 # cox-acp
 agent-client-protocol = "2.0"

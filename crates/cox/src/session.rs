@@ -310,7 +310,14 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.worktree = cli.worktree.clone();
         state.sessions = project_sessions(&home, cwd);
         state.composer.set_vim(config.tui.vim);
-        state.dark = config.tui.theme != "light";
+        // T22.6: `"auto"` queries the terminal's OSC 11 background once,
+        // before raw mode; any other value (including an unrecognised one)
+        // keeps the pre-T22.6 default of dark unless the user chose light.
+        state.dark = match config.tui.theme.as_str() {
+            "light" => false,
+            "auto" => cox_tui::color::detect_dark(cox_tui::color::OSC11_TIMEOUT).unwrap_or(true),
+            _ => true,
+        };
         state.glyphs = cox_tui::glyph::resolve(&config.tui);
         state.depth = cox_tui::color::resolve(&config.tui);
         // `NO_COLOR` (T24.1) wins over `dark`/`light`: every token resets so

@@ -141,7 +141,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[tui]`
 
 - `vim` = `false`
-- `theme` = `"auto"` — auto | dark | light
+- `theme` = `"auto"` — auto | dark | light; `auto` queries the terminal's OSC 11 background colour once, before raw mode, with a 100 ms timeout (T22.6) — tmux, a query error, or no reply within the timeout falls back to `dark`, same as before this query existed. An explicit `dark`/`light` (config file or `COX_TUI_THEME`) always wins over detection. `cox doctor` reports what `auto` resolved to.
 - `inline` = `true`
 - `show_thinking` = `"collapsed"` — collapsed | hidden | full
 - `mouse` = `true`
