@@ -164,7 +164,13 @@ async fn client_server_crash_does_not_end_session() {
             ..McpServerConfig::default()
         },
     );
-    let (clients, tools, notices) = connect_all(&servers, Duration::from_secs(2), true).await;
+    let (clients, tools, notices) = connect_all(
+        &servers,
+        Duration::from_secs(2),
+        true,
+        &cox_mcp::client::Auth::none(),
+    )
+    .await;
     assert!(clients.is_empty() && tools.is_empty());
     assert_eq!(notices.len(), 1);
     assert!(

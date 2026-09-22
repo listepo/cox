@@ -1,6 +1,8 @@
 //! `cox mcp`: picks which built-in tools to serve and plugs the permission
 //! engine in as the gate (T6.2). The wire side lives in `cox_mcp::server`;
 //! this is the only place the flags, the engine and the store meet.
+//! `cox mcp login|logout <server>` (T22.5) run the OAuth flow for an HTTP
+//! server outside a session, so a headless start never has to.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -12,7 +14,7 @@ use cox_protocol::traits::Store as _;
 use cox_protocol::types::{ApprovalPolicy, PermissionMode, SandboxMode, SandboxPolicy, ToolCall};
 use cox_store::Store;
 
-use crate::cli::{Cli, McpArgs};
+use crate::cli::{Cli, McpAction, McpArgs};
 use crate::{config_load, session};
 
 const READ_ONLY: &[&str] = &["read", "grep", "glob", "outline"];
@@ -57,6 +59,11 @@ fn selected(args: &McpArgs) -> Vec<String> {
 
 pub fn run(cli: &Cli, args: &McpArgs, cwd: &Path) -> anyhow::Result<()> {
     let config = config_load::load(cwd, cli)?.config;
+    match &args.action {
+        Some(McpAction::Login { server }) => return login(&config, cwd, server),
+        Some(McpAction::Logout { server }) => return logout(server),
+        None => {}
+    }
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
     let names = selected(args);
@@ -92,6 +99,41 @@ pub fn run(cli: &Cli, args: &McpArgs, cwd: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The server's URL, or why there is none to log in to.
+fn http_url(
+    config: &cox_protocol::config::Config,
+    cwd: &Path,
+    server: &str,
+) -> anyhow::Result<String> {
+    let found = session::mcp_servers(config, cwd);
+    let cfg = found
+        .servers
+        .get(server)
+        .ok_or_else(|| anyhow::anyhow!("no MCP server named `{server}`"))?;
+    cfg.url
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("`{server}` is a stdio server; only HTTP servers use OAuth"))
+}
+
+fn login(config: &cox_protocol::config::Config, cwd: &Path, server: &str) -> anyhow::Result<()> {
+    let url = http_url(config, cwd, server)?;
+    let auth = session::mcp_auth(true);
+    let store = auth.secrets.store(server);
+    let prompt = auth
+        .prompt
+        .ok_or_else(|| anyhow::anyhow!("login needs a terminal"))?;
+    tokio::runtime::Runtime::new()?.block_on(cox_mcp::auth::login(&url, store, None, &*prompt))?;
+    println!("logged in to `{server}`; the token is in the keyring (cox/mcp/{server})");
+    Ok(())
+}
+
+fn logout(server: &str) -> anyhow::Result<()> {
+    let store = session::mcp_auth(false).secrets.store(server);
+    tokio::runtime::Runtime::new()?.block_on(cox_mcp::auth::logout(store))?;
+    println!("logged out of `{server}`");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +145,7 @@ mod tests {
             ["read", "grep", "glob", "outline"]
         );
         let with_write = selected(&McpArgs {
+            action: None,
             allow_write: true,
             tools: None,
         });
@@ -110,6 +153,7 @@ mod tests {
         assert!(with_write.contains(&"apply_patch".to_string()));
         assert!(!with_write.contains(&"bash".to_string()));
         let explicit = selected(&McpArgs {
+            action: None,
             allow_write: false,
             tools: Some("bash, read".into()),
         });

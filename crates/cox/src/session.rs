@@ -36,13 +36,15 @@ use crate::resume;
 /// Loads config, picks the provider (`COX_PROVIDER` test doubles first) and
 /// opens the store under `COX_HOME`. `answer` is what `ask_user` returns
 /// when no one is there to ask; `tweak` lets a surface adjust the effective
-/// config before the session locks it in.
+/// config before the session locks it in; `interactive` says a person is at
+/// the terminal, so an MCP server's 401 may open a browser login (T22.5).
 pub async fn open(
     cli: &Cli,
     cwd: &Path,
     answer: Option<String>,
     tweak: impl FnOnce(&mut Config),
     resume: Option<(SessionId, History)>,
+    interactive: bool,
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
@@ -70,7 +72,7 @@ pub async fn open(
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
     let mut all = tools(answer, &store, mdir);
     if config.mcp.enabled {
-        all.extend(mcp_tools(&config, cwd).await);
+        all.extend(mcp_tools(&config, cwd, interactive).await);
     }
     let session = match resume {
         Some((id, history)) => Session::resume(
@@ -114,16 +116,42 @@ pub async fn open(
     Ok((session, loaded))
 }
 
+/// The MCP servers in effect for `cwd`: config, `.mcp.json`, `~/.claude.json`.
+pub fn mcp_servers(config: &Config, cwd: &Path) -> cox_mcp::discovery::Discovered {
+    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let home = config_load::home_dir();
+    cox_mcp::discovery::discover(&config.mcp.servers, Some(&project), Some(&home))
+}
+
+/// T22.5: tokens live in the keyring; with a person present a 401 prints
+/// the login URL and opens the browser, headless surfaces get a notice.
+pub fn mcp_auth(interactive: bool) -> cox_mcp::client::Auth {
+    cox_mcp::client::Auth {
+        secrets: Arc::new(cox_mcp::auth::Keyring),
+        prompt: interactive.then(|| {
+            Arc::new(|url: &str| {
+                eprintln!("cox: mcp login: open {url}");
+                if !cox_mcp::auth::open_browser(url) {
+                    eprintln!("cox: no browser found; open the URL by hand");
+                }
+            }) as cox_mcp::client::Prompt
+        }),
+    }
+}
+
 /// T7.6: every discovered MCP server's tools, connected on the runtime the
 /// session will run on (the sessions live in the tools). A server that will
 /// not start is a warning and no tools (D14).
-async fn mcp_tools(config: &Config, cwd: &Path) -> Vec<Arc<dyn Tool>> {
-    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
-    let home = config_load::home_dir();
-    let found = cox_mcp::discovery::discover(&config.mcp.servers, Some(&project), Some(&home));
+async fn mcp_tools(config: &Config, cwd: &Path, interactive: bool) -> Vec<Arc<dyn Tool>> {
+    let found = mcp_servers(config, cwd);
     let timeout = std::time::Duration::from_secs(u64::from(config.mcp.timeout_s));
-    let (_clients, tools, notices) =
-        cox_mcp::client::connect_all(&found.servers, timeout, config.mcp.deferred).await;
+    let (_clients, tools, notices) = cox_mcp::client::connect_all(
+        &found.servers,
+        timeout,
+        config.mcp.deferred,
+        &mcp_auth(interactive),
+    )
+    .await;
     for notice in found.notices.iter().chain(&notices) {
         eprintln!("cox: warning: {notice}");
     }
@@ -172,7 +200,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         let seed = resume_spec
             .as_ref()
             .map(|(_, history)| history.messages.clone());
-        let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take()))?;
+        let (session, loaded) =
+            rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take(), true))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
         if let Some(messages) = seed {
