@@ -15,6 +15,7 @@ nucleo = { workspace = true }
 pulldown-cmark = { workspace = true }
 syntect = { workspace = true }
 unicode-width = { workspace = true }
+terminal-colorsaurus = { workspace = true }
 thiserror = { workspace = true }
 tui-textarea-2 = { version = "0.13", default-features = false, features = ["crossterm"] }
 

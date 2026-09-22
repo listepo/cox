@@ -58,7 +58,9 @@ impl CheckResult {
 }
 
 /// Run all doctor checks. Returns exit code 0 when no `fail`, 1 otherwise.
-pub fn run(json: bool, mcp: &HashMap<String, McpServerConfig>) -> i32 {
+/// `tui_theme` is `config.tui.theme`, shown (and queried when `"auto"`) by
+/// `check_terminal`.
+pub fn run(json: bool, mcp: &HashMap<String, McpServerConfig>, tui_theme: &str) -> i32 {
     let mut results = Vec::new();
 
     // Get COX_HOME early for reuse.
@@ -84,8 +86,8 @@ pub fn run(json: bool, mcp: &HashMap<String, McpServerConfig>) -> i32 {
     // git on PATH.
     results.push(check_git());
 
-    // Terminal capabilities.
-    results.push(check_terminal());
+    // Terminal capabilities, including `tui.theme = "auto"` (T22.6).
+    results.push(check_terminal(tui_theme));
 
     // Prices table age.
     results.push(check_prices());
@@ -223,7 +225,7 @@ fn check_git() -> CheckResult {
     }
 }
 
-fn check_terminal() -> CheckResult {
+fn check_terminal(tui_theme: &str) -> CheckResult {
     let mut details = Vec::new();
 
     // Check TERM variable.
@@ -249,6 +251,18 @@ fn check_terminal() -> CheckResult {
     if let Ok((cols, rows)) = crossterm::terminal::size() {
         details.push(format!("size {}x{}", cols, rows));
     }
+
+    // `tui.theme = "auto"` (T22.6): same OSC 11 query `run_tui` makes,
+    // reported here so `doctor` explains what a session will resolve to
+    // without opening one.
+    details.push(match tui_theme {
+        "auto" => match cox_tui::color::detect_dark(cox_tui::color::OSC11_TIMEOUT) {
+            Some(true) => "theme: auto → dark (OSC 11 reply)".to_string(),
+            Some(false) => "theme: auto → light (OSC 11 reply)".to_string(),
+            None => "theme: auto → dark (no OSC 11 reply)".to_string(),
+        },
+        other => format!("theme: {other}"),
+    });
 
     CheckResult::ok("terminal", details.join(", "))
 }

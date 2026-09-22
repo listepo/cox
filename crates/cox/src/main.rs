@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),
         Some(Command::Doctor) => {
             let servers = session::mcp_servers(&loaded.config, &cwd).servers;
-            let code = doctor::run(cli.json, &servers);
+            let code = doctor::run(cli.json, &servers, &loaded.config.tui.theme);
             drop(telemetry);
             std::process::exit(code);
         }
