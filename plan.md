@@ -21,7 +21,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | todo | P1 | 1 | 0% | |
-| T25.1 | todo | P0 | 3 | 0% | |
+| T25.1 | in progress | P0 | 3 | 0% | Claude Code / claude-sonnet-5 |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
 | T25.4 | todo | P1 | 3 | 0% | |
@@ -1186,10 +1186,17 @@ Out of scope: animated GIFs.
 
 #### T25.1 Message queue and send-now
 
-Model: sonnet · Status: open · Depends: T23.1 · Size: ~180 · Priority: P0 · Complexity: 3
+Model: claude-sonnet-5 · Status: in progress · Depends: T23.1 · Size: ~180 · Priority: P0 · Complexity: 3
 Goal: `Enter` during a turn queues the message; the queue drains one turn at a time; `Ctrl+Enter` interrupts and flushes the queue as one turn.
 Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/view.rs`.
 Steps: (1) `State.queue: VecDeque<String>`; `Enter` while `status.running` pushes and clears the composer; `Ctrl+U` (composer empty) pops the last queued line back into the composer. (2) `view.rs`: queued lines render above the composer, dim, prefixed `⏸`, at most three shown plus `+n`. (3) On `TurnDone` (not `Interrupted`), pop the front and emit `Cmd::Submit(UserTurn)`. (4) `Ctrl+Enter` (Kitty keys) or `Alt+Enter` when a turn runs: `Cmd::Submit(Interrupt)` then, on the resulting `TurnDone{Interrupted}`, join the queue with the composer text (`\n\n`) into one `UserTurn`. (5) `/clear` empties the queue.
+
+Execution plan:
+1. `state.rs`: add `State.queue: VecDeque<String>` and `State.send_now: bool` (set when Ctrl+Enter/Alt+Enter interrupts a running turn, consumed by the next `TurnDone`). Thread `state.status.busy` into `composer.key(key, busy)`. On `Edit::Submit(text)` with no matching slash command and `busy`, push to `queue` instead of submitting. Add `Edit::SendNow(text)` handling: push non-empty text to the queue tail, set `send_now`, submit `Submission::Interrupt`. Extend the `Event::TurnDone` handling (`on_event` becomes `-> Vec<Cmd>`) so a non-interrupted finish pops the queue's head as the next turn, and an interrupted finish with `send_now` set joins the whole queue with `\n\n` into one turn. Add a `Ctrl+U` global binding (composer empty, no modal) that pops the queue's tail back into the composer. `/clear` clears the queue too.
+2. `composer.rs`: give `Composer::key` a `busy: bool` parameter; while busy, Ctrl+Enter/Alt+Enter clear the composer and return the new `Edit::SendNow(String)` variant instead of inserting a newline; Shift+Enter and the idle case are unchanged.
+3. `view.rs`: a `queue` band between the modal area and the composer, at most three queued lines (sanitised, first line only) prefixed `⏸` in `theme.dim`, collapsing to a `+n` summary past three.
+4. Tests in `state.rs`: `queued_messages_drain_in_order`, `send_now_interrupts_and_flushes`, `ctrl_u_unqueues_last` (drive `update` with `Msg::Key`/`Msg::Event(TurnDone)` directly, no PTY needed). An `insta` snapshot in `view.rs` for the two-queued-lines frame. Verify: the card's Check, workspace `nextest`/`clippy`/`fmt`, and a manual run of the real binary against a `COX_HOME` scratch tree (`--model scripted` with a two-turn scenario) to confirm the drain-after-natural-finish and send-now-after-interrupt behaviour end to end, since a PTY automated test would need a fourth file outside this card's scope.
+
 Check:
 ```bash
 mise exec -- cargo nextest run -p cox-tui queued_messages_drain_in_order send_now_interrupts_and_flushes ctrl_u_unqueues_last
