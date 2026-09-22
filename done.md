@@ -3056,3 +3056,52 @@ $ COX_HOME=<scratch> cox config show --sources   # [tui] diff = "stacked" in the
 $ COX_HOME=<scratch> cox --model scripted --permission-mode bypass run -p go --output-format stream-json   # scenario: bash background echo; exit 4
      task_created "bash: echo hi-from-bg; exit 4", tool_call_done "background task … started", turn_done (see (3))
 ```
+
+#### T29.1 `--plain` surface
+
+Model: opus · Status: done 2026-09-23 · Depends: T22.1 · Size: ~200 · Priority: P2 · Complexity: 3
+Goal: `cox --plain` (also `COX_PLAIN=1`, `tui.screen_reader = true`) is a fifth consumer of the event stream: flat labelled lines, numbered prompts, no cursor movement, BEL on completion, full scrollback.
+Files: `crates/cox/src/plain.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/session.rs`.
+Steps: (1) `plain.rs`: read stdin lines, map events to `you:`, `cox:`, `thinking:` (only when `show_thinking = full`), `tool: <name> <subject>` + result head/tail, `error:`, `question:` with numbered options, `approve? [1] allow [2] session [3] deny`, `cost: …` once per turn; markdown tables as `Header: value`; never rewrite a line. (2) `Ctrl+C` interrupts, second quits (same semantics). (3) BEL after `TurnDone` and before a prompt. (4) `COX_AX_STARTUP_QUIET_MS` optional delay before the first prompt (Claude Code parity for assistive tech).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox --test plain plain_transcript_snapshot plain_has_no_csi_cursor_moves
+```
+Done when: the PTY transcript snapshot exists and contains no `CSI … H/J/K` sequences.
+Out of scope: pickers (`@`, `/`) — plain mode takes paths and commands as typed text.
+Execution plan: (1) `crates/cox/src/plain.rs` (new): open the session through `session::open` with an `ask_user` question channel (same as `run_tui`), then one `select!` loop over events, stdin lines (a reader thread), surfaced questions and `ctrl_c`; each event becomes one labelled line (assistant/thinking text buffered to `ItemDone`, sanitized with `cox_tui::text::sanitize`, markdown tables flattened to `Header: value`); slash commands reuse `cox_tui::commands::parse`. (2) `cli.rs`: `--plain`, mapped to the new `tui.screen_reader` key (`config_load.rs` flag map, `cox-protocol` `TuiConfig`, `default.toml`, `docs/config.md`); `COX_PLAIN=1` read in `main.rs`, which dispatches to `plain::run`. (3) `session.rs`: extract `run_tui`'s `--resume`/`--continue` lookup into one helper both surfaces call. (4) `crates/cox/tests/plain.rs`: the real binary under `portable_pty`, a scripted turn, Ctrl+C twice; insta snapshot of the raw byte transcript plus a scan for `CSI … H/J/K`; unit tests for the table flattening and head/tail. Verify with the Check, the three workspace commands and a manual run against a scratch `COX_HOME`.
+
+What landed (commit `T29.1: --plain surface`): new `crates/cox/src/plain.rs` is the fifth consumer of the `Event` stream. It opens the session through the existing `session::open`, passing an `ask_user` question channel as `run_tui` does (T22.1's `Answers::Surface`). One `select!` loop reads events, stdin lines (from a reader thread), surfaced questions, `Ctrl+C` (one long-lived listener task) and the running submission. Output is whole labelled lines only: `you:` (the prompt, which the terminal echo completes; a pipe gets the line printed), `cox:` and `thinking:` (only with `show_thinking = "full"`), buffered to `ItemDone` so a markdown table is flattened to `Header: value; Header: value` rows, `tool: <name> <subject>`, `result: ok|failed, N lines` plus the first and last 3 lines indented (and `cox expand <id>` when the result was shortened), `notice:`/`warning:`/`budget:`/`security:`, `error:`, `question:` with `[n]` options and an `answer:` prompt (a number picks an option, other text is the answer, an empty line dismisses), `approve? [1] allow [2] session [3] deny` (other input re-prompts), and `cost: $x this turn, $y session, N in / M out tokens` once per `TurnDone`. Everything the model or a tool wrote passes through `cox_tui::text::sanitize`. A line printed under a visible prompt ends that line and repeats the prompt below; nothing ever moves the cursor. BEL precedes every prompt, so it sounds once each turn ends and whenever an approval or question waits. `Ctrl+C` follows the TUI's rule: a running turn is interrupted (pending approvals are denied, questions dismissed), an idle one arms, and a second idle press quits. `/quit` and EOF quit too. Slash commands are typed text through `cox_tui::commands::parse`; picker-only commands print a notice. `COX_AX_STARTUP_QUIET_MS` delays the first prompt. `--resume`/`--continue` work: `session.rs`'s lookup moved into `resume_from_flags`, which `run_tui` and `plain::run` now share. Activation: `--plain` (`cli.rs`) maps to the new `tui.screen_reader` key (`flag_key_map`, `TuiConfig`, `default.toml`, `docs/config.md`), and `COX_PLAIN=1` is read in `main.rs`. `COX_PLAIN` and `COX_AX_STARTUP_QUIET_MS` joined the `COX_` env layer's ignore list, because figment otherwise rejected them as the unknown keys `plain`/`ax`. `config_ignores_test_only_cox_env_vars` now sets both. New `crates/cox/tests/plain.rs` runs the real binary under `portable_pty` with a scripted write, an approval, a table reply and Ctrl+C twice. It snapshots the raw transcript (`plain__plain_transcript.snap`, BEL shown as `<BEL>`, temp paths and token digits redacted) and scans the raw bytes for cursor-moving CSI (`A`–`H`, `J`, `K`, `S`, `T`, `f`). Unit tests in `plain.rs` cover table flattening, head/tail and escape stripping.
+
+Deviations: (1) Size: `plain.rs` is 625 lines (about 560 before its tests), plus 150 lines of PTY test, against the card's ~200. The approval/question queue, the prompt-repeat rule and Ctrl+C semantics make up most of it. (2) Files: 10 instead of 3. The `tui.screen_reader` key the Goal names needed `cox-protocol` (`config.rs`, `default.toml`), `docs/config.md` (the docs test requires every key) and `config_load.rs`; `main.rs` dispatches. (3) `COX_TUI_SCREEN_READER=true` does not work as an env override, because the `COX_` layer splits on every `_`. This existing limitation applies to every underscore key (`show_thinking` too). The config file, `--plain` and `COX_PLAIN=1` all work. (4) No new dependency; the PTY test reuses `portable-pty` and does not need `vt100`.
+
+Not landed: the T24.5 status-line text is not reused for the `cost:` line, because T24.5 is not done. The line prints its own cost/token summary once per turn.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox --test plain plain_transcript_snapshot plain_has_no_csi_cursor_moves
+        PASS [ 2.117s] (1/2) cox::plain plain_has_no_csi_cursor_moves
+        PASS [ 2.125s] (2/2) cox::plain plain_transcript_snapshot
+     Summary [ 2.125s] 2 tests run: 2 passed, 0 skipped
+$ mise exec -- cargo nextest run --workspace
+     Summary [ 8.752s] 779 tests run: 779 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+
+$ printf 'go\n1\n/cost\n' | COX_HOME=<scratch> COX_PROVIDER=scripted COX_SCENARIO=<write + table> cox --plain --model scripted
+<BEL>you: go
+cox: writing
+tool: write a.txt
+<BEL>approve? [1] allow [2] session [3] deny 1
+result: ok, 1 line
+  wrote <scratch>/work/a.txt (1 bytes)
+cox: file: a.txt; state: written
+cost: $0.0000 this turn, $0.0000 session, 7420 in / 22 out tokens
+<BEL>you: /cost
+cost: $0.0000 this session
+
+Also run against the scratch home: `COX_PLAIN=1` (answering 3 denies the call), `tui.screen_reader = true` set with `cox config set` plus a positional first prompt (a bad answer re-prompts, 2 allows for the session), and an `ask_user` scenario (answering `2` returns `blue`).
+```
+

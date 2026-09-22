@@ -22,7 +22,6 @@
 - T27.4. `/loop`
 - T28.1. Status-line segments
 - T28.2. Project cost aggregate
-- T29.1. `--plain` surface
 - T29.2. Reduced motion and daltonized themes
 - T30.1. `profile = "minimal"`
 - T30.2. Footprint benchmark
