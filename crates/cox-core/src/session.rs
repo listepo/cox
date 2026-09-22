@@ -1222,6 +1222,8 @@ pub struct MemoryStore {
     memory: StdMutex<HashMap<(String, String), (String, String)>>,
     /// `(session, turn, text)` FTS rows (T10.3).
     index: StdMutex<Vec<(String, u32, String)>>,
+    /// `checkpoints` rows in insertion order (T26.1).
+    checkpoints: StdMutex<Vec<cox_protocol::CheckpointRow>>,
 }
 
 impl MemoryStore {
@@ -1233,6 +1235,7 @@ impl MemoryStore {
             archive: StdMutex::new(HashMap::new()),
             memory: StdMutex::new(HashMap::new()),
             index: StdMutex::new(Vec::new()),
+            checkpoints: StdMutex::new(Vec::new()),
         }
     }
 
@@ -1359,6 +1362,26 @@ impl Store for MemoryStore {
             text.to_string(),
         ));
         Ok(())
+    }
+    fn checkpoint_insert(&self, row: &cox_protocol::CheckpointRow) -> Result<(), StoreError> {
+        self.checkpoints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(row.clone());
+        Ok(())
+    }
+    fn checkpoint_list(
+        &self,
+        session: &SessionId,
+    ) -> Result<Vec<cox_protocol::CheckpointRow>, StoreError> {
+        Ok(self
+            .checkpoints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|r| r.session == *session)
+            .cloned()
+            .collect())
     }
 }
 

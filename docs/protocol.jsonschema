@@ -331,6 +331,43 @@
         ]
       },
       {
+        "description": "Pre-images of the files a tool call changed are archived and\nretrievable (T26.1). Emitted after the `checkpoints` rows exist, so a\nsurface that sees it can already `/rewind`; never emitted for a call\nthat changed nothing.",
+        "type": "object",
+        "properties": {
+          "turn": {
+            "description": "The turn the call ran in.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "call": {
+            "description": "The call, or `None` for a rewind's own writes.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CallId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "description": "Every path recorded, in path order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/CheckpointFile"
+            }
+          },
+          "type": {
+            "type": "string",
+            "const": "checkpoint"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "files"
+        ]
+      },
+      {
         "description": "A background subagent task was created.",
         "type": "object",
         "properties": {
@@ -1193,6 +1230,49 @@
           "estimated",
           "cost_usd",
           "latency_ms"
+        ]
+      },
+      "CheckpointFile": {
+        "description": "One path in an `Event::Checkpoint`.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "The confined absolute path.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What was recorded for it.",
+            "$ref": "#/$defs/CheckpointKind"
+          }
+        },
+        "required": [
+          "path",
+          "kind"
+        ]
+      },
+      "CheckpointKind": {
+        "description": "What a `checkpoints` row holds for one path (T26.1): the bytes a tool\ncall was about to overwrite, a file it created, a file it deleted, or\nthe marker that starts a user turn (`path` empty).",
+        "oneOf": [
+          {
+            "description": "The pre-image of a file that was changed; `archive` holds its bytes.",
+            "type": "string",
+            "const": "pre"
+          },
+          {
+            "description": "The file did not exist before the call.",
+            "type": "string",
+            "const": "created"
+          },
+          {
+            "description": "The file existed before the call and is gone after it; `archive` holds it.",
+            "type": "string",
+            "const": "deleted"
+          },
+          {
+            "description": "A user turn started; nothing archived.",
+            "type": "string",
+            "const": "turn"
+          }
         ]
       },
       "TaskId": {

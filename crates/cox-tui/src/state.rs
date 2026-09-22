@@ -678,7 +678,7 @@ fn on_event(state: &mut State, ev: Event) {
             text: error.to_string(),
             fatal,
         }),
-        Event::SessionStarted { .. } | Event::Compacted { .. } => {}
+        Event::SessionStarted { .. } | Event::Compacted { .. } | Event::Checkpoint { .. } => {}
     }
 }
 

@@ -17,7 +17,8 @@ use tokio_util::sync::CancellationToken;
 use crate::errors::{ProviderError, StoreError, ToolError};
 use crate::ids::{ArchiveId, CallId, SessionId};
 use crate::types::{
-    Caps, ProviderEvent, ProviderId, Request, Risk, SandboxPolicy, ToolOutput, ToolSpec, Usage,
+    Caps, CheckpointKind, ProviderEvent, ProviderId, Request, Risk, SandboxPolicy, ToolOutput,
+    ToolSpec, Usage,
 };
 
 /// A row inserted for a new session (`Store::session_create`), matching the
@@ -94,6 +95,56 @@ pub struct MemoryHit {
     pub snippet: String,
 }
 
+/// One `checkpoints` row (`Store::checkpoint_insert`, T26.1): what a tool
+/// call was about to change, archived before it ran, or the marker that
+/// starts a user turn. `/rewind` walks these newest-first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointRow {
+    /// The session the change belongs to.
+    pub session: SessionId,
+    /// The turn number within the session (the FTS/ledger turn counter).
+    pub turn: u32,
+    /// The call that made the change; `None` for a turn marker or a rewind.
+    pub call: Option<CallId>,
+    /// The confined absolute path; empty for a turn marker.
+    pub path: PathBuf,
+    /// What was recorded.
+    pub kind: CheckpointKind,
+    /// Where the pre-image bytes live; `None` for `Created`/`Turn` and for a
+    /// file too large to archive (then `sha256` alone identifies it).
+    pub archive: Option<ArchiveId>,
+    /// SHA-256 of the pre-image, empty when there is none.
+    pub sha256: String,
+}
+
+/// A file's bytes before a call that names its path (`Checkpointer::preimages`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreImage {
+    /// The confined absolute path.
+    pub path: PathBuf,
+    /// `None` when the file does not exist yet.
+    pub bytes: Option<Vec<u8>>,
+}
+
+/// An opaque fingerprint of the workspace roots (`Checkpointer::snapshot`):
+/// one tree id per root. Only the implementation that made it reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Snapshot {
+    /// `(root, tree id)` pairs in root order.
+    pub trees: Vec<(PathBuf, String)>,
+}
+
+/// One file that differs between two snapshots (`Checkpointer::changes`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    /// The confined absolute path.
+    pub path: PathBuf,
+    /// `Pre` (modified), `Created` or `Deleted`.
+    pub kind: CheckpointKind,
+    /// The bytes before the change, when there were any and they fit.
+    pub before: Option<Vec<u8>>,
+}
+
 /// A model provider: turns a `Request` into a stream of `ProviderEvent`s.
 /// Implemented by `cox-provider` for Anthropic/OpenAI/local backends and by
 /// `Scripted`/`Replay` fakes for tests (D12); `cox-core` never depends on
@@ -157,6 +208,13 @@ pub trait Tool: Send + Sync {
     fn risk(&self, _input: &Value) -> Risk {
         self.spec().risk
     }
+    /// The paths this call writes, when its input names them (`edit`,
+    /// `write`, `apply_patch`). `None` means "unknown" — `bash`, MCP tools —
+    /// and the loop snapshots the whole workspace around the call instead
+    /// (T26.1). Read-only tools are never asked.
+    fn touches(&self, _input: &Value) -> Option<Vec<String>> {
+        None
+    }
     /// Runs the tool. `text` in the returned `ToolOutput` is untruncated;
     /// the core archives it and truncates what the model sees.
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError>;
@@ -199,6 +257,11 @@ pub trait Store: Send + Sync {
     /// Best-effort by contract: the rollout is the source of truth and the
     /// loop ignores failures, so a broken index degrades search, never turns.
     fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError>;
+    /// Records one checkpoint row (T26.1). Written before the matching
+    /// `Event::Checkpoint` is emitted, never after.
+    fn checkpoint_insert(&self, row: &CheckpointRow) -> Result<(), StoreError>;
+    /// Every checkpoint row of a session in insertion order.
+    fn checkpoint_list(&self, session: &SessionId) -> Result<Vec<CheckpointRow>, StoreError>;
 }
 
 /// Where a tool's full, pre-truncation output is written before the model
@@ -213,6 +276,23 @@ pub trait Archive: Send + Sync {
     async fn put(&self, put: ArchivePut) -> Result<ArchiveId, StoreError>;
     /// Reads back archived bytes by id.
     async fn get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError>;
+}
+
+/// Where the loop gets a file's bytes before a call changes it (T26.1).
+/// Implemented by `cox-tools` (`checkpoint::GitCheckpointer`), which is
+/// the crate allowed to read files and run git; `cox-core` only decides
+/// *when* to ask and what to archive.
+#[async_trait]
+pub trait Checkpointer: Send + Sync {
+    /// The current bytes of every path in `paths`, each confined to `roots`
+    /// exactly as the tool will confine it. A path that fails confinement
+    /// is skipped (the tool will refuse it too).
+    async fn preimages(&self, roots: &[PathBuf], cwd: &Path, paths: &[String]) -> Vec<PreImage>;
+    /// A fingerprint of everything under `roots` that is not ignored.
+    async fn snapshot(&self, roots: &[PathBuf]) -> Result<Snapshot, ToolError>;
+    /// What differs between two snapshots of the same roots, with the
+    /// pre-image bytes of every modified or deleted file.
+    async fn changes(&self, before: &Snapshot, after: &Snapshot) -> Result<Vec<Change>, ToolError>;
 }
 
 /// A hook runner (`cox-ext`): executes one hook subprocess against the
@@ -244,5 +324,6 @@ mod tests {
         assert_object_safe::<dyn Provider>();
         assert_object_safe::<dyn Tool>();
         assert_object_safe::<dyn Hook>();
+        assert_object_safe::<dyn Checkpointer>();
     }
 }

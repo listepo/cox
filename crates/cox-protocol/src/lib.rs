@@ -27,15 +27,16 @@ pub use config::{Config, DEFAULT_CONFIG_TOML};
 pub use errors::{CoreError, ExtError, McpError, ProviderError, StoreError, ToolError};
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{
-    Archive, ArchivePut, Hook, MemoryHit, Provider, SessionRow, Store, Tool, ToolCx, UsageRow,
+    Archive, ArchivePut, Change, CheckpointRow, Checkpointer, Hook, MemoryHit, PreImage, Provider,
+    SessionRow, Snapshot, Store, Tool, ToolCx, UsageRow,
 };
 pub use types::ArchiveRef;
 pub use types::{
-    ApprovalPolicy, Attachment, Caps, Concurrency, Content, DecidedBy, Decision, Diff, Effort,
-    Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level, LinuxBackend, Message, ModelId,
-    PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role, SandboxMode, SandboxPolicy,
-    SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier, ToolCall, ToolOutput,
-    ToolResult, ToolSpec, Usage, Why,
+    ApprovalPolicy, Attachment, Caps, CheckpointFile, CheckpointKind, Concurrency, Content,
+    DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level,
+    LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role,
+    SandboxMode, SandboxPolicy, SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier,
+    ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
 };
 
 #[cfg(test)]
