@@ -315,6 +315,15 @@ impl Session {
         (f64::from(tokens) >= limit).then_some(tokens)
     }
 
+    /// `/handoff` (T26.3): the `compact` job over the whole history with the
+    /// focus `hand off: <objective>`, recorded against this session. The
+    /// history is left untouched — the summary seeds a new child session.
+    pub async fn handoff_summary(&self, objective: &str) -> Option<String> {
+        let history = self.inner.lock().await.history.clone();
+        self.summarise(&history, Some(&format!("hand off: {objective}")))
+            .await
+    }
+
     async fn compaction_notice(&self, why: &str) -> Result<bool, CoreError> {
         self.emit(Event::Notice {
             level: Level::Warn,

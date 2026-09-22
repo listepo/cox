@@ -59,6 +59,16 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("mcp", "/mcp", "MCP servers and their tools"),
     ("doctor", "/doctor", "check the install"),
     ("clear", "/clear", "new session, same directory"),
+    (
+        "fork",
+        "/fork [turn]",
+        "new child session with the history up to a turn (default: all)",
+    ),
+    (
+        "handoff",
+        "/handoff <objective>",
+        "new child session seeded with a cheap summary and the objective",
+    ),
     ("todo", "/todo", "toggle the todo panel"),
     ("tasks", "/tasks", "list running background tasks"),
     ("vim", "/vim", "toggle vim keys"),
@@ -90,6 +100,10 @@ pub enum Action {
     Resume,
     /// Open the rewind timeline (T26.2); `Esc Esc` on an empty composer too.
     Rewind,
+    /// `/fork [turn]` (T26.3): `None` keeps every turn.
+    Fork(Option<u32>),
+    /// `/handoff <objective>` (T26.3).
+    Handoff(String),
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
@@ -152,6 +166,18 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
         "rewind" => Action::Rewind,
+        // `T7` as the rewind timeline prints it, or a bare `7`.
+        "fork" => match args.first() {
+            None => Action::Fork(None),
+            Some(arg) => match arg.trim_start_matches(['T', 't']).parse::<u32>() {
+                Ok(turn) if turn > 0 => Action::Fork(Some(turn)),
+                _ => Action::Notice(format!("/fork [turn]: `{arg}` is not a turn number")),
+            },
+        },
+        "handoff" => match joined() {
+            Some(objective) => Action::Handoff(objective),
+            None => Action::Notice("/handoff needs an objective".into()),
+        },
         "vim" => Action::Vim,
         "theme" => Action::Theme(joined()),
         "help" => Action::Help,
@@ -218,6 +244,23 @@ pub fn autocompact(compact_at: f64, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T26.3: `/fork` takes an optional turn in either spelling the
+    /// timeline uses; `/handoff` needs its objective.
+    #[test]
+    fn fork_and_handoff_parse_their_arguments() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(p("/fork"), Some(Action::Fork(None)));
+        assert_eq!(p("/fork T3"), Some(Action::Fork(Some(3))));
+        assert_eq!(p("/fork 3"), Some(Action::Fork(Some(3))));
+        assert!(matches!(p("/fork later"), Some(Action::Notice(_))));
+        assert!(matches!(p("/fork 0"), Some(Action::Notice(_))));
+        assert_eq!(
+            p("/handoff ship the parser"),
+            Some(Action::Handoff("ship the parser".into()))
+        );
+        assert!(matches!(p("/handoff"), Some(Action::Notice(_))));
+    }
 
     /// T25.7: `/autocompact` names the project config layer, the same data
     /// `cox config show --sources` prints.

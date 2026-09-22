@@ -31,10 +31,18 @@ use crate::view::view;
 const VIEWPORT_ROWS: u16 = 15;
 
 /// Why the TUI stopped; the binary uses this to quit or start a fresh session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TuiOutcome {
     Quit,
     Clear,
+    /// `/fork [turn]` (T26.3): continue in a child with the history up to `turn`.
+    Fork {
+        turn: Option<u32>,
+    },
+    /// `/handoff <objective>` (T26.3): continue in a summary-seeded child.
+    Handoff {
+        objective: String,
+    },
 }
 
 /// One `ask_user` call surfaced by the binary (T22.1), mirroring
@@ -148,6 +156,8 @@ pub async fn run(
                     }
                     Cmd::Quit => return Ok(TuiOutcome::Quit),
                     Cmd::Clear => return Ok(TuiOutcome::Clear),
+                    Cmd::Fork(turn) => return Ok(TuiOutcome::Fork { turn }),
+                    Cmd::Handoff(objective) => return Ok(TuiOutcome::Handoff { objective }),
                     // Clipboard lands with the transcript cells (T5.3).
                     Cmd::Copy(_) => {}
                     // A request the runtime has not answered yet is still

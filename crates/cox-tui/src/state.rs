@@ -272,6 +272,12 @@ pub enum Cmd {
     Submit(Submission),
     Quit,
     Clear,
+    /// `/fork [turn]` (T26.3): leave for a child session with the history
+    /// up to `turn` (`None`: all of it); the binary builds it.
+    Fork(Option<u32>),
+    /// `/handoff <objective>` (T26.3): leave for a child session seeded
+    /// with a cheap-tier summary of this one plus the objective.
+    Handoff(String),
     Copy(String),
     Ask(Ask),
     /// `ask_user`'s answer for `call`; `None` is `Esc` (dismissed). The
@@ -916,6 +922,22 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         }
         Action::Notice(text) => notice(state, Level::Warn, text),
         Action::Rewind => return open_rewind(state),
+        // A running turn would be cut mid-write, so both wait for it.
+        Action::Fork(_) | Action::Handoff(_) if state.status.busy => {
+            notice(state, Level::Warn, "interrupt the turn first".into());
+        }
+        Action::Fork(Some(turn)) if !state.turns.iter().any(|t| t.seq == turn) => {
+            let text = format!("fork: no turn T{turn}; /rewind lists them");
+            notice(state, Level::Warn, text);
+        }
+        Action::Fork(turn) => {
+            state.queue.clear();
+            return vec![Cmd::Fork(turn)];
+        }
+        Action::Handoff(objective) => {
+            state.queue.clear();
+            return vec![Cmd::Handoff(objective)];
+        }
         Action::Theme(Some(name)) => {
             if state.theme_rows.contains(&name) {
                 return apply_theme_choice(state, &name);

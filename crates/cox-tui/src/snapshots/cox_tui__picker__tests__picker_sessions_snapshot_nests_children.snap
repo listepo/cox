@@ -1,0 +1,9 @@
+---
+source: crates/cox-tui/src/picker.rs
+expression: "crate::view::buffer_to_string(&buf)"
+---
+ resume:
+ ▸ auth work · /tmp/work · 3h · $0.83
+   └ auth: try b · /tmp/work · 2h · $0.10
+     └ auth: handoff · /tmp/work · now · $0.01
+   docs · /tmp/work · 9d · $0.01
