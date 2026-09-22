@@ -2654,3 +2654,33 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 $ mise exec -- cargo fmt --check
      clean
 ```
+
+#### T23.1 Kitty keyboard protocol
+
+Model: claude-sonnet-5 · Status: done 2026-09-22 · Depends: T23.0 · Size: ~80 (landed ~250) · Priority: P1 · Complexity: 2
+Goal: `Shift+Enter` and `Ctrl+Enter` are distinct keys where the terminal supports it; `Alt+Enter` stays the fallback everywhere.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) `app.rs`: when `caps.kitty_keyboard`, `PushKeyboardEnhancementFlags(DISAMBIGUATE_ESC_CODES | REPORT_EVENT_TYPES)` after raw mode; `PopKeyboardEnhancementFlags` in the restore path and the panic hook. (2) `state.rs`: ignore `KeyEventKind::Release`/`Repeat` for bindings that must not repeat (`Enter`, `Esc`); `Shift+Enter` → newline, `Ctrl+Enter` → reserved for T25.1 send-now (until then, newline). (3) Keymap docs (§1.13) gain the row.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test keys shift_enter_inserts_newline ctrl_enter_is_distinct
+mise exec -- cargo nextest run -p cox-tui --test shell pty_pops_keyboard_flags_on_exit
+```
+Done when: the PTY e2e sees `CSI > 1 u` … `CSI < u` bracket the session when the vt100 fixture advertises support, and nothing when it does not.
+Out of scope: the send-now behaviour (T25.1).
+What landed (commit `T23.1: Kitty keyboard protocol`): `app.rs` pushes `KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES | REPORT_EVENT_TYPES` right after `enable_raw_mode()` when `state.caps.kitty_keyboard`, and `restore()` (now `restore(kitty: bool)`) pops it first — on the normal end of `run()` and in the panic hook, so the terminal is never left mid-protocol. `state.rs` gained `pub caps: cox_tui::term::Caps` on `State` (defaulted via `Caps::default()`) and drops `KeyEventKind::Repeat` for `Enter`/`Esc` at the top of `on_key` (`Release` was already filtered in `app.rs`). `composer.rs`'s Enter-modifier guard now also matches `KeyModifiers::CONTROL`, so `Ctrl+Enter` inserts a newline the same as `Shift+Enter`/`Alt+Enter` until T25.1 gives it send-now. `crates/cox/src/session.rs` seeds `state.caps` from `Caps::detect` + `apply(config.tui.caps)` only — deliberately *not* `query()`: a live `CSI ?u` round trip needs exclusive use of stdin for its reply, and `app.rs`'s own input thread starts reading moments later; wiring `query()` into the interactive path (as first attempted) made `crates/cox/tests/tui_e2e.rs`'s double-`Ctrl+C` quit intermittently fail (the two threads racing for stdin), so only `doctor` (which owns the terminal outright and prints the query's own verdict) still calls it. The card's Check needed a PTY e2e (`pty_pops_keyboard_flags_on_exit` in `tests/shell.rs`), but `cox-tui` has no binary of its own to spawn under a PTY the way `crates/cox/tests/tui_e2e.rs` spawns the real `cox`; `src/bin/kitty_probe.rs` (new) is that process — it builds a minimal `Session` (a `NullProvider` implementing `cox_protocol::traits::Provider` inline, never actually called) and a `State` with `caps.kitty_keyboard` from `COX_KITTY_PROBE_KITTY`, runs `cox_tui::app::run`, and quits itself by feeding two synthetic `Ctrl+C` on the `feed` channel. `NullProvider` exists specifically so `cox-tui` does not gain `cox-provider` as a dependency: a `[[bin]]` target only ever resolves `[dependencies]`, never `[dev-dependencies]` (confirmed by trial — `cargo test --bin kitty_probe` builds a working-but-irrelevant libtest-harness variant with dev-deps visible, while the plain executable `CARGO_BIN_EXE_kitty_probe` points at is always built with `[dependencies]` only), and a regular `cox-provider` dependency fails `crates/cox/tests/deps.rs`'s `cox-tui may only depend on cox-core/cox-protocol among workspace crates` rule. New dependencies: `async-trait`, `tokio-util` (regular, for the inline `Provider` impl) and `portable-pty`, `vt100` (dev, `tests/shell.rs` spawns `kitty_probe` under a PTY and answers its `CSI 6n` cursor query exactly as `tui_e2e.rs` does) — all four already used elsewhere in the workspace, so `toolchain.md`/`rust.md` needed no new rows. §1.13's keymap table gained the `Ctrl+Enter` row. Landed size is well over the card's ~80 estimate: the PTY e2e's infrastructure (the probe binary, the inline provider, the PTY-reading test helper) is most of it, not the `app.rs`/`state.rs`/`composer.rs` behavior change itself.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui --test keys shift_enter_inserts_newline ctrl_enter_is_distinct
+     Summary [ 0.012s] 2 tests run: 2 passed, 8 skipped
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_pops_keyboard_flags_on_exit
+     Summary [ 1.209s] 1 test run: 1 passed, 3 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     686 tests run: 685 passed, 1 failed, 3 skipped — the 1 failure is the pre-existing, unrelated cox-provider usage_prices_toml_parses_and_has_all_tier_models
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+$ COX_HOME=/tmp/cox-scratch-t231 TERM=xterm-256color mise exec -- cargo run -p cox -- doctor
+     terminal row unaffected (T23.0's doctor path is unchanged; T23.1 only changed the interactive-session path)
+```
