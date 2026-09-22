@@ -22,7 +22,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.7 | todo | P2 | 3 | 0% | |
 | T24.2 | todo | P0 | 3 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.4 | todo | P0 | 3 | 0% | |
+| T24.4 | in progress | P0 | 3 | 0% | Claude Code / claude-sonnet-5 |
 | T24.5 | todo | P1 | 3 | 0% | |
 | T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
@@ -1207,7 +1207,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T24.4 Tool cards
 
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~180 · Priority: P0 · Complexity: 3
+Model: claude-sonnet-5 · Status: in progress · Depends: T24.1 · Size: ~180 · Priority: P0 · Complexity: 3
 Goal: a tool cell is a card with a phase-tinted rail, a one-line header, a folded body and `Ctrl+E` to expand the last one in place.
 Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/glyph.rs`.
 Steps: (1) Header: `⚙ edit src/lib.rs · +3 −1 · 12 ms · exit 0` — tool glyph, subject (sanitised, T23.3 link), diff counts when `ToolResult.diff` is present, elapsed, exit code for `bash` (parsed from the trailer the tool already writes). (2) Left rail glyph per phase from the glyph table: `pending` (spinner), `ok` (`│` in `theme.tool`), `error` (`│` in `theme.error`); the header line takes the same tint. (3) Body: head/tail from `truncate` with one fold line `… 48 more lines · Ctrl+E`; errors render unfolded; `Ctrl+E` toggles `state.expanded_last` (the §1.13 key that was never implemented) and re-renders the last tool cell only (it is still in the viewport; finished cells in scrollback cannot change — say so in the fold line: `… 48 more lines · /expand <id>`). (4) `show_diffs` keeps hiding diff bodies when off.
@@ -1217,6 +1217,15 @@ mise exec -- cargo nextest run -p cox-tui --test cells card_pending card_ok_fold
 ```
 Done when: three snapshots exist and `docs/screenshots/running_tool.svg` is regenerated from the new frame.
 Out of scope: side-by-side diffs (T24.5).
+Execution plan (Claude Code / claude-sonnet-5):
+1. `cells.rs`: add `rail()` helper (inserts a phase-tinted glyph+space span ahead of a line's own spans, replacing the old plain two-space `indent()`) and `bash_exit_code()` (parses `[exit <code> in <ms>ms]`, the trailer `cox-tools::bash` already appends, from the output's last line). `Look` gains `expand_last: Option<bool>` (`None` = not the toggle-eligible cell, `Some(bool)` = this is it and whether it is open) — the per-cell decision belongs to the caller (`view.rs`), not `Look`'s single shared build.
+2. `cells.rs` `Cell::Tool` arm: phase from `result.map(|r| r.ok)` picks the rail glyph/tint (`None` → spinner + `theme.tool`, `Some(true)` → `│` + `theme.tool`, `Some(false)` → `│` + `theme.error`); header line takes the same tint and gains diff counts (`diff::counts`, reused from T24.1), `{duration_ms}ms`, and (`bash` only) `exit {code}` once `result` is `Some`. Body/fold/summary lines go through `rail()` instead of the old inline `"  "` prefix. Folding forces open on error or `expand_last == Some(true)`; the fold-line hint is `Ctrl+E` when `expand_last == Some(false)` and `/expand <id>` (from `result.archive`) otherwise. `show_diffs` path (`diff::lines`) is untouched — out of scope beyond `Ctrl+O`, unrailed like today.
+3. `state.rs`: `State.expanded_last: bool` (default `false`); `Ctrl+E` in `on_key` toggles it (same shape as the existing `Ctrl+T`/`Ctrl+O` handlers); `State::look()` sets `Look.expand_last: None` (the generic look; only the transcript loop knows which cell is last).
+4. `view.rs`: the transcript `flat_map` finds `state.transcript.iter().rposition(|c| matches!(c, Cell::Tool { .. }))` once, then for that one index overrides `look.expand_last = Some(state.expanded_last)` before calling `cell_lines`. `app.rs`'s scrollback flush is untouched — a flushed cell is never the toggle-eligible one by definition.
+5. `glyph.rs`: doc-comment only, noting `quote` (`│`) now also draws the tool-card rail.
+6. `tests/cells.rs`: four new tests built with local `tool`/`tool_done`-style helpers (mirroring `screenshots.rs`, since this file's own helpers only replay the fixture): `card_pending` (spinner rail, no result yet), `card_ok_folded` (`>12` output lines, folded, `│` rail in `tool` tint), `card_error_unfolded` (`ok: false`, long output, renders whole), `ctrl_e_expands_last_card` (folded before, full after `Ctrl+E`, via `insta` before/after like `cell_thinking_collapses_until_ctrl_t`).
+7. Regenerate `docs/screenshots/running_tool.svg` via `just screenshots` (it renders a pending bash card, so its rail/header text changes); review the diff is the intended new pending-card look before accepting.
+Verify: the Check command above, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`; review every changed snapshot (existing `cells`/`screenshots` suites will shift because every tool cell's rendering changed) and accept only the ones matching this card.
 
 #### T24.5 Word-level and side-by-side diffs
 
