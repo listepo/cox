@@ -1291,6 +1291,7 @@ mise exec -- cargo nextest run -p cox --test plain plain_transcript_snapshot pla
 ```
 Done when: the PTY transcript snapshot exists and contains no `CSI … H/J/K` sequences.
 Out of scope: pickers (`@`, `/`) — plain mode takes paths and commands as typed text.
+Execution plan: (1) `crates/cox/src/plain.rs` (new): open the session through `session::open` with an `ask_user` question channel (same as `run_tui`), then one `select!` loop over events, stdin lines (a reader thread), surfaced questions and `ctrl_c`; each event becomes one labelled line (assistant/thinking text buffered to `ItemDone`, sanitized with `cox_tui::text::sanitize`, markdown tables flattened to `Header: value`); slash commands reuse `cox_tui::commands::parse`. (2) `cli.rs`: `--plain`, mapped to the new `tui.screen_reader` key (`config_load.rs` flag map, `cox-protocol` `TuiConfig`, `default.toml`, `docs/config.md`); `COX_PLAIN=1` read in `main.rs`, which dispatches to `plain::run`. (3) `session.rs`: extract `run_tui`'s `--resume`/`--continue` lookup into one helper both surfaces call. (4) `crates/cox/tests/plain.rs`: the real binary under `portable_pty`, a scripted turn, Ctrl+C twice; insta snapshot of the raw byte transcript plus a scan for `CSI … H/J/K`; unit tests for the table flattening and head/tail. Verify with the Check, the three workspace commands and a manual run against a scratch `COX_HOME`.
 
 #### T29.2 Reduced motion and daltonized themes
 
