@@ -30,6 +30,12 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "go back to an earlier turn: code, conversation or both",
     ),
     ("cost", "/cost", "what this session has spent"),
+    ("context", "/context", "where the next request's tokens go"),
+    (
+        "autocompact",
+        "/autocompact",
+        "the compaction threshold and its config source",
+    ),
     (
         "permissions",
         "/permissions [default|plan|auto|bypass]",
@@ -195,5 +201,31 @@ pub fn next_mode(mode: PermissionMode) -> PermissionMode {
         PermissionMode::Default => PermissionMode::Plan,
         PermissionMode::Plan => PermissionMode::Auto,
         PermissionMode::Auto | PermissionMode::Bypass => PermissionMode::Default,
+    }
+}
+
+/// `/autocompact`'s line: the threshold and the config layer that set it —
+/// `source` is `cox config show --sources`' `source_of` layer name.
+pub fn autocompact(compact_at: f64, source: &str) -> String {
+    let layer = match source {
+        "project" => "project config",
+        "user" => "user config",
+        other => other,
+    };
+    format!("compact_at = {compact_at} ({layer})")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T25.7: `/autocompact` names the project config layer, the same data
+    /// `cox config show --sources` prints.
+    #[test]
+    fn autocompact_line_names_the_project_config_layer() {
+        assert_eq!(
+            autocompact(0.75, "project"),
+            "compact_at = 0.75 (project config)"
+        );
     }
 }

@@ -2755,3 +2755,45 @@ $ mise exec -- cargo fmt --check
      clean
 ```
 
+#### T25.7 `/context`
+
+Model: Claude Code / claude-sonnet-5 · Status: done 2026-09-22 · Depends: — · Size: ~150 (landed ~305) · Priority: P0 · Complexity: 2
+Goal: a modal shows where the next request's tokens go — tool specs, system prompt, instruction files, skills index, memory, history (verbatim / pointers / summary), and the cached share; `/autocompact` shows the threshold and its config source.
+Files: `crates/cox-core/src/context.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
+Steps: (1) `context::assemble` returns `Breakdown { tools, system, instructions, skills, memory, volatile, history_verbatim, history_pointers, summary, total, cached_estimate }` alongside the `Request` (estimates from the T1.8 estimator; the last `Usage.cache_read_tokens` gives the cached share). (2) `Submission::Command { name: "context" }` → `Event::Notice(Info)` carrying the breakdown as `structured` JSON. (3) `modal.rs`: a bar per segment scaled to `max_context`, numbers right-aligned, the compaction threshold as a marker; `/autocompact` prints `compact_at = 0.75 (project config)` from `cox config show --sources` data.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core breakdown_sums_to_estimate
+mise exec -- cargo nextest run -p cox-tui context_modal_snapshot
+```
+Done when: the modal snapshot exists and `breakdown.total` equals the estimator's request total.
+Out of scope: per-file instruction attribution (one line per instruction file is enough).
+
+Execution plan:
+- `context.rs`: `pub struct Breakdown { tools, system, instructions, skills, memory, volatile, history_verbatim, history_pointers, summary, total, cached_estimate }`, `pub fn breakdown(req, total, last_usage)` and `Breakdown::to_json()` (the `structured` payload for step 2). `assemble`'s signature cannot change without editing `cox-core/src/session.rs`'s call site (locked by T23.1's uncommitted work), so the breakdown is computed from the assembled `Request` alongside it instead. The estimator's request total is a parameter: cox-core may only depend on cox-protocol (`crates/cox/tests/deps.rs`), so the T1.8 `cox_provider::tokens::estimate` number is supplied by the provider-owning caller; the nine §1.9 segment shares distribute it by rendered bytes with cumulative rounding, so the shares sum to `total` exactly (`breakdown_sums_to_estimate`). `cached_estimate` = the last `Usage::cache_read_tokens` (0 before the first call).
+- Message attribution: `Content::Pointer` → `history_pointers`; the leading message carrying `compact.rs`'s `[Compacted summary of ` header → `summary` (history is append-only and the summary is otherwise an indistinguishable plain user message); everything else → `history_verbatim`. System blocks by the fixed §1.9 order: `[0]` tools, `[1]` system prompt, `[2]` instructions, `[3+]` volatile; `skills`/`memory` stay 0 until T7.1/T10 put their indexes in.
+- `modal.rs`: `ContextBars { segments, total, cached, max_context, compact_at }` in the sibling modals' `height`/`lines(glyphs, theme)` shape — one ASCII bar per segment scaled to `max_context`, numbers right-aligned, a `|` marker plus caption at `compact_at × max_context`; `context_modal_snapshot` snapshots it through `TestBackend`.
+- `commands.rs`: `COMMANDS` rows for `/context` and `/autocompact` (they fall through the existing catch-all to `Submission::Command`, so palette, `/help` and parser cannot disagree) and `autocompact(compact_at, source)` printing `compact_at = 0.75 (project config)` from `cox config show --sources`' `source_of` layer names.
+- Wiring that cannot land inside this task's 3-file/≤200-LOC limit (proposed §6 split, done as a follow-up card): the `Submission::Command { name: "context" | "autocompact" }` dispatch in `cox-core/src/session.rs` (emit `Event::Notice(Info)` with `Breakdown::to_json()` — `Event::Notice` needs a `structured` field in `cox-protocol`, or the JSON rides in `text`), opening and rendering the modal (`state.rs` `Modal` variant + `view.rs` arm over `ContextBars`), and threading `compact_at` + `source_of` into the `/autocompact` line.
+- Verify: the two Check commands above, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`.
+
+What landed (commit `T25.7: /context`): `crates/cox-core/src/context.rs` gained `pub struct Breakdown` (the eleven card fields), `pub fn breakdown(req, total, last_usage) -> Breakdown` and `Breakdown::to_json()` (step 2's `structured` payload). `breakdown` splits the T1.8 estimator's request total over the §1.9 segments by rendered bytes with cumulative rounding, so the nine shares sum to `total` exactly; `breakdown_sums_to_estimate` pins `breakdown.total` to `cox_provider::tokens::estimate(&req).tokens` (the real estimator, via cox-core's existing dev-dependency), the segments-sum equality, the `to_json` shape and `cached_estimate` = the last `Usage::cache_read_tokens`. Attribution: system blocks by the fixed §1.9 order (`[0]` tools, `[1]` prompt, `[2]` instructions, `[3+]` volatile — `skills`/`memory` stay 0 until T7.1/T10 split their indexes out of 2/3), `Content::Pointer` → `history_pointers`, the leading message carrying `compact.rs`'s `[Compacted summary of ` marker → `summary`, everything else → `history_verbatim`. `crates/cox-tui/src/modal.rs` gained `ContextBars` in the sibling modals' `height`/`lines(glyphs, theme)` shape — a `context · total / max_context tokens · cached` header, one ASCII (`#`) bar per segment scaled to `max_context`, numbers right-aligned, a `|` marker column on every bar and a `^ compact_at = 0.75 = 150000 tokens` caption at `compact_at × max_context`, `total`/`cached` rows — snapshotted by `context_modal_snapshot` through `ratatui::backend::TestBackend`. `crates/cox-tui/src/commands.rs` gained `/context` and `/autocompact` rows in `COMMANDS` (the existing catch-all turns both into `Submission::Command`, keeping palette, `/help` and parser in lockstep) and `autocompact(compact_at, source)`, which prints `compact_at = 0.75 (project config)` from `cox config show --sources`' `source_of` layer names (`autocompact_line_names_the_project_config_layer`).
+
+Deviations and not landed (recorded as a proposed §6 amendment — a T25.7b wiring card — not silently dropped): (1) `assemble` keeps its signature; returning the `Breakdown` alongside the `Request` would edit `cox-core/src/session.rs`'s `let mut req = assemble_with(…)` call site, which the concurrent T22.3 work has open, so `breakdown(&request, total, last_usage)` computes the breakdown from the assembled `Request` alongside it. (2) The estimator's total is a parameter, not a call: `crates/cox/tests/deps.rs` pins cox-core to cox-protocol-only among workspace crates, so the provider-owning caller passes `cox_provider::tokens::estimate`'s number and the test pins the equality against the real estimator — no duplicated heuristic. (3) Step 2's dispatch and step 3's modal-open path did NOT land: they need `cox-core/src/session.rs` (the `Submission::Command { name: "context" | "autocompact" }` arms emitting `Event::Notice(Info)` with `to_json()`), `cox-protocol` (`Event::Notice` has no `structured` field today — add one or carry the JSON in `text`), `cox-tui/src/state.rs` + `view.rs` (a `Modal` variant and render arm over `ContextBars`) and the `compact_at`/`source_of` plumbing for the `/autocompact` line — four files outside this task's allowed three. Until that follow-up lands, `/context` and `/autocompact` reach the core and fall through its catch-all no-op, and `context.rs`'s payload items carry item-level `#[allow(dead_code)]` with the reason in a comment. (4) Size: landed ~305 added lines across the three files (~220 outside tests) against the card's ~150 — rustfmt's struct-literal expansion and the two fixtures are most of the overshoot (same shape as T23.1/T25.1's "landed" notes); no fourth file and no new dependency.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-core breakdown_sums_to_estimate
+        PASS [   0.013s] (1/1) cox-core context::tests::breakdown_sums_to_estimate
+     Summary [   0.013s] 1 test run: 1 passed, 155 skipped
+$ mise exec -- cargo nextest run -p cox-tui context_modal_snapshot
+        PASS [   0.028s] (1/1) cox-tui modal::tests::context_modal_snapshot
+     Summary [   0.028s] 1 test run: 1 passed, 144 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     696 tests run: 695 passed, 1 failed, 3 skipped — the 1 failure is the pre-existing, unrelated cox-provider usage_prices_toml_parses_and_has_all_tier_models
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
+

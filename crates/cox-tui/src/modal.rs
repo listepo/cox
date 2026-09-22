@@ -2,13 +2,13 @@
 //! decide it — `y` allow, `s` allow for the session, `n` deny, `e` edit a
 //! bash command inline and resubmit it as `Decision::Edit`. Separate from
 //! `state` so the key table and the drawing sit together and one snapshot
-//! covers both.
+//! covers both. The `/context` modal (T25.7) lives here for the same reason.
 
 use cox_protocol::ids::CallId;
 use cox_protocol::types::{Decision, ToolCall, Why};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 
 use crate::glyph::Glyphs;
 use crate::text::sanitize;
@@ -209,5 +209,126 @@ impl Question {
                 self.input, g.caret, g.sep
             )),
         ]
+    }
+}
+
+/// `/context` (T25.7): where the next request's tokens go — one bar per
+/// §1.9 segment scaled to `max_context`, numbers right-aligned, and the
+/// compaction threshold as a marker. Same `height`/`lines` shape as the
+/// sibling modals; bars are ASCII so both glyph sets hold (T14.1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextBars {
+    /// `(label, estimated tokens)` per §1.9 segment, display order — the
+    /// numbers arrive as rows because `cox-core`'s `Breakdown` is not
+    /// exported across the crate boundary and this modal only displays.
+    pub segments: Vec<(&'static str, u32)>,
+    pub total: u32,
+    pub cached: u32,
+    pub max_context: u32,
+    pub compact_at: f64,
+}
+
+/// Bar geometry, fixed so the rows and the threshold marker align; the
+/// label column is 17 so the widest label ("history verbatim") keeps a gap.
+const LABEL: usize = 17;
+const BAR: usize = 24;
+
+impl ContextBars {
+    pub fn height(&self) -> u16 {
+        // header + one row per segment + total + cached + threshold caption.
+        u16::try_from(self.segments.len() + 4).unwrap_or(u16::MAX)
+    }
+
+    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
+        let marker = ((self.compact_at.clamp(0.0, 1.0) * BAR as f64).round() as usize).min(BAR - 1);
+        let bar = |tokens: u32| {
+            let filled = u64::from(tokens) * BAR as u64 / u64::from(self.max_context.max(1));
+            (0..BAR)
+                .map(|i| match (i == marker, (i as u64) < filled) {
+                    (true, _) => '|',
+                    (false, true) => '#',
+                    (false, false) => ' ',
+                })
+                .collect::<String>()
+        };
+        let row = |label: &str, tokens: u32, style: Style| {
+            Line::from(vec![
+                Span::styled(
+                    format!(" {label:<w$}", w = LABEL),
+                    Style::default().fg(theme.dim),
+                ),
+                Span::styled(bar(tokens), Style::default().fg(theme.accent)),
+                Span::styled(format!("  {tokens:>8}"), style),
+            ])
+        };
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let mut lines = vec![Line::styled(
+            format!(
+                " context {} {} / {} tokens {} cached {}",
+                g.sep, self.total, self.max_context, g.sep, self.cached
+            ),
+            bold,
+        )];
+        lines.extend(
+            self.segments
+                .iter()
+                .map(|(label, tokens)| row(label, *tokens, Style::default())),
+        );
+        lines.push(row("total", self.total, bold));
+        lines.push(row(
+            "cached",
+            self.cached,
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        let threshold = (self.compact_at.clamp(0.0, 1.0) * f64::from(self.max_context)) as u32;
+        lines.push(Line::styled(
+            format!(
+                " {}^ compact_at = {} = {} tokens",
+                " ".repeat(LABEL + marker),
+                self.compact_at,
+                threshold
+            ),
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        lines
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::widgets::{Paragraph, Widget};
+
+    use super::*;
+
+    /// T25.7 `/context`: bars scaled to `max_context`, right-aligned
+    /// numbers, the compaction threshold marked.
+    #[test]
+    fn context_modal_snapshot() {
+        let bars = ContextBars {
+            segments: vec![
+                ("tools", 21_500),
+                ("system", 3_200),
+                ("instructions", 120),
+                ("skills", 0),
+                ("memory", 0),
+                ("volatile", 240),
+                ("history verbatim", 41_000),
+                ("history pointers", 1_250),
+                ("summary", 900),
+            ],
+            total: 68_210,
+            cached: 51_000,
+            max_context: 200_000,
+            compact_at: 0.75,
+        };
+        let mut term = Terminal::new(TestBackend::new(72, bars.height())).expect("test terminal");
+        term.draw(|f| {
+            Paragraph::new(bars.lines(&Glyphs::default(), &Theme::dark()))
+                .render(f.area(), f.buffer_mut());
+        })
+        .expect("draw");
+        insta::assert_snapshot!(crate::view::buffer_to_string(term.backend().buffer()));
     }
 }

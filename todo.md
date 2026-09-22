@@ -19,7 +19,6 @@
 - T25.4. Vim, second half
 - T25.5. Keybindings file
 - T25.6. `/init`
-- T25.7. `/context`
 - T25.8. Cross-session prompt history
 - T26.3. `/fork` and `/handoff`
 - T26.4. `/undo`, `/redo`
