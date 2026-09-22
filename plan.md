@@ -7,7 +7,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T22.2 | todo | P0 | 2 | 0% | |
-| T22.3 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | todo | P1 | 1 | 0% | |
 | T23.2 | todo | P1 | 2 | 0% | |
@@ -17,25 +16,24 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.6 | todo | P3 | 1 | 0% | |
 | T23.7 | todo | P2 | 3 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.5 | todo | P1 | 3 | 0% | |
+| T24.5 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | todo | P1 | 1 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.4 | todo | P1 | 3 | 0% | |
+| T25.4 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T25.5 | todo | P1 | 3 | 0% | |
 | T25.6 | todo | P1 | 2 | 0% | |
-| T25.7 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T25.8 | todo | P2 | 2 | 0% | |
-| T26.3 | todo | P1 | 3 | 0% | |
+| T26.3 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T26.4 | todo | P2 | 1 | 0% | |
-| T27.1 | todo | P1 | 3 | 0% | |
+| T27.1 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T27.2 | todo | P1 | 2 | 0% | |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T28.1 | todo | P1 | 2 | 0% | |
 | T28.2 | todo | P2 | 1 | 0% | |
-| T28.3 | todo | P1 | 3 | 0% | |
+| T28.3 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T28.4 | todo | P1 | 2 | 0% | |
 | T29.1 | todo | P2 | 3 | 0% | |
 | T29.2 | todo | P2 | 1 | 0% | |
@@ -1117,7 +1115,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T24.5 Word-level and side-by-side diffs
 
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~200 · Priority: P1 · Complexity: 3
+Model: opus · Status: in progress · Depends: T24.1 · Size: ~200 · Priority: P1 · Complexity: 3
 Goal: intra-line changes are highlighted; side-by-side when the viewport is ≥ 120 columns; one renderer serves the edit card, the approval modal and `Ctrl+G`.
 Files: `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/cells.rs`, `config/default.toml`.
 Steps: (1) `diff.rs`: for each replaced pair of lines run `similar::TextDiff::from_words` (workspace dep) and emit `Span`s with `theme.diff_add`/`diff_del` on the changed words only, dim on the unchanged; cap word-diff at 400 characters per line (fall back to line colour). (2) `Layout::Side { left, right }` when `width ≥ 120` and `tui.diff = auto|side`; `Stacked` otherwise; gutter with line numbers in `theme.dim`. (3) The edit card, the approval modal's diff and `Ctrl+G` call the one `diff::render(&Diff, width, &Theme, layout)`. (4) `tui.diff = "auto"` documented.
@@ -1198,7 +1196,7 @@ Out of scope: an interactive shell (T15.4 completion already helps the line).
 
 #### T25.4 Vim, second half
 
-Model: sonnet · Status: open · Depends: — · Size: ~200 · Priority: P1 · Complexity: 3
+Model: opus · Status: in progress · Depends: — · Size: ~200 · Priority: P1 · Complexity: 3
 Goal: motions, counts, operators, text objects, visual modes and undo/redo; `Esc` in normal mode never interrupts the turn.
 Files: `crates/cox-tui/src/vim.rs`, `crates/cox-tui/src/composer.rs`.
 Steps: (1) Motions `w b e 0 ^ $ gg G h j k l` with counts. (2) Operators `d c y` with motions and `dd cc yy`, `p P`, `x X`, `u` / `Ctrl+R` over `tui-textarea-2`'s history. (3) Text objects `iw aw i" a" i' a' i( a( i[ a[ i{ a{`. (4) `v` and `V` visual modes with `d y c`. (5) `Esc` in normal mode is a no-op (interrupt stays on `Ctrl+C` and on `Esc` in insert mode as today); the status line shows `-- NORMAL --`/`-- VISUAL --`.
@@ -1253,7 +1251,7 @@ Out of scope: a global (cross-project) history.
 
 #### T26.3 `/fork` and `/handoff`
 
-Model: sonnet · Status: open · Depends: T26.2 · Size: ~160 · Priority: P1 · Complexity: 3
+Model: opus · Status: in progress · Depends: T26.2 · Size: ~160 · Priority: P1 · Complexity: 3
 Goal: `/fork [turn]` starts a new session with the history up to that turn; `/handoff <objective>` starts a new session seeded with a cheap-tier summary plus the objective; both appear as children in `/sessions`.
 Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-store/src/queries.rs`.
 Steps: (1) `/fork`: `resume::from_home` loads the rollout, truncates at the turn (default: current), and `Session::resume`-style injection (T17.1) creates the child with `parent_id = <this>`; the TUI switches to it like `/clear` does. (2) `/handoff <text>`: run the `compact` job on the `cheap` tier with the focus "hand off: <objective>" to produce the seed summary; the child's first history item is that summary (as a `Summary` item, same as compaction). (3) `/sessions` and `cox sessions` show children indented under their parent (`queries::sessions_tree`).
@@ -1282,7 +1280,7 @@ Out of scope: multi-step redo history.
 
 #### T27.1 `bash` background tasks and `Ctrl+B`
 
-Model: sonnet · Status: open · Depends: — · Size: ~160 · Priority: P1 · Complexity: 3
+Model: opus · Status: in progress · Depends: — · Size: ~160 · Priority: P1 · Complexity: 3
 Goal: `bash(background: true)` joins the T9.2 task registry (id, progress, completion event, archive by task id) instead of just detaching; `Ctrl+B` moves a running foreground `bash` or `agent` call to the background and unblocks the composer.
 Files: `crates/cox-core/src/tasks.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-tui/src/state.rs`.
 Steps: (1) `tasks.rs` gains `TaskKind::Shell`; `bash`'s `background()` path returns the `TaskId` line the `agent` path already returns and streams its output into the archive under that id; `TaskCompleted` carries exit code and archive id. (2) `Submission::Background { call_id }`: the core detaches the running call into a task (the tool keeps its cancellation token, now task-scoped as in `tasks.rs`), returns a pointer result to the model immediately (`background task <id> started`), and the turn continues. (3) `Ctrl+B` in the TUI while a tool card is pending → `Cmd::Submit(Background)`; `/tasks` already lists tasks — add exit code and `expand` hint.
@@ -1351,7 +1349,7 @@ Out of scope: budgets per project (config already caps per session and month).
 
 #### T28.3 Pre-emptive compaction
 
-Model: opus · Status: open · Depends: — · Size: ~150 · Priority: P1 · Complexity: 3
+Model: opus · Status: in progress · Depends: — · Size: ~150 · Priority: P1 · Complexity: 3
 Goal: a request that would exceed the threshold is compacted *before* the provider call inside a turn, not after `TurnDone`; the last two turns stay verbatim.
 Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/compact.rs`, `crates/cox-core/tests/scenarios/`.
 Steps: (1) In the turn loop after `assemble` (step 3a) and before `provider.stream`: `estimate(req)` (or `count_tokens` when `Caps.count_tokens` and the estimate is within 10 % of the threshold) compared with `compact_at × max_context`. (2) Over → run microcompaction first (older tool results → pointers, T8.2); still over → full compaction on the `cheap` tier with `keep_turns` (D6f), then re-assemble once; still over → `TurnDone{Budget}` with a `Notice` naming the size. (3) `Event::Compacted` carries `reason: "pre-call"|"post-turn"`. (4) Scenario `big_tool_output_mid_turn_compacts_before_call`.
