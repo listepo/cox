@@ -31,7 +31,6 @@
 - T25.6. `/init`
 - T25.7. `/context`
 - T25.8. Cross-session prompt history
-- T26.2. `/rewind`
 - T26.3. `/fork` and `/handoff`
 - T26.4. `/undo`, `/redo`
 - T27.1. `bash` background tasks and `Ctrl+B`

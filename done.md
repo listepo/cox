@@ -2394,3 +2394,20 @@ $ sqlite3 cox.db "select turn, call_id is not null, path, kind, archive_id is no
 $ mise exec -- cargo nextest run --workspace   # 628 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing, fails on the untouched tree too)
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check   # clean
 ```
+
+#### T26.2 `/rewind`
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: T26.1 · Size: ~200 ×2 · Priority: P0 · Complexity: 4
+Goal: `/rewind` (and `Esc Esc` on an empty composer) opens a timeline; the user restores code, conversation, or both; history stays append-only.
+Files: `crates/cox-protocol/src/{types,traits}.rs`, `crates/cox-tools/src/checkpoint.rs` (`restore`), `crates/cox-core/src/rewind.rs` (new) + `checkpoint.rs`/`compact.rs`/`rollout.rs`/`session.rs`, `crates/cox-core/tests/rewind.rs` + `scenarios/rewind_two.toml`, `crates/cox-tui/src/{commands,picker,state}.rs`, `crates/cox-tui/tests/rewind.rs`, `docs/how-it-works.md`, `docs/protocol.jsonschema`.
+What landed (commit after afb7f08): `Submission::Rewind { to_turn, code, conversation }` and `Event::Rewound { to_turn, code, conversation, restored, skipped }`; `Event::TurnStarted` carries `seq` (1-based turn number) so every surface can name a turn and `History.turns` keeps a resumed session counting where it left off; `Checkpointer::restore` (confined `atomic_write`, or remove) in `cox-tools`. Code rewind: the earliest row per path since `to_turn` is written back (created files removed, deleted ones return), each write first checkpointed under a fresh turn number with no call id, so `/redo` (T26.4) has its rows; pre-images over the size cap are reported as skipped. Conversation rewind: the in-memory history is cut at the turn mark (`TurnMark.seq`), the rollout is untouched, `Rewound` is appended and `History::from_rollout` replays the cut. Refusals (turn running, unknown turn, nothing chosen) are a `Notice(Warn)`, never an error. TUI: `/rewind` row in the palette, `Kind::Rewind` picker (`T7 · 3 files · "text"`, newest first) then `Kind::RewindWhat` (`both`/`code`/`talk`), `Esc Esc` within 500 ms on an empty composer, `Rewound` cuts the transcript at the turn. Deviations from the card: the row shows the file count but not `+41 −12` (line stats are not recorded), the rewound marker is a plain `Notice` rather than a dim `⤺` cell, and the TUI part is not driven through the PTY e2e.
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core --test rewind
+PASS rewind_code_restores_bytes · rewind_conversation_is_append_only · resume_after_rewind_stops_at_marker · rewind_refuses_unknown_turns_with_a_notice
+$ mise exec -- cargo nextest run -p cox-tui --test rewind
+PASS rewind_timeline_snapshot · rewind_choice_then_what_becomes_a_submission · esc_esc_on_an_empty_composer_opens_the_timeline · rewound_conversation_cuts_the_transcript_at_the_turn
+$ mise exec -- cargo nextest run -p cox-tools restore_writes_bytes_back_and_removes_created_files   # real files, confined
+$ mise exec -- cargo nextest run -p cox-core resume_builds_identical_request   # invariant 6 still passes
+$ mise exec -- cargo nextest run --workspace   # 639 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check   # clean
+```
