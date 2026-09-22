@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.3 | todo | P0 | 2 | 0% | |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | todo | P1 | 1 | 0% | |
-| T23.1 | in progress | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T23.2 | todo | P1 | 2 | 0% | |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
@@ -1034,29 +1033,6 @@ Done when: the script exits 0 and `docs/compat.md` lists every remaining leftove
 Out of scope: fixing any leftover — that is a card, not this audit.
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
-
-#### T23.1 Kitty keyboard protocol
-
-Model: claude-sonnet-5 · Status: in progress · Depends: T23.0 · Size: ~80 · Priority: P1 · Complexity: 2
-Goal: `Shift+Enter` and `Ctrl+Enter` are distinct keys where the terminal supports it; `Alt+Enter` stays the fallback everywhere.
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `app.rs`: when `caps.kitty_keyboard`, `PushKeyboardEnhancementFlags(DISAMBIGUATE_ESC_CODES | REPORT_EVENT_TYPES)` after raw mode; `PopKeyboardEnhancementFlags` in the restore path and the panic hook. (2) `state.rs`: ignore `KeyEventKind::Release`/`Repeat` for bindings that must not repeat (`Enter`, `Esc`); `Shift+Enter` → newline, `Ctrl+Enter` → reserved for T25.1 send-now (until then, newline). (3) Keymap docs (§1.13) gain the row.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test keys shift_enter_inserts_newline ctrl_enter_is_distinct
-mise exec -- cargo nextest run -p cox-tui --test shell pty_pops_keyboard_flags_on_exit
-```
-Done when: the PTY e2e sees `CSI > 1 u` … `CSI < u` bracket the session when the vt100 fixture advertises support, and nothing when it does not.
-Out of scope: the send-now behaviour (T25.1).
-
-Execution plan:
-- `state.rs`: add `pub caps: cox_tui::term::Caps` field to `State`, defaulted `Caps::default()` in `State::new`; at the top of `on_key`, drop `KeyEventKind::Repeat` for `Enter`/`Esc` (Release is already filtered in `app.rs`'s select loop).
-- `composer.rs`: add `KeyModifiers::CONTROL` to the Enter newline-modifier `intersects` check, so `Ctrl+Enter` inserts a newline like `Shift+Enter`/`Alt+Enter` until T25.1 gives it send-now.
-- `app.rs`: after `enable_raw_mode()`, `execute!(..., PushKeyboardEnhancementFlags(DISAMBIGUATE_ESCAPE_CODES | REPORT_EVENT_TYPES))` when `state.caps.kitty_keyboard`; `restore()` takes `kitty: bool` and conditionally runs `PopKeyboardEnhancementFlags` first, threaded through both call sites (panic hook, end of `run`).
-- `crates/cox/src/session.rs`: build `Caps` (`detect` → bounded `query` → `apply(config.tui.caps)`, mirroring `doctor.rs`'s T23.0 pattern) and assign to `state.caps`, next to the existing `state.depth`/`state.dark` lines.
-- Tests: `shift_enter_inserts_newline`, `ctrl_enter_is_distinct` in `crates/cox-tui/tests/keys.rs` (plain `Composer`/`update` calls, no PTY). `pty_pops_keyboard_flags_on_exit` in `crates/cox-tui/tests/shell.rs` — `cox-tui` has no binary of its own to spawn under a PTY (unlike `crates/cox/tests/tui_e2e.rs`), so a small test-only `[[bin]] kitty_probe` (`src/bin/kitty_probe.rs`, `cox-provider` as a dev-dependency for `Scripted::from_toml("", "")`) builds a minimal session + `State` with `caps.kitty_keyboard` from an env var, runs `cox_tui::app::run`, and quits itself via two synthetic `Ctrl+C` sent on the `feed` channel; the test spawns it under a PTY with `portable-pty`/`vt100` (already workspace deps, used the same way in `tui_e2e.rs`), answers `CSI 6n` the same way, and asserts the raw byte stream for the push/pop bracket with and without the flag.
-- New dev-deps: `cox-provider`, `portable-pty`, `vt100` for `cox-tui` — one-line reason each in the implementation commit, rows in `toolchain.md`.
-- Verify: the two Check commands above, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`.
 
 #### T23.2 Flicker-free scrollback (`scrolling-regions`)
 
