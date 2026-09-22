@@ -19,7 +19,7 @@ Core tools are always in context; deferred tools join through `tool_search`
 | `bash` | Exec (Destructive as classified) | no | command line | sandboxed, streamed, `background: true` archives |
 | `todo` | ReadOnly | no | — | drives the TUI todo panel |
 | `expand` | ReadOnly | no | archive id | reads back archived output, capped |
-| `ask_user` | ReadOnly | yes | question | blocks the turn; `--answer` headless |
+| `ask_user` | ReadOnly | yes | question | blocks the turn; `--answer` headless; TUI: modal |
 | `tool_search` | ReadOnly | no | query | reveals up to 5 deferred schemas |
 | `web_fetch` | ReadOnly | yes | URL | readability fallback; domain rules apply |
 | `agent` | max of its tools | yes | preset | `explore` / `shell` presets, own budget |
