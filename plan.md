@@ -16,7 +16,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.6 | todo | P3 | 1 | 0% | |
 | T23.7 | todo | P2 | 3 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.5 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | todo | P1 | 1 | 0% | |
@@ -1095,20 +1094,6 @@ mise exec -- cargo build --release -p cox && ls -l target/release/cox
 ```
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
-
-#### T24.5 Word-level and side-by-side diffs
-
-Model: opus · Status: in progress · Depends: T24.1 · Size: ~200 · Priority: P1 · Complexity: 3
-Goal: intra-line changes are highlighted; side-by-side when the viewport is ≥ 120 columns; one renderer serves the edit card, the approval modal and `Ctrl+G`.
-Files: `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/cells.rs`, `config/default.toml`.
-Steps: (1) `diff.rs`: for each replaced pair of lines run `similar::TextDiff::from_words` (workspace dep) and emit `Span`s with `theme.diff_add`/`diff_del` on the changed words only, dim on the unchanged; cap word-diff at 400 characters per line (fall back to line colour). (2) `Layout::Side { left, right }` when `width ≥ 120` and `tui.diff = auto|side`; `Stacked` otherwise; gutter with line numbers in `theme.dim`. (3) The edit card, the approval modal's diff and `Ctrl+G` call the one `diff::render(&Diff, width, &Theme, layout)`. (4) `tui.diff = "auto"` documented.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test diff word_diff_highlights_changed_words side_by_side_at_140_columns stacked_at_80_columns
-```
-Done when: three snapshots exist, `docs/screenshots/diff_view.svg` is regenerated, and the approval modal uses the same output.
-Out of scope: syntax highlighting inside side-by-side (kept for stacked only if the size limit bites; say so).
-Execution plan: (1) `diff.rs`: `Mode` (`auto|side|stacked`, parsed from `tui.diff`, unknown → `auto`), `Layout::{Stacked, Side { left, right }}` picked from `Look.width` (side at ≥ 120 unless `stacked`), `render(&Diff, &Look, Layout)` behind the existing `lines`; `-`/`+` runs are paired line by line and each pair goes through `TextDiff::from_words` (≤ 400 chars, else line colour); unpaired lines keep the syntect pass; side rows carry `old │ new` with a dim line-number gutter and a width-fitting span cutter. (2) `cells.rs`/`state.rs`/`markdown.rs`: `Look.diff: diff::Mode`, `State.diff_mode`. (3) `modal.rs`/`view.rs`: the approval modal for an `edit` call builds a `Diff` from its sanitized `old`/`new` with `similar` and prints it through the same `diff::lines` (capped rows); `crates/cox-tui/Cargo.toml` wires the workspace `similar`. (4) `tui.diff = "auto"` in `default.toml`, `TuiConfig`, `docs/config.md`, wired in `crates/cox/src/session.rs`. (5) Tests in `tests/diff.rs` (the Check's three, with a style dump for the word-diff one) and an edit-approval snapshot in `tests/approval.rs`; regenerate `docs/screenshots/diff_view.svg` with `just screenshots`' command. Verify: the Check, then nextest/clippy/fmt; run `cox doctor` against a scratch `COX_HOME` for the config key. Exceeds the ≤ 3 files guidance (config wiring + modal + tests); recorded in `done.md`.
 
 #### T24.6 Footer hints and `?` help
 

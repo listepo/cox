@@ -9,7 +9,6 @@
 - T23.6. OSC 9;4 progress
 - T23.7. Resize hardening
 - T24.3. `two-face` syntax set
-- T24.5. Word-level and side-by-side diffs
 - T24.6. Footer hints and `?` help
 - T24.7. Motion and narrow-width polish
 - T24.8. Screenshots and gallery
