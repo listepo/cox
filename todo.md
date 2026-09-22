@@ -12,7 +12,6 @@
 - T23.5. Notifications
 - T23.6. OSC 9;4 progress
 - T23.7. Resize hardening
-- T24.2. Theme files and `/theme`
 - T24.3. `two-face` syntax set
 - T24.5. Word-level and side-by-side diffs
 - T24.6. Footer hints and `?` help
