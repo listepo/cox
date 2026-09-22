@@ -48,6 +48,7 @@ Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; se
 - Tests live in `#[cfg(test)] mod tests` at the bottom of the file, named as the claim they prove (`compaction_keeps_last_two_turns_verbatim`). Transcript and TUI tests are `insta` snapshots. A bug fix adds the narrowest regression test that fails without it.
 - All terminal output goes through `cox-tui`; there is no `println!` outside it and `crates/cox`.
 - No new dependency without a one-line reason in the commit message and a row in `plan.md` §1.
+- No raw SQL (`plan.md` D9). Queries go through Diesel's typed DSL over `schema.rs` and the models in `cox-store/src/models.rs`. Raw SQL is allowed only in `migrations/*/up.sql`/`down.sql` and for FTS5 virtual tables via `diesel::sql_query`, which Diesel cannot model. Both stay in `cox-store`.
 
 ## Trust boundaries
 
