@@ -25,6 +25,7 @@ use crate::status::parse_todo;
 use crate::tasks;
 use crate::term::Caps;
 use crate::theme::{Theme, ThemeFile};
+use crate::vim::Mode;
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -655,9 +656,16 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         }
         None => {
             // Esc while a turn runs interrupts it; otherwise it reaches the
-            // composer (vim's normal mode wants it).
+            // composer (vim's normal mode wants it). In vim's normal and
+            // visual modes it never interrupts (T25.4): there it only
+            // cancels a pending command, and `Ctrl+C` still interrupts.
+            let vim_owns_esc = state.composer.vim_mode().is_some_and(|m| m != Mode::Insert);
             if key.code == KeyCode::Esc && state.status.busy {
-                return vec![Cmd::Submit(Submission::Interrupt)];
+                if !vim_owns_esc {
+                    return vec![Cmd::Submit(Submission::Interrupt)];
+                }
+                state.composer.key(key, true);
+                return Vec::new();
             }
             // `Esc Esc` on an empty composer opens the rewind timeline
             // (T26.2); a lone Esc still reaches the composer for vim.

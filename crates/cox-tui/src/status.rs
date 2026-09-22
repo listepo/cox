@@ -52,8 +52,10 @@ pub fn line(state: &State) -> Line<'static> {
         (false, false) => String::new(),
     };
     let vim = match state.composer.vim_mode() {
-        Some(Mode::Normal) => format!(" {sep} NORMAL"),
-        Some(Mode::Insert) => format!(" {sep} INSERT"),
+        Some(Mode::Normal) => format!(" {sep} -- NORMAL --"),
+        Some(Mode::Insert) => format!(" {sep} -- INSERT --"),
+        Some(Mode::Visual) => format!(" {sep} -- VISUAL --"),
+        Some(Mode::VisualLine) => format!(" {sep} -- VISUAL LINE --"),
         None => String::new(),
     };
     // Only when there are any, so a lone session's line is unchanged; `!`

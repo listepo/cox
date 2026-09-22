@@ -34,6 +34,9 @@ tokio-util = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+# T25.4: the vim keypress table in `tests/vim.rs`; already a workspace
+# dependency of cox-core, cox-protocol and cox-tools.
+rstest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 # T23.1: the PTY e2e in `tests/shell.rs` spawns `kitty_probe` and answers its

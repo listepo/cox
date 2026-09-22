@@ -983,6 +983,7 @@ dependencies = [
  "portable-pty",
  "pulldown-cmark",
  "ratatui",
+ "rstest",
  "serde_json",
  "syntect",
  "tempfile",
