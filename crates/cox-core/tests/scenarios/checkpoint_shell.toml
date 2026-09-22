@@ -1,0 +1,10 @@
+[[turn]]
+text = "removing"
+tool_calls = [{ name = "shell", input = { cmd = "rm gone.txt" } }]
+
+[[turn]]
+text = "again"
+tool_calls = [{ name = "shell", input = { cmd = "true" } }]
+
+[[turn]]
+text = "done"
