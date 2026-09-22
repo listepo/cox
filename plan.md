@@ -6,7 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.2 | in progress | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
+| T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | todo | P1 | 1 | 0% | |
 | T23.2 | todo | P1 | 2 | 0% | |
@@ -973,26 +973,6 @@ ok
 
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
-
-#### T22.2 Skills index and file commands reach the session
-
-Model: Claude Code / claude-sonnet-5 · Status: in progress · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
-Goal: `skills::index` is the last block of `system[2]`, `SkillTool` is in the tool list, `.claude/commands` and `.cox/commands` are in the `/` palette and submit as `Submission::Command`.
-Files: `crates/cox/src/session.rs`, `crates/cox-core/src/context.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) In the binary's session builder call `cox_ext::skills::discover(&skill_dirs(..))` once, pass `skills::index(&skills)` into the core's instruction block (`Loaded.block` + index, same slot, index last so a user without skills has an unchanged prefix). (2) Register `SkillTool::new(skills)` in the tool list (deferred, `ReadOnly`). (3) `cox_ext::commands::discover(..)` (already used by `ext_cmd.rs`) → `State.commands` extension: `(name, usage, description)` triples appended after the built-in `COMMANDS`; choosing one inserts `/name ` and `Enter` submits `Submission::Command { name, args }` (T5.5 parser already handles unknown names as `Command`). (4) `allowed-tools` of an invoked skill narrows the engine for the turn: pass `structured.allowed_tools` from the `SkillTool` result into `Session::set_turn_tools` (add if absent).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core prefix_bytes_identical_between_turns skills_index_is_in_system_2
-mise exec -- cargo nextest run -p cox-tui palette_lists_file_commands
-```
-Done when: the fixture skill `greeting` appears in the first request's `system[2]` and its body only after `skill{"name":"greeting"}`; snapshot `frames__composer_slash_palette` shows a file command; `cox ext list` output unchanged.
-Out of scope: skill marketplaces, `/skills install`.
-Execution plan:
-- `crates/cox-core/src/context.rs`: `assemble_with_skills(…, skills_index)` appends the index at the end of `system[2]` (empty index appends nothing, so a user without skills keeps an unchanged prefix); `assemble_with` delegates with `""`, so the `cox-core/src/session.rs` call site is untouched. `skills_index_is_in_system_2` uses the fixture skill `greeting`: its index line is the tail of `system[2]`, its body is in no request block and arrives only with the `skill{"name":"greeting"}` tool result.
-- `crates/cox/src/session.rs`: `cox_ext::skills::discover(&cox_ext::skills::skill_dirs(..))` once in `open` (roots as `ext_cmd.rs`; notices → stderr warn, D14), `SkillTool::new(skills)` pushed into the tool list (spec already `deferred`/`ReadOnly`); `cox_ext::commands::discover(..)` in `run_tui` appends `(name, usage, description)` triples to `state.commands` after the built-ins.
-- `crates/cox-tui/src/state.rs`: `State.commands` becomes those triples; a `/name args` line whose name is not in `COMMANDS` submits `Submission::Command { name, args }` before the T5.5 parser (which only answers unknown names with a notice); choosing a palette row still inserts `/name `; `palette_lists_file_commands`.
-- Wiring that cannot land inside this task's allowed 3 files (proposed §6 split, follow-up card): threading `skills::index` from the surface into `assemble_with_skills` (a `Session` field/setter plus the `assemble_with` call site in `cox-core/src/session.rs`, and the `lib.rs` re-export — nothing in the core can reach the new entry point today), step 4's `Session::set_turn_tools` + the `structured.allowed_tools` read in `cox-core/src/turn.rs`, and the few-line `crates/cox-tui/tests/frames.rs` change that would show a file command in the `frames__composer_slash_palette` snapshot.
-- Verify: the two Check commands, the workspace suite, clippy, fmt, a `COX_HOME` scratch run against the `greeting` fixture, and `cox ext list` before/after.
 
 #### T22.4 Mouse: wire `tui.mouse` or delete the key
 

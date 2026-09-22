@@ -2840,3 +2840,47 @@ $ COX_HOME=/tmp/cox-scratch-t284 TERM=xterm-256color mise exec -- cargo run -q -
      toolchain/db/sandbox/git/prices/settings.json rows ok; API keys: expected miss with a fix line (no key in the scratch env)
 ```
 
+#### T22.2 Skills index and file commands reach the session
+
+Model: Claude Code / claude-sonnet-5 · Status: done 2026-09-22 · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
+Goal: `skills::index` is the last block of `system[2]`, `SkillTool` is in the tool list, `.claude/commands` and `.cox/commands` are in the `/` palette and submit as `Submission::Command`.
+Files: `crates/cox/src/session.rs`, `crates/cox-core/src/context.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) In the binary's session builder call `cox_ext::skills::discover(&skill_dirs(..))` once, pass `skills::index(&skills)` into the core's instruction block (`Loaded.block` + index, same slot, index last so a user without skills has an unchanged prefix). (2) Register `SkillTool::new(skills)` in the tool list (deferred, `ReadOnly`). (3) `cox_ext::commands::discover(..)` (already used by `ext_cmd.rs`) → `State.commands` extension: `(name, usage, description)` triples appended after the built-in `COMMANDS`; choosing one inserts `/name ` and `Enter` submits `Submission::Command { name, args }` (T5.5 parser already handles unknown names as `Command`). (4) `allowed-tools` of an invoked skill narrows the engine for the turn: pass `structured.allowed_tools` from the `SkillTool` result into `Session::set_turn_tools` (add if absent).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core prefix_bytes_identical_between_turns skills_index_is_in_system_2
+mise exec -- cargo nextest run -p cox-tui palette_lists_file_commands
+```
+Done when: the fixture skill `greeting` appears in the first request's `system[2]` and its body only after `skill{"name":"greeting"}`; snapshot `frames__composer_slash_palette` shows a file command; `cox ext list` output unchanged.
+Out of scope: skill marketplaces, `/skills install`.
+Execution plan:
+- `crates/cox-core/src/context.rs`: `assemble_with_skills(…, skills_index)` appends the index at the end of `system[2]` (empty index appends nothing, so a user without skills keeps an unchanged prefix); `assemble_with` delegates with `""`, so the `cox-core/src/session.rs` call site is untouched. `skills_index_is_in_system_2` uses the fixture skill `greeting`: its index line is the tail of `system[2]`, its body is in no request block and arrives only with the `skill{"name":"greeting"}` tool result.
+- `crates/cox/src/session.rs`: `cox_ext::skills::discover(&cox_ext::skills::skill_dirs(..))` once in `open` (roots as `ext_cmd.rs`; notices → stderr warn, D14), `SkillTool::new(skills)` pushed into the tool list (spec already `deferred`/`ReadOnly`); `cox_ext::commands::discover(..)` in `run_tui` appends `(name, usage, description)` triples to `state.commands` after the built-ins.
+- `crates/cox-tui/src/state.rs`: `State.commands` becomes those triples; a `/name args` line whose name is not in `COMMANDS` submits `Submission::Command { name, args }` before the T5.5 parser (which only answers unknown names with a notice); choosing a palette row still inserts `/name `; `palette_lists_file_commands`.
+- Wiring that cannot land inside this task's allowed 3 files (proposed §6 split, follow-up card): threading `skills::index` from the surface into `assemble_with_skills` (a `Session` field/setter plus the `assemble_with` call site in `cox-core/src/session.rs`, and the `lib.rs` re-export — nothing in the core can reach the new entry point today), step 4's `Session::set_turn_tools` + the `structured.allowed_tools` read in `cox-core/src/turn.rs`, and the few-line `crates/cox-tui/tests/frames.rs` change that would show a file command in the `frames__composer_slash_palette` snapshot.
+- Verify: the two Check commands, the workspace suite, clippy, fmt, a `COX_HOME` scratch run against the `greeting` fixture, and `cox ext list` before/after.
+What landed: steps 1 (core half), 2 and 3. `crates/cox-core/src/context.rs` gained `assemble_with_skills(…, skills_index)` (index appended last in `system[2]`; empty index appends nothing, so `assemble_with`'s delegation with `""` keeps the pre-T22.2 prefix byte-identical) plus `skills_index_is_in_system_2`: the index line is the tail of `system[2]`, the fixture body (`Say hello in the language`) is in no request block before the `skill{"name":"greeting"}` tool result and in the first request after it, and `system[0..=2]` is byte-identical between the two turns. `crates/cox/src/session.rs` `open` discovers `SKILL.md` once via `cox_ext::skills::skill_dirs(home, ~/.claude, project)` (notices → stderr warning, D14), pushes `SkillTool::new(skills)` (spec already `deferred`/`ReadOnly`), and rebuilds the `tool_search` index over the full spec list so the deferred `skill` tool stays discoverable (D6d); `run_tui` discovers markdown commands via `cox_ext::commands::command_dirs(..)` and appends `(name, usage, description)` triples to `state.commands` after the built-ins. `crates/cox-tui/src/state.rs` carries `State.commands` as those triples, inserts `/name ` for a chosen palette row, and submits `/name args` for a non-built-in name as `Submission::Command { name, args }` ahead of the T5.5 parser; `palette_lists_file_commands` pins built-ins-first ordering, palette listing, insertion, and the `Command` submission.
+Deviations and not landed (the card's own Execution-plan split, not silently dropped): (1) Step 1's surface half did NOT land — `open` builds the index nowhere and nothing passes `skills::index(&skills)` into the core: `assemble_with_skills` is reachable only from `assemble_with` (with `""`) and its test, so a live session's `system[2]` has no skills line yet. Threading it needs a `Session` field/setter plus the `assemble_with` call site in `cox-core/src/session.rs` (currently touched by the concurrent T28.3 work) — a fourth file the 3-file rule forbids. (2) Step 4 did NOT land — there is no `Session::set_turn_tools`, and `cox-core/src/turn.rs` never reads `structured.allowed_tools` (`SkillTool` already emits it in `structured`, verified by `cox-ext/tests/skills.rs`, but nothing consumes it), so an invoked skill's `allowed-tools` does not narrow the engine yet. (3) The `frames__composer_slash_palette` snapshot still shows built-ins only — `crates/cox-tui/tests/frames.rs` is a fourth file and unchanged. Until the follow-up lands, the Done-when reads: index line in `system[2]` and body-after-call hold at the `assemble_with_skills` level (the named test), not in a live first request. (4) Size: landed ~259 added / ~15 removed lines across the three files (~120 non-test) against the card's ~150 — rustfmt's test-literal expansion and the two named tests are most of the overshoot; no fourth source file and no new dependency.
+Check output:
+```text
+$ mise exec -- cargo nextest run -p cox-core prefix_bytes_identical_between_turns skills_index_is_in_system_2
+    Starting 2 tests across 17 binaries (159 tests skipped)
+        PASS [   0.023s] (1/2) cox-core::context context_prefix_bytes_identical_between_turns
+        PASS [   0.029s] (2/2) cox-core context::tests::skills_index_is_in_system_2
+     Summary [   0.030s] 2 tests run: 2 passed, 159 skipped
+$ mise exec -- cargo nextest run -p cox-tui palette_lists_file_commands
+    Starting 1 test across 17 binaries (146 tests skipped)
+        PASS [   0.025s] (1/1) cox-tui state::tests::palette_lists_file_commands
+     Summary [   0.027s] 1 test run: 1 passed, 146 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     Summary [   4.643s] 710 tests run: 710 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     Finished `dev` profile [unoptimized + debuginfo] target(s)
+$ mise exec -- cargo fmt --check
+     clean
+$ COX_HOME=/tmp/cox-t222 mise exec -- cargo run -q -p cox -- --cwd /tmp/cox-t222/proj ext list
+     commands lists the scratch `hi` command and skills lists the scratch `greeting` copy alongside the repo's own skills (discovery code paths this task wires in); `ext list`'s own code is untouched by this task
+$ COX_HOME=/tmp/cox-t222/home COX_PROVIDER=scripted COX_SCENARIO=/tmp/cox-t222/scenario.toml mise exec -- cargo run -q -p cox -- --cwd /tmp/cox-t222/proj run -p "say hi" --output-format text --approve never
+     hello there (session builds and runs with the scratch skills/commands on disk; shows steps 2–3 are live in `open`/`run_tui`)
+```
+

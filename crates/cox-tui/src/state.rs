@@ -7,8 +7,8 @@ use std::collections::VecDeque;
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, StopReason,
-    Submission, Tier, ToolCall, ToolResult,
+    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, SlashCommand,
+    StopReason, Submission, Tier, ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -137,8 +137,10 @@ pub struct State {
     /// Local branch names for `git checkout <Tab>` (T15.4); the runtime
     /// lists them at start, like `files`.
     pub git_branches: Vec<String>,
-    /// Names the `/` palette offers; T7.3 appends markdown commands.
-    pub commands: Vec<String>,
+    /// The `/` palette as `(name, usage, description)`: the built-in
+    /// `COMMANDS` first, then T22.2's markdown file commands appended by the
+    /// runtime. A name beyond `COMMANDS` submits `Submission::Command`.
+    pub commands: Vec<(String, String, String)>,
     /// A first idle `Ctrl+C` arms; the second quits.
     pub ctrl_c_armed: bool,
     /// 100 ms ticks since start; spinners and elapsed times read it.
@@ -308,7 +310,10 @@ impl State {
             banner: None,
             files: Vec::new(),
             git_branches: Vec::new(),
-            commands: COMMANDS.iter().map(|(n, ..)| n.to_string()).collect(),
+            commands: COMMANDS
+                .iter()
+                .map(|(n, u, d)| (n.to_string(), u.to_string(), d.to_string()))
+                .collect(),
             ctrl_c_armed: false,
             turns: Vec::new(),
             current_seq: 0,
@@ -668,7 +673,12 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             match state.composer.key(key, state.status.busy) {
                 Edit::Submit(text) => {
                     let tier = state.status.tier.unwrap_or(Tier::Code);
-                    match commands::parse(&text, tier) {
+                    // T22.2: a file command's name reaches the core as
+                    // `Submission::Command`; the T5.5 parser owns the
+                    // built-ins and would answer these with a notice.
+                    match file_command(&state.commands, &text)
+                        .or_else(|| commands::parse(&text, tier))
+                    {
                         Some(action) => act(state, action),
                         // A turn is running: queue instead of submitting
                         // (T25.1). A slash command still runs immediately
@@ -694,10 +704,8 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     Vec::new()
                 }
                 Edit::OpenCommands => {
-                    state.modal = Some(Modal::Picker(Picker::open(
-                        Kind::Commands,
-                        state.commands.clone(),
-                    )));
+                    let names = state.commands.iter().map(|(n, ..)| n.clone()).collect();
+                    state.modal = Some(Modal::Picker(Picker::open(Kind::Commands, names)));
                     Vec::new()
                 }
                 Edit::OpenHistory => {
@@ -829,6 +837,26 @@ fn agents_list(agents: &[Presence]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// T22.2: a `/name args` line naming a file command — something
+/// `State.commands` carries beyond the built-in `COMMANDS`, which the T5.5
+/// parser owns — submits `Submission::Command` for the core, the same shape
+/// the parser already produces for built-ins without a dedicated arm.
+fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Action> {
+    let mut words = line.strip_prefix('/')?.split_whitespace();
+    let name = words.next()?;
+    if COMMANDS.iter().any(|(n, ..)| *n == name) {
+        return None;
+    }
+    commands.iter().any(|(n, ..)| n == name).then(|| {
+        Action::Submit(Submission::Command {
+            command: SlashCommand {
+                name: name.to_string(),
+                args: words.map(str::to_string).collect(),
+            },
+        })
+    })
 }
 
 /// A slash command's effect; anything the core owns becomes a `Submit`.
@@ -1306,5 +1334,54 @@ mod tests {
         assert!(cmds.is_empty());
         assert_eq!(state.composer.text(), "second");
         assert_eq!(state.queue, VecDeque::from(["first".to_string()]));
+    }
+
+    /// T22.2: a markdown file command joins the `/` palette after the
+    /// built-ins, a chosen row inserts `/name `, and `Enter` submits it as
+    /// `Submission::Command { name, args }` — args tokenized like any line.
+    #[test]
+    fn palette_lists_file_commands() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.commands.push((
+            "review".into(),
+            "/review [pr]".into(),
+            "review a pull request".into(),
+        ));
+        assert_eq!(
+            state.commands.first().map(|(n, ..)| n.as_str()),
+            Some("model"),
+            "built-in COMMANDS come first"
+        );
+        assert_eq!(
+            state.commands.last().map(|(n, ..)| n.as_str()),
+            Some("review"),
+            "file commands are appended after them"
+        );
+
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        for c in "rev".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        let rows = match &state.modal {
+            Some(Modal::Picker(p)) => p.matches.clone(),
+            other => panic!("the palette is open, got {other:?}"),
+        };
+        assert!(rows.contains(&"review".to_string()), "{rows:?}");
+
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert_eq!(state.composer.text(), "/review ");
+        for c in "pr-1".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::Command {
+                command: SlashCommand {
+                    name: "review".into(),
+                    args: vec!["pr-1".into()],
+                },
+            })]
+        );
     }
 }

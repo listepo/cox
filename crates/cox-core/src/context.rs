@@ -42,6 +42,26 @@ pub fn assemble_with(
     cwd: &Path,
     date: &str,
 ) -> Request {
+    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "")
+}
+
+/// `assemble_with` plus the `system[2]` skills index (T22.2), appended last
+/// in the block. An empty index appends nothing, so a user without skills
+/// keeps the exact prefix bytes of every earlier session and `system[0..=2]`
+/// stays byte-stable across turns either way (D6e). The surface builds the
+/// index with `cox_ext::skills::index`; threading it through `Session` is
+/// the recorded T22.2 split, so the core's own call sites pass `""` for now.
+#[allow(clippy::too_many_arguments)]
+pub fn assemble_with_skills(
+    history: &[Message],
+    config: &cox_protocol::Config,
+    tier: Tier,
+    tools: &[Arc<dyn Tool>],
+    discovered: &[String],
+    cwd: &Path,
+    date: &str,
+    skills_index: &str,
+) -> Request {
     let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
     let deferring = config.context.deferred_tools;
     let mut specs: Vec<_> = all
@@ -72,7 +92,11 @@ pub fn assemble_with(
             cache: true,
         },
         SystemBlock {
-            text: INSTRUCTIONS.to_string(),
+            text: if skills_index.is_empty() {
+                INSTRUCTIONS.to_string()
+            } else {
+                format!("{INSTRUCTIONS}\n{skills_index}")
+            },
             cache: true,
         },
         SystemBlock {
@@ -250,7 +274,7 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
         let seg = match i {
             0 => 0, // tool specs
             1 => 1, // system prompt
-            2 => 2, // instruction files (the skills index joins here in T7.1)
+            2 => 2, // instruction files (the skills index is appended here, T22.2)
             _ => 5, // volatile (the memory index joins here in T10)
         };
         w[seg] += block.text.len() as u64 + 1;
@@ -341,5 +365,99 @@ mod tests {
         assert!(b.summary > 0 && b.history_pointers > 0 && b.instructions > 0);
         assert_eq!(b.cached_estimate, usage.cache_read_tokens);
         assert_eq!(b.to_json()["total"], b.total);
+    }
+
+    /// T22.2: the skills index is the tail of `system[2]`, a user without
+    /// skills keeps an unchanged prefix, and the fixture skill `greeting`'s
+    /// body reaches a request only after `skill{"name":"greeting"}` returns it.
+    #[test]
+    fn skills_index_is_in_system_2() {
+        const GREETING: &str =
+            include_str!("../../cox-ext/tests/fixtures/skills/greeting/SKILL.md");
+        // Exactly what `cox_ext::skills::index` emits for the fixture skill.
+        let index = "# Skills\nCall the `skill` tool with a name to load its instructions.\n- greeting: Greet the user in their language before answering.\n";
+        let config = cox_protocol::Config::default();
+        let call = CallId::new();
+        let history: Vec<Message> = serde_json::from_value(serde_json::json!([
+            {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+        ]))
+        .expect("history");
+        let first = assemble_with_skills(
+            &history,
+            &config,
+            Tier::Code,
+            &[],
+            &[],
+            Path::new("/w"),
+            "d",
+            index,
+        );
+        assert!(
+            first.system[2].text.ends_with(index),
+            "{:?}",
+            first.system[2].text
+        );
+        assert!(first.system[2].text.contains("- greeting: "));
+        assert!(
+            GREETING.contains("Say hello in the language"),
+            "the fixture"
+        );
+        let before = serde_json::to_string(&first).expect("request");
+        assert!(
+            !before.contains("Say hello in the language"),
+            "the body is not in the first request"
+        );
+
+        // The body arrives only after `skill{"name":"greeting"}`: its tool
+        // result is the first request content that carries the body.
+        let mut invoked = history.clone();
+        invoked.extend(
+            serde_json::from_value::<Vec<Message>>(serde_json::json!([
+                {"role": "assistant", "content": [{"type": "tool_use", "id": call,
+                  "name": "skill", "input": {"name": "greeting"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "call_id": call,
+                  "content": "# Skill: greeting\n\nSay hello in the language the user wrote in.",
+                  "is_error": false}]},
+            ]))
+            .expect("skill round"),
+        );
+        let second = assemble_with_skills(
+            &invoked,
+            &config,
+            Tier::Code,
+            &[],
+            &[],
+            Path::new("/w"),
+            "d",
+            index,
+        );
+        assert!(
+            serde_json::to_string(&second)
+                .expect("request")
+                .contains("Say hello in the language"),
+            "the body arrives with the skill tool result"
+        );
+        assert_eq!(
+            serde_json::to_vec(&first.system[0..=2]).expect("first"),
+            serde_json::to_vec(&second.system[0..=2]).expect("second"),
+            "the prefix is byte-identical between turns"
+        );
+
+        // No skills: byte-identical prefix to the pre-T22.2 assembly.
+        let plain = assemble(&history, &config, &[], Path::new("/w"), "d");
+        let empty = assemble_with_skills(
+            &history,
+            &config,
+            Tier::Code,
+            &[],
+            &[],
+            Path::new("/w"),
+            "d",
+            "",
+        );
+        assert_eq!(
+            serde_json::to_vec(&plain.system[0..=2]).expect("plain"),
+            serde_json::to_vec(&empty.system[0..=2]).expect("empty"),
+        );
     }
 }

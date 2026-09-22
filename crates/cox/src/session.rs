@@ -82,10 +82,40 @@ pub async fn open(
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
+    // T27.3: a worktree session's project is still the main checkout, so
+    // the sessions of one repository see each other whatever tree they edit.
+    let project = project_root(cwd).await;
+    // T22.2: `SKILL.md` files are discovered once per session build; the
+    // `skill` tool hands bodies out on demand, and a broken skill is a
+    // warning and skipped, never fatal (D14).
+    let claude_home = config_load::home_dir().join(".claude");
+    let found = cox_ext::skills::discover(&cox_ext::skills::skill_dirs(
+        Some(&home),
+        Some(&claude_home),
+        Some(&project),
+    ));
+    for notice in &found.notices {
+        eprintln!("cox: warning: {notice}");
+    }
     let mut all = tools(answer, &store, mdir);
     if let Some(tx) = questions {
         all = with_question_surface(all, tx);
     }
+    // T22.2: the deferred `skill` tool hands skill bodies out on demand
+    // (its spec is `deferred`, `ReadOnly`; broken skills are skipped above,
+    // D14). `tool_search` answers from the spec list it was built with, so
+    // its index is rebuilt over the full set — the swap-by-name shape of
+    // `with_question_surface` — or the deferred `skill` could never be
+    // discovered (D6d).
+    all.push(Arc::new(cox_ext::skills::SkillTool::new(found.skills)));
+    let specs: Vec<_> = all.iter().map(|t| t.spec()).collect();
+    all = all
+        .into_iter()
+        .map(|t| match t.spec().name.as_str() {
+            "tool_search" => Arc::new(ToolSearchTool::new(specs.clone())) as Arc<dyn Tool>,
+            _ => t,
+        })
+        .collect();
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd, interactive).await);
     }
@@ -120,9 +150,6 @@ pub async fn open(
             cwd.to_path_buf(),
         )) as Arc<dyn Hook>
     });
-    // T27.3: a worktree session's project is still the main checkout, so
-    // the sessions of one repository see each other whatever tree they edit.
-    let project = project_root(cwd).await;
     session.set_hook(Arc::new(
         cox_ext::presence::PresenceHook::new(
             home.clone(),
@@ -312,6 +339,28 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         ))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
+        // T22.2: markdown commands from `.claude/commands`/`.cox/commands`
+        // join the `/` palette after the built-ins; a broken file is a
+        // warning and skipped (D14).
+        let cmds = cox_ext::commands::discover(&cox_ext::commands::command_dirs(
+            Some(&home),
+            Some(&config_load::home_dir().join(".claude")),
+            Some(&project),
+        ));
+        for notice in &cmds.notices {
+            eprintln!("cox: warning: {notice}");
+        }
+        state.commands.extend(cmds.commands.iter().map(|c| {
+            let usage = match &c.argument_hint {
+                Some(hint) => format!("/{} <{hint}>", c.name),
+                None => format!("/{}", c.name),
+            };
+            (
+                c.name.clone(),
+                usage,
+                c.description.clone().unwrap_or_default(),
+            )
+        }));
         if let Some(history) = seed {
             state.transcript_from_history(&history);
         }
