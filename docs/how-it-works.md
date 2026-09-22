@@ -255,6 +255,10 @@ to `T7`), so a turn number never means two things.
 
 An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` challenge. cox then runs the standard flow (authorization code with PKCE, dynamic client registration when the server offers it) through rmcp: in the TUI the login URL is printed and the browser opened, a listener on `127.0.0.1` takes the redirect, and the token is filed in the OS keyring as `cox/mcp/<name>`. From then on the token is attached to every request and refreshed before it expires. Headless surfaces (`cox run`, `cox acp`) never wait for a browser: the server is skipped with the warning `run \`cox mcp login <name>\``, which runs the same flow outside a session. `cox mcp logout <name>` forgets the token, and `cox doctor` prints one `mcp auth <name>` row per HTTP server (`ok (expires in 3h)`, `expired`, `none`).
 
+## Worktrees: a task that must not touch this checkout
+
+`cox --worktree t42` runs the session in `_worktrees/<repo>-t42` on branch `t42`, creating both when they do not exist. The location and the name follow the workspace `worktrees` rule: the nearest ancestor of the repository that already holds `_worktrees/` (else a new one next to the repository, or `WT_ROOT`), a lower-case branch cut from a freshly fetched `origin/<default>` with no upstream, and a lock whose reason names the owner (`cox / pid 123 | t42 | 2026-09-22`). The main checkout stays a second workspace root, so the model can read it but every edit lands in the worktree; the status line shows `⎇ t42 +3 −1 · ⧉ t42`, and the presence record carries the worktree path. `/quit` on a clean worktree asks whether to remove it; a dirty one is kept and said so. The branch is never deleted — merging is the user's action. A subagent gets the same thing with `agent(isolation: "worktree")`: its worktree is named after the task id, its answer ends with `[worktree <path>, branch <name>]`, and the worktree outlives the task. Another owner's lock (`Cursor / grok | …`) is never reused or removed.
+
 ## The four surfaces (one stream each)
 
 | Surface | Command | What it does with `Event`s |

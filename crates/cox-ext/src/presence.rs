@@ -182,8 +182,19 @@ impl PresenceHook {
                 turn: 0,
                 touched: Vec::new(),
                 updated: now_secs(),
+                worktree: None,
             }),
         }
+    }
+
+    /// Records the worktree the session runs in (`cox --worktree`, T27.3),
+    /// so `/agents` can tell a worktree session from one on the main tree.
+    pub fn with_worktree(self, worktree: Option<PathBuf>) -> Self {
+        {
+            let mut record = self.record.lock().unwrap_or_else(|e| e.into_inner());
+            record.worktree = worktree;
+        }
+        self
     }
 
     fn update(&self, change: impl FnOnce(&mut Presence)) {
@@ -281,6 +292,7 @@ mod tests {
             turn: 3,
             touched: vec!["src/x.rs".into()],
             updated,
+            worktree: None,
         }
     }
 

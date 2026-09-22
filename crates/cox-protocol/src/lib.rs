@@ -24,7 +24,9 @@ pub mod traits;
 pub mod types;
 
 pub use config::{Config, DEFAULT_CONFIG_TOML};
-pub use errors::{CoreError, ExtError, McpError, ProviderError, StoreError, ToolError};
+pub use errors::{
+    CoreError, ExtError, McpError, ProviderError, StoreError, ToolError, WorktreeError,
+};
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{
     Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, Hook, MemoryHit, PreImage,

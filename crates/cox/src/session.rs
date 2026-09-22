@@ -102,18 +102,83 @@ pub async fn open(
             cwd.to_path_buf(),
         )) as Arc<dyn Hook>
     });
-    session.set_hook(Arc::new(cox_ext::presence::PresenceHook::new(
-        home.clone(),
-        session.id(),
-        cwd.to_path_buf(),
-        config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()),
-        shell,
-    )));
+    // T27.3: a worktree session's project is still the main checkout, so
+    // the sessions of one repository see each other whatever tree they edit.
+    let project = match &cli.worktree {
+        Some(_) => cli
+            .add_dir
+            .last()
+            .cloned()
+            .unwrap_or_else(|| cwd.to_path_buf()),
+        None => config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()),
+    };
+    session.set_hook(Arc::new(
+        cox_ext::presence::PresenceHook::new(
+            home.clone(),
+            session.id(),
+            cwd.to_path_buf(),
+            project,
+            shell,
+        )
+        .with_worktree(cli.worktree.as_ref().map(|_| cwd.to_path_buf())),
+    ));
     // T26.1: pre-images for `/rewind` live in private git dirs under home.
     session.set_checkpointer(Arc::new(cox_tools::checkpoint::GitCheckpointer::new(
         home.clone(),
     )));
+    // T27.3: `agent(isolation: "worktree")` gets real worktrees on every surface.
+    session.set_worktrees(Arc::new(cox_tools::git::GitWorktrees));
     Ok((session, loaded))
+}
+
+/// `--worktree <name>` (T27.3): creates or reuses the worktree, then makes
+/// the rest of the run see it as `--cwd <worktree> --add-dir <main>`, so
+/// the session's roots are the worktree first and the main checkout for
+/// reading. Returns the new cwd. Runs before config is loaded because the
+/// project config is read from the worktree like everything else.
+pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
+    let Some(name) = cli.worktree.clone() else {
+        return Ok(cwd.to_path_buf());
+    };
+    let owner = format!("cox / pid {}", std::process::id());
+    let rt = tokio::runtime::Runtime::new()?;
+    let wt = rt.block_on(cox_tools::git::worktree_add(cwd, &name, &owner))?;
+    cli.add_dir.push(wt.main.clone());
+    cli.cwd = Some(wt.path.clone());
+    Ok(wt.path)
+}
+
+/// After `/quit` in a worktree session: a clean tree is offered for
+/// removal on the terminal the TUI just gave back; a dirty one is kept and
+/// said so. The branch always stays — merging is the user's action.
+fn offer_worktree_removal(rt: &tokio::runtime::Runtime, path: &Path) {
+    if rt.block_on(cox_tools::git::is_clean(path)) != Some(true) {
+        eprintln!(
+            "cox: worktree {} kept: it has uncommitted or untracked files",
+            path.display()
+        );
+        return;
+    }
+    eprint!(
+        "cox: worktree {} is clean; remove it? [y/N] ",
+        path.display()
+    );
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        eprintln!("cox: worktree {} kept", path.display());
+        return;
+    }
+    match rt.block_on(cox_tools::git::worktree_remove(
+        path,
+        cox_tools::git::OWNER_PREFIX,
+    )) {
+        Ok(()) => eprintln!(
+            "cox: worktree {} removed; its branch is kept for you to merge",
+            path.display()
+        ),
+        Err(e) => eprintln!("cox: worktree {} kept: {e}", path.display()),
+    }
 }
 
 /// The MCP servers in effect for `cwd`: config, `.mcp.json`, `~/.claude.json`.
@@ -209,6 +274,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         }
         state.files = cox_tools::glob::workspace_files(cwd);
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
+        state.worktree = cli.worktree.clone();
         state.sessions = project_sessions(&home, cwd);
         state.composer.set_vim(config.tui.vim);
         state.dark = config.tui.theme != "light";
@@ -302,6 +368,9 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             cox_tui::app::TuiOutcome::Clear => continue,
             cox_tui::app::TuiOutcome::Quit => break,
         }
+    }
+    if cli.worktree.is_some() {
+        offer_worktree_removal(&rt, cwd);
     }
     Ok(())
 }
@@ -476,10 +545,56 @@ pub(crate) fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBu
 
 #[cfg(test)]
 mod tests {
+    use clap::Parser as _;
     use cox_protocol::config::CompatibleProviderConfig;
     use cox_protocol::types::ProviderId;
 
     use super::*;
+
+    /// T27.3: `--worktree t9` from a repository puts the session in
+    /// `_worktrees/<repo>-t9` with the main checkout as its second root.
+    #[test]
+    fn worktree_flag_sets_roots() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir(&repo).expect("mkdir");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        if !git(&["init", "-q", "--initial-branch=trunk"]) {
+            return; // no usable git here
+        }
+        std::fs::write(repo.join("a.txt"), "a\n").expect("write");
+        assert!(git(&["add", "a.txt"]));
+        assert!(git(&[
+            "-c",
+            "user.email=t@example.invalid",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "first"
+        ]));
+        let repo = std::fs::canonicalize(&repo).expect("canon");
+        let mut cli = Cli::parse_from(["cox", "--worktree", "T9"]);
+        let cwd = enter_worktree(&mut cli, &repo).expect("enter");
+        let root = std::fs::canonicalize(tmp.path()).expect("canon");
+        assert_eq!(cwd, root.join("_worktrees").join("repo-t9"));
+        assert!(cwd.join("a.txt").is_file(), "the worktree is checked out");
+        let loaded = config_load::load(&cwd, &cli).expect("load");
+        assert_eq!(
+            loaded.config.core.workspace_roots,
+            vec![repo.clone(), cwd.clone()],
+            "main checkout for reading, the worktree as cwd"
+        );
+        assert_eq!(cli.cwd.as_deref(), Some(cwd.as_path()));
+    }
 
     fn deepseek_config(api: &str) -> Config {
         let mut cfg = Config::default();

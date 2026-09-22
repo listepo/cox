@@ -164,6 +164,9 @@ pub struct State {
     /// The branch and line counts the runtime polls; `None` outside a
     /// repository, so the line is unchanged there.
     pub git: Option<GitStatus>,
+    /// The `--worktree` name (T27.3); the status line shows it after the
+    /// branch, and only then.
+    pub worktree: Option<String>,
     /// The `/rewind` timeline (T26.2): one row per user turn, oldest first.
     pub turns: Vec<TurnRow>,
     /// The `seq` of the turn in flight, from `TurnStarted`.
@@ -264,6 +267,7 @@ impl State {
             agents: Vec::new(),
             sessions: Vec::new(),
             git: None,
+            worktree: None,
         }
     }
 

@@ -38,4 +38,5 @@ A checkout configured for Claude Code or Codex works with cox unchanged:
 | `--output-format stream-json` | yes | same event shapes for scripts |
 | `~/.codex/config.toml` | no | Codex config is not imported |
 | MCP OAuth | yes | authorization code + PKCE, token in the keyring, `cox mcp login <name>` |
+| Worktree isolation | yes | `--worktree <name>` and `agent(isolation: "worktree")`; `_worktrees/<repo>-<name>`, branch `<name>`, locked for its owner |
 | MCP resources/prompts, image input | no | deferred to v0.2 |
