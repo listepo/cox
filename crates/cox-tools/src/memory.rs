@@ -470,6 +470,15 @@ mod tests {
         ) -> Result<(), StoreError> {
             Ok(())
         }
+        fn checkpoint_insert(&self, _row: &cox_protocol::CheckpointRow) -> Result<(), StoreError> {
+            Ok(())
+        }
+        fn checkpoint_list(
+            &self,
+            _session: &SessionId,
+        ) -> Result<Vec<cox_protocol::CheckpointRow>, StoreError> {
+            Ok(vec![])
+        }
     }
 
     struct NoopArchive;

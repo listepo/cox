@@ -5,7 +5,7 @@
 
 use diesel::prelude::*;
 
-use crate::schema::{archive, memory, sessions, usage};
+use crate::schema::{archive, checkpoints, memory, sessions, usage};
 
 #[derive(Insertable)]
 #[diesel(table_name = sessions)]
@@ -83,4 +83,21 @@ pub(crate) struct NewMemory {
     pub path: String,
     pub kind: String,
     pub updated_at: String,
+}
+
+/// Both directions of the `checkpoints` table (T26.1): written by
+/// `checkpoint_insert`, read back by `checkpoint_list`. Field order matches
+/// the table after `id`.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = checkpoints)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub(crate) struct CheckpointDbRow {
+    pub session_id: String,
+    pub turn: i32,
+    pub call_id: Option<String>,
+    pub path: String,
+    pub kind: String,
+    pub archive_id: Option<String>,
+    pub sha256: String,
+    pub created_at: String,
 }

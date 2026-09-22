@@ -188,6 +188,31 @@ pub enum Level {
     Security,
 }
 
+/// What a `checkpoints` row holds for one path (T26.1): the bytes a tool
+/// call was about to overwrite, a file it created, a file it deleted, or
+/// the marker that starts a user turn (`path` empty).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointKind {
+    /// The pre-image of a file that was changed; `archive` holds its bytes.
+    Pre,
+    /// The file did not exist before the call.
+    Created,
+    /// The file existed before the call and is gone after it; `archive` holds it.
+    Deleted,
+    /// A user turn started; nothing archived.
+    Turn,
+}
+
+/// One path in an `Event::Checkpoint`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CheckpointFile {
+    /// The confined absolute path.
+    pub path: PathBuf,
+    /// What was recorded for it.
+    pub kind: CheckpointKind,
+}
+
 /// `permissions.mode` (plan.md §1.6/§1.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -783,6 +808,18 @@ pub enum Event {
         /// Context tokens after compaction.
         after_tokens: u32,
     },
+    /// Pre-images of the files a tool call changed are archived and
+    /// retrievable (T26.1). Emitted after the `checkpoints` rows exist, so a
+    /// surface that sees it can already `/rewind`; never emitted for a call
+    /// that changed nothing.
+    Checkpoint {
+        /// The turn the call ran in.
+        turn: TurnId,
+        /// The call, or `None` for a rewind's own writes.
+        call: Option<CallId>,
+        /// Every path recorded, in path order.
+        files: Vec<CheckpointFile>,
+    },
     /// A background subagent task was created.
     TaskCreated {
         /// The task's id.
@@ -1112,6 +1149,7 @@ mod tests {
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
     #[case::usage(Event::Usage { turn: TurnId::new(), usage: sample_usage() })]
     #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200 })]
+    #[case::checkpoint(Event::Checkpoint { turn: TurnId::new(), call: Some(CallId::new()), files: vec![CheckpointFile { path: PathBuf::from("/w/a.rs"), kind: CheckpointKind::Pre }] })]
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002 })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
