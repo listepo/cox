@@ -332,6 +332,17 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.dark = resolved.dark;
         state.glyphs = cox_tui::glyph::resolve(&config.tui);
         state.depth = cox_tui::color::resolve(&config.tui);
+        // T23.1: the env heuristic only, not `query()` — a live `CSI ?u`
+        // round trip needs exclusive use of stdin for its reply, and
+        // `app.rs`'s own input thread starts reading it moments later; the
+        // two racing is exactly how `doctor` (which owns the terminal
+        // outright and prints the query's own verdict) gets away with
+        // `query()` and an interactive session should not risk it. A
+        // heuristic miss is what `[tui.caps]` (surfaced by `doctor`) is for.
+        let env_fn = |key: &str| std::env::var(key).ok();
+        let mut caps = cox_tui::term::Caps::detect(&env_fn);
+        caps.apply(&config.tui.caps);
+        state.caps = caps;
         // `NO_COLOR` (T24.1) wins over whatever `tui.theme` picked: every
         // token resets so only `Modifier::BOLD`/`DIM` carry hierarchy.
         state.theme = match state.depth {

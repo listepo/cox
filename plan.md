@@ -538,7 +538,7 @@ Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--s
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
-| `Enter` | send | `Shift+Enter` / `Alt+Enter` | newline |
+| `Enter` | send | `Shift+Enter` / `Alt+Enter` / `Ctrl+Enter` | newline (`Ctrl+Enter` reserved for send-now, T25.1) |
 | `Esc` | interrupt turn / close modal | `Ctrl+C` ×2 within 1 s | quit |
 | `Tab` | cycle permission mode default → plan → auto | `Ctrl+O` | transcript overlay (full scrollback, search `/`) |
 | `Ctrl+T` | toggle thinking visibility | `Ctrl+E` | expand last tool output |
