@@ -34,7 +34,6 @@
 - T26.4. `/undo`, `/redo`
 - T27.1. `bash` background tasks and `Ctrl+B`
 - T27.2. Approvals labelled by source; agent cards
-- T27.3. Worktree isolation
 - T27.4. `/loop`
 - T28.1. Status-line segments
 - T28.2. Project cost aggregate

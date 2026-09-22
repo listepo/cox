@@ -40,7 +40,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.1 | todo | P1 | 3 | 0% | |
 | T27.2 | todo | P1 | 2 | 0% | |
-| T27.3 | in progress | P2 | 4 | 0% | Claude Code / claude-fable-5-1 |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T28.1 | todo | P1 | 2 | 0% | |
 | T28.2 | todo | P2 | 1 | 0% | |
@@ -1452,27 +1451,6 @@ mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
 ```
 Done when: the two snapshots exist and `docs/protocol.jsonschema` regenerates with the new field.
 Out of scope: talking to an agent mid-task (`@agent` messaging).
-
-#### T27.3 Worktree isolation
-
-Model: claude-fable-5-1 · Status: in progress · Depends: T19.5 (gate, done), T27.1 · Size: ~200 · Priority: P2 · Complexity: 4
-Goal: `cox --worktree <name>` and `agent(isolation: "worktree")` run in `_worktrees/<repo>-<name>` created per the workspace `worktrees` skill; nothing happens without the flag.
-Files: `crates/cox-tools/src/git.rs`, `crates/cox/src/session.rs`, `crates/cox-tui/src/status.rs`.
-Steps: (1) `git::worktree_add(repo_root, name) -> PathBuf` runs `git worktree add --lock --reason "cox <session>" ../_worktrees/<repo>-<name> -b cox/<name>` (idempotent when it exists and is locked by this session id); `worktree_remove` only when `git status --porcelain` is empty. (2) `--worktree <name>` sets the session cwd and root to that path and `--add-dir` to the main checkout (gate decision); the presence record (P16) carries the worktree path. (3) `agent(isolation: "worktree")` does the same for the child session, named after the task id; the child's result includes the branch name. (4) Status line: `⎇ cox/T42 ⧉ T42`; `/quit` offers removal when clean.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tools worktree_add_is_idempotent worktree_remove_refuses_dirty
-mise exec -- cargo nextest run -p cox worktree_flag_sets_roots
-```
-Done when: a scratch repo test creates, uses and removes a worktree; the `worktrees` skill's naming rule is followed literally.
-Out of scope: merging worktree branches (a user or `bash` action).
-Execution plan (Claude Code / claude-fable-5-1):
-1. `cox-protocol`: `traits::Worktrees { add(from, name, owner) -> Result<Worktree, WorktreeError> }`, `Worktree { path, branch, main }`, `errors::WorktreeError`; `Presence.worktree: Option<PathBuf>`.
-2. `cox-tools::git`: `worktree_add(dir, name, owner)` — main checkout via `git rev-parse --git-common-dir`, root = nearest ancestor holding `_worktrees/` else `_worktrees/` next to the repo (`WT_ROOT` overrides), path `<root>/<repo>-<name>`, branch `<name>` (lower case, `[a-z0-9._-]`), start point `origin/<default>` after a best-effort fetch else `HEAD`, `git worktree add --lock --reason "<owner> | <name> | <date>" --no-track`; reused when already registered and the lock is empty or starts with `cox /`, refused when another owner holds it. `worktree_remove(path, owner)` refuses the main checkout, an unregistered path, another owner's lock and a dirty tree; unlock + remove, branch kept. `is_clean(dir)`. `GitWorktrees` implements the trait. Tests: `worktree_add_is_idempotent`, `worktree_remove_refuses_dirty`.
-3. `cox-core`: `Session::set_worktrees`, `spawn_child(.., cwd)`; `agent(isolation: "worktree")` asks the trait for `<task-id>` owned by `cox / <parent session>`, runs the child with cwd = worktree and roots `[worktree, main]`, and appends `[worktree <path>, branch <branch>]` to the answer. Test: `subagent_worktree_isolation_runs_child_in_its_worktree` with a fake `Worktrees`.
-4. `crates/cox`: `--worktree <NAME>` (`flag_key_map` → `runtime.worktree`); `main.rs` creates it once, then treats it as `--cwd <path> --add-dir <main>`; `session::open` installs `GitWorktrees` and hands the path to the presence record; `/quit` on a clean worktree asks on stderr before `worktree_remove`. Test: `worktree_flag_sets_roots`.
-5. `cox-tui`: `State.worktree`, glyph `worktree` (`⧉` / `wt`), status segment after the branch.
-6. Docs: `docs/how-it-works.md` section, `docs/compat.md` row. Deviation from the card recorded in `done.md`: the branch is `<name>`, not `cox/<name>`, because the skill's naming rule wins ("followed literally").
 
 #### T27.4 `/loop`
 

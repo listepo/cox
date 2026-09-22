@@ -2438,3 +2438,38 @@ $ mise exec -- cargo nextest run --workspace --no-fail-fast # 643 passed, 1 fail
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
 ```
 
+
+#### T27.3 Worktree isolation
+
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: T19.5 (gate, done), T27.1 · Size: ~200 · Priority: P2 · Complexity: 4
+Goal: `cox --worktree <name>` and `agent(isolation: "worktree")` run in `_worktrees/<repo>-<name>` created per the workspace `worktrees` skill; nothing happens without the flag.
+Files: `crates/cox-tools/src/git.rs`, `crates/cox/src/session.rs`, `crates/cox-tui/src/status.rs`.
+Steps: (1) `git::worktree_add(repo_root, name) -> PathBuf` runs `git worktree add --lock --reason "cox <session>" ../_worktrees/<repo>-<name> -b cox/<name>` (idempotent when it exists and is locked by this session id); `worktree_remove` only when `git status --porcelain` is empty. (2) `--worktree <name>` sets the session cwd and root to that path and `--add-dir` to the main checkout (gate decision); the presence record (P16) carries the worktree path. (3) `agent(isolation: "worktree")` does the same for the child session, named after the task id; the child's result includes the branch name. (4) Status line: `⎇ cox/T42 ⧉ T42`; `/quit` offers removal when clean.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tools worktree_add_is_idempotent worktree_remove_refuses_dirty
+mise exec -- cargo nextest run -p cox worktree_flag_sets_roots
+```
+Done when: a scratch repo test creates, uses and removes a worktree; the `worktrees` skill's naming rule is followed literally.
+Out of scope: merging worktree branches (a user or `bash` action).
+Execution plan (Claude Code / claude-fable-5-1):
+1. `cox-protocol`: `traits::Worktrees { add(from, name, owner) -> Result<Worktree, WorktreeError> }`, `Worktree { path, branch, main }`, `errors::WorktreeError`; `Presence.worktree: Option<PathBuf>`.
+2. `cox-tools::git`: `worktree_add(dir, name, owner)` — main checkout via `git rev-parse --git-common-dir`, root = nearest ancestor holding `_worktrees/` else `_worktrees/` next to the repo (`WT_ROOT` overrides), path `<root>/<repo>-<name>`, branch `<name>` (lower case, `[a-z0-9._-]`), start point `origin/<default>` after a best-effort fetch else `HEAD`, `git worktree add --lock --reason "<owner> | <name> | <date>" --no-track`; reused when already registered and the lock is empty or starts with `cox /`, refused when another owner holds it. `worktree_remove(path, owner)` refuses the main checkout, an unregistered path, another owner's lock and a dirty tree; unlock + remove, branch kept. `is_clean(dir)`. `GitWorktrees` implements the trait. Tests: `worktree_add_is_idempotent`, `worktree_remove_refuses_dirty`.
+3. `cox-core`: `Session::set_worktrees`, `spawn_child(.., cwd)`; `agent(isolation: "worktree")` asks the trait for `<task-id>` owned by `cox / <parent session>`, runs the child with cwd = worktree and roots `[worktree, main]`, and appends `[worktree <path>, branch <branch>]` to the answer. Test: `subagent_worktree_isolation_runs_child_in_its_worktree` with a fake `Worktrees`.
+4. `crates/cox`: `--worktree <NAME>` (`flag_key_map` → `runtime.worktree`); `main.rs` creates it once, then treats it as `--cwd <path> --add-dir <main>`; `session::open` installs `GitWorktrees` and hands the path to the presence record; `/quit` on a clean worktree asks on stderr before `worktree_remove`. Test: `worktree_flag_sets_roots`.
+5. `cox-tui`: `State.worktree`, glyph `worktree` (`⧉` / `wt`), status segment after the branch.
+6. Docs: `docs/how-it-works.md` section, `docs/compat.md` row. Deviation from the card recorded in `done.md`: the branch is `<name>`, not `cox/<name>`, because the skill's naming rule wins ("followed literally").
+
+What landed (commit `T27.3: Worktree isolation`): `cox_tools::git::worktree_add`/`worktree_remove`/`is_clean` and `GitWorktrees` (the `cox_protocol::traits::Worktrees` implementation); `WorktreeError` in `cox-protocol`; `Presence.worktree`; `Session::set_worktrees` and a cwd override in `spawn_child`; `agent(isolation: "worktree")` with the `[worktree <path>, branch <name>]` trailer; `--worktree <NAME>` resolved once in `main` into `--cwd <worktree> --add-dir <main>`; the `⧉ <name>` status segment (ASCII `wt`); `/quit` asks on stderr before removing a clean worktree; `docs/how-it-works.md` section and `docs/compat.md` row.
+
+Deviations from the card: the branch is `<name>`, not `cox/<name>`, and the lock reason is `cox / pid <pid> | <name> | <date>` (`cox / <session>` for a subagent's worktree) — the `worktrees` skill's naming rule is followed literally, as the Done-when line asks. Any cox owner (`cox /` prefix) may reuse or remove a cox worktree; another owner's lock is refused. The worktree root is the skill's (`_worktrees/` in the nearest ancestor, `WT_ROOT` override), not `../_worktrees` unconditionally. Size: ~800 LOC over 20 files (the trait seam, the flag, the TUI segment and their tests each live in their own crate).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tools worktree_add_is_idempotent worktree_remove_refuses_dirty   # 2 passed
+$ mise exec -- cargo nextest run -p cox worktree_flag_sets_roots                                        # 1 passed
+$ mise exec -- cargo nextest run -p cox-core subagent_worktree_isolation_runs_child_in_its_worktree     # 1 passed
+$ COX_HOME=<scratch> cox --worktree Demo --cwd <scratch>/ws/repo --permission-mode auto run -p hi   # scripted write lands in <scratch>/ws/_worktrees/repo-demo (branch demo, locked "cox / pid N | demo | 2026-09-22"); main checkout clean; rerun reuses it; a "Cursor / grok" lock and "Bad Name" are refused with exit 1
+$ mise exec -- cargo nextest run --workspace --no-fail-fast # 649 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
+```
