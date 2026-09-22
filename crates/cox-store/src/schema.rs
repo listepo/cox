@@ -94,7 +94,6 @@ diesel::table! {
         path -> Text,
         kind -> Text,
         archive_id -> Nullable<Text>,
-        sha256 -> Text,
         created_at -> Text,
     }
 }

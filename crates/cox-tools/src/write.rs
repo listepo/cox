@@ -99,6 +99,10 @@ impl Tool for WriteTool {
         }
     }
 
+    fn touches(&self, input: &Value) -> Option<Vec<String>> {
+        Some(vec![self.subject(input)])
+    }
+
     fn subject(&self, input: &Value) -> String {
         input
             .get("path")

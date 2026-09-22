@@ -27,8 +27,8 @@ pub use config::{Config, DEFAULT_CONFIG_TOML};
 pub use errors::{CoreError, ExtError, McpError, ProviderError, StoreError, ToolError};
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{
-    Archive, ArchivePut, Change, CheckpointRow, Checkpointer, Hook, MemoryHit, PreImage, Provider,
-    SessionRow, Snapshot, Store, Tool, ToolCx, UsageRow,
+    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, Hook, MemoryHit, PreImage,
+    Provider, SessionRow, Snapshot, Store, Tool, ToolCx, UsageRow,
 };
 pub use types::ArchiveRef;
 pub use types::{
