@@ -18,7 +18,12 @@ unicode-width = { workspace = true }
 terminal-colorsaurus = { workspace = true }
 thiserror = { workspace = true }
 tui-textarea-2 = { version = "0.13", default-features = false, features = ["crossterm"] }
+# T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
+# set` already uses, so a theme file's own comments would survive an edit
+# the same way (already a workspace dep, only newly wired into this crate).
+toml_edit = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }

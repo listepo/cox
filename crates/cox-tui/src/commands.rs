@@ -56,6 +56,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("todo", "/todo", "toggle the todo panel"),
     ("tasks", "/tasks", "list running background tasks"),
     ("vim", "/vim", "toggle vim keys"),
+    (
+        "theme",
+        "/theme [name]",
+        "pick a colour theme, previewed live",
+    ),
     ("help", "/help", "this list"),
     ("quit", "/quit", "exit"),
 ];
@@ -83,6 +88,9 @@ pub enum Action {
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
     Vim,
+    /// `/theme [name]`: a name applies it directly, `None` opens the picker
+    /// (T24.2).
+    Theme(Option<String>),
     /// Something to tell the user without leaving the TUI.
     Notice(String),
 }
@@ -139,6 +147,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "resume" => Action::Resume,
         "rewind" => Action::Rewind,
         "vim" => Action::Vim,
+        "theme" => Action::Theme(joined()),
         "help" => Action::Help,
         "quit" => Action::Quit,
         _ if COMMANDS.iter().any(|(n, ..)| *n == name) => Action::Submit(Submission::Command {

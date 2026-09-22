@@ -31,6 +31,10 @@ pub enum Kind {
     Rewind,
     /// After a rewind row: what to restore.
     RewindWhat,
+    /// `/theme` (T24.2): built-ins, `~/.cox/themes/*.toml` stems, and every
+    /// `.tmTheme` under a `syntax: ` row prefix; moving the cursor previews
+    /// the row live, `Esc` reverts it.
+    Themes,
 }
 
 /// The `RewindWhat` rows; the first word is what `Submission::Rewind` gets.
@@ -127,6 +131,7 @@ impl Kind {
             Kind::Shell => "complete: ",
             Kind::Rewind => "rewind to: ",
             Kind::RewindWhat => "restore: ",
+            Kind::Themes => "theme: ",
         }
     }
 }
@@ -316,5 +321,26 @@ mod tests {
             ],
         );
         assert_eq!(picker.matches.len(), 2);
+    }
+
+    /// T24.2's Done-when: a picker snapshot exists for `/theme` — built-ins,
+    /// a user file, and a `.tmTheme` row share one list.
+    #[test]
+    fn picker_themes_snapshot() {
+        let picker = Picker::open(
+            Kind::Themes,
+            vec![
+                "cox-dark".into(),
+                "cox-light".into(),
+                "system".into(),
+                "nord".into(),
+                "syntax: Solarized (dark)".into(),
+            ],
+        );
+        let lines = picker.lines(&Glyphs::default(), &Theme::dark());
+        let area = ratatui::layout::Rect::new(0, 0, 40, lines.len() as u16);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(ratatui::widgets::Paragraph::new(lines), area, &mut buf);
+        insta::assert_snapshot!(crate::view::buffer_to_string(&buf));
     }
 }

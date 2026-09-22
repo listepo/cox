@@ -928,9 +928,11 @@ dependencies = [
  "ratatui",
  "serde_json",
  "syntect",
+ "tempfile",
  "terminal-colorsaurus",
  "thiserror 2.0.20",
  "tokio",
+ "toml_edit 0.25.15+spec-1.1.0",
  "tui-textarea-2",
  "unicode-width",
 ]

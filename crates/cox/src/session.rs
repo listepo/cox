@@ -30,6 +30,7 @@ use cox_tools::write::WriteTool;
 use cox_tui::state::{Ask, GitStatus, Msg, State};
 
 use crate::cli::Cli;
+use crate::config_cmd;
 use crate::config_load::{self, LoadedConfig};
 use crate::resume;
 
@@ -256,6 +257,17 @@ fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    let themes_dir = home.join("themes");
+    // T24.2: a `/theme` picker choice reaches here as `(key, value)`
+    // because only `crates/cox` owns `config_cmd::set`; a write failing
+    // (a full disk, a bad permission) is not fatal, just not persisted —
+    // the picker already applied the theme to `state` either way.
+    let (persist_tx, mut persist_rx) = tokio::sync::mpsc::channel::<(String, String)>(4);
+    rt.spawn(async move {
+        while let Some((key, value)) = persist_rx.recv().await {
+            let _ = config_cmd::set(&key, &value);
+        }
+    });
     let mut resume_spec = if cli.r#continue {
         let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
         let history = resume::from_home(&home, &id.to_string())?;
@@ -294,26 +306,44 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.worktree = cli.worktree.clone();
         state.sessions = project_sessions(&home, cwd);
         state.composer.set_vim(config.tui.vim);
-        // T22.6: `"auto"` queries the terminal's OSC 11 background once,
-        // before raw mode; any other value (including an unrecognised one)
-        // keeps the pre-T22.6 default of dark unless the user chose light.
-        state.dark = match config.tui.theme.as_str() {
-            "light" => false,
-            "auto" => cox_tui::color::detect_dark(cox_tui::color::OSC11_TIMEOUT).unwrap_or(true),
-            _ => true,
-        };
+        // T22.6/T24.2: `"auto"` and a named theme both query the terminal's
+        // OSC 11 background once, before raw mode; `"light"`/`"dark"` are
+        // an explicit choice and skip it, same as before T24.2 existed.
+        let needs_background = !matches!(config.tui.theme.as_str(), "light" | "dark");
+        let background_dark = needs_background
+            .then(|| cox_tui::color::detect_dark(cox_tui::color::OSC11_TIMEOUT))
+            .flatten();
+        let catalog = cox_tui::theme::catalog(&themes_dir);
+        let resolved = cox_tui::theme::resolve(&config.tui.theme, background_dark, &catalog);
+        state.dark = resolved.dark;
         state.glyphs = cox_tui::glyph::resolve(&config.tui);
         state.depth = cox_tui::color::resolve(&config.tui);
-        // `NO_COLOR` (T24.1) wins over `dark`/`light`: every token resets so
-        // only `Modifier::BOLD`/`DIM` carry hierarchy.
-        state.theme = match (state.depth, state.dark) {
-            (cox_tui::color::Depth::None, _) => cox_tui::theme::Theme::mono(),
-            (_, true) => cox_tui::theme::Theme::dark(),
-            (_, false) => cox_tui::theme::Theme::light(),
+        // `NO_COLOR` (T24.1) wins over whatever `tui.theme` picked: every
+        // token resets so only `Modifier::BOLD`/`DIM` carry hierarchy.
+        state.theme = match state.depth {
+            cox_tui::color::Depth::None => cox_tui::theme::Theme::mono(),
+            _ => resolved.theme,
         };
+        if let Some(warning) = resolved.warning {
+            state.transcript.push(cox_tui::state::Cell::Notice {
+                level: cox_protocol::types::Level::Warn,
+                text: warning,
+            });
+        }
+        // T24.2 step 4: `.tmTheme` files merge into the bundled syntect set
+        // once per process, like the theme name leak below.
+        cox_tui::markdown::load_user_themes(&themes_dir);
+        let syntax_names: Vec<&'static str> = cox_tui::theme::tm_theme_names(&themes_dir)
+            .into_iter()
+            .map(|name| -> &'static str { String::leak(name) })
+            .collect();
         // The theme name outlives every render; one leak per process buys a
-        // `Copy` `Look` instead of a clone on each line.
-        state.syntax_theme = String::leak(config.tui.syntax_theme.clone());
+        // `Copy` `Look` instead of a clone on each line. A theme file's own
+        // `syntax` wins over `tui.syntax_theme` when it names one.
+        let syntax_theme_cfg = resolved
+            .syntax
+            .unwrap_or_else(|| config.tui.syntax_theme.clone());
+        state.syntax_theme = String::leak(syntax_theme_cfg);
         if !state.syntax_theme.is_empty()
             && cox_tui::markdown::theme_name(state.dark, state.syntax_theme) != state.syntax_theme
         {
@@ -326,6 +356,15 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                 ),
             });
         }
+        // `/theme` (T24.2 step 3): built-ins and user files, then every
+        // `.tmTheme` under a `syntax: ` row.
+        state.theme_rows = catalog
+            .iter()
+            .map(|(name, _)| name.clone())
+            .chain(syntax_names.iter().map(|name| format!("syntax: {name}")))
+            .collect();
+        state.theme_catalog = catalog;
+        state.syntax_names = syntax_names;
         state.show_thinking = config.tui.show_thinking == "full";
         state.marks = cli.verbose > 0;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
@@ -405,7 +444,14 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             first = false;
         }
         let quit = session.clone();
-        let outcome = rt.block_on(cox_tui::app::run(session, state, feed_rx, ask, surfaced_rx))?;
+        let outcome = rt.block_on(cox_tui::app::run(
+            session,
+            state,
+            feed_rx,
+            ask,
+            surfaced_rx,
+            persist_tx.clone(),
+        ))?;
         poll.abort();
         // The TUI never shut the core down, so `SessionEnd` hooks and the
         // presence record outlived the window (T16.2).

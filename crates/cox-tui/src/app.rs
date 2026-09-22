@@ -64,13 +64,16 @@ pub enum TuiError {
 /// this workspace, T16.3; git counts, T15.2) for the same reason, and
 /// `ask` carries what the TUI wants fetched (the diff, T15.3); the answer
 /// arrives on `feed`. `questions` carries each `ask_user` call (T22.1); its
-/// reply sender is answered from here, never from `state::update`.
+/// reply sender is answered from here, never from `state::update`. `persist`
+/// carries a `/theme` choice's `(key, value)` (T24.2) out to `config_cmd::set`
+/// — this crate has no `toml_edit`-editing path of its own.
 pub async fn run(
     session: Session,
     mut state: State,
     mut feed: tokio::sync::mpsc::Receiver<Msg>,
     ask: tokio::sync::mpsc::Sender<Ask>,
     mut questions: tokio::sync::mpsc::Receiver<Question>,
+    persist: tokio::sync::mpsc::Sender<(String, String)>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
@@ -149,6 +152,12 @@ pub async fn run(
                                 pending = Some((pending_call, reply));
                             }
                         }
+                    }
+                    // Best-effort: a full channel or a closed receiver just
+                    // means this one preview is not persisted; the picker
+                    // already applied it to `state` either way.
+                    Cmd::PersistConfig { key, value } => {
+                        let _ = persist.try_send((key, value));
                     }
                 }
             }

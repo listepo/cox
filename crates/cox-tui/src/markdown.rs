@@ -3,7 +3,8 @@
 //! Separate from the cells so an assistant reply and a compaction summary
 //! render through one path and a test can check the mapping on a string.
 
-use std::sync::LazyLock;
+use std::path::Path;
+use std::sync::{LazyLock, OnceLock};
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
@@ -18,12 +19,28 @@ use crate::glyph::Glyphs;
 
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
+/// `.tmTheme` files under `~/.cox/themes/` (T24.2 step 4), merged on top of
+/// the bundled set by `load_user_themes` once at startup; empty until then,
+/// same as an unconfigured `tui.syntax_theme`.
+static USER_THEMES: OnceLock<ThemeSet> = OnceLock::new();
+
+/// Reads every `.tmTheme` in `dir` into `USER_THEMES`, so a name that
+/// collides with a bundled theme picks the user's file. Fails open: a
+/// missing `dir` or any file `syntect` rejects leaves the bundled set as
+/// the whole story, never a startup error. Idempotent — a second call
+/// (e.g. from a test) is a no-op, matching `glyph`'s "decided once" leak.
+pub fn load_user_themes(dir: &Path) {
+    if let Ok(set) = ThemeSet::load_from_folder(dir) {
+        let _ = USER_THEMES.set(set);
+    }
+}
 
 /// The syntect theme to highlight with: `tui.syntax_theme` when it names one
-/// of syntect's bundled themes, otherwise the `tui.theme` default (`auto`
-/// reads as dark because most terminals are).
+/// of syntect's bundled or user (T24.2) themes, otherwise the `tui.theme`
+/// default (`auto` reads as dark because most terminals are).
 pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
-    if THEMES.themes.contains_key(chosen) {
+    let known = |set: &ThemeSet| set.themes.contains_key(chosen);
+    if THEMES.themes.contains_key(chosen) || USER_THEMES.get().is_some_and(known) {
         return chosen;
     }
     if dark {
@@ -33,10 +50,15 @@ pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
     }
 }
 
-/// The bundled theme names, for `cox`'s startup warning about an unknown
-/// `tui.syntax_theme` — a bad name falls back, it never fails the session.
+/// The bundled plus user (T24.2) theme names, for `cox`'s startup warning
+/// about an unknown `tui.syntax_theme` — a bad name falls back, it never
+/// fails the session.
 pub fn themes() -> Vec<String> {
-    THEMES.themes.keys().cloned().collect()
+    let mut names: Vec<String> = THEMES.themes.keys().cloned().collect();
+    if let Some(user) = USER_THEMES.get() {
+        names.extend(user.themes.keys().cloned());
+    }
+    names
 }
 
 /// Renders `text` as lines, unwrapped; trailing blank lines are dropped so a
@@ -259,7 +281,8 @@ pub fn highlight(token: &str, rows: &[&str], theme: &str) -> Vec<Line<'static>> 
     let syntax = SYNTAXES
         .find_syntax_by_token(token)
         .unwrap_or_else(|| SYNTAXES.find_syntax_plain_text());
-    let Some(theme) = THEMES.themes.get(theme) else {
+    let user = USER_THEMES.get().and_then(|set| set.themes.get(theme));
+    let Some(theme) = user.or_else(|| THEMES.themes.get(theme)) else {
         return rows.iter().map(|l| Line::raw((*l).to_string())).collect();
     };
     let mut h = HighlightLines::new(syntax, theme);
