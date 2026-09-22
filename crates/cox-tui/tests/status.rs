@@ -16,6 +16,7 @@ fn turn(state: &mut State, model: &str, cost: f64, input: u32) {
     let turn = TurnId::new();
     for ev in [
         Event::TurnStarted {
+            seq: 1,
             turn,
             job: Job::Main,
             tier: Tier::Code,

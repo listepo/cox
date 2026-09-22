@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::types::{
-    Content, Decision, Event, ItemKind, Level, Message, PermissionMode, Role, StopReason, ToolCall,
+    Content, Decision, Event, ItemKind, Job, Level, Message, PermissionMode, Role, StopReason,
+    ToolCall,
 };
 
 /// Reconstructed transcript plus the session flags resume must restore.
@@ -19,6 +20,9 @@ pub struct History {
     pub grants: Vec<(String, String)>,
     /// True when the caller dropped a truncated last JSONL line.
     pub truncated: bool,
+    /// The highest main-turn `seq` seen, so a resumed session keeps
+    /// numbering where it left off (T26.2).
+    pub turns: u32,
 }
 
 impl History {
@@ -45,9 +49,36 @@ impl History {
         let mut pending_results: Vec<Content> = Vec::new();
         let mut calls: HashMap<CallId, ToolCall> = HashMap::new();
         let mut grants = Vec::new();
+        let mut turns = 0u32;
+        // Where each main turn starts in `messages`, for `Rewound`.
+        let mut starts: Vec<(u32, usize)> = Vec::new();
 
         for ev in events {
             match ev {
+                Event::TurnStarted {
+                    seq,
+                    job: Job::Main,
+                    ..
+                } => {
+                    flush_results(&mut messages, &mut pending_results);
+                    turns = turns.max(*seq);
+                    starts.push((*seq, messages.len()));
+                }
+                // The user's cut (T26.2): history stops at `to_turn`, the
+                // rollout keeps every line, so the cut is replayed here.
+                Event::Rewound {
+                    to_turn,
+                    conversation: true,
+                    ..
+                } => {
+                    flush_results(&mut messages, &mut pending_results);
+                    if let Some(at) = starts.iter().position(|(seq, _)| seq >= to_turn) {
+                        let len = starts[at].1;
+                        messages.truncate(len);
+                        turn_of.truncate(len);
+                        starts.truncate(at);
+                    }
+                }
                 Event::ItemStarted { item, kind } => {
                     flush_results(&mut messages, &mut pending_results);
                     items.insert(*item, kind.clone());
@@ -154,6 +185,7 @@ impl History {
             permission_mode: PermissionMode::Default,
             grants,
             truncated,
+            turns,
         }
     }
 

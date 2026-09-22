@@ -240,6 +240,17 @@ index doubles as the stat cache, so a warm snapshot is one stat pass. A
 pre-image over 8 MiB is recorded without bytes. Without `git` on `PATH`,
 the session warns once and runs without checkpoints — never a failed turn.
 
+`/rewind` (or `Esc Esc` on an empty composer) lists the turns newest first
+— `T7 · 3 files · "add the cache column"` — and asks what to restore: code,
+conversation or both. Code walks the rows from the newest turn down to the
+chosen one and writes each earliest pre-image back (created files are
+removed, deleted ones return); every write is checkpointed first under a
+new turn number, so a rewind is itself undoable. Conversation appends an
+`Event::Rewound { to_turn }` marker: the in-memory history is cut there,
+the rollout keeps every line, and resume stops reading at the marker. The
+next turn keeps counting from where the session was (`T8` after a rewind
+to `T7`), so a turn number never means two things.
+
 ## The four surfaces (one stream each)
 
 | Surface | Command | What it does with `Event`s |

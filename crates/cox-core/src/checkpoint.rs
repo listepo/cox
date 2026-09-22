@@ -116,6 +116,27 @@ async fn record(
         return;
     }
     let seq = session.inner.lock().await.turn_seq;
+    let emitted = store_rows(session, seq, Some(call), files).await;
+    if !emitted.is_empty() {
+        let _ = session
+            .emit(Event::Checkpoint {
+                turn,
+                call: Some(call),
+                files: emitted,
+            })
+            .await;
+    }
+}
+
+/// The rows and archive entries for `files` under turn `seq`; what came
+/// back is what exists. A rewind's own writes go through here too, with no
+/// call and no event.
+pub(crate) async fn store_rows(
+    session: &Session,
+    seq: u32,
+    call: Option<CallId>,
+    files: Vec<(PathBuf, bool, Before)>,
+) -> Vec<CheckpointFile> {
     let mut emitted = Vec::new();
     for (path, deleted, before) in files {
         let kind = match (&before, deleted) {
@@ -127,7 +148,8 @@ async fn record(
             Before::Bytes(bytes) => {
                 let put = ArchivePut {
                     session: session.id,
-                    call,
+                    // A rewind has no call; its rows are found by turn.
+                    call: call.unwrap_or_default(),
                     tool: "checkpoint".into(),
                     subject: Some(path.display().to_string()),
                     bytes,
@@ -145,7 +167,7 @@ async fn record(
         let row = CheckpointRow {
             session: session.id,
             turn: seq,
-            call: Some(call),
+            call,
             path: path.clone(),
             kind,
             archive,
@@ -156,15 +178,7 @@ async fn record(
         }
         emitted.push(CheckpointFile { path, kind });
     }
-    if !emitted.is_empty() {
-        let _ = session
-            .emit(Event::Checkpoint {
-                turn,
-                call: Some(call),
-                files: emitted,
-            })
-            .await;
-    }
+    emitted
 }
 
 /// The first failure is loud, the rest are silent: a missing `git` would

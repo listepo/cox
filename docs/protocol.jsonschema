@@ -40,6 +40,12 @@
             "description": "The turn's id.",
             "$ref": "#/$defs/TurnId"
           },
+          "seq": {
+            "description": "The turn's ordinal in this session, 1-based; `/rewind` names\nturns by it and the `checkpoints` rows carry it (T26.1).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
           "job": {
             "description": "Which job this turn is (usually `Job::Main`).",
             "$ref": "#/$defs/Job"
@@ -60,6 +66,7 @@
         "required": [
           "type",
           "turn",
+          "seq",
           "job",
           "tier",
           "model"
@@ -365,6 +372,52 @@
           "type",
           "turn",
           "files"
+        ]
+      },
+      {
+        "description": "`/rewind` finished (T26.2). With `conversation`, resume and the\ncontext builder stop reading history at `to_turn`; the rollout keeps\nevery earlier line.",
+        "type": "object",
+        "properties": {
+          "to_turn": {
+            "description": "The turn the session went back to.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "code": {
+            "description": "Files were restored.",
+            "type": "boolean"
+          },
+          "conversation": {
+            "description": "The conversation was cut.",
+            "type": "boolean"
+          },
+          "restored": {
+            "description": "Paths written back or removed.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "description": "Paths whose pre-image was too large to keep, left as they are.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "const": "rewound"
+          }
+        },
+        "required": [
+          "type",
+          "to_turn",
+          "code",
+          "conversation",
+          "restored",
+          "skipped"
         ]
       },
       {
@@ -2205,6 +2258,36 @@
           "type",
           "hook_id",
           "outcome"
+        ]
+      },
+      {
+        "description": "`/rewind` (T26.2): restore the workspace, the conversation or both\nto the start of turn `to_turn`.",
+        "type": "object",
+        "properties": {
+          "to_turn": {
+            "description": "The turn to go back to (its `seq`); that turn and later ones are undone.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "code": {
+            "description": "Write every pre-image since `to_turn` back into the workspace.",
+            "type": "boolean"
+          },
+          "conversation": {
+            "description": "Drop the conversation from `to_turn` on (append-only: a marker, not an edit).",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "const": "rewind"
+          }
+        },
+        "required": [
+          "type",
+          "to_turn",
+          "code",
+          "conversation"
         ]
       },
       {

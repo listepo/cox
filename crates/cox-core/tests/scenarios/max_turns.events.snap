@@ -12,6 +12,7 @@ expression: value
   {
     "type": "turn_started",
     "turn": "<id>",
+    "seq": 1,
     "job": "main",
     "tier": "code",
     "model": "claude-sonnet-5"

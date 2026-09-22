@@ -97,6 +97,7 @@ fn model_switched_renames_the_status_only_for_the_running_tier() {
     update(
         &mut state,
         Msg::Event(Event::TurnStarted {
+            seq: 1,
             turn: TurnId::new(),
             job: Job::Main,
             tier: Tier::Code,

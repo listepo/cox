@@ -46,6 +46,15 @@ impl Checkpointer for Fake {
             trees: vec![(roots[0].clone(), format!("tree{n}"))],
         })
     }
+    async fn restore(
+        &self,
+        _roots: &[PathBuf],
+        _cwd: &Path,
+        _path: &Path,
+        _bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        Ok(())
+    }
     async fn changes(
         &self,
         before: &Snapshot,

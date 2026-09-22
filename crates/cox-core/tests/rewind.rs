@@ -1,0 +1,286 @@
+//! T26.2: `/rewind` restores pre-images through the checkpointer, cuts the
+//! in-memory history without editing the rollout, and resume honours the
+//! `Rewound` marker.
+
+mod common;
+
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use common::{drain, open, scenario, spawn_turn};
+use cox_core::History;
+use cox_protocol::errors::ToolError;
+use cox_protocol::traits::{Archive, Store};
+use cox_protocol::types::{CheckpointKind, Event, Level, Role, Submission};
+use cox_protocol::{Before, Change, Checkpointer, PreImage, Snapshot};
+
+/// `a.rs` held "old" when the turn touched it and "now" by the time the
+/// rewind looks; every restore is recorded.
+#[derive(Default)]
+struct Fake {
+    reads: AtomicU32,
+    restores: Mutex<Vec<(PathBuf, Option<Vec<u8>>)>>,
+}
+
+#[async_trait]
+impl Checkpointer for Fake {
+    async fn preimages(&self, roots: &[PathBuf], _cwd: &Path, paths: &[String]) -> Vec<PreImage> {
+        let first = self.reads.fetch_add(1, Ordering::SeqCst) == 0;
+        paths
+            .iter()
+            .map(|p| PreImage {
+                path: roots[0].join(p),
+                before: if p.ends_with("a.rs") {
+                    Before::Bytes(if first {
+                        b"old".to_vec()
+                    } else {
+                        b"now".to_vec()
+                    })
+                } else {
+                    Before::Absent
+                },
+            })
+            .collect()
+    }
+    async fn snapshot(&self, _roots: &[PathBuf]) -> Result<Snapshot, ToolError> {
+        Ok(Snapshot::default())
+    }
+    async fn changes(&self, _b: &Snapshot, _a: &Snapshot) -> Result<Vec<Change>, ToolError> {
+        Ok(vec![])
+    }
+    async fn restore(
+        &self,
+        _roots: &[PathBuf],
+        _cwd: &Path,
+        path: &Path,
+        bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        self.restores
+            .lock()
+            .expect("lock")
+            .push((path.to_path_buf(), bytes.map(<[u8]>::to_vec)));
+        Ok(())
+    }
+}
+
+fn allow_all() -> cox_protocol::Config {
+    let mut config = cox_protocol::Config::default();
+    config.permissions.allow = vec!["touch".into()];
+    config
+}
+
+async fn turn(
+    session: &cox_core::Session,
+    rx: &mut tokio::sync::mpsc::Receiver<Event>,
+    text: &str,
+) -> Vec<Event> {
+    let running = spawn_turn(session, text);
+    let events = drain(rx).await;
+    running.await.expect("join").expect("turn");
+    events
+}
+
+/// Every event up to the next `Rewound`, which is included.
+async fn until_rewound(rx: &mut tokio::sync::mpsc::Receiver<Event>) -> Vec<Event> {
+    let mut out = Vec::new();
+    loop {
+        let ev = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("event timeout")
+            .expect("stream closed");
+        let done = matches!(ev, Event::Notice { .. });
+        out.push(ev);
+        if done {
+            break;
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn rewind_code_restores_bytes() {
+    let (session, store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let fake = Arc::new(Fake::default());
+    session.set_checkpointer(fake.clone());
+    turn(&session, &mut rx, "edit a.rs and new.rs").await;
+    // The old pre-image, not today's bytes, is what a rewind writes back.
+    let rows = store.checkpoint_list(&session.id()).expect("rows");
+    let pre = rows
+        .iter()
+        .find(|r| r.kind == CheckpointKind::Pre)
+        .expect("pre row");
+    assert_eq!(
+        store
+            .get(&pre.archive.expect("archived"))
+            .await
+            .expect("bytes"),
+        b"old"
+    );
+
+    session
+        .submit(Submission::Rewind {
+            to_turn: 1,
+            code: true,
+            conversation: false,
+        })
+        .await
+        .expect("rewind");
+    let events = until_rewound(&mut rx).await;
+    let Some(Event::Rewound {
+        to_turn,
+        restored,
+        skipped,
+        ..
+    }) = events.iter().find(|e| matches!(e, Event::Rewound { .. }))
+    else {
+        panic!("no Rewound: {events:?}");
+    };
+    assert_eq!(*to_turn, 1);
+    assert_eq!(
+        restored,
+        &vec![
+            PathBuf::from("/tmp/cox-turn/a.rs"),
+            PathBuf::from("/tmp/cox-turn/new.rs")
+        ]
+    );
+    assert!(skipped.is_empty());
+    assert_eq!(
+        *fake.restores.lock().expect("lock"),
+        vec![
+            (PathBuf::from("/tmp/cox-turn/a.rs"), Some(b"old".to_vec())),
+            (PathBuf::from("/tmp/cox-turn/new.rs"), None),
+        ]
+    );
+    // The rewind's own pre-images landed under a new turn so it is undoable.
+    let rows = store.checkpoint_list(&session.id()).expect("rows");
+    let rewind_rows: Vec<_> = rows.iter().filter(|r| r.turn == 2).collect();
+    assert_eq!(rewind_rows[0].kind, CheckpointKind::Turn);
+    assert_eq!(rewind_rows[1].kind, CheckpointKind::Pre);
+    assert_eq!(rewind_rows[1].path, PathBuf::from("/tmp/cox-turn/a.rs"));
+    assert!(rewind_rows[1].call.is_none());
+}
+
+#[tokio::test]
+async fn rewind_conversation_is_append_only() {
+    let (session, store, mut rx) = open(&scenario("rewind_two"), cox_protocol::Config::default());
+    turn(&session, &mut rx, "one").await;
+    turn(&session, &mut rx, "two").await;
+    let before = store.rollout_read(&session.id()).expect("rollout").len();
+
+    session
+        .submit(Submission::Rewind {
+            to_turn: 2,
+            code: false,
+            conversation: true,
+        })
+        .await
+        .expect("rewind");
+    let events = until_rewound(&mut rx).await;
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            Event::Rewound {
+                to_turn: 2,
+                conversation: true,
+                ..
+            }
+        )),
+        "{events:?}"
+    );
+
+    // Nothing before the marker changed; the marker is appended.
+    let rollout = store.rollout_read(&session.id()).expect("rollout");
+    assert!(rollout.len() > before);
+    let users: Vec<_> = rollout
+        .iter()
+        .filter_map(|e| match e {
+            Event::ItemStarted {
+                kind: cox_protocol::types::ItemKind::UserMessage { text, .. },
+                ..
+            } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(users, vec!["one", "two"]);
+    let last_user = rollout
+        .iter()
+        .rposition(|e| {
+            matches!(
+                e,
+                Event::ItemStarted {
+                    kind: cox_protocol::types::ItemKind::UserMessage { .. },
+                    ..
+                }
+            )
+        })
+        .expect("user item");
+    let rewound = rollout
+        .iter()
+        .position(|e| matches!(e, Event::Rewound { .. }))
+        .expect("marker");
+    assert!(rewound > last_user);
+
+    // The next turn is T3 and the model sees only turn one before it.
+    let events = turn(&session, &mut rx, "three").await;
+    assert!(
+        matches!(events.first(), Some(Event::TurnStarted { seq: 3, .. })),
+        "{:?}",
+        events.first()
+    );
+}
+
+#[tokio::test]
+async fn resume_after_rewind_stops_at_marker() {
+    let (session, store, mut rx) = open(&scenario("rewind_two"), cox_protocol::Config::default());
+    turn(&session, &mut rx, "one").await;
+    turn(&session, &mut rx, "two").await;
+    session
+        .submit(Submission::Rewind {
+            to_turn: 2,
+            code: false,
+            conversation: true,
+        })
+        .await
+        .expect("rewind");
+    until_rewound(&mut rx).await;
+    turn(&session, &mut rx, "three").await;
+
+    let history = History::from_events(&store.rollout_read(&session.id()).expect("rollout"));
+    let users: Vec<String> = history
+        .messages
+        .iter()
+        .filter(|m| m.role == Role::User)
+        .map(|m| format!("{:?}", m.content))
+        .collect();
+    assert_eq!(users.len(), 2, "{users:?}");
+    assert!(
+        users[0].contains("one") && users[1].contains("three"),
+        "{users:?}"
+    );
+    assert_eq!(history.turns, 3);
+}
+
+#[tokio::test]
+async fn rewind_refuses_unknown_turns_with_a_notice() {
+    let (session, _store, mut rx) = open(&scenario("rewind_two"), cox_protocol::Config::default());
+    turn(&session, &mut rx, "one").await;
+    session
+        .submit(Submission::Rewind {
+            to_turn: 5,
+            code: true,
+            conversation: true,
+        })
+        .await
+        .expect("submit");
+    let events = until_rewound(&mut rx).await;
+    let Some(Event::Notice {
+        level: Level::Warn,
+        text,
+    }) = events.last()
+    else {
+        panic!("no warning: {events:?}");
+    };
+    assert_eq!(text, "rewind: no turn T5; this session has T1..T1");
+}

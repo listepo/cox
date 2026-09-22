@@ -304,6 +304,15 @@ pub trait Checkpointer: Send + Sync {
     /// What differs between two snapshots of the same roots, with the
     /// pre-image bytes of every modified or deleted file.
     async fn changes(&self, before: &Snapshot, after: &Snapshot) -> Result<Vec<Change>, ToolError>;
+    /// Writes a pre-image back (`Some`) or removes a file `/rewind` undoes
+    /// the creation of (`None`); the path is confined to `roots` first.
+    async fn restore(
+        &self,
+        roots: &[PathBuf],
+        cwd: &Path,
+        path: &Path,
+        bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError>;
 }
 
 /// A hook runner (`cox-ext`): executes one hook subprocess against the

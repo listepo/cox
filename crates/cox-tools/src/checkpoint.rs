@@ -185,6 +185,25 @@ impl Checkpointer for GitCheckpointer {
         out.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(out)
     }
+
+    async fn restore(
+        &self,
+        roots: &[PathBuf],
+        cwd: &Path,
+        path: &Path,
+        bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        let path = confine(roots, cwd, &path.to_string_lossy())?;
+        match bytes {
+            Some(bytes) => crate::write::atomic_write(&path, bytes),
+            None => match tokio::fs::remove_file(&path).await {
+                Ok(()) => Ok(()),
+                // Already gone is the state we want.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(_) => Err(ToolError::Io),
+            },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +352,29 @@ mod tests {
                     before: Before::Absent,
                 },
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn restore_writes_bytes_back_and_removes_created_files() {
+        let (_dir, root, cp) = workspace();
+        let roots = vec![root.clone()];
+        cp.restore(&roots, &root, &root.join("src/a.rs"), Some(b"zero\n"))
+            .await
+            .expect("write back");
+        assert_eq!(fs::read(root.join("src/a.rs")).expect("read"), b"zero\n");
+        cp.restore(&roots, &root, &root.join(".gitignore"), None)
+            .await
+            .expect("remove");
+        assert!(!root.join(".gitignore").exists());
+        // Removing twice is fine; escaping the root is not.
+        cp.restore(&roots, &root, &root.join(".gitignore"), None)
+            .await
+            .expect("idempotent");
+        assert!(
+            cp.restore(&roots, &root, &root.join("../escape"), Some(b"x"))
+                .await
+                .is_err()
         );
     }
 
