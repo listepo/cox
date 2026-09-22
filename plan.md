@@ -18,7 +18,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
 | T23.7 | todo | P2 | 3 | 0% | |
-| T24.2 | in progress | P0 | 3 | 90% | Claude Code / claude-sonnet-5 |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T24.5 | todo | P1 | 3 | 0% | |
 | T24.6 | todo | P1 | 2 | 0% | |
@@ -1146,20 +1145,6 @@ Done when: the test passes on macOS and Linux CI.
 Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (documented in `docs/compat.md`).
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
-
-#### T24.2 Theme files and `/theme`
-
-Model: claude-sonnet-5 · Status: in progress · Depends: T24.1, T22.6 · Size: ~200 · Priority: P0 · Complexity: 3
-Goal: themes are TOML files with dark/light variants, `/theme` previews live, `.tmTheme` files become syntax themes.
-Files: `crates/cox-tui/src/theme.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/picker.rs`.
-Steps: (1) `~/.cox/themes/<name>.toml`: `[tokens] accent = { dark = "#7aa2f7", light = "#2e5aac" } …`, `syntax = "<tmTheme name or built-in>"`, `[glyphs]` optional overrides; parse with the workspace `toml`; missing tokens fall back to the built-in of the same variant. (2) Built-ins embedded with `include_str!`: `cox-dark`, `cox-light`, `system` (tokens named by ANSI index so the terminal palette shows through — OpenCode's approach). (3) `/theme [name]`: `Kind::Themes` picker over built-ins + files; moving the cursor applies the theme to `State` immediately (live preview), `Enter` writes `tui.theme` with `cox config set` semantics (`toml_edit`), `Esc` restores the previous theme. (4) `.tmTheme` in the same directory: `syntect::highlighting::ThemeSet::load_from_folder` at startup; names appear in the same picker under a `syntax:` prefix and set `tui.syntax_theme`. (5) `docs/config.md`: theme file schema.
-Execution plan: `theme.rs` gains `ThemeFile` (`dark`/`light` `TrueColorOverrides` + optional `syntax`/`variant`), `parse_theme_file` (`toml_edit::DocumentMut`, syntax-error-only failure — an unknown key or a bad colour string is simply not set), `parse_color` (`#rrggbb`, a bare ANSI index, or an ANSI name), `BUILT_IN_THEMES` (`include_str!` of three new files under `crates/cox-tui/assets/themes/`), `catalog(dir)` and `tm_theme_names(dir)` (fail open to built-ins-only / empty on a missing or unreadable directory), and `resolve(name, background_dark, catalog)` reusing T22.6's one `detect_dark` read rather than a second query path — `"light"`/`"dark"` never query it, `"auto"` and a named theme without a pinned `variant` share it. `commands.rs` adds `/theme [name]`; `picker.rs` adds `Kind::Themes`. `state.rs` adds a `Kind::Themes`-guarded key handler (`Pick::Nothing` re-applies the row under the cursor for live preview; `Pick::Closed`/`Esc` restores the `(dark, theme, syntax_theme)` snapshot taken on open; `Pick::Chosen`/`Enter` applies then persists) plus a `Cmd::PersistConfig { key, value }` the binary crate cannot avoid routing through a channel (`cox-tui` cannot depend on `cox`'s `config_cmd::set`) — `app.rs::run` gains a `persist: Sender<(String, String)>` parameter, and `session.rs` spawns the receiver into `config_cmd::set`, mirroring the existing `ask`/`feed` channel pattern. `markdown.rs` adds `load_user_themes(dir)` (`ThemeSet::load_from_folder`, keyed by file stem) merged ahead of the built-ins in `highlight`. `session.rs`'s T22.6 three-way match is replaced by `theme::resolve` fed the same `detect_dark` call, plus a startup notice cell on an unknown `tui.theme` or `tui.syntax_theme`. `docs/config.md` mirrors the `default.toml` comment changes verbatim (the generator test checks byte-for-byte equality). Verify with the Check below, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and a `COX_HOME` scratch `config set`/`config show --sources` run.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui theme_file_round_trips theme_picker_preview_reverts_on_esc tmtheme_in_themes_dir_is_listed
-```
-Done when: picker snapshot exists, a fixture `.tmTheme` is listed and applied, and `cox config show` reports the chosen theme with source `user`.
-Out of scope: a theme *editor* (Crush's `Ctrl+E`); daltonized variants (T29.2).
 
 #### T24.3 `two-face` syntax set
 
