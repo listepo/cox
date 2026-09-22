@@ -36,6 +36,7 @@ pub trait Gate: Send + Sync {
 /// Everything a [`ToolCx`] needs besides the per-call id and output channel.
 pub struct CxTemplate {
     pub roots: Vec<PathBuf>,
+    pub writable_roots: Vec<PathBuf>,
     pub cwd: PathBuf,
     pub sandbox: SandboxPolicy,
     pub archive: Arc<dyn Archive>,
@@ -72,6 +73,7 @@ impl ToolServer {
         tokio::spawn(async move { while drain.recv().await.is_some() {} });
         let cx = ToolCx {
             roots: self.cx.roots.clone(),
+            writable_roots: self.cx.writable_roots.clone(),
             cwd: self.cx.cwd.clone(),
             sandbox: self.cx.sandbox.clone(),
             archive: self.cx.archive.clone(),

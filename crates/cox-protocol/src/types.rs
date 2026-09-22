@@ -188,6 +188,31 @@ pub enum Level {
     Security,
 }
 
+/// What a `checkpoints` row holds for one path (T26.1): the bytes a tool
+/// call was about to overwrite, a file it created, a file it deleted, or
+/// the marker that starts a user turn (`path` empty).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointKind {
+    /// The pre-image of a file that was changed; `archive` holds its bytes.
+    Pre,
+    /// The file did not exist before the call.
+    Created,
+    /// The file existed before the call and is gone after it; `archive` holds it.
+    Deleted,
+    /// A user turn started; nothing archived.
+    Turn,
+}
+
+/// One path in an `Event::Checkpoint`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CheckpointFile {
+    /// The confined absolute path.
+    pub path: PathBuf,
+    /// What was recorded for it.
+    pub kind: CheckpointKind,
+}
+
 /// `permissions.mode` (plan.md §1.6/§1.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -569,6 +594,10 @@ pub struct Presence {
     pub touched: Vec<String>,
     /// Unix seconds of the last heartbeat.
     pub updated: u64,
+    /// The worktree it runs in (`cox --worktree`, T27.3); absent for a
+    /// session on the main checkout, and in records older than the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<PathBuf>,
 }
 
 /// A session's state as the other sessions see it.
@@ -674,6 +703,16 @@ pub enum Submission {
         /// The outcome.
         outcome: HookOutcome,
     },
+    /// `/rewind` (T26.2): restore the workspace, the conversation or both
+    /// to the start of turn `to_turn`.
+    Rewind {
+        /// The turn to go back to (its `seq`); that turn and later ones are undone.
+        to_turn: u32,
+        /// Write every pre-image since `to_turn` back into the workspace.
+        code: bool,
+        /// Drop the conversation from `to_turn` on (append-only: a marker, not an edit).
+        conversation: bool,
+    },
     /// Wind down the session cleanly.
     Shutdown,
 }
@@ -697,6 +736,10 @@ pub enum Event {
     TurnStarted {
         /// The turn's id.
         turn: TurnId,
+        /// The turn's ordinal in this session, 1-based; `/rewind` names
+        /// turns by it and the `checkpoints` rows carry it (T26.1).
+        #[serde(default)]
+        seq: u32,
         /// Which job this turn is (usually `Job::Main`).
         job: Job,
         /// The tier routed to.
@@ -782,6 +825,33 @@ pub enum Event {
         before_tokens: u32,
         /// Context tokens after compaction.
         after_tokens: u32,
+    },
+    /// Pre-images of the files a tool call changed are archived and
+    /// retrievable (T26.1). Emitted after the `checkpoints` rows exist, so a
+    /// surface that sees it can already `/rewind`; never emitted for a call
+    /// that changed nothing.
+    Checkpoint {
+        /// The turn the call ran in.
+        turn: TurnId,
+        /// The call, or `None` for a rewind's own writes.
+        call: Option<CallId>,
+        /// Every path recorded, in path order.
+        files: Vec<CheckpointFile>,
+    },
+    /// `/rewind` finished (T26.2). With `conversation`, resume and the
+    /// context builder stop reading history at `to_turn`; the rollout keeps
+    /// every earlier line.
+    Rewound {
+        /// The turn the session went back to.
+        to_turn: u32,
+        /// Files were restored.
+        code: bool,
+        /// The conversation was cut.
+        conversation: bool,
+        /// Paths written back or removed.
+        restored: Vec<PathBuf>,
+        /// Paths whose pre-image was too large to keep, left as they are.
+        skipped: Vec<PathBuf>,
     },
     /// A background subagent task was created.
     TaskCreated {
@@ -1100,7 +1170,7 @@ mod tests {
 
     #[rstest]
     #[case::session_started(Event::SessionStarted { session: SessionId::new(), config_digest: "deadbeef".into(), cwd: PathBuf::from("/tmp") })]
-    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), job: Job::Main, tier: Tier::Code, model: ModelId("claude-sonnet-5".into()) })]
+    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), seq: 1, job: Job::Main, tier: Tier::Code, model: ModelId("claude-sonnet-5".into()) })]
     #[case::item_started(Event::ItemStarted { item: ItemId::new(), kind: ItemKind::UserMessage { text: "hi".into(), attachments: vec![] } })]
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
@@ -1112,6 +1182,7 @@ mod tests {
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
     #[case::usage(Event::Usage { turn: TurnId::new(), usage: sample_usage() })]
     #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200 })]
+    #[case::checkpoint(Event::Checkpoint { turn: TurnId::new(), call: Some(CallId::new()), files: vec![CheckpointFile { path: PathBuf::from("/w/a.rs"), kind: CheckpointKind::Pre }] })]
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002 })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
@@ -1122,6 +1193,20 @@ mod tests {
         let json = serde_json::to_string(&event).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(event, back);
+    }
+
+    #[test]
+    fn turn_started_without_seq_defaults_to_zero() {
+        let turn = TurnId::new();
+        let json = serde_json::json!({
+            "type": "turn_started",
+            "turn": turn,
+            "job": "main",
+            "tier": "code",
+            "model": "m"
+        });
+        let event: Event = serde_json::from_value(json).expect("old rollout line");
+        assert!(matches!(event, Event::TurnStarted { seq: 0, .. }));
     }
 
     #[rstest]
@@ -1145,7 +1230,8 @@ mod tests {
     /// assert it is snake_case, over one value per `Event` variant.
     #[rstest]
     #[case::session_started(Event::SessionStarted { session: SessionId::new(), config_digest: "d".into(), cwd: PathBuf::from(".") })]
-    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), job: Job::Main, tier: Tier::Code, model: ModelId("m".into()) })]
+    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), seq: 1, job: Job::Main, tier: Tier::Code, model: ModelId("m".into()) })]
+    #[case::rewound(Event::Rewound { to_turn: 2, code: true, conversation: false, restored: vec![PathBuf::from("a.rs")], skipped: vec![] })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     fn event_tags_are_snake_case(#[case] event: Event) {

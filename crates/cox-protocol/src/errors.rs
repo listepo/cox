@@ -282,6 +282,71 @@ pub enum McpError {
     },
 }
 
+/// Failures of the worktree helper (T27.3): what `cox --worktree` and
+/// `agent(isolation: "worktree")` report when git refuses or a rule of the
+/// `worktrees` skill applies. The owner and dirty-tree refusals are rules,
+/// not git errors, so they are variants rather than one message.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, thiserror::Error)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum WorktreeError {
+    /// The name is not `[a-z0-9][a-z0-9._-]*` after lower-casing.
+    #[error("worktree name {name:?} may only contain a-z 0-9 . _ -")]
+    BadName {
+        /// What was asked for.
+        name: String,
+    },
+    /// `dir` is not inside a git repository.
+    #[error("{dir:?} is not inside a git repository")]
+    NotARepository {
+        /// The directory the lookup started from.
+        dir: PathBuf,
+    },
+    /// The path is not one of the repository's worktrees.
+    #[error("{path:?} is not a registered worktree")]
+    NotRegistered {
+        /// The path asked about.
+        path: PathBuf,
+    },
+    /// A registered path belongs to another branch (or is detached).
+    #[error("{path:?} is on branch {actual:?}, expected {expected:?}")]
+    BranchMismatch {
+        /// The registered worktree path.
+        path: PathBuf,
+        /// The requested branch.
+        expected: String,
+        /// The branch Git reported; `None` means detached HEAD.
+        actual: Option<String>,
+    },
+    /// The lock reason names someone else; leave it and tell the creator.
+    #[error("{path:?} is locked by another owner ({reason})")]
+    LockedByOther {
+        /// The worktree.
+        path: PathBuf,
+        /// The lock reason as `git worktree list` shows it.
+        reason: String,
+    },
+    /// Uncommitted or untracked files: commit them or ask the creator.
+    #[error("{path:?} has uncommitted or untracked files")]
+    Dirty {
+        /// The worktree.
+        path: PathBuf,
+    },
+    /// Removing the main checkout is never what anyone meant.
+    #[error("refusing to remove the main checkout {path:?}")]
+    MainCheckout {
+        /// The main checkout.
+        path: PathBuf,
+    },
+    /// A git command failed; `stderr` is git's text.
+    #[error("git {args}: {stderr}")]
+    Git {
+        /// The arguments, space-joined.
+        args: String,
+        /// What git said, trimmed.
+        stderr: String,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

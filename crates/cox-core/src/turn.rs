@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use cox_protocol::ArchivePut;
 use cox_protocol::errors::{CoreError, ToolError};
-use cox_protocol::ids::{CallId, ItemId};
+use cox_protocol::ids::{CallId, ItemId, TurnId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tracing::Instrument as _;
 
+use crate::checkpoint;
 use crate::hooks;
 use crate::permission::Outcome;
 use crate::permission::policy::{ExecPath, exec_path};
@@ -120,6 +121,7 @@ pub(crate) async fn consume_provider(
 /// Runs one batch of tool calls; results are returned in emission order.
 pub(crate) async fn run_tools(
     session: &Session,
+    turn: TurnId,
     calls: Vec<(CallId, String, Value)>,
 ) -> Result<Vec<(CallId, ToolResult)>, CoreError> {
     let tools: HashMap<String, Arc<dyn Tool>> = session
@@ -170,14 +172,15 @@ pub(crate) async fn run_tools(
             }
         };
         session.dedup_invalidate(call.risk, &call.subject).await;
-        if tool.spec().concurrency == Concurrency::Exclusive {
+        let needs_snapshot = call.risk != Risk::ReadOnly && tool.touches(&call.input).is_none();
+        if tool.spec().concurrency == Concurrency::Exclusive || needs_snapshot {
             serial.push((id, tool, call.input));
         } else {
             parallel.push((id, tool, call.input));
         }
     }
     for (id, tool, input) in serial {
-        let (id, result) = run_one(session, id, tool, input).await;
+        let (id, result) = run_one(session, turn, id, tool, input).await;
         done.insert(id, result);
     }
     let cap = session.config.core.parallel_tools.max(1) as usize;
@@ -191,7 +194,9 @@ pub(crate) async fn run_tools(
             };
             let session = session.clone_handle();
             let parent = tracing::Span::current();
-            set.spawn(async move { run_one(&session, id, tool, input).await }.instrument(parent));
+            set.spawn(
+                async move { run_one(&session, turn, id, tool, input).await }.instrument(parent),
+            );
             inflight += 1;
         }
         let Some(joined) = set.join_next().await else {
@@ -354,6 +359,7 @@ fn sandbox_denial(output: &ToolOutput) -> Option<String> {
 )]
 async fn run_one(
     session: &Session,
+    turn: TurnId,
     id: CallId,
     tool: Arc<dyn Tool>,
     input: Value,
@@ -365,6 +371,7 @@ async fn run_one(
     let (out_tx, mut out_rx) = mpsc::channel::<String>(32);
     let mut cx = ToolCx {
         roots: session.config.core.workspace_roots.clone(),
+        writable_roots: session.writable_roots().to_vec(),
         cwd: session.cwd.clone(),
         sandbox: SandboxPolicy {
             mode: session.config.sandbox.mode,
@@ -401,6 +408,8 @@ async fn run_one(
         == ExecPath::Confined)
         .then(|| input.clone());
     let hook_input = input.clone();
+    // T26.1: pre-images before the call can change anything.
+    let pending = checkpoint::before(session, turn, id, tool.as_ref(), &input).await;
     let call = |input: Value| async { tool.call(input, &cx).await };
     let mut output = call(input).await.unwrap_or_else(error_output);
     if let (Some(input), Some(detail)) = (retry, sandbox_denial(&output)) {
@@ -417,6 +426,7 @@ async fn run_one(
             output = tool.call(input, &cx).await.unwrap_or_else(error_output);
         }
     }
+    checkpoint::after(session, turn, id, pending).await;
     // §1.8 step vii: informational; the verdict is not applied.
     let event = if output.is_error {
         HookEvent::PostToolUseFailure

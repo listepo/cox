@@ -72,6 +72,7 @@ fn cx() -> ToolCx {
     let (tx, _rx) = tokio::sync::mpsc::channel(4);
     ToolCx {
         roots: vec![PathBuf::from("/tmp")],
+        writable_roots: vec![PathBuf::from("/tmp")],
         cwd: PathBuf::from("/tmp"),
         sandbox: SandboxPolicy {
             mode: SandboxMode::ReadOnly,
@@ -98,6 +99,7 @@ async fn serve() -> (McpClient, tokio::task::JoinHandle<()>) {
         Arc::new(Open),
         CxTemplate {
             roots: vec![PathBuf::from("/tmp")],
+            writable_roots: vec![PathBuf::from("/tmp")],
             cwd: PathBuf::from("/tmp"),
             sandbox: cx().sandbox,
             archive: Arc::new(NoArchive),
@@ -164,7 +166,13 @@ async fn client_server_crash_does_not_end_session() {
             ..McpServerConfig::default()
         },
     );
-    let (clients, tools, notices) = connect_all(&servers, Duration::from_secs(2), true).await;
+    let (clients, tools, notices) = connect_all(
+        &servers,
+        Duration::from_secs(2),
+        true,
+        &cox_mcp::client::Auth::none(),
+    )
+    .await;
     assert!(clients.is_empty() && tools.is_empty());
     assert_eq!(notices.len(), 1);
     assert!(

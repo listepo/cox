@@ -111,6 +111,8 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("budget", "budget.session_usd"),
         ("cwd", "core.workspace_roots"),
         ("add-dir", "core.workspace_roots"),
+        // T27.3: resolved once in `main` into `--cwd`/`--add-dir`.
+        ("worktree", "runtime.worktree"),
         ("home", "core.home"),
         ("verbose", "core.log_level"),
         ("no-hooks", "hooks.enabled"),

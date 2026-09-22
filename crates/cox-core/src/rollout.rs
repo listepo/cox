@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::types::{
-    Content, Decision, Event, ItemKind, Level, Message, PermissionMode, Role, StopReason, ToolCall,
+    Content, Decision, Event, ItemKind, Job, Level, Message, PermissionMode, Role, StopReason,
+    ToolCall,
 };
 
 /// Reconstructed transcript plus the session flags resume must restore.
@@ -19,6 +20,25 @@ pub struct History {
     pub grants: Vec<(String, String)>,
     /// True when the caller dropped a truncated last JSONL line.
     pub truncated: bool,
+    /// The highest main-turn `seq` seen, so a resumed session keeps
+    /// numbering where it left off (T26.2).
+    pub turns: u32,
+    /// Surviving main turns as `(seq, message index, checkpoint count)`.
+    /// These are rollout ordinals, not positions after rewind/compaction.
+    pub turn_marks: Vec<HistoryTurn>,
+}
+
+/// Reconstructed metadata for one user turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HistoryTurn {
+    /// The user item that owns this turn, retained for later compaction.
+    pub item: ItemId,
+    /// The original `Event::TurnStarted::seq`.
+    pub seq: u32,
+    /// Where this turn begins in [`History::messages`].
+    pub message_index: usize,
+    /// Files checkpointed during this turn.
+    pub checkpoints: usize,
 }
 
 impl History {
@@ -45,9 +65,40 @@ impl History {
         let mut pending_results: Vec<Content> = Vec::new();
         let mut calls: HashMap<CallId, ToolCall> = HashMap::new();
         let mut grants = Vec::new();
+        let mut turns = 0u32;
+        let mut current_seq = 0u32;
+        let mut item_seq: HashMap<ItemId, u32> = HashMap::new();
+        let mut checkpoint_counts: HashMap<u32, usize> = HashMap::new();
+        // Where each main turn starts in `messages`, for `Rewound`.
+        let mut starts: Vec<(u32, usize)> = Vec::new();
 
         for ev in events {
             match ev {
+                Event::TurnStarted {
+                    seq,
+                    job: Job::Main,
+                    ..
+                } => {
+                    flush_results(&mut messages, &mut pending_results);
+                    turns = turns.max(*seq);
+                    current_seq = *seq;
+                    starts.push((*seq, messages.len()));
+                }
+                // The user's cut (T26.2): history stops at `to_turn`, the
+                // rollout keeps every line, so the cut is replayed here.
+                Event::Rewound {
+                    to_turn,
+                    conversation: true,
+                    ..
+                } => {
+                    flush_results(&mut messages, &mut pending_results);
+                    if let Some(at) = starts.iter().position(|(seq, _)| seq >= to_turn) {
+                        let len = starts[at].1;
+                        messages.truncate(len);
+                        turn_of.truncate(len);
+                        starts.truncate(at);
+                    }
+                }
                 Event::ItemStarted { item, kind } => {
                     flush_results(&mut messages, &mut pending_results);
                     items.insert(*item, kind.clone());
@@ -75,8 +126,18 @@ impl History {
                         continue;
                     }
                     match kind {
-                        ItemKind::UserMessage { text, .. } | ItemKind::Summary { text } => {
+                        ItemKind::UserMessage { text, .. } => {
                             current_turn = Some(*item);
+                            item_seq.insert(*item, current_seq);
+                            messages.push(Message {
+                                role: Role::User,
+                                content: vec![Content::Text { text }],
+                            });
+                            turn_of.push(current_turn);
+                        }
+                        ItemKind::Summary { text } => {
+                            current_turn = Some(*item);
+                            item_seq.insert(*item, 0);
                             messages.push(Message {
                                 role: Role::User,
                                 content: vec![Content::Text { text }],
@@ -119,6 +180,10 @@ impl History {
                         messages.push(msg);
                         turn_of.push(turn);
                     }
+                    starts = starts_from(&turn_of, &item_seq);
+                }
+                Event::Checkpoint { files, .. } => {
+                    *checkpoint_counts.entry(current_seq).or_default() += files.len();
                 }
                 Event::ToolCallDone { call_id, result } => {
                     pending_results.push(Content::ToolResult {
@@ -148,12 +213,31 @@ impl History {
             }
         }
         flush_results(&mut messages, &mut pending_results);
+        turn_of.resize(messages.len(), current_turn);
+        let mut seen = HashSet::new();
+        let turn_marks = messages
+            .iter()
+            .zip(&turn_of)
+            .enumerate()
+            .filter_map(|(message_index, (message, item))| {
+                let item = (*item)?;
+                let seq = *item_seq.get(&item)?;
+                (message.role == Role::User && seq != 0 && seen.insert(item)).then(|| HistoryTurn {
+                    item,
+                    seq,
+                    message_index,
+                    checkpoints: checkpoint_counts.get(&seq).copied().unwrap_or_default(),
+                })
+            })
+            .collect();
 
         Self {
             messages,
             permission_mode: PermissionMode::Default,
             grants,
             truncated,
+            turns,
+            turn_marks,
         }
     }
 
@@ -164,6 +248,19 @@ impl History {
             text: "last rollout line was truncated and dropped".into(),
         })
     }
+}
+
+fn starts_from(turn_of: &[Option<ItemId>], item_seq: &HashMap<ItemId, u32>) -> Vec<(u32, usize)> {
+    let mut seen = HashSet::new();
+    turn_of
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let item = (*item)?;
+            let seq = *item_seq.get(&item)?;
+            (seq != 0 && seen.insert(item)).then_some((seq, index))
+        })
+        .collect()
 }
 
 fn flush_results(messages: &mut Vec<Message>, pending: &mut Vec<Content>) {
@@ -244,6 +341,53 @@ mod tests {
             h.messages[0].content,
             vec![Content::Text { text: "new".into() }]
         );
+    }
+
+    #[test]
+    fn resume_marks_keep_original_seq_after_compaction() {
+        let old = ItemId::new();
+        let keep = ItemId::new();
+        let summary = ItemId::new();
+        let events = vec![
+            Event::TurnStarted {
+                turn: TurnId::new(),
+                seq: 4,
+                job: Job::Main,
+                tier: cox_protocol::types::Tier::Code,
+                model: cox_protocol::types::ModelId("m".into()),
+            },
+            user_item(old, "old"),
+            Event::ItemDone { item: old },
+            Event::TurnStarted {
+                turn: TurnId::new(),
+                seq: 7,
+                job: Job::Main,
+                tier: cox_protocol::types::Tier::Code,
+                model: cox_protocol::types::ModelId("m".into()),
+            },
+            user_item(keep, "keep"),
+            Event::ItemDone { item: keep },
+            Event::ItemStarted {
+                item: summary,
+                kind: ItemKind::Summary {
+                    text: "summary".into(),
+                },
+            },
+            Event::ItemDone { item: summary },
+            Event::Compacted {
+                summary,
+                dropped: vec![old],
+                before_tokens: 10,
+                after_tokens: 2,
+            },
+        ];
+
+        let history = History::from_events(&events);
+        assert_eq!(history.turns, 7);
+        assert_eq!(history.turn_marks.len(), 1);
+        assert_eq!(history.turn_marks[0].item, keep);
+        assert_eq!(history.turn_marks[0].seq, 7);
+        assert_eq!(history.turn_marks[0].message_index, 1);
     }
 
     #[test]

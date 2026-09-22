@@ -90,6 +90,7 @@ fn server() -> ToolServer {
         Arc::new(ReadOnlyGate),
         CxTemplate {
             roots: vec![PathBuf::from(".")],
+            writable_roots: vec![PathBuf::from(".")],
             cwd: PathBuf::from("."),
             sandbox: SandboxPolicy {
                 mode: SandboxMode::ReadOnly,

@@ -2373,3 +2373,103 @@ Check output:
 $ hugo --gc --minify   # in website/
 Pages │ 17 · Total in 33 ms
 ```
+
+#### T26.1 Checkpoint store
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: — · Size: ~200 ×3 · Priority: P0 · Complexity: 4
+Goal: before every `Write`/`Destructive` tool call and before every user turn, the pre-image of each touched file is archived; for `bash`, the workspace is compared before and after so shell-caused changes are captured too; `Event::Checkpoint` is emitted.
+Files: `crates/cox-protocol/src/{types,traits,lib}.rs`, `crates/cox-store/migrations/00000000000003_checkpoints/{up,down}.sql` + `schema.rs`/`models.rs`/`lib.rs`, `crates/cox-tools/src/checkpoint.rs` (new) + `touches` in `edit.rs`/`write.rs`/`v4a/apply.rs`, `crates/cox-core/src/checkpoint.rs` (new) + `session.rs`/`turn.rs`, `crates/cox-core/tests/checkpoint.rs` + two scenarios, `crates/cox/src/session.rs`, `docs/how-it-works.md`.
+What landed (three commits, 7e380de · 34e7d9c · afb7f08): the card's file list crossed the crate boundary — `cox-core` may not read files or run git — so the snapshot lives in `cox-tools` behind `cox_protocol::Checkpointer` and the loop only orchestrates. (a) `CheckpointKind {Pre, Created, Deleted, Turn}`, `CheckpointRow`, `Event::Checkpoint { turn, call, files }`, `Store::checkpoint_insert/list`, `Tool::touches` (default `None`), migration 3 (`checkpoints` table, no `sha256` column — the archive row already hashes). (b) `GitCheckpointer`: a private bare repository per root under `<home>/checkpoints/<hash>` with `--work-tree=<root>`, `git add -A` + `write-tree` as the snapshot (its own index is the stat cache, `.gitignore` honoured, `GIT_ALTERNATE_OBJECT_DIRECTORIES` reuses the workspace's blobs), `diff-tree --name-status` + `cat-file` for the pre-images, direct `confine` + read for paths `edit`/`write`/`apply_patch` name; `Before {Absent, Bytes, TooLarge}` so an 8 MiB+ file is never mistaken for a created one. (c) `checkpoint::before/after` around `run_one` for every non-read-only call, a `Turn` marker row per user turn, `Session::set_checkpointer` (shared with children), one `Notice(Warn)` per session when git is unusable, installed by the binary next to the presence hook. Deviation from the card: the in-memory 256 KiB copies are replaced by the git object store (no size cap on what is captured, only on what is archived), and the timing test lives in `cox-tools`.
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core --test checkpoint
+PASS edit_has_preimage · bash_rm_has_preimage · checkpoint_row_exists_before_write · missing_git_warns_once_and_never_fails_the_turn
+Summary 4 tests run: 4 passed
+$ mise exec -- cargo nextest run -p cox-tools --run-ignored ignored-only checkpoint
+PASS [ 53.402s] warm_snapshot_under_200ms_on_50k_files   # 50 000 files; the 53 s is the test creating them, the warm snapshot itself is under 200 ms
+$ COX_HOME=<scratch> COX_PROVIDER=scripted cox run -p hi --output-format stream-json   # write a.rs; bash rm gone.txt && echo hi > made.txt
+{"type":"checkpoint",…,"files":[{"path":".../a.rs","kind":"pre"}]}
+{"type":"checkpoint",…,"files":[{"path":".../gone.txt","kind":"deleted"},{"path":".../made.txt","kind":"created"}]}
+$ sqlite3 cox.db "select turn, call_id is not null, path, kind, archive_id is not null from checkpoints"
+1|0||turn|0 · 1|1|…/a.rs|pre|1 · 1|1|…/gone.txt|deleted|1 · 1|1|…/made.txt|created|0
+$ mise exec -- cargo nextest run --workspace   # 628 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing, fails on the untouched tree too)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check   # clean
+```
+
+#### T26.2 `/rewind`
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: T26.1 · Size: ~200 ×2 · Priority: P0 · Complexity: 4
+Goal: `/rewind` (and `Esc Esc` on an empty composer) opens a timeline; the user restores code, conversation, or both; history stays append-only.
+Files: `crates/cox-protocol/src/{types,traits}.rs`, `crates/cox-tools/src/checkpoint.rs` (`restore`), `crates/cox-core/src/rewind.rs` (new) + `checkpoint.rs`/`compact.rs`/`rollout.rs`/`session.rs`, `crates/cox-core/tests/rewind.rs` + `scenarios/rewind_two.toml`, `crates/cox-tui/src/{commands,picker,state}.rs`, `crates/cox-tui/tests/rewind.rs`, `docs/how-it-works.md`, `docs/protocol.jsonschema`.
+What landed (commit after afb7f08): `Submission::Rewind { to_turn, code, conversation }` and `Event::Rewound { to_turn, code, conversation, restored, skipped }`; `Event::TurnStarted` carries `seq` (1-based turn number) so every surface can name a turn and `History.turns` keeps a resumed session counting where it left off; `Checkpointer::restore` (confined `atomic_write`, or remove) in `cox-tools`. Code rewind: the earliest row per path since `to_turn` is written back (created files removed, deleted ones return), each write first checkpointed under a fresh turn number with no call id, so `/redo` (T26.4) has its rows; pre-images over the size cap are reported as skipped. Conversation rewind: the in-memory history is cut at the turn mark (`TurnMark.seq`), the rollout is untouched, `Rewound` is appended and `History::from_rollout` replays the cut. Refusals (turn running, unknown turn, nothing chosen) are a `Notice(Warn)`, never an error. TUI: `/rewind` row in the palette, `Kind::Rewind` picker (`T7 · 3 files · "text"`, newest first) then `Kind::RewindWhat` (`both`/`code`/`talk`), `Esc Esc` within 500 ms on an empty composer, `Rewound` cuts the transcript at the turn. Deviations from the card: the row shows the file count but not `+41 −12` (line stats are not recorded), the rewound marker is a plain `Notice` rather than a dim `⤺` cell, and the TUI part is not driven through the PTY e2e.
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core --test rewind
+PASS rewind_code_restores_bytes · rewind_conversation_is_append_only · resume_after_rewind_stops_at_marker · rewind_refuses_unknown_turns_with_a_notice
+$ mise exec -- cargo nextest run -p cox-tui --test rewind
+PASS rewind_timeline_snapshot · rewind_choice_then_what_becomes_a_submission · esc_esc_on_an_empty_composer_opens_the_timeline · rewound_conversation_cuts_the_transcript_at_the_turn
+$ mise exec -- cargo nextest run -p cox-tools restore_writes_bytes_back_and_removes_created_files   # real files, confined
+$ mise exec -- cargo nextest run -p cox-core resume_builds_identical_request   # invariant 6 still passes
+$ mise exec -- cargo nextest run --workspace   # 639 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check   # clean
+```
+
+#### T22.5 MCP OAuth
+
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: — · Size: ~200 · Priority: P0 · Complexity: 4
+Goal: an HTTP MCP server answering 401 with OAuth metadata gets the rmcp `auth` flow, the token lands in the keyring, refresh is automatic, expiry is a `Notice(Warn)` naming the server — never a silent skip.
+Files: `crates/cox-mcp/src/auth.rs` (new), `crates/cox-mcp/src/client.rs`, `crates/cox/src/doctor.rs`.
+Steps: (1) Enable rmcp's `auth` feature in the workspace row (no new crate; `keyring 4` is already listed in §1.1). (2) `auth.rs`: `Store` = keyring entry `cox/mcp/<server>` holding `{access, refresh, expires_at, client_id}`; `authorize(server, metadata)` runs the authorization-code flow with PKCE: print the URL, open the browser when `TERM_PROGRAM`/`DISPLAY` allow (`open`/`xdg-open` via `which`), listen on `127.0.0.1:0` for the redirect with a 120 s timeout; device-code flow when the metadata advertises it (headless). (3) `client.rs`: on 401 with `WWW-Authenticate` resource metadata → step 2 once per session, then retry; refresh 60 s before `expires_at`; a refresh failure emits `Notice(Warn, "mcp <server>: token expired, run cox mcp login <server>")` and marks the server disabled for the session. (4) `cox mcp login <server>` / `logout` subcommands (in `mcp_cmd.rs` if the size allows, else a §6 follow-up); `doctor` prints `auth: ok (expires in 3h) | expired | none` per HTTP server. (5) Contract test with wiremock: `401 → /.well-known metadata → token endpoint → 200 tools/list`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-mcp oauth_401_then_token_then_200 oauth_refresh_failure_is_a_warning
+```
+Done when: the wiremock flow passes without a browser (device-code path), `doctor` shows the auth row, and an expired token never turns into a skipped server without a notice.
+Out of scope: consumer-subscription OAuth for model providers (research §8.2 #34), dynamic client registration beyond what rmcp provides.
+Execution plan (Claude Code / claude-fable-5-1): (a) `crates/cox-mcp/src/auth.rs`: `Secrets` trait (`store(server) -> Arc<dyn CredentialStore>`), `Keyring` impl over `keyring::Entry::new("cox", "mcp/<server>")` holding rmcp's `StoredCredentials` as JSON, `Memory` impl for tests, `login(server, url, store, challenge, on_url)` = rmcp `AuthorizationSession` (discovery from the 401 challenge, dynamic registration, PKCE) with a loopback listener on `127.0.0.1:0` and a 120 s timeout, `open_browser(url)`, `status(creds)` for doctor, `logout(store)`. (b) `client.rs`: HTTP servers connect through `AuthClient<reqwest::Client>` + `StreamableHttpClientTransport::with_client`; a 401 on the handshake becomes `ClientError::LoginRequired { name, expired }`; `connect_all` takes an `Auth { secrets, prompt }` — with a prompt the login runs once and the connect is retried, without one the notice reads `token expired, run \`cox mcp login <name>\``. (c) `crates/cox`: `open(.., interactive)` decides whether a prompt exists (TUI yes, `run`/`acp` no); `cox mcp login|logout <server>` subcommands; `doctor` gets one `mcp auth <name>` row per HTTP server. (d) wiremock tests in `client.rs`: `oauth_401_then_token_then_200` (the test plays the browser by GET-ing the loopback callback) and `oauth_refresh_failure_is_a_warning`. Deviation to record: rmcp 3.4 has no device-code grant, so the headless path is the printed URL + loopback listener, not device code.
+What landed (commit after c5ab101): `crates/cox-mcp/src/auth.rs` — `Secrets` (`Keyring` → entry `cox/mcp/<server>` holding rmcp's `StoredCredentials` as JSON; `Memory` for tests), `login()` = rmcp `AuthorizationSession` seeded from the 401 challenge (discovery, dynamic client registration, PKCE) with a loopback listener on `127.0.0.1:0` and a 120 s timeout, `open_browser`, `status`/`stored` for doctor, `logout`. `client.rs`: HTTP servers connect through `AuthClient<reqwest::Client>` so a stored token is attached and refreshed silently; a 401 on the handshake becomes `ClientError::LoginRequired { name, expired }`; `connect_all` takes `Auth { secrets, prompt }` — with a prompt (TUI) the login runs once and the connect is retried, without one (`cox run`, `cox acp`) the notice reads `mcp server \`x\` skipped: token expired, run \`cox mcp login x\`` (or `login required`). An unreadable keyring falls back to an in-memory store for the session instead of taking the server down. `cox mcp login|logout <server>`; `cox doctor` prints `mcp auth <name>: ok (expires in 3h) | ok (no expiry) | expired | none` per HTTP server. Deviations from the card: rmcp 3.4 has no device-code grant, so the headless login is the printed URL plus the loopback callback (the wiremock test plays the browser by GET-ing the callback); mid-session refresh rejection surfaces as the tool call's error text, not a `Notice` (tools have no event channel); MCP notices still reach the user as `cox: warning:` lines on stderr, as before; `cox-mcp` names `reqwest 0.13` directly (the version rmcp implements its client trait for; the workspace row stays 0.12 for the providers — no new crate in the lockfile); size ~700 LOC across 13 files, over the ≤200/≤3 cap by design of the card.
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-mcp oauth_401_then_token_then_200 oauth_refresh_failure_is_a_warning
+PASS oauth_401_then_token_then_200 · oauth_refresh_failure_is_a_warning
+$ COX_HOME=<scratch> cox doctor | grep 'mcp auth'          # mcp auth demo: ⚠ keyring: ... A default keychain could not be found (scratch HOME has no keychain)
+$ COX_HOME=<scratch> cox mcp login nosuch                  # Error: no MCP server named `nosuch`
+$ COX_HOME=<scratch> cox mcp login local                   # Error: `local` is a stdio server; only HTTP servers use OAuth
+$ COX_HOME=<scratch> cox run -p hi --output-format stream-json   # against a 401-only server: cox: warning: mcp server `demo` skipped: login required, run `cox mcp login demo`
+$ mise exec -- cargo nextest run --workspace --no-fail-fast # 643 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
+```
+
+
+#### T27.3 Worktree isolation
+
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: T19.5 (gate, done), T27.1 · Size: ~200 · Priority: P2 · Complexity: 4
+Goal: `cox --worktree <name>` and `agent(isolation: "worktree")` run in `_worktrees/<repo>-<name>` created per the workspace `worktrees` skill; nothing happens without the flag.
+Files: `crates/cox-tools/src/git.rs`, `crates/cox/src/session.rs`, `crates/cox-tui/src/status.rs`.
+Steps: (1) `git::worktree_add(repo_root, name) -> PathBuf` runs `git worktree add --lock --reason "cox <session>" ../_worktrees/<repo>-<name> -b cox/<name>` (idempotent when it exists and is locked by this session id); `worktree_remove` only when `git status --porcelain` is empty. (2) `--worktree <name>` sets the session cwd and root to that path and `--add-dir` to the main checkout (gate decision); the presence record (P16) carries the worktree path. (3) `agent(isolation: "worktree")` does the same for the child session, named after the task id; the child's result includes the branch name. (4) Status line: `⎇ cox/T42 ⧉ T42`; `/quit` offers removal when clean.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tools worktree_add_is_idempotent worktree_remove_refuses_dirty
+mise exec -- cargo nextest run -p cox worktree_flag_sets_roots
+```
+Done when: a scratch repo test creates, uses and removes a worktree; the `worktrees` skill's naming rule is followed literally.
+Out of scope: merging worktree branches (a user or `bash` action).
+Execution plan (Claude Code / claude-fable-5-1):
+1. `cox-protocol`: `traits::Worktrees { add(from, name, owner) -> Result<Worktree, WorktreeError> }`, `Worktree { path, branch, main }`, `errors::WorktreeError`; `Presence.worktree: Option<PathBuf>`.
+2. `cox-tools::git`: `worktree_add(dir, name, owner)` — main checkout via `git rev-parse --git-common-dir`, root = nearest ancestor holding `_worktrees/` else `_worktrees/` next to the repo (`WT_ROOT` overrides), path `<root>/<repo>-<name>`, branch `<name>` (lower case, `[a-z0-9._-]`), start point `origin/<default>` after a best-effort fetch else `HEAD`, `git worktree add --lock --reason "<owner> | <name> | <date>" --no-track`; reused when already registered and the lock is empty or starts with `cox /`, refused when another owner holds it. `worktree_remove(path, owner)` refuses the main checkout, an unregistered path, another owner's lock and a dirty tree; unlock + remove, branch kept. `is_clean(dir)`. `GitWorktrees` implements the trait. Tests: `worktree_add_is_idempotent`, `worktree_remove_refuses_dirty`.
+3. `cox-core`: `Session::set_worktrees`, `spawn_child(.., cwd)`; `agent(isolation: "worktree")` asks the trait for `<task-id>` owned by `cox / <parent session>`, runs the child with cwd = worktree and roots `[worktree, main]`, and appends `[worktree <path>, branch <branch>]` to the answer. Test: `subagent_worktree_isolation_runs_child_in_its_worktree` with a fake `Worktrees`.
+4. `crates/cox`: `--worktree <NAME>` (`flag_key_map` → `runtime.worktree`); `main.rs` creates it once, then treats it as `--cwd <path> --add-dir <main>`; `session::open` installs `GitWorktrees` and hands the path to the presence record; `/quit` on a clean worktree asks on stderr before `worktree_remove`. Test: `worktree_flag_sets_roots`.
+5. `cox-tui`: `State.worktree`, glyph `worktree` (`⧉` / `wt`), status segment after the branch.
+6. Docs: `docs/how-it-works.md` section, `docs/compat.md` row. Deviation from the card recorded in `done.md`: the branch is `<name>`, not `cox/<name>`, because the skill's naming rule wins ("followed literally").
+
+What landed (commit `T27.3: Worktree isolation`): `cox_tools::git::worktree_add`/`worktree_remove`/`is_clean` and `GitWorktrees` (the `cox_protocol::traits::Worktrees` implementation); `WorktreeError` in `cox-protocol`; `Presence.worktree`; `Session::set_worktrees` and a cwd override in `spawn_child`; `agent(isolation: "worktree")` with the `[worktree <path>, branch <name>]` trailer; `--worktree <NAME>` resolved once in `main` into `--cwd <worktree> --add-dir <main>`; the `⧉ <name>` status segment (ASCII `wt`); `/quit` asks on stderr before removing a clean worktree; `docs/how-it-works.md` section and `docs/compat.md` row.
+
+Deviations from the card: the branch is `<name>`, not `cox/<name>`, and the lock reason is `cox / pid <pid> | <name> | <date>` (`cox / <session>` for a subagent's worktree) — the `worktrees` skill's naming rule is followed literally, as the Done-when line asks. Any cox owner (`cox /` prefix) may reuse or remove a cox worktree; another owner's lock is refused. The worktree root is the skill's (`_worktrees/` in the nearest ancestor, `WT_ROOT` override), not `../_worktrees` unconditionally. Size: ~800 LOC over 20 files (the trait seam, the flag, the TUI segment and their tests each live in their own crate).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tools worktree_add_is_idempotent worktree_remove_refuses_dirty   # 2 passed
+$ mise exec -- cargo nextest run -p cox worktree_flag_sets_roots                                        # 1 passed
+$ mise exec -- cargo nextest run -p cox-core subagent_worktree_isolation_runs_child_in_its_worktree     # 1 passed
+$ COX_HOME=<scratch> cox --worktree Demo --cwd <scratch>/ws/repo --permission-mode auto run -p hi   # scripted write lands in <scratch>/ws/_worktrees/repo-demo (branch demo, locked "cox / pid N | demo | 2026-09-22"); main checkout clean; rerun reuses it; a "Cursor / grok" lock and "Bad Name" are refused with exit 1
+$ mise exec -- cargo nextest run --workspace --no-fail-fast # 649 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
+```

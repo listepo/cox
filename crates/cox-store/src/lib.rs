@@ -23,11 +23,11 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use sha2::{Digest, Sha256};
 
 use cox_protocol::{
-    Archive, ArchiveId, ArchivePut, Event, MemoryHit, ModelId, SessionId, SessionRow,
-    Store as StoreTrait, StoreError, Usage, UsageRow,
+    Archive, ArchiveId, ArchivePut, CheckpointRow, Event, MemoryHit, ModelId, SessionId,
+    SessionRow, Store as StoreTrait, StoreError, Usage, UsageRow,
 };
 
-use models::{NewArchive, NewMemory, NewSession, UsageDbRow};
+use models::{CheckpointDbRow, NewArchive, NewMemory, NewSession, UsageDbRow};
 use rollout::RolloutWriter;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -420,6 +420,61 @@ impl StoreTrait for Store {
     fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError> {
         self.rollout_index_text(session, turn, text)
     }
+
+    fn checkpoint_insert(&self, row: &CheckpointRow) -> Result<(), StoreError> {
+        let new_row = CheckpointDbRow {
+            session_id: row.session.to_string(),
+            turn: row.turn as i32,
+            call_id: row.call.map(|c| c.to_string()),
+            path: row.path.to_string_lossy().into_owned(),
+            kind: to_tag(&row.kind),
+            archive_id: row.archive.map(|a| a.to_string()),
+            created_at: now_rfc3339(),
+        };
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::insert_into(schema::checkpoints::table)
+            .values(&new_row)
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
+    fn checkpoint_list(&self, session: &SessionId) -> Result<Vec<CheckpointRow>, StoreError> {
+        let rows: Vec<CheckpointDbRow> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            schema::checkpoints::table
+                .filter(schema::checkpoints::session_id.eq(session.to_string()))
+                .order(schema::checkpoints::id.asc())
+                .select(CheckpointDbRow::as_select())
+                .load(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        // A tag or id that no longer parses is a corrupt row, not a
+        // defaultable one — same stance as `usage_for_session`.
+        let corrupt = || StoreError::Corrupt {
+            path: self.home.join("cox.db"),
+        };
+        rows.into_iter()
+            .map(|r| {
+                Ok(CheckpointRow {
+                    session: *session,
+                    turn: r.turn as u32,
+                    call: r
+                        .call_id
+                        .as_deref()
+                        .map(|c| c.parse().map_err(|_| corrupt()))
+                        .transpose()?,
+                    path: PathBuf::from(r.path),
+                    kind: from_tag(&r.kind).ok_or_else(corrupt)?,
+                    archive: r
+                        .archive_id
+                        .as_deref()
+                        .map(|a| a.parse().map_err(|_| corrupt()))
+                        .transpose()?,
+                })
+            })
+            .collect()
+    }
 }
 
 /// Narrower async view of the archive methods for `Tool::call` (D6a); wraps
@@ -806,5 +861,50 @@ mod tests {
             .expect("session counters");
         assert_eq!(turns, 1);
         assert_eq!(cost, 0.02);
+    }
+
+    #[test]
+    fn checkpoint_rows_round_trip_in_insertion_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let session = SessionId::new();
+        let call = CallId::new();
+        let archive = store
+            .archive_put(&ArchivePut {
+                session,
+                call,
+                tool: "checkpoint".into(),
+                subject: Some("/w/a.rs".into()),
+                bytes: b"before".to_vec(),
+            })
+            .expect("archive");
+        let rows = vec![
+            CheckpointRow {
+                session,
+                turn: 1,
+                call: None,
+                path: PathBuf::new(),
+                kind: cox_protocol::CheckpointKind::Turn,
+                archive: None,
+            },
+            CheckpointRow {
+                session,
+                turn: 1,
+                call: Some(call),
+                path: PathBuf::from("/w/a.rs"),
+                kind: cox_protocol::CheckpointKind::Pre,
+                archive: Some(archive),
+            },
+        ];
+        for row in &rows {
+            store.checkpoint_insert(row).expect("insert");
+        }
+        store
+            .checkpoint_insert(&CheckpointRow {
+                session: SessionId::new(),
+                ..rows[0].clone()
+            })
+            .expect("another session's row");
+        assert_eq!(store.checkpoint_list(&session).expect("list"), rows);
     }
 }

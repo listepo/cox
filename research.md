@@ -254,3 +254,133 @@ because ambient repo servers add startup noise to every task.
 - Agents: A (Claude Code/Copilot, 19 lookups), B (Codex, 22), C (competitors, 3 sub-agents, ~75 lookups), D (crates, 69), E (specs, 19), F (tokens/testing, **3 lookups** — largely written from the model's memory; treated as directional only), G (fact-check, 43). Total ≈ 550 k subagent tokens on Haiku, ≈ $1.
 - Author verifications: `codex-rs/Cargo.toml` (deps), crates.io API (18 crates), crates.io name availability (`cox`, `coxswain`, `boatswain`, `mizzen`, `brigantine` free), the Claude API reference (models, prices, caching thresholds, thinking/effort rules).
 - Still unverified: official prices for non-Anthropic providers; Claude Code's compaction thresholds and truncation limits; Terminal-Bench 2.x task counts; Copilot CLI internals (closed). Each has a task that replaces the guess with a measurement (T1.7, T8.5, T12.1).
+
+## 8. Field survey 2026-09-22 — what terminal coding agents ship now, and where cox stands
+
+Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~180 lookups, every bullet carries a URL in the agent transcripts) covering (A) Claude Code / Codex CLI / Gemini CLI→Antigravity / Copilot CLI, (B) OpenCode, Crush, Amp, Cursor CLI, Factory Droid, Goose, Pi, aider, Kilo, Mistral Vibe, Qwen Code, Kimi, Warp, (C) terminal capabilities and ratatui ecosystem, (D) capability trends and a matrix. The author verified the cox column against the code (not the plan), and the ratatui/crossterm claims against the vendored crate sources (ledger #29–31). Third-party claims about vendors keep the agents' confidence: [high] = official docs/changelog/repo, [med] = one secondary source, [unverified] = not confirmed. The improvement plan that follows from this section is `docs/design/improvement-plan-2026.md` (proposal, A26); nothing here changes §0 decisions.
+
+### 8.1 What the field converged on (table stakes in 2026)
+
+| Convention | Who ships it | Confidence | cox today |
+|---|---|---|---|
+| `Shift+Tab` cycles into a read-only *plan* mode | Claude Code, Codex (`/plan` too), Copilot CLI; OpenCode uses `Tab` | high | `Tab` cycles default→plan→auto (§1.13); no plan-specific view |
+| Checkpoint before every edit, `/rewind` restores code, conversation or both | Claude Code (`Esc Esc`, ~30-day retention; bash-caused changes *not* tracked), Cursor CLI (`/rewind` timeline with per-turn diffs, branch-on-rewind), OpenCode (`/undo`, `/redo`, separate git object DB), Gemini CLI | high | implemented in T26.1–T26.2, including shell-caused changes |
+| Queue messages while a turn runs; a *send-now* key interrupts and flushes | Claude Code (`Ctrl+Enter`, 2.1.275), Pi (queued messages pinned above the editor) | high | composer is blocked during a turn |
+| Subagents run in the background by default, isolated in git worktrees on request | Claude Code (`isolation: "worktree"`, agents map with per-agent cards), Codex (up to 6, "Smart Approvals" label the source thread), Copilot (`/fleet`, live subagent timing) | high | `agent` tool with presets and worktree isolation (T27.3); `/agents` lists sessions; approvals are not labelled by source |
+| `/fork` / `/branch` and `/handoff` | Codex (`/fork`, `/side`), Claude Code (`/branch`, `--fork-session`), Amp (`/handoff` seeds a new thread) | high | none (`parent_id` column exists) |
+| `/context` token breakdown and a visible auto-compact threshold | Claude Code (`/context`, `/autocompact`), OpenCode v2 compacts *before* the call | high | `ctx %` and `cache %` in the status line; compaction after `TurnDone` only |
+| Themes as files, `/theme` with live preview; syntax themes from `.tmTheme` | Codex (32 themes, `.tmTheme` drop-in), Crush (`Ctrl+P` palette, `Ctrl+E` live editor), OpenCode ("system" theme derived from the terminal background, `{dark,light}` per colour) | high | `tui.theme = auto|dark|light` picks one of two syntect base16 themes; `auto` is not detected |
+| Custom keybindings file | Claude Code (`keybindings.json`), Codex (F13–F24) | high | none |
+| Real vim: text objects, visual mode, undo/redo of drafts | Claude Code 2.1.118, Codex | high | vim-lite (`hjkl`, `i`, `x`, `dd`-less) |
+| `!` drops into a shell line without leaving the session | Factory Droid, Claude Code | high | none |
+| Desktop notification on turn end / approval (OSC 9/777 + BEL, hooks) | all four majors; Pi | high | none |
+| OSC 8 hyperlinks on paths/URLs; clickable | Codex, Pi | high | none |
+| Image paste (`Ctrl+V`), screenshots to the model | Codex (Windows/Linux too), Claude Code (macOS; Windows open issue), OpenCode (drag-drop), Pi (Kitty graphics inline) | high | refused with a hint (gate T19.4) |
+| Screen-reader / plain mode, reduced motion, daltonized themes | Claude Code (`--ax-screen-reader`, `prefersReducedMotion`) | high | `NO_COLOR`, ASCII glyph fallback (T14.1/T14.2) |
+| Voice input (`/voice`) | Claude Code, aider | high | none — out of scope (see plan §6) |
+| Remote control from phone/web, session keeps running locally | Claude Code Remote Control, Codex Remote, Amp Orbs, Cursor background agents | high | none — out of scope for v0.2 |
+| Scheduled agents / `/loop` | Claude Code Routines (cloud), Cursor CLI `/loop` (local) | high | none |
+| MCP OAuth, elicitation, 2026-07-28 spec (MRTR, list TTLs, MCP Apps extension; sampling deprecated) | Claude Code CLI, Copilot, Codex | high | stdio + HTTP and OAuth implemented (T22.5); elicitation and MCP Apps remain open |
+| ACP as an agent | OpenCode (Zed, JetBrains, Neovim), Goose, Amp via adapter; Claude Code/Codex/Cursor not listed as native ACP agents | med | `cox acp` (T11.1) — a real lead |
+| `AGENTS.md` under the Agentic AI Foundation, 60 k+ repos; Claude Code reads it since 2.1.277 | everyone | high | yes (T7.1) |
+| Native Windows sandbox | Codex only (restricted tokens/ACLs, "experimental") | high | none, loud warning (D7) |
+
+### 8.2 What users complain about (the gaps a newcomer can win on)
+
+- **Trust**: silent model downgrades and routing (Claude Code April 2026 incident, Gemini CLI Pro→Flash), expired credentials in the wider field, hallucinated tool results. cox's D5 ("never up, never silent"), keyring-backed MCP OAuth (T22.5), and the ledger are the answer; the remaining work is *showing* it (plan P28). [high]
+- **Noise in multi-agent views**: Codex #12047 "raw scaffolding noise", approvals popping from unnamed threads. [high]
+- **"It does not look good yet"** even for Codex (#2609, #21130: semantic colours beyond syntax, Plan/Build switcher). Crush is the reference for looks; OpenCode for "genuinely pleasant" clarity of tool calls and diffs. [high]
+- **Footprint**: OpenCode ~1 GB RSS "for a TUI", Goose loads whole sessions into memory, Copilot CLI Node OOM. A Rust binary with a measured RSS is a marketing fact cox has not published. [high]
+- **System-prompt tax**: Pi keeps the prompt under ~1 000 tokens by shipping nothing optional; `oh-my-pi` adds the rest as extensions. cox's deferred tools (D6d) are the same idea half-done: the skills index, memory index and instruction files still ride in every request. [high]
+- **Copy fidelity**: Claude Code drops GFM features on copy (#26390); Codex falls back to key/value for cramped tables. [high]
+- **Windows**: image paste, sandbox and MCP install remain the weakest area for everyone. [high]
+- **Policy**: Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (enforced 2026-04-04); Codex's ChatGPT-plan login is sanctioned. cox must not implement consumer-subscription OAuth for Anthropic; API keys and the keyring stay the path. [med — secondary sources; treat as policy until the official page is read]
+
+### 8.3 Terminal capabilities (author-verified against vendored sources where marked ✔)
+
+| Capability | Mechanism | Support | ratatui/crossterm 0.30.2/0.29 |
+|---|---|---|---|
+| Distinct `Shift+Enter`/`Ctrl+Enter` | Kitty keyboard protocol | Kitty, Ghostty, foot, Alacritty, iTerm2, WezTerm, Rio, Warp; not tmux | `PushKeyboardEnhancementFlags` ✔ (no-op where unsupported) |
+| Flicker-free `insert_before` | scrolling regions | VT100-class terminals | ratatui feature `scrolling-regions` ✔ present, **not enabled** in cox |
+| Clipboard over SSH/tmux | OSC 52 | Alacritty, Ghostty, Kitty, WezTerm, tmux forwards | crossterm feature `osc52` → `CopyToClipboard` ✔ present, not enabled |
+| Hyperlinks | OSC 8 | iTerm2, Terminal.app 13+, Ghostty, Kitty, WezTerm, Alacritty, VTE | no widget in ratatui; emit the sequence around a span (`hyperrat` exists) |
+| Desktop notification | OSC 9 / OSC 777 / BEL | iTerm2, WezTerm, Ghostty, Kitty, Warp (OSC 9) | raw write |
+| Tab/taskbar progress | OSC 9;4 | Windows Terminal, Konsole, foot, WezTerm, Kitty, Ghostty | raw write |
+| Background colour → dark/light | OSC 11 | xterm, iTerm2, Kitty, Alacritty, WezTerm, foot, VTE, Windows Terminal ≥ 1.22 | `terminal-colorsaurus` / `termbg` crates (new dependency, needs approval) |
+| Focus in/out (notify only when unfocused) | focus events | most | `EnableFocusChange` ✔ |
+| Inline images | Kitty / iTerm2 / Sixel | Kitty ≥ 0.28, Ghostty, WezTerm, iTerm2; halfblock fallback | `ratatui-image` (v0.2 images gate) |
+| Synchronised output | mode 2026 | Ghostty ≥ 1.0, Kitty, WezTerm | ratatui's crossterm backend already wraps frames |
+| Languages beyond syntect's ~40 | `two-face` (bat's syntax set, ~250 languages, +0.6 MiB) | — | new dependency, needs approval |
+
+Codex TUI structure worth copying (R§1.6 confirmed by two independent code readings): immutable committed `HistoryCell`s plus exactly one mutable active cell; a `BottomPane` stack of views (approval, pickers) that receives input first; `Ctrl+T` transcript overlay over the inline viewport. cox already has the first and third (T5.3, `Ctrl+O`); the modal stack is single-level.
+
+### 8.4 cox versus the field — capability matrix (cox column verified in code on 2026-09-22)
+
+`yes` shipped · `part` partial · `no` absent · `?` unverified for that vendor
+
+| Capability | cox | Claude Code | Codex | OpenCode | Crush | Copilot | Cursor CLI | Pi | aider |
+|---|---|---|---|---|---|---|---|---|---|
+| Lossless tool-output archive + `expand` | **yes** | ? | ? | ? | ? | ? | ? | no | no |
+| Explicit tiered routing, never up | **yes** | no (silent Haiku) | part (effort profiles) | part | part | part (auto, discounted) | no | no | part (architect/editor) |
+| Per-request usage row with cache read/write | **yes** | part (`/cost`) | ? | ? | ? | ? | ? | ? | part |
+| Deferred tool schemas + `tool_search` | **yes** | yes | ? | no | no | ? | ? | no | no |
+| Dedup of repeated reads | **yes** | no | no | no | no | no | no | no | no |
+| OS sandbox macOS + Linux | yes | yes | yes | ? | ? | yes | ? | no (containers) | no |
+| Windows sandbox | no | no | yes (exp.) | no | no | part (proxies) | ? | no | no |
+| Permission rules, deny wins | yes | yes | yes | ? | ? | yes | ? | no | no |
+| Plan mode | part | yes | yes | yes | ? | yes | yes | no (`oh-my-pi`) | no |
+| Checkpoints / rewind | **yes** | yes | ? | yes | ? | ? | yes | no | part (git commits) |
+| Bash-caused changes in rewind | **yes** | no | ? | yes (worktree snapshots) | ? | ? | ? | no | yes (commits) |
+| Queued messages + send-now | **no** | yes | ? | ? | ? | ? | ? | yes | no |
+| Background subagents | part | yes | yes | yes | ? | yes | yes | no | no |
+| Approval labelled by source agent | no | yes | yes | ? | ? | yes | ? | n/a | n/a |
+| Worktree isolation | **yes** | yes | yes | part (community) | ? | yes | ? | no | no |
+| `/fork`, `/handoff` | no | yes | yes | ? | ? | ? | yes (rewind branch) | no | no |
+| `/loop` / scheduled | no | yes | part | ? | ? | ? | yes | no | no |
+| Hooks (events) | yes (11 of 13 fire) | yes (30+) | part | yes (25+) | part | ? | ? | no | no |
+| Skills (`SKILL.md`) | part (discovered, not in context) | yes | ? | ? | yes | ? | ? | yes | no |
+| Custom slash commands from files | part (`cox ext list` only) | yes | yes | yes | ? | yes | yes | yes | no |
+| MCP client | yes | yes | yes | yes | yes | yes | yes | no | part |
+| MCP OAuth | **yes** | yes | yes | ? | yes | yes | ? | no | no |
+| MCP elicitation | no | yes (CLI) | ? | ? | ? | ? | ? | no | no |
+| ACP server | **yes** | ? | ? | yes | ? | ? | ? | ? | ? |
+| `cox mcp` (tools as an MCP server) | **yes** | no | yes | no | no | no | no | no | no |
+| Headless `stream-json` | yes | yes | yes | yes | yes | yes | yes | yes (RPC) | no |
+| Multi-provider incl. local | **yes** | no | no | yes (75+) | yes | part | no | yes | yes |
+| `ask_user` answered interactively | **no** (fixed answer) | yes | yes | yes | yes | yes | yes | no | n/a |
+| Themes as files, `/theme` | no | part | yes | yes | yes | yes | ? | yes | no |
+| Terminal background detection | no | ? | ? | yes | ? | ? | ? | ? | no |
+| Word-level / side-by-side diff | no | no | part | yes (`diff_style`) | ? | ? | ? | ? | yes (best-rated) |
+| Collapsible tool cards | part (fold + hint) | yes | yes | yes | yes | yes | ? | ? | no |
+| Keybindings file | no | yes | part | ? | ? | ? | ? | ? | no |
+| Vim mode | lite | full | full | ? | ? | ? | ? | ? | no |
+| Mouse | no (config key is dead) | yes | ? | yes | yes | yes | ? | ? | no |
+| Kitty keyboard protocol | no | ? | ? | ? | ? | ? | ? | yes | no |
+| OSC 8 links | no | ? | yes | ? | ? | ? | yes (Jan 2026) | yes | no |
+| OSC 52 clipboard | no | ? | ? | ? | ? | ? | ? | ? | no |
+| Notifications (OSC 9 / bell) | no | yes | yes | ? | ? | yes | ? | ? | no |
+| Image paste | no | yes | yes | yes | ? | ? | ? | yes | part |
+| `/context` breakdown | no | yes | ? | ? | ? | ? | ? | ? | part (`/tokens`) |
+| Pre-emptive compaction (before the call) | no (after turn) | yes | ? | yes | ? | ? | ? | ? | no |
+| Auto-memory | part (opt-in extraction) | yes | yes | ? | ? | yes | ? | no | no |
+| Screen-reader / plain mode | no | yes | ? | ? | ? | yes (a11y work) | ? | ? | part (plain) |
+| Secret redaction of transcripts | part (`record --redact`) | part (community) | ? | ? | ? | yes | ? | ? | no |
+| `doctor` | yes | yes | no | no (requested) | no | ? | ? | ? | no |
+| Measured RSS / startup published | no | no | no | no (~1 GB reported) | no | no | no | no | no |
+| Repo map | no (gate T19.6) | no | no | ? | ? | no | no | no | yes |
+| LSP diagnostics after edit | no (gate T19.2) | part | part | yes | yes | ? | ? | part (ext) | no |
+
+Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, `cox mcp`, ACP, multi-provider) are ahead of every vendor; checkpoints and rewind now close one major surface gap, while the remaining gaps include no queue, no themes, dead config keys, and a fixed-answer `ask_user`. The plan therefore spends P22–P26 on the surface and keeps the core decisions.
+
+### 8.5 Fact-check ledger additions
+
+| # | Claim | Verdict | Source |
+|---|---|---|---|
+| 29 | ratatui 0.30.2 has a `scrolling-regions` feature that makes `insert_before` scroll a region instead of repainting | confirmed by author | `~/.cargo/registry/.../ratatui-0.30.2/Cargo.toml` line 88; PR ratatui/ratatui#1341 |
+| 30 | crossterm 0.29 ships `CopyToClipboard` behind an `osc52` feature | confirmed by author | `crossterm-0.29.0/Cargo.toml` line 66, `examples/copy-to-clipboard.rs` |
+| 31 | crossterm 0.29 exposes `PushKeyboardEnhancementFlags` | confirmed by author | `crossterm-0.29.0/src/event.rs` |
+| 32 | cox `tui.mouse`, `tui.theme = "auto"` are read but have no effect; `ask_user` in the TUI is `Answers::Fixed`; skills index and custom commands are only in `cox ext list`; `SessionStart` hook never fires | confirmed by author | `crates/cox/src/session.rs`, `crates/cox-tui/src/app.rs`, `crates/cox-core/src` grep on 2026-09-22 |
+| 33 | Gemini CLI retired into a closed-source Antigravity CLI (June 2026) | [med] | developers.googleblog.com (agent A/D), not read by the author |
+| 34 | Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (2026-04-04) | [med] | secondary sources only (agent D); read the official policy before any login work |
+| 35 | Vendor model names quoted by reviewers (e.g. "GPT-6 Astra") and star counts (OpenCode 140–172 k, Pi 104–140 k) | [unverified] | vary by source; directional only |
+| 36 | Codex CLI checkpoints/rewind | [unverified] | no documentation found by agent D |

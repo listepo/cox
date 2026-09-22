@@ -26,11 +26,14 @@ use cli::{Cli, Command, ConfigAction};
 
 fn main() -> anyhow::Result<()> {
     load_dotenv()?;
-    let cli = Cli::parse();
-    let cwd = match &cli.cwd {
+    let mut cli = Cli::parse();
+    let mut cwd = match &cli.cwd {
         Some(dir) => dir.clone(),
         None => std::env::current_dir().unwrap_or_default(),
     };
+    if cli.worktree.is_some() {
+        cwd = session::enter_worktree(&mut cli, &cwd)?;
+    }
     let loaded = config_load::load(&cwd, &cli)?;
     let telemetry_home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let telemetry = telemetry::init(&loaded.config, &telemetry_home)?;
@@ -38,7 +41,8 @@ fn main() -> anyhow::Result<()> {
     match &cli.command {
         Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),
         Some(Command::Doctor) => {
-            let code = doctor::run(cli.json);
+            let servers = session::mcp_servers(&loaded.config, &cwd).servers;
+            let code = doctor::run(cli.json, &servers);
             drop(telemetry);
             std::process::exit(code);
         }

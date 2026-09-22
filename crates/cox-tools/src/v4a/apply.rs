@@ -278,6 +278,27 @@ impl Tool for ApplyPatchTool {
         }
     }
 
+    /// Every path the patch writes: each op's path plus a move's target.
+    /// An unparseable patch touches nothing — `call` refuses it first.
+    fn touches(&self, input: &Value) -> Option<Vec<String>> {
+        let patch = input
+            .get("patch")
+            .and_then(Value::as_str)
+            .map(parse)?
+            .ok()?;
+        let mut paths = Vec::new();
+        for op in &patch.ops {
+            paths.push(op.path().to_string());
+            if let Op::Update {
+                move_to: Some(to), ..
+            } = op
+            {
+                paths.push(to.clone());
+            }
+        }
+        Some(paths)
+    }
+
     fn subject(&self, input: &Value) -> String {
         let Some(Ok(patch)) = input.get("patch").and_then(Value::as_str).map(parse) else {
             return String::new();
@@ -298,12 +319,12 @@ impl Tool for ApplyPatchTool {
         let mut resolved = BTreeMap::new();
         for op in &patch.ops {
             let path = op.path().to_string();
-            resolved.insert(path.clone(), confine(&cx.roots, &cx.cwd, &path)?);
+            resolved.insert(path.clone(), confine(&cx.writable_roots, &cx.cwd, &path)?);
             if let Op::Update {
                 move_to: Some(to), ..
             } = op
             {
-                resolved.insert(to.clone(), confine(&cx.roots, &cx.cwd, to)?);
+                resolved.insert(to.clone(), confine(&cx.writable_roots, &cx.cwd, to)?);
             }
         }
 

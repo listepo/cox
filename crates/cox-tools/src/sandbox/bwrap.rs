@@ -49,6 +49,7 @@ pub const PROBE: &[&str] = &[
 pub fn argv(
     policy: &SandboxPolicy,
     roots: &[PathBuf],
+    writable_roots: &[PathBuf],
     scratch: &[PathBuf],
     shell: &[String],
 ) -> Vec<String> {
@@ -56,14 +57,23 @@ pub fn argv(
         .chain(BASE.iter().copied())
         .map(str::to_string)
         .collect();
-    let writable = super::writable(policy, roots, scratch);
+    let writable = super::writable(policy, writable_roots, scratch);
     for path in writable.iter().filter(|p| p.exists()) {
         let under_tmp = path.starts_with("/tmp") && !roots.contains(path);
         if !under_tmp {
             bind(&mut argv, "--bind", path);
         }
     }
-    for path in super::readonly(policy, roots).iter().filter(|p| p.exists()) {
+    for path in roots
+        .iter()
+        .filter(|root| !writable_roots.contains(root) && root.exists())
+    {
+        bind(&mut argv, "--ro-bind", path);
+    }
+    for path in super::readonly(policy, writable_roots)
+        .iter()
+        .filter(|p| p.exists())
+    {
         bind(&mut argv, "--ro-bind", path);
     }
     if !policy.network {
@@ -113,6 +123,7 @@ mod tests {
         let argv = argv(
             &policy(SandboxMode::WorkspaceWrite, false),
             std::slice::from_ref(&root),
+            std::slice::from_ref(&root),
             &[],
             &shell(),
         );
@@ -141,6 +152,7 @@ mod tests {
         let argv = argv(
             &policy(SandboxMode::ReadOnly, true),
             std::slice::from_ref(&root),
+            std::slice::from_ref(&root),
             &[],
             &shell(),
         );
@@ -150,10 +162,32 @@ mod tests {
     }
 
     #[test]
+    fn bwrap_keeps_non_writable_workspace_roots_read_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let main = dir.path().join("main");
+        let worktree = dir.path().join("worktree");
+        std::fs::create_dir_all(&main).expect("main");
+        std::fs::create_dir_all(&worktree).expect("worktree");
+        let roots = vec![worktree.clone(), main.clone()];
+        let argv = argv(
+            &policy(SandboxMode::WorkspaceWrite, false),
+            &roots,
+            std::slice::from_ref(&worktree),
+            &[],
+            &shell(),
+        );
+        let joined = argv.join(" ");
+        assert!(joined.contains(&triple("--bind", &worktree)), "{joined}");
+        assert!(joined.contains(&triple("--ro-bind", &main)), "{joined}");
+        assert!(!joined.contains(&triple("--bind", &main)), "{joined}");
+    }
+
+    #[test]
     fn bwrap_skips_missing_sources_and_scratch_under_tmp() {
         let missing = PathBuf::from("/definitely/not/here");
         let argv = argv(
             &policy(SandboxMode::WorkspaceWrite, false),
+            std::slice::from_ref(&missing),
             std::slice::from_ref(&missing),
             &[PathBuf::from("/tmp")],
             &shell(),

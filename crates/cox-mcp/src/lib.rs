@@ -4,6 +4,7 @@
 //! `server` is the other direction: cox's own tools offered to another
 //! agent over stdio (`cox mcp`).
 
+pub mod auth;
 pub mod client;
 pub mod discovery;
 pub mod server;

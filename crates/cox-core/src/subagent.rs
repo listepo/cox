@@ -9,7 +9,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{ItemId, TaskId};
-use cox_protocol::traits::{Tool, ToolCx};
+use cox_protocol::traits::{Tool, ToolCx, Worktree};
 use cox_protocol::types::{
     Concurrency, Content, Event, HookEvent, HookOutcome, Job, Message, ModelId, ProviderEvent,
     Request, Risk, Role, Submission, SystemBlock, Tier, ToolOutput, ToolSpec,
@@ -136,7 +136,10 @@ impl Tool for AgentTool {
                 where X is handled and report file:line\", `shell` (bash, web_fetch) for \
                 builds, test runs and HTTP calls whose full output you do not need. Pass \
                 `task` with everything the subagent needs to know; it does not see this \
-                conversation. Optional: `tools` to narrow the tool list, `budget_usd`."
+                conversation. Optional: `tools` to narrow the tool list, `budget_usd`, \
+                `isolation: \"worktree\"` to run the task in its own git worktree and \
+                branch (named after the task id) so its edits never touch this checkout; \
+                the answer then ends with the worktree path and branch."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -145,7 +148,8 @@ impl Tool for AgentTool {
                     "preset": {"type": "string", "enum": ["explore", "shell"]},
                     "tools": {"type": "array", "items": {"type": "string"}},
                     "budget_usd": {"type": "number", "minimum": 0},
-                    "background": {"type": "boolean"}
+                    "background": {"type": "boolean"},
+                    "isolation": {"type": "string", "enum": ["none", "worktree"]}
                 },
                 "required": ["task"]
             }),
@@ -191,14 +195,49 @@ impl Tool for AgentTool {
             input.get("budget_usd").and_then(Value::as_f64),
         );
         config.core.max_turns = preset.max_turns;
+        let task = TaskId::new();
+        // T27.3: the child works in `_worktrees/<repo>-<task>` on branch
+        // `<task>`, with the main checkout as a second root so it can still
+        // read what the parent sees; the worktree outlives the task for
+        // the user to merge.
+        let worktree = match input.get("isolation").and_then(Value::as_str) {
+            Some("worktree") => {
+                let worktrees = self.parent.worktrees().ok_or_else(|| ToolError::Denied {
+                    why: "worktree isolation is not available on this surface".into(),
+                })?;
+                let owner = format!("cox / {}", self.parent.id);
+                let wt = worktrees
+                    .add(&self.parent.cwd, &task.to_string(), &owner)
+                    .await
+                    .map_err(|e| ToolError::Denied {
+                        why: format!("worktree: {e}"),
+                    })?;
+                config.core.workspace_roots = vec![wt.path.clone(), wt.main.clone()];
+                Some(wt)
+            }
+            Some("none") | None => None,
+            Some(other) => {
+                return Err(ToolError::Denied {
+                    why: format!("unknown isolation {other:?}; use none or worktree"),
+                });
+            }
+        };
         let child = self
             .parent
-            .spawn_child(config, tools, preset.job, tier)
+            .spawn_child(
+                config,
+                tools,
+                preset.job,
+                tier,
+                worktree.as_ref().map(|wt| wt.path.clone()),
+            )
             .map_err(core_error)?;
+        if let Some(wt) = &worktree {
+            child.set_writable_roots(vec![wt.path.clone()]);
+        }
         let Some(events) = child.events() else {
             return Err(ToolError::Io);
         };
-        let task = TaskId::new();
         let label = format!("{}: {}", preset.name, first_line(&task_text));
         // SubagentStart gates both paths; a Block means the task never existed.
         if let HookOutcome::Block { reason } = hooks::fire(
@@ -236,6 +275,7 @@ impl Tool for AgentTool {
                     events,
                     cancel,
                     progress,
+                    worktree,
                 };
                 let outcome = run_task(&parent, child, task_text, io).await;
                 let (answer, cost_usd) = match outcome {
@@ -285,6 +325,7 @@ impl Tool for AgentTool {
                 events,
                 cancel: cx.cancel.clone(),
                 progress: cx.output.clone(),
+                worktree,
             },
         )
         .await;
@@ -337,6 +378,8 @@ struct RunIo {
     events: mpsc::Receiver<Event>,
     cancel: CancellationToken,
     progress: mpsc::Sender<String>,
+    /// The child's worktree, named in the answer so the parent can merge it.
+    worktree: Option<Worktree>,
 }
 
 /// Drives the child's turn and distills its answer (shared by the
@@ -413,6 +456,14 @@ async fn run_task(
             result.truncate(io.preset.result_cap_tokens * 4);
             result.push_str("\n[cut at the result cap]");
         }
+    }
+    // After the cap, so the trailer the parent merges from is never cut.
+    if let Some(wt) = &io.worktree {
+        result.push_str(&format!(
+            "\n[worktree {}, branch {}]",
+            wt.path.display(),
+            wt.branch
+        ));
     }
     Ok(TaskOutcome {
         answer: result,

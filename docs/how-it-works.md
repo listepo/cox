@@ -211,6 +211,7 @@ tests — use `COX_HOME=/tmp/cox-scratch`):
   cox.db                      sessions, per-request usage ledger, archive index, memory FTS
   sessions/<ulid>.jsonl       the rollout: one Event per line, resume + replay source
   archive/<ulid>              tool outputs over 16 KiB (smaller ones inline in the db)
+  checkpoints/<hash>/         one private bare git repository per workspace root (below)
   logs/cox.log                tracing log
 ```
 
@@ -218,6 +219,45 @@ Every provider call writes one `usage` row (model, input/output, cache
 read/write, cost). `cox stats --day`, `cox stats --month`, and
 `cox stats --cache` read the ledger; session/monthly caps in
 `[budget]` stop the turn with `TurnDone{Budget}` instead of a surprise.
+
+## Checkpoints: every write has a pre-image
+
+Before `edit`, `write` or `apply_patch` runs, cox reads the files the call
+names and archives their bytes (`checkpoints` row `pre`; `created` when the
+file did not exist). Around a call that names no path — `bash`, an MCP
+tool — cox snapshots the workspace before and after and archives the
+pre-image of every file that changed or disappeared (`deleted`). The row and
+the archive exist *before* the model sees the result; only then does
+`Event::Checkpoint { turn, call, files }` reach the surfaces. A marker row
+per user turn gives `/rewind` (T26.2) its timeline.
+
+The snapshot is `git add -A` + `write-tree` inside a private bare repository
+under `~/.cox/checkpoints/<hash>` whose work tree is the workspace root:
+your repository's index, hooks and `.git` are never touched, `.gitignore`
+still keeps `target/` out, and `GIT_ALTERNATE_OBJECT_DIRECTORIES` points at
+your repository's objects so unchanged blobs are never copied. The private
+index doubles as the stat cache, so a warm snapshot is one stat pass. A
+pre-image over 8 MiB is recorded without bytes. Without `git` on `PATH`,
+the session warns once and runs without checkpoints — never a failed turn.
+
+`/rewind` (or `Esc Esc` on an empty composer) lists the turns newest first
+— `T7 · 3 files · "add the cache column"` — and asks what to restore: code,
+conversation or both. Code walks the rows from the newest turn down to the
+chosen one and writes each earliest pre-image back (created files are
+removed, deleted ones return); every write is checkpointed first under a
+new turn number, so a rewind is itself undoable. Conversation appends an
+`Event::Rewound { to_turn }` marker: the in-memory history is cut there,
+the rollout keeps every line, and resume stops reading at the marker. The
+next turn keeps counting from where the session was (`T8` after a rewind
+to `T7`), so a turn number never means two things.
+
+## MCP servers that need a login
+
+An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` challenge. cox then runs the standard flow (authorization code with PKCE, dynamic client registration when the server offers it) through rmcp: in the TUI the login URL is printed and the browser opened, a listener on `127.0.0.1` takes the redirect, and the token is filed in the OS keyring as `cox/mcp/<name>`. From then on the token is attached to every request and refreshed before it expires. Headless surfaces (`cox run`, `cox acp`) never wait for a browser: the server is skipped with the warning `run \`cox mcp login <name>\``, which runs the same flow outside a session. `cox mcp logout <name>` forgets the token, and `cox doctor` prints one `mcp auth <name>` row per HTTP server (`ok (expires in 3h)`, `expired`, `none`).
+
+## Worktrees: a task that must not touch this checkout
+
+`cox --worktree t42` runs the session in `_worktrees/<repo>-t42` on branch `t42`, creating both when they do not exist. The location and the name follow the workspace `worktrees` rule: the nearest ancestor of the repository that already holds `_worktrees/` (else a new one next to the repository, or `WT_ROOT`), a lower-case branch cut from a freshly fetched `origin/<default>` with no upstream, and a lock whose reason names the owner (`cox / pid 123 | t42 | 2026-09-22`). The main checkout stays a second workspace root, so the model can read it but every edit lands in the worktree; the status line shows `⎇ t42 +3 −1 · ⧉ t42`, and the presence record carries the worktree path. `/quit` on a clean worktree asks whether to remove it; a dirty one is kept and said so. The branch is never deleted — merging is the user's action. A subagent gets the same thing with `agent(isolation: "worktree")`: its worktree is named after the task id, its answer ends with `[worktree <path>, branch <name>]`, and the worktree outlives the task. Another owner's lock (`Cursor / grok | …`) is never reused or removed.
 
 ## The four surfaces (one stream each)
 

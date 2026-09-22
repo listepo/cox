@@ -83,3 +83,17 @@ diesel::table! {
         updated_at -> Text,
     }
 }
+
+diesel::table! {
+    /// `00000000000003_checkpoints` (T26.1).
+    checkpoints (id) {
+        id -> Integer,
+        session_id -> Text,
+        turn -> Integer,
+        call_id -> Nullable<Text>,
+        path -> Text,
+        kind -> Text,
+        archive_id -> Nullable<Text>,
+        created_at -> Text,
+    }
+}

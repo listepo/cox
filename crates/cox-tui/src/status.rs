@@ -36,6 +36,16 @@ pub fn line(state: &State) -> Line<'static> {
             g.removed
         )
     });
+    // `⧉ t42` right after the branch when the session runs in a worktree
+    // (T27.3); the name came from the command line, but is sanitised like
+    // the branch since a script may have passed it.
+    let worktree = state.worktree.as_ref().map_or(String::new(), |name| {
+        format!(
+            "{} {} {sep} ",
+            state.glyphs.worktree,
+            crate::text::sanitize(name)
+        )
+    });
     let tail = match (s.busy, state.ctrl_c_armed) {
         (true, _) => format!(" {sep} working"),
         (false, true) => format!(" {sep} Ctrl+C again to quit"),
@@ -62,7 +72,7 @@ pub fn line(state: &State) -> Line<'static> {
     };
     Line::styled(
         format!(
-            " {git}{model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{agents}{tail}{vim}",
+            " {git}{worktree}{model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{agents}{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
             format!("{:?}", state.mode).to_lowercase(),

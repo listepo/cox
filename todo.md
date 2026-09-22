@@ -1,1 +1,46 @@
 # Todo
+
+- T22.1. `ask_user` answered in the TUI
+- T22.2. Skills index and file commands reach the session
+- T22.3. `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
+- T22.4. Mouse: wire `tui.mouse` or delete the key
+- T22.6. `tui.theme = "auto"` detects the terminal background
+- T22.7. Leftover audit
+- T23.0. `cox_tui::term::Caps`
+- T23.1. Kitty keyboard protocol
+- T23.2. Flicker-free scrollback (`scrolling-regions`)
+- T23.3. OSC 8 hyperlinks
+- T23.4. OSC 52 clipboard
+- T23.5. Notifications
+- T23.6. OSC 9;4 progress
+- T23.7. Resize hardening
+- T24.1. Semantic colour tokens
+- T24.2. Theme files and `/theme`
+- T24.3. `two-face` syntax set
+- T24.4. Tool cards
+- T24.5. Word-level and side-by-side diffs
+- T24.6. Footer hints and `?` help
+- T24.7. Motion and narrow-width polish
+- T24.8. Screenshots and gallery
+- T25.1. Message queue and send-now
+- T25.2. `Shift+Tab` mode cycle and plan-mode view
+- T25.3. `!` shell line
+- T25.4. Vim, second half
+- T25.5. Keybindings file
+- T25.6. `/init`
+- T25.7. `/context`
+- T25.8. Cross-session prompt history
+- T26.3. `/fork` and `/handoff`
+- T26.4. `/undo`, `/redo`
+- T27.1. `bash` background tasks and `Ctrl+B`
+- T27.2. Approvals labelled by source; agent cards
+- T27.4. `/loop`
+- T28.1. Status-line segments
+- T28.2. Project cost aggregate
+- T28.3. Pre-emptive compaction
+- T28.4. Unconditional redaction of what leaves the session
+- T29.1. `--plain` surface
+- T29.2. Reduced motion and daltonized themes
+- T30.1. `profile = "minimal"`
+- T30.2. Footprint benchmark
+- T30.3. Eval run with a verification step

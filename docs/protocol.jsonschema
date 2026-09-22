@@ -40,6 +40,13 @@
             "description": "The turn's id.",
             "$ref": "#/$defs/TurnId"
           },
+          "seq": {
+            "description": "The turn's ordinal in this session, 1-based; `/rewind` names\nturns by it and the `checkpoints` rows carry it (T26.1).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "default": 0
+          },
           "job": {
             "description": "Which job this turn is (usually `Job::Main`).",
             "$ref": "#/$defs/Job"
@@ -328,6 +335,89 @@
           "dropped",
           "before_tokens",
           "after_tokens"
+        ]
+      },
+      {
+        "description": "Pre-images of the files a tool call changed are archived and\nretrievable (T26.1). Emitted after the `checkpoints` rows exist, so a\nsurface that sees it can already `/rewind`; never emitted for a call\nthat changed nothing.",
+        "type": "object",
+        "properties": {
+          "turn": {
+            "description": "The turn the call ran in.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "call": {
+            "description": "The call, or `None` for a rewind's own writes.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CallId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "description": "Every path recorded, in path order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/CheckpointFile"
+            }
+          },
+          "type": {
+            "type": "string",
+            "const": "checkpoint"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "files"
+        ]
+      },
+      {
+        "description": "`/rewind` finished (T26.2). With `conversation`, resume and the\ncontext builder stop reading history at `to_turn`; the rollout keeps\nevery earlier line.",
+        "type": "object",
+        "properties": {
+          "to_turn": {
+            "description": "The turn the session went back to.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "code": {
+            "description": "Files were restored.",
+            "type": "boolean"
+          },
+          "conversation": {
+            "description": "The conversation was cut.",
+            "type": "boolean"
+          },
+          "restored": {
+            "description": "Paths written back or removed.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "description": "Paths whose pre-image was too large to keep, left as they are.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "const": "rewound"
+          }
+        },
+        "required": [
+          "type",
+          "to_turn",
+          "code",
+          "conversation",
+          "restored",
+          "skipped"
         ]
       },
       {
@@ -1193,6 +1283,49 @@
           "estimated",
           "cost_usd",
           "latency_ms"
+        ]
+      },
+      "CheckpointFile": {
+        "description": "One path in an `Event::Checkpoint`.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "The confined absolute path.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What was recorded for it.",
+            "$ref": "#/$defs/CheckpointKind"
+          }
+        },
+        "required": [
+          "path",
+          "kind"
+        ]
+      },
+      "CheckpointKind": {
+        "description": "What a `checkpoints` row holds for one path (T26.1): the bytes a tool\ncall was about to overwrite, a file it created, a file it deleted, or\nthe marker that starts a user turn (`path` empty).",
+        "oneOf": [
+          {
+            "description": "The pre-image of a file that was changed; `archive` holds its bytes.",
+            "type": "string",
+            "const": "pre"
+          },
+          {
+            "description": "The file did not exist before the call.",
+            "type": "string",
+            "const": "created"
+          },
+          {
+            "description": "The file existed before the call and is gone after it; `archive` holds it.",
+            "type": "string",
+            "const": "deleted"
+          },
+          {
+            "description": "A user turn started; nothing archived.",
+            "type": "string",
+            "const": "turn"
+          }
         ]
       },
       "TaskId": {
@@ -2125,6 +2258,36 @@
           "type",
           "hook_id",
           "outcome"
+        ]
+      },
+      {
+        "description": "`/rewind` (T26.2): restore the workspace, the conversation or both\nto the start of turn `to_turn`.",
+        "type": "object",
+        "properties": {
+          "to_turn": {
+            "description": "The turn to go back to (its `seq`); that turn and later ones are undone.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "code": {
+            "description": "Write every pre-image since `to_turn` back into the workspace.",
+            "type": "boolean"
+          },
+          "conversation": {
+            "description": "Drop the conversation from `to_turn` on (append-only: a marker, not an edit).",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "const": "rewind"
+          }
+        },
+        "required": [
+          "type",
+          "to_turn",
+          "code",
+          "conversation"
         ]
       },
       {

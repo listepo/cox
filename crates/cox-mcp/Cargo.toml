@@ -16,6 +16,16 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# T22.5: OAuth for HTTP servers — tokens live in the OS keyring (the same
+# `cox/<account>` entries the providers use); `reqwest` is the client rmcp's
+# `AuthClient` wraps, so the crate names it rather than relying on rmcp's
+# feature to pull it in.
+keyring = { workspace = true }
+# rmcp 3.4 implements its HTTP client trait for reqwest 0.13, which it already
+# pulls in; the workspace row (0.12, for the providers) is a different type.
+reqwest = { version = "0.13", default-features = false, features = ["default-tls", "system-proxy"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# T22.5: the OAuth contract test plays authorization server and MCP server.
+wiremock = { workspace = true }

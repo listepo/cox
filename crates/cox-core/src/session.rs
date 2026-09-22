@@ -3,11 +3,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
-use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
+use cox_protocol::traits::{
+    Archive, ArchivePut, Checkpointer, Hook, Provider, Store, Tool, Worktrees,
+};
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
     ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
@@ -85,8 +88,9 @@ pub(crate) struct Inner {
     pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
     pub(crate) extracted: Vec<crate::memory_extract::Fact>,
-    /// Monotonic turn counter for the FTS index (T10.3).
-    turn_seq: u32,
+    /// Monotonic turn counter for the FTS index (T10.3) and the
+    /// `checkpoints` rows (T26.1).
+    pub(crate) turn_seq: u32,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -114,6 +118,17 @@ pub struct Session {
     /// The hook runner, installed once by the surface and shared with
     /// children so a subagent's calls run the same hooks.
     hook: Arc<OnceLock<Arc<dyn Hook>>>,
+    /// Where pre-images come from (T26.1); installed by the surface like
+    /// the hook, shared with children. Absent in tests and in `cox mcp`.
+    checkpointer: Arc<OnceLock<Arc<dyn Checkpointer>>>,
+    /// Roots mutation may target. Empty until a worktree-isolated surface
+    /// narrows it; ordinary sessions write anywhere they can read.
+    writable_roots: Arc<OnceLock<Vec<PathBuf>>>,
+    /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
+    /// installed by the surface, shared with children. Absent in tests.
+    worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
+    /// The one "checkpoints off" warning per session has been emitted.
+    pub(crate) checkpoint_warned: Arc<AtomicBool>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
     pub(crate) inner: Arc<Mutex<Inner>>,
@@ -185,13 +200,15 @@ impl Session {
     }
 
     /// A child session sharing this one's provider, store and archive
-    /// (plan.md T3.9): its own rollout and budget, `parent_id` set.
+    /// (plan.md T3.9): its own rollout and budget, `parent_id` set. `cwd`
+    /// is the parent's unless the child runs in a worktree (T27.3).
     pub(crate) fn spawn_child(
         &self,
         config: cox_protocol::Config,
         tools: Vec<Arc<dyn Tool>>,
         job: Job,
         tier: Tier,
+        cwd: Option<PathBuf>,
     ) -> Result<Self, CoreError> {
         let mut child = Self::build(
             config,
@@ -199,13 +216,16 @@ impl Session {
             tools,
             self.store.clone(),
             self.archive.clone(),
-            self.cwd.clone(),
+            cwd.unwrap_or_else(|| self.cwd.clone()),
             None,
             Some(self.id),
             job,
             tier,
         )?;
         child.hook = self.hook.clone();
+        child.checkpointer = self.checkpointer.clone();
+        child.worktrees = self.worktrees.clone();
+        child.checkpoint_warned = self.checkpoint_warned.clone();
         Ok(child)
     }
 
@@ -223,18 +243,17 @@ impl Session {
         tier: Tier,
     ) -> Result<Self, CoreError> {
         let is_resume = resume.is_some();
-        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice) =
+        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice, turns) =
             match resume {
                 Some((id, history)) => {
                     let truncated_notice = history.truncated_notice();
                     let turn_marks = history
-                        .messages
+                        .turn_marks
                         .iter()
-                        .enumerate()
-                        .filter(|(_, m)| m.role == Role::User)
-                        .map(|(start, _)| TurnMark {
-                            item: ItemId::new(),
-                            start,
+                        .map(|mark| TurnMark {
+                            item: mark.item,
+                            start: mark.message_index,
+                            seq: mark.seq,
                         })
                         .collect();
                     (
@@ -244,6 +263,7 @@ impl Session {
                         history.grants,
                         turn_marks,
                         truncated_notice,
+                        history.turns,
                     )
                 }
                 None => (
@@ -253,6 +273,7 @@ impl Session {
                     Vec::new(),
                     Vec::new(),
                     None,
+                    0,
                 ),
             };
         let (tx, rx) = mpsc::channel(256);
@@ -287,6 +308,10 @@ impl Session {
             telemetry_span,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),
+            checkpointer: Arc::new(OnceLock::new()),
+            writable_roots: Arc::new(OnceLock::new()),
+            worktrees: Arc::new(OnceLock::new()),
+            checkpoint_warned: Arc::new(AtomicBool::new(false)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
             inner: Arc::new(Mutex::new(Inner {
@@ -303,12 +328,12 @@ impl Session {
                 discovered: Vec::new(),
                 turn_marks,
                 archives: HashMap::new(),
+                turn_seq: turns,
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
                 extracted: Vec::new(),
-                turn_seq: 0,
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -406,6 +431,38 @@ impl Session {
         self.hook.get().cloned()
     }
 
+    /// Installs the pre-image source for `/rewind` (T26.1); a second call
+    /// is ignored so a session and its children share one.
+    pub fn set_checkpointer(&self, checkpointer: Arc<dyn Checkpointer>) {
+        let _ = self.checkpointer.set(checkpointer);
+    }
+
+    pub(crate) fn checkpointer(&self) -> Option<Arc<dyn Checkpointer>> {
+        self.checkpointer.get().cloned()
+    }
+
+    /// Narrows mutations without hiding read-only workspace roots.
+    pub fn set_writable_roots(&self, roots: Vec<PathBuf>) {
+        let _ = self.writable_roots.set(roots);
+    }
+
+    pub(crate) fn writable_roots(&self) -> &[PathBuf] {
+        self.writable_roots
+            .get()
+            .map(Vec::as_slice)
+            .unwrap_or(&self.config.core.workspace_roots)
+    }
+
+    /// Installs the worktree provider (T27.3); a second call is ignored
+    /// like `set_checkpointer`.
+    pub fn set_worktrees(&self, worktrees: Arc<dyn Worktrees>) {
+        let _ = self.worktrees.set(worktrees);
+    }
+
+    pub(crate) fn worktrees(&self) -> Option<Arc<dyn Worktrees>> {
+        self.worktrees.get().cloned()
+    }
+
     /// Feeds one submission into the state machine.
     pub async fn submit(&self, sub: Submission) -> Result<(), CoreError> {
         match sub {
@@ -459,6 +516,11 @@ impl Session {
                 .await
                 .map(|_| ()),
             Submission::SwitchModel { tier, model } => self.switch_model(tier, model).await,
+            Submission::Rewind {
+                to_turn,
+                code,
+                conversation,
+            } => self.rewind(to_turn, code, conversation).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
@@ -676,8 +738,13 @@ impl Session {
         {
             HookOutcome::Block { reason } => {
                 let tc = self.config.tiers.get(self.tier);
-                self.emit_turn_started(turn, self.tier, ModelId(tc.model.clone()))
-                    .await?;
+                self.emit_turn_started(
+                    turn,
+                    self.next_seq().await,
+                    self.tier,
+                    ModelId(tc.model.clone()),
+                )
+                .await?;
                 self.emit(Event::Notice {
                     level: Level::Warn,
                     text: format!("prompt blocked by hook: {reason}"),
@@ -700,7 +767,8 @@ impl Session {
         let route = match self.route_for(Job::Main, confirm_think).await {
             Ok(route) => route,
             Err(RouteError::NeedsConfirm { tier, model }) => {
-                self.emit_turn_started(turn, tier, model.clone()).await?;
+                self.emit_turn_started(turn, self.next_seq().await, tier, model.clone())
+                    .await?;
                 let detail = RouteError::NeedsConfirm { tier, model }.notice();
                 self.emit(Event::Notice {
                     level: Level::Warn,
@@ -711,8 +779,13 @@ impl Session {
             }
             Err(e) => {
                 let tc = self.config.tiers.get(self.tier);
-                self.emit_turn_started(turn, self.tier, ModelId(tc.model.clone()))
-                    .await?;
+                self.emit_turn_started(
+                    turn,
+                    self.next_seq().await,
+                    self.tier,
+                    ModelId(tc.model.clone()),
+                )
+                .await?;
                 self.emit(Event::Error {
                     error: CoreError::Config {
                         key: "tiers".into(),
@@ -744,9 +817,11 @@ impl Session {
                     .map(|text| Content::Text { text })
                     .collect(),
             });
+            let seq = inner.turn_seq + 1;
             inner.turn_marks.push(TurnMark {
                 item: user_item,
                 start,
+                seq,
             });
             inner.provider_calls = 0;
             inner.retried_after_too_long = false;
@@ -756,7 +831,8 @@ impl Session {
         // T10.3: index the user text under this turn's number; best-effort,
         // like every index write.
         let _ = self.store.rollout_index(&self.id, seq, &text);
-        self.emit_turn_started(turn, route.tier, route.model.clone())
+        crate::checkpoint::mark_turn(self, seq);
+        self.emit_turn_started(turn, seq, route.tier, route.model.clone())
             .await?;
         self.emit(Event::ItemStarted {
             item: user_item,
@@ -1089,7 +1165,7 @@ impl Session {
             });
             inner.state = State::RunningTools;
         }
-        let results = run_tools(self, streamed.calls).await?;
+        let results = run_tools(self, turn, streamed.calls).await?;
         if self.cancel_token().is_cancelled() {
             self.set_state(State::Interrupted).await;
             self.finish(turn, StopReason::Interrupted).await?;
@@ -1114,14 +1190,23 @@ impl Session {
         Ok(Step::Continue)
     }
 
+    /// The number the next user turn will get; a refused turn (blocked
+    /// prompt, unconfirmed think tier) reports it too, since the counter
+    /// only moves when a user item lands.
+    async fn next_seq(&self) -> u32 {
+        self.inner.lock().await.turn_seq + 1
+    }
+
     async fn emit_turn_started(
         &self,
         turn: TurnId,
+        seq: u32,
         tier: Tier,
         model: ModelId,
     ) -> Result<(), CoreError> {
         self.emit(Event::TurnStarted {
             turn,
+            seq,
             job: self.job,
             tier,
             model,
@@ -1222,6 +1307,8 @@ pub struct MemoryStore {
     memory: StdMutex<HashMap<(String, String), (String, String)>>,
     /// `(session, turn, text)` FTS rows (T10.3).
     index: StdMutex<Vec<(String, u32, String)>>,
+    /// `checkpoints` rows in insertion order (T26.1).
+    checkpoints: StdMutex<Vec<cox_protocol::CheckpointRow>>,
 }
 
 impl MemoryStore {
@@ -1233,6 +1320,7 @@ impl MemoryStore {
             archive: StdMutex::new(HashMap::new()),
             memory: StdMutex::new(HashMap::new()),
             index: StdMutex::new(Vec::new()),
+            checkpoints: StdMutex::new(Vec::new()),
         }
     }
 
@@ -1359,6 +1447,26 @@ impl Store for MemoryStore {
             text.to_string(),
         ));
         Ok(())
+    }
+    fn checkpoint_insert(&self, row: &cox_protocol::CheckpointRow) -> Result<(), StoreError> {
+        self.checkpoints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(row.clone());
+        Ok(())
+    }
+    fn checkpoint_list(
+        &self,
+        session: &SessionId,
+    ) -> Result<Vec<cox_protocol::CheckpointRow>, StoreError> {
+        Ok(self
+            .checkpoints
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|r| r.session == *session)
+            .cloned()
+            .collect())
     }
 }
 

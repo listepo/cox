@@ -7,12 +7,14 @@
 
 mod budget;
 pub mod cache_diag;
+mod checkpoint;
 mod compact;
 mod context;
 mod dedup;
 mod hooks;
 pub mod memory_extract;
 pub mod permission;
+mod rewind;
 mod rollout;
 pub mod router;
 mod session;
@@ -23,5 +25,5 @@ mod turn;
 
 pub use context::{assemble, assemble_with, microcompact};
 pub use permission::{Engine, Outcome};
-pub use rollout::History;
+pub use rollout::{History, HistoryTurn};
 pub use session::{MemoryStore, Session};

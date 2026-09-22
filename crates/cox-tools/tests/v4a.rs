@@ -35,6 +35,7 @@ fn cx(root: PathBuf) -> ToolCx {
     let (tx, _rx) = mpsc::channel(16);
     ToolCx {
         roots: vec![root.clone()],
+        writable_roots: vec![root.clone()],
         cwd: root,
         sandbox: SandboxPolicy {
             mode: SandboxMode::WorkspaceWrite,
@@ -84,6 +85,29 @@ fn copy_tree(from: &Path, to: &Path) {
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/v4a")
+}
+
+#[tokio::test]
+async fn apply_patch_cannot_mutate_a_read_only_workspace_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let main = dir.path().join("main");
+    let worktree = dir.path().join("worktree");
+    std::fs::create_dir_all(&main).expect("main");
+    std::fs::create_dir_all(&worktree).expect("worktree");
+    let target = main.join("new.txt");
+    let mut cx = cx(worktree);
+    cx.roots.push(main);
+    let patch = format!(
+        "*** Begin Patch\n*** Add File: {}\n+no\n*** End Patch",
+        target.display()
+    );
+
+    let result = ApplyPatchTool
+        .call(serde_json::json!({"patch": patch}), &cx)
+        .await;
+
+    assert!(result.is_err());
+    assert!(!target.exists());
 }
 
 #[test]

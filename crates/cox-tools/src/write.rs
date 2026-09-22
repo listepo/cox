@@ -99,6 +99,10 @@ impl Tool for WriteTool {
         }
     }
 
+    fn touches(&self, input: &Value) -> Option<Vec<String>> {
+        Some(vec![self.subject(input)])
+    }
+
     fn subject(&self, input: &Value) -> String {
         input
             .get("path")
@@ -110,7 +114,7 @@ impl Tool for WriteTool {
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError> {
         let path_arg = str_field(&input, "path")?;
         let content = str_field(&input, "content")?;
-        let path = confine(&cx.roots, &cx.cwd, &path_arg)?;
+        let path = confine(&cx.writable_roots, &cx.cwd, &path_arg)?;
 
         let previous = match std::fs::read(&path) {
             Ok(bytes) => {
@@ -203,6 +207,24 @@ mod tests {
         assert!(!out.is_error);
         let got = std::fs::read_to_string(dir.path().join("a/b/c.txt")).expect("read back");
         assert_eq!(got, "hi\n");
+    }
+
+    #[tokio::test]
+    async fn write_cannot_mutate_a_read_only_workspace_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let main = dir.path().join("main");
+        let worktree = dir.path().join("worktree");
+        std::fs::create_dir_all(&main).expect("main");
+        std::fs::create_dir_all(&worktree).expect("worktree");
+        let mut cx = cx(&worktree);
+        cx.roots.push(main.clone());
+
+        let result = WriteTool
+            .call(json!({"path": main.join("new.txt"), "content": "no"}), &cx)
+            .await;
+
+        assert!(result.is_err());
+        assert!(!main.join("new.txt").exists());
     }
 
     #[tokio::test]

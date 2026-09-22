@@ -52,6 +52,10 @@ pub struct Cli {
     /// Add an extra workspace root (repeatable).
     #[arg(long = "add-dir", global = true, value_name = "DIR")]
     pub add_dir: Vec<PathBuf>,
+    /// Work in the git worktree `_worktrees/<repo>-<NAME>` on branch `NAME`,
+    /// created if missing; the main checkout stays readable as a second root.
+    #[arg(long, global = true, value_name = "NAME")]
+    pub worktree: Option<String>,
     /// Override `core.home` (same effect as the `COX_HOME` env var).
     #[arg(long, global = true, value_name = "DIR")]
     pub home: Option<PathBuf>,
@@ -200,14 +204,31 @@ pub struct SessionsArgs {
 
 /// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools
 /// by default; writes are opt-in and `bash` only by name.
+/// `cox mcp login|logout <server>` (T22.5) manage an HTTP server's OAuth token.
 #[derive(Args, Debug, Default, Clone)]
 pub struct McpArgs {
+    #[command(subcommand)]
+    pub action: Option<McpAction>,
     /// Also serve `edit`, `write` and `apply_patch`.
     #[arg(long)]
     pub allow_write: bool,
     /// Serve exactly these tools (comma-separated); the only way to get `bash`.
     #[arg(long, value_name = "A,B")]
     pub tools: Option<String>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum McpAction {
+    /// Log in to an HTTP MCP server (OAuth in the browser); the token goes to the keyring.
+    Login {
+        /// Server name from config, `.mcp.json` or `~/.claude.json`.
+        server: String,
+    },
+    /// Forget an HTTP MCP server's token.
+    Logout {
+        /// Server name from config, `.mcp.json` or `~/.claude.json`.
+        server: String,
+    },
 }
 
 /// `cox record <name> -p <prompt> [--sse FILE] [--redact]` (plan.md T1.5).

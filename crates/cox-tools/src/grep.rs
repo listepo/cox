@@ -363,6 +363,7 @@ mod tests {
         let (tx, _rx) = mpsc::channel(16);
         ToolCx {
             roots: vec![root.clone()],
+            writable_roots: vec![root.clone()],
             cwd: root,
             sandbox: SandboxPolicy {
                 mode: SandboxMode::ReadOnly,

@@ -36,13 +36,15 @@ use crate::resume;
 /// Loads config, picks the provider (`COX_PROVIDER` test doubles first) and
 /// opens the store under `COX_HOME`. `answer` is what `ask_user` returns
 /// when no one is there to ask; `tweak` lets a surface adjust the effective
-/// config before the session locks it in.
+/// config before the session locks it in; `interactive` says a person is at
+/// the terminal, so an MCP server's 401 may open a browser login (T22.5).
 pub async fn open(
     cli: &Cli,
     cwd: &Path,
     answer: Option<String>,
     tweak: impl FnOnce(&mut Config),
     resume: Option<(SessionId, History)>,
+    interactive: bool,
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
@@ -51,6 +53,13 @@ pub async fn open(
         loaded.config.core.workspace_roots =
             vec![config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())];
     }
+    let worktree_main = if cli.worktree.is_some() {
+        let main = project_root(cwd).await;
+        add_read_root(&mut loaded.config, &main);
+        Some(main)
+    } else {
+        None
+    };
     // T9.1 step 4 (generalised): a non-first-party `tiers.code.provider`
     // maps every tier to the same server; the router then pins each tier to
     // that provider's section model, so a `--provider deepseek` flip works
@@ -70,7 +79,7 @@ pub async fn open(
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
     let mut all = tools(answer, &store, mdir);
     if config.mcp.enabled {
-        all.extend(mcp_tools(&config, cwd).await);
+        all.extend(mcp_tools(&config, cwd, interactive).await);
     }
     let session = match resume {
         Some((id, history)) => Session::resume(
@@ -92,6 +101,9 @@ pub async fn open(
             cwd.to_path_buf(),
         )?,
     };
+    if worktree_main.is_some() {
+        session.set_writable_roots(vec![cwd.to_path_buf()]);
+    }
     // A14: the presence hook wraps the user's shell hooks so the other
     // sessions of this workspace see every surface, `--no-hooks` or not.
     let shell: Option<Arc<dyn Hook>> = loaded.config.hooks.enabled.then(|| {
@@ -100,26 +112,126 @@ pub async fn open(
             cwd.to_path_buf(),
         )) as Arc<dyn Hook>
     });
-    session.set_hook(Arc::new(cox_ext::presence::PresenceHook::new(
+    // T27.3: a worktree session's project is still the main checkout, so
+    // the sessions of one repository see each other whatever tree they edit.
+    let project = project_root(cwd).await;
+    session.set_hook(Arc::new(
+        cox_ext::presence::PresenceHook::new(
+            home.clone(),
+            session.id(),
+            cwd.to_path_buf(),
+            project,
+            shell,
+        )
+        .with_worktree(cli.worktree.as_ref().map(|_| cwd.to_path_buf())),
+    ));
+    // T26.1: pre-images for `/rewind` live in private git dirs under home.
+    session.set_checkpointer(Arc::new(cox_tools::checkpoint::GitCheckpointer::new(
         home.clone(),
-        session.id(),
-        cwd.to_path_buf(),
-        config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()),
-        shell,
     )));
+    // T27.3: `agent(isolation: "worktree")` gets real worktrees on every surface.
+    session.set_worktrees(Arc::new(cox_tools::git::GitWorktrees));
     Ok((session, loaded))
+}
+
+/// `--worktree <name>` (T27.3): creates or reuses the worktree, then makes
+/// the rest of the run see it as `--cwd <worktree>`; [`open`] adds the main
+/// checkout as a read-only root after config loading. Returns the new cwd.
+/// Runs before config is loaded because the
+/// project config is read from the worktree like everything else.
+pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
+    let Some(name) = cli.worktree.clone() else {
+        return Ok(cwd.to_path_buf());
+    };
+    let owner = format!("cox / pid {}", std::process::id());
+    let rt = tokio::runtime::Runtime::new()?;
+    let wt = rt.block_on(cox_tools::git::worktree_add(cwd, &name, &owner))?;
+    cli.cwd = Some(wt.path.clone());
+    Ok(wt.path)
+}
+
+/// One worktree-aware project identity for presence writes and polling.
+async fn project_root(cwd: &Path) -> PathBuf {
+    cox_tools::git::project_root(cwd)
+        .await
+        .unwrap_or_else(|_| config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()))
+}
+
+fn add_read_root(config: &mut Config, root: &Path) {
+    if !config.core.workspace_roots.iter().any(|r| r == root) {
+        config.core.workspace_roots.push(root.to_path_buf());
+    }
+}
+
+/// After `/quit` in a worktree session: a clean tree is offered for
+/// removal on the terminal the TUI just gave back; a dirty one is kept and
+/// said so. The branch always stays — merging is the user's action.
+fn offer_worktree_removal(rt: &tokio::runtime::Runtime, path: &Path) {
+    if rt.block_on(cox_tools::git::is_clean(path)) != Some(true) {
+        eprintln!(
+            "cox: worktree {} kept: it has uncommitted or untracked files",
+            path.display()
+        );
+        return;
+    }
+    eprint!(
+        "cox: worktree {} is clean; remove it? [y/N] ",
+        path.display()
+    );
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        eprintln!("cox: worktree {} kept", path.display());
+        return;
+    }
+    match rt.block_on(cox_tools::git::worktree_remove(
+        path,
+        cox_tools::git::OWNER_PREFIX,
+    )) {
+        Ok(()) => eprintln!(
+            "cox: worktree {} removed; its branch is kept for you to merge",
+            path.display()
+        ),
+        Err(e) => eprintln!("cox: worktree {} kept: {e}", path.display()),
+    }
+}
+
+/// The MCP servers in effect for `cwd`: config, `.mcp.json`, `~/.claude.json`.
+pub fn mcp_servers(config: &Config, cwd: &Path) -> cox_mcp::discovery::Discovered {
+    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let home = config_load::home_dir();
+    cox_mcp::discovery::discover(&config.mcp.servers, Some(&project), Some(&home))
+}
+
+/// T22.5: tokens live in the keyring; with a person present a 401 prints
+/// the login URL and opens the browser, headless surfaces get a notice.
+pub fn mcp_auth(interactive: bool) -> cox_mcp::client::Auth {
+    cox_mcp::client::Auth {
+        secrets: Arc::new(cox_mcp::auth::Keyring),
+        prompt: interactive.then(|| {
+            Arc::new(|url: &str| {
+                eprintln!("cox: mcp login: open {url}");
+                if !cox_mcp::auth::open_browser(url) {
+                    eprintln!("cox: no browser found; open the URL by hand");
+                }
+            }) as cox_mcp::client::Prompt
+        }),
+    }
 }
 
 /// T7.6: every discovered MCP server's tools, connected on the runtime the
 /// session will run on (the sessions live in the tools). A server that will
 /// not start is a warning and no tools (D14).
-async fn mcp_tools(config: &Config, cwd: &Path) -> Vec<Arc<dyn Tool>> {
-    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
-    let home = config_load::home_dir();
-    let found = cox_mcp::discovery::discover(&config.mcp.servers, Some(&project), Some(&home));
+async fn mcp_tools(config: &Config, cwd: &Path, interactive: bool) -> Vec<Arc<dyn Tool>> {
+    let found = mcp_servers(config, cwd);
     let timeout = std::time::Duration::from_secs(u64::from(config.mcp.timeout_s));
-    let (_clients, tools, notices) =
-        cox_mcp::client::connect_all(&found.servers, timeout, config.mcp.deferred).await;
+    let (_clients, tools, notices) = cox_mcp::client::connect_all(
+        &found.servers,
+        timeout,
+        config.mcp.deferred,
+        &mcp_auth(interactive),
+    )
+    .await;
     for notice in found.notices.iter().chain(&notices) {
         eprintln!("cox: warning: {notice}");
     }
@@ -152,6 +264,7 @@ fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    let project = rt.block_on(project_root(cwd));
     let mut resume_spec = if cli.r#continue {
         let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
         let history = resume::from_home(&home, &id.to_string())?;
@@ -165,17 +278,17 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     };
     let mut first = true;
     loop {
-        let seed = resume_spec
-            .as_ref()
-            .map(|(_, history)| history.messages.clone());
-        let (session, loaded) = rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take()))?;
+        let seed = resume_spec.as_ref().map(|(_, history)| history.clone());
+        let (session, loaded) =
+            rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take(), true))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
-        if let Some(messages) = seed {
-            state.transcript_from_history(&messages);
+        if let Some(history) = seed {
+            state.transcript_from_history(&history);
         }
         state.files = cox_tools::glob::workspace_files(cwd);
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
+        state.worktree = cli.worktree.clone();
         state.sessions = project_sessions(&home, cwd);
         state.composer.set_vim(config.tui.vim);
         state.dark = config.tui.theme != "light";
@@ -203,7 +316,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
         let poll = {
             let home = home.clone();
-            let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+            let project = project.clone();
             let me = session.id();
             let git = config.tui.git;
             let dir = cwd.to_path_buf();
@@ -269,6 +382,9 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             cox_tui::app::TuiOutcome::Clear => continue,
             cox_tui::app::TuiOutcome::Quit => break,
         }
+    }
+    if cli.worktree.is_some() {
+        offer_worktree_removal(&rt, cwd);
     }
     Ok(())
 }
@@ -443,10 +559,63 @@ pub(crate) fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBu
 
 #[cfg(test)]
 mod tests {
+    use clap::Parser as _;
     use cox_protocol::config::CompatibleProviderConfig;
     use cox_protocol::types::ProviderId;
 
     use super::*;
+
+    /// T27.3: `--worktree t9` from a repository puts the session in
+    /// `_worktrees/<repo>-t9` with the main checkout as its second root.
+    #[test]
+    fn worktree_flag_sets_roots() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir(&repo).expect("mkdir");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        if !git(&["init", "-q", "--initial-branch=trunk"]) {
+            return; // no usable git here
+        }
+        std::fs::write(repo.join("a.txt"), "a\n").expect("write");
+        assert!(git(&["add", "a.txt"]));
+        assert!(git(&[
+            "-c",
+            "user.email=t@example.invalid",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "first"
+        ]));
+        let repo = std::fs::canonicalize(&repo).expect("canon");
+        let mut cli = Cli::parse_from(["cox", "--worktree", "T9"]);
+        let cwd = enter_worktree(&mut cli, &repo).expect("enter");
+        let root = std::fs::canonicalize(tmp.path()).expect("canon");
+        assert_eq!(cwd, root.join("_worktrees").join("repo-t9"));
+        assert!(cwd.join("a.txt").is_file(), "the worktree is checked out");
+        let mut loaded = config_load::load(&cwd, &cli).expect("load");
+        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone()]);
+        assert!(cli.add_dir.is_empty(), "the main checkout is not writable");
+        let project = rt_project_root(&cwd);
+        assert_eq!(project, repo);
+        add_read_root(&mut loaded.config, &project);
+        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone(), repo]);
+        assert_eq!(cli.cwd.as_deref(), Some(cwd.as_path()));
+    }
+
+    fn rt_project_root(cwd: &Path) -> PathBuf {
+        tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(project_root(cwd))
+    }
 
     fn deepseek_config(api: &str) -> Config {
         let mut cfg = Config::default();

@@ -24,6 +24,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "effort for the rest of the session; bare restores the tier default",
     ),
     ("compact", "/compact [focus]", "compact the context now"),
+    (
+        "rewind",
+        "/rewind",
+        "go back to an earlier turn: code, conversation or both",
+    ),
     ("cost", "/cost", "what this session has spent"),
     (
         "permissions",
@@ -72,6 +77,8 @@ pub enum Action {
     Sessions,
     /// Open the session picker.
     Resume,
+    /// Open the rewind timeline (T26.2); `Esc Esc` on an empty composer too.
+    Rewind,
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
@@ -130,6 +137,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "agents" => Action::Agents,
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
+        "rewind" => Action::Rewind,
         "vim" => Action::Vim,
         "help" => Action::Help,
         "quit" => Action::Quit,
