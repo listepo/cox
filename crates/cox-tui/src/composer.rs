@@ -109,10 +109,13 @@ impl Composer {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let (row, col) = self.area.cursor();
         match key.code {
+            // `Ctrl+Enter` is reserved for send-now (T25.1); until it lands,
+            // it falls back to the same newline as `Shift+Enter`/`Alt+Enter`
+            // (T23.1) instead of doing nothing.
             KeyCode::Enter
-                if key
-                    .modifiers
-                    .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+                if key.modifiers.intersects(
+                    KeyModifiers::SHIFT | KeyModifiers::ALT | KeyModifiers::CONTROL,
+                ) =>
             {
                 self.area.insert_newline();
                 Edit::Nothing

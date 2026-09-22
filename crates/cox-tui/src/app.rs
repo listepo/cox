@@ -13,7 +13,10 @@ use std::time::Duration;
 use cox_core::Session;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::CallId;
-use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste, Event as Input, KeyEventKind};
+use crossterm::event::{
+    DisableBracketedPaste, EnableBracketedPaste, Event as Input, KeyEventKind,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
@@ -78,9 +81,22 @@ pub async fn run(
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
     execute!(io::stdout(), EnableBracketedPaste)?;
+    // T23.1: only a terminal `cox_tui::term::Caps::query` already found to
+    // report `CSI ?u` support gets the push — everything else keeps the
+    // plain `Esc`-prefixed encoding it always had.
+    let kitty = state.caps.kitty_keyboard;
+    if kitty {
+        execute!(
+            io::stdout(),
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            )
+        )?;
+    }
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore();
+        restore(kitty);
         hook(info);
     }));
     let mut terminal = Terminal::with_options(
@@ -182,7 +198,7 @@ pub async fn run(
     }
     .await;
     stop.store(true, Ordering::Relaxed);
-    restore();
+    restore(kitty);
     result
 }
 
@@ -208,8 +224,14 @@ fn spawn_input(stop: Arc<AtomicBool>) -> tokio::sync::mpsc::Receiver<io::Result<
     rx
 }
 
-/// Leaves the terminal usable whatever happened; safe to call twice.
-fn restore() {
+/// Leaves the terminal usable whatever happened; safe to call twice. `kitty`
+/// pops the Kitty keyboard protocol flags first — popping when nothing was
+/// pushed is a no-op on every terminal that implements the spec, but `run`
+/// only pays for the round trip when its own push actually happened.
+fn restore(kitty: bool) {
+    if kitty {
+        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+    }
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     let _ = disable_raw_mode();
 }

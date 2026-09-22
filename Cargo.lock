@@ -919,11 +919,13 @@ dependencies = [
 name = "cox-tui"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "cox-core",
  "cox-protocol",
  "crossterm",
  "insta",
  "nucleo",
+ "portable-pty",
  "pulldown-cmark",
  "ratatui",
  "serde_json",
@@ -932,9 +934,11 @@ dependencies = [
  "terminal-colorsaurus",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-util",
  "toml_edit 0.25.15+spec-1.1.0",
  "tui-textarea-2",
  "unicode-width",
+ "vt100",
 ]
 
 [[package]]

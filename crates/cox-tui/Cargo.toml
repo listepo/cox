@@ -22,8 +22,22 @@ tui-textarea-2 = { version = "0.13", default-features = false, features = ["cros
 # set` already uses, so a theme file's own comments would survive an edit
 # the same way (already a workspace dep, only newly wired into this crate).
 toml_edit = { workspace = true }
+# T23.1: `bin/kitty_probe.rs` (test-only; nothing under `src/lib.rs` imports
+# it) implements `cox_protocol::traits::Provider` inline (a `Session` needs
+# one) rather than depending on `cox-provider` — a `[[bin]]` target only
+# ever gets `[dependencies]`, never `[dev-dependencies]`, so a dev-only
+# `cox-provider` would not resolve for it, and a regular one would break
+# `crates/cox/tests/deps.rs`'s `cox-tui may only depend on
+# cox-core/cox-protocol among workspace crates`.
+async-trait = { workspace = true }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+# T23.1: the PTY e2e in `tests/shell.rs` spawns `kitty_probe` and answers its
+# `CSI 6n` cursor query, the same way `crates/cox/tests/tui_e2e.rs` already
+# does for the real binary.
+portable-pty = { workspace = true }
+vt100 = { workspace = true }

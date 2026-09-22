@@ -8,7 +8,7 @@ use cox_protocol::types::{
     Content, Event, ItemKind, Level, Message, PermissionMode, Presence, Role, SandboxMode,
     Submission, Tier, ToolCall, ToolResult,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::banner::Banner;
 use crate::cells::Look;
@@ -21,6 +21,7 @@ use crate::modal::{Approval, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
+use crate::term::Caps;
 use crate::theme::{Theme, ThemeFile};
 
 /// One transcript entry. A finished cell leaves the viewport for the
@@ -152,6 +153,10 @@ pub struct State {
     /// `tui.color` resolved: what the terminal can show, applied to the
     /// finished buffer rather than at each render site.
     pub depth: Depth,
+    /// `cox_tui::term::Caps` (T23.0) resolved once at startup; `app.rs`
+    /// reads `kitty_keyboard` to push/pop the Kitty keyboard protocol
+    /// (T23.1), and later P23 tasks read the rest.
+    pub caps: Caps,
     /// The semantic colour tokens (T24.1) every styled span picks from;
     /// `dark`/`light` by `tui.theme`, `mono` when `depth` is `NO_COLOR`.
     pub theme: Theme,
@@ -305,6 +310,7 @@ impl State {
             glyphs: glyph::UNICODE,
             syntax_theme: "",
             depth: Depth::True,
+            caps: Caps::default(),
             theme: Theme::dark(),
             show_diffs: true,
             expanded_last: false,
@@ -449,6 +455,12 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+    // A held `Enter`/`Esc` must not repeat-submit or repeat-dismiss under the
+    // Kitty keyboard protocol (T23.1); `Release` is already filtered in
+    // `app.rs`'s select loop, before a `Msg::Key` ever reaches here.
+    if key.kind == KeyEventKind::Repeat && matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
+        return Vec::new();
+    }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     // `Ctrl+C` interrupts a running turn; when idle it must be pressed twice.
     if ctrl && key.code == KeyCode::Char('c') {
