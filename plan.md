@@ -7,7 +7,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T22.2 | todo | P0 | 2 | 0% | |
-| T22.3 | todo | P0 | 2 | 0% | |
+| T22.3 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | todo | P1 | 1 | 0% | |
 | T23.2 | todo | P1 | 2 | 0% | |
@@ -26,7 +26,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T25.4 | todo | P1 | 3 | 0% | |
 | T25.5 | todo | P1 | 3 | 0% | |
 | T25.6 | todo | P1 | 2 | 0% | |
-| T25.7 | todo | P0 | 2 | 0% | |
+| T25.7 | in progress | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.3 | todo | P1 | 3 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
@@ -101,7 +101,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
-| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4) |
+| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25 |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
@@ -990,20 +990,6 @@ mise exec -- cargo nextest run -p cox-tui palette_lists_file_commands
 Done when: the fixture skill `greeting` appears in the first request's `system[2]` and its body only after `skill{"name":"greeting"}`; snapshot `frames__composer_slash_palette` shows a file command; `cox ext list` output unchanged.
 Out of scope: skill marketplaces, `/skills install`.
 
-#### T22.3 `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
-
-Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P0 · Complexity: 2
-Goal: the two configured-but-silent events run; a `matcher` that is not a plain tool name is compiled as a regex (Claude Code semantics).
-Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/hooks.rs`, `crates/cox-ext/src/hooks.rs`.
-Steps: (1) `Session::new` runs `HookEvent::SessionStart` after `SessionStarted` is emitted (payload: `session_id`, `cwd`, `source: "startup"|"resume"|"clear"`); `additionalContext` from stdout is appended to the volatile block (`system[3]`) exactly as T16.2 does for `PermissionRequest`. (2) `Notification` fires on `ApprovalRequired`, `TurnDone` and `ask_user` (payload `kind`, `message`, `title`); its stdout is ignored (observe-only). (3) `matcher`: try exact tool name; if it contains a regex metacharacter compile with `regex` (already a workspace dep); invalid regex → `Notice(Warn)` naming the hook, hook skipped (fail open, D14). (4) Update `docs/config.md` hook table.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core session_start_hook_runs_once notification_hook_gets_turn_done_payload
-mise exec -- cargo nextest run -p cox-ext matcher_regex_matches_bash_or_edit
-```
-Done when: shell-stub hooks in a `COX_HOME` scratch tree write both payloads to a file once per session; a broken regex is a warning, not a failure.
-Out of scope: `PreModelSwitch`/`PostModelSwitch` and other events cox does not list in §1.6.
-
 #### T22.4 Mouse: wire `tui.mouse` or delete the key
 
 Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
@@ -1252,7 +1238,7 @@ Out of scope: rewriting an existing `AGENTS.md`.
 
 #### T25.7 `/context`
 
-Model: sonnet · Status: open · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
+Model: Claude Code / claude-sonnet-5 · Status: in progress · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
 Goal: a modal shows where the next request's tokens go — tool specs, system prompt, instruction files, skills index, memory, history (verbatim / pointers / summary), and the cached share; `/autocompact` shows the threshold and its config source.
 Files: `crates/cox-core/src/context.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
 Steps: (1) `context::assemble` returns `Breakdown { tools, system, instructions, skills, memory, volatile, history_verbatim, history_pointers, summary, total, cached_estimate }` alongside the `Request` (estimates from the T1.8 estimator; the last `Usage.cache_read_tokens` gives the cached share). (2) `Submission::Command { name: "context" }` → `Event::Notice(Info)` carrying the breakdown as `structured` JSON. (3) `modal.rs`: a bar per segment scaled to `max_context`, numbers right-aligned, the compaction threshold as a marker; `/autocompact` prints `compact_at = 0.75 (project config)` from `cox config show --sources` data.
@@ -1263,6 +1249,14 @@ mise exec -- cargo nextest run -p cox-tui context_modal_snapshot
 ```
 Done when: the modal snapshot exists and `breakdown.total` equals the estimator's request total.
 Out of scope: per-file instruction attribution (one line per instruction file is enough).
+
+Execution plan:
+- `context.rs`: `pub struct Breakdown { tools, system, instructions, skills, memory, volatile, history_verbatim, history_pointers, summary, total, cached_estimate }`, `pub fn breakdown(req, total, last_usage)` and `Breakdown::to_json()` (the `structured` payload for step 2). `assemble`'s signature cannot change without editing `cox-core/src/session.rs`'s call site (locked by T23.1's uncommitted work), so the breakdown is computed from the assembled `Request` alongside it instead. The estimator's request total is a parameter: cox-core may only depend on cox-protocol (`crates/cox/tests/deps.rs`), so the T1.8 `cox_provider::tokens::estimate` number is supplied by the provider-owning caller; the nine §1.9 segment shares distribute it by rendered bytes with cumulative rounding, so the shares sum to `total` exactly (`breakdown_sums_to_estimate`). `cached_estimate` = the last `Usage::cache_read_tokens` (0 before the first call).
+- Message attribution: `Content::Pointer` → `history_pointers`; the leading message carrying `compact.rs`'s `[Compacted summary of ` header → `summary` (history is append-only and the summary is otherwise an indistinguishable plain user message); everything else → `history_verbatim`. System blocks by the fixed §1.9 order: `[0]` tools, `[1]` system prompt, `[2]` instructions, `[3+]` volatile; `skills`/`memory` stay 0 until T7.1/T10 put their indexes in.
+- `modal.rs`: `ContextBars { segments, total, cached, max_context, compact_at }` in the sibling modals' `height`/`lines(glyphs, theme)` shape — one ASCII bar per segment scaled to `max_context`, numbers right-aligned, a `|` marker plus caption at `compact_at × max_context`; `context_modal_snapshot` snapshots it through `TestBackend`.
+- `commands.rs`: `COMMANDS` rows for `/context` and `/autocompact` (they fall through the existing catch-all to `Submission::Command`, so palette, `/help` and parser cannot disagree) and `autocompact(compact_at, source)` printing `compact_at = 0.75 (project config)` from `cox config show --sources`' `source_of` layer names.
+- Wiring that cannot land inside this task's 3-file/≤200-LOC limit (proposed §6 split, done as a follow-up card): the `Submission::Command { name: "context" | "autocompact" }` dispatch in `cox-core/src/session.rs` (emit `Event::Notice(Info)` with `Breakdown::to_json()` — `Event::Notice` needs a `structured` field in `cox-protocol`, or the JSON rides in `text`), opening and rendering the modal (`state.rs` `Modal` variant + `view.rs` arm over `ContextBars`), and threading `compact_at` + `source_of` into the `/autocompact` line.
+- Verify: the two Check commands above, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`.
 
 #### T25.8 Cross-session prompt history
 

@@ -44,10 +44,21 @@ impl Hook for ShellHooks {
             .unwrap_or_default()
             .to_string();
         let mut outcome = HookOutcome::Continue;
-        for hook in hooks
-            .iter()
-            .filter(|h| matches(h.matcher.as_deref(), &tool))
-        {
+        for hook in hooks {
+            match matches(hook.matcher.as_deref(), &tool) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                // D14 fail open: a broken matcher is this hook's failure —
+                // skipped with the core's `Notice(Warn)` naming it.
+                Err(e) => {
+                    return HookOutcome::Failed {
+                        error: format!(
+                            "{}: invalid matcher regex {:?}: {e}",
+                            hook.command, hook.matcher
+                        ),
+                    };
+                }
+            }
             let limit = hook
                 .timeout_s
                 .map_or(timeout, |s| Duration::from_secs(u64::from(s)));
@@ -64,16 +75,16 @@ impl Hook for ShellHooks {
     }
 }
 
-/// Claude's matcher: absent, empty or `*` matches everything; otherwise
-/// `|`-separated names, each exact or a `prefix*` glob.
-/// ponytail: no regex matchers; add `regex` when a real config needs one.
-fn matches(matcher: Option<&str>, tool: &str) -> bool {
+/// Claude's matcher (T22.3): absent, empty or `*` matches everything; a
+/// pattern without regex metacharacters is an exact tool name; anything
+/// else compiles with `regex` and is searched unanchored against the tool
+/// name, like Claude Code's `.test`. An invalid regex is `Err`, which the
+/// runner turns into a skipped hook and a warning — never a config fatal.
+fn matches(matcher: Option<&str>, tool: &str) -> Result<bool, regex::Error> {
     match matcher.map(str::trim) {
-        None | Some("") | Some("*") => true,
-        Some(m) => m.split('|').map(str::trim).any(|pat| {
-            pat.strip_suffix('*')
-                .map_or(pat == tool, |prefix| tool.starts_with(prefix))
-        }),
+        None | Some("") | Some("*") => Ok(true),
+        Some(m) if !m.contains(|c: char| ".$^*+?()[]{}|\\".contains(c)) => Ok(m == tool),
+        Some(m) => regex::Regex::new(m).map(|re| re.is_match(tool)),
     }
 }
 
@@ -176,11 +187,49 @@ mod tests {
 
     #[test]
     fn hooks_matcher_is_exact_or_prefix_glob() {
-        assert!(matches(None, "bash"));
-        assert!(matches(Some("*"), "bash"));
-        assert!(matches(Some("bash|edit"), "edit"));
-        assert!(matches(Some("mcp__*"), "mcp__x__y"));
-        assert!(!matches(Some("bash"), "bashful"));
+        assert!(matches(None, "bash").unwrap());
+        assert!(matches(Some("*"), "bash").unwrap());
+        assert!(matches(Some("bash|edit"), "edit").unwrap());
+        assert!(matches(Some("mcp__*"), "mcp__x__y").unwrap());
+        assert!(!matches(Some("bash"), "bashful").unwrap());
+    }
+
+    #[test]
+    fn matcher_regex_matches_bash_or_edit() {
+        assert!(matches(Some("bash|edit"), "bash").unwrap());
+        assert!(matches(Some("bash|edit"), "edit").unwrap());
+        assert!(!matches(Some("bash|edit"), "read").unwrap());
+        assert!(matches(Some("^mcp__.*"), "mcp__srv__tool").unwrap());
+    }
+
+    #[tokio::test]
+    async fn broken_matcher_regex_names_the_hook_and_skips_it() {
+        let mut events = HashMap::new();
+        events.insert(
+            "PreToolUse".to_string(),
+            vec![HookConfig {
+                matcher: Some("(".into()),
+                command: "echo never".into(),
+                timeout_s: None,
+            }],
+        );
+        let config = HooksConfig {
+            events,
+            ..HooksConfig::default()
+        };
+        let hooks = ShellHooks::new(&config, PathBuf::from("."));
+        let out = hooks
+            .run(
+                HookEvent::PreToolUse,
+                serde_json::json!({ "tool_name": "bash" }),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert!(
+            matches!(out, HookOutcome::Failed { ref error }
+                if error.contains("echo never") && error.contains("matcher")),
+            "{out:?}"
+        );
     }
 
     #[test]

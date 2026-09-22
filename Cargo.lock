@@ -853,6 +853,7 @@ dependencies = [
  "insta",
  "nix 0.31.3",
  "pathdiff",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",

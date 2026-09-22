@@ -1,7 +1,6 @@
 # Todo
 
 - T22.2. Skills index and file commands reach the session
-- T22.3. `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
 - T22.4. Mouse: wire `tui.mouse` or delete the key
 - T22.7. Leftover audit
 - T23.2. Flicker-free scrollback (`scrolling-regions`)

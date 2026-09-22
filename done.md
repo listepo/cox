@@ -2711,3 +2711,47 @@ $ mise exec -- cargo fmt --check
 $ COX_HOME=<scratch> mise exec -- cargo run -p cox -- doctor
      unaffected (T25.1 only changed the interactive TUI session path)
 ```
+
+#### T22.3 `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
+
+Model: Claude Code / claude-sonnet-5 · Status: done 2026-09-22 · Depends: — · Size: ~120 · Priority: P0 · Complexity: 2
+Goal: the two configured-but-silent events run; a `matcher` that is not a plain tool name is compiled as a regex (Claude Code semantics).
+Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/hooks.rs`, `crates/cox-ext/src/hooks.rs`.
+Steps: (1) `Session::new` runs `HookEvent::SessionStart` after `SessionStarted` is emitted (payload: `session_id`, `cwd`, `source: "startup"|"resume"|"clear"`); `additionalContext` from stdout is appended to the volatile block (`system[3]`) exactly as T16.2 does for `PermissionRequest`. (2) `Notification` fires on `ApprovalRequired`, `TurnDone` and `ask_user` (payload `kind`, `message`, `title`); its stdout is ignored (observe-only). (3) `matcher`: try exact tool name; if it contains a regex metacharacter compile with `regex` (already a workspace dep); invalid regex → `Notice(Warn)` naming the hook, hook skipped (fail open, D14). (4) Update `docs/config.md` hook table.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core session_start_hook_runs_once notification_hook_gets_turn_done_payload
+mise exec -- cargo nextest run -p cox-ext matcher_regex_matches_bash_or_edit
+```
+Done when: shell-stub hooks in a `COX_HOME` scratch tree write both payloads to a file once per session; a broken regex is a warning, not a failure.
+Out of scope: `PreModelSwitch`/`PostModelSwitch` and other events cox does not list in §1.6.
+Execution plan (Claude Code / claude-sonnet-5):
+- `cox-core/src/hooks.rs`: `fire_configured` (dispatch `SessionStart`/`Notification` only when `hooks.events` configures them — a runner then sees exactly the configured trigger points) and `notification_payload(&Event) -> Option<Value>` (`kind`/`message`/`title` for `ApprovalRequired`, `TurnDone`, `ask_user`).
+- `cox-core/src/session.rs`: `Inner.startup: Option<&'static str>` armed by `build` (`"resume"` for `Session::resume`, `"startup"` otherwise, no child sessions); `submit` flushes it once via `fire_configured(SessionStart, {"source"})` and stores `additional_context` (reusing `hooks::prompt_rewrite`) into `Inner.startup_context`, which `step` appends to `req.system[3].text`; `emit` fires `Notification` before recording `TurnDone`/`ApprovalRequired`/`ToolCallRequested(ask_user)` so nothing follows a turn's last event (§1.15 #7).
+- `cox-ext/src/hooks.rs`: `matches` tries an exact tool name first, compiles a matcher carrying a regex metacharacter with `regex` (unanchored, Claude Code `.test` semantics), and returns `Err` on an invalid regex → `HookOutcome::Failed` naming the hook command → core `Notice(Warn)` + skip (D14). Tests: `matcher_regex_matches_bash_or_edit` plus the broken-regex warn path.
+- Step 4 rides on `crates/cox-protocol/default.toml`'s `[hooks]` comments (docs/config.md is generated from them by `config_docs_config_md_matches_default_toml`).
+- Tests in `src/session.rs`'s `mod tests`: `session_start_hook_runs_once`, `notification_hook_gets_turn_done_payload` over `MemoryStore` + `Scripted` + a recording `Hook` stub.
+
+What landed (commit `T22.3: SessionStart and Notification hooks fire; matcher accepts a regex`): `SessionStart` fires exactly once per session with `source: "startup"` (`Session::new`) or `"resume"` (`Session::resume`) on top of `fire`'s common `session_id`/`cwd`/`hook_event_name` fields, and its stdout `additionalContext` is appended to `req.system[3].text`, the volatile block after the last cache breakpoint (§1.9 — the cached prefix is untouched). `Notification` fires on `ApprovalRequired` (`kind: "approval_required"`), `TurnDone` (`kind: "turn_done"`, `message` = the stop reason) and `ask_user` (`kind: "ask_user"`, `message` = the question) with `title` alongside, before the announced event is recorded so a broken hook's warning still precedes `TurnDone` (§1.15 rule 7); its stdout is never read. `matches` in `cox-ext` now: absent/empty/`*` matches everything, a pattern without regex metacharacters is an exact tool name (`bash` no longer matches `bashful`), anything else compiles with `regex` and is searched unanchored (`bash|edit`, `^mcp__.*`), and an invalid regex becomes `HookOutcome::Failed` naming the hook command — the core turns that into `Notice(Warn)` "hook PreToolUse skipped: …" and skips the hook (D14). Tests `session_start_hook_runs_once` (two submissions, one `SessionStart`, `source`/`session_id`/`cwd` asserted) and `notification_hook_gets_turn_done_payload` (a scripted turn's `kind`/`title`/`message`/`hook_event_name` asserted) in `src/session.rs`; `matcher_regex_matches_bash_or_edit` and `broken_matcher_regex_names_the_hook_and_skips_it` in `cox-ext`; `hooks_matcher_is_exact_or_prefix_glob` kept green. `docs/config.md`'s `[hooks]` table now documents the protocol, the matcher rules, the event list and the two payloads.
+
+Deviations from the card: (1) `SessionStart` cannot literally run inside `Session::new` — it is sync, `Hook::run` is async, and the surface installs the runner via `set_hook` only *after* `Session::new` returns (`crates/cox/src/session.rs::open`), so a fire there would find no runner and never run in the real binary. `build` arms `Inner.startup` and the first `submit` dispatches it (once, via `.take()`); ordering after `SessionStarted` is preserved and the scratch-tree run below proves it fires. Subagent children do not arm (they announce via `SubagentStart`). `source: "clear"` is documented (the Claude Code value) but not produced: cox has no `/clear`-starts-a-new-session path yet. (2) The card's "exactly as T16.2 does for `PermissionRequest`" contradicts T16.2 itself (which ignores the `PermissionRequest` verdict); what is reused is T16.2's *context* mechanism (`Modify { input: {"additional_context"} }` via `hooks::prompt_rewrite`, produced by `cox-ext`'s `verdict`/`with_context`), with the destination the card states (`system[3]`). (3) `Notification` is dispatched at `Session::emit`, the one choke point that sees `ApprovalRequired`/`TurnDone`/`ToolCallRequested(ask_user)` without editing `turn.rs` (outside the card's Files). (4) The two new events dispatch only when `hooks.events` configures them (`hooks::fire_configured`): they are the card's "configured-but-silent" events, an unconfigured dispatch is a no-op for `ShellHooks`/`PresenceHook` either way, and this keeps `broken_hook_is_skipped_not_fatal` (§1.15 #10)'s pinned `seen == [UserPromptSubmit, PreToolUse, PostToolUse, Stop]` sequence exact — the invariant that nothing else fires. (5) `regex` was NOT already a workspace dep (the card's parenthetical): it is compiled in this tree via syntect/fancy-regex and tree-sitter but undeclared. Declared `regex = "1"` in `[workspace.dependencies]` + one `cox-ext` edge — no new crate enters the build (Cargo.lock gains exactly that one edge) — with the AGENTS.md-required one-line reason in the commit and a §1.1 row. (6) Step 4: `docs/config.md` is generated from `crates/cox-protocol/default.toml` by `config_docs_config_md_matches_default_toml` ("do not hand-edit"), so the hook table lives in the `[hooks]` key comments there and `docs/config.md` was regenerated. (7) Not unit-tested: the `ask_user`/`approval_required` payload arms (same match shape as the tested `turn_done` one) and the `system[3]` append line itself (extraction is covered by `prompt_rewrite`'s existing test). Size: ~200 LOC over 3 source files plus the two manifests and the generated doc.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-core session_start_hook_runs_once notification_hook_gets_turn_done_payload
+        PASS [   0.014s] (1/2) cox-core session::tests::session_start_hook_runs_once
+        PASS [   0.014s] (2/2) cox-core session::tests::notification_hook_gets_turn_done_payload
+     Summary [   0.015s] 2 tests run: 2 passed, 154 skipped
+$ mise exec -- cargo nextest run -p cox-ext matcher_regex_matches_bash_or_edit
+        PASS [   0.011s] (1/1) cox-ext hooks::tests::matcher_regex_matches_bash_or_edit
+     Summary [   0.012s] 1 test run: 1 passed, 42 skipped
+$ COX_HOME=<scratch>/home COX_PROVIDER=scripted COX_SCENARIO=<scratch>/scenario.toml mise exec -- cargo run -q -p cox -- --cwd <scratch>/ws --permission-mode auto run -p "read it"   # a session, twice
+     each session appends exactly one {"hook_event_name":"SessionStart","source":"startup",session_id,cwd} and one {"hook_event_name":"Notification","kind":"turn_done","title":"Turn done","message":"end_turn"} to <scratch>/payloads.jsonl (4 payloads after 2 sessions — once per session); the PreToolUse hook with matcher "(" never runs, the turn completes, and the rollout carries Notice warn "hook PreToolUse skipped: echo broken-matcher-ran: invalid matcher regex Some(\"(\"): regex parse error …"
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     696 tests run: 695 passed, 1 failed, 3 skipped — the 1 failure is the pre-existing, unrelated cox-provider usage_prices_toml_parses_and_has_all_tier_models
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
+

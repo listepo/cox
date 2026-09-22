@@ -95,6 +95,9 @@ sha2 = "0.11"
 
 # cox-ext
 serde_yaml = "0.9"
+# T22.3: hook `matcher` regexes; `regex` 1.x is already built in this tree
+# (syntect/fancy-regex, tree-sitter), so this adds no new crate to the lock.
+regex = "1"
 
 # cox-tui
 ratatui = "0.30.2"
