@@ -37,7 +37,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T25.6 | todo | P1 | 2 | 0% | |
 | T25.7 | todo | P0 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
-| T26.2 | in progress | P0 | 4 | 0% | Claude Code / claude-fable-5-1 |
 | T26.3 | todo | P1 | 3 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.1 | todo | P1 | 3 | 0% | |
@@ -1411,20 +1410,6 @@ Done when: the picker snapshot shows both groups.
 Out of scope: a global (cross-project) history.
 
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
-
-#### T26.2 `/rewind`
-
-Model: claude-fable-5-1 · Status: in progress · Depends: T26.1 · Size: ~200 · Priority: P0 · Complexity: 4
-Goal: `/rewind` (and `Esc Esc` on an empty composer) opens a timeline; the user restores code, conversation, or both; history stays append-only.
-Files: `crates/cox-tui/src/picker.rs`, `crates/cox-core/src/session.rs`, `crates/cox-tui/src/commands.rs`.
-Steps: (1) `Kind::Rewind` picker: one row per turn — `T7 · 3 files · +41 −12 · "add the cache column"` (the user text truncated), newest first; `Enter` opens a three-option row `[c]ode [t]alk [b]oth`. (2) `Submission::Rewind { to_turn, code: bool, conversation: bool }`. (3) Code: the core walks `checkpoints` rows from the latest turn down to `to_turn`, writes each `pre` image back through the confined `write` path (bypassing the 200-line rule), deletes `created` files, restores `deleted` ones; every write is itself checkpointed (so `/redo` works, T26.4); result summarised in a `Notice`. (4) Conversation: append `Event::Rewound { to_turn }`; `context::assemble` and `resume` stop reading history at the last `Rewound` marker's turn (append-only, D6f); the TUI clears cells after that turn from its viewport (scrollback stays — a dim `⤺ rewound to T7` cell is inserted). (5) `Esc Esc` on an empty composer within 500 ms opens the same picker.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core rewind_code_restores_bytes rewind_conversation_is_append_only resume_after_rewind_stops_at_marker
-mise exec -- cargo nextest run -p cox-tui rewind_timeline_snapshot
-```
-Done when: the loop scenarios pass, the timeline snapshot exists, and invariant 6 (`resume_builds_identical_request`) still passes after a rewind.
-Out of scope: rewinding subagent sessions (they are their own sessions).
 
 #### T26.3 `/fork` and `/handoff`
 
