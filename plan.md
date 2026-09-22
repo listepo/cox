@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.2 | todo | P0 | 2 | 0% | |
 | T22.3 | todo | P0 | 2 | 0% | |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.5 | in progress | P0 | 4 | 0% | Claude Code / claude-fable-5-1 |
 | T22.6 | todo | P1 | 2 | 0% | |
 | T22.7 | todo | P1 | 1 | 0% | |
 | T23.0 | todo | P1 | 2 | 0% | |
@@ -109,7 +108,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
-| `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6) |
+| `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4) |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize` | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3 |
@@ -1041,19 +1040,6 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 ```
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
-
-#### T22.5 MCP OAuth
-
-Model: claude-fable-5-1 · Status: in progress · Depends: — · Size: ~200 · Priority: P0 · Complexity: 4
-Goal: an HTTP MCP server answering 401 with OAuth metadata gets the rmcp `auth` flow, the token lands in the keyring, refresh is automatic, expiry is a `Notice(Warn)` naming the server — never a silent skip.
-Files: `crates/cox-mcp/src/auth.rs` (new), `crates/cox-mcp/src/client.rs`, `crates/cox/src/doctor.rs`.
-Steps: (1) Enable rmcp's `auth` feature in the workspace row (no new crate; `keyring 4` is already listed in §1.1). (2) `auth.rs`: `Store` = keyring entry `cox/mcp/<server>` holding `{access, refresh, expires_at, client_id}`; `authorize(server, metadata)` runs the authorization-code flow with PKCE: print the URL, open the browser when `TERM_PROGRAM`/`DISPLAY` allow (`open`/`xdg-open` via `which`), listen on `127.0.0.1:0` for the redirect with a 120 s timeout; device-code flow when the metadata advertises it (headless). (3) `client.rs`: on 401 with `WWW-Authenticate` resource metadata → step 2 once per session, then retry; refresh 60 s before `expires_at`; a refresh failure emits `Notice(Warn, "mcp <server>: token expired, run cox mcp login <server>")` and marks the server disabled for the session. (4) `cox mcp login <server>` / `logout` subcommands (in `mcp_cmd.rs` if the size allows, else a §6 follow-up); `doctor` prints `auth: ok (expires in 3h) | expired | none` per HTTP server. (5) Contract test with wiremock: `401 → /.well-known metadata → token endpoint → 200 tools/list`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-mcp oauth_401_then_token_then_200 oauth_refresh_failure_is_a_warning
-```
-Done when: the wiremock flow passes without a browser (device-code path), `doctor` shows the auth row, and an expired token never turns into a skipped server without a notice.
-Out of scope: consumer-subscription OAuth for model providers (research §8.2 #34), dynamic client registration beyond what rmcp provides.
 
 #### T22.6 `tui.theme = "auto"` detects the terminal background
 
