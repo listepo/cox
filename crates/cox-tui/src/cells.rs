@@ -35,6 +35,14 @@ pub struct Look {
     /// The semantic colour tokens (T24.1) every styled span picks from,
     /// resolved from `tui.theme`/`NO_COLOR`; never a bare colour literal.
     pub colors: Theme,
+    /// `Ctrl+E` (T24.4): whether *this* tool cell is the one still in the
+    /// viewport that the key can reach. `None` — not that cell, `Ctrl+E`
+    /// cannot open it, the fold line points at `/expand <id>` instead.
+    /// `Some(open)` — it is; the fold line reads `Ctrl+E` and folding is
+    /// skipped once `open` is true. Per-cell, so it is not part of the one
+    /// `Look` a whole render pass shares; the caller (`view.rs`) sets it for
+    /// the single index it applies to.
+    pub expand_last: Option<bool>,
 }
 
 /// Output longer than head + tail + 1 lines is folded in the middle; the
@@ -46,11 +54,24 @@ fn dim(s: impl Into<String>) -> Line<'static> {
     Line::styled(s.into(), Style::default().add_modifier(Modifier::DIM))
 }
 
-/// Tool output is indented two columns; a highlighted line keeps its spans,
-/// so the indent is a span of its own rather than a reformat.
-fn indent(mut line: Line<'static>) -> Line<'static> {
-    line.spans.insert(0, Span::raw("  "));
+/// The tool card's left edge (T24.4): a phase-tinted glyph and a space,
+/// inserted as a span of its own so a highlighted body line keeps its own
+/// spans untouched — this is what used to be a plain two-column indent.
+fn rail(mut line: Line<'static>, glyph: &'static str, style: Style) -> Line<'static> {
+    line.spans
+        .insert(0, Span::styled(format!("{glyph} "), style));
     line
+}
+
+/// The exit code `cox-tools::bash` already appends to its own output
+/// (`[exit <code> in <ms>ms]`, `crates/cox-tools/src/bash/mod.rs::render`),
+/// read back from the cleaned output's last line rather than re-parsed from
+/// the process — the header shows exactly what the tool told the model.
+fn bash_exit_code(output: &str) -> Option<&str> {
+    let line = output.lines().next_back()?.trim();
+    let rest = line.strip_prefix("[exit ")?;
+    let (code, _) = rest.split_once(" in ")?;
+    Some(code)
 }
 
 /// The syntect token for a tool whose output is the file named by its
@@ -104,33 +125,74 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             result,
             started,
         } => {
-            let header = format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject));
+            let sep = g.sep;
+            // The card's phase: no result yet, a result that succeeded, or
+            // one that failed. The rail and the header share its tint, so
+            // a failed call is red top to bottom without a second lookup.
+            let phase_ok = result.as_ref().map(|r| r.ok);
+            let (rail_glyph, tint) = match phase_ok {
+                None => (g.spin(look.tick), look.colors.tool),
+                Some(true) => (g.quote, look.colors.tool),
+                Some(false) => (g.quote, look.colors.error),
+            };
+            let rail_style = Style::default().fg(tint);
+            let output = clean(output);
+            let mut header = format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject));
+            if let Some(r) = result {
+                if let Some(d) = r.diff.as_ref() {
+                    let (added, removed) = diff::counts(&d.unified);
+                    header.push_str(&format!(" {sep} +{added} {}{removed}", g.minus));
+                }
+                header.push_str(&format!(" {sep} {}ms", r.duration_ms));
+                if call.name == "bash"
+                    && let Some(code) = bash_exit_code(&output)
+                {
+                    header.push_str(&format!(" {sep} exit {code}"));
+                }
+            }
             let mut lines = vec![Line::styled(
                 text::truncate(&header, usize::from(look.width.max(1))),
-                Style::default().fg(look.colors.tool),
+                Style::default().fg(tint),
             )];
-            let output = clean(output);
             let out: Vec<&str> = output.lines().collect();
             // A tool that prints a file prints source: highlight it by the
-            // subject's extension, indented like plain output.
+            // subject's extension, railed like plain output.
             let token = file_token(&call.name, &call.subject);
             let body = |rows: &[&str]| -> Vec<Line<'static>> {
                 match token.as_deref() {
                     Some(t) => markdown::highlight(t, rows, look.theme)
                         .into_iter()
-                        .map(indent)
+                        .map(|l| rail(l, rail_glyph, rail_style))
                         .collect(),
-                    None => rows.iter().map(|l| Line::raw(format!("  {l}"))).collect(),
+                    None => rows
+                        .iter()
+                        .map(|l| rail(Line::raw((*l).to_string()), rail_glyph, rail_style))
+                        .collect(),
                 }
             };
-            if out.len() > HEAD + TAIL + 1 {
+            // An error shows its output whole rather than hide the reason it
+            // failed; otherwise `Ctrl+E` on the one eligible cell does.
+            let force_open = phase_ok == Some(false) || look.expand_last == Some(true);
+            if !force_open && out.len() > HEAD + TAIL + 1 {
                 lines.extend(body(&out[..HEAD]));
-                lines.push(dim(format!(
-                    "  {} {} lines hidden {}",
-                    g.ellipsis,
-                    out.len() - HEAD - TAIL,
-                    g.ellipsis
-                )));
+                let hidden = out.len() - HEAD - TAIL;
+                let hint = if look.expand_last == Some(false) {
+                    format!(" {sep} Ctrl+E")
+                } else {
+                    result
+                        .as_ref()
+                        .and_then(|r| r.archive.as_ref())
+                        .map(|a| format!(" {sep} /expand {}", a.id))
+                        .unwrap_or_default()
+                };
+                lines.push(rail(
+                    Line::styled(
+                        format!("{} {hidden} more lines{hint}", g.ellipsis),
+                        Style::default().add_modifier(Modifier::DIM),
+                    ),
+                    rail_glyph,
+                    rail_style,
+                ));
                 lines.extend(body(&out[out.len() - TAIL..]));
             } else {
                 lines.extend(body(&out));
@@ -148,21 +210,21 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                     let expand = r
                         .archive
                         .as_ref()
-                        .map(|a| format!(" {} cox expand {}", g.sep, a.id))
+                        .map(|a| format!(" {sep} cox expand {}", a.id))
                         .unwrap_or_default();
-                    lines.push(dim(format!(
-                        "  {mark} {}B {}ms{expand}",
-                        r.bytes, r.duration_ms
-                    )));
+                    lines.push(rail(
+                        dim(format!("{mark} {}B {}ms{expand}", r.bytes, r.duration_ms)),
+                        rail_glyph,
+                        rail_style,
+                    ));
                 }
                 None => {
                     let elapsed = look.tick.saturating_sub(*started);
-                    lines.push(dim(format!(
-                        "  {} {}.{}s",
-                        g.spin(look.tick),
-                        elapsed / 10,
-                        elapsed % 10
-                    )));
+                    lines.push(rail(
+                        dim(format!("{}.{}s", elapsed / 10, elapsed % 10)),
+                        rail_glyph,
+                        rail_style,
+                    ));
                 }
             }
             lines

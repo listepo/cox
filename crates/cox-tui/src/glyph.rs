@@ -37,7 +37,7 @@ pub struct Glyphs {
     pub worktree: &'static str,
     /// Unordered list marker.
     pub bullet: &'static str,
-    /// Block quote rail.
+    /// Block quote rail, and (T24.4) a settled tool card's left-edge rail.
     pub quote: &'static str,
     /// Repeated for a horizontal rule and a table's header rule.
     pub rule: &'static str,

@@ -2,7 +2,7 @@
 source: crates/cox-tui/tests/approval.rs
 expression: "format!(\"{expanded}\\n---\\n{collapsed}\")"
 ---
-⚙ edit src/lib.rs
+⚙ edit src/lib.rs · +1 −1 · 1ms
   ± src/lib.rs  +1 −1
   --- a/src/lib.rs
   +++ b/src/lib.rs
@@ -10,8 +10,8 @@ expression: "format!(\"{expanded}\\n---\\n{collapsed}\")"
   -fn old() {}
   +fn new() {}
    fn keep() {}
-  ✓ 0B 1ms
-⚙ edit README.md
+│ ✓ 0B 1ms
+⚙ edit README.md · +2 −0 · 1ms
   ± README.md  +2 −0
   --- a/README.md
   +++ b/README.md
@@ -19,11 +19,11 @@ expression: "format!(\"{expanded}\\n---\\n{collapsed}\")"
    # cox
   +
   +A coxswain.
-  ✓ 0B 1ms
+│ ✓ 0B 1ms
 ---
-⚙ edit src/lib.rs
+⚙ edit src/lib.rs · +1 −1 · 1ms
   ± src/lib.rs  +1 −1
-  ✓ 0B 1ms
-⚙ edit README.md
+│ ✓ 0B 1ms
+⚙ edit README.md · +2 −0 · 1ms
   ± README.md  +2 −0
-  ✓ 0B 1ms
+│ ✓ 0B 1ms

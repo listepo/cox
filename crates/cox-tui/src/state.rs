@@ -155,6 +155,10 @@ pub struct State {
     pub theme: Theme,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
+    /// `Ctrl+E` (T24.4): the last tool cell still in the viewport, expanded
+    /// past its fold rather than head/tail. `view.rs` is the only reader
+    /// that knows which cell is last, so it turns this into `Look.expand_last`.
+    pub expanded_last: bool,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
     pub todo: Vec<(String, String)>,
     pub show_todo: bool,
@@ -266,6 +270,7 @@ impl State {
             depth: Depth::True,
             theme: Theme::dark(),
             show_diffs: true,
+            expanded_last: false,
             todo: Vec::new(),
             show_todo: false,
             marks: false,
@@ -346,6 +351,9 @@ impl State {
             tick: self.tick,
             marks: self.marks,
             colors: self.theme,
+            // The generic look shared by a whole render pass does not know
+            // which cell is last; `view.rs` overrides it for that one index.
+            expand_last: None,
         }
     }
 
@@ -430,6 +438,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     }
     if ctrl && key.code == KeyCode::Char('o') {
         state.show_diffs = !state.show_diffs;
+        return Vec::new();
+    }
+    if ctrl && key.code == KeyCode::Char('e') {
+        state.expanded_last = !state.expanded_last;
         return Vec::new();
     }
     if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {

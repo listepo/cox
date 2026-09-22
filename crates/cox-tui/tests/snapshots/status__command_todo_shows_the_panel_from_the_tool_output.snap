@@ -2,8 +2,8 @@
 source: crates/cox-tui/tests/status.rs
 expression: "buffer_to_string(&render(&state, 60, 8))"
 ---
-⚙ todo 3 items
-  ✓ 0B 1ms
+⚙ todo 3 items · 1ms
+│ ✓ 0B 1ms
  todo
  [x] read the loop
  [~] write cells

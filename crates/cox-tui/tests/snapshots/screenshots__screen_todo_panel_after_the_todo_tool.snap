@@ -3,8 +3,8 @@ source: crates/cox-tui/tests/screenshots.rs
 expression: "shot(\"todo_panel\", &mut state)"
 ---
 › plan the ledger work
-⚙ todo 3 items
-  ✓ 93B 12ms
+⚙ todo 3 items · 12ms
+│ ✓ 93B 12ms
 Three steps; starting the second.
 
 

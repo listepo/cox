@@ -4,10 +4,10 @@ expression: "shot(\"running_tool\", &mut state)"
 ---
 › build it
 ⚙ bash cargo build --workspace
-     Compiling cox-protocol v0.1.0
-     Compiling cox-core v0.1.0
-     Compiling cox-tui v0.1.0
-  ⠸ 2.3s
+⠸    Compiling cox-protocol v0.1.0
+⠸    Compiling cox-core v0.1.0
+⠸    Compiling cox-tui v0.1.0
+⠸ 2.3s
 
 
 
