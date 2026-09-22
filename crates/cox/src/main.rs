@@ -38,7 +38,8 @@ fn main() -> anyhow::Result<()> {
     match &cli.command {
         Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),
         Some(Command::Doctor) => {
-            let code = doctor::run(cli.json);
+            let servers = session::mcp_servers(&loaded.config, &cwd).servers;
+            let code = doctor::run(cli.json, &servers);
             drop(telemetry);
             std::process::exit(code);
         }

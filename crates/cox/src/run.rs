@@ -171,6 +171,7 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
             }
         },
         resume_spec,
+        false,
     ))?;
     // T6.3: with any other policy a driver answers asks on stdin, within
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.

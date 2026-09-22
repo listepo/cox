@@ -812,12 +812,15 @@ version = "0.1.2"
 dependencies = [
  "async-trait",
  "cox-protocol",
+ "keyring",
+ "reqwest 0.13.5",
  "rmcp",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
+ "wiremock",
 ]
 
 [[package]]

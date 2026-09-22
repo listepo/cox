@@ -200,14 +200,31 @@ pub struct SessionsArgs {
 
 /// `cox mcp [--allow-write] [--tools a,b]` (plan.md T6.2): read-only tools
 /// by default; writes are opt-in and `bash` only by name.
+/// `cox mcp login|logout <server>` (T22.5) manage an HTTP server's OAuth token.
 #[derive(Args, Debug, Default, Clone)]
 pub struct McpArgs {
+    #[command(subcommand)]
+    pub action: Option<McpAction>,
     /// Also serve `edit`, `write` and `apply_patch`.
     #[arg(long)]
     pub allow_write: bool,
     /// Serve exactly these tools (comma-separated); the only way to get `bash`.
     #[arg(long, value_name = "A,B")]
     pub tools: Option<String>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum McpAction {
+    /// Log in to an HTTP MCP server (OAuth in the browser); the token goes to the keyring.
+    Login {
+        /// Server name from config, `.mcp.json` or `~/.claude.json`.
+        server: String,
+    },
+    /// Forget an HTTP MCP server's token.
+    Logout {
+        /// Server name from config, `.mcp.json` or `~/.claude.json`.
+        server: String,
+    },
 }
 
 /// `cox record <name> -p <prompt> [--sse FILE] [--redact]` (plan.md T1.5).

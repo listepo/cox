@@ -251,6 +251,10 @@ the rollout keeps every line, and resume stops reading at the marker. The
 next turn keeps counting from where the session was (`T8` after a rewind
 to `T7`), so a turn number never means two things.
 
+## MCP servers that need a login
+
+An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` challenge. cox then runs the standard flow (authorization code with PKCE, dynamic client registration when the server offers it) through rmcp: in the TUI the login URL is printed and the browser opened, a listener on `127.0.0.1` takes the redirect, and the token is filed in the OS keyring as `cox/mcp/<name>`. From then on the token is attached to every request and refreshed before it expires. Headless surfaces (`cox run`, `cox acp`) never wait for a browser: the server is skipped with the warning `run \`cox mcp login <name>\``, which runs the same flow outside a session. `cox mcp logout <name>` forgets the token, and `cox doctor` prints one `mcp auth <name>` row per HTTP server (`ok (expires in 3h)`, `expired`, `none`).
+
 ## The four surfaces (one stream each)
 
 | Surface | Command | What it does with `Event`s |

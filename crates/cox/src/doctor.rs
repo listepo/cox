@@ -1,9 +1,11 @@
 //! `cox doctor`: diagnostics to understand why cox will or will not work on
 //! this machine. Checks: toolchain version, `COX_HOME` writable, db opens,
 //! API keys per configured provider, sandbox backend, `git` on PATH, terminal
-//! capabilities (TERM, true colour, size), prices table age, `.claude/settings.json`.
+//! capabilities (TERM, true colour, size), prices table age, `.claude/settings.json`,
+//! and one OAuth row per HTTP MCP server (T22.5).
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
 
+use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
@@ -11,6 +13,7 @@ use std::process::Command as ProcessCommand;
 use serde::{Deserialize, Serialize};
 
 use cox_protocol::Store as _;
+use cox_protocol::config::McpServerConfig;
 use cox_provider::usage::{Price, PriceTable};
 
 /// One check result.
@@ -55,7 +58,7 @@ impl CheckResult {
 }
 
 /// Run all doctor checks. Returns exit code 0 when no `fail`, 1 otherwise.
-pub fn run(json: bool) -> i32 {
+pub fn run(json: bool, mcp: &HashMap<String, McpServerConfig>) -> i32 {
     let mut results = Vec::new();
 
     // Get COX_HOME early for reuse.
@@ -89,6 +92,15 @@ pub fn run(json: bool) -> i32 {
 
     // .claude/settings.json found.
     results.push(check_claude_settings());
+
+    // One row per HTTP MCP server: is its token usable?
+    let mut names: Vec<&String> = mcp
+        .iter()
+        .filter(|(_, c)| c.url.is_some())
+        .map(|(n, _)| n)
+        .collect();
+    names.sort();
+    results.extend(names.into_iter().map(|name| check_mcp_auth(name)));
 
     // Output and determine exit code.
     let has_fail = if json {
@@ -243,6 +255,26 @@ fn check_terminal() -> CheckResult {
 
 const PRICES_STALE_DAYS: u32 = 90;
 const PRICES_FIX: &str = "update crates/cox-provider/prices.toml from the official page";
+
+/// `mcp auth <name>`: `ok (expires in 3h)`, `ok (no expiry)`, `expired` or
+/// `none`. `none` is fine — the server may not ask for a login at all.
+fn check_mcp_auth(name: &str) -> CheckResult {
+    use cox_mcp::auth::{Status, status, stored};
+    let check = format!("mcp auth {name}");
+    match stored(name) {
+        Ok(creds) => match status(creds.as_ref(), cox_mcp::auth::now()) {
+            s @ Status::Expired => {
+                CheckResult::warn(&check, s.to_string(), format!("run `cox mcp login {name}`"))
+            }
+            s => CheckResult::ok(&check, s.to_string()),
+        },
+        Err(e) => CheckResult::warn(
+            &check,
+            format!("keyring: {e}"),
+            format!("run `cox mcp login {name}` once the keyring is available"),
+        ),
+    }
+}
 
 fn parse_iso_date(s: &str) -> Option<(u32, u32, u32)> {
     let mut parts = s.split('-');

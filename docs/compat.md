@@ -37,4 +37,5 @@ A checkout configured for Claude Code or Codex works with cox unchanged:
 | Codex `apply_patch` (V4A) | yes | Add/Update/Delete/Move, `@@` context |
 | `--output-format stream-json` | yes | same event shapes for scripts |
 | `~/.codex/config.toml` | no | Codex config is not imported |
-| MCP resources/prompts, MCP OAuth, image input | no | deferred to v0.2 |
+| MCP OAuth | yes | authorization code + PKCE, token in the keyring, `cox mcp login <name>` |
+| MCP resources/prompts, image input | no | deferred to v0.2 |
