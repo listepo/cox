@@ -232,7 +232,7 @@ impl Session {
         tier: Tier,
     ) -> Result<Self, CoreError> {
         let is_resume = resume.is_some();
-        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice) =
+        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice, turns) =
             match resume {
                 Some((id, history)) => {
                     let truncated_notice = history.truncated_notice();
@@ -241,9 +241,11 @@ impl Session {
                         .iter()
                         .enumerate()
                         .filter(|(_, m)| m.role == Role::User)
-                        .map(|(start, _)| TurnMark {
+                        .zip(1u32..)
+                        .map(|((start, _), seq)| TurnMark {
                             item: ItemId::new(),
                             start,
+                            seq,
                         })
                         .collect();
                     (
@@ -253,6 +255,7 @@ impl Session {
                         history.grants,
                         turn_marks,
                         truncated_notice,
+                        history.turns,
                     )
                 }
                 None => (
@@ -262,6 +265,7 @@ impl Session {
                     Vec::new(),
                     Vec::new(),
                     None,
+                    0,
                 ),
             };
         let (tx, rx) = mpsc::channel(256);
@@ -314,12 +318,12 @@ impl Session {
                 discovered: Vec::new(),
                 turn_marks,
                 archives: HashMap::new(),
+                turn_seq: turns,
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
                 extracted: Vec::new(),
-                turn_seq: 0,
                 last_context_tokens: 0,
                 retried_after_too_long: false,
             })),
@@ -480,6 +484,11 @@ impl Session {
                 .await
                 .map(|_| ()),
             Submission::SwitchModel { tier, model } => self.switch_model(tier, model).await,
+            Submission::Rewind {
+                to_turn,
+                code,
+                conversation,
+            } => self.rewind(to_turn, code, conversation).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
@@ -697,8 +706,13 @@ impl Session {
         {
             HookOutcome::Block { reason } => {
                 let tc = self.config.tiers.get(self.tier);
-                self.emit_turn_started(turn, self.tier, ModelId(tc.model.clone()))
-                    .await?;
+                self.emit_turn_started(
+                    turn,
+                    self.next_seq().await,
+                    self.tier,
+                    ModelId(tc.model.clone()),
+                )
+                .await?;
                 self.emit(Event::Notice {
                     level: Level::Warn,
                     text: format!("prompt blocked by hook: {reason}"),
@@ -721,7 +735,8 @@ impl Session {
         let route = match self.route_for(Job::Main, confirm_think).await {
             Ok(route) => route,
             Err(RouteError::NeedsConfirm { tier, model }) => {
-                self.emit_turn_started(turn, tier, model.clone()).await?;
+                self.emit_turn_started(turn, self.next_seq().await, tier, model.clone())
+                    .await?;
                 let detail = RouteError::NeedsConfirm { tier, model }.notice();
                 self.emit(Event::Notice {
                     level: Level::Warn,
@@ -732,8 +747,13 @@ impl Session {
             }
             Err(e) => {
                 let tc = self.config.tiers.get(self.tier);
-                self.emit_turn_started(turn, self.tier, ModelId(tc.model.clone()))
-                    .await?;
+                self.emit_turn_started(
+                    turn,
+                    self.next_seq().await,
+                    self.tier,
+                    ModelId(tc.model.clone()),
+                )
+                .await?;
                 self.emit(Event::Error {
                     error: CoreError::Config {
                         key: "tiers".into(),
@@ -765,9 +785,11 @@ impl Session {
                     .map(|text| Content::Text { text })
                     .collect(),
             });
+            let seq = inner.turn_seq + 1;
             inner.turn_marks.push(TurnMark {
                 item: user_item,
                 start,
+                seq,
             });
             inner.provider_calls = 0;
             inner.retried_after_too_long = false;
@@ -778,7 +800,7 @@ impl Session {
         // like every index write.
         let _ = self.store.rollout_index(&self.id, seq, &text);
         crate::checkpoint::mark_turn(self, seq);
-        self.emit_turn_started(turn, route.tier, route.model.clone())
+        self.emit_turn_started(turn, seq, route.tier, route.model.clone())
             .await?;
         self.emit(Event::ItemStarted {
             item: user_item,
@@ -1136,14 +1158,23 @@ impl Session {
         Ok(Step::Continue)
     }
 
+    /// The number the next user turn will get; a refused turn (blocked
+    /// prompt, unconfirmed think tier) reports it too, since the counter
+    /// only moves when a user item lands.
+    async fn next_seq(&self) -> u32 {
+        self.inner.lock().await.turn_seq + 1
+    }
+
     async fn emit_turn_started(
         &self,
         turn: TurnId,
+        seq: u32,
         tier: Tier,
         model: ModelId,
     ) -> Result<(), CoreError> {
         self.emit(Event::TurnStarted {
             turn,
+            seq,
             job: self.job,
             tier,
             model,

@@ -164,6 +164,31 @@ pub struct State {
     /// The branch and line counts the runtime polls; `None` outside a
     /// repository, so the line is unchanged there.
     pub git: Option<GitStatus>,
+    /// The `/rewind` timeline (T26.2): one row per user turn, oldest first.
+    pub turns: Vec<TurnRow>,
+    /// The `seq` of the turn in flight, from `TurnStarted`.
+    pub current_seq: u32,
+    /// The turn chosen in the rewind picker, awaiting the what-to-restore row.
+    pub rewind_to: Option<u32>,
+    /// The tick of a first `Esc` on an empty composer; a second within
+    /// `ESC_ESC_TICKS` opens the rewind timeline.
+    pub esc_armed: Option<u64>,
+}
+
+/// Ticks (100 ms each) two `Esc`s may be apart to count as `Esc Esc`.
+pub const ESC_ESC_TICKS: u64 = 5;
+
+/// One user turn as the rewind timeline shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnRow {
+    pub seq: u32,
+    /// The user's text.
+    pub text: String,
+    /// Files checkpointed during the turn.
+    pub files: usize,
+    /// Where the turn's user cell sits in `transcript`, so a conversation
+    /// rewind cuts there.
+    pub cell_at: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -222,6 +247,10 @@ impl State {
             git_branches: Vec::new(),
             commands: COMMANDS.iter().map(|(n, ..)| n.to_string()).collect(),
             ctrl_c_armed: false,
+            turns: Vec::new(),
+            current_seq: 0,
+            rewind_to: None,
+            esc_armed: None,
             tick: 0,
             show_thinking: false,
             dark: true,
@@ -411,6 +440,23 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     state.composer.key(key);
                 }
                 Pick::Closed => {}
+                Pick::Chosen(choice) if picker.kind == Kind::Rewind => {
+                    state.rewind_to = picker::turn_of_entry(&choice);
+                    state.modal = Some(Modal::Picker(Picker::open(
+                        Kind::RewindWhat,
+                        picker::REWIND_WHAT.map(String::from).to_vec(),
+                    )));
+                }
+                Pick::Chosen(choice) if picker.kind == Kind::RewindWhat => {
+                    if let Some(to_turn) = state.rewind_to.take() {
+                        let what = choice.split(' ').next().unwrap_or("");
+                        return vec![Cmd::Submit(Submission::Rewind {
+                            to_turn,
+                            code: what != "talk",
+                            conversation: what != "code",
+                        })];
+                    }
+                }
                 Pick::Chosen(choice) => match picker.kind {
                     Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
                     // Resuming in place needs `app::run` to return a request;
@@ -425,6 +471,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         notice(state, Level::Info, text);
                     }
                     Kind::History => state.composer.set_text(&choice),
+                    Kind::Rewind | Kind::RewindWhat => {}
                     Kind::Shell => {
                         let mut line = state.composer.text();
                         let keep = line.len() - picker::last_word(&line).len();
@@ -455,6 +502,17 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             // composer (vim's normal mode wants it).
             if key.code == KeyCode::Esc && state.status.busy {
                 return vec![Cmd::Submit(Submission::Interrupt)];
+            }
+            // `Esc Esc` on an empty composer opens the rewind timeline
+            // (T26.2); a lone Esc still reaches the composer for vim.
+            if key.code == KeyCode::Esc && state.composer.is_empty() {
+                let armed = state.esc_armed.take();
+                if armed.is_some_and(|t| state.tick.saturating_sub(t) <= ESC_ESC_TICKS) {
+                    return open_rewind(state);
+                }
+                state.esc_armed = Some(state.tick);
+            } else {
+                state.esc_armed = None;
             }
             match state.composer.key(key) {
                 Edit::Submit(text) => {
@@ -502,6 +560,30 @@ fn set_mode(state: &mut State, mode: PermissionMode) -> Vec<Cmd> {
 
 fn notice(state: &mut State, level: Level, text: String) {
     state.transcript.push(Cell::Notice { level, text });
+}
+
+/// `/rewind` and `Esc Esc`: the timeline, newest first.
+fn open_rewind(state: &mut State) -> Vec<Cmd> {
+    if state.status.busy {
+        notice(
+            state,
+            Level::Warn,
+            "rewind: interrupt the turn first".into(),
+        );
+        return Vec::new();
+    }
+    if state.turns.is_empty() {
+        notice(state, Level::Info, "nothing to rewind yet".into());
+        return Vec::new();
+    }
+    let rows = state
+        .turns
+        .iter()
+        .rev()
+        .map(|t| picker::turn_entry(t.seq, t.files, &t.text))
+        .collect();
+    state.modal = Some(Modal::Picker(Picker::open(Kind::Rewind, rows)));
+    Vec::new()
 }
 
 /// `/agents`: one line per live session of this workspace. Its cwd and
@@ -579,6 +661,7 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             state.modal = Some(Modal::Picker(Picker::open(Kind::Sessions, rows)));
         }
         Action::Notice(text) => notice(state, Level::Warn, text),
+        Action::Rewind => return open_rewind(state),
     }
     Vec::new()
 }
@@ -590,10 +673,18 @@ fn on_event(state: &mut State, ev: Event) {
     }
     match ev {
         Event::ItemStarted { item, kind } => match kind {
-            ItemKind::UserMessage { text, attachments } => state.transcript.push(Cell::User {
-                text,
-                attachments: attachments.into_iter().map(|a| a.name).collect(),
-            }),
+            ItemKind::UserMessage { text, attachments } => {
+                state.turns.push(TurnRow {
+                    seq: state.current_seq,
+                    text: text.clone(),
+                    files: 0,
+                    cell_at: state.transcript.len(),
+                });
+                state.transcript.push(Cell::User {
+                    text,
+                    attachments: attachments.into_iter().map(|a| a.name).collect(),
+                });
+            }
             ItemKind::AssistantMessage { text } => state.transcript.push(Cell::Assistant {
                 item,
                 text,
@@ -654,7 +745,10 @@ fn on_event(state: &mut State, ev: Event) {
             state.modal = Some(Modal::Approval(Approval::new(call, why)));
         }
         Event::ApprovalDecided { .. } => state.modal = None,
-        Event::TurnStarted { tier, model, .. } => {
+        Event::TurnStarted {
+            seq, tier, model, ..
+        } => {
+            state.current_seq = seq;
             state.status.busy = true;
             state.status.tier = Some(tier);
             state.status.model = model.to_string();
@@ -678,7 +772,23 @@ fn on_event(state: &mut State, ev: Event) {
             text: error.to_string(),
             fatal,
         }),
-        Event::SessionStarted { .. } | Event::Compacted { .. } | Event::Checkpoint { .. } => {}
+        Event::Checkpoint { files, .. } => {
+            if let Some(turn) = state.turns.last_mut() {
+                turn.files += files.len();
+            }
+        }
+        Event::Rewound {
+            to_turn,
+            conversation,
+            ..
+        } => {
+            if conversation && let Some(at) = state.turns.iter().position(|t| t.seq >= to_turn) {
+                let cut = state.turns[at].cell_at;
+                state.transcript.truncate(cut);
+                state.turns.truncate(at);
+            }
+        }
+        Event::SessionStarted { .. } | Event::Compacted { .. } => {}
     }
 }
 

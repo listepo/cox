@@ -73,6 +73,7 @@ fn start_turn(state: &mut State) -> TurnId {
     ev(
         state,
         Event::TurnStarted {
+            seq: 1,
             turn,
             job: Job::Main,
             tier: Tier::Code,

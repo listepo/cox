@@ -699,6 +699,16 @@ pub enum Submission {
         /// The outcome.
         outcome: HookOutcome,
     },
+    /// `/rewind` (T26.2): restore the workspace, the conversation or both
+    /// to the start of turn `to_turn`.
+    Rewind {
+        /// The turn to go back to (its `seq`); that turn and later ones are undone.
+        to_turn: u32,
+        /// Write every pre-image since `to_turn` back into the workspace.
+        code: bool,
+        /// Drop the conversation from `to_turn` on (append-only: a marker, not an edit).
+        conversation: bool,
+    },
     /// Wind down the session cleanly.
     Shutdown,
 }
@@ -722,6 +732,9 @@ pub enum Event {
     TurnStarted {
         /// The turn's id.
         turn: TurnId,
+        /// The turn's ordinal in this session, 1-based; `/rewind` names
+        /// turns by it and the `checkpoints` rows carry it (T26.1).
+        seq: u32,
         /// Which job this turn is (usually `Job::Main`).
         job: Job,
         /// The tier routed to.
@@ -819,6 +832,21 @@ pub enum Event {
         call: Option<CallId>,
         /// Every path recorded, in path order.
         files: Vec<CheckpointFile>,
+    },
+    /// `/rewind` finished (T26.2). With `conversation`, resume and the
+    /// context builder stop reading history at `to_turn`; the rollout keeps
+    /// every earlier line.
+    Rewound {
+        /// The turn the session went back to.
+        to_turn: u32,
+        /// Files were restored.
+        code: bool,
+        /// The conversation was cut.
+        conversation: bool,
+        /// Paths written back or removed.
+        restored: Vec<PathBuf>,
+        /// Paths whose pre-image was too large to keep, left as they are.
+        skipped: Vec<PathBuf>,
     },
     /// A background subagent task was created.
     TaskCreated {
@@ -1137,7 +1165,7 @@ mod tests {
 
     #[rstest]
     #[case::session_started(Event::SessionStarted { session: SessionId::new(), config_digest: "deadbeef".into(), cwd: PathBuf::from("/tmp") })]
-    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), job: Job::Main, tier: Tier::Code, model: ModelId("claude-sonnet-5".into()) })]
+    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), seq: 1, job: Job::Main, tier: Tier::Code, model: ModelId("claude-sonnet-5".into()) })]
     #[case::item_started(Event::ItemStarted { item: ItemId::new(), kind: ItemKind::UserMessage { text: "hi".into(), attachments: vec![] } })]
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
@@ -1183,7 +1211,8 @@ mod tests {
     /// assert it is snake_case, over one value per `Event` variant.
     #[rstest]
     #[case::session_started(Event::SessionStarted { session: SessionId::new(), config_digest: "d".into(), cwd: PathBuf::from(".") })]
-    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), job: Job::Main, tier: Tier::Code, model: ModelId("m".into()) })]
+    #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), seq: 1, job: Job::Main, tier: Tier::Code, model: ModelId("m".into()) })]
+    #[case::rewound(Event::Rewound { to_turn: 2, code: true, conversation: false, restored: vec![PathBuf::from("a.rs")], skipped: vec![] })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     fn event_tags_are_snake_case(#[case] event: Event) {

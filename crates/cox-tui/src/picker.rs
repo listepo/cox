@@ -26,6 +26,32 @@ pub enum Kind {
     Sessions,
     /// `Tab` on a `git` line (T15.4): a subcommand, a branch or a path.
     Shell,
+    /// `/rewind` (T26.2): one row per turn, newest first.
+    Rewind,
+    /// After a rewind row: what to restore.
+    RewindWhat,
+}
+
+/// The `RewindWhat` rows; the first word is what `Submission::Rewind` gets.
+pub const REWIND_WHAT: [&str; 3] = [
+    "both — files and conversation",
+    "code — files only, keep the conversation",
+    "talk — conversation only, keep the files",
+];
+
+/// One `/rewind` row: `T7 · 3 files · "add the cache column"`.
+pub fn turn_entry(seq: u32, files: usize, text: &str) -> String {
+    const MAX: usize = 48;
+    let mut short: String = text.chars().take(MAX).collect();
+    if text.chars().count() > MAX {
+        short.push('…');
+    }
+    format!("T{seq} · {files} files · \"{short}\"")
+}
+
+/// The turn a `turn_entry` row names.
+pub fn turn_of_entry(row: &str) -> Option<u32> {
+    row.strip_prefix('T')?.split(' ').next()?.parse().ok()
 }
 
 /// Git's porcelain, offered where the subcommand goes.
@@ -98,6 +124,8 @@ impl Kind {
             Kind::History => "history: ",
             Kind::Sessions => "resume: ",
             Kind::Shell => "complete: ",
+            Kind::Rewind => "rewind to: ",
+            Kind::RewindWhat => "restore: ",
         }
     }
 }
@@ -255,6 +283,16 @@ mod tests {
         assert_eq!(candidates("git add sr", &state), ["src/lib.rs"]);
         assert_eq!(last_word("git add sr"), "sr");
         assert_eq!(last_word("git add "), "");
+    }
+
+    #[test]
+    fn picker_turn_entry_round_trips_and_shortens_long_prompts() {
+        let row = turn_entry(7, 3, "add the cache column");
+        assert_eq!(row, "T7 · 3 files · \"add the cache column\"");
+        assert_eq!(turn_of_entry(&row), Some(7));
+        let long = turn_entry(12, 0, &"x".repeat(60));
+        assert!(long.ends_with("…\""));
+        assert_eq!(turn_of_entry("both — files and conversation"), None);
     }
 
     #[test]

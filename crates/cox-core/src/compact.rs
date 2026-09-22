@@ -48,6 +48,9 @@ impl Trigger {
 pub(crate) struct TurnMark {
     pub item: ItemId,
     pub start: usize,
+    /// The turn's `seq` (`Event::TurnStarted`); `0` for the synthetic
+    /// summary turn compaction leaves behind. `/rewind` cuts here.
+    pub seq: u32,
 }
 
 /// The history index the kept turns start at, and the turns before it.
@@ -184,7 +187,11 @@ impl Session {
             for m in &mut kept_marks {
                 m.start = m.start - cut + 1;
             }
-            inner.turn_marks = vec![TurnMark { item, start: 0 }];
+            inner.turn_marks = vec![TurnMark {
+                item,
+                start: 0,
+                seq: 0,
+            }];
             inner.turn_marks.append(&mut kept_marks);
             let after = estimate_tokens(&inner.history);
             inner.last_context_tokens = after;
@@ -282,6 +289,7 @@ mod tests {
             .map(|i| TurnMark {
                 item: ItemId::new(),
                 start: i * 2,
+                seq: i as u32 + 1,
             })
             .collect()
     }

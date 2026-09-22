@@ -98,6 +98,7 @@ fn frame_after_one_turn_replays_events() {
     };
     let events = [
         Event::TurnStarted {
+            seq: 1,
             turn,
             job: Job::Main,
             tier: Tier::Code,
