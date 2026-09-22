@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn usage_prices_toml_parses_and_has_all_tier_models() {
         let table = PriceTable::from_str(DEFAULT_PRICES).expect("default prices parse");
-        assert_eq!(table.prices.len(), 20);
+        assert_eq!(table.prices.len(), 21);
         // `price_for` is a linear find, so row order carries no meaning and
         // is not asserted on.
         // Verify all required tier models are present.
@@ -173,6 +173,7 @@ mod tests {
         assert!(ids.contains(&"claude-sonnet-5"));
         assert!(ids.contains(&"claude-opus-5"));
         assert!(ids.contains(&"claude-fable-5-1"));
+        assert!(ids.contains(&"jev-latest"));
     }
 
     #[test]
