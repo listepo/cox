@@ -1466,6 +1466,13 @@ mise exec -- cargo nextest run -p cox worktree_flag_sets_roots
 ```
 Done when: a scratch repo test creates, uses and removes a worktree; the `worktrees` skill's naming rule is followed literally.
 Out of scope: merging worktree branches (a user or `bash` action).
+Execution plan (Claude Code / claude-fable-5-1):
+1. `cox-protocol`: `traits::Worktrees { add(from, name, owner) -> Result<Worktree, WorktreeError> }`, `Worktree { path, branch, main }`, `errors::WorktreeError`; `Presence.worktree: Option<PathBuf>`.
+2. `cox-tools::git`: `worktree_add(dir, name, owner)` — main checkout via `git rev-parse --git-common-dir`, root = nearest ancestor holding `_worktrees/` else `_worktrees/` next to the repo (`WT_ROOT` overrides), path `<root>/<repo>-<name>`, branch `<name>` (lower case, `[a-z0-9._-]`), start point `origin/<default>` after a best-effort fetch else `HEAD`, `git worktree add --lock --reason "<owner> | <name> | <date>" --no-track`; reused when already registered and the lock is empty or starts with `cox /`, refused when another owner holds it. `worktree_remove(path, owner)` refuses the main checkout, an unregistered path, another owner's lock and a dirty tree; unlock + remove, branch kept. `is_clean(dir)`. `GitWorktrees` implements the trait. Tests: `worktree_add_is_idempotent`, `worktree_remove_refuses_dirty`.
+3. `cox-core`: `Session::set_worktrees`, `spawn_child(.., cwd)`; `agent(isolation: "worktree")` asks the trait for `<task-id>` owned by `cox / <parent session>`, runs the child with cwd = worktree and roots `[worktree, main]`, and appends `[worktree <path>, branch <branch>]` to the answer. Test: `subagent_worktree_isolation_runs_child_in_its_worktree` with a fake `Worktrees`.
+4. `crates/cox`: `--worktree <NAME>` (`flag_key_map` → `runtime.worktree`); `main.rs` creates it once, then treats it as `--cwd <path> --add-dir <main>`; `session::open` installs `GitWorktrees` and hands the path to the presence record; `/quit` on a clean worktree asks on stderr before `worktree_remove`. Test: `worktree_flag_sets_roots`.
+5. `cox-tui`: `State.worktree`, glyph `worktree` (`⧉` / `wt`), status segment after the branch.
+6. Docs: `docs/how-it-works.md` section, `docs/compat.md` row. Deviation from the card recorded in `done.md`: the branch is `<name>`, not `cox/<name>`, because the skill's naming rule wins ("followed literally").
 
 #### T27.4 `/loop`
 
