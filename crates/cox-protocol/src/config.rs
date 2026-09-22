@@ -638,6 +638,10 @@ pub struct TuiConfig {
     pub syntax_theme: String,
     /// Whether the status line polls git for the branch and `+n −m` (T15.2).
     pub git: bool,
+    /// `[tui.caps]` (T23.0): overrides one named `cox_tui::term::Caps`
+    /// field (`osc8 = false`) for a terminal `Caps::detect`/`query` guesses
+    /// wrong about. An unrecognised name is ignored, not rejected.
+    pub caps: HashMap<String, bool>,
 }
 
 impl Default for TuiConfig {
@@ -653,6 +657,7 @@ impl Default for TuiConfig {
             color: "auto".to_string(),
             syntax_theme: String::new(),
             git: true,
+            caps: HashMap::new(),
         }
     }
 }
