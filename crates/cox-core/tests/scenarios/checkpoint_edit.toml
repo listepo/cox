@@ -1,0 +1,9 @@
+[[turn]]
+text = "editing"
+tool_calls = [
+  { name = "touch", input = { path = "a.rs" } },
+  { name = "touch", input = { path = "new.rs" } },
+]
+
+[[turn]]
+text = "done"

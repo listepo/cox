@@ -3,11 +3,12 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
-use cox_protocol::traits::{Archive, ArchivePut, Hook, Provider, Store, Tool};
+use cox_protocol::traits::{Archive, ArchivePut, Checkpointer, Hook, Provider, Store, Tool};
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
     ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
@@ -85,8 +86,9 @@ pub(crate) struct Inner {
     pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
     pub(crate) extracted: Vec<crate::memory_extract::Fact>,
-    /// Monotonic turn counter for the FTS index (T10.3).
-    turn_seq: u32,
+    /// Monotonic turn counter for the FTS index (T10.3) and the
+    /// `checkpoints` rows (T26.1).
+    pub(crate) turn_seq: u32,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -114,6 +116,11 @@ pub struct Session {
     /// The hook runner, installed once by the surface and shared with
     /// children so a subagent's calls run the same hooks.
     hook: Arc<OnceLock<Arc<dyn Hook>>>,
+    /// Where pre-images come from (T26.1); installed by the surface like
+    /// the hook, shared with children. Absent in tests and in `cox mcp`.
+    checkpointer: Arc<OnceLock<Arc<dyn Checkpointer>>>,
+    /// The one "checkpoints off" warning per session has been emitted.
+    pub(crate) checkpoint_warned: Arc<AtomicBool>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
     pub(crate) inner: Arc<Mutex<Inner>>,
@@ -206,6 +213,8 @@ impl Session {
             tier,
         )?;
         child.hook = self.hook.clone();
+        child.checkpointer = self.checkpointer.clone();
+        child.checkpoint_warned = self.checkpoint_warned.clone();
         Ok(child)
     }
 
@@ -287,6 +296,8 @@ impl Session {
             telemetry_span,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),
+            checkpointer: Arc::new(OnceLock::new()),
+            checkpoint_warned: Arc::new(AtomicBool::new(false)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
             inner: Arc::new(Mutex::new(Inner {
@@ -404,6 +415,16 @@ impl Session {
 
     pub(crate) fn hook(&self) -> Option<Arc<dyn Hook>> {
         self.hook.get().cloned()
+    }
+
+    /// Installs the pre-image source for `/rewind` (T26.1); a second call
+    /// is ignored so a session and its children share one.
+    pub fn set_checkpointer(&self, checkpointer: Arc<dyn Checkpointer>) {
+        let _ = self.checkpointer.set(checkpointer);
+    }
+
+    pub(crate) fn checkpointer(&self) -> Option<Arc<dyn Checkpointer>> {
+        self.checkpointer.get().cloned()
     }
 
     /// Feeds one submission into the state machine.
@@ -756,6 +777,7 @@ impl Session {
         // T10.3: index the user text under this turn's number; best-effort,
         // like every index write.
         let _ = self.store.rollout_index(&self.id, seq, &text);
+        crate::checkpoint::mark_turn(self, seq);
         self.emit_turn_started(turn, route.tier, route.model.clone())
             .await?;
         self.emit(Event::ItemStarted {
@@ -1089,7 +1111,7 @@ impl Session {
             });
             inner.state = State::RunningTools;
         }
-        let results = run_tools(self, streamed.calls).await?;
+        let results = run_tools(self, turn, streamed.calls).await?;
         if self.cancel_token().is_cancelled() {
             self.set_state(State::Interrupted).await;
             self.finish(turn, StopReason::Interrupted).await?;

@@ -107,6 +107,10 @@ pub async fn open(
         config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()),
         shell,
     )));
+    // T26.1: pre-images for `/rewind` live in private git dirs under home.
+    session.set_checkpointer(Arc::new(cox_tools::checkpoint::GitCheckpointer::new(
+        home.clone(),
+    )));
     Ok((session, loaded))
 }
 

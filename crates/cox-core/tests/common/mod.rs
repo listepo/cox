@@ -22,6 +22,8 @@ pub struct Echo;
 pub struct Touch;
 /// Read-only; loops until cancelled.
 pub struct Slow;
+/// Exec, exclusive; names no path, so a checkpoint must snapshot (T26.1).
+pub struct Shell;
 
 fn text(text: &str, is_error: bool) -> ToolOutput {
     ToolOutput {
@@ -75,8 +77,36 @@ impl Tool for Touch {
             .unwrap_or("")
             .into()
     }
+    /// Like `edit`/`write`: the pre-image is read from the named path.
+    fn touches(&self, input: &Value) -> Option<Vec<String>> {
+        Some(vec![self.subject(input)])
+    }
     async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
         Ok(text("touched", false))
+    }
+}
+
+#[async_trait]
+impl Tool for Shell {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "shell".into(),
+            description: "exec stub".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+            deferred: false,
+            risk: Risk::Exec,
+            concurrency: Concurrency::Exclusive,
+        }
+    }
+    fn subject(&self, input: &Value) -> String {
+        input
+            .get("cmd")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .into()
+    }
+    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        Ok(text("ran", false))
     }
 }
 
@@ -114,7 +144,12 @@ pub fn scenario(name: &str) -> String {
 }
 
 pub fn tools() -> Vec<Arc<dyn Tool>> {
-    vec![Arc::new(Echo), Arc::new(Touch), Arc::new(Slow)]
+    vec![
+        Arc::new(Echo),
+        Arc::new(Touch),
+        Arc::new(Slow),
+        Arc::new(Shell),
+    ]
 }
 
 /// A session over `toml` with an in-memory store; the receiver is taken.

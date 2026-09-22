@@ -7,6 +7,7 @@
 
 mod budget;
 pub mod cache_diag;
+mod checkpoint;
 mod compact;
 mod context;
 mod dedup;

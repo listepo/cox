@@ -211,6 +211,7 @@ tests — use `COX_HOME=/tmp/cox-scratch`):
   cox.db                      sessions, per-request usage ledger, archive index, memory FTS
   sessions/<ulid>.jsonl       the rollout: one Event per line, resume + replay source
   archive/<ulid>              tool outputs over 16 KiB (smaller ones inline in the db)
+  checkpoints/<hash>/         one private bare git repository per workspace root (below)
   logs/cox.log                tracing log
 ```
 
@@ -218,6 +219,26 @@ Every provider call writes one `usage` row (model, input/output, cache
 read/write, cost). `cox stats --day`, `cox stats --month`, and
 `cox stats --cache` read the ledger; session/monthly caps in
 `[budget]` stop the turn with `TurnDone{Budget}` instead of a surprise.
+
+## Checkpoints: every write has a pre-image
+
+Before `edit`, `write` or `apply_patch` runs, cox reads the files the call
+names and archives their bytes (`checkpoints` row `pre`; `created` when the
+file did not exist). Around a call that names no path — `bash`, an MCP
+tool — cox snapshots the workspace before and after and archives the
+pre-image of every file that changed or disappeared (`deleted`). The row and
+the archive exist *before* the model sees the result; only then does
+`Event::Checkpoint { turn, call, files }` reach the surfaces. A marker row
+per user turn gives `/rewind` (T26.2) its timeline.
+
+The snapshot is `git add -A` + `write-tree` inside a private bare repository
+under `~/.cox/checkpoints/<hash>` whose work tree is the workspace root:
+your repository's index, hooks and `.git` are never touched, `.gitignore`
+still keeps `target/` out, and `GIT_ALTERNATE_OBJECT_DIRECTORIES` points at
+your repository's objects so unchanged blobs are never copied. The private
+index doubles as the stat cache, so a warm snapshot is one stat pass. A
+pre-image over 8 MiB is recorded without bytes. Without `git` on `PATH`,
+the session warns once and runs without checkpoints — never a failed turn.
 
 ## The four surfaces (one stream each)
 
