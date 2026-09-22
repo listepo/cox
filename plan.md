@@ -37,7 +37,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T25.6 | todo | P1 | 2 | 0% | |
 | T25.7 | todo | P0 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
-| T26.1 | in progress | P0 | 4 | 0% | Claude Code / claude-fable-5-1 |
 | T26.2 | in progress | P0 | 4 | 0% | Claude Code / claude-fable-5-1 |
 | T26.3 | todo | P1 | 3 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
@@ -1412,20 +1411,6 @@ Done when: the picker snapshot shows both groups.
 Out of scope: a global (cross-project) history.
 
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
-
-#### T26.1 Checkpoint store
-
-Model: claude-fable-5-1 · Status: in progress · Depends: — · Size: ~200 · Priority: P0 · Complexity: 4
-Execution plan (claude-fable-5-1, 2026-09-22): the card's file list does not fit the crate boundary — `cox-core` may not read files or run git, so the snapshot lives in `cox-tools` behind a new `cox_protocol::Checkpointer` trait and the loop only orchestrates. Delivered as three commits under this id: (a) protocol + store: `CheckpointKind`, `CheckpointRow`, `Event::Checkpoint`, `Store::checkpoint_insert/list`, `Tool::touches` (default `None`), `Checkpointer` trait, migration `00000000000003_checkpoints` + `schema.rs`/`models.rs`, `MemoryStore` impl; (b) `cox_tools::checkpoint::GitCheckpointer`: per-root private git dir under `<home>/checkpoints/<hash>` with `--work-tree=<root>` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` pointing at the repo's own objects, `git add -A` + `write-tree` as the snapshot (honours `.gitignore`, the private index is the stat cache so a warm snapshot is one stat pass), `diff-tree --name-status` + `cat-file` for the pre-images, direct `confine` + read for the paths `edit`/`write`/`apply_patch` name via `touches`; (c) the loop: `checkpoint::before/after` around `run_one` for `Write`/`Destructive`/`Exec` calls, a `Turn` marker row per user turn, `Session::set_checkpointer` (installed by the binary like `set_hook`), a one-time `Notice(Warn)` when git is missing, and the scenario tests. No git → no checkpoints, never a failed turn.
-Goal: before every `Write`/`Destructive` tool call and before every user turn, the pre-image of each touched file is archived; for `bash`, the workspace is compared before and after so shell-caused changes are captured too; `Event::Checkpoint` is emitted.
-Files: `crates/cox-core/src/checkpoint.rs` (new), `crates/cox-store/migrations/00000000000003_checkpoints/{up,down}.sql` + `schema.rs`/`models.rs`, `crates/cox-protocol/src/types.rs`.
-Steps: (1) Table `checkpoints (id, session_id, turn, call_id NULL, path, kind CHECK(kind IN ('pre','deleted','created')), archive_id NULL, sha256, created_at)`; a `Store::checkpoint_insert/list(session, turn)` pair; `cox-store` stays the only crate with SQL. (2) `checkpoint.rs`: `before_call(call)`: for `edit`/`write`/`apply_patch` the subject paths (and the V4A file list) are read and archived through the T2.5 archive (`ArchivePut`), `kind = pre` (or `created` when the file does not exist yet); for `bash` and MCP `Write` tools: `Snapshot::take(roots)` = for git-tracked files `git ls-files -s` (mode+blob sha) via `cox_tools::git`, for untracked files an `ignore`-walk with `mtime+size` capped at 20 000 entries; `after_call` diffs the two snapshots and archives the pre-images of changed/deleted files from the *before* snapshot — which means the before snapshot must keep the bytes of files under 256 KiB in memory or on disk under `~/.cox/tmp` (documented trade-off; larger files record `sha` only). (3) Before each `UserTurn`, a turn marker row (`path = ''`). (4) `Event::Checkpoint { turn, call: Option<CallId>, files: Vec<{path, kind}> }` after the row exists (lossless rule).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core edit_has_preimage bash_rm_has_preimage checkpoint_row_exists_before_write bash_snapshot_under_200ms_on_50k_files
-```
-Done when: the four tests pass (the timing test uses a generated 50 k-file tree and is `#[ignore]`d on CI but run locally with the number in `done.md`), and `docs/how-it-works.md` gains a checkpoints section.
-Out of scope: restoring (T26.2); files outside the workspace roots (never touched by cox tools; a `bash` that writes to `~` is out of the sandbox anyway).
 
 #### T26.2 `/rewind`
 

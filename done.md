@@ -2373,3 +2373,24 @@ Check output:
 $ hugo --gc --minify   # in website/
 Pages │ 17 · Total in 33 ms
 ```
+
+#### T26.1 Checkpoint store
+Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: — · Size: ~200 ×3 · Priority: P0 · Complexity: 4
+Goal: before every `Write`/`Destructive` tool call and before every user turn, the pre-image of each touched file is archived; for `bash`, the workspace is compared before and after so shell-caused changes are captured too; `Event::Checkpoint` is emitted.
+Files: `crates/cox-protocol/src/{types,traits,lib}.rs`, `crates/cox-store/migrations/00000000000003_checkpoints/{up,down}.sql` + `schema.rs`/`models.rs`/`lib.rs`, `crates/cox-tools/src/checkpoint.rs` (new) + `touches` in `edit.rs`/`write.rs`/`v4a/apply.rs`, `crates/cox-core/src/checkpoint.rs` (new) + `session.rs`/`turn.rs`, `crates/cox-core/tests/checkpoint.rs` + two scenarios, `crates/cox/src/session.rs`, `docs/how-it-works.md`.
+What landed (three commits, 7e380de · 34e7d9c · afb7f08): the card's file list crossed the crate boundary — `cox-core` may not read files or run git — so the snapshot lives in `cox-tools` behind `cox_protocol::Checkpointer` and the loop only orchestrates. (a) `CheckpointKind {Pre, Created, Deleted, Turn}`, `CheckpointRow`, `Event::Checkpoint { turn, call, files }`, `Store::checkpoint_insert/list`, `Tool::touches` (default `None`), migration 3 (`checkpoints` table, no `sha256` column — the archive row already hashes). (b) `GitCheckpointer`: a private bare repository per root under `<home>/checkpoints/<hash>` with `--work-tree=<root>`, `git add -A` + `write-tree` as the snapshot (its own index is the stat cache, `.gitignore` honoured, `GIT_ALTERNATE_OBJECT_DIRECTORIES` reuses the workspace's blobs), `diff-tree --name-status` + `cat-file` for the pre-images, direct `confine` + read for paths `edit`/`write`/`apply_patch` name; `Before {Absent, Bytes, TooLarge}` so an 8 MiB+ file is never mistaken for a created one. (c) `checkpoint::before/after` around `run_one` for every non-read-only call, a `Turn` marker row per user turn, `Session::set_checkpointer` (shared with children), one `Notice(Warn)` per session when git is unusable, installed by the binary next to the presence hook. Deviation from the card: the in-memory 256 KiB copies are replaced by the git object store (no size cap on what is captured, only on what is archived), and the timing test lives in `cox-tools`.
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core --test checkpoint
+PASS edit_has_preimage · bash_rm_has_preimage · checkpoint_row_exists_before_write · missing_git_warns_once_and_never_fails_the_turn
+Summary 4 tests run: 4 passed
+$ mise exec -- cargo nextest run -p cox-tools --run-ignored ignored-only checkpoint
+PASS [ 53.402s] warm_snapshot_under_200ms_on_50k_files   # 50 000 files; the 53 s is the test creating them, the warm snapshot itself is under 200 ms
+$ COX_HOME=<scratch> COX_PROVIDER=scripted cox run -p hi --output-format stream-json   # write a.rs; bash rm gone.txt && echo hi > made.txt
+{"type":"checkpoint",…,"files":[{"path":".../a.rs","kind":"pre"}]}
+{"type":"checkpoint",…,"files":[{"path":".../gone.txt","kind":"deleted"},{"path":".../made.txt","kind":"created"}]}
+$ sqlite3 cox.db "select turn, call_id is not null, path, kind, archive_id is not null from checkpoints"
+1|0||turn|0 · 1|1|…/a.rs|pre|1 · 1|1|…/gone.txt|deleted|1 · 1|1|…/made.txt|created|0
+$ mise exec -- cargo nextest run --workspace   # 628 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing, fails on the untouched tree too)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check   # clean
+```
