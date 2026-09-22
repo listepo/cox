@@ -2473,3 +2473,39 @@ $ COX_HOME=<scratch> cox --worktree Demo --cwd <scratch>/ws/repo --permission-mo
 $ mise exec -- cargo nextest run --workspace --no-fail-fast # 649 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
 ```
+
+#### T24.1 Semantic colour tokens
+
+Model: claude-sonnet-5 · Status: done 2026-09-22 · Depends: — · Size: ~180 · Priority: P0 · Complexity: 3
+Goal: every colour on screen comes from a named token; ANSI-16 first, truecolor as an overlay; `NO_COLOR` keeps bold/dim only.
+Files: `crates/cox-tui/src/theme.rs` (new), `crates/cox-tui/src/color.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `pub struct Theme { text, dim, accent, user, agent, tool, ok, warn, error, diff_add, diff_del, diff_hunk, border, selection, mode_plan, mode_auto, mode_bypass }` of `ratatui::style::Color`; `Theme::dark()`, `Theme::light()` built from ANSI-16 names; `Theme::apply_truecolor(&TrueColorOverrides)` for the 24-bit variant. (2) Replace every `Color::` literal in `cells.rs`, `status.rs`, `modal.rs`, `picker.rs`, `banner.rs`, `diff.rs`, `composer.rs` with `state.theme.<token>` (the existing `color::Depth` downgrade keeps working on top). (3) `NO_COLOR` → `Theme::mono()` (all `Reset`, hierarchy through `BOLD`/`DIM`). (4) A grep test asserts no `Color::` literal outside `theme.rs` and `color.rs`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui no_color_literal_outside_theme
+mise exec -- cargo insta test -p cox-tui --accept-unseen
+```
+Done when: default dark snapshots are byte-identical to before (the mapping is 1:1), the grep test passes, and `Theme::mono` has its own frame snapshot.
+Out of scope: theme files (T24.2).
+Execution plan (Claude Code / claude-sonnet-5):
+1. `crates/cox-tui/src/theme.rs` (new): `Theme { text, dim, accent, user, agent, tool, ok, warn, error, diff_add, diff_del, diff_hunk, border, selection, mode_plan, mode_auto, mode_bypass }` of `ratatui::style::Color`; `Theme::dark()`/`light()`/`mono()`; `TrueColorOverrides` (all-`Option<Color>`) + `apply_truecolor` for T24.2 to overlay later; `ALERT_FG` const for the banner's black-on-red badge (a fixed contrast pair, not a themeable role — documented as such, not a new `Theme` field). Tests: `mono_resets_every_token`, `dark_and_light_share_hues_but_not_greys`, `apply_truecolor_overlays_only_the_given_fields`, `no_color_literal_outside_theme` (scans `src/*.rs`, skips `#[cfg(test)]` tails like the crate's `unwrap`/`expect` convention, exempts `theme.rs`/`color.rs` per the card plus `svg.rs`/`markdown.rs` — both convert an already-resolved runtime `Color` rather than pick a UI one; `markdown.rs`'s syntect passthrough is T24.3's territory).
+2. `cells.rs`, `diff.rs`: add `colors: Theme` to `Look` (named apart from `Look::theme`, the existing syntect theme-name field). Replace the 8 literals: tool header/`Level::Warn`/`Level::Budget`/`Level::Security`/`Cell::Error` in `cells.rs`, `@@`/`+`/`-` diff lines in `diff.rs`, with `look.colors.<token>` (`tool`, `warn`, `accent`, `error`, `diff_hunk`, `diff_add`, `diff_del`).
+3. `banner.rs`, `modal.rs`, `picker.rs`: thread `theme: &Theme` alongside the existing `glyphs: &Glyphs` parameter on `line`/`lines`; replace the badge (`theme::ALERT_FG` fg, `theme.error` bg), the approval header (`theme.warn`) and the picker's selected row (`theme.selection`).
+4. `state.rs`: `State.theme: Theme`, defaulting `Theme::dark()` (matches the existing `dark: true` default); `State::look()` fills `Look.colors` from it.
+5. `view.rs`: pass `&state.theme` into `Banner::line`, `Approval::lines`, `Picker::lines`.
+6. `crates/cox/src/session.rs`: right after `state.dark`/`state.depth` are resolved, set `state.theme` to `dark()`/`light()` by `state.dark`, then to `mono()` when `state.depth == Depth::None` (`NO_COLOR`), fully-qualified like the neighbouring `cox_tui::color::resolve` call.
+7. `status.rs`, `composer.rs`: checked — no `Color::` literal exists in either today, so nothing to change there.
+8. `crates/cox-tui/tests/frames.rs`: one new `insta` frame snapshot with `state.theme = Theme::mono()`.
+Verify: the two Check commands above, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`.
+
+What landed (commit `T24.1: Semantic colour tokens`): `crates/cox-tui/src/theme.rs` (new) — `Theme` (17 ANSI-16 tokens), `Theme::dark()`/`light()`/`mono()`, `TrueColorOverrides` + `apply_truecolor` for T24.2 to consume later, the `ALERT_FG` badge constant, and the `no_color_literal_outside_theme` grep test; `Look.colors: Theme` added in `cells.rs` and read there and in `diff.rs`; `theme: &Theme` threaded into `banner::Banner::line`, `modal::Approval::lines`, `picker::Picker::lines` alongside their existing `glyphs`/`g` parameter; `State.theme` (defaults `Theme::dark()`) filling `Look.colors` from `State::look()`; `view.rs` passing `&state.theme` to the banner, approval and picker widgets; `crates/cox/src/session.rs` resolving `state.theme` from `state.dark`/`state.depth` (mono on `NO_COLOR`) right after the existing `glyph::resolve`/`color::resolve` calls; one new `insta` frame snapshot (`frame_mono_theme_renders_notices_and_a_tool_card`) proving `Theme::mono()` still renders a notice and a tool card.
+
+Deviations from the card: `status.rs` and `composer.rs` (named in Step 2) had no `Color::` literal to replace — checked both, nothing to do there. The grep test's exemption list is `theme.rs`/`color.rs` (as the card says) plus `svg.rs` and `markdown.rs`: both convert a `Color` someone else already resolved (a finished `Buffer` to CSS in `svg.rs`, syntect's own 24-bit syntax highlighting in `markdown.rs`) rather than pick a UI colour, and `markdown.rs`'s syntect passthrough is T24.3's ("`two-face` syntax set") territory, not this one's. `Level::Budget` in `cells.rs` (previously `Color::Magenta`) maps to the `accent` token — the card's fixed 17-token list has no dedicated "budget" role. The banner's black-on-red badge foreground is a new `theme::ALERT_FG` constant rather than a `Theme` field, since it is a fixed contrast pair, not a themeable role (documented in `theme.rs`).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui no_color_literal_outside_theme   # 1 passed
+$ mise exec -- cargo insta test -p cox-tui --accept-unseen   # all pass; only the new Theme::mono() snapshot was created, no existing snapshot changed
+$ mise exec -- cargo nextest run --workspace --no-fail-fast # 654 passed, 1 failed: cox-provider usage_prices_toml_parses_and_has_all_tier_models (pre-existing)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
+```
