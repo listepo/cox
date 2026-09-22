@@ -324,6 +324,11 @@
             "format": "uint32",
             "minimum": 0
           },
+          "reason": {
+            "description": "What triggered it (T28.3); rollouts written before the field\nexisted read as `post-turn`.",
+            "$ref": "#/$defs/CompactReason",
+            "default": "post-turn"
+          },
           "type": {
             "type": "string",
             "const": "compacted"
@@ -1283,6 +1288,31 @@
           "estimated",
           "cost_usd",
           "latency_ms"
+        ]
+      },
+      "CompactReason": {
+        "description": "Why `Event::Compacted` happened (plan.md §1.10, T28.3).",
+        "oneOf": [
+          {
+            "description": "Inside a turn, before a provider call whose request would exceed\n`compact_at × max_context`.",
+            "type": "string",
+            "const": "pre-call"
+          },
+          {
+            "description": "At the next turn's start, from the last call's reported usage.",
+            "type": "string",
+            "const": "post-turn"
+          },
+          {
+            "description": "`/compact` or `Submission::Compact`.",
+            "type": "string",
+            "const": "manual"
+          },
+          {
+            "description": "The provider rejected a request as too long; the call retries once.",
+            "type": "string",
+            "const": "context-too-long"
+          }
         ]
       },
       "CheckpointFile": {

@@ -137,7 +137,7 @@ pub enum Event {
     ToolCallDone      { call_id: CallId, result: ToolResult },// ToolResult { ok: bool, visible: String, archive: Option<ArchiveRef>, bytes: u64, duration_ms: u64, diff: Option<Diff> }
     ItemDone      { item: ItemId },
     Usage         { turn: TurnId, usage: Usage },
-    Compacted     { summary: ItemId, dropped: Vec<ItemId>, before_tokens: u32, after_tokens: u32 },
+    Compacted     { summary: ItemId, dropped: Vec<ItemId>, before_tokens: u32, after_tokens: u32, reason: CompactReason }, // CompactReason: PreCall | PostTurn | Manual | ContextTooLong ("pre-call" …); absent in old rollouts = post-turn
     TaskCreated   { task: TaskId, label: String, tier: Tier },
     TaskCompleted { task: TaskId, result_item: ItemId, cost_usd: f64 },
     ModelSwitched { tier: Tier, from: ModelId, to: ModelId },
@@ -474,7 +474,7 @@ Token accounting per call writes `context_tokens` (input + cache read + cache wr
 
 ### 1.10 Compaction and microcompaction
 
-Trigger: after `TurnDone`, when `context_tokens_last_call ≥ context.compact_at × max_context`, or on `/compact [focus]`, or when a provider returns a context-length error (then compaction runs before retrying once).
+Trigger: after `TurnDone`, when `context_tokens_last_call ≥ context.compact_at × max_context` (`post-turn`, checked at the next turn's start), or on `/compact [focus]` (`manual`), or when a provider returns a context-length error (`context-too-long`; compaction runs before retrying once), or before any provider call inside a turn whose assembled request estimates at or over that threshold (`pre-call`, T28.3: ⌈bytes/4⌉, refined by `Provider::count_tokens` within 10 % of it; microcompaction of every result outside `keep_turns` first, then compaction and one re-assembly; still over → `Notice(Budget)` + `TurnDone{Budget}`). `Compacted.reason` names which.
 
 Algorithm (append-only, D6f):
 1. `PreCompact` hooks run with `{trigger, focus}`; a hook may `Block` (compaction skipped, notice shown).

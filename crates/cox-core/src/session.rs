@@ -933,13 +933,6 @@ impl Session {
             inner.provider_calls += 1;
             inner.round += 1;
         }
-        let req_messages = crate::context::microcompact(
-            &history,
-            &marks,
-            self.config.context.keep_turns,
-            self.config.context.microcompact_after_turns,
-            &archives,
-        );
         // T9.1: every provider call routes through the Router; the gate
         // already passed in `run_turn`, so only a bad provider name can fail
         // here and it is turn-fatal, never silent.
@@ -958,22 +951,57 @@ impl Session {
                 return Ok(Step::Done);
             }
         };
-        let mut req = assemble_with(
-            &req_messages,
-            &self.config,
-            route.tier,
-            &self.tools,
-            &discovered,
-            &self.cwd,
-            "",
+        // One assembly for the first try and T28.3's pre-call retry, so the
+        // retried request differs only in the history it is given.
+        let build = |history: &[Message], marks: &[usize], microcompact_after: u32| {
+            let req_messages = crate::context::microcompact(
+                history,
+                marks,
+                self.config.context.keep_turns,
+                microcompact_after,
+                &archives,
+            );
+            let mut req = assemble_with(
+                &req_messages,
+                &self.config,
+                route.tier,
+                &self.tools,
+                &discovered,
+                &self.cwd,
+                "",
+            );
+            req.model = route.model.clone();
+            // T22.3: `SessionStart` hook context goes into `system[3]` — the
+            // volatile block after the last cache breakpoint (§1.9), so the
+            // cached prefix stays byte-stable.
+            if !startup_context.is_empty() {
+                req.system[3].text.push_str(&startup_context);
+            }
+            req
+        };
+        let first = build(
+            &history,
+            &marks,
+            self.config.context.microcompact_after_turns,
         );
-        req.model = route.model.clone();
-        // T22.3: `SessionStart` hook context goes into `system[3]` — the
-        // volatile block after the last cache breakpoint (§1.9), so the
-        // cached prefix stays byte-stable.
-        if !startup_context.is_empty() {
-            req.system[3].text.push_str(&startup_context);
-        }
+        let req = match self.fit_request(first, build).await? {
+            compact::Fit::Fits(req) => req,
+            compact::Fit::TooBig(tokens) => {
+                self.emit(Event::Notice {
+                    level: Level::Budget,
+                    text: format!(
+                        "request not sent: ~{tokens} tokens is over compact_at {} × max_context {} \
+                         even after compaction; the last {} turn(s) are kept verbatim",
+                        self.config.context.compact_at,
+                        self.provider.capabilities().max_context,
+                        self.config.context.keep_turns,
+                    ),
+                })
+                .await?;
+                self.finish(turn, StopReason::Budget).await?;
+                return Ok(Step::Done);
+            }
+        };
         let provider_span = tracing::info_span!(
             parent: &tracing::Span::current(),
             "chat",

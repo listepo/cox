@@ -241,6 +241,22 @@ pub enum ApprovalPolicy {
     Never,
 }
 
+/// Why `Event::Compacted` happened (plan.md §1.10, T28.3).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompactReason {
+    /// Inside a turn, before a provider call whose request would exceed
+    /// `compact_at × max_context`.
+    PreCall,
+    /// At the next turn's start, from the last call's reported usage.
+    #[default]
+    PostTurn,
+    /// `/compact` or `Submission::Compact`.
+    Manual,
+    /// The provider rejected a request as too long; the call retries once.
+    ContextTooLong,
+}
+
 /// `sandbox.mode` (plan.md §1.6/D7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -825,6 +841,10 @@ pub enum Event {
         before_tokens: u32,
         /// Context tokens after compaction.
         after_tokens: u32,
+        /// What triggered it (T28.3); rollouts written before the field
+        /// existed read as `post-turn`.
+        #[serde(default)]
+        reason: CompactReason,
     },
     /// Pre-images of the files a tool call changed are archived and
     /// retrievable (T26.1). Emitted after the `checkpoints` rows exist, so a
@@ -1181,7 +1201,7 @@ mod tests {
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None } })]
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
     #[case::usage(Event::Usage { turn: TurnId::new(), usage: sample_usage() })]
-    #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200 })]
+    #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200, reason: CompactReason::PreCall })]
     #[case::checkpoint(Event::Checkpoint { turn: TurnId::new(), call: Some(CallId::new()), files: vec![CheckpointFile { path: PathBuf::from("/w/a.rs"), kind: CheckpointKind::Pre }] })]
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002 })]
