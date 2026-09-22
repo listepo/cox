@@ -12,7 +12,8 @@ fn press(c: &mut Composer, keys: &str) {
             '⎋' => KeyCode::Esc,
             _ => KeyCode::Char(ch),
         };
-        c.key(KeyEvent::from(code));
+        // No turn runs in this table; `busy` never changes the outcome.
+        c.key(KeyEvent::from(code), false);
     }
 }
 
