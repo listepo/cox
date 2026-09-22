@@ -30,7 +30,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T28.1 | todo | P1 | 2 | 0% | |
 | T28.2 | todo | P2 | 1 | 0% | |
 | T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
-| T29.1 | todo | P2 | 3 | 0% | |
+| T29.1 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
 | T30.1 | todo | P2 | 2 | 0% | |
 | T30.2 | todo | P2 | 2 | 0% | |
@@ -1281,7 +1281,7 @@ Out of scope: budgets per project (config already caps per session and month).
 
 #### T29.1 `--plain` surface
 
-Model: sonnet · Status: open · Depends: T22.1 · Size: ~200 · Priority: P2 · Complexity: 3
+Model: opus · Status: in progress · Depends: T22.1 · Size: ~200 · Priority: P2 · Complexity: 3
 Goal: `cox --plain` (also `COX_PLAIN=1`, `tui.screen_reader = true`) is a fifth consumer of the event stream: flat labelled lines, numbered prompts, no cursor movement, BEL on completion, full scrollback.
 Files: `crates/cox/src/plain.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/session.rs`.
 Steps: (1) `plain.rs`: read stdin lines, map events to `you:`, `cox:`, `thinking:` (only when `show_thinking = full`), `tool: <name> <subject>` + result head/tail, `error:`, `question:` with numbered options, `approve? [1] allow [2] session [3] deny`, `cost: …` once per turn; markdown tables as `Header: value`; never rewrite a line. (2) `Ctrl+C` interrupts, second quits (same semantics). (3) BEL after `TurnDone` and before a prompt. (4) `COX_AX_STARTUP_QUIET_MS` optional delay before the first prompt (Claude Code parity for assistive tech).
