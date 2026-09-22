@@ -15,7 +15,6 @@
 - T24.8. Screenshots and gallery
 - T25.2. `Shift+Tab` mode cycle and plan-mode view
 - T25.3. `!` shell line
-- T25.4. Vim, second half
 - T25.5. Keybindings file
 - T25.6. `/init`
 - T25.8. Cross-session prompt history

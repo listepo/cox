@@ -22,7 +22,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T24.8 | todo | P1 | 1 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.4 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T25.5 | todo | P1 | 3 | 0% | |
 | T25.6 | todo | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
@@ -1178,20 +1177,6 @@ mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_ou
 ```
 Done when: the loop scenarios pass and the next request after `!ls` is byte-identical to the one before it (prefix invariant).
 Out of scope: an interactive shell (T15.4 completion already helps the line).
-
-#### T25.4 Vim, second half
-
-Model: opus · Status: in progress · Depends: — · Size: ~200 · Priority: P1 · Complexity: 3
-Goal: motions, counts, operators, text objects, visual modes and undo/redo; `Esc` in normal mode never interrupts the turn.
-Files: `crates/cox-tui/src/vim.rs`, `crates/cox-tui/src/composer.rs`.
-Steps: (1) Motions `w b e 0 ^ $ gg G h j k l` with counts. (2) Operators `d c y` with motions and `dd cc yy`, `p P`, `x X`, `u` / `Ctrl+R` over `tui-textarea-2`'s history. (3) Text objects `iw aw i" a" i' a' i( a( i[ a[ i{ a{`. (4) `v` and `V` visual modes with `d y c`. (5) `Esc` in normal mode is a no-op (interrupt stays on `Ctrl+C` and on `Esc` in insert mode as today); the status line shows `-- NORMAL --`/`-- VISUAL --`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test vim
-```
-Done when: a 20-row table test (`rstest`) covers every item above and `docs/getting-started.md` lists the vim keys.
-Out of scope: `.` repeat, macros, registers.
-Execution plan: (1) `vim.rs`: `Mode` gains `Visual`/`VisualLine`; the normal-mode handler becomes count → optional `g`/`i`/`a` prefix → operator-pending → motion/command; motions move the textarea cursor (so visual mode extends the selection for free) and report linewise/inclusive; one `apply(op, from, to, linewise)` does `d c y` for motions, text objects, `dd cc yy` and visual selections through a single `cut`/`copy` (one undo step); text objects are computed on the flattened text (brackets may span lines, quotes stay on one line); `u`/`Ctrl+R` call `undo`/`redo`, insert runs coalesce into one undo step. (2) `state.rs`: `Esc` while a turn runs interrupts only outside normal/visual mode. (3) `status.rs`: `-- NORMAL --`/`-- INSERT --`/`-- VISUAL --`/`-- VISUAL LINE --`. (4) `tests/vim.rs`: `rstest` table (≥20 cases, one per item) plus the existing tests; `rstest` wired into cox-tui's dev-dependencies from the workspace table (already used by cox-core/cox-protocol/cox-tools; no version change). (5) `docs/getting-started.md`: vim key table. Verify: the card's Check, then nextest/clippy/fmt on the workspace.
 
 #### T25.5 Keybindings file
 

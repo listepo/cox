@@ -2918,3 +2918,36 @@ $ COX_HOME=/tmp/cox-t222/home COX_PROVIDER=scripted COX_SCENARIO=/tmp/cox-t222/s
 ```
 
 ```
+
+#### T25.4 Vim, second half
+
+Model: opus · Status: done 2026-09-23 · Depends: — · Size: ~200 · Priority: P1 · Complexity: 3
+Goal: motions, counts, operators, text objects, visual modes and undo/redo; `Esc` in normal mode never interrupts the turn.
+Files: `crates/cox-tui/src/vim.rs`, `crates/cox-tui/src/composer.rs`.
+Steps: (1) Motions `w b e 0 ^ $ gg G h j k l` with counts. (2) Operators `d c y` with motions and `dd cc yy`, `p P`, `x X`, `u` / `Ctrl+R` over `tui-textarea-2`'s history. (3) Text objects `iw aw i" a" i' a' i( a( i[ a[ i{ a{`. (4) `v` and `V` visual modes with `d y c`. (5) `Esc` in normal mode is a no-op (interrupt stays on `Ctrl+C` and on `Esc` in insert mode as today); the status line shows `-- NORMAL --`/`-- VISUAL --`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test vim
+```
+Done when: a 20-row table test (`rstest`) covers every item above and `docs/getting-started.md` lists the vim keys.
+Out of scope: `.` repeat, macros, registers.
+Execution plan: (1) `vim.rs`: `Mode` gains `Visual`/`VisualLine`; the normal-mode handler becomes count → optional `g`/`i`/`a` prefix → operator-pending → motion/command; motions move the textarea cursor (so visual mode extends the selection for free) and report linewise/inclusive; one `apply(op, from, to, linewise)` does `d c y` for motions, text objects, `dd cc yy` and visual selections through a single `cut`/`copy` (one undo step); text objects are computed on the flattened text (brackets may span lines, quotes stay on one line); `u`/`Ctrl+R` call `undo`/`redo`, insert runs coalesce into one undo step. (2) `state.rs`: `Esc` while a turn runs interrupts only outside normal/visual mode. (3) `status.rs`: `-- NORMAL --`/`-- INSERT --`/`-- VISUAL --`/`-- VISUAL LINE --`. (4) `tests/vim.rs`: `rstest` table (≥20 cases, one per item) plus the existing tests; `rstest` wired into cox-tui's dev-dependencies from the workspace table (already used by cox-core/cox-protocol/cox-tools; no version change). (5) `docs/getting-started.md`: vim key table. Verify: the card's Check, then nextest/clippy/fmt on the workspace.
+
+What landed (commit `T25.4: Vim, second half`): `crates/cox-tui/src/vim.rs`'s `Mode` gained `Visual`/`VisualLine`. The normal-mode handler reads a count, then an optional `g`/`i`/`a` prefix, then an operator, then a motion or command. Motions move the textarea cursor, so visual mode extends the selection without extra code, and report linewise/inclusive. One `apply(op, from, to, linewise)` runs `d c y` for motions, text objects, `dd cc yy` and visual selections. Text objects are computed on the flattened text: brackets may span lines, quotes stay on one line. `u`/`Ctrl+R` call tui-textarea's `undo`/`redo`, and each insert run coalesces into one undo step. `state.rs`: `Esc` while a turn runs interrupts only outside vim's normal and visual modes. `status.rs`: `-- NORMAL --`/`-- INSERT --`/`-- VISUAL --`/`-- VISUAL LINE --`. `tests/vim.rs`: the `vim_key_table` `rstest` table has 41 cases covering every step, alongside the existing tests. `docs/getting-started.md` gained a "Vim keys" table.
+
+Dependency: `rstest` was added to cox-tui's dev-dependencies from the workspace table, which cox-core, cox-protocol and cox-tools already use. No version changed.
+
+Deviations: (1) Size: about 540 added lines against the card's ~200, with `vim.rs` at +434/-87 and the tests at +109. The count/prefix/operator parser and the text-object scanner account for most of the overshoot. (2) Files: `composer.rs` needed no change. The work touched `vim.rs`, `state.rs`, `status.rs`, `tests/vim.rs`, `crates/cox-tui/Cargo.toml` (+`Cargo.lock`) and `docs/getting-started.md`, as the execution plan listed. That is more than the 3-file rule allows, but these are the files the card and plan require.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui --test vim
+     Summary [ 0.047s] 44 tests run: 44 passed, 0 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     Summary [ 14.703s] 748 tests run: 748 passed, 3 skipped (includes cox-tools::bash bash_cancel_stops_the_command)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean (rerun in this worktree's own target dir).
+$ mise exec -- cargo fmt --check
+     clean
+```
+
