@@ -6,11 +6,12 @@
 
 use cox_protocol::types::{Decision, ToolCall, Why};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
 use crate::glyph::Glyphs;
 use crate::text::sanitize;
+use crate::theme::Theme;
 
 /// The bash tool's input field the `e` key rewrites.
 const COMMAND_FIELD: &str = "command";
@@ -87,7 +88,7 @@ impl Approval {
         3
     }
 
-    pub fn lines(&self, g: &Glyphs) -> Vec<Line<'static>> {
+    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
         let why = match &self.why {
             Why::RuleAsk { rule } => format!("rule {rule} asks"),
             Why::Risk { risk } => format!("{risk:?} risk needs approval").to_lowercase(),
@@ -109,9 +110,7 @@ impl Approval {
                     sanitize(&self.call.name),
                     sanitize(&self.call.subject)
                 ),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
             ),
             Line::styled(
                 format!(" {why}"),
