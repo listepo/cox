@@ -17,7 +17,7 @@ use crate::commands::{self, Action, COMMANDS};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
 use crate::markdown;
-use crate::modal::Approval;
+use crate::modal::{Approval, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
@@ -93,6 +93,8 @@ pub struct Status {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
     Approval(Approval),
+    /// `ask_user` (T22.1): blocks the turn until a key answers or dismisses it.
+    Question(Question),
     Picker(Picker),
     /// `Ctrl+G` (T15.3): the working tree's `git diff HEAD`, drawn over the
     /// transcript; `scroll` is lines from the top.
@@ -215,6 +217,15 @@ pub enum Msg {
     Git(Option<GitStatus>),
     /// The runtime's answer to `Ask::GitDiff` (T15.3); `None` outside a repo.
     Diff(Option<String>),
+    /// A model's `ask_user` call, surfaced by the runtime (T22.1). The
+    /// reply's `oneshot` sender stays in `app.rs`, not here: `State` and
+    /// `Modal` must stay `Clone`/`PartialEq` for tests and snapshots, and a
+    /// `oneshot::Sender` is neither.
+    Question {
+        call: CallId,
+        question: String,
+        options: Vec<String>,
+    },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -232,6 +243,11 @@ pub enum Cmd {
     Clear,
     Copy(String),
     Ask(Ask),
+    /// `ask_user`'s answer for `call`; `None` is `Esc` (dismissed). The
+    /// runtime looks up the matching reply sender itself — it drops it
+    /// rather than sending empty text, so the tool call fails instead of
+    /// succeeding silently.
+    Answer(CallId, Option<String>),
 }
 
 impl State {
@@ -412,6 +428,14 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll: 0 });
             Vec::new()
         }
+        Msg::Question {
+            call,
+            question,
+            options,
+        } => {
+            state.modal = Some(Modal::Question(Question::new(call, question, options)));
+            Vec::new()
+        }
     }
 }
 
@@ -466,6 +490,14 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             })],
             None => {
                 state.modal = Some(Modal::Approval(approval));
+                Vec::new()
+            }
+        },
+        Some(Modal::Question(mut question)) => match question.key(key) {
+            Some(QuestionAnswer::Text(text)) => vec![Cmd::Answer(question.call, Some(text))],
+            Some(QuestionAnswer::Dismissed) => vec![Cmd::Answer(question.call, None)],
+            None => {
+                state.modal = Some(Modal::Question(question));
                 Vec::new()
             }
         },

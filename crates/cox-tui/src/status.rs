@@ -7,7 +7,7 @@ use cox_protocol::types::{PresenceStatus, SandboxMode};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
-use crate::state::State;
+use crate::state::{Modal, State};
 use crate::vim::Mode;
 
 pub fn line(state: &State) -> Line<'static> {
@@ -58,6 +58,12 @@ pub fn line(state: &State) -> Line<'static> {
     };
     // Only when there are any, so a lone session's line is unchanged; `!`
     // when one of them is waiting for its user (T16.3).
+    // `ask_user`'s modal takes over the mode slot (T22.1): there is
+    // nothing to permission-check while it is open.
+    let mode = match &state.modal {
+        Some(Modal::Question(_)) => "question".to_string(),
+        _ => format!("{:?}", state.mode).to_lowercase(),
+    };
     let agents = match state.agents.len() {
         0 => String::new(),
         n => {
@@ -75,7 +81,7 @@ pub fn line(state: &State) -> Line<'static> {
             " {git}{worktree}{model} {sep} ctx {pct}% {sep} cache {cache}% {sep} ${:.2} {sep} {sandbox} {sep} {} tasks {sep} [{}]{agents}{tail}{vim}",
             s.cost_usd,
             state.tasks.len(),
-            format!("{:?}", state.mode).to_lowercase(),
+            mode,
         ),
         Style::default().add_modifier(Modifier::DIM),
     )

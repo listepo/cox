@@ -18,6 +18,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let banner = u16::from(state.banner.is_some());
     let modal = match &state.modal {
         Some(Modal::Approval(a)) => a.height(),
+        Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
         // The diff view takes the transcript's rows, not a band of its own.
         Some(Modal::Diff { .. }) | None => 0,
@@ -90,6 +91,9 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     match &state.modal {
         Some(Modal::Approval(a)) => {
             Paragraph::new(a.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
+        Some(Modal::Question(q)) => {
+            Paragraph::new(q.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
         }
         Some(Modal::Picker(p)) => {
             Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)

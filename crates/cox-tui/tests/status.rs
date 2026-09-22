@@ -67,6 +67,23 @@ fn status_line_after_two_turns() {
     insta::assert_snapshot!(cox_tui::status::line(&state).to_string());
 }
 
+/// T22.1: while `ask_user`'s modal is open, the mode slot names it instead
+/// of the permission mode — there is nothing to permission-check meanwhile.
+#[test]
+fn status_line_shows_question_in_the_mode_slot_while_the_modal_is_open() {
+    let mut state = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
+    update(
+        &mut state,
+        Msg::Question {
+            call: CallId::new(),
+            question: "which environment?".into(),
+            options: vec![],
+        },
+    );
+    let line = cox_tui::status::line(&state).to_string();
+    assert!(line.contains("[question]"), "{line}");
+}
+
 #[test]
 fn command_slash_model_opus_emits_switch_model() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
