@@ -18,7 +18,6 @@
 - T25.6. `/init`
 - T25.8. Cross-session prompt history
 - T26.4. `/undo`, `/redo`
-- T27.1. `bash` background tasks and `Ctrl+B`
 - T27.2. Approvals labelled by source; agent cards
 - T27.4. `/loop`
 - T28.1. Status-line segments

@@ -25,7 +25,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T25.6 | todo | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
-| T27.1 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T27.2 | todo | P1 | 2 | 0% | |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T28.1 | todo | P1 | 2 | 0% | |
@@ -1220,20 +1219,6 @@ Done when: the test passes and the fold line of a tool card mentions `/undo` aft
 Out of scope: multi-step redo history.
 
 ### P27 — Agents you can see (goal: no "raw scaffolding noise")
-
-#### T27.1 `bash` background tasks and `Ctrl+B`
-
-Model: opus · Status: in progress · Depends: — · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `bash(background: true)` joins the T9.2 task registry (id, progress, completion event, archive by task id) instead of just detaching; `Ctrl+B` moves a running foreground `bash` or `agent` call to the background and unblocks the composer.
-Files: `crates/cox-core/src/tasks.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `tasks.rs` gains `TaskKind::Shell`; `bash`'s `background()` path returns the `TaskId` line the `agent` path already returns and streams its output into the archive under that id; `TaskCompleted` carries exit code and archive id. (2) `Submission::Background { call_id }`: the core detaches the running call into a task (the tool keeps its cancellation token, now task-scoped as in `tasks.rs`), returns a pointer result to the model immediately (`background task <id> started`), and the turn continues. (3) `Ctrl+B` in the TUI while a tool card is pending → `Cmd::Submit(Background)`; `/tasks` already lists tasks — add exit code and `expand` hint.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core bash_background_registers_task ctrl_b_detaches_running_call
-```
-Done when: the scenarios pass and the PTY e2e shows the composer accepting input while a backgrounded `sleep` runs.
-Out of scope: persisting tasks across restarts.
-Execution plan: (1) `cox-protocol`: `Submission::Background { call_id }`; `Event::TaskCompleted` gains optional `exit_code` and `archive` (serde-defaulted, old rollouts still parse); amend §1.2 and the §1.13 keymap row. (2) `cox-core/tasks.rs`: `TaskKind { Agent, Shell }`; one detach path for both cases — `run_one` spawns the tool call and waits on it or on a per-call detach token (`arm_detach`); `bash(background: true)` is the same path pre-triggered (the core strips the flag, so `bash` runs its normal PTY loop), `Submission::Background` pulls the token mid-run. A detached call returns the pointer result at once and stops streaming to its card; on completion the output is archived, `TaskCompleted { exit_code, archive }` fires (shell tasks; a subagent keeps its own pair), and the bounded pointer + notice go out through `publish_task_result`. `bash` reports `structured.exit_code`; its own detached path stays only for callers with no core (`cox mcp`). (3) `session.rs`: the detach map on `Inner` and the one `Background` arm — nothing else, to keep the T28.3 merge small. (4) `cox-tui`: `Ctrl+B` with a pending `bash`/`agent` card → `Cmd::Submit(Background)`; `/tasks` keeps finished tasks with `exit <code> · /expand <id>`. Verify: core tests `bash_background_registers_task`, `ctrl_b_detaches_running_call` (real `BashTool`), a TUI key test, a PTY e2e (`sleep` backgrounded with `Ctrl+B`, the composer takes text while the task is still listed), the three workspace commands, and the real binary on a scratch `COX_HOME`.
 
 #### T27.2 Approvals labelled by source; agent cards
 
