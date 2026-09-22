@@ -130,6 +130,9 @@ pub struct State {
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
     pub tasks: Vec<(TaskId, String)>,
+    /// Recently finished tasks as `/tasks` lines: exit code and the
+    /// `/expand` id of a shell task's output (T27.1).
+    pub finished_tasks: Vec<String>,
     /// Lines scrolled up from the bottom of the transcript.
     pub scroll: usize,
     pub banner: Option<Banner>,
@@ -315,6 +318,7 @@ impl State {
             modal: None,
             mode,
             tasks: Vec::new(),
+            finished_tasks: Vec::new(),
             scroll: 0,
             banner: None,
             files: Vec::new(),
@@ -443,6 +447,16 @@ impl State {
         self.transcript.drain(..n).collect()
     }
 
+    /// The newest `bash` or `agent` call still waiting for its result.
+    fn detachable_call(&self) -> Option<CallId> {
+        self.transcript.iter().rev().find_map(|c| match c {
+            Cell::Tool {
+                call, result: None, ..
+            } if matches!(call.name.as_str(), "bash" | "agent") => Some(call.id),
+            _ => None,
+        })
+    }
+
     fn tool_mut(&mut self, id: CallId) -> Option<&mut Cell> {
         self.transcript
             .iter_mut()
@@ -532,6 +546,15 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     }
     if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {
         return vec![Cmd::Ask(Ask::GitDiff)];
+    }
+    // `Ctrl+B` (T27.1): the newest pending `bash`/`agent` card becomes a
+    // background task; the turn goes on without waiting for it.
+    if ctrl
+        && key.code == KeyCode::Char('b')
+        && state.modal.is_none()
+        && let Some(call_id) = state.detachable_call()
+    {
+        return vec![Cmd::Submit(Submission::Background { call_id })];
     }
     // `Ctrl+U` on an empty composer pops the queue's tail back for editing
     // (T25.1); a non-empty composer keeps its usual line-kill behaviour.
@@ -901,7 +924,11 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             notice(state, Level::Info, text);
         }
         Action::Todo => state.show_todo = !state.show_todo,
-        Action::Tasks => notice(state, Level::Info, tasks::list(&state.tasks)),
+        Action::Tasks => notice(
+            state,
+            Level::Info,
+            tasks::list(&state.tasks, &state.finished_tasks),
+        ),
         Action::Vim => {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);
@@ -1067,7 +1094,23 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }
         }
         Event::TaskCreated { task, label, .. } => state.tasks.push((task, label)),
-        Event::TaskCompleted { task, .. } => state.tasks.retain(|(t, _)| *t != task),
+        Event::TaskCompleted {
+            task,
+            exit_code,
+            archive,
+            ..
+        } => {
+            if let Some(i) = state.tasks.iter().position(|(t, _)| *t == task) {
+                let (_, label) = state.tasks.remove(i);
+                let line = tasks::finished_line(task, &label, exit_code, archive);
+                state.finished_tasks.push(line);
+                let over = state
+                    .finished_tasks
+                    .len()
+                    .saturating_sub(tasks::FINISHED_KEPT);
+                state.finished_tasks.drain(..over);
+            }
+        }
         Event::Notice { level, text } => state.transcript.push(Cell::Notice { level, text }),
         Event::Error { error, fatal } => state.transcript.push(Cell::Error {
             text: error.to_string(),
@@ -1416,6 +1459,33 @@ mod tests {
                     args: vec!["pr-1".into()],
                 },
             })]
+        );
+    }
+
+    /// T27.1: `Ctrl+B` backgrounds the newest pending `bash` card; with no
+    /// such card it is not swallowed as a background request.
+    #[test]
+    fn ctrl_b_backgrounds_the_pending_bash_card() {
+        use cox_protocol::types::{Risk, ToolCall};
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let ctrl_b = || Msg::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+        assert_eq!(update(&mut state, ctrl_b()), Vec::new());
+        let call_id = CallId::new();
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallRequested {
+                call: ToolCall {
+                    id: call_id,
+                    name: "bash".into(),
+                    input: serde_json::json!({"command": "sleep 5"}),
+                    risk: Risk::Exec,
+                    subject: "sleep 5".into(),
+                },
+            }),
+        );
+        assert_eq!(
+            update(&mut state, ctrl_b()),
+            vec![Cmd::Submit(Submission::Background { call_id })]
         );
     }
 }

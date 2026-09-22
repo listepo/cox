@@ -729,6 +729,12 @@ pub enum Submission {
         /// Drop the conversation from `to_turn` on (append-only: a marker, not an edit).
         conversation: bool,
     },
+    /// `Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a
+    /// background task; the model gets a pointer result and the turn goes on.
+    Background {
+        /// The running call to detach.
+        call_id: CallId,
+    },
     /// Wind down the session cleanly.
     Shutdown,
 }
@@ -873,7 +879,7 @@ pub enum Event {
         /// Paths whose pre-image was too large to keep, left as they are.
         skipped: Vec<PathBuf>,
     },
-    /// A background subagent task was created.
+    /// A background task (subagent or detached `bash`) was created.
     TaskCreated {
         /// The task's id.
         task: TaskId,
@@ -882,7 +888,7 @@ pub enum Event {
         /// The tier it runs on.
         tier: Tier,
     },
-    /// A background subagent task finished.
+    /// A background task (subagent or detached `bash`) finished.
     TaskCompleted {
         /// The task that finished.
         task: TaskId,
@@ -890,6 +896,12 @@ pub enum Event {
         result_item: ItemId,
         /// What it cost, in USD.
         cost_usd: f64,
+        /// A shell task's exit code (T27.1); absent for subagents.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+        /// Where a shell task's full output was archived (T27.1).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        archive: Option<ArchiveId>,
     },
     /// A tier's model changed mid-session.
     ModelSwitched {
@@ -1204,7 +1216,7 @@ mod tests {
     #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200, reason: CompactReason::PreCall })]
     #[case::checkpoint(Event::Checkpoint { turn: TurnId::new(), call: Some(CallId::new()), files: vec![CheckpointFile { path: PathBuf::from("/w/a.rs"), kind: CheckpointKind::Pre }] })]
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
-    #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002 })]
+    #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
@@ -1239,6 +1251,7 @@ mod tests {
     #[case::set_permission_mode(Submission::SetPermissionMode { mode: PermissionMode::Plan })]
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
+    #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::shutdown(Submission::Shutdown)]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");

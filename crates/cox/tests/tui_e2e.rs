@@ -28,7 +28,7 @@ struct Tui {
 }
 
 impl Tui {
-    fn spawn(home: &Path, work: &Path, scenario: &Path) -> Tui {
+    fn spawn(home: &Path, work: &Path, scenario: &Path, args: &[&str]) -> Tui {
         let pty = NativePtySystem::default()
             .openpty(PtySize {
                 rows: ROWS,
@@ -39,6 +39,7 @@ impl Tui {
             .unwrap();
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_cox"));
         cmd.args(["--cwd", work.to_str().unwrap(), "--model", "scripted"]);
+        cmd.args(args);
         cmd.cwd(work);
         cmd.env("COX_HOME", home);
         // The real `~/.claude.json` / `~/.claude/settings.json` must not leak
@@ -164,8 +165,7 @@ fn tui_renders_scripted_turn_and_exits_on_double_ctrl_c() {
         env!("CARGO_MANIFEST_DIR"),
         "/../cox-core/tests/scenarios/text_only.toml"
     ));
-    let tui = Tui::spawn(home.path(), work.path(), scenario);
-
+    let tui = Tui::spawn(home.path(), work.path(), scenario, &[]);
     // The status line is the first thing the TUI paints.
     tui.wait_until("status line", |t| t.contains("$0.00"));
     // Reply rendered, turn finished, status shows the model and the cost.
@@ -190,7 +190,7 @@ fn tui_fork_and_handoff_start_child_sessions() {
         "[[turn]]\ntext = \"hello from scripted\"\n[[turn]]\ntext = \"we said hello\"\n",
     )
     .unwrap();
-    let tui = Tui::spawn(home.path(), work.path(), &scenario);
+    let tui = Tui::spawn(home.path(), work.path(), &scenario, &[]);
 
     tui.wait_until("status line", |t| t.contains("$0.00"));
     tui.turn("hello", "hello from scripted");
@@ -215,4 +215,39 @@ fn tui_fork_and_handoff_start_child_sessions() {
         .map(|r| r.depth)
         .collect();
     assert_eq!(depths, [0, 1, 2], "parent, fork, handoff");
+}
+
+/// T27.1: `Ctrl+B` on a running `sleep` moves it to the background; the
+/// turn ends and the composer takes input while the task still runs.
+#[test]
+fn tui_ctrl_b_backgrounds_sleep_and_composer_accepts_input() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let scenario = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/scenarios/bash_sleep_then_done.toml"
+    ));
+    let tui = Tui::spawn(
+        home.path(),
+        work.path(),
+        scenario,
+        &["--permission-mode", "bypass"],
+    );
+    tui.wait_until("status line", |t| t.contains("$0.00"));
+    tui.send(b"go\r");
+    tui.wait_until("sleep running", |t| {
+        t.contains("begin") && t.contains("working")
+    });
+    tui.send(b"\x02");
+    tui.wait_until("turn done, task listed", |t| {
+        t.contains("moved on") && !t.contains("working") && t.contains("1 tasks")
+    });
+    tui.send(b"typed while it sleeps");
+    tui.wait_until("composer text while the task runs", |t| {
+        t.contains("typed while it sleeps") && t.contains("1 tasks")
+    });
+    tui.wait_until("task finished", |t| {
+        t.contains("background task finished") && t.contains("0 tasks")
+    });
+    tui.quit();
 }

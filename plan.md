@@ -117,6 +117,7 @@ pub enum Submission {
     SetPermissionMode(PermissionMode),                        // default | plan | auto | bypass
     Command(SlashCommand),                                    // parsed by the surface, executed by the core
     HookResult { hook_id: String, outcome: HookOutcome },     // hook runner is outside the core
+    Background { call_id: CallId },                           // Ctrl+B: detach a running bash/agent call into a task (T27.1)
     Shutdown,
 }
 
@@ -135,7 +136,7 @@ pub enum Event {
     Usage         { turn: TurnId, usage: Usage },
     Compacted     { summary: ItemId, dropped: Vec<ItemId>, before_tokens: u32, after_tokens: u32, reason: CompactReason }, // CompactReason: PreCall | PostTurn | Manual | ContextTooLong ("pre-call" …); absent in old rollouts = post-turn
     TaskCreated   { task: TaskId, label: String, tier: Tier },
-    TaskCompleted { task: TaskId, result_item: ItemId, cost_usd: f64 },
+    TaskCompleted { task: TaskId, result_item: ItemId, cost_usd: f64, exit_code: Option<i32>, archive: Option<ArchiveId> }, // exit code + archive: shell tasks (T27.1)
     ModelSwitched { tier: Tier, from: ModelId, to: ModelId },
     Notice        { level: Level, text: String },            // Level: Info | Warn | Budget | Security
     TurnDone      { turn: TurnId, stop: StopReason },        // EndTurn | MaxTurns | Interrupted | Budget | Refusal { detail } | Error
@@ -537,7 +538,7 @@ Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--s
 | `@` | file picker (nucleo) | `/` at line start | command palette |
 | `y` / `s` / `n` / `e` in approval modal | allow / allow for session / deny / edit command | `Ctrl+R` | prompt history search |
 | `PageUp/PageDown`, mouse wheel | scroll transcript | `Ctrl+L` | redraw |
-| `Ctrl+G` | diff view: the working tree against `HEAD`, per-file blocks; `PageUp/PageDown` scroll, `Esc` closes (T15.3) | | |
+| `Ctrl+G` | diff view: the working tree against `HEAD`, per-file blocks; `PageUp/PageDown` scroll, `Esc` closes (T15.3) | `Ctrl+B` | move the running `bash`/`agent` call to the background; the turn goes on (T27.1) |
 
 Slash commands (parsed in the surface, executed as `Submission::Command`): `/model [tier] [model]`, `/effort [low|high|xhigh]` (session-wide, clamped per model, T16.4), `/think <prompt>` (confirm dialog with price), `/compact [focus]`, `/cost`, `/permissions`, `/sandbox <mode>`, `/resume`, `/sessions`, `/expand <id>`, `/agents` (live sessions in this workspace, T16.3), `/skills`, `/hooks`, `/mcp`, `/doctor`, `/clear` (new session, same cwd), `/vim`, `/help`, `/quit`. Markdown files in `.claude/commands` and `.cox/commands` appear in the same palette (T7.3).
 

@@ -84,8 +84,10 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
-    /// Running background tasks: label and tier by id (T9.2).
-    pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
+    /// Running background tasks: label, tier and kind by id (T9.2, T27.1).
+    pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
+    /// Running calls `Submission::Background` may detach (T27.1).
+    pub(crate) detach: HashMap<CallId, CancellationToken>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
     pub(crate) extracted: Vec<crate::memory_extract::Fact>,
     /// Monotonic turn counter for the FTS index (T10.3) and the
@@ -342,6 +344,7 @@ impl Session {
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
+                detach: HashMap::new(),
                 extracted: Vec::new(),
                 last_context_tokens: 0,
                 retried_after_too_long: false,
@@ -573,6 +576,7 @@ impl Session {
                 code,
                 conversation,
             } => self.rewind(to_turn, code, conversation).await,
+            Submission::Background { call_id } => self.background(call_id).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
