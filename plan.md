@@ -21,7 +21,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | todo | P1 | 1 | 0% | |
-| T25.1 | todo | P0 | 3 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
 | T25.4 | todo | P1 | 3 | 0% | |
@@ -1183,19 +1182,6 @@ Done when: every screen test has an SVG and the website build (`hugo --minify`) 
 Out of scope: animated GIFs.
 
 ### P25 — Composer and flow (goal: the keys a Claude Code or Codex user already has in their fingers)
-
-#### T25.1 Message queue and send-now
-
-Model: sonnet · Status: open · Depends: T23.1 · Size: ~180 · Priority: P0 · Complexity: 3
-Goal: `Enter` during a turn queues the message; the queue drains one turn at a time; `Ctrl+Enter` interrupts and flushes the queue as one turn.
-Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/view.rs`.
-Steps: (1) `State.queue: VecDeque<String>`; `Enter` while `status.running` pushes and clears the composer; `Ctrl+U` (composer empty) pops the last queued line back into the composer. (2) `view.rs`: queued lines render above the composer, dim, prefixed `⏸`, at most three shown plus `+n`. (3) On `TurnDone` (not `Interrupted`), pop the front and emit `Cmd::Submit(UserTurn)`. (4) `Ctrl+Enter` (Kitty keys) or `Alt+Enter` when a turn runs: `Cmd::Submit(Interrupt)` then, on the resulting `TurnDone{Interrupted}`, join the queue with the composer text (`\n\n`) into one `UserTurn`. (5) `/clear` empties the queue.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui queued_messages_drain_in_order send_now_interrupts_and_flushes ctrl_u_unqueues_last
-```
-Done when: the frame snapshot with two queued lines exists and the PTY e2e types during a scripted turn and sees the second turn start after the first ends.
-Out of scope: editing a queued message in place.
 
 #### T25.2 `Shift+Tab` mode cycle and plan-mode view
 

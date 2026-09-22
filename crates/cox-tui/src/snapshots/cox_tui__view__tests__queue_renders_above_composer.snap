@@ -1,0 +1,12 @@
+---
+source: crates/cox-tui/src/view.rs
+expression: buffer_to_string(&buf)
+---
+
+
+
+
+ ⏸ first message
+ ⏸ second message
+>  message · @ file · / command
+ - · ctx 0% · cache 0% · $0.00 · workspa

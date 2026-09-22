@@ -6,12 +6,42 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::cells::cell_lines;
 use crate::state::{Cell, Modal, State};
 use crate::status;
+
+/// Queued messages (T25.1) shown above at once before they collapse to a
+/// `+n` summary — enough to see what is coming without pushing the
+/// composer off screen.
+const QUEUE_SHOWN: usize = 3;
+
+/// One line per queued message (T25.1), oldest first, dim and prefixed
+/// `⏸`; past `QUEUE_SHOWN` the rest collapse into one `+n` line. Each
+/// message shows only its first line — same reasoning as a picker row, a
+/// queued message is a label here, not a place to read the whole thing —
+/// and goes through `text::sanitize` like other user text a render site
+/// did not type itself.
+fn queue_lines(state: &State) -> Vec<Line<'static>> {
+    let style = Style::default().fg(state.theme.dim);
+    let total = state.queue.len();
+    let mut lines: Vec<Line<'static>> = state
+        .queue
+        .iter()
+        .take(QUEUE_SHOWN)
+        .map(|text| {
+            let first = crate::text::sanitize(text.lines().next().unwrap_or(""));
+            Line::styled(format!(" ⏸ {first}"), style)
+        })
+        .collect();
+    if total > QUEUE_SHOWN {
+        lines.push(Line::styled(format!(" ⏸ +{}", total - QUEUE_SHOWN), style));
+    }
+    lines
+}
 
 /// Draws `state` into `area`; returns where the cursor goes.
 pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
@@ -29,11 +59,14 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     } else {
         0
     };
+    let queue = queue_lines(state);
+    let queue_rows = u16::try_from(queue.len()).unwrap_or(u16::MAX);
     let [
         banner_area,
         transcript,
         todo_area,
         modal_area,
+        queue_area,
         composer,
         status,
     ] = Layout::vertical([
@@ -41,6 +74,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Constraint::Min(1),
         Constraint::Length(todo_rows),
         Constraint::Length(modal),
+        Constraint::Length(queue_rows),
         Constraint::Length(composer_rows),
         Constraint::Length(1),
     ])
@@ -100,6 +134,9 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         }
         Some(Modal::Diff { .. }) | None => {}
     }
+    if !queue.is_empty() {
+        Paragraph::new(queue).render(queue_area, buf);
+    }
 
     let [prompt, text] =
         Layout::horizontal([Constraint::Length(2), Constraint::Min(1)]).areas(composer);
@@ -140,4 +177,22 @@ pub fn buffer_to_string(buf: &Buffer) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cox_protocol::types::{PermissionMode, SandboxMode};
+
+    /// T25.1 step 2/"Done when": two queued messages render above the
+    /// composer, dim and prefixed `⏸`, oldest first.
+    #[test]
+    fn queue_renders_above_composer() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.busy = true;
+        state.queue.push_back("first message".to_string());
+        state.queue.push_back("second message".to_string());
+        let buf = render(&state, 40, 8);
+        insta::assert_snapshot!(buffer_to_string(&buf));
+    }
 }

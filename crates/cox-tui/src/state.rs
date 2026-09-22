@@ -3,10 +3,12 @@
 //! and core events and executes the `Cmd`s it returns, and a test feeds it
 //! the same `Event`s a real session emits, so every screen is replayable.
 
+use std::collections::VecDeque;
+
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, Submission, Tier,
-    ToolCall, ToolResult,
+    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, StopReason,
+    Submission, Tier, ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -204,6 +206,14 @@ pub struct State {
     /// `(dark, theme, syntax_theme)` saved when `/theme` opens the picker;
     /// `Esc` restores it, a chosen row drops it.
     pub theme_prev: Option<(bool, Theme, &'static str)>,
+    /// Messages typed with `Enter` while a turn runs (T25.1), oldest first;
+    /// `view.rs` shows them above the composer and each natural `TurnDone`
+    /// pops one into the next turn.
+    pub queue: VecDeque<String>,
+    /// Set when `Ctrl+Enter`/`Alt+Enter` interrupts a running turn to send
+    /// now (T25.1); the next `TurnDone{Interrupted}` consumes it and joins
+    /// the whole queue into one turn instead of leaving it queued.
+    pub send_now: bool,
 }
 
 /// Ticks (100 ms each) two `Esc`s may be apart to count as `Esc Esc`.
@@ -325,6 +335,8 @@ impl State {
             theme_catalog: Vec::new(),
             syntax_names: Vec::new(),
             theme_prev: None,
+            queue: VecDeque::new(),
+            send_now: false,
         }
     }
 
@@ -436,10 +448,7 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.composer.insert(&text);
             Vec::new()
         }
-        Msg::Event(ev) => {
-            on_event(state, ev);
-            Vec::new()
-        }
+        Msg::Event(ev) => on_event(state, ev),
         Msg::Tick => {
             state.tick += 1;
             Vec::new()
@@ -508,6 +517,15 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {
         return vec![Cmd::Ask(Ask::GitDiff)];
     }
+    // `Ctrl+U` on an empty composer pops the queue's tail back for editing
+    // (T25.1); a non-empty composer keeps its usual line-kill behaviour.
+    if ctrl && key.code == KeyCode::Char('u') && state.modal.is_none() && state.composer.is_empty()
+    {
+        if let Some(text) = state.queue.pop_back() {
+            state.composer.set_text(&text);
+        }
+        return Vec::new();
+    }
     if key.code == KeyCode::Tab && state.modal.is_none() {
         // A `git` line completes (T15.4); any other Tab cycles the mode.
         let line = state.composer.text();
@@ -568,7 +586,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 // Backspacing out of the picker also removes the `@`/`/`
                 // that opened it, as the user meant.
                 Pick::Closed if key.code == KeyCode::Backspace && picker.kind != Kind::Shell => {
-                    state.composer.key(key);
+                    state.composer.key(key, state.status.busy);
                 }
                 Pick::Closed => {}
                 Pick::Chosen(choice) if picker.kind == Kind::Rewind => {
@@ -647,11 +665,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             } else {
                 state.esc_armed = None;
             }
-            match state.composer.key(key) {
+            match state.composer.key(key, state.status.busy) {
                 Edit::Submit(text) => {
                     let tier = state.status.tier.unwrap_or(Tier::Code);
                     match commands::parse(&text, tier) {
                         Some(action) => act(state, action),
+                        // A turn is running: queue instead of submitting
+                        // (T25.1). A slash command still runs immediately
+                        // above — `/clear` in particular must reach the
+                        // queue it is about to empty.
+                        None if state.status.busy => {
+                            state.queue.push_back(text);
+                            Vec::new()
+                        }
                         None => vec![Cmd::Submit(Submission::UserTurn {
                             text,
                             attachments: Vec::new(),
@@ -659,6 +685,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         })],
                     }
                 }
+                Edit::SendNow(text) => send_now(state, text),
                 Edit::OpenFiles => {
                     state.modal = Some(Modal::Picker(Picker::open(
                         Kind::Files,
@@ -689,6 +716,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
 fn set_mode(state: &mut State, mode: PermissionMode) -> Vec<Cmd> {
     state.mode = mode;
     vec![Cmd::Submit(Submission::SetPermissionMode { mode })]
+}
+
+/// `Ctrl+Enter`/`Alt+Enter` while a turn runs (T25.1): the composer already
+/// cleared itself (`Edit::SendNow`); its text joins the queue's tail so the
+/// interrupt this triggers, once `TurnDone{Interrupted}` acknowledges it,
+/// flushes everything typed so far as one turn instead of leaving it queued
+/// for the next natural finish.
+fn send_now(state: &mut State, text: String) -> Vec<Cmd> {
+    if !text.trim().is_empty() {
+        state.queue.push_back(text);
+    }
+    state.send_now = true;
+    vec![Cmd::Submit(Submission::Interrupt)]
 }
 
 /// T24.2: applies one `/theme` row to `State` without persisting it — the
@@ -798,6 +838,7 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             if let Submission::Command { command } = &sub
                 && command.name == "clear"
             {
+                state.queue.clear();
                 return vec![Cmd::Clear];
             }
             return vec![Cmd::Submit(sub)];
@@ -860,11 +901,12 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
     Vec::new()
 }
 
-fn on_event(state: &mut State, ev: Event) {
+fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
     if let Some(banner) = Banner::from_event(&ev) {
         state.banner = Some(banner);
-        return;
+        return Vec::new();
     }
+    let mut cmds = Vec::new();
     match ev {
         Event::ItemStarted { item, kind } => match kind {
             ItemKind::UserMessage { text, attachments } => {
@@ -947,7 +989,10 @@ fn on_event(state: &mut State, ev: Event) {
             state.status.tier = Some(tier);
             state.status.model = model.to_string();
         }
-        Event::TurnDone { .. } => state.status.busy = false,
+        Event::TurnDone { stop, .. } => {
+            state.status.busy = false;
+            cmds = turn_done_cmds(state, stop);
+        }
         Event::Usage { usage, .. } => {
             state.status.cost_usd += usage.cost_usd;
             state.status.context_tokens =
@@ -984,6 +1029,33 @@ fn on_event(state: &mut State, ev: Event) {
         }
         Event::SessionStarted { .. } | Event::Compacted { .. } => {}
     }
+    cmds
+}
+
+/// `Event::TurnDone` (T25.1): a natural finish drains the queue's head as
+/// the next turn; an interrupt from `send_now` instead joins everything
+/// queued (composer text included, folded in by `send_now`) into the one
+/// turn `Ctrl+Enter`/`Alt+Enter` asked for. A plain `Ctrl+C` interrupt
+/// (`send_now` unset) leaves the queue untouched — the user cancelled, they
+/// did not ask to send it.
+fn turn_done_cmds(state: &mut State, stop: StopReason) -> Vec<Cmd> {
+    let text = match stop {
+        StopReason::Interrupted if state.send_now => {
+            state.send_now = false;
+            let joined = state.queue.drain(..).collect::<Vec<_>>().join("\n\n");
+            (!joined.is_empty()).then_some(joined)
+        }
+        StopReason::Interrupted => None,
+        _ => state.queue.pop_front(),
+    };
+    match text {
+        Some(text) => vec![Cmd::Submit(Submission::UserTurn {
+            text,
+            attachments: Vec::new(),
+            confirm_think: false,
+        })],
+        None => Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -991,8 +1063,18 @@ mod tests {
     use super::*;
     use crate::theme;
     use cox_core::{History, HistoryTurn};
+    use cox_protocol::ids::TurnId;
     use cox_protocol::types::{Content, Message, PermissionMode, Role, SandboxMode};
     use crossterm::event::{KeyCode, KeyEvent};
+
+    /// Types `text` into the composer and submits it with a plain `Enter`,
+    /// the way a user queues or sends a message.
+    fn type_line(state: &mut State, text: &str) {
+        for c in text.chars() {
+            update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+    }
 
     #[test]
     fn transcript_from_history_seeds_user_and_assistant() {
@@ -1121,5 +1203,108 @@ mod tests {
             "Esc restores the theme active before the picker opened"
         );
         assert!(state.modal.is_none());
+    }
+
+    /// T25.1 step 1/3: `Enter` while a turn runs queues instead of
+    /// submitting, and each natural `TurnDone` drains the queue's head in
+    /// the order the messages were typed.
+    #[test]
+    fn queued_messages_drain_in_order() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.busy = true;
+        type_line(&mut state, "first");
+        type_line(&mut state, "second");
+        assert_eq!(
+            state.queue,
+            VecDeque::from(["first".to_string(), "second".to_string()])
+        );
+        assert!(state.composer.is_empty());
+
+        let done = |stop| {
+            Msg::Event(Event::TurnDone {
+                turn: TurnId::new(),
+                stop,
+            })
+        };
+        let cmds = update(&mut state, done(StopReason::EndTurn));
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "first".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+        assert_eq!(state.queue, VecDeque::from(["second".to_string()]));
+
+        let cmds = update(&mut state, done(StopReason::EndTurn));
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "second".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+        assert!(state.queue.is_empty());
+    }
+
+    /// T25.1 step 4: `Ctrl+Enter` while a turn runs interrupts it and, once
+    /// the interrupt lands, joins the queue with whatever was still in the
+    /// composer into one turn.
+    #[test]
+    fn send_now_interrupts_and_flushes() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.busy = true;
+        type_line(&mut state, "first");
+        for c in "second".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+
+        let cmds = update(
+            &mut state,
+            Msg::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)),
+        );
+        assert_eq!(cmds, vec![Cmd::Submit(Submission::Interrupt)]);
+        assert!(state.composer.is_empty());
+        assert_eq!(
+            state.queue,
+            VecDeque::from(["first".to_string(), "second".to_string()])
+        );
+
+        let cmds = update(
+            &mut state,
+            Msg::Event(Event::TurnDone {
+                turn: TurnId::new(),
+                stop: StopReason::Interrupted,
+            }),
+        );
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "first\n\nsecond".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+        assert!(state.queue.is_empty());
+    }
+
+    /// T25.1 step 1: `Ctrl+U` on an empty composer pops the queue's tail
+    /// back for editing.
+    #[test]
+    fn ctrl_u_unqueues_last() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.busy = true;
+        type_line(&mut state, "first");
+        type_line(&mut state, "second");
+
+        let cmds = update(
+            &mut state,
+            Msg::Key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL)),
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(state.composer.text(), "second");
+        assert_eq!(state.queue, VecDeque::from(["first".to_string()]));
     }
 }

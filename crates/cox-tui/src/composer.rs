@@ -15,6 +15,10 @@ use crate::vim::{Mode, Vim};
 pub enum Edit {
     Nothing,
     Submit(String),
+    /// `Ctrl+Enter`/`Alt+Enter` while a turn runs (T25.1): the composer's
+    /// text, already cleared like `Submit`'s, for the caller to fold into
+    /// the interrupt-then-flush send-now asks for.
+    SendNow(String),
     OpenFiles,
     OpenCommands,
     OpenHistory,
@@ -100,7 +104,9 @@ impl Composer {
         self.area.insert_str(text);
     }
 
-    pub fn key(&mut self, key: KeyEvent) -> Edit {
+    /// `busy` is `state.status.busy`: whether a turn is running, which
+    /// changes what `Ctrl+Enter`/`Alt+Enter` mean (T25.1).
+    pub fn key(&mut self, key: KeyEvent, busy: bool) -> Edit {
         if let Some(vim) = &mut self.vim
             && vim.key(key, &mut self.area)
         {
@@ -109,9 +115,20 @@ impl Composer {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let (row, col) = self.area.cursor();
         match key.code {
-            // `Ctrl+Enter` is reserved for send-now (T25.1); until it lands,
-            // it falls back to the same newline as `Shift+Enter`/`Alt+Enter`
-            // (T23.1) instead of doing nothing.
+            // A turn in flight repurposes `Ctrl+Enter` (Kitty keys) and
+            // `Alt+Enter` as send-now (T25.1) instead of the newline they
+            // insert otherwise; `Shift+Enter` always stays a newline, busy
+            // or not, since it is never send-now's trigger.
+            KeyCode::Enter
+                if busy
+                    && key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                let text = self.text();
+                self.area = fresh();
+                Edit::SendNow(text)
+            }
             KeyCode::Enter
                 if key.modifiers.intersects(
                     KeyModifiers::SHIFT | KeyModifiers::ALT | KeyModifiers::CONTROL,

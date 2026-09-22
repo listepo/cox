@@ -15,7 +15,6 @@
 - T24.6. Footer hints and `?` help
 - T24.7. Motion and narrow-width polish
 - T24.8. Screenshots and gallery
-- T25.1. Message queue and send-now
 - T25.2. `Shift+Tab` mode cycle and plan-mode view
 - T25.3. `!` shell line
 - T25.4. Vim, second half

@@ -2684,3 +2684,30 @@ $ mise exec -- cargo fmt --check
 $ COX_HOME=/tmp/cox-scratch-t231 TERM=xterm-256color mise exec -- cargo run -p cox -- doctor
      terminal row unaffected (T23.0's doctor path is unchanged; T23.1 only changed the interactive-session path)
 ```
+
+#### T25.1 Message queue and send-now
+
+Model: claude-sonnet-5 · Status: done 2026-09-22 · Depends: T23.1 · Size: ~180 (landed ~230) · Priority: P0 · Complexity: 3
+Goal: `Enter` during a turn queues the message; the queue drains one turn at a time; `Ctrl+Enter` interrupts and flushes the queue as one turn.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/composer.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `State.queue: VecDeque<String>`; `Enter` while `status.running` pushes and clears the composer; `Ctrl+U` (composer empty) pops the last queued line back into the composer. (2) `view.rs`: queued lines render above the composer, dim, prefixed `⏸`, at most three shown plus `+n`. (3) On `TurnDone` (not `Interrupted`), pop the front and emit `Cmd::Submit(UserTurn)`. (4) `Ctrl+Enter` (Kitty keys) or `Alt+Enter` when a turn runs: `Cmd::Submit(Interrupt)` then, on the resulting `TurnDone{Interrupted}`, join the queue with the composer text (`\n\n`) into one `UserTurn`. (5) `/clear` empties the queue.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui queued_messages_drain_in_order send_now_interrupts_and_flushes ctrl_u_unqueues_last
+```
+Done when: the frame snapshot with two queued lines exists and the PTY e2e types during a scripted turn and sees the second turn start after the first ends.
+Out of scope: editing a queued message in place.
+What landed (commit `T25.1: Message queue and send-now`): `State` gained `queue: VecDeque<String>` and `send_now: bool` (T25.1). `Composer::key` now takes a `busy: bool` (`state.status.busy` at every call site); while busy, `Ctrl+Enter`/`Alt+Enter` clear the composer and return the new `Edit::SendNow(String)` instead of inserting a newline — `Shift+Enter` and the idle case are unchanged, so `T23.1`'s existing newline behaviour still holds whenever no turn is running. In `state.rs`'s `on_key`, `Edit::Submit(text)` with no matching slash command pushes to `queue` instead of submitting when `state.status.busy`; `Edit::SendNow(text)` (`send_now` helper) folds any composer text into the queue's tail, sets `send_now`, and submits `Submission::Interrupt` — the core-facing effect is the same cancel every `Ctrl+C` already used, per the "no new side channel" rule. `on_event` became `fn on_event(state: &mut State, ev: Event) -> Vec<Cmd>`; its `TurnDone` arm now calls `turn_done_cmds`, which pops the queue's head as the next turn on a natural finish, joins the whole queue with `"\n\n"` into one turn on `StopReason::Interrupted` when `send_now` was set (consuming the flag), and leaves the queue untouched on a plain `Ctrl+C` interrupt (`send_now` unset) — cancelling was not a request to send anything. A new `Ctrl+U` global binding (no modal, empty composer) pops the queue's tail back into the composer for re-editing; `/clear` also clears the queue. `view.rs` adds a `queue` band between the modal area and the composer: up to three queued messages (first line only, `text::sanitize`d, dim via `theme.dim`) prefixed `⏸`, collapsing past three into one `⏸ +n` line; a new `queue_renders_above_composer` insta snapshot covers it. `crates/cox-tui/tests/vim.rs`'s `press` helper needed a mechanical update to the new `Composer::key` arity (`busy: false`, no turn runs in that table). Verified beyond the card's Check: `cargo nextest run --workspace --no-fail-fast` (689/690, the one failure is the pre-existing unrelated `cox-provider usage_prices_toml_parses_and_has_all_tier_models`), `clippy -D warnings` and `fmt --check` clean, and a throwaway PTY e2e against the real binary + `--model scripted` with a two-turn scenario (`hello\r` then `queued\r` while the first turn was still in flight) confirmed both `reply one` and `reply two` land in order, run 4× with no flakiness, then discarded — a committed PTY test was out of the card's 3-file scope.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui queued_messages_drain_in_order send_now_interrupts_and_flushes ctrl_u_unqueues_last
+     Summary [ 0.015s] 3 tests run: 3 passed, 140 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     690 tests run: 689 passed, 1 failed, 3 skipped — the 1 failure is the pre-existing, unrelated cox-provider usage_prices_toml_parses_and_has_all_tier_models
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- doctor
+     unaffected (T25.1 only changed the interactive TUI session path)
+```
