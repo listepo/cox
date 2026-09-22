@@ -3,19 +3,27 @@
 //! bash command inline and resubmit it as `Decision::Edit`. Separate from
 //! `state` so the key table and the drawing sit together and one snapshot
 //! covers both. The `/context` modal (T25.7) lives here for the same reason.
+//! An `edit` call's proposed change prints through `diff::lines` (T24.5),
+//! the renderer the edit card and `Ctrl+G` use.
 
 use cox_protocol::ids::CallId;
-use cox_protocol::types::{Decision, ToolCall, Why};
+use cox_protocol::types::{Decision, Diff, ToolCall, Why};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::cells::Look;
+use crate::diff;
 use crate::glyph::Glyphs;
 use crate::text::sanitize;
 use crate::theme::Theme;
 
 /// The bash tool's input field the `e` key rewrites.
 const COMMAND_FIELD: &str = "command";
+
+/// Diff rows the approval modal shows before folding the rest into one
+/// line, so a large edit never pushes the composer off screen.
+const DIFF_ROWS: usize = 12;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Approval {
@@ -85,11 +93,32 @@ impl Approval {
             .map_or_else(|| self.call.subject.clone(), str::to_string)
     }
 
-    pub fn height(&self) -> u16 {
-        3
+    /// An `edit` call's `old` → `new` as a unified diff, so the modal shows
+    /// what `y` would write. Line numbers count from the snippet, not the
+    /// file: the TUI never reads the disk. `None` for any other tool.
+    fn proposed(&self) -> Option<Diff> {
+        if self.call.name != "edit" {
+            return None;
+        }
+        let field = |k: &str| self.call.input[k].as_str().map(sanitize);
+        let (path, old, new) = (field("path")?, field("old")?, field("new")?);
+        // A trailing newline on both sides keeps `\ No newline` markers out
+        // of a snippet that simply ends mid-file.
+        let eol = |s: String| if s.ends_with('\n') { s } else { s + "\n" };
+        let (old, new) = (eol(old), eol(new));
+        let text = similar::TextDiff::from_lines(&old, &new);
+        let mut unified = text.unified_diff();
+        unified.context_radius(3).header(&path, &path);
+        Some(Diff {
+            path: path.clone().into(),
+            unified: unified.to_string(),
+        })
     }
 
-    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
+    /// The prompt, the proposed diff when there is one (at most
+    /// `DIFF_ROWS`), the reason and the keys.
+    pub fn lines(&self, look: &Look) -> Vec<Line<'static>> {
+        let (g, theme) = (&look.glyphs, &look.colors);
         let why = match &self.why {
             Why::RuleAsk { rule } => format!("rule {rule} asks"),
             Why::Risk { risk } => format!("{risk:?} risk needs approval").to_lowercase(),
@@ -104,21 +133,35 @@ impl Approval {
             None if self.editable() => " [y]es  [s]ession  [n]o  [e]dit".to_string(),
             None => " [y]es  [s]ession  [n]o".to_string(),
         };
-        vec![
-            Line::styled(
-                format!(
-                    " approve {} {}?",
-                    sanitize(&self.call.name),
-                    sanitize(&self.call.subject)
-                ),
-                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+        let mut out = vec![Line::styled(
+            format!(
+                " approve {} {}?",
+                sanitize(&self.call.name),
+                sanitize(&self.call.subject)
             ),
-            Line::styled(
-                format!(" {why}"),
-                Style::default().add_modifier(Modifier::DIM),
-            ),
-            Line::raw(keys),
-        ]
+            Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
+        )];
+        if let Some(d) = self.proposed() {
+            let look = Look {
+                show_diffs: true,
+                ..*look
+            };
+            let rows = diff::lines(&d, &look);
+            let hidden = rows.len().saturating_sub(DIFF_ROWS);
+            out.extend(rows.into_iter().take(DIFF_ROWS));
+            if hidden > 0 {
+                out.push(Line::styled(
+                    format!("  {} {hidden} more lines", g.ellipsis),
+                    Style::default().add_modifier(Modifier::DIM),
+                ));
+            }
+        }
+        out.push(Line::styled(
+            format!(" {why}"),
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        out.push(Line::raw(keys));
+        out
     }
 }
 

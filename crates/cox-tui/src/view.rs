@@ -46,8 +46,15 @@ fn queue_lines(state: &State) -> Vec<Line<'static>> {
 /// Draws `state` into `area`; returns where the cursor goes.
 pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let banner = u16::from(state.banner.is_some());
+    // The transcript spans the full width, so one `look` serves it and the
+    // approval modal, whose height is its own line count (an edit's diff).
+    let look = state.look(area.width);
+    let approval = match &state.modal {
+        Some(Modal::Approval(a)) => a.lines(&look),
+        _ => Vec::new(),
+    };
     let modal = match &state.modal {
-        Some(Modal::Approval(a)) => a.height(),
+        Some(Modal::Approval(_)) => u16::try_from(approval.len()).unwrap_or(u16::MAX),
         Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
         // The diff view takes the transcript's rows, not a band of its own.
@@ -83,7 +90,6 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if let Some(b) = &state.banner {
         b.line(&state.theme).render(banner_area, buf);
     }
-    let look = state.look(transcript.width);
     let rows = usize::from(transcript.height);
     let (lines, offset): (Vec<Line<'static>>, usize) = match &state.modal {
         // The transcript scrolls from its end; the diff view from its start.
@@ -123,9 +129,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Paragraph::new(status::todo_lines(state)).render(todo_area, buf);
     }
     match &state.modal {
-        Some(Modal::Approval(a)) => {
-            Paragraph::new(a.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
-        }
+        Some(Modal::Approval(_)) => Paragraph::new(approval).render(modal_area, buf),
         Some(Modal::Question(q)) => {
             Paragraph::new(q.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
         }

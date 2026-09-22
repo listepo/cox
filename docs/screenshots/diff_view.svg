@@ -12,19 +12,11 @@
 <text x="146.4" y="115.0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#bf616a">self</text>
 <text x="180.0" y="115.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce">) {</text>
 <text x="12.0" y="133.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#cd3131">  -</text>
-<text x="70.8" y="133.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#b48ead">let</text>
-<text x="96.0" y="133.0" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce"> ev = </text>
-<text x="146.4" y="133.0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#bf616a">self</text>
-<text x="180.0" y="133.0" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce">.</text>
-<text x="188.4" y="133.0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#96b5b4">next</text>
-<text x="222.0" y="133.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce">();</text>
+<text x="37.2" y="133.0" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" fill-opacity="0.6">    let ev = </text>
+<text x="146.4" y="133.0" textLength="100.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#cd3131">self.next();</text>
 <text x="12.0" y="151.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#0dbc79">  +</text>
-<text x="70.8" y="151.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#b48ead">let</text>
-<text x="96.0" y="151.0" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce"> ev = </text>
-<text x="146.4" y="151.0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#bf616a">self</text>
-<text x="180.0" y="151.0" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce">.</text>
-<text x="188.4" y="151.0" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#96b5b4">next_event</text>
-<text x="272.4" y="151.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce">();</text>
+<text x="37.2" y="151.0" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" fill-opacity="0.6">    let ev = </text>
+<text x="146.4" y="151.0" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#0dbc79">self.next_event();</text>
 <text x="12.0" y="169.0" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#0dbc79">  +</text>
 <text x="70.8" y="169.0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#bf616a">self</text>
 <text x="104.4" y="169.0" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#c0c5ce">.ledger.</text>

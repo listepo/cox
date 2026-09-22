@@ -636,6 +636,9 @@ pub struct TuiConfig {
     /// A syntect theme name for code, diffs and file output; empty follows
     /// `theme`, and an unknown name warns and follows `theme` too.
     pub syntax_theme: String,
+    /// `auto` | `side` | `stacked` (T24.5): side-by-side diffs from 120
+    /// columns, or never; an unknown value is `auto`.
+    pub diff: String,
     /// Whether the status line polls git for the branch and `+n −m` (T15.2).
     pub git: bool,
     /// `[tui.caps]` (T23.0): overrides one named `cox_tui::term::Caps`
@@ -656,6 +659,7 @@ impl Default for TuiConfig {
             icons: HashMap::new(),
             color: "auto".to_string(),
             syntax_theme: String::new(),
+            diff: "auto".to_string(),
             git: true,
             caps: HashMap::new(),
         }

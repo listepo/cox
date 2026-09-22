@@ -28,6 +28,8 @@ pub struct Look {
     pub show_thinking: bool,
     /// `Ctrl+O`: diffs in full rather than their `+n −m` header.
     pub show_diffs: bool,
+    /// `tui.diff` (T24.5): whether a wide viewport splits a diff in two.
+    pub diff: diff::Mode,
     /// Ticks (100 ms) since start; drives the spinner and elapsed time.
     pub tick: u64,
     /// Leave `text::sanitize` markers where something was removed.

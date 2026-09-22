@@ -167,6 +167,8 @@ pub struct State {
     pub theme: Theme,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
+    /// `tui.diff` (T24.5); the binary sets it from config.
+    pub diff_mode: crate::diff::Mode,
     /// `Ctrl+E` (T24.4): the last tool cell still in the viewport, expanded
     /// past its fold rather than head/tail. `view.rs` is the only reader
     /// that knows which cell is last, so it turns this into `Look.expand_last`.
@@ -335,6 +337,7 @@ impl State {
             caps: Caps::default(),
             theme: Theme::dark(),
             show_diffs: true,
+            diff_mode: crate::diff::Mode::Auto,
             expanded_last: false,
             todo: Vec::new(),
             show_todo: false,
@@ -419,6 +422,7 @@ impl State {
             glyphs: self.glyphs,
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,
+            diff: self.diff_mode,
             tick: self.tick,
             marks: self.marks,
             colors: self.theme,

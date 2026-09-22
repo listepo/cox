@@ -149,6 +149,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 - `color` = `"auto"` — auto | none | 16 | 256 | true (NO_COLOR forces none)
 - `syntax_theme` = `""` — syntect theme for code, diffs and file output ("" follows theme); a `.tmTheme` file in `~/.cox/themes/` is merged in at startup and offered by `/theme` under a `syntax: ` prefix (T24.2)
+- `diff` = `"auto"` — auto | side | stacked — edit cards, the approval modal and Ctrl+G split old and new side by side from 120 columns (auto and side alike; narrower stays stacked), stacked never splits; replaced lines highlight the changed words (T24.5)
 - `git` = `true` — branch and +n -m in the status line, polled every 2 s
 - `caps` = `{}` — [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
 ## `[hooks]`

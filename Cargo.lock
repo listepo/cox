@@ -985,6 +985,7 @@ dependencies = [
  "ratatui",
  "rstest",
  "serde_json",
+ "similar 3.2.0",
  "syntect",
  "tempfile",
  "terminal-colorsaurus",
