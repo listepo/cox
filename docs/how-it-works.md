@@ -274,6 +274,32 @@ Useful companions: `cox sessions --grep <q>` (find a rollout),
 instruction files, skills, commands, agents, hooks, MCP servers are in
 effect).
 
+## What leaves the session is redacted
+
+Anything cox persists or prints outside the session passes through one
+helper, `cox_core::redact::scrub`, which replaces five secret shapes with
+`«redacted»`: `sk-…` API keys, `Bearer …` tokens, AWS `AKIA…` key ids,
+GitHub `ghp_…` tokens, and PEM blocks (from `-----BEGIN …` through their
+`-----END` line). Nothing the model needs for the task passes through it —
+redacting model input would break tasks that legitimately handle keys.
+
+Scrubbed: the rollout lines for `TextDelta`, `ToolCallOutput` and
+`ToolCallDone` text (the copy `Store::rollout_append` receives; the
+in-memory history keeps the original), and `cox run`'s `stream-json`,
+`json` and `text` output. Not scrubbed: user text, tool-call input and
+thinking (model input), the live TUI/ACP transcript (that *is* the
+session), and the tool-output archive (lossless by default). When the
+scrub changes a tool result, the session raises `Notice(Security, "tool
+output contained a secret-shaped string; redacted in the rollout")` right
+behind it.
+
+Two known holes are deliberate: a secret split across streamed deltas is
+redacted per delta only, and `resume` rebuilds history from the scrubbed
+rollout — a resumed turn's model input is the redacted copy. The
+remaining surfaces (`cox sessions --grep` lines, `cox expand` output,
+`logs/cox.log` fields, `cox record`'s cassettes) follow in the T28.4b
+follow-up card.
+
 ## Trust boundaries in one paragraph
 
 Model output, tool results, MCP responses, hook stdout, skill files, and

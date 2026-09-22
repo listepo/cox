@@ -28,7 +28,6 @@
 - T28.1. Status-line segments
 - T28.2. Project cost aggregate
 - T28.3. Pre-emptive compaction
-- T28.4. Unconditional redaction of what leaves the session
 - T29.1. `--plain` surface
 - T29.2. Reduced motion and daltonized themes
 - T30.1. `profile = "minimal"`

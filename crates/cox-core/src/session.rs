@@ -416,10 +416,29 @@ impl Session {
         if let Some(extra) = hooks::notification_payload(&ev) {
             let _ = hooks::fire_configured(self, HookEvent::Notification, extra).await;
         }
+        // T28.4: the rollout is what leaves the session, so the copy written
+        // here is scrubbed; `ev` — the in-memory history and every surface —
+        // keeps the original (redacting model input is out of scope).
+        let scrubbed = crate::redact::scrub_event(&ev);
+        let redacted = scrubbed.as_ref() != &ev && matches!(&ev, Event::ToolCallDone { .. });
         self.store
-            .rollout_append(&self.id, &ev)
+            .rollout_append(&self.id, scrubbed.as_ref())
             .map_err(|error| CoreError::Store { error })?;
         let _ = self.tx.send(ev).await;
+        // T28.4: a tool result the scrub changed raises the notice right
+        // behind it — PostToolUse's per-call signal, emitted where the
+        // change is detected so streamed output cannot dodge it either.
+        if redacted {
+            let notice = Event::Notice {
+                level: Level::Security,
+                text: "tool output contained a secret-shaped string; redacted in the rollout"
+                    .into(),
+            };
+            self.store
+                .rollout_append(&self.id, &notice)
+                .map_err(|error| CoreError::Store { error })?;
+            let _ = self.tx.send(notice).await;
+        }
         Ok(())
     }
 

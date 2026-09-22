@@ -14,6 +14,7 @@ mod dedup;
 mod hooks;
 pub mod memory_extract;
 pub mod permission;
+pub mod redact;
 mod rewind;
 mod rollout;
 pub mod router;
