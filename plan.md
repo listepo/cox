@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Статус | Приоритет | Сложность | Готовность | Агент |
 | --- | --- | --- | --- | --- | --- |
-| T22.1 | in progress | P0 | 3 | 40% | Claude Code / claude-sonnet-5 |
 | T22.2 | todo | P0 | 2 | 0% | |
 | T22.3 | todo | P0 | 2 | 0% | |
 | T22.4 | todo | P1 | 2 | 0% | |
@@ -981,21 +980,6 @@ ok
 
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
-
-#### T22.1 `ask_user` answered in the TUI
-
-Model: claude-sonnet-5 · Status: in progress · Depends: — · Size: ~170 · Priority: P0 · Complexity: 3
-Goal: a model call to `ask_user` blocks the turn until the user picks an option or types an answer in a modal; headless keeps `--answer`.
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `AskUserTool` already has `Answers::Surface(mpsc::Sender<Question>)` with `Question { call, question, options, reply: oneshot::Sender<String> }`; the binary constructs the TUI tool with `Answers::Fixed` (line ~403) — replace with `Surface(tx)` for `run_tui` only and forward each `Question` into the app loop as `Msg::Question(Question)`. (2) `modal.rs`: add `Question` beside `Approval`: numbered options (`1`–`9` select), a free-text row (`Enter` sends), `Esc` replies the empty string (the tool returns `is_error` "no answer"). (3) `state.rs`: `Msg::Question` sets `state.modal`; the answer goes through `reply.send` in `update` (a `Cmd::Answer` if `update` must stay pure — keep the sender in the modal struct and send in `app.rs`). (4) Status line shows `question` in the mode slot while the modal is open.
-Execution plan: `Modal`/`State` stay pure — the `oneshot::Sender` can't live in `State` (not `Clone`/`PartialEq`), so `app.rs` keeps it in a local `pending` map and resolves it on `Cmd::Answer`. Add `Modal::Question`/`Msg::Question`/`Cmd::Answer` in `state.rs`; render in `view.rs`; `status.rs` shows `[question]` while the modal is open. `session.rs` gets `with_question_surface()` (mirrors `with_client_tools()`) swapping `ask_user` to `Answers::Surface` by name inside `open()`, wired only from `run_tui()`; `run.rs`'s headless path passes `None`. New `crates/cox-tui/tests/question.rs` covers the modal (digit picks an option, Enter sends free text, Esc sends `None`) plus the `modal_question_with_options` snapshot; `status.rs` gets one assertion for the mode slot; `session.rs` gets `tui_question_surface_is_wired` proving the swapped tool round-trips an answer. `docs/tools.md`'s `ask_user` row gains "TUI: modal". Verify with the Check below, then `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, and a `COX_HOME` scratch smoke test.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui question_
-mise exec -- cargo nextest run -p cox tui_question_surface_is_wired
-```
-Done when: a scripted scenario with an `ask_user` call shows the modal frame (snapshot `modal_question_with_options`), `2⏎` returns the second option to the model, `Esc` returns an error result; `docs/tools.md` row for `ask_user` says "TUI: modal".
-Out of scope: ACP elicitation, MCP elicitation (both map onto the same modal later).
 
 #### T22.2 Skills index and file commands reach the session
 
