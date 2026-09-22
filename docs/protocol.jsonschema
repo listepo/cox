@@ -44,7 +44,8 @@
             "description": "The turn's ordinal in this session, 1-based; `/rewind` names\nturns by it and the `checkpoints` rows carry it (T26.1).",
             "type": "integer",
             "format": "uint32",
-            "minimum": 0
+            "minimum": 0,
+            "default": 0
           },
           "job": {
             "description": "Which job this turn is (usually `Job::Main`).",
@@ -66,7 +67,6 @@
         "required": [
           "type",
           "turn",
-          "seq",
           "job",
           "tier",
           "model"

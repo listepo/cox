@@ -100,15 +100,24 @@ pub async fn worktree_add(from: &Path, name: &str, owner: &str) -> Result<Worktr
         return Err(WorktreeError::BadName { name });
     }
     let main = main_checkout(from).await?;
-    let root = std::env::var_os("WT_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| worktrees_root(&main));
+    let root = resolve_worktrees_root(
+        &main,
+        std::env::var_os("WT_ROOT").map(PathBuf::from),
+        std::env::current_dir,
+    )?;
     let repo = main
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "repo".to_string());
     let path = root.join(format!("{repo}-{name}"));
     if let Some(record) = worktree_record(&main, &path).await? {
+        if record.branch.as_deref() != Some(name.as_str()) {
+            return Err(WorktreeError::BranchMismatch {
+                path,
+                expected: name,
+                actual: record.branch,
+            });
+        }
         match record.locked.as_deref() {
             None => {}
             Some(reason) if reason.starts_with(OWNER_PREFIX) => {}
@@ -121,7 +130,7 @@ pub async fn worktree_add(from: &Path, name: &str, owner: &str) -> Result<Worktr
         }
         return Ok(Worktree {
             path,
-            branch: record.branch.unwrap_or_else(|| name.clone()),
+            branch: name,
             main,
         });
     }
@@ -159,6 +168,24 @@ pub async fn worktree_add(from: &Path, name: &str, owner: &str) -> Result<Worktr
         branch: name,
         main,
     })
+}
+
+fn resolve_worktrees_root(
+    main: &Path,
+    override_root: Option<PathBuf>,
+    current_dir: impl FnOnce() -> std::io::Result<PathBuf>,
+) -> Result<PathBuf, WorktreeError> {
+    let root = match override_root {
+        Some(root) if root.is_absolute() => root,
+        Some(root) => current_dir()
+            .map(|cwd| cwd.join(root))
+            .map_err(|e| WorktreeError::Git {
+                args: "current_dir".into(),
+                stderr: e.to_string(),
+            })?,
+        None => worktrees_root(main),
+    };
+    Ok(root)
 }
 
 /// Unlocks and removes the worktree at `path`, keeping its branch (merging
@@ -223,6 +250,11 @@ async fn main_checkout(dir: &Path) -> Result<PathBuf, WorktreeError> {
         .ok_or_else(|| WorktreeError::NotARepository {
             dir: dir.to_path_buf(),
         })
+}
+
+/// The main checkout shared by `dir` and every linked worktree.
+pub async fn project_root(dir: &Path) -> Result<PathBuf, WorktreeError> {
+    main_checkout(dir).await
 }
 
 /// Nearest ancestor of `main` holding `_worktrees/`, else a new one next to
@@ -361,6 +393,31 @@ mod tests {
         assert_eq!(numstat(""), (0, 0));
     }
 
+    #[test]
+    fn relative_worktree_root_uses_process_working_directory() {
+        let main = Path::new("/repos/main");
+        let resolved =
+            resolve_worktrees_root(main, Some(PathBuf::from("relative/worktrees")), || {
+                Ok(PathBuf::from("/process/cwd"))
+            })
+            .expect("relative root");
+        assert_eq!(resolved, PathBuf::from("/process/cwd/relative/worktrees"));
+
+        let absolute =
+            resolve_worktrees_root(main, Some(PathBuf::from("/absolute/worktrees")), || {
+                Err(std::io::Error::other("must not read cwd"))
+            })
+            .expect("absolute root");
+        assert_eq!(absolute, PathBuf::from("/absolute/worktrees"));
+
+        assert!(matches!(
+            resolve_worktrees_root(main, Some(PathBuf::from("relative")), || {
+                Err(std::io::Error::other("cwd unavailable"))
+            }),
+            Err(WorktreeError::Git { args, .. }) if args == "current_dir"
+        ));
+    }
+
     /// A repository with one commit and one edited line, built with `-c`
     /// identity so the developer's global config never decides the result.
     async fn repo() -> Option<tempfile::TempDir> {
@@ -462,6 +519,32 @@ mod tests {
         assert!(matches!(
             worktree_add(&main, "t42", "cox / s1").await,
             Err(WorktreeError::LockedByOther { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn worktree_add_refuses_detached_record_at_requested_path() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let path = main
+            .parent()
+            .expect("parent")
+            .join("_worktrees")
+            .join("repo-detached");
+        fs::create_dir_all(path.parent().expect("worktree root")).expect("mkdir");
+        let path_s = path.display().to_string();
+        git(&main, &["worktree", "add", "--detach", &path_s, "HEAD"])
+            .await
+            .expect("detached worktree");
+
+        assert!(matches!(
+            worktree_add(&main, "detached", "cox / s1").await,
+            Err(WorktreeError::BranchMismatch {
+                actual: None,
+                expected,
+                ..
+            }) if expected == "detached"
         ));
     }
 

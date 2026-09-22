@@ -112,7 +112,7 @@ impl Session {
             inner.turn_seq
         };
         checkpoint::mark_turn(self, seq);
-        let roots = &self.config.core.workspace_roots;
+        let roots = self.writable_roots();
         let mut restored = Vec::new();
         let mut skipped = Vec::new();
         for row in targets {

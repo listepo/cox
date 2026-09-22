@@ -232,6 +232,9 @@ impl Tool for AgentTool {
                 worktree.as_ref().map(|wt| wt.path.clone()),
             )
             .map_err(core_error)?;
+        if let Some(wt) = &worktree {
+            child.set_writable_roots(vec![wt.path.clone()]);
+        }
         let Some(events) = child.events() else {
             return Err(ToolError::Io);
         };

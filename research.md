@@ -264,9 +264,9 @@ Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~
 | Convention | Who ships it | Confidence | cox today |
 |---|---|---|---|
 | `Shift+Tab` cycles into a read-only *plan* mode | Claude Code, Codex (`/plan` too), Copilot CLI; OpenCode uses `Tab` | high | `Tab` cycles default→plan→auto (§1.13); no plan-specific view |
-| Checkpoint before every edit, `/rewind` restores code, conversation or both | Claude Code (`Esc Esc`, ~30-day retention; bash-caused changes *not* tracked), Cursor CLI (`/rewind` timeline with per-turn diffs, branch-on-rewind), OpenCode (`/undo`, `/redo`, separate git object DB), Gemini CLI | high | none |
+| Checkpoint before every edit, `/rewind` restores code, conversation or both | Claude Code (`Esc Esc`, ~30-day retention; bash-caused changes *not* tracked), Cursor CLI (`/rewind` timeline with per-turn diffs, branch-on-rewind), OpenCode (`/undo`, `/redo`, separate git object DB), Gemini CLI | high | implemented in T26.1–T26.2, including shell-caused changes |
 | Queue messages while a turn runs; a *send-now* key interrupts and flushes | Claude Code (`Ctrl+Enter`, 2.1.275), Pi (queued messages pinned above the editor) | high | composer is blocked during a turn |
-| Subagents run in the background by default, isolated in git worktrees on request | Claude Code (`isolation: "worktree"`, agents map with per-agent cards), Codex (up to 6, "Smart Approvals" label the source thread), Copilot (`/fleet`, live subagent timing) | high | `agent` tool with presets; `/agents` lists sessions; approvals are not labelled by source; no worktree isolation (gate T19.5) |
+| Subagents run in the background by default, isolated in git worktrees on request | Claude Code (`isolation: "worktree"`, agents map with per-agent cards), Codex (up to 6, "Smart Approvals" label the source thread), Copilot (`/fleet`, live subagent timing) | high | `agent` tool with presets and worktree isolation (T27.3); `/agents` lists sessions; approvals are not labelled by source |
 | `/fork` / `/branch` and `/handoff` | Codex (`/fork`, `/side`), Claude Code (`/branch`, `--fork-session`), Amp (`/handoff` seeds a new thread) | high | none (`parent_id` column exists) |
 | `/context` token breakdown and a visible auto-compact threshold | Claude Code (`/context`, `/autocompact`), OpenCode v2 compacts *before* the call | high | `ctx %` and `cache %` in the status line; compaction after `TurnDone` only |
 | Themes as files, `/theme` with live preview; syntax themes from `.tmTheme` | Codex (32 themes, `.tmTheme` drop-in), Crush (`Ctrl+P` palette, `Ctrl+E` live editor), OpenCode ("system" theme derived from the terminal background, `{dark,light}` per colour) | high | `tui.theme = auto|dark|light` picks one of two syntect base16 themes; `auto` is not detected |
@@ -280,14 +280,14 @@ Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~
 | Voice input (`/voice`) | Claude Code, aider | high | none — out of scope (see plan §6) |
 | Remote control from phone/web, session keeps running locally | Claude Code Remote Control, Codex Remote, Amp Orbs, Cursor background agents | high | none — out of scope for v0.2 |
 | Scheduled agents / `/loop` | Claude Code Routines (cloud), Cursor CLI `/loop` (local) | high | none |
-| MCP OAuth, elicitation, 2026-07-28 spec (MRTR, list TTLs, MCP Apps extension; sampling deprecated) | Claude Code CLI, Copilot, Codex | high | stdio + HTTP; OAuth is a header comment, 401 servers are skipped (done.md T7.6) |
+| MCP OAuth, elicitation, 2026-07-28 spec (MRTR, list TTLs, MCP Apps extension; sampling deprecated) | Claude Code CLI, Copilot, Codex | high | stdio + HTTP and OAuth implemented (T22.5); elicitation and MCP Apps remain open |
 | ACP as an agent | OpenCode (Zed, JetBrains, Neovim), Goose, Amp via adapter; Claude Code/Codex/Cursor not listed as native ACP agents | med | `cox acp` (T11.1) — a real lead |
 | `AGENTS.md` under the Agentic AI Foundation, 60 k+ repos; Claude Code reads it since 2.1.277 | everyone | high | yes (T7.1) |
 | Native Windows sandbox | Codex only (restricted tokens/ACLs, "experimental") | high | none, loud warning (D7) |
 
 ### 8.2 What users complain about (the gaps a newcomer can win on)
 
-- **Trust**: silent model downgrades and routing (Claude Code April 2026 incident, Gemini CLI Pro→Flash), MCP OAuth expiring silently, hallucinated tool results. cox's D5 ("never up, never silent") and the ledger are the answer; the remaining work is *showing* it (plan P28). [high]
+- **Trust**: silent model downgrades and routing (Claude Code April 2026 incident, Gemini CLI Pro→Flash), expired credentials in the wider field, hallucinated tool results. cox's D5 ("never up, never silent"), keyring-backed MCP OAuth (T22.5), and the ledger are the answer; the remaining work is *showing* it (plan P28). [high]
 - **Noise in multi-agent views**: Codex #12047 "raw scaffolding noise", approvals popping from unnamed threads. [high]
 - **"It does not look good yet"** even for Codex (#2609, #21130: semantic colours beyond syntax, Plan/Build switcher). Crush is the reference for looks; OpenCode for "genuinely pleasant" clarity of tool calls and diffs. [high]
 - **Footprint**: OpenCode ~1 GB RSS "for a TUI", Goose loads whole sessions into memory, Copilot CLI Node OOM. A Rust binary with a measured RSS is a marketing fact cox has not published. [high]
@@ -329,19 +329,19 @@ Codex TUI structure worth copying (R§1.6 confirmed by two independent code read
 | Windows sandbox | no | no | yes (exp.) | no | no | part (proxies) | ? | no | no |
 | Permission rules, deny wins | yes | yes | yes | ? | ? | yes | ? | no | no |
 | Plan mode | part | yes | yes | yes | ? | yes | yes | no (`oh-my-pi`) | no |
-| Checkpoints / rewind | **no** | yes | ? | yes | ? | ? | yes | no | part (git commits) |
-| Bash-caused changes in rewind | no | no | ? | yes (worktree snapshots) | ? | ? | ? | no | yes (commits) |
+| Checkpoints / rewind | **yes** | yes | ? | yes | ? | ? | yes | no | part (git commits) |
+| Bash-caused changes in rewind | **yes** | no | ? | yes (worktree snapshots) | ? | ? | ? | no | yes (commits) |
 | Queued messages + send-now | **no** | yes | ? | ? | ? | ? | ? | yes | no |
 | Background subagents | part | yes | yes | yes | ? | yes | yes | no | no |
 | Approval labelled by source agent | no | yes | yes | ? | ? | yes | ? | n/a | n/a |
-| Worktree isolation | no | yes | yes | part (community) | ? | yes | ? | no | no |
+| Worktree isolation | **yes** | yes | yes | part (community) | ? | yes | ? | no | no |
 | `/fork`, `/handoff` | no | yes | yes | ? | ? | ? | yes (rewind branch) | no | no |
 | `/loop` / scheduled | no | yes | part | ? | ? | ? | yes | no | no |
 | Hooks (events) | yes (11 of 13 fire) | yes (30+) | part | yes (25+) | part | ? | ? | no | no |
 | Skills (`SKILL.md`) | part (discovered, not in context) | yes | ? | ? | yes | ? | ? | yes | no |
 | Custom slash commands from files | part (`cox ext list` only) | yes | yes | yes | ? | yes | yes | yes | no |
 | MCP client | yes | yes | yes | yes | yes | yes | yes | no | part |
-| MCP OAuth | **no** | yes | yes | ? | yes | yes | ? | no | no |
+| MCP OAuth | **yes** | yes | yes | ? | yes | yes | ? | no | no |
 | MCP elicitation | no | yes (CLI) | ? | ? | ? | ? | ? | no | no |
 | ACP server | **yes** | ? | ? | yes | ? | ? | ? | ? | ? |
 | `cox mcp` (tools as an MCP server) | **yes** | no | yes | no | no | no | no | no | no |
@@ -370,7 +370,7 @@ Codex TUI structure worth copying (R§1.6 confirmed by two independent code read
 | Repo map | no (gate T19.6) | no | no | ? | ? | no | no | no | yes |
 | LSP diagnostics after edit | no (gate T19.2) | part | part | yes | yes | ? | ? | part (ext) | no |
 
-Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, `cox mcp`, ACP, multi-provider) are ahead of every vendor; the *surface* is a generation behind (no rewind, no queue, no themes, dead config keys, a fixed-answer `ask_user`). The plan therefore spends P22–P26 on the surface and keeps the core decisions.
+Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, `cox mcp`, ACP, multi-provider) are ahead of every vendor; checkpoints and rewind now close one major surface gap, while the remaining gaps include no queue, no themes, dead config keys, and a fixed-answer `ask_user`. The plan therefore spends P22–P26 on the surface and keeps the core decisions.
 
 ### 8.5 Fact-check ledger additions
 

@@ -53,6 +53,13 @@ pub async fn open(
         loaded.config.core.workspace_roots =
             vec![config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())];
     }
+    let worktree_main = if cli.worktree.is_some() {
+        let main = project_root(cwd).await;
+        add_read_root(&mut loaded.config, &main);
+        Some(main)
+    } else {
+        None
+    };
     // T9.1 step 4 (generalised): a non-first-party `tiers.code.provider`
     // maps every tier to the same server; the router then pins each tier to
     // that provider's section model, so a `--provider deepseek` flip works
@@ -94,6 +101,9 @@ pub async fn open(
             cwd.to_path_buf(),
         )?,
     };
+    if worktree_main.is_some() {
+        session.set_writable_roots(vec![cwd.to_path_buf()]);
+    }
     // A14: the presence hook wraps the user's shell hooks so the other
     // sessions of this workspace see every surface, `--no-hooks` or not.
     let shell: Option<Arc<dyn Hook>> = loaded.config.hooks.enabled.then(|| {
@@ -104,14 +114,7 @@ pub async fn open(
     });
     // T27.3: a worktree session's project is still the main checkout, so
     // the sessions of one repository see each other whatever tree they edit.
-    let project = match &cli.worktree {
-        Some(_) => cli
-            .add_dir
-            .last()
-            .cloned()
-            .unwrap_or_else(|| cwd.to_path_buf()),
-        None => config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()),
-    };
+    let project = project_root(cwd).await;
     session.set_hook(Arc::new(
         cox_ext::presence::PresenceHook::new(
             home.clone(),
@@ -132,9 +135,9 @@ pub async fn open(
 }
 
 /// `--worktree <name>` (T27.3): creates or reuses the worktree, then makes
-/// the rest of the run see it as `--cwd <worktree> --add-dir <main>`, so
-/// the session's roots are the worktree first and the main checkout for
-/// reading. Returns the new cwd. Runs before config is loaded because the
+/// the rest of the run see it as `--cwd <worktree>`; [`open`] adds the main
+/// checkout as a read-only root after config loading. Returns the new cwd.
+/// Runs before config is loaded because the
 /// project config is read from the worktree like everything else.
 pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
     let Some(name) = cli.worktree.clone() else {
@@ -143,9 +146,21 @@ pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
     let owner = format!("cox / pid {}", std::process::id());
     let rt = tokio::runtime::Runtime::new()?;
     let wt = rt.block_on(cox_tools::git::worktree_add(cwd, &name, &owner))?;
-    cli.add_dir.push(wt.main.clone());
     cli.cwd = Some(wt.path.clone());
     Ok(wt.path)
+}
+
+/// One worktree-aware project identity for presence writes and polling.
+async fn project_root(cwd: &Path) -> PathBuf {
+    cox_tools::git::project_root(cwd)
+        .await
+        .unwrap_or_else(|_| config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf()))
+}
+
+fn add_read_root(config: &mut Config, root: &Path) {
+    if !config.core.workspace_roots.iter().any(|r| r == root) {
+        config.core.workspace_roots.push(root.to_path_buf());
+    }
 }
 
 /// After `/quit` in a worktree session: a clean tree is offered for
@@ -249,6 +264,7 @@ fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    let project = rt.block_on(project_root(cwd));
     let mut resume_spec = if cli.r#continue {
         let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
         let history = resume::from_home(&home, &id.to_string())?;
@@ -262,15 +278,13 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     };
     let mut first = true;
     loop {
-        let seed = resume_spec
-            .as_ref()
-            .map(|(_, history)| history.messages.clone());
+        let seed = resume_spec.as_ref().map(|(_, history)| history.clone());
         let (session, loaded) =
             rt.block_on(open(cli, cwd, None, |_| {}, resume_spec.take(), true))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
-        if let Some(messages) = seed {
-            state.transcript_from_history(&messages);
+        if let Some(history) = seed {
+            state.transcript_from_history(&history);
         }
         state.files = cox_tools::glob::workspace_files(cwd);
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
@@ -302,7 +316,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
         let poll = {
             let home = home.clone();
-            let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+            let project = project.clone();
             let me = session.id();
             let git = config.tui.git;
             let dir = cwd.to_path_buf();
@@ -587,13 +601,20 @@ mod tests {
         let root = std::fs::canonicalize(tmp.path()).expect("canon");
         assert_eq!(cwd, root.join("_worktrees").join("repo-t9"));
         assert!(cwd.join("a.txt").is_file(), "the worktree is checked out");
-        let loaded = config_load::load(&cwd, &cli).expect("load");
-        assert_eq!(
-            loaded.config.core.workspace_roots,
-            vec![repo.clone(), cwd.clone()],
-            "main checkout for reading, the worktree as cwd"
-        );
+        let mut loaded = config_load::load(&cwd, &cli).expect("load");
+        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone()]);
+        assert!(cli.add_dir.is_empty(), "the main checkout is not writable");
+        let project = rt_project_root(&cwd);
+        assert_eq!(project, repo);
+        add_read_root(&mut loaded.config, &project);
+        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone(), repo]);
         assert_eq!(cli.cwd.as_deref(), Some(cwd.as_path()));
+    }
+
+    fn rt_project_root(cwd: &Path) -> PathBuf {
+        tokio::runtime::Runtime::new()
+            .expect("runtime")
+            .block_on(project_root(cwd))
     }
 
     fn deepseek_config(api: &str) -> Config {

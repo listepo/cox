@@ -1,0 +1,9 @@
+[[turn]]
+text = "two unknown writes"
+tool_calls = [
+  { name = "unknown", input = {} },
+  { name = "unknown", input = {} },
+]
+
+[[turn]]
+text = "done"

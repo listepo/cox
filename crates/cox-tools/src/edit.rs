@@ -98,7 +98,7 @@ impl Tool for EditTool {
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
-        let path = confine(&cx.roots, &cx.cwd, &path_arg)?;
+        let path = confine(&cx.writable_roots, &cx.cwd, &path_arg)?;
 
         let raw = std::fs::read(&path).map_err(|_| ToolError::NotFound)?;
         if raw.contains(&0) {

@@ -42,8 +42,9 @@ pub const REWIND_WHAT: [&str; 3] = [
 /// One `/rewind` row: `T7 · 3 files · "add the cache column"`.
 pub fn turn_entry(seq: u32, files: usize, text: &str) -> String {
     const MAX: usize = 48;
-    let mut short: String = text.chars().take(MAX).collect();
-    if text.chars().count() > MAX {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut short: String = flat.chars().take(MAX).collect();
+    if flat.chars().count() > MAX {
         short.push('…');
     }
     format!("T{seq} · {files} files · \"{short}\"")
@@ -292,6 +293,10 @@ mod tests {
         assert_eq!(turn_of_entry(&row), Some(7));
         let long = turn_entry(12, 0, &"x".repeat(60));
         assert!(long.ends_with("…\""));
+        assert_eq!(
+            turn_entry(8, 1, "first\n\tsecond   third"),
+            "T8 · 1 files · \"first second third\""
+        );
         assert_eq!(turn_of_entry("both — files and conversation"), None);
     }
 

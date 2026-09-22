@@ -31,6 +31,7 @@ fn cx(root: PathBuf) -> ToolCx {
     let (tx, _rx) = mpsc::channel(16);
     ToolCx {
         roots: vec![root.clone()],
+        writable_roots: vec![root.clone()],
         cwd: root,
         sandbox: SandboxPolicy {
             mode: SandboxMode::WorkspaceWrite,
@@ -63,6 +64,29 @@ fn write_fixture(content: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("f.txt"), content).expect("write fixture");
     dir
+}
+
+#[tokio::test]
+async fn edit_cannot_mutate_a_read_only_workspace_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let main = dir.path().join("main");
+    let worktree = dir.path().join("worktree");
+    std::fs::create_dir_all(&main).expect("main");
+    std::fs::create_dir_all(&worktree).expect("worktree");
+    let file = main.join("f.txt");
+    std::fs::write(&file, "old").expect("fixture");
+    let mut cx = cx(worktree.clone());
+    cx.roots.push(main.clone());
+
+    let result = EditTool
+        .call(
+            serde_json::json!({"path": file, "old": "old", "new": "new"}),
+            &cx,
+        )
+        .await;
+
+    assert!(result.is_err());
+    assert_eq!(std::fs::read_to_string(file).expect("unchanged"), "old");
 }
 
 proptest! {

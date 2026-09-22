@@ -319,12 +319,12 @@ impl Tool for ApplyPatchTool {
         let mut resolved = BTreeMap::new();
         for op in &patch.ops {
             let path = op.path().to_string();
-            resolved.insert(path.clone(), confine(&cx.roots, &cx.cwd, &path)?);
+            resolved.insert(path.clone(), confine(&cx.writable_roots, &cx.cwd, &path)?);
             if let Op::Update {
                 move_to: Some(to), ..
             } = op
             {
-                resolved.insert(to.clone(), confine(&cx.roots, &cx.cwd, to)?);
+                resolved.insert(to.clone(), confine(&cx.writable_roots, &cx.cwd, to)?);
             }
         }
 

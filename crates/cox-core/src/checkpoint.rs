@@ -44,7 +44,7 @@ pub(crate) async fn before(
     if tool.risk(input) == Risk::ReadOnly {
         return Pending::Done;
     }
-    let roots = &session.config.core.workspace_roots;
+    let roots = session.writable_roots();
     if let Some(paths) = tool.touches(input) {
         let files = cp
             .preimages(roots, &session.cwd, &paths)
@@ -74,7 +74,7 @@ pub(crate) async fn after(session: &Session, turn: TurnId, call: CallId, pending
     let Some(cp) = session.checkpointer() else {
         return;
     };
-    let roots = &session.config.core.workspace_roots;
+    let roots = session.writable_roots();
     let changes = async {
         let later = cp.snapshot(roots).await?;
         cp.changes(&earlier, &later).await

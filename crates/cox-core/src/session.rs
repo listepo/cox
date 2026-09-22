@@ -121,6 +121,9 @@ pub struct Session {
     /// Where pre-images come from (T26.1); installed by the surface like
     /// the hook, shared with children. Absent in tests and in `cox mcp`.
     checkpointer: Arc<OnceLock<Arc<dyn Checkpointer>>>,
+    /// Roots mutation may target. Empty until a worktree-isolated surface
+    /// narrows it; ordinary sessions write anywhere they can read.
+    writable_roots: Arc<OnceLock<Vec<PathBuf>>>,
     /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
     /// installed by the surface, shared with children. Absent in tests.
     worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
@@ -245,15 +248,12 @@ impl Session {
                 Some((id, history)) => {
                     let truncated_notice = history.truncated_notice();
                     let turn_marks = history
-                        .messages
+                        .turn_marks
                         .iter()
-                        .enumerate()
-                        .filter(|(_, m)| m.role == Role::User)
-                        .zip(1u32..)
-                        .map(|((start, _), seq)| TurnMark {
-                            item: ItemId::new(),
-                            start,
-                            seq,
+                        .map(|mark| TurnMark {
+                            item: mark.item,
+                            start: mark.message_index,
+                            seq: mark.seq,
                         })
                         .collect();
                     (
@@ -309,6 +309,7 @@ impl Session {
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),
             checkpointer: Arc::new(OnceLock::new()),
+            writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
             tx,
@@ -438,6 +439,18 @@ impl Session {
 
     pub(crate) fn checkpointer(&self) -> Option<Arc<dyn Checkpointer>> {
         self.checkpointer.get().cloned()
+    }
+
+    /// Narrows mutations without hiding read-only workspace roots.
+    pub fn set_writable_roots(&self, roots: Vec<PathBuf>) {
+        let _ = self.writable_roots.set(roots);
+    }
+
+    pub(crate) fn writable_roots(&self) -> &[PathBuf] {
+        self.writable_roots
+            .get()
+            .map(Vec::as_slice)
+            .unwrap_or(&self.config.core.workspace_roots)
     }
 
     /// Installs the worktree provider (T27.3); a second call is ignored

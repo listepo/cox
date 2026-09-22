@@ -258,3 +258,73 @@ async fn checkpoint_row_exists_before_write() {
         vec![(true, "rows=1".to_string()), (true, "rows=2".to_string())]
     );
 }
+
+/// A mutating tool with unknown paths must not overlap another snapshot
+/// window even when its advertised concurrency is parallel.
+struct ParallelUnknown {
+    active: Arc<AtomicU32>,
+    max_active: Arc<AtomicU32>,
+}
+
+#[async_trait]
+impl Tool for ParallelUnknown {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "unknown".into(),
+            description: "parallel tool with unknown writes".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+            deferred: false,
+            risk: Risk::Exec,
+            concurrency: Concurrency::Parallel,
+        }
+    }
+
+    fn subject(&self, _input: &Value) -> String {
+        "unknown".into()
+    }
+
+    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_active.fetch_max(active, Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        Ok(ToolOutput {
+            text: "done".into(),
+            is_error: false,
+            diff: None,
+            structured: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn unknown_mutations_are_serialized_before_snapshotting() {
+    let mut config = allow_all();
+    config.permissions.allow.push("unknown".into());
+    config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
+    let provider = Arc::new(
+        cox_provider::scripted::Scripted::from_toml(&scenario("checkpoint_parallel_unknown"), "")
+            .expect("scenario"),
+    );
+    let store = Arc::new(cox_core::MemoryStore::new());
+    let active = Arc::new(AtomicU32::new(0));
+    let max_active = Arc::new(AtomicU32::new(0));
+    let session = cox_core::Session::new(
+        config,
+        provider,
+        vec![Arc::new(ParallelUnknown {
+            active,
+            max_active: max_active.clone(),
+        })],
+        store.clone(),
+        store,
+        PathBuf::from("/tmp/cox-turn"),
+    )
+    .expect("session");
+    let mut rx = session.events().expect("events once");
+    let running = spawn_turn(&session, "serialize");
+    let _events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+
+    assert_eq!(max_active.load(Ordering::SeqCst), 1);
+}

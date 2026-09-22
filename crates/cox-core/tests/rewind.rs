@@ -260,6 +260,14 @@ async fn resume_after_rewind_stops_at_marker() {
         "{users:?}"
     );
     assert_eq!(history.turns, 3);
+    assert_eq!(
+        history
+            .turn_marks
+            .iter()
+            .map(|mark| (mark.seq, mark.message_index))
+            .collect::<Vec<_>>(),
+        vec![(1, 0), (3, 2)]
+    );
 }
 
 #[tokio::test]

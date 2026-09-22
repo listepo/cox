@@ -187,7 +187,10 @@ impl Tool for BashTool {
         let run = run(
             &cmd,
             &cx.cwd,
-            &cx.roots,
+            Workspace {
+                read: &cx.roots,
+                write: &cx.writable_roots,
+            },
             &cx.sandbox,
             &cx.cancel,
             &cx.output,
@@ -236,7 +239,12 @@ fn denial(text: &str) -> Option<String> {
 /// `TaskCompleted` and a way to fetch the row by task id arrive with T9.2.
 fn background(cmd: Cmd, timeout: Duration, cx: &ToolCx) -> ToolOutput {
     let task = TaskId::new();
-    let (cwd, roots, sandbox) = (cx.cwd.clone(), cx.roots.clone(), cx.sandbox.clone());
+    let (cwd, roots, writable_roots, sandbox) = (
+        cx.cwd.clone(),
+        cx.roots.clone(),
+        cx.writable_roots.clone(),
+        cx.sandbox.clone(),
+    );
     let archive = cx.archive.clone();
     let (session, call) = (cx.session, cx.call);
     let subject = cmd.line.clone();
@@ -247,7 +255,10 @@ fn background(cmd: Cmd, timeout: Duration, cx: &ToolCx) -> ToolOutput {
         if let Ok(run) = run(
             &cmd,
             &cwd,
-            &roots,
+            Workspace {
+                read: &roots,
+                write: &writable_roots,
+            },
             &sandbox,
             &CancellationToken::new(),
             &sink,
@@ -309,9 +320,10 @@ fn command_for(
     cmd: &Cmd,
     cwd: &Path,
     roots: &[PathBuf],
+    writable_roots: &[PathBuf],
     sandbox: &SandboxPolicy,
 ) -> Result<Command, ToolError> {
-    let mut cmd = crate::sandbox::command(sandbox, roots, &cmd.shell, &cmd.line)
+    let mut cmd = crate::sandbox::command(sandbox, roots, writable_roots, &cmd.shell, &cmd.line)
         .map_err(|_| ToolError::Io)?;
     cmd.current_dir(cwd);
     cmd.env_clear();
@@ -356,7 +368,7 @@ fn signal(pid: u32, sig: Signal) {
 async fn run(
     cmd: &Cmd,
     cwd: &Path,
-    roots: &[PathBuf],
+    workspace: Workspace<'_>,
     sandbox: &SandboxPolicy,
     cancel: &CancellationToken,
     output: &mpsc::Sender<String>,
@@ -370,7 +382,7 @@ async fn run(
         ws_ypixel: 0,
     };
     let pty = openpty(&size, None::<&Termios>).map_err(|_| ToolError::Io)?;
-    let mut child = command_for(cmd, cwd, roots, sandbox)?;
+    let mut child = command_for(cmd, cwd, workspace.read, workspace.write, sandbox)?;
     attach_pty(&mut child, &pty.slave)?;
     let mut child = child.spawn().map_err(|_| ToolError::Io)?;
     let pid = child.id();
@@ -479,6 +491,12 @@ async fn run(
     }
     run.elapsed = start.elapsed();
     Ok(run)
+}
+
+#[derive(Clone, Copy)]
+struct Workspace<'a> {
+    read: &'a [PathBuf],
+    write: &'a [PathBuf],
 }
 
 /// Whether the master has bytes to read within `timeout`, so the reader

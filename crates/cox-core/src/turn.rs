@@ -172,7 +172,8 @@ pub(crate) async fn run_tools(
             }
         };
         session.dedup_invalidate(call.risk, &call.subject).await;
-        if tool.spec().concurrency == Concurrency::Exclusive {
+        let needs_snapshot = call.risk != Risk::ReadOnly && tool.touches(&call.input).is_none();
+        if tool.spec().concurrency == Concurrency::Exclusive || needs_snapshot {
             serial.push((id, tool, call.input));
         } else {
             parallel.push((id, tool, call.input));
@@ -370,6 +371,7 @@ async fn run_one(
     let (out_tx, mut out_rx) = mpsc::channel::<String>(32);
     let mut cx = ToolCx {
         roots: session.config.core.workspace_roots.clone(),
+        writable_roots: session.writable_roots().to_vec(),
         cwd: session.cwd.clone(),
         sandbox: SandboxPolicy {
             mode: session.config.sandbox.mode,

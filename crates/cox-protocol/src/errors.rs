@@ -307,6 +307,16 @@ pub enum WorktreeError {
         /// The path asked about.
         path: PathBuf,
     },
+    /// A registered path belongs to another branch (or is detached).
+    #[error("{path:?} is on branch {actual:?}, expected {expected:?}")]
+    BranchMismatch {
+        /// The registered worktree path.
+        path: PathBuf,
+        /// The requested branch.
+        expected: String,
+        /// The branch Git reported; `None` means detached HEAD.
+        actual: Option<String>,
+    },
     /// The lock reason names someone else; leave it and tell the creator.
     #[error("{path:?} is locked by another owner ({reason})")]
     LockedByOther {

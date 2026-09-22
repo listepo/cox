@@ -32,6 +32,7 @@ fn cx() -> ToolCx {
     let (tx, _rx) = mpsc::channel(1);
     ToolCx {
         roots: vec![PathBuf::from("/tmp")],
+        writable_roots: vec![PathBuf::from("/tmp")],
         cwd: PathBuf::from("/tmp"),
         sandbox: SandboxPolicy {
             mode: SandboxMode::ReadOnly,

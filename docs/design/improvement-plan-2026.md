@@ -19,8 +19,9 @@ The surface is a generation behind, and some of it is silently broken (research 
 | `tui.theme = "auto"` is `dark` unless the string is `light` | light terminals get a dark syntax theme |
 | skills index and `.claude/commands` reach only `cox ext list` | skills never enter `system[2]`; `/name` commands are not in the palette |
 | `SessionStart` and `Notification` hooks never fire | a Claude Code hook set imported per D4 is partly dead |
-| MCP OAuth is a header comment; a 401 server is skipped | HTTP servers with auth silently vanish |
-| no checkpoint, no message queue, no themes, no notifications, no keybindings, no plan-mode view | the 2026 table stakes in research §8.1 |
+| MCP OAuth is implemented (T22.5) | HTTP MCP servers can authenticate and refresh through the keyring-backed flow |
+| checkpoints/rewind and worktree isolation are implemented (T26.1–T26.2, T27.3) | shell-caused changes are recoverable and isolated agents keep the main checkout read-only |
+| no message queue, themes, notifications, keybindings, or plan-mode view | the remaining 2026 table stakes in research §8.1 |
 
 ## 2. Principles
 
@@ -71,7 +72,7 @@ Sum of complexity (1–5, from the `plan.md` table): P0 13 tasks / 37; P1 21 tas
 | Consumer-subscription OAuth for Anthropic | policy (research §8.2, ledger #34); API keys + keyring remain |
 | Windows sandbox | D7 keeps the loud warning; Codex's restricted-token approach is a v0.3 scope gate, not a task |
 | Agent teams with a shared task file, orchestration DSL | valuable, but each is a phase of its own after P27 proves background agents |
-| MCP Apps (`ui://` resources), elicitation | after T22.5 OAuth; elicitation maps onto T22.1's question modal — a follow-up card |
+| MCP Apps (`ui://` resources), elicitation | OAuth shipped in T22.5; elicitation maps onto T22.1's question modal — a follow-up card |
 | Repo map, LSP diagnostics, images, WASM | already gated (T19.1–T19.6); P26/P27 do not depend on them |
 
 ## 7. Dependencies that need approval

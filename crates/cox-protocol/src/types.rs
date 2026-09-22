@@ -738,6 +738,7 @@ pub enum Event {
         turn: TurnId,
         /// The turn's ordinal in this session, 1-based; `/rewind` names
         /// turns by it and the `checkpoints` rows carry it (T26.1).
+        #[serde(default)]
         seq: u32,
         /// Which job this turn is (usually `Job::Main`).
         job: Job,
@@ -1192,6 +1193,20 @@ mod tests {
         let json = serde_json::to_string(&event).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(event, back);
+    }
+
+    #[test]
+    fn turn_started_without_seq_defaults_to_zero() {
+        let turn = TurnId::new();
+        let json = serde_json::json!({
+            "type": "turn_started",
+            "turn": turn,
+            "job": "main",
+            "tier": "code",
+            "model": "m"
+        });
+        let event: Event = serde_json::from_value(json).expect("old rollout line");
+        assert!(matches!(event, Event::TurnStarted { seq: 0, .. }));
     }
 
     #[rstest]

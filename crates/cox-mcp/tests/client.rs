@@ -72,6 +72,7 @@ fn cx() -> ToolCx {
     let (tx, _rx) = tokio::sync::mpsc::channel(4);
     ToolCx {
         roots: vec![PathBuf::from("/tmp")],
+        writable_roots: vec![PathBuf::from("/tmp")],
         cwd: PathBuf::from("/tmp"),
         sandbox: SandboxPolicy {
             mode: SandboxMode::ReadOnly,
@@ -98,6 +99,7 @@ async fn serve() -> (McpClient, tokio::task::JoinHandle<()>) {
         Arc::new(Open),
         CxTemplate {
             roots: vec![PathBuf::from("/tmp")],
+            writable_roots: vec![PathBuf::from("/tmp")],
             cwd: PathBuf::from("/tmp"),
             sandbox: cx().sandbox,
             archive: Arc::new(NoArchive),

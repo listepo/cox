@@ -5,8 +5,8 @@
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Level, Message, PermissionMode, Presence, Role, SandboxMode,
-    Submission, Tier, ToolCall, ToolResult,
+    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, Submission, Tier,
+    ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -272,8 +272,8 @@ impl State {
     }
 
     /// Seeds the transcript from reconstructed session history so resume is not blank.
-    pub fn transcript_from_history(&mut self, messages: &[Message]) {
-        for message in messages {
+    pub fn transcript_from_history(&mut self, history: &cox_core::History) {
+        for (message_index, message) in history.messages.iter().enumerate() {
             match message.role {
                 Role::User => {
                     let text = message
@@ -286,6 +286,18 @@ impl State {
                         .collect::<Vec<_>>()
                         .join("");
                     if !text.is_empty() {
+                        if let Some(mark) = history
+                            .turn_marks
+                            .iter()
+                            .find(|mark| mark.message_index == message_index)
+                        {
+                            self.turns.push(TurnRow {
+                                seq: mark.seq,
+                                text: text.clone(),
+                                files: mark.checkpoints,
+                                cell_at: self.transcript.len(),
+                            });
+                        }
                         self.transcript.push(Cell::User {
                             text,
                             attachments: vec![],
@@ -315,6 +327,7 @@ impl State {
                 }
             }
         }
+        self.current_seq = history.turns;
     }
 
     /// What `cells::cell_lines` needs for a `width`-column render.
@@ -335,6 +348,9 @@ impl State {
     /// everything behind it in the viewport.
     pub fn take_finished(&mut self) -> Vec<Cell> {
         let n = self.transcript.iter().take_while(|c| c.done()).count();
+        for turn in &mut self.turns {
+            turn.cell_at = turn.cell_at.saturating_sub(n);
+        }
         self.transcript.drain(..n).collect()
     }
 
@@ -799,6 +815,7 @@ fn on_event(state: &mut State, ev: Event) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cox_core::{History, HistoryTurn};
     use cox_protocol::types::{Content, Message, PermissionMode, Role, SandboxMode};
     use crossterm::event::{KeyCode, KeyEvent};
 
@@ -819,7 +836,19 @@ mod tests {
             },
         ];
         let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
-        state.transcript_from_history(&messages);
+        state.transcript_from_history(&History {
+            messages: messages.to_vec(),
+            permission_mode: PermissionMode::Default,
+            grants: Vec::new(),
+            truncated: false,
+            turns: 4,
+            turn_marks: vec![HistoryTurn {
+                item: ItemId::new(),
+                seq: 4,
+                message_index: 0,
+                checkpoints: 2,
+            }],
+        });
         assert_eq!(state.transcript.len(), 2);
         assert!(matches!(
             &state.transcript[0],
@@ -829,6 +858,40 @@ mod tests {
             &state.transcript[1],
             Cell::Assistant { text, done: true, .. } if text == "hi there"
         ));
+        assert_eq!(state.turns[0].seq, 4);
+        assert_eq!(state.turns[0].files, 2);
+        assert_eq!(state.current_seq, 4);
+    }
+
+    #[test]
+    fn take_finished_rebases_turn_cell_indices() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.transcript.push(Cell::User {
+            text: "one".into(),
+            attachments: Vec::new(),
+        });
+        state.transcript.push(Cell::User {
+            text: "two".into(),
+            attachments: Vec::new(),
+        });
+        state.turns = vec![
+            TurnRow {
+                seq: 1,
+                text: "one".into(),
+                files: 0,
+                cell_at: 0,
+            },
+            TurnRow {
+                seq: 2,
+                text: "two".into(),
+                files: 0,
+                cell_at: 1,
+            },
+        ];
+
+        assert_eq!(state.take_finished().len(), 2);
+        assert_eq!(state.turns[0].cell_at, 0);
+        assert_eq!(state.turns[1].cell_at, 0);
     }
 
     #[test]

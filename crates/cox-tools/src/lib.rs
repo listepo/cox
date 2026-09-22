@@ -48,8 +48,10 @@ pub fn tool_cx(
     session: SessionId,
     call: CallId,
 ) -> ToolCx {
+    let writable_roots = roots.clone();
     ToolCx {
         roots,
+        writable_roots,
         cwd,
         sandbox,
         archive,

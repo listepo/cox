@@ -32,6 +32,7 @@ impl Archive for NoArchive {
 fn cx() -> ToolCx {
     ToolCx {
         roots: vec![PathBuf::from(".")],
+        writable_roots: vec![PathBuf::from(".")],
         cwd: PathBuf::from("."),
         sandbox: SandboxPolicy {
             mode: SandboxMode::ReadOnly,

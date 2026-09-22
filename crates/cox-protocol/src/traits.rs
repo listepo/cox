@@ -185,8 +185,11 @@ pub trait Provider: Send + Sync {
 /// boundary (AGENTS.md) — paths still go through `cox_tools::path::confine`,
 /// commands still go through `cox_tools::sandbox`.
 pub struct ToolCx {
-    /// Workspace roots the call may read/write within.
+    /// Workspace roots the call may read within.
     pub roots: Vec<PathBuf>,
+    /// Workspace roots the call may mutate. Normally identical to `roots`;
+    /// isolated worktrees omit the main checkout from this set.
+    pub writable_roots: Vec<PathBuf>,
     /// The call's working directory.
     pub cwd: PathBuf,
     /// The sandbox policy in effect for this call.

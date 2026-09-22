@@ -80,6 +80,7 @@ pub fn backend(linux: LinuxBackend) -> Option<Backend> {
 pub fn command(
     policy: &SandboxPolicy,
     roots: &[PathBuf],
+    writable_roots: &[PathBuf],
     shell: &Path,
     command: &str,
 ) -> io::Result<Command> {
@@ -94,7 +95,7 @@ pub fn command(
     let scratch = scratch(policy.mode);
     let argv: Vec<String> = match backend {
         Some(Backend::Seatbelt) => {
-            let profile = seatbelt::profile(policy, roots, &scratch);
+            let profile = seatbelt::profile(policy, writable_roots, &scratch);
             let mut argv = vec![
                 SANDBOX_EXEC.to_string(),
                 "-p".to_string(),
@@ -104,7 +105,7 @@ pub fn command(
             argv.extend(shell);
             argv
         }
-        Some(Backend::Bwrap) => bwrap::argv(policy, roots, &scratch, &shell),
+        Some(Backend::Bwrap) => bwrap::argv(policy, roots, writable_roots, &scratch, &shell),
         Some(Backend::Landlock) | None => shell.to_vec(),
     };
     let mut cmd = Command::new(&argv[0]);
@@ -112,7 +113,7 @@ pub fn command(
     #[cfg(target_os = "linux")]
     if backend == Some(Backend::Landlock) {
         use std::os::unix::process::CommandExt;
-        let guard = landlock::prepare(policy, &writable(policy, roots, &scratch))?;
+        let guard = landlock::prepare(policy, &writable(policy, writable_roots, &scratch))?;
         // SAFETY: `apply` only issues syscalls on state prepared before the
         // fork; nothing in it allocates or takes a lock.
         unsafe { cmd.pre_exec(move || guard.apply()) };
@@ -135,19 +136,24 @@ fn scratch(mode: SandboxMode) -> Vec<PathBuf> {
 }
 
 /// What the command may write: `scratch` in every mode, the workspace
-/// roots and `[sandbox].writable` only in `workspace-write`.
-fn writable(policy: &SandboxPolicy, roots: &[PathBuf], scratch: &[PathBuf]) -> Vec<PathBuf> {
+/// explicitly writable roots and `[sandbox].writable` only in
+/// `workspace-write`.
+fn writable(
+    policy: &SandboxPolicy,
+    writable_roots: &[PathBuf],
+    scratch: &[PathBuf],
+) -> Vec<PathBuf> {
     let mut paths = scratch.to_vec();
     if policy.mode == SandboxMode::WorkspaceWrite {
-        paths.extend(roots.iter().chain(&policy.writable).cloned());
+        paths.extend(writable_roots.iter().chain(&policy.writable).cloned());
     }
     paths
 }
 
 /// Every root × `readonly_in_workspace`, the subpaths that stay read-only
 /// inside a writable root.
-fn readonly(policy: &SandboxPolicy, roots: &[PathBuf]) -> Vec<PathBuf> {
-    roots
+fn readonly(policy: &SandboxPolicy, writable_roots: &[PathBuf]) -> Vec<PathBuf> {
+    writable_roots
         .iter()
         .flat_map(|root| {
             policy
@@ -211,6 +217,7 @@ mod tests {
         let cmd = command(
             &policy(SandboxMode::DangerFullAccess),
             &[],
+            &[],
             Path::new("/bin/sh"),
             "echo hi",
         )
@@ -234,6 +241,7 @@ mod tests {
         assert_eq!(backend(LinuxBackend::Auto), Some(Backend::Seatbelt));
         let cmd = command(
             &policy(SandboxMode::WorkspaceWrite),
+            &[],
             &[],
             Path::new("/bin/zsh"),
             "echo hi",

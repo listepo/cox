@@ -82,6 +82,7 @@ pub fn run(cli: &Cli, args: &McpArgs, cwd: &Path) -> anyhow::Result<()> {
         roots.push(cwd.to_path_buf());
     }
     let cx = CxTemplate {
+        writable_roots: roots.clone(),
         roots,
         cwd: cwd.to_path_buf(),
         sandbox: SandboxPolicy {
