@@ -351,6 +351,7 @@ mod tests {
             tick: 0,
             marks: false,
             colors: crate::theme::Theme::dark(),
+            expand_last: None,
         }
     }
 

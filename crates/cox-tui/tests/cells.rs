@@ -2,10 +2,14 @@
 //! stream in `fixtures/events/transcript.jsonl`, so a change to how a cell
 //! prints shows up as a snapshot diff rather than in a user's terminal.
 
-use cox_protocol::types::{Event, PermissionMode, SandboxMode};
+use cox_protocol::ids::CallId;
+use cox_protocol::types::{Event, PermissionMode, Risk, SandboxMode, ToolCall, ToolResult};
 use cox_tui::cells::cell_lines;
 use cox_tui::state::{Cell, Msg, State, update};
+use cox_tui::view::{buffer_to_string, view};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 
 const WIDTH: u16 = 60;
 
@@ -139,4 +143,143 @@ fn cell_notice_error_and_summary() {
         .map(|c| text(&s, c))
         .collect();
     insta::assert_snapshot!(rest.join("\n"));
+}
+
+// T24.4 tool cards: a dedicated session per test (rather than the fixture
+// above) so each one starts from a single, isolated tool call.
+
+fn requested(state: &mut State, name: &str, subject: &str, risk: Risk) -> CallId {
+    let id = CallId::new();
+    update(
+        state,
+        Msg::Event(Event::ToolCallRequested {
+            call: ToolCall {
+                id,
+                name: name.into(),
+                input: serde_json::json!({}),
+                risk,
+                subject: subject.into(),
+            },
+        }),
+    );
+    id
+}
+
+fn output(state: &mut State, id: CallId, delta: &str) {
+    update(
+        state,
+        Msg::Event(Event::ToolCallOutput {
+            call_id: id,
+            delta: delta.into(),
+        }),
+    );
+}
+
+fn done(state: &mut State, id: CallId, ok: bool) {
+    update(
+        state,
+        Msg::Event(Event::ToolCallDone {
+            call_id: id,
+            result: ToolResult {
+                ok,
+                visible: String::new(),
+                archive: None,
+                bytes: 0,
+                duration_ms: 8,
+                diff: None,
+            },
+        }),
+    );
+}
+
+/// Twenty numbered lines: past `HEAD + TAIL + 1` (12), so long enough to
+/// fold, with a bash exit trailer so the header's `exit N` has something to
+/// parse.
+fn long_output(exit: u32) -> String {
+    let body = (1..=20)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{body}\n[exit {exit} in 8ms]")
+}
+
+fn tool_cell(state: &State) -> &Cell {
+    cell(state, |c| matches!(c, Cell::Tool { .. }))
+}
+
+#[test]
+fn card_pending() {
+    let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    requested(&mut s, "bash", "sleep 5", Risk::Exec);
+    for _ in 0..7 {
+        update(&mut s, Msg::Tick);
+    }
+    insta::assert_snapshot!(text(&s, tool_cell(&s)));
+}
+
+#[test]
+fn card_ok_folded() {
+    let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let id = requested(&mut s, "bash", "seq 20", Risk::Exec);
+    output(&mut s, id, &long_output(0));
+    done(&mut s, id, true);
+    let rendered = text(&s, tool_cell(&s));
+    assert!(
+        rendered.contains("more lines"),
+        "20 lines should still fold:\n{rendered}"
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn card_error_unfolded() {
+    let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let id = requested(&mut s, "bash", "seq 20 && exit 1", Risk::Exec);
+    output(&mut s, id, &long_output(1));
+    done(&mut s, id, false);
+    let rendered = text(&s, tool_cell(&s));
+    assert!(
+        !rendered.contains("more lines"),
+        "a failed call must show its output whole:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("20"),
+        "the tail of the output must still be there:\n{rendered}"
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+/// `view()` is the only place that knows which tool cell is last, so this
+/// drives the real render loop rather than `cell_lines` directly, proving
+/// `Ctrl+E` reaches through `state.rs` and `view.rs` into the fold.
+#[test]
+fn ctrl_e_expands_last_card() {
+    let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let id = requested(&mut s, "bash", "seq 20", Risk::Exec);
+    output(&mut s, id, &long_output(0));
+    done(&mut s, id, true);
+
+    let mut buf = Buffer::empty(Rect::new(0, 0, WIDTH, 60));
+    view(&s, Rect::new(0, 0, WIDTH, 60), &mut buf);
+    let folded = buffer_to_string(&buf);
+    assert!(
+        folded.contains("Ctrl+E"),
+        "the last card should hint at Ctrl+E while folded:\n{folded}"
+    );
+
+    update(
+        &mut s,
+        Msg::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL)),
+    );
+    let mut buf = Buffer::empty(Rect::new(0, 0, WIDTH, 60));
+    view(&s, Rect::new(0, 0, WIDTH, 60), &mut buf);
+    let expanded = buffer_to_string(&buf);
+    assert!(
+        !expanded.contains("more lines"),
+        "Ctrl+E should unfold the last card in place:\n{expanded}"
+    );
+    assert!(
+        expanded.contains("20"),
+        "the previously hidden tail should now be visible:\n{expanded}"
+    );
 }

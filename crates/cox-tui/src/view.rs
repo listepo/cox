@@ -10,7 +10,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::cells::cell_lines;
-use crate::state::{Modal, State};
+use crate::state::{Cell, Modal, State};
 use crate::status;
 
 /// Draws `state` into `area`; returns where the cursor goes.
@@ -58,10 +58,23 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             (lines, offset)
         }
         _ => {
+            // `Ctrl+E` (T24.4) can only reach the last tool cell still in
+            // the viewport; every other cell renders with the plain `look`.
+            let last_tool = state
+                .transcript
+                .iter()
+                .rposition(|c| matches!(c, Cell::Tool { .. }));
             let lines: Vec<Line<'static>> = state
                 .transcript
                 .iter()
-                .flat_map(|c| cell_lines(c, &look))
+                .enumerate()
+                .flat_map(|(i, c)| {
+                    let mut look = look;
+                    if Some(i) == last_tool {
+                        look.expand_last = Some(state.expanded_last);
+                    }
+                    cell_lines(c, &look)
+                })
                 .collect();
             let offset = lines.len().saturating_sub(rows + state.scroll);
             (lines, offset)

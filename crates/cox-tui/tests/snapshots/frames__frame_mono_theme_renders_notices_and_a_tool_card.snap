@@ -4,8 +4,8 @@ expression: "buffer_to_string(&render(&state, 60, 8))"
 ---
 [security] danger-full-access is on
 ⚙ bash ls
-  README.md
-  ⠋ 0.0s
+⠋ README.md
+⠋ 0.0s
 
 
 >  message · @ file · / command
