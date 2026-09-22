@@ -117,6 +117,7 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("verbose", "core.log_level"),
         ("no-hooks", "hooks.enabled"),
         ("no-mcp", "mcp.enabled"),
+        ("plain", "tui.screen_reader"),
         // `cox run` (plan.md §1.12 `cox run` row).
         ("prompt", "runtime.prompt"),
         ("output-format", "runtime.output_format"),
@@ -225,6 +226,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
     }
     if cli.no_mcp {
         set_dotted(&mut root, keys["no-mcp"], JsonValue::from(false));
+    }
+    if cli.plain {
+        set_dotted(&mut root, keys["plain"], JsonValue::from(true));
     }
     root
 }
@@ -388,8 +392,10 @@ fn build_figment(
         // provider (cox-provider::from_env), not config keys. `COX_HOME`
         // overrides `core.home` directly below. `COX_EXPECT_SANDBOX` pins the
         // backend a sandbox test asserts (CI sets it globally), so it must
-        // not leak into the config tree as `expect.sandbox` either. The
-        // ignore list matches pre-split keys (`EXPECT_SANDBOX`, not dotted).
+        // not leak into the config tree as `expect.sandbox` either.
+        // `COX_PLAIN` and `COX_AX_STARTUP_QUIET_MS` are read by the plain
+        // surface (T29.1) itself. The ignore list matches pre-split keys
+        // (`EXPECT_SANDBOX`, not dotted).
         Env::prefixed("COX_")
             .ignore(&[
                 "home",
@@ -397,6 +403,8 @@ fn build_figment(
                 "scenario",
                 "cassettes",
                 "expect_sandbox",
+                "plain",
+                "ax_startup_quiet_ms",
             ])
             .split("_"),
     ));
@@ -612,6 +620,8 @@ mod tests {
                 ("COX_EXPECT_SANDBOX", Some("bwrap")),
                 ("COX_PROVIDER", Some("scripted")),
                 ("COX_SCENARIO", Some("/tmp/scenario.toml")),
+                ("COX_PLAIN", Some("1")),
+                ("COX_AX_STARTUP_QUIET_MS", Some("300")),
             ],
             || {
                 let cli = parse(&[]);

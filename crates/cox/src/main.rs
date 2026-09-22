@@ -12,6 +12,7 @@ mod doctor;
 mod expand_cmd;
 mod ext_cmd;
 mod mcp_cmd;
+mod plain;
 mod record;
 mod resume;
 mod run;
@@ -95,6 +96,12 @@ fn main() -> anyhow::Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(self_update::run(version))?;
             Ok(())
+        }
+        // T29.1: `--plain`, `tui.screen_reader` or `COX_PLAIN=1`.
+        None if loaded.config.tui.screen_reader
+            || std::env::var("COX_PLAIN").is_ok_and(|v| v == "1") =>
+        {
+            plain::run(&cli, &cwd)
         }
         None => session::run_tui(&cli, &cwd),
     }

@@ -384,6 +384,26 @@ fn handoff(
     seed_child(&Store::open(home)?, cwd, parent, &events)
 }
 
+/// `--continue` / `--resume <id>` for the interactive surfaces (the TUI and
+/// `--plain`, T29.1): the session to reopen and its rebuilt history.
+pub(crate) fn resume_from_flags(
+    cli: &Cli,
+    home: &Path,
+    cwd: &Path,
+) -> anyhow::Result<Option<(SessionId, History)>> {
+    if cli.r#continue {
+        let id = Store::open(home)?.latest_session_for_cwd(cwd)?;
+        let history = resume::from_home(home, &id.to_string())?;
+        Ok(Some((id, history)))
+    } else if let Some(id_str) = &cli.resume {
+        let id: SessionId = id_str.parse()?;
+        let history = resume::from_home(home, id_str)?;
+        Ok(Some((id, history)))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
@@ -400,17 +420,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             let _ = config_cmd::set(&key, &value);
         }
     });
-    let mut resume_spec = if cli.r#continue {
-        let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
-        let history = resume::from_home(&home, &id.to_string())?;
-        Some((id, history))
-    } else if let Some(id_str) = &cli.resume {
-        let id: SessionId = id_str.parse()?;
-        let history = resume::from_home(&home, id_str)?;
-        Some((id, history))
-    } else {
-        None
-    };
+    let mut resume_spec = resume_from_flags(cli, &home, cwd)?;
     let mut first = true;
     // What `/fork`/`/handoff` did, shown atop the next session's transcript.
     let mut announce: Option<(Level, String)> = None;

@@ -142,6 +142,7 @@ vim = false
 theme = "auto"                      # auto | dark | light | a built-in (cox-dark, cox-light, system) or a `~/.cox/themes/<name>.toml` file's stem; `auto` queries the terminal's OSC 11 background colour once, before raw mode, with a 100 ms timeout (T22.6) — tmux, a query error, or no reply within the timeout falls back to `dark`, same as before this query existed. An explicit `dark`/`light` (config file or `COX_TUI_THEME`) always wins over detection; a named theme follows the same read unless its file pins a `variant`. `cox doctor` reports what `auto` resolved to. `/theme` previews and writes this (T24.2).
 inline = true
 show_thinking = "collapsed"         # collapsed | hidden | full
+screen_reader = false               # the plain surface (T29.1): flat labelled lines, numbered prompts, no cursor movement, BEL when a turn ends; same as `--plain` or `COX_PLAIN=1`
 mouse = true
 glyphs = "auto"                     # auto | unicode | ascii
 icons = {}                          # [tui.icons] name = "glyph" overrides one symbol

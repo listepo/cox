@@ -625,6 +625,8 @@ pub struct TuiConfig {
     pub inline: bool,
     /// `collapsed` | `hidden` | `full`.
     pub show_thinking: String,
+    /// The plain, screen-reader-friendly surface instead of the TUI (T29.1).
+    pub screen_reader: bool,
     /// Whether mouse input (scroll, click) is enabled.
     pub mouse: bool,
     /// `auto` | `unicode` | `ascii`: the glyph set the TUI prints.
@@ -654,6 +656,7 @@ impl Default for TuiConfig {
             theme: "auto".to_string(),
             inline: true,
             show_thinking: "collapsed".to_string(),
+            screen_reader: false,
             mouse: true,
             glyphs: "auto".to_string(),
             icons: HashMap::new(),

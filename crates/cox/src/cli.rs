@@ -71,6 +71,10 @@ pub struct Cli {
     /// Disable MCP servers for this invocation.
     #[arg(long = "no-mcp", global = true)]
     pub no_mcp: bool,
+    /// Plain surface for screen readers: labelled lines, numbered prompts,
+    /// no cursor movement (also `COX_PLAIN=1`, `tui.screen_reader`).
+    #[arg(long)]
+    pub plain: bool,
 }
 
 /// Top-level subcommands (plan.md §1.12). Only `Run` and `Config` are
