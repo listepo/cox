@@ -25,7 +25,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T25.5 | todo | P1 | 3 | 0% | |
 | T25.6 | todo | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
-| T26.3 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.1 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T27.2 | todo | P1 | 2 | 0% | |
@@ -1219,28 +1218,6 @@ Done when: the picker snapshot shows both groups.
 Out of scope: a global (cross-project) history.
 
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
-
-#### T26.3 `/fork` and `/handoff`
-
-Model: opus · Status: in progress · Depends: T26.2 · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `/fork [turn]` starts a new session with the history up to that turn; `/handoff <objective>` starts a new session seeded with a cheap-tier summary plus the objective; both appear as children in `/sessions`.
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-store/src/queries.rs`.
-Steps: (1) `/fork`: `resume::from_home` loads the rollout, truncates at the turn (default: current), and `Session::resume`-style injection (T17.1) creates the child with `parent_id = <this>`; the TUI switches to it like `/clear` does. (2) `/handoff <text>`: run the `compact` job on the `cheap` tier with the focus "hand off: <objective>" to produce the seed summary; the child's first history item is that summary (as a `Summary` item, same as compaction). (3) `/sessions` and `cox sessions` show children indented under their parent (`queries::sessions_tree`).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox fork_creates_child_with_truncated_history handoff_seeds_summary
-mise exec -- cargo nextest run -p cox-store sessions_tree_nests_children
-```
-Done when: both commands work in the PTY e2e with the scripted provider and the sessions picker snapshot shows nesting.
-Out of scope: merging a fork back.
-
-Execution plan:
-- `sessions.parent_id` already exists (init migration, `schema.rs`, `NewSession`), so no migration. `cox-store/src/queries.rs`: `Store::sessions_tree(limit) -> Vec<TreeRow { info, depth }>` over Diesel's typed DSL (newest `limit` rows; children under their parent, newest first; a child whose parent is outside the page is a root; a cycle guard) + `sessions_tree_nests_children`.
-- `cox-core/src/compact.rs`: `Session::handoff_summary(objective)` = the private `summarise` over the whole history with the focus `hand off: <objective>` (the `compact` job, so the cheap tier, and a ledger row on the parent).
-- `cox-tui`: `commands.rs` rows + `Action::Fork(Option<u32>)`/`Action::Handoff(String)`; `state.rs` refuses both while a turn runs (and an unknown turn) and returns `Cmd::Fork`/`Cmd::Handoff`; `app.rs` turns them into `TuiOutcome::Fork { turn }`/`Handoff { objective }` like `/clear`; `picker.rs` `tree_prefix(depth)` + `session_entry` takes a depth, with a nesting picker snapshot.
-- `crates/cox/src/session.rs`: `seed_child(store, cwd, parent, events)` creates the row with `parent_id`, writes a fresh `SessionStarted` then `events` into the child's own rollout (so a later `--resume` of the child rebuilds the same history), returns `History::from_events`; `fork` = the parent's rollout minus `SessionStarted`, cut before the first main `TurnStarted` with `seq > turn`; handoff = one `Summary` item (summary + objective). `run_tui` asks for the summary before `Shutdown`, then resumes into the child like `/clear` restarts, with a notice; a failure is a warning and resumes the parent. `project_sessions` and `cox sessions` (`sessions.rs`) list `sessions_tree` with indented children.
-- Tests: `fork_creates_child_with_truncated_history`, `handoff_seeds_summary` (real `Session` + `Scripted`), `sessions_tree_nests_children`, picker snapshot, PTY e2e `tui_fork_and_handoff_start_child_sessions` in `crates/cox/tests/tui_e2e.rs`.
-- Verify: the Check commands, then the three workspace commands, then the real binary against a scratch `COX_HOME`.
 
 #### T26.4 `/undo`, `/redo`
 

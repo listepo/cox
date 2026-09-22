@@ -18,7 +18,6 @@
 - T25.5. Keybindings file
 - T25.6. `/init`
 - T25.8. Cross-session prompt history
-- T26.3. `/fork` and `/handoff`
 - T26.4. `/undo`, `/redo`
 - T27.1. `bash` background tasks and `Ctrl+B`
 - T27.2. Approvals labelled by source; agent cards

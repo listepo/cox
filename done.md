@@ -2865,6 +2865,40 @@ $ mise exec -- cargo nextest run -p cox-core big_tool_output_mid_turn_compacts_b
      Summary [   0.038s] 2 tests run: 2 passed, 159 skipped
 $ mise exec -- cargo nextest run --workspace --no-fail-fast
      Summary [  15.785s] 709 tests run: 709 passed, 3 skipped
+
+#### T26.3 `/fork` and `/handoff`
+
+Model: Claude Code / claude-opus-5-5 · Status: done 2026-09-23 · Depends: T26.2 · Size: ~160 (landed ~430 outside tests) · Priority: P1 · Complexity: 3
+Goal: `/fork [turn]` starts a new session with the history up to that turn; `/handoff <objective>` starts a new session seeded with a cheap-tier summary plus the objective; both appear as children in `/sessions`.
+Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-store/src/queries.rs`.
+Steps: (1) `/fork`: `resume::from_home` loads the rollout, truncates at the turn (default: current), and `Session::resume`-style injection (T17.1) creates the child with `parent_id = <this>`; the TUI switches to it like `/clear` does. (2) `/handoff <text>`: run the `compact` job on the `cheap` tier with the focus "hand off: <objective>" to produce the seed summary; the child's first history item is that summary (as a `Summary` item, same as compaction). (3) `/sessions` and `cox sessions` show children indented under their parent (`queries::sessions_tree`).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox fork_creates_child_with_truncated_history handoff_seeds_summary
+mise exec -- cargo nextest run -p cox-store sessions_tree_nests_children
+```
+Done when: both commands work in the PTY e2e with the scripted provider and the sessions picker snapshot shows nesting.
+Out of scope: merging a fork back.
+
+Execution plan:
+- `sessions.parent_id` already exists (init migration, `schema.rs`, `NewSession`), so no migration. `cox-store/src/queries.rs`: `Store::sessions_tree(limit) -> Vec<TreeRow { info, depth }>` over Diesel's typed DSL (newest `limit` rows; children under their parent, newest first; a child whose parent is outside the page is a root; a cycle guard) + `sessions_tree_nests_children`.
+- `cox-core/src/compact.rs`: `Session::handoff_summary(objective)` = the private `summarise` over the whole history with the focus `hand off: <objective>` (the `compact` job, so the cheap tier, and a ledger row on the parent).
+- `cox-tui`: `commands.rs` rows + `Action::Fork(Option<u32>)`/`Action::Handoff(String)`; `state.rs` refuses both while a turn runs (and an unknown turn) and returns `Cmd::Fork`/`Cmd::Handoff`; `app.rs` turns them into `TuiOutcome::Fork { turn }`/`Handoff { objective }` like `/clear`; `picker.rs` `tree_prefix(depth)` + `session_entry` takes a depth, with a nesting picker snapshot.
+- `crates/cox/src/session.rs`: `seed_child(store, cwd, parent, events)` creates the row with `parent_id`, writes a fresh `SessionStarted` then `events` into the child's own rollout (so a later `--resume` of the child rebuilds the same history), returns `History::from_events`; `fork` = the parent's rollout minus `SessionStarted`, cut before the first main `TurnStarted` with `seq > turn`; handoff = one `Summary` item (summary + objective). `run_tui` asks for the summary before `Shutdown`, then resumes into the child like `/clear` restarts, with a notice; a failure is a warning and resumes the parent. `project_sessions` and `cox sessions` (`sessions.rs`) list `sessions_tree` with indented children.
+- Tests: `fork_creates_child_with_truncated_history`, `handoff_seeds_summary` (real `Session` + `Scripted`), `sessions_tree_nests_children`, picker snapshot, PTY e2e `tui_fork_and_handoff_start_child_sessions` in `crates/cox/tests/tui_e2e.rs`.
+- Verify: the Check commands, then the three workspace commands, then the real binary against a scratch `COX_HOME`.
+Deviations: (1) Size and files: 9 source files plus one snapshot, ~430 added lines outside tests (~760 with tests) against ≤200 LOC / ≤3 files and the card's ~160. The card's three files could not carry it: the TUI needs the command in `state.rs` (refuse while busy / unknown turn) and `app.rs` (`TuiOutcome::Fork`/`Handoff`, no longer `Copy`), the picker nesting is `picker.rs`, `cox sessions` is `sessions.rs`, and the cheap summary is a `cox-core/src/compact.rs` method so `cox` does not reach into the private `summarise`. No new dependency, no migration (`sessions.parent_id` already existed). (2) The PTY e2e moved the existing test's PTY setup into a shared `Tui` helper (spawn, send, wait_until, turn, palette command, quit) instead of copying it; the old test's assertions are unchanged. (3) A fork writes the kept events into the child's own rollout (with a fresh `SessionStarted`) rather than pointing at the parent's file, so a later `--resume <child>` needs no parent. A handoff whose summariser returns nothing still starts the child with the objective and says so in the notice; a child that cannot be built warns and resumes the parent.
+Check:
+```
+$ mise exec -- cargo nextest run -p cox fork_creates_child_with_truncated_history handoff_seeds_summary
+        PASS (cox::bin/cox) session::tests::fork_creates_child_with_truncated_history
+        PASS (cox::bin/cox) session::tests::handoff_seeds_summary
+$ mise exec -- cargo nextest run -p cox-store sessions_tree_nests_children
+        PASS (cox-store) queries::tests::sessions_tree_nests_children
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+        PASS cox::tui_e2e tui_fork_and_handoff_start_child_sessions
+        PASS cox-tui picker::tests::picker_sessions_snapshot_nests_children
+     Summary 712 tests run: 712 passed, 3 skipped
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
      clean
 $ mise exec -- cargo fmt --check
@@ -2951,3 +2985,8 @@ $ mise exec -- cargo fmt --check
      clean
 ```
 
+$ COX_HOME=<scratch> cox (TUI: hello, /fork, /handoff finish the demo, Ctrl+C x2); cox sessions
+01M35NZZGYCVYC07Y2K7Y965P6     untitled   …  now    1     $0.0000
+└ 01M35P04K82BKW5E63P91X267F   untitled   …  now    1     $0.0000
+  └ 01M35P074BN256M36W56ZAYQXP untitled   …  now    0     $0.0000
+```
