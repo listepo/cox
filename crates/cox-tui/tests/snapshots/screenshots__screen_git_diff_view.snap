@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
-assertion_line: 396
 expression: "shot(\"diff_view\", &mut state)"
 ---
  git diff HEAD · PageUp/PageDown scroll · Esc closes
@@ -16,5 +15,5 @@ expression: "shot(\"diff_view\", &mut state)"
    }
   ± README.md  +2 −0
   --- a/README.md
->  message · @ file · / command
+> Esc close · PageUp scroll up · PageDown scroll down
 - · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
-assertion_line: 630
 expression: "shot(\"question_modal\", &mut state)"
 ---
 › deploy it
@@ -17,5 +16,5 @@ expression: "shot(\"question_modal\", &mut state)"
  ask_user which environment?
  1) staging  2) production
  > ▏   Enter sends · Esc dismisses
->  message · @ file · / command
+> Enter choose · Esc close · Up previous · Down next
 sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · ⎇ main +12 −3 · [question] · working

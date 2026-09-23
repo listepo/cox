@@ -48,86 +48,295 @@ fn shell_choice_replaces_the_word_being_typed() {
 
 /// T23.1: `cox-tui` has no binary of its own to spawn under a PTY (unlike
 /// `crates/cox/tests/tui_e2e.rs`, which spawns the real `cox`), so
-/// `src/bin/kitty_probe.rs` — which exists purely for this test — stands
-/// in: it drives `cox_tui::app::run` for real and quits itself a moment
-/// after start.
-mod kitty_pty {
+/// `src/bin/kitty_probe.rs` — which exists purely for these tests — stands
+/// in: it drives `cox_tui::app::run` for real and quits itself once its
+/// scenario is fed.
+mod pty {
     use std::io::{Read, Write};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+    use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 
-    /// Spawns `kitty_probe` with `COX_KITTY_PROBE_KITTY` set, answers its
-    /// `CSI 6n` cursor queries the same way `tui_e2e.rs` does for the real
-    /// binary (the inline viewport needs an answer or it stalls), waits for
-    /// it to quit itself, and returns every raw byte the PTY saw.
-    pub fn run_probe(kitty: bool) -> Vec<u8> {
-        let pty = NativePtySystem::default()
-            .openpty(PtySize {
-                rows: 24,
-                cols: 80,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("openpty");
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_kitty_probe"));
-        cmd.env("COX_KITTY_PROBE_KITTY", if kitty { "1" } else { "0" });
-        cmd.env("TERM", "xterm-256color");
-        let mut child = pty.slave.spawn_command(cmd).expect("spawn kitty_probe");
-        drop(pty.slave);
+    /// Generous on purpose: a slow CI box must never turn into a flake.
+    const DEADLINE: Duration = Duration::from_secs(30);
 
-        let captured = Arc::new(Mutex::new(Vec::new()));
-        let mut reader = pty.master.try_clone_reader().expect("clone reader");
-        let writer = Arc::new(Mutex::new(pty.master.take_writer().expect("writer")));
-        let sink = captured.clone();
-        let replier = writer.clone();
-        thread::spawn(move || {
-            let mut parser = vt100::Parser::new(24, 80, 0);
-            let mut buf = [0u8; 4096];
-            // Carries the tail of the previous read so a query split across
-            // two reads is still seen, like `tui_e2e.rs`.
-            let mut tail: Vec<u8> = Vec::new();
-            while let Ok(n) = reader.read(&mut buf) {
-                if n == 0 {
-                    break;
+    /// The terminal side of the PTY: every raw byte, a vt100 screen, and
+    /// the two behaviours of real terminals that `vt100` 0.16 lacks, so a
+    /// test measures cox rather than the fixture (T23.7).
+    pub struct Term {
+        pub raw: Vec<u8>,
+        pub parser: vt100::Parser,
+        /// Lines scrolled off a DECSTBM region whose top is row 1. xterm,
+        /// kitty and tmux keep these in scrollback — the premise of
+        /// ratatui's `scrolling-regions` — but `vt100` drops them.
+        pub evicted: Vec<String>,
+        /// `CSI a;b r` last seen, 1-based; `None` once reset.
+        region: Option<(u16, u16)>,
+        /// An escape sequence or UTF-8 char split across two reads, held
+        /// back so `resize` never lands in the middle of one.
+        pending: Vec<u8>,
+    }
+
+    impl Term {
+        /// Feeds whatever complete input `bytes` finishes and returns how
+        /// many `CSI 6n` cursor queries it held.
+        fn feed(&mut self, bytes: &[u8]) -> usize {
+            self.raw.extend_from_slice(bytes);
+            self.pending.extend_from_slice(bytes);
+            let buf = std::mem::take(&mut self.pending);
+            let complete = complete_len(&buf);
+            let mut queries = 0;
+            let mut fed = 0;
+            let mut i = 0;
+            while i < complete {
+                if buf[i] != 0x1b || buf.get(i + 1) != Some(&b'[') {
+                    i += 1;
+                    continue;
                 }
-                parser.process(&buf[..n]);
-                sink.lock().unwrap().extend_from_slice(&buf[..n]);
-                tail.extend_from_slice(&buf[..n]);
-                let queries = tail.windows(4).filter(|w| *w == b"\x1b[6n").count();
-                if queries > 0 {
-                    let (row, col) = parser.screen().cursor_position();
-                    let reply = format!("\x1b[{};{}R", row + 1, col + 1).repeat(queries);
-                    let _ = replier.lock().unwrap().write_all(reply.as_bytes());
+                let params_at = i + 2;
+                let end = (params_at..complete)
+                    .find(|&j| (0x40..=0x7e).contains(&buf[j]))
+                    .unwrap_or(complete);
+                let params = std::str::from_utf8(&buf[params_at..end]).unwrap_or("");
+                match buf.get(end) {
+                    Some(b'n') if params == "6" => queries += 1,
+                    Some(b'r') => {
+                        let mut it = params.split(';').map(|p| p.parse::<u16>().ok());
+                        self.region = match (it.next().flatten(), it.next().flatten()) {
+                            (Some(top), Some(bottom)) => Some((top, bottom)),
+                            _ => None,
+                        };
+                    }
+                    Some(b'S') => {
+                        let rows = self.parser.screen().size().0;
+                        if let Some((1, bottom)) = self.region.filter(|r| r.1 < rows) {
+                            self.parser.process(&buf[fed..i]);
+                            fed = i;
+                            let n = params.parse::<u16>().unwrap_or(1).min(bottom);
+                            let cols = self.parser.screen().size().1;
+                            let lines = self.parser.screen().rows(0, cols).take(n.into());
+                            self.evicted.extend(lines);
+                        }
+                    }
+                    _ => {}
                 }
-                let keep = tail.len().saturating_sub(3);
-                tail.drain(..keep);
+                i = end + 1;
             }
-        });
-
-        let start = Instant::now();
-        loop {
-            if child.try_wait().expect("try_wait").is_some() {
-                break;
-            }
-            assert!(
-                start.elapsed() < Duration::from_secs(5),
-                "kitty_probe did not exit"
-            );
-            thread::sleep(Duration::from_millis(20));
+            self.parser.process(&buf[fed..complete]);
+            self.pending = buf[complete..].to_vec();
+            queries
         }
-        // `restore()` writes the pop sequence right as the process exits;
-        // give the reader thread a moment to drain it.
-        thread::sleep(Duration::from_millis(100));
-        captured.lock().unwrap().clone()
+
+        /// Every line the user could scroll back to, oldest first within
+        /// each source: evicted region lines, then `vt100`'s own
+        /// scrollback, then the screen.
+        pub fn transcript(&mut self) -> Vec<String> {
+            let mut lines = self.evicted.clone();
+            let cols = self.parser.screen().size().1;
+            let screen = self.parser.screen_mut();
+            screen.set_scrollback(usize::MAX);
+            for offset in (1..=screen.scrollback()).rev() {
+                screen.set_scrollback(offset);
+                lines.extend(screen.rows(0, cols).next());
+            }
+            screen.set_scrollback(0);
+            lines.extend(screen.rows(0, cols));
+            lines
+        }
+    }
+
+    /// Whether `raw` stops right after a draw: ratatui shows or hides the
+    /// cursor and then moves it to its resting cell, and nothing follows.
+    fn ends_on_frame(raw: &[u8]) -> bool {
+        let Some(at) = raw
+            .windows(6)
+            .rposition(|w| w == b"\x1b[?25h" || w == b"\x1b[?25l")
+        else {
+            return false;
+        };
+        let rest = &raw[at + 6..];
+        rest.len() > 3
+            && rest.starts_with(b"\x1b[")
+            && rest.ends_with(b"H")
+            && rest[2..rest.len() - 1]
+                .iter()
+                .all(|b| b.is_ascii_digit() || *b == b';')
+    }
+
+    /// Length of the prefix of `buf` that ends on a whole escape sequence
+    /// and a whole UTF-8 char.
+    fn complete_len(buf: &[u8]) -> usize {
+        if let Some(esc) = buf.iter().rposition(|&b| b == 0x1b) {
+            let rest = &buf[esc + 1..];
+            let done = match rest.first() {
+                None => false,
+                Some(b'[') => rest[1..].iter().any(|b| (0x40..=0x7e).contains(b)),
+                Some(b']') => rest.contains(&0x07),
+                Some(_) => true,
+            };
+            if !done {
+                return esc;
+            }
+        }
+        let lead = buf.iter().rposition(|&b| b & 0xc0 != 0x80).unwrap_or(0);
+        let want = match buf.get(lead) {
+            Some(b) if b & 0xe0 == 0xc0 => 2,
+            Some(b) if b & 0xf0 == 0xe0 => 3,
+            Some(b) if b & 0xf8 == 0xf0 => 4,
+            _ => 1,
+        };
+        if buf.len() - lead < want {
+            lead
+        } else {
+            buf.len()
+        }
+    }
+
+    pub struct Probe {
+        pub term: Arc<Mutex<Term>>,
+        master: Box<dyn MasterPty + Send>,
+        child: Box<dyn Child + Send + Sync>,
+        reading: thread::JoinHandle<()>,
+    }
+
+    impl Probe {
+        /// Spawns `kitty_probe` with `env` on a `rows`×`cols` PTY and
+        /// answers its `CSI 6n` cursor queries the same way `tui_e2e.rs`
+        /// does for the real binary (the inline viewport needs an answer
+        /// or it stalls).
+        pub fn spawn(env: &[(&str, &str)], rows: u16, cols: u16) -> Self {
+            let pty = NativePtySystem::default()
+                .openpty(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .expect("openpty");
+            let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_kitty_probe"));
+            for (key, value) in env {
+                cmd.env(key, value);
+            }
+            cmd.env("TERM", "xterm-256color");
+            let child = pty.slave.spawn_command(cmd).expect("spawn kitty_probe");
+            drop(pty.slave);
+
+            let term = Arc::new(Mutex::new(Term {
+                raw: Vec::new(),
+                parser: vt100::Parser::new(rows, cols, 10_000),
+                evicted: Vec::new(),
+                region: None,
+                pending: Vec::new(),
+            }));
+            let mut reader = pty.master.try_clone_reader().expect("clone reader");
+            let mut writer = pty.master.take_writer().expect("writer");
+            let shared = term.clone();
+            let reading = thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                while let Ok(n) = reader.read(&mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    let mut term = shared.lock().unwrap();
+                    let queries = term.feed(&buf[..n]);
+                    if queries > 0 {
+                        let (row, col) = term.parser.screen().cursor_position();
+                        let reply = format!("\x1b[{};{}R", row + 1, col + 1).repeat(queries);
+                        let _ = writer.write_all(reply.as_bytes());
+                    }
+                }
+            });
+            Probe {
+                term,
+                master: pty.master,
+                child,
+                reading,
+            }
+        }
+
+        /// Waits until the screen shows `text`.
+        pub fn wait_for(&self, text: &str) {
+            let start = Instant::now();
+            while !self
+                .term
+                .lock()
+                .unwrap()
+                .parser
+                .screen()
+                .contents()
+                .contains(text)
+            {
+                assert!(
+                    start.elapsed() < DEADLINE,
+                    "{text:?} never reached the screen"
+                );
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+
+        /// Resizes the terminal the way xterm does, then tells the probe:
+        /// a shrink that would cut off the cursor row first scrolls the top
+        /// rows into scrollback (`vt100` would drop the bottom rows). It
+        /// waits for a frame boundary so the cursor is where the app last
+        /// parked it rather than wherever a half-written frame left it —
+        /// the one moment a resize has a single right answer.
+        pub fn resize(&self, rows: u16, cols: u16) {
+            let start = Instant::now();
+            let mut term = loop {
+                let term = self.term.lock().unwrap();
+                if term.pending.is_empty() && ends_on_frame(&term.raw) {
+                    break term;
+                }
+                drop(term);
+                assert!(start.elapsed() < DEADLINE, "no frame boundary to resize at");
+                thread::sleep(Duration::from_millis(2));
+            };
+            let (row, col) = term.parser.screen().cursor_position();
+            if row >= rows {
+                let lift = row + 1 - rows;
+                let keep = format!("\x1b[{lift}S\x1b[{};{}H", row - lift + 1, col + 1);
+                term.parser.process(keep.as_bytes());
+            }
+            term.parser.screen_mut().set_size(rows, cols);
+            self.master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .expect("resize pty");
+        }
+
+        /// Waits for the probe to quit itself and for the reader to drain
+        /// what it wrote last (`restore()` writes right as it exits).
+        pub fn finish(mut self) -> Arc<Mutex<Term>> {
+            let start = Instant::now();
+            while self.child.try_wait().expect("try_wait").is_none() {
+                assert!(start.elapsed() < DEADLINE, "kitty_probe did not exit");
+                thread::sleep(Duration::from_millis(20));
+            }
+            // The master reports EOF/EIO once the last slave fd closes.
+            while !self.reading.is_finished() {
+                assert!(start.elapsed() < DEADLINE, "PTY reader did not drain");
+                thread::sleep(Duration::from_millis(10));
+            }
+            self.term
+        }
+    }
+
+    /// Runs a scenario that needs no interaction and returns its raw bytes.
+    pub fn run_probe(env: &[(&str, &str)], rows: u16, cols: u16) -> Vec<u8> {
+        let term = Probe::spawn(env, rows, cols).finish();
+        term.lock().unwrap().raw.clone()
     }
 }
 
 #[test]
 fn pty_pops_keyboard_flags_on_exit() {
-    let with = kitty_pty::run_probe(true);
+    let with = pty::run_probe(&[("COX_KITTY_PROBE_KITTY", "1")], 24, 80);
     assert!(
         with.windows(5).any(|w| w == b"\x1b[>3u"),
         "push flags missing: {:?}",
@@ -139,7 +348,7 @@ fn pty_pops_keyboard_flags_on_exit() {
         String::from_utf8_lossy(&with)
     );
 
-    let without = kitty_pty::run_probe(false);
+    let without = pty::run_probe(&[("COX_KITTY_PROBE_KITTY", "0")], 24, 80);
     assert!(
         !without.windows(5).any(|w| w == b"\x1b[>3u"),
         "push flags present without the capability: {:?}",
@@ -150,4 +359,102 @@ fn pty_pops_keyboard_flags_on_exit() {
         "pop flags present without the capability: {:?}",
         String::from_utf8_lossy(&without)
     );
+}
+
+/// Rows `app.rs` keeps for the live viewport (`VIEWPORT_ROWS`).
+const VIEWPORT_ROWS: usize = 15;
+
+/// A sentinel no cox frame draws, so a cell still holding it was not
+/// touched by the frame under test.
+const SENTINEL: &str = "\u{a4}";
+
+/// Replays `raw` offline and counts the frames that rewrote the whole
+/// viewport. ratatui ends every `draw` by showing or hiding the cursor and
+/// `insert_before` never does, so each `?25h`/`?25l` closes one frame (the
+/// inserts that preceded that draw included). Before each frame every
+/// screen cell is overwritten with `SENTINEL` in a copy of the screen; a
+/// row with no sentinel left afterwards was erased or fully redrawn, and a
+/// frame that did that to at least `VIEWPORT_ROWS` rows repainted the
+/// viewport rather than diffing it.
+fn full_repaints(raw: &[u8], rows: u16, cols: u16) -> usize {
+    let mut live = vt100::Parser::new(rows, cols, 0);
+    let mut seed = b"\x1b7".to_vec();
+    for row in 1..=rows {
+        seed.extend(format!("\x1b[{row};1H{}", SENTINEL.repeat(cols.into())).bytes());
+    }
+    seed.extend(b"\x1b8");
+    let mut repaints = 0;
+    let mut rest = raw;
+    while !rest.is_empty() {
+        let end = rest
+            .windows(6)
+            .position(|w| w == b"\x1b[?25h" || w == b"\x1b[?25l")
+            .map_or(rest.len(), |at| at + 6);
+        let (frame, next) = rest.split_at(end);
+        rest = next;
+        let mut copy = vt100::Parser::new(rows, cols, 0);
+        copy.process(&live.screen().state_formatted());
+        copy.process(&seed);
+        copy.process(frame);
+        live.process(frame);
+        let screen = copy.screen();
+        let rewritten = (0..rows)
+            .filter(|&r| {
+                (0..cols).all(|c| screen.cell(r, c).is_none_or(|x| x.contents() != SENTINEL))
+            })
+            .count();
+        if rewritten >= VIEWPORT_ROWS {
+            repaints += 1;
+        }
+    }
+    repaints
+}
+
+/// T23.2: 40 finished cells stream into scrollback on an 80×24 PTY.
+/// Without `scrolling-regions` every `insert_before` clears the viewport
+/// and the next draw repaints all of it (measured: 40 repaints for 40
+/// cells); with the feature the region above the viewport scrolls and the
+/// viewport is only diffed (measured: 0). The bound is the card's "at most
+/// once per cell" tightened to one for the whole run, so the test fails if
+/// the feature is ever dropped.
+#[test]
+fn pty_insert_before_repaints_at_most_once_per_cell() {
+    let raw = pty::run_probe(&[("COX_PROBE_SCENARIO", "cells")], 24, 80);
+    let shown = String::from_utf8_lossy(&raw);
+    assert!(
+        shown.contains("cell-40"),
+        "the last cell never reached the screen"
+    );
+    let repaints = full_repaints(&raw, 24, 80);
+    assert!(
+        repaints <= 1,
+        "{repaints} full-viewport repaints for 40 inserted cells"
+    );
+}
+
+/// T23.7: a 120×40 terminal shrinks to 80×24 while a reply streams below
+/// 12 finished cells; the reply and 4 more cells finish after the resize.
+/// Every one of them must be in the scrollback exactly once: a stale copy
+/// of the old viewport pushed up by the resize would show `reply-start`
+/// twice, and a whole-screen clear would lose the cells that were still on
+/// screen.
+#[test]
+fn pty_resize_mid_stream_keeps_scrollback_unique() {
+    let probe = pty::Probe::spawn(&[("COX_PROBE_SCENARIO", "resize")], 40, 120);
+    probe.wait_for("reply-start");
+    probe.resize(24, 80);
+    let term = probe.finish();
+    let lines = term.lock().unwrap().transcript();
+    let markers = (1..=16)
+        .map(|n| format!("cell-{n:02}"))
+        .chain(["reply-start".to_string(), "reply-end".to_string()]);
+    for marker in markers {
+        let seen = lines.iter().filter(|l| l.contains(&marker)).count();
+        assert_eq!(
+            seen,
+            1,
+            "{marker} appears {seen} times in:\n{}",
+            lines.join("\n")
+        );
+    }
 }

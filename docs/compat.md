@@ -97,3 +97,6 @@ row is a card, not this audit.)
 | T14.3 | `bash` output stays plain because its subject is a command, not a path. | Extension-based highlighting has nothing to key on. |
 | T14.3 | The theme list in the warning is unsorted (syntect's map order). | Sorting a borrowed map's keys would copy it for a warning nobody greps. |
 | T18.1 | No PTY end-to-end of TUI resume. | The seeded-transcript unit tests cover the path the PTY run would repeat. |
+| T23.2 | The `vt100` PTY fixture drops lines scrolled off a DECSTBM region, so the PTY tests model the save real terminals make; that save is not re-verified per terminal (Terminal.app, Windows Terminal). | `scrolling-regions` relies on it by design (ratatui#1341), and no emulator crate in the tree implements it. |
+| T23.7 | A resize that lands halfway through a frame can misplace the rebuilt viewport by the rows that frame's cursor had travelled. | The terminal moves lines at the instant it resizes, and the app cannot learn where a half-written frame left the cursor. |
+| T23.7 | tmux pane resizes and reflowing terminals (text rewrapped on a width change) are not reproduced; Linux CI was not run from the macOS host. | The `vt100` fixture truncates instead of reflowing, and tmux is not installed on the authoring host. |

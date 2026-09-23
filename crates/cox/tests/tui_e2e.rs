@@ -251,3 +251,46 @@ fn tui_ctrl_b_backgrounds_sleep_and_composer_accepts_input() {
     });
     tui.quit();
 }
+
+/// T25.5: `send = "ctrl+enter"` in `keybindings.toml` shows in the hints,
+/// turns plain Enter into a newline and sends on Ctrl+Enter. A plain PTY
+/// writes `\r` for both keys, so Ctrl+Enter goes in as the kitty
+/// keyboard protocol's `CSI 13;5u`, which is what a terminal that can tell
+/// them apart sends.
+#[test]
+fn tui_keybindings_toml_rebinds_send_to_ctrl_enter() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join("keybindings.toml"),
+        "send = \"ctrl+enter\"\n",
+    )
+    .unwrap();
+    let scenario = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../cox-core/tests/scenarios/text_only.toml"
+    ));
+    let tui = Tui::spawn(home.path(), work.path(), scenario, &[]);
+    tui.wait_until("rebound hint", |t| {
+        t.contains("Ctrl+Enter send") && t.contains("$0.00")
+    });
+    tui.send(b"hello\r");
+    tui.send(b"again");
+    tui.wait_until("two composer lines, nothing sent", |t| {
+        t.contains("hello") && t.contains("again") && !t.contains("working")
+    });
+    // Enter had its chance to send; the scripted reply is instant, so half
+    // a second without it means the `\r` stayed in the composer.
+    thread::sleep(Duration::from_millis(500));
+    let before = tui.wait_until("screen", |_| true);
+    assert!(
+        !before.contains("hello from scripted"),
+        "Enter sent:\n{before}"
+    );
+    tui.send(b"\x1b[13;5u");
+    let text = tui.wait_until("finished scripted turn", |t| {
+        t.contains("hello from scripted") && !t.contains("working")
+    });
+    assert_eq!(text.matches("hello from scripted").count(), 1, "{text}");
+    tui.quit();
+}

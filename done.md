@@ -3275,3 +3275,134 @@ prefix: ok 58 tokens (profile minimal)
 #### T57 Clean up target dirs with dunnage after tests
 
 `just test` now ends with `just dunnage` (a just post-dependency). `dunnage run target` compresses and dedupes `./target` losslessly — it never deletes and keeps mtimes, so nothing rebuilds. Exit code 2 (a build held the lock) counts as success; a checkout with no `target/` yet or a machine without `dunnage` is a no-op with an install hint. dunnage is installed with `ketch install dunnage`; `toolchain.md` lists ketch and dunnage and gains a `ketch` package table; `AGENTS.md` names `just test` under Commands.
+
+#### T24.6 Footer hints and `?` help
+
+Model: opus · Status: done 2026-09-24 · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
+Goal: the composer placeholder row shows 3–5 context-dependent hints; `?` on an empty composer opens the full keymap overlay from the one table that also feeds `/help` and the docs.
+Files: `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
+Steps: (1) `commands.rs`: `pub const KEYMAP: &[(&str, &str, Context)]` (`key`, `action`, `Idle|Running|Modal|Overlay`) — the single source; `/help` renders it; a doc test asserts `docs/getting-started.md`'s keymap table matches. (2) `view.rs`: placeholder = the first 3–5 entries for the current context (`Enter send · Shift+Tab mode · @ file · / command · ? help` idle; `Esc stop · Ctrl+B background · Ctrl+O transcript` running). (3) `modal.rs`: `Help` overlay listing `KEYMAP` grouped by context, `Esc`/`?` closes; `?` only when the composer is empty (otherwise it is a character).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hints_follow_context keymap_table_matches_docs
+```
+Done when: the overlay snapshot exists and the doc test pins `docs/getting-started.md`.
+Out of scope: keybinding customisation (T25.5 extends the same table).
+Execution plan: (a) `commands.rs`: `Context { Idle, Running, Modal, Overlay }`, `KEYMAP` rows `(key, action id, context)` for the keys `state.rs`/`composer.rs`/`modal.rs` handle today (`Tab` stays the mode key until T25.2 lands), `keys_for(ctx)`, `/help` = keymap grouped by context + the command list; test `keymap_table_matches_docs` builds the markdown table from `KEYMAP` and asserts `docs/getting-started.md` contains it verbatim. (b) `state.rs` (a fourth file, unavoidable: the key lives there): `Modal::Help`, `State::context()`, `?` on an empty composer with no modal opens it, `Esc`/`?` close it. (c) `modal.rs`: `help_lines` packs each context's rows into width-wrapped lines. (d) `view.rs`: an empty composer draws the first five rows of the current context as dim hints instead of the textarea placeholder; `Modal::Help` draws over the transcript like the diff view. (e) Snapshots: `help_overlay_snapshot`, `placeholder_hints_follow_context`; accept the placeholder change in existing snapshots. Verify with the Check, then nextest/clippy/fmt.
+
+Notes: `Tab` stays the `mode.cycle` key in `KEYMAP` because T25.2 (`Shift+Tab`) is not on `main` yet; T25.2 changes that one row and the docs table. The hints fit the composer width: five when they fit, never fewer than three. `/help` stays a notice (keymap by context, then the commands); `?` opens the overlay. Size: ~200 LOC of code and tests, over the ~120 estimate because the 30-row `KEYMAP` table and its docs twin are data. Four source files instead of three: `state.rs` holds the key dispatch, so `Modal::Help`, `State::context()` and the `?` key had to go there. The placeholder change re-accepted the existing snapshots that show the composer, and `docs/screenshots/*.svg` were regenerated with `just screenshots`. The commit also applies `cargo fmt` to `status.rs` and `tests/status.rs` (left unformatted by T28.1 on `main`) so that `cargo fmt --check` passes.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hints_follow_context keymap_table_matches_docs
+3 passed (view::tests::help_overlay_snapshot, view::tests::placeholder_hints_follow_context, commands::tests::keymap_table_matches_docs)
+$ mise exec -- cargo nextest run --workspace
+804 tests run: 804 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
+
+#### T25.5 Keybindings file
+
+Model: opus · Status: done 2026-09-24 · Depends: T24.6 · Size: ~160 · Priority: P1 · Complexity: 3
+Goal: `~/.cox/keybindings.toml` rebinds any action in the keymap table; Claude Code's `keybindings.json` is imported read-only for the actions that exist in both; conflicts are reported by `doctor`.
+Files: `crates/cox-tui/src/keymap.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-ext/src/claude_settings.rs`.
+Steps: (1) `keymap.rs`: `Action` enum generated from `KEYMAP` (T24.6), `Binding { key, modifiers, context }`, parser for `"ctrl+enter"`, `"shift+tab"`, `"alt+m"`; `Keymap::resolve(KeyEvent, Context) -> Option<Action>`. (2) `state.rs` dispatches through `Keymap` instead of the literal `match` (the literal table becomes the default `Keymap`). (3) `claude_settings.rs`: read `~/.claude/keybindings.json` (`{ "bindings": [{ "key", "command", "when" }] }`) and map the commands cox has (`send`, `newline`, `interrupt`, `mode.cycle`, `transcript`, `help`); unknown commands ignored with a debug log. (4) `doctor`: two actions on one key in one context → warning naming both.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui keymap_parses_chords keymap_rebinds_send claude_keybindings_import_maps_known_commands
+```
+Done when: rebinding `send` to `ctrl+enter` works in the PTY e2e and `docs/config.md` documents the file.
+Out of scope: chords (`ctrl+x ctrl+s`), per-mode vim remaps.
+Execution plan: (a) `keymap.rs` (new): `Action` enum for the `KEYMAP` actions `state.rs` dispatches (`send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`), with a test that pins every enum id to a `KEYMAP` row; `parse` for `ctrl+enter`/`shift+tab`/`alt+m`; `Keymap` = ordered rows built from `KEYMAP`, `resolve(KeyEvent, Context)` (a running turn falls back to idle keys), `rebind` (cox file: replaces the action's keys), `add` (Claude import: additive); a user key takes that key from the defaults in its context, and `conflicts()` names two user actions on one key and context; `load(toml, claude)` returns the keymap, warnings and skipped entries. (b) `state.rs`: `State.keymap`; `on_key` resolves through it (`Ctrl+C` stays fixed); `Tab` completion stays in front of it; an `Enter` no binding claims is a newline; hints, the `?` overlay and `/help` read the keymap, so they show rebound keys. (c) `claude_settings.rs`: `keybindings(claude_home)` reads `keybindings.json` in Claude Code's real shape `{ "bindings": [{ "context", "bindings": { "<key>": "<action>" | null } }] }` (not the `{key, command, when}` shape in step 3) and returns `(key, action)` pairs; `keymap.rs` maps `chat:submit`, `chat:newline`, `chat:sendNow`, `chat:cancel`, `chat:cycleMode`, `app:toggleTranscript`, `task:background`, `app:exit`; Claude has no action that opens help, and unknown actions and chords are skipped with a `tracing::debug!` in the binary. (d) `crates/cox`: `config_load::keymap(cox_home, claude_home)` read by `session.rs` (warnings become notices) and by `doctor` (`keybindings` row: warn with each conflict naming both actions). (e) `docs/config.md` documents `~/.cox/keybindings.toml`. (f) PTY e2e in `tui_e2e.rs`: `send = "ctrl+enter"`, the test writes the Kitty CSI-u sequence for Ctrl+Enter (`\x1b[13;5u`), because a plain PTY cannot tell Ctrl+Enter from Enter; plain Enter then inserts a newline. More than three files and more than ~160 LOC are expected; `done.md` will say why.
+
+Notes: Claude Code's real `keybindings.json` shape is `{ "bindings": [{ "context", "bindings": { "<key>": "<action>" | null } }] }`, not the `{key, command, when}` shape in step 3, so `claude_settings::keybindings` reads that; a `null` (Claude's unbind) is dropped. Mapped Claude actions: `chat:submit`, `chat:newline`, `chat:sendNow`, `chat:cancel`, `chat:cycleMode`, `app:toggleTranscript`, `task:background`, `app:exit`; Claude has no action that opens help, so `help` is not imported. Unknown actions and chords are logged with `tracing::debug!`, and a broken file becomes a transcript notice. The rebindable actions are the ones `state.rs` dispatches (`send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`); `@`, `/`, `Ctrl+R`, the modal/overlay keys and `Ctrl+C` stay fixed. `keybindings.toml` replaces an action's keys, the Claude import adds to them, and a user key takes that key from the defaults, so `doctor` only reports two user bindings on one key and context. `cox-tui` may not depend on `cox-ext` (`tests/deps.rs`), so the JSON is read in `cox-ext` and mapped in `cox-tui`. `docs/config.md` is generated, so the keybindings section is a constant appended by the generator in `cox-protocol/src/config.rs`, and a `cox-tui` test pins every action id to it. PTY e2e: a plain PTY writes `\r` for both Enter and Ctrl+Enter, so `tui_keybindings_toml_rebinds_send_to_ctrl_enter` sends the kitty keyboard protocol's `CSI 13;5u`, which crossterm decodes as Ctrl+Enter; the test also checks that plain Enter stays a newline. `ctrl_b_backgrounds_the_pending_bash_card` now sets `busy`, because `Ctrl+B` is a running-turn key in the keymap. `plain.rs` passes the default keymap to `commands::help` (plain mode reads whole lines). Size: ~940 lines added and ~130 removed in code, tests and docs (`keymap.rs` alone is ~500, about a quarter of it tests), across 14 source/test files plus docs, snapshots and regenerated `docs/screenshots/*.svg`. That is well over the ~160 / 3-file estimate because dispatch, hints, the overlay, `/help`, the session, `doctor` and the docs generator all had to read one keymap. Manual run: `COX_HOME=<scratch> cox doctor` with `send = "ctrl+o"`, `transcript = "ctrl+o"` and `warp = "f1"` prints `keybindings: ⚠ keybindings.toml: unknown action "warp"; Ctrl+O in idle: send and transcript`. Setting `HOME` to the scratch tree as well made `doctor` hang before any output (the toolchain check goes through the mise/rustup shims), which has nothing to do with this task.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui keymap_parses_chords keymap_rebinds_send claude_keybindings_import_maps_known_commands
+3 tests run: 3 passed, 219 skipped
+$ mise exec -- cargo nextest run --workspace
+812 tests run: 812 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+
+#### T23.2 Flicker-free scrollback (`scrolling-regions`)
+
+Model: opus · Status: done 2026-09-24 · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
+Goal: `insert_before` scrolls the region above the viewport instead of repainting everything.
+Files: `Cargo.toml`, `crates/cox-tui/tests/shell.rs`.
+Steps: (1) Add `scrolling-regions` to the ratatui feature list (verified present in 0.30.2, ledger #29). (2) PTY test: stream 40 finished cells through the real binary with the scripted provider and count full-viewport repaints in the vt100 screen diff (a repaint = every viewport row rewritten in one frame); assert ≤ 1 per inserted cell. (3) Record the before/after count in the commit message; if the count does not drop on the vt100 parser, keep the feature off and record why in §6 (falsifier).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
+```
+Done when: the test passes with the feature on and the number in the commit message is lower than before.
+Out of scope: resize handling (T23.7).
+Approval: the creator approved enabling ratatui's `scrolling-regions` feature (2026-09-24).
+Execution plan: (1) `cox-tui` has no `cox` binary to spawn, so `src/bin/kitty_probe.rs` (the T23.1 probe that already drives `cox_tui::app::run` under a PTY) gains a `COX_PROBE_SCENARIO=cells` mode that feeds 40 finished `Notice` cells on its feed channel, one per loop iteration, then quits. (2) `tests/shell.rs`: fold the T23.1 PTY reader into one shared harness (spawn, `CSI 6n` answers, vt100 parser, raw capture, wait for exit with a 30 s deadline) and add `pty_insert_before_repaints_at_most_once_per_cell`: replay the raw bytes offline, split them into frames at ratatui's per-draw cursor show/hide, seed every screen row with a sentinel before each frame, and count a frame as a full-viewport repaint when at least the viewport's 15 rows lost every sentinel. (3) Measure with the feature off, then add `scrolling-regions` to the workspace ratatui entry and measure again; assert the stricter bound the numbers justify; both numbers go into the commit message. If the count does not drop, revert the feature and record the falsifier in §6. (4) Update `research.md` (the "not enabled" row), §1 and `toolchain.md` if they list ratatui features. Verify with the Check and the three workspace commands.
+
+Deviations: the card names "the real binary with the scripted provider", but `cox-tui` tests cannot spawn `cox` (no `CARGO_BIN_EXE_cox` outside `crates/cox`), so `src/bin/kitty_probe.rs` (the T23.1 probe that already runs `cox_tui::app::run` under a PTY) gained a `COX_PROBE_SCENARIO=cells` mode that feeds 40 `Notice` cells; a third file beyond the card's two. The T23.1 PTY reader was folded into one shared harness in `tests/shell.rs` rather than copied, so the test file grew by ~100 lines. The assertion is tighter than the card's "≤ 1 per inserted cell" (which the build without the feature also met: exactly 40 for 40): at most 1 for the whole run, so the test fails if the feature is dropped. `Cargo.lock` gains lock-only entries for ratatui's weak optional termion backend (nothing new is compiled; `cargo deny check licenses bans` ok). Finding recorded in `research.md`: the `vt100` fixture keeps no scrollback for lines scrolled off a DECSTBM region.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
+PASS cox-tui::shell pty_insert_before_repaints_at_most_once_per_cell — 1 passed
+full-viewport repaints for 40 inserted cells: before (feature off) 40, after (feature on) 0; 3 runs each, identical
+$ mise exec -- cargo nextest run --workspace
+802 tests run: 802 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean for every file this task touched; pre-existing diffs from T28.1 in crates/cox-tui/src/status.rs and crates/cox-tui/tests/status.rs (left untouched)
+```
+
+#### T23.7 Resize hardening
+
+Model: opus · Status: done 2026-09-24 · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
+Goal: a resize mid-stream leaves no duplicated or stale lines in scrollback (ratatui #2086 class).
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/tests/shell.rs`.
+Steps: (1) On `Input::Resize`, set `state.resizing = true`, skip `insert_before` and `draw` until the next tick with a stable size (two identical size reads 16 ms apart), then `terminal.clear()` of the viewport region and a full redraw. (2) Re-measure the inline viewport height (`VIEWPORT_ROWS` clamped to the new height − 2). (3) PTY test resizes 120×40 → 80×24 while a reply streams, then asserts the vt100 scrollback contains each finished cell exactly once.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
+```
+Done when: the test passes on macOS and Linux CI.
+Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (documented in `docs/compat.md`).
+Execution plan: (1) `app.rs`: every loop iteration compares the backend size with the size the `Terminal` was built for; a difference (an `Input::Resize` or a size read) starts settling, a local in `run` (not a `State` field: nothing in `update`/`view` needs it) holding the last read and when it was taken. While settling, no `take_finished`/`insert_before`/`draw` runs, so finished cells wait in `State` and ratatui's own `autoresize` (which clears the whole screen on a narrower width) never fires. (2) On a tick whose size read equals the previous one taken at least 16 ms earlier: query the cursor, subtract the cursor's row offset inside the old viewport (tracked after every draw; a draw that shows no cursor parks it on the viewport's top-left), clear from that row down (the old viewport region only), and rebuild the `Terminal` with `Viewport::Inline(VIEWPORT_ROWS.min(height − 2))`; the same helper builds the first one. Then the queued cells go in and the frame is drawn in full. (3) `kitty_probe.rs`: `COX_PROBE_SCENARIO=resize` feeds 12 cells, starts an assistant reply, streams until the terminal size changes, then finishes the reply and feeds 4 more cells. (4) `tests/shell.rs`: `pty_resize_mid_stream_keeps_scrollback_unique` spawns at 120×40, waits (30 s deadline) for the streaming reply on screen, resizes the vt100 parser and the PTY to 80×24 together, and asserts every cell and the reply appear exactly once across scrollback and screen. The harness models two things real terminals do that the `vt100` crate does not: a shrink keeps the cursor row visible by scrolling the top rows into scrollback, and lines scrolled off a DECSTBM region whose top is row 1 are kept (see the T23.2 note in `research.md`). Verify with the Check, the three workspace commands and a manual run against a scratch `COX_HOME`; Linux CI is not reachable from here.
+
+Deviations: the settling state is a local in `app::run`, not a `state.resizing` field, because nothing in `update`/`view` reads it (and `state.rs` stays untouched). It starts on any size change the loop sees, not only on `Input::Resize`, so a tick that reaches `draw` before the resize event arrives cannot trigger ratatui's `autoresize` (which clears the whole screen on a narrower width). The scenario runs through `src/bin/kitty_probe.rs` (`COX_PROBE_SCENARIO=resize`) for the same reason as T23.2: `cox-tui` tests cannot spawn `cox`. That adds a third file, and `docs/compat.md` records the leftovers. The size is over the card's ~80: `app.rs` +~70, the probe +~40, and the PTY harness in `tests/shell.rs` +~190. The harness models two behaviours of xterm-class terminals that `vt100` 0.16 lacks: a height shrink scrolls the top rows into scrollback so the cursor row stays visible, and lines scrolled off a DECSTBM region whose top is row 1 are kept. It also resizes only at a frame boundary. Without that, a resize that lands halfway through a frame moves the cursor away from the row the app parked it on, which is a real race; it is recorded in `docs/compat.md`. Without the fix the test lost cell-04…cell-12. With the fix but without the viewport clear, the stale frame showed up twice. Linux CI was not run from the macOS host.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
+PASS cox-tui::shell pty_resize_mid_stream_keeps_scrollback_unique — 1 passed (40 stress runs, plus 20 under CPU load, all passed)
+$ mise exec -- cargo nextest run --workspace
+803 tests run: 803 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean for every file this task touched; pre-existing diffs from T28.1 in crates/cox-tui/src/status.rs and crates/cox-tui/tests/status.rs (left untouched)
+$ real `cox` binary, scratch COX_HOME, COX_PROVIDER=scripted, 120x40 -> 80x24 after five turns (throwaway PTY run, not committed)
+all seven turns in scrollback exactly once; no stale status or composer lines
+```
+
+#### T30.4 CI footprint baseline
+
+Model: Claude Code / claude-opus-5-5 · Status: done 2026-09-24 · Depends: T30.2 · Size: ~15 · Priority: P2 · Complexity: 1
+Goal: `footprint --check` in CI compares a runner against a baseline measured on a runner, not against the laptop that wrote `scripts/footprint.json`.
+Why: PR #34's `footprint (macos-15)` failed on `first_frame_ms` (baseline 40.0 from the creator's Mac, 60.1 on the runner), while the same branch on the Mac measured 38.4 ms and passed. The runner is faster at cold start (7.5 vs 11.0 ms) and slower at first frame, so no single machine's numbers fit both. The creator chose a separate CI baseline over dropping `--check` in CI.
+Change: `scripts/footprint.sh` keys the baseline as `<OS-arch>-ci` when `CI` is set (GitHub Actions sets `CI=true`); `scripts/footprint.json` gains `Darwin-arm64-ci` with the numbers of that `macos-15` run (PR #34, run 35927365093). The local `Darwin-arm64` key and `just footprint` are unchanged. `Linux-x86_64-ci` has no entry yet, so that job warns and exits 0 until someone runs `--write` on a runner.
+Check:
+```text
+$ bash -n scripts/footprint.sh
+syntax ok
+$ CI=true → key Darwin-arm64-ci; CI unset → key Darwin-arm64
+$ bash scripts/footprint.sh --check   # local Mac, PR #34 branch
+first_frame_ms: baseline 40.0, now 38.4 — footprint: no metric regressed >20%
+```
+Known limit: the CI baseline is one run; if runner noise alone crosses 20 %, refresh it from a runner with `--write` rather than widening the threshold.

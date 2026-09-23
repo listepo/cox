@@ -35,8 +35,8 @@ fn segments(state: &State) -> Vec<(bool, String)> {
         SandboxMode::DangerFullAccess => "danger-full-access",
     };
     let pct = u64::from(s.context_tokens) * 100 / u64::from(s.context_window.max(1));
-    let filled = ((s.cache_ratio.clamp(0.0, 1.0) * CTX_CELLS as f64).round() as usize)
-        .min(CTX_CELLS);
+    let filled =
+        ((s.cache_ratio.clamp(0.0, 1.0) * CTX_CELLS as f64).round() as usize).min(CTX_CELLS);
     let bar: String = "▰".repeat(filled) + &"▱".repeat(CTX_CELLS - filled);
     let cache_pct = (s.cache_ratio * 100.0).round() as u64;
     // Inside a repository the line starts with `⎇ main +12 −3`; outside one
@@ -200,7 +200,10 @@ fn spans_for(state: &State, text: &str) -> Vec<Span<'static>> {
     if text.starts_with('$') {
         let s = &state.status;
         if s.cost_usd >= s.budget_cap_usd.max(0.0) * s.budget_warn_at.max(0.0) {
-            return vec![Span::styled(text.to_string(), Style::default().fg(theme.warn))];
+            return vec![Span::styled(
+                text.to_string(),
+                Style::default().fg(theme.warn),
+            )];
         }
     }
     vec![Span::raw(text.to_string())]

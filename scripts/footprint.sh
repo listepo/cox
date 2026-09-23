@@ -11,8 +11,9 @@
 # are python3 (already required by evals/run.py). RSS comes from
 # /usr/bin/time -l (macOS, bytes) or -v (Linux, KiB) — on Linux install the
 # `time` package first. Baselines are keyed by OS-arch because binaries and
-# timings are per-target; --check with no entry for this machine warns and
-# exits 0 so a new platform bootstraps instead of failing.
+# timings are per-target, plus `<OS-arch>-ci` for CI runners (T30.4); --check
+# with no entry for this machine warns and exits 0 so a new platform
+# bootstraps instead of failing.
 
 set -euo pipefail
 
@@ -24,7 +25,9 @@ if [ $# -gt 1 ] || { [ $# -eq 1 ] && [ "$1" != "--write" ] && [ "$1" != "--check
 fi
 [ $# -eq 1 ] && MODE="${1#--}"
 
-OS="$(uname -s)-$(uname -m)"
+# A CI runner is a different machine from any laptop the baseline was
+# written on, so CI (GitHub sets CI=true) compares against its own `-ci` key.
+OS="$(uname -s)-$(uname -m)${CI:+-ci}"
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/footprint-XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT
 

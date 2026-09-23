@@ -1,18 +1,14 @@
 # Todo
 
 - T22.4. Mouse: wire `tui.mouse` or delete the key
-- T23.2. Flicker-free scrollback (`scrolling-regions`)
 - T23.3. OSC 8 hyperlinks
 - T23.4. OSC 52 clipboard
 - T23.5. Notifications
 - T23.6. OSC 9;4 progress
-- T23.7. Resize hardening
 - T24.3. `two-face` syntax set
-- T24.6. Footer hints and `?` help
 - T24.7. Motion and narrow-width polish
 - T25.2. `Shift+Tab` mode cycle and plan-mode view
 - T25.3. `!` shell line
-- T25.5. Keybindings file
 - T25.8. Cross-session prompt history
 - T26.4. `/undo`, `/redo`
 - T27.2. Approvals labelled by source; agent cards

@@ -9,19 +9,15 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | done | P1 | 1 | 0% | |
-| T23.2 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
-| T23.7 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.6 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | done | P1 | 1 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.5 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T25.6 | done | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
@@ -94,7 +90,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
-| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
+| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
@@ -985,20 +981,6 @@ Out of scope: drag selection inside the TUI (the terminal's own selection covers
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
-#### T23.2 Flicker-free scrollback (`scrolling-regions`)
-
-Model: opus · Status: in progress · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
-Goal: `insert_before` scrolls the region above the viewport instead of repainting everything.
-Files: `Cargo.toml`, `crates/cox-tui/tests/shell.rs`.
-Steps: (1) Add `scrolling-regions` to the ratatui feature list (verified present in 0.30.2, ledger #29). (2) PTY test: stream 40 finished cells through the real binary with the scripted provider and count full-viewport repaints in the vt100 screen diff (a repaint = every viewport row rewritten in one frame); assert ≤ 1 per inserted cell. (3) Record the before/after count in the commit message; if the count does not drop on the vt100 parser, keep the feature off and record why in §6 (falsifier).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
-```
-Done when: the test passes with the feature on and the number in the commit message is lower than before.
-Out of scope: resize handling (T23.7).
-Approval: the creator approved enabling ratatui's `scrolling-regions` feature (2026-09-24).
-
 #### T23.3 OSC 8 hyperlinks
 
 Model: sonnet · Status: open · Depends: T23.0 · Size: ~120 · Priority: P1 · Complexity: 2
@@ -1053,19 +1035,6 @@ mise exec -- cargo nextest run -p cox-tui progress_sequence_follows_turn_state
 Done when: the sequence test passes and the PTY e2e on a terminal without the capability sees no `9;4`.
 Out of scope: percentages (a turn has no known length).
 
-#### T23.7 Resize hardening
-
-Model: opus · Status: in progress · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
-Goal: a resize mid-stream leaves no duplicated or stale lines in scrollback (ratatui #2086 class).
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/tests/shell.rs`.
-Steps: (1) On `Input::Resize`, set `state.resizing = true`, skip `insert_before` and `draw` until the next tick with a stable size (two identical size reads 16 ms apart), then `terminal.clear()` of the viewport region and a full redraw. (2) Re-measure the inline viewport height (`VIEWPORT_ROWS` clamped to the new height − 2). (3) PTY test resizes 120×40 → 80×24 while a reply streams, then asserts the vt100 scrollback contains each finished cell exactly once.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
-```
-Done when: the test passes on macOS and Linux CI.
-Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (documented in `docs/compat.md`).
-
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
 #### T24.3 `two-face` syntax set
@@ -1081,19 +1050,6 @@ mise exec -- cargo build --release -p cox && ls -l target/release/cox
 ```
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
-
-#### T24.6 Footer hints and `?` help
-
-Model: opus · Status: in progress · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
-Goal: the composer placeholder row shows 3–5 context-dependent hints; `?` on an empty composer opens the full keymap overlay from the one table that also feeds `/help` and the docs.
-Files: `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
-Steps: (1) `commands.rs`: `pub const KEYMAP: &[(&str, &str, Context)]` (`key`, `action`, `Idle|Running|Modal|Overlay`) — the single source; `/help` renders it; a doc test asserts `docs/getting-started.md`'s keymap table matches. (2) `view.rs`: placeholder = the first 3–5 entries for the current context (`Enter send · Shift+Tab mode · @ file · / command · ? help` idle; `Esc stop · Ctrl+B background · Ctrl+O transcript` running). (3) `modal.rs`: `Help` overlay listing `KEYMAP` grouped by context, `Esc`/`?` closes; `?` only when the composer is empty (otherwise it is a character).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hints_follow_context keymap_table_matches_docs
-```
-Done when: the overlay snapshot exists and the doc test pins `docs/getting-started.md`.
-Out of scope: keybinding customisation (T25.5 extends the same table).
 
 #### T24.7 Motion and narrow-width polish
 
@@ -1136,19 +1092,6 @@ mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_ou
 ```
 Done when: the loop scenarios pass and the next request after `!ls` is byte-identical to the one before it (prefix invariant).
 Out of scope: an interactive shell (T15.4 completion already helps the line).
-
-#### T25.5 Keybindings file
-
-Model: opus · Status: in progress · Depends: T24.6 · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `~/.cox/keybindings.toml` rebinds any action in the keymap table; Claude Code's `keybindings.json` is imported read-only for the actions that exist in both; conflicts are reported by `doctor`.
-Files: `crates/cox-tui/src/keymap.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-ext/src/claude_settings.rs`.
-Steps: (1) `keymap.rs`: `Action` enum generated from `KEYMAP` (T24.6), `Binding { key, modifiers, context }`, parser for `"ctrl+enter"`, `"shift+tab"`, `"alt+m"`; `Keymap::resolve(KeyEvent, Context) -> Option<Action>`. (2) `state.rs` dispatches through `Keymap` instead of the literal `match` (the literal table becomes the default `Keymap`). (3) `claude_settings.rs`: read `~/.claude/keybindings.json` (`{ "bindings": [{ "key", "command", "when" }] }`) and map the commands cox has (`send`, `newline`, `interrupt`, `mode.cycle`, `transcript`, `help`); unknown commands ignored with a debug log. (4) `doctor`: two actions on one key in one context → warning naming both.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui keymap_parses_chords keymap_rebinds_send claude_keybindings_import_maps_known_commands
-```
-Done when: rebinding `send` to `ctrl+enter` works in the PTY e2e and `docs/config.md` documents the file.
-Out of scope: chords (`ctrl+x ctrl+s`), per-mode vim remaps.
 
 #### T25.8 Cross-session prompt history
 

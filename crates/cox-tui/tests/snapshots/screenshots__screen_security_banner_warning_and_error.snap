@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
-assertion_line: 477
 expression: "shot(\"banner_and_error\", &mut state)"
 ---
 › append the host to /etc/hosts
@@ -19,5 +18,5 @@ expression: "shot(\"banner_and_error\", &mut state)"
 
 
 
->  message · @ file · / command
+> Enter send · Tab mode cycle · @ file · / command · ? help
 sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

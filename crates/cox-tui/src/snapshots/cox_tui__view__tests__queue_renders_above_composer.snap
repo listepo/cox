@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/src/view.rs
-assertion_line: 200
 expression: buffer_to_string(&buf)
 ---
 
@@ -9,5 +8,5 @@ expression: buffer_to_string(&buf)
 
  ⏸ first message
  ⏸ second message
->  message · @ file · / command
+> Esc interrupt · Ctrl+B background · Ct
 - · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default] ·

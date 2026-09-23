@@ -6,6 +6,8 @@
 
 use cox_protocol::types::{Effort, ModelId, PermissionMode, SlashCommand, Submission, Tier};
 
+use crate::keymap::Keymap;
+
 /// `(name, usage, what it does)`; the palette lists the names in this order.
 pub const COMMANDS: &[(&str, &str, &str)] = &[
     (
@@ -85,6 +87,77 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("help", "/help", "this list"),
     ("quit", "/quit", "exit"),
 ];
+
+/// Where a key applies (T24.6): the composer with no turn, a running turn,
+/// a modal that takes the keys (approval, question, picker), or an overlay
+/// drawn over the transcript (help, diff).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Context {
+    Idle,
+    Running,
+    Modal,
+    Overlay,
+}
+
+impl Context {
+    pub const ALL: [Context; 4] = [
+        Context::Idle,
+        Context::Running,
+        Context::Modal,
+        Context::Overlay,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Context::Idle => "idle",
+            Context::Running => "running",
+            Context::Modal => "modal",
+            Context::Overlay => "overlay",
+        }
+    }
+}
+
+/// `(key, action, context)`: the one keymap the footer hints, the `?`
+/// overlay, `/help` and `docs/getting-started.md` all read, and the default
+/// `keymap::Keymap` (T25.5). Within a context the first rows are the footer
+/// hints, so order matters; an action's rows stay together.
+pub const KEYMAP: &[(&str, &str, Context)] = &[
+    ("Enter", "send", Context::Idle),
+    ("Tab", "mode.cycle", Context::Idle),
+    ("@", "file", Context::Idle),
+    ("/", "command", Context::Idle),
+    ("?", "help", Context::Idle),
+    ("Shift+Enter", "newline", Context::Idle),
+    ("Alt+Enter", "newline", Context::Idle),
+    ("Ctrl+Enter", "newline", Context::Idle),
+    ("Ctrl+R", "history", Context::Idle),
+    ("Ctrl+T", "thinking", Context::Idle),
+    ("Ctrl+O", "transcript", Context::Idle),
+    ("Ctrl+E", "expand", Context::Idle),
+    ("Ctrl+G", "diff", Context::Idle),
+    ("Ctrl+C", "quit", Context::Idle),
+    ("Ctrl+D", "quit", Context::Idle),
+    ("Esc", "interrupt", Context::Running),
+    ("Ctrl+C", "interrupt", Context::Running),
+    ("Ctrl+B", "background", Context::Running),
+    ("Ctrl+O", "transcript", Context::Running),
+    ("Alt+Enter", "send.now", Context::Running),
+    ("Ctrl+Enter", "send.now", Context::Running),
+    ("Ctrl+U", "unqueue", Context::Running),
+    ("Enter", "choose", Context::Modal),
+    ("Esc", "close", Context::Modal),
+    ("Up", "previous", Context::Modal),
+    ("Down", "next", Context::Modal),
+    ("Esc", "close", Context::Overlay),
+    ("?", "close", Context::Overlay),
+    ("PageUp", "scroll.up", Context::Overlay),
+    ("PageDown", "scroll.down", Context::Overlay),
+];
+
+/// An action id as the footer and overlay print it: `mode.cycle` → `mode cycle`.
+pub fn label(action: &str) -> String {
+    action.replace('.', " ")
+}
 
 /// What a parsed command asks for.
 #[derive(Debug, Clone, PartialEq)]
@@ -197,14 +270,22 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
     })
 }
 
-/// `/help`: one line per command.
-pub fn help() -> String {
+/// `/help`: the keymap as bound now, one line per context, then one line
+/// per command.
+pub fn help(keymap: &Keymap) -> String {
+    let keys = Context::ALL.iter().map(|ctx| {
+        let rows: Vec<String> = keymap
+            .rows(*ctx)
+            .into_iter()
+            .map(|(k, a)| format!("{k} {}", label(a)))
+            .collect();
+        format!("{:8} {}", ctx.name(), rows.join(" · "))
+    });
     let width = COMMANDS.iter().map(|(_, u, _)| u.len()).max().unwrap_or(0);
-    COMMANDS
+    let commands = COMMANDS
         .iter()
-        .map(|(_, usage, what)| format!("{usage:width$}  {what}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .map(|(_, usage, what)| format!("{usage:width$}  {what}"));
+    keys.chain(commands).collect::<Vec<_>>().join("\n")
 }
 
 fn tier_named(s: &str) -> Option<Tier> {
@@ -265,6 +346,22 @@ mod tests {
             Some(Action::Handoff("ship the parser".into()))
         );
         assert!(matches!(p("/handoff"), Some(Action::Notice(_))));
+    }
+
+    /// T24.6: `docs/getting-started.md`'s keymap table is `KEYMAP`, row for
+    /// row, and ends where `KEYMAP` ends (a blank line follows it).
+    #[test]
+    fn keymap_table_matches_docs() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/getting-started.md");
+        let doc = std::fs::read_to_string(path).expect("getting-started.md");
+        let mut table = String::from("| Key | Action | Context |\n| --- | --- | --- |\n");
+        for (key, action, ctx) in KEYMAP {
+            table.push_str(&format!("| `{key}` | {action} | {} |\n", ctx.name()));
+        }
+        assert!(
+            doc.contains(&format!("{table}\n")),
+            "docs/getting-started.md's keymap table differs from KEYMAP; expected:\n{table}"
+        );
     }
 
     /// T25.7: `/autocompact` names the project config layer, the same data
