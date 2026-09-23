@@ -11,7 +11,6 @@
 - T24.7. Motion and narrow-width polish
 - T25.2. `Shift+Tab` mode cycle and plan-mode view
 - T25.3. `!` shell line
-- T25.5. Keybindings file
 - T25.8. Cross-session prompt history
 - T26.4. `/undo`, `/redo`
 - T27.2. Approvals labelled by source; agent cards

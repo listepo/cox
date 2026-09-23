@@ -20,7 +20,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T24.8 | done | P1 | 1 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.5 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T25.6 | done | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
@@ -1122,20 +1121,6 @@ mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_ou
 ```
 Done when: the loop scenarios pass and the next request after `!ls` is byte-identical to the one before it (prefix invariant).
 Out of scope: an interactive shell (T15.4 completion already helps the line).
-
-#### T25.5 Keybindings file
-
-Model: opus · Status: in progress · Depends: T24.6 · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `~/.cox/keybindings.toml` rebinds any action in the keymap table; Claude Code's `keybindings.json` is imported read-only for the actions that exist in both; conflicts are reported by `doctor`.
-Files: `crates/cox-tui/src/keymap.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-ext/src/claude_settings.rs`.
-Steps: (1) `keymap.rs`: `Action` enum generated from `KEYMAP` (T24.6), `Binding { key, modifiers, context }`, parser for `"ctrl+enter"`, `"shift+tab"`, `"alt+m"`; `Keymap::resolve(KeyEvent, Context) -> Option<Action>`. (2) `state.rs` dispatches through `Keymap` instead of the literal `match` (the literal table becomes the default `Keymap`). (3) `claude_settings.rs`: read `~/.claude/keybindings.json` (`{ "bindings": [{ "key", "command", "when" }] }`) and map the commands cox has (`send`, `newline`, `interrupt`, `mode.cycle`, `transcript`, `help`); unknown commands ignored with a debug log. (4) `doctor`: two actions on one key in one context → warning naming both.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui keymap_parses_chords keymap_rebinds_send claude_keybindings_import_maps_known_commands
-```
-Done when: rebinding `send` to `ctrl+enter` works in the PTY e2e and `docs/config.md` documents the file.
-Out of scope: chords (`ctrl+x ctrl+s`), per-mode vim remaps.
-Execution plan: (a) `keymap.rs` (new): `Action` enum for the `KEYMAP` actions `state.rs` dispatches (`send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`), with a test that pins every enum id to a `KEYMAP` row; `parse` for `ctrl+enter`/`shift+tab`/`alt+m`; `Keymap` = ordered rows built from `KEYMAP`, `resolve(KeyEvent, Context)` (a running turn falls back to idle keys), `rebind` (cox file: replaces the action's keys), `add` (Claude import: additive); a user key takes that key from the defaults in its context, and `conflicts()` names two user actions on one key and context; `load(toml, claude)` returns the keymap, warnings and skipped entries. (b) `state.rs`: `State.keymap`; `on_key` resolves through it (`Ctrl+C` stays fixed); `Tab` completion stays in front of it; an `Enter` no binding claims is a newline; hints, the `?` overlay and `/help` read the keymap, so they show rebound keys. (c) `claude_settings.rs`: `keybindings(claude_home)` reads `keybindings.json` in Claude Code's real shape `{ "bindings": [{ "context", "bindings": { "<key>": "<action>" | null } }] }` (not the `{key, command, when}` shape in step 3) and returns `(key, action)` pairs; `keymap.rs` maps `chat:submit`, `chat:newline`, `chat:sendNow`, `chat:cancel`, `chat:cycleMode`, `app:toggleTranscript`, `task:background`, `app:exit`; Claude has no action that opens help, and unknown actions and chords are skipped with a `tracing::debug!` in the binary. (d) `crates/cox`: `config_load::keymap(cox_home, claude_home)` read by `session.rs` (warnings become notices) and by `doctor` (`keybindings` row: warn with each conflict naming both actions). (e) `docs/config.md` documents `~/.cox/keybindings.toml`. (f) PTY e2e in `tui_e2e.rs`: `send = "ctrl+enter"`, the test writes the Kitty CSI-u sequence for Ctrl+Enter (`\x1b[13;5u`), because a plain PTY cannot tell Ctrl+Enter from Enter; plain Enter then inserts a newline. More than three files and more than ~160 LOC are expected; `done.md` will say why.
 
 #### T25.8 Cross-session prompt history
 
