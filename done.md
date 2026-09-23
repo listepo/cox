@@ -3132,3 +3132,24 @@ binary (/Users/listepo/GitHub/listepo/apps/cox/target/release/cox): 43.9 MiB (46
 ```
 Deviations: (1) Replay is 30 user turns / 60 provider calls, not 50 — that is what the 5 committed transcripts hold (6 lines each incl. summary); context still grows turn to turn via `--resume`, which is what RSS measures. (2) Baseline lives at `scripts/footprint.json` next to the script (repo has no other committed-JSON convention; `evals/` keeps its data beside its runner too). (3) A 4th file, `website/content/_index.md`, carries the one website line the card requires, plus a `justfile` recipe line (no other path from `just footprint` to the script). (4) First-frame timing is spawn-to-first-stdout-byte of `stream-json`, not a PTY frame — headless `run` is the surface CI can measure deterministically. Cold-start timings vary with machine load (11–39 ms seen); RSS/binary are stable.
 
+
+#### T22.7 Leftover audit
+
+Model: haiku · Status: done 2026-09-23 · Depends: T22.1, T22.2, T22.3, T22.4, T22.5, T22.6 · Size: docs · Priority: P1 · Complexity: 1
+Goal: every "Not done:" line in `done.md` is either a task in §3, closed by P22, or recorded as a deliberate won't-do in `docs/compat.md` with one sentence why.
+Files: `docs/compat.md`, `scripts/leftovers.sh` (new), `plan.md` (§6 note only).
+Steps: (1) `scripts/leftovers.sh` extracts every `Not done:` sentence with its task id from `done.md`. (2) For each item: mark `closed by T..` when a P22 task covers it, `task T..` when a §3 card covers it, else add a row to a "Known leftovers" table in `docs/compat.md` (`task | leftover | why it stays`). (3) The script exits non-zero when an item is in none of the three sets; wire it into `just check`.
+Check:
+```bash
+bash scripts/leftovers.sh
+```
+Done when: the script exits 0 and `docs/compat.md` lists every remaining leftover with a reason.
+Out of scope: fixing any leftover — that is a card, not this audit.
+
+Check output:
+```
+$ bash scripts/leftovers.sh
+leftovers: ok: 33 items across 33 tasks, every one closed, tasked, or recorded
+$ bash -n scripts/leftovers.sh && echo ok
+ok
+```

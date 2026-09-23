@@ -2,6 +2,7 @@
 # toolchain (mise.toml) is used, never whatever `cargo` happens to be on PATH.
 
 check:
+    bash scripts/leftovers.sh
     mise exec -- cargo fmt --check
     mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 

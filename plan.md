@@ -8,7 +8,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.7 | todo | P1 | 1 | 0% | |
+| T22.7 | done | P1 | 1 | 0% | |
 | T23.2 | todo | P1 | 2 | 0% | |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
@@ -983,19 +983,6 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
 
-#### T22.7 Leftover audit
-
-Model: haiku · Status: open · Depends: T22.1, T22.2, T22.3, T22.4, T22.5, T22.6 · Size: docs · Priority: P1 · Complexity: 1
-Goal: every "Not done:" line in `done.md` is either a task in §3, closed by P22, or recorded as a deliberate won't-do in `docs/compat.md` with one sentence why.
-Files: `docs/compat.md`, `scripts/leftovers.sh` (new), `plan.md` (§6 note only).
-Steps: (1) `scripts/leftovers.sh` extracts every `Not done:` sentence with its task id from `done.md`. (2) For each item: mark `closed by T..` when a P22 task covers it, `task T..` when a §3 card covers it, else add a row to a "Known leftovers" table in `docs/compat.md` (`task | leftover | why it stays`). (3) The script exits non-zero when an item is in none of the three sets; wire it into `just check`.
-Check:
-```bash
-bash scripts/leftovers.sh
-```
-Done when: the script exits 0 and `docs/compat.md` lists every remaining leftover with a reason.
-Out of scope: fixing any leftover — that is a card, not this audit.
-
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
 #### T23.2 Flicker-free scrollback (`scrolling-regions`)
@@ -1122,7 +1109,7 @@ Out of scope: tachyonfx-style effects (none planned).
 
 #### T24.8 Screenshots and gallery
 
-Model: haiku · Status: open · Depends: T24.2, T24.4, T24.5, T24.6, T22.1 · Size: docs · Priority: P1 · Complexity: 1
+Model: haiku · Status: in progress · Depends: T24.2, T24.4, T24.5, T24.6, T22.1 · Size: docs · Priority: P1 · Complexity: 1
 Goal: `just screenshots` covers every new state and the website gallery lists them.
 Files: `crates/cox-tui/tests/screenshots.rs`, `website/content/docs/screens.md` (or the existing gallery page), `README.md`.
 Steps: (1) Add screen tests: theme picker, tool card ×3, side-by-side diff, help overlay, question modal, queued messages (after T25.1), rewind timeline (after T26.2 — leave a TODO row if not yet landed). (2) Run `just screenshots`; commit the SVGs. (3) Gallery page: one image per state with a one-line caption; README picks the tool-card frame.
@@ -1137,7 +1124,7 @@ Out of scope: animated GIFs.
 
 #### T25.2 `Shift+Tab` mode cycle and plan-mode view
 
-Model: sonnet · Status: open · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
+Model: sonnet · Status: in progress · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
 Goal: `Shift+Tab` cycles default → plan → auto; `Tab` completes `@`/`/` only; the composer prompt and status line show the mode; in plan mode denied writes render as a dim "planned" line instead of an error card.
 Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/cells.rs`.
 Steps: (1) Move the mode cycle from `Tab` to `BackTab` (crossterm reports `Shift+Tab` as `KeyCode::BackTab` everywhere, Kitty or not); `Tab` in the composer triggers picker completion when a `@`/`/` token is under the cursor, else inserts nothing. (2) Prompt glyph per mode from the glyph table: `>` default, `▷` plan, `»` auto, `!` bypass, coloured with `theme.mode_*`. (3) `cells.rs`: a `ToolCallDone` whose result is `denied: plan mode` renders `▷ planned: edit src/lib.rs` in `theme.dim` (no error tint). (4) §1.13 table updated.
@@ -1177,7 +1164,7 @@ Out of scope: chords (`ctrl+x ctrl+s`), per-mode vim remaps.
 
 #### T25.6 `/init`
 
-Model: sonnet · Status: open · Depends: — · Size: ~140 · Priority: P1 · Complexity: 2
+Model: sonnet · Status: in progress · Depends: — · Size: ~140 · Priority: P1 · Complexity: 2
 Goal: writes an `AGENTS.md` skeleton for the repo on the `cheap` tier after showing the diff for approval; never overwrites without `--force`.
 Files: `crates/cox-tui/src/commands.rs`, `crates/cox-core/src/init.rs` (new), `crates/cox/src/session.rs`.
 Steps: (1) `init.rs`: detect manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `mise.toml`, `justfile`) and derive build/test/lint commands; render a template (`# <name>`, layout table from the top-level directories, commands, "conventions" left as a `cheap`-tier summary of the README if present). (2) `Submission::Command { name: "init" }` → the core runs the `cheap` job `init`, then emits an `ApprovalRequired` for the `write` of `AGENTS.md` (the existing diff modal shows it). (3) `cox init [--force]` subcommand for headless use.
@@ -1251,7 +1238,7 @@ Out of scope: cloud schedules.
 
 #### T28.1 Status-line segments
 
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
+Model: sonnet · Status: in progress · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
 Goal: `ctx` is a mini bar with the cached share in the accent colour; `$` shows spend over the session cap; effort and mode badges; segments drop from the right on narrow terminals in a documented order.
 Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/theme.rs`, `docs/getting-started.md`.
 Steps: (1) `ctx ▰▰▰▱▱ 41%` where filled cells in `theme.accent` mark cached tokens and `theme.text` uncached (from the last `Usage`). (2) `$0.83/5` (cap from `budget.session_usd`, `theme.warn` above `warn_at`). (3) Badges `[plan]`, `effort:xhigh` when non-default. (4) Drop order at narrow widths: git counts → cache → tasks → effort → model → cost → ctx (documented); a `--plain` variant (T29.1) prints the same text once per turn.
@@ -1295,7 +1282,7 @@ Out of scope: a colour-vision simulator.
 
 #### T30.1 `profile = "minimal"`
 
-Model: sonnet · Status: open · Depends: T22.2 · Size: ~140 · Priority: P2 · Complexity: 2
+Model: sonnet · Status: in progress · Depends: T22.2 · Size: ~140 · Priority: P2 · Complexity: 2
 Goal: a config profile whose assembled prefix is ≤ 1 000 tokens; `doctor` prints the prefix token count for the active profile; a test pins the cap.
 Files: `config/default.toml`, `crates/cox-core/src/context.rs`, `crates/cox/src/doctor.rs`.
 Steps: (1) `[profiles.minimal]`: `context.deferred_tools = true` with the core eight only, `system_prompt = "minimal"` (a second embedded prompt ≤ 300 tokens), `instruction_budget_tokens = 2000`, no skills index, no memory index; `cox --profile minimal` and `core.profile` key. (2) `context::assemble` honours the profile (the prefix layout §1.9 is unchanged — blocks are just smaller or empty). (3) `doctor`: `prefix: 912 tokens (profile minimal)` using the T1.8 estimator. (4) Test `minimal_prefix_under_1000_tokens` over the fixtures workspace.
