@@ -32,3 +32,7 @@ Permission rules can be imported from an existing `.claude/settings.json` setup;
 ## Model routing
 
 Jobs are grouped into cheap, code, and think tiers. Background tasks such as compaction and summaries stay in the cheap tier. The think tier requires explicit user confirmation—cox does not silently escalate a request to a more expensive model.
+
+## Profiles
+
+`cox --profile minimal` (or `core.profile = "minimal"`) assembles the lean prefix: the core tools plus `expand`, the short system prompt, and no skills or memory index. The layout (§1.9) is unchanged — blocks only shrink — so the cache contract holds. `cox doctor` prints the active profile's prefix token count (`prefix: N tokens (profile …)`).

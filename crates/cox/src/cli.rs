@@ -46,6 +46,10 @@ pub struct Cli {
     /// Override `budget.session_usd`.
     #[arg(long, global = true, value_name = "USD")]
     pub budget: Option<f64>,
+    /// Assembled-prefix profile: `minimal` keeps the core tools, the short
+    /// system prompt and no skills/memory index (T30.1).
+    #[arg(long, global = true, value_name = "NAME")]
+    pub profile: Option<String>,
     /// Run as if started from this directory.
     #[arg(long, global = true, value_name = "DIR")]
     pub cwd: Option<PathBuf>,
@@ -71,6 +75,10 @@ pub struct Cli {
     /// Disable MCP servers for this invocation.
     #[arg(long = "no-mcp", global = true)]
     pub no_mcp: bool,
+    /// Plain surface for screen readers: labelled lines, numbered prompts,
+    /// no cursor movement (also `COX_PLAIN=1`, `tui.screen_reader`).
+    #[arg(long)]
+    pub plain: bool,
 }
 
 /// Top-level subcommands (plan.md §1.12). Only `Run` and `Config` are
@@ -96,6 +104,8 @@ pub enum Command {
     Mcp(McpArgs),
     /// Agent Client Protocol server on stdio.
     Acp,
+    /// Scaffold an AGENTS.md for the repo.
+    Init(InitArgs),
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
     Ext(ExtArgs),
     /// Self-update the binary.
@@ -176,6 +186,9 @@ pub struct StatsArgs {
     /// Group usage by month, broken down by tier and job.
     #[arg(long)]
     pub month: bool,
+    /// Print totals for one project slug (or every project when omitted).
+    #[arg(long, value_name = "SLUG")]
+    pub project: Option<Option<String>>,
     /// Machine-readable JSON output.
     #[arg(long)]
     pub json: bool,
@@ -277,6 +290,14 @@ pub enum ConfigAction {
     },
     /// Print the user config file path.
     Path,
+}
+
+/// `cox init [--force]` (plan.md T25.6): scaffold `AGENTS.md` headlessly.
+#[derive(Args, Debug, Clone)]
+pub struct InitArgs {
+    /// Overwrite an existing `AGENTS.md` instead of refusing.
+    #[arg(long)]
+    pub force: bool,
 }
 
 /// `cox ext [list]` (plan.md §1.12/T9.3): bare `ext` prints the human

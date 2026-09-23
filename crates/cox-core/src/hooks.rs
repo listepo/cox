@@ -10,6 +10,47 @@ use serde_json::{Value, json};
 
 use crate::session::Session;
 
+/// Dispatches `event` only when `hooks.events` configures it (T22.3).
+/// `SessionStart`/`Notification` are observe-only trigger points nothing
+/// else listens for, so an unconfigured dispatch would be pure noise to an
+/// installed runner — and every configured hook runs exactly as documented.
+pub(crate) async fn fire_configured(
+    session: &Session,
+    event: HookEvent,
+    extra: Value,
+) -> HookOutcome {
+    if !session.config.hooks.events.contains_key(event.name()) {
+        return HookOutcome::Continue;
+    }
+    // `Box::pin`: `fire` can emit a `Notice` back through `Session::emit`,
+    // which may dispatch here again — the cycle needs one indirect future.
+    Box::pin(fire(session, event, extra)).await
+}
+
+/// What a `Notification` carries per trigger (T22.3): `kind`, `message`,
+/// `title`, on top of `fire`'s common fields. Its stdout is observe-only
+/// and never read.
+pub(crate) fn notification_payload(event: &Event) -> Option<Value> {
+    match event {
+        Event::ApprovalRequired { call, .. } => Some(json!({
+            "kind": "approval_required",
+            "title": "Approval required",
+            "message": format!("{}: {}", call.name, call.subject),
+        })),
+        Event::TurnDone { stop, .. } => Some(json!({
+            "kind": "turn_done",
+            "title": "Turn done",
+            "message": crate::session::stop_reason_name(stop),
+        })),
+        Event::ToolCallRequested { call } if call.name == "ask_user" => Some(json!({
+            "kind": "ask_user",
+            "title": "Question",
+            "message": call.input.pointer("/question").and_then(Value::as_str).unwrap_or_default(),
+        })),
+        _ => None,
+    }
+}
+
 /// Runs `event` with the common payload fields plus `extra` merged in.
 pub(crate) async fn fire(session: &Session, event: HookEvent, extra: Value) -> HookOutcome {
     let config = &session.config.hooks;

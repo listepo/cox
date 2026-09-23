@@ -1,0 +1,62 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"help_overlay\", &mut state)"
+---
+› what can I press here
+Every key, grouped by context.
+[info] idle     Enter send · Tab mode cycle · @ file · / command · ? help · Shift+Enter newline ·
+Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O transcript ·
+Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
+       running  Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter
+        send now · Ctrl+Enter send now · Ctrl+U unqueue
+       modal    Enter choose · Esc close · Up previous · Down next
+       overlay  Esc close · ? close · PageUp scroll up · PageDown scroll down
+       /model [cheap|code|think] [model]                        switch a tier's model
+       /think <prompt>                                          one turn on the think tier, price
+       confirmed first
+       /effort [low|high|xhigh]                                 effort for the rest of the session;
+       bare restores the tier default
+       /compact [focus]                                         compact the context now
+       /rewind                                                  go back to an earlier turn: code,
+       conversation or both
+       /cost                                                    what this session has spent
+       /context                                                 where the next request's tokens go
+       /autocompact                                             the compaction threshold and its
+       config source
+       /permissions [default|plan|auto|bypass]                  show or set the permission mode
+       /sandbox <read-only|workspace-write|danger-full-access>  set the sandbox mode
+       /resume                                                  pick an earlier session to resume
+       /sessions                                                this project's recent sessions
+       /expand <id>                                             show an archived tool output in full
+       /agents                                                  live cox sessions in this workspace
+       /skills                                                  list skills
+       /hooks                                                   list hooks
+       /mcp                                                     MCP servers and their tools
+       /doctor                                                  check the install
+       /clear                                                   new session, same directory
+       /fork [turn]                                             new child session with the history
+       up to a turn (default: all)
+       /handoff <objective>                                     new child session seeded with a
+       cheap summary and the objective
+       /init [--force]                                          scaffold AGENTS.md for this repo
+       /todo                                                    toggle the todo panel
+       /tasks                                                   list running background tasks
+       /vim                                                     toggle vim keys
+       /theme [name]                                            pick a colour theme, previewed live
+       /help                                                    this list
+       /quit                                                    exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+> Enter send · Tab mode cycle · @ file · / command · ? help
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

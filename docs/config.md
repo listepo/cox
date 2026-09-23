@@ -9,6 +9,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `max_turns` = `200` — per UserTurn, counts provider calls
 - `parallel_tools` = `4`
 - `log_level` = `"info"` — tracing filter; file log at ~/.cox/logs/cox.log
+- `profile` = `""` — "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
 ## `[tiers.cheap]`
 
 - `provider` = `"anthropic"`
@@ -116,6 +117,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `instruction_budget_tokens` = `8000`
 - `memory_budget_tokens` = `800`
 - `deferred_tools` = `true`
+- `system_prompt` = `"default"` — default | minimal (T30.1); `core.profile = "minimal"` implies it
 ## `[permissions]`
 
 - `mode` = `"default"` — default | plan | auto | bypass (bypass only via flag)
@@ -144,17 +146,19 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `theme` = `"auto"` — auto | dark | light | a built-in (cox-dark, cox-light, system) or a `~/.cox/themes/<name>.toml` file's stem; `auto` queries the terminal's OSC 11 background colour once, before raw mode, with a 100 ms timeout (T22.6) — tmux, a query error, or no reply within the timeout falls back to `dark`, same as before this query existed. An explicit `dark`/`light` (config file or `COX_TUI_THEME`) always wins over detection; a named theme follows the same read unless its file pins a `variant`. `cox doctor` reports what `auto` resolved to. `/theme` previews and writes this (T24.2).
 - `inline` = `true`
 - `show_thinking` = `"collapsed"` — collapsed | hidden | full
+- `screen_reader` = `false` — the plain surface (T29.1): flat labelled lines, numbered prompts, no cursor movement, BEL when a turn ends; same as `--plain` or `COX_PLAIN=1`
 - `mouse` = `true`
 - `glyphs` = `"auto"` — auto | unicode | ascii
 - `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 - `color` = `"auto"` — auto | none | 16 | 256 | true (NO_COLOR forces none)
 - `syntax_theme` = `""` — syntect theme for code, diffs and file output ("" follows theme); a `.tmTheme` file in `~/.cox/themes/` is merged in at startup and offered by `/theme` under a `syntax: ` prefix (T24.2)
+- `diff` = `"auto"` — auto | side | stacked — edit cards, the approval modal and Ctrl+G split old and new side by side from 120 columns (auto and side alike; narrower stays stacked), stacked never splits; replaced lines highlight the changed words (T24.5)
 - `git` = `true` — branch and +n -m in the status line, polled every 2 s
 - `caps` = `{}` — [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
 ## `[hooks]`
 
-- `timeout_s` = `60`
-- `fail_open` = `true`
+- `timeout_s` = `60` — seconds per [[hooks.<Event>]] process (a hook's own timeout_s overrides); stdin carries the Claude Code JSON payload, exit 2 blocks, stdout may carry updatedInput or additionalContext
+- `fail_open` = `true` — a hook that crashes, times out or has an invalid matcher regex is warned about and skipped, never fatal (D14). matcher is an exact tool name, or — when it carries a regex metacharacter — a regex over the tool name (T22.3). Events: UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop, PreCompact, PostCompact, SessionStart (payload source: startup | resume | clear; stdout additionalContext joins the volatile system block), SessionEnd, PermissionRequest, SubagentStart, SubagentStop, Notification (observe-only kind/message/title payload on ApprovalRequired, TurnDone and ask_user)
 ## `[mcp]`
 
 - `timeout_s` = `30`
@@ -172,3 +176,18 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[record]`
 
 - `redact` = `true`
+## `~/.cox/keybindings.toml`
+
+Rebinds the TUI's keys (T25.5). Each line is an action id and a key, or a list of keys; dotted ids may be written as TOML tables. The keys you give replace the action's defaults, in every context the action has (`idle`, `running`), and take the key from whatever action held it by default. A missing file means the defaults in `docs/getting-started.md`.
+
+```toml
+send = "ctrl+enter"
+newline = ["enter", "shift+enter"]
+mode.cycle = "shift+tab"
+```
+
+- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
+- A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a terminal that reports it (kitty keyboard protocol, see `cox doctor`).
+- `~/.claude/keybindings.json` is read first, for the actions both tools have: `chat:submit` → `send`, `chat:newline` → `newline`, `chat:sendNow` → `send.now`, `chat:cancel` → `interrupt`, `chat:cycleMode` → `mode.cycle`, `app:toggleTranscript` → `transcript`, `task:background` → `background`, `app:exit` → `quit`. Its keys are added beside the defaults; this file still wins. Other Claude actions and chords are skipped.
+- An unknown action, a bad key or a file that is not TOML is a warning in the transcript and is skipped. `cox doctor` lists those and any key two of your bindings both claim.

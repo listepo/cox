@@ -19,6 +19,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 nix = { workspace = true, features = ["signal"] }
 pathdiff = { workspace = true }
+# T22.3: a `matcher` that is not a plain tool name compiles as a regex.
+regex = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }

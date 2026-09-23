@@ -137,10 +137,34 @@ impl Kind {
     }
 }
 
-/// One `/resume` row: title (or `untitled`), cwd, coarse age and cost.
-pub fn session_entry(title: Option<&str>, cwd: &str, age: &str, cost_usd: f64) -> String {
+/// How a session `depth` levels below a root is indented (T26.3): nothing
+/// for a root, `└ ` under its parent, two more spaces per extra level.
+/// `cox sessions` indents its id column the same way.
+pub fn tree_prefix(depth: usize) -> String {
+    match depth {
+        0 => String::new(),
+        d => format!("{}└ ", "  ".repeat(d - 1)),
+    }
+}
+
+/// The `/sessions` picker header (T28.2): the project totals from the one
+/// SQL aggregate in `Store::project_totals`, so the list names its cost.
+pub fn project_header(slug: &str, sessions: i64, cost_usd: f64) -> String {
+    format!("this project {slug} · {sessions} sessions · ${cost_usd:.2}")
+}
+
+/// One `/resume` row: title (or `untitled`), cwd, coarse age and cost;
+/// a fork or handoff is indented under its parent by `depth`.
+pub fn session_entry(
+    depth: usize,
+    title: Option<&str>,
+    cwd: &str,
+    age: &str,
+    cost_usd: f64,
+) -> String {
     format!(
-        "{} · {} · {} · ${:.2}",
+        "{}{} · {} · {} · ${:.2}",
+        tree_prefix(depth),
         title.unwrap_or("untitled"),
         cwd,
         age,
@@ -309,11 +333,11 @@ mod tests {
     #[test]
     fn picker_session_entry_lists_title_cwd_age_cost() {
         assert_eq!(
-            session_entry(Some("auth work"), "/tmp/work", "3h", 0.83),
+            session_entry(0, Some("auth work"), "/tmp/work", "3h", 0.83),
             "auth work · /tmp/work · 3h · $0.83"
         );
         assert_eq!(
-            session_entry(None, "/tmp/work", "now", 0.0),
+            session_entry(0, None, "/tmp/work", "now", 0.0),
             "untitled · /tmp/work · now · $0.00"
         );
         assert_eq!(Kind::Sessions.prefix(), "resume: ");
@@ -321,11 +345,45 @@ mod tests {
         let picker = Picker::open(
             Kind::Sessions,
             vec![
-                session_entry(Some("auth work"), "/tmp/work", "3h", 0.83),
-                session_entry(Some("docs"), "/tmp/other", "9d", 0.01),
+                session_entry(0, Some("auth work"), "/tmp/work", "3h", 0.83),
+                session_entry(0, Some("docs"), "/tmp/other", "9d", 0.01),
             ],
         );
         assert_eq!(picker.matches.len(), 2);
+    }
+
+    /// T28.2: the `/sessions` header names the project totals from the one
+    /// SQL aggregate, so the list shows its own cost.
+    #[test]
+    fn picker_project_header_names_sessions_and_cost() {
+        assert_eq!(
+            project_header("cox", 14, 12.40),
+            "this project cox · 14 sessions · $12.40"
+        );
+        assert_eq!(
+            project_header("cox", 0, 0.0),
+            "this project cox · 0 sessions · $0.00"
+        );
+    }
+
+    /// T26.3's Done-when: the `/resume` picker shows a fork under its
+    /// parent and a handoff of the fork one level deeper.
+    #[test]
+    fn picker_sessions_snapshot_nests_children() {
+        let picker = Picker::open(
+            Kind::Sessions,
+            vec![
+                session_entry(0, Some("auth work"), "/tmp/work", "3h", 0.83),
+                session_entry(1, Some("auth: try b"), "/tmp/work", "2h", 0.10),
+                session_entry(2, Some("auth: handoff"), "/tmp/work", "now", 0.01),
+                session_entry(0, Some("docs"), "/tmp/work", "9d", 0.01),
+            ],
+        );
+        let lines = picker.lines(&Glyphs::default(), &Theme::dark());
+        let area = ratatui::layout::Rect::new(0, 0, 50, lines.len() as u16);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(ratatui::widgets::Paragraph::new(lines), area, &mut buf);
+        insta::assert_snapshot!(crate::view::buffer_to_string(&buf));
     }
 
     /// T24.2's Done-when: a picker snapshot exists for `/theme` — built-ins,

@@ -1,0 +1,21 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"rewind_timeline\", &mut state)"
+---
+› add the cache column
+› snapshot the status line
+
+
+
+
+
+
+
+
+
+
+ rewind to:
+ ▸ T2 · 0 files · "snapshot the status line"
+   T1 · 3 files · "add the cache column"
+> Enter choose · Esc close · Up previous · Down next
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

@@ -84,8 +84,10 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
-    /// Running background tasks: label and tier by id (T9.2).
-    pub(crate) tasks: HashMap<TaskId, (String, Tier)>,
+    /// Running background tasks: label, tier and kind by id (T9.2, T27.1).
+    pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
+    /// Running calls `Submission::Background` may detach (T27.1).
+    pub(crate) detach: HashMap<CallId, CancellationToken>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
     pub(crate) extracted: Vec<crate::memory_extract::Fact>,
     /// Monotonic turn counter for the FTS index (T10.3) and the
@@ -95,6 +97,13 @@ pub(crate) struct Inner {
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
     retried_after_too_long: bool,
+    /// `SessionStart` source awaiting its one dispatch (T22.3): armed by
+    /// `build`, flushed on the first `submit` — by then the surface has
+    /// installed the hook runner, and only once per session.
+    startup: Option<&'static str>,
+    /// `additional_context` from the `SessionStart` hook (T22.3), appended
+    /// to `system[3]`, the one block after the last cache breakpoint.
+    startup_context: String,
 }
 
 /// One conversation: a provider, tools, a store, and an event stream.
@@ -243,6 +252,8 @@ impl Session {
         tier: Tier,
     ) -> Result<Self, CoreError> {
         let is_resume = resume.is_some();
+        // Subagents announce themselves with `SubagentStart`, not `SessionStart`.
+        let is_child = parent_id.is_some();
         let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice, turns) =
             match resume {
                 Some((id, history)) => {
@@ -333,9 +344,12 @@ impl Session {
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
+                detach: HashMap::new(),
                 extracted: Vec::new(),
                 last_context_tokens: 0,
                 retried_after_too_long: false,
+                startup: (!is_child).then_some(if is_resume { "resume" } else { "startup" }),
+                startup_context: String::new(),
             })),
         };
         let started = Event::SessionStarted {
@@ -399,10 +413,35 @@ impl Session {
     }
 
     pub(crate) async fn emit(&self, ev: Event) -> Result<(), CoreError> {
+        // T22.3: `Notification` is observe-only and fires before the event
+        // it announces is recorded, so a broken hook's warning still lands
+        // before `TurnDone` (§1.15 rule 7).
+        if let Some(extra) = hooks::notification_payload(&ev) {
+            let _ = hooks::fire_configured(self, HookEvent::Notification, extra).await;
+        }
+        // T28.4: the rollout is what leaves the session, so the copy written
+        // here is scrubbed; `ev` — the in-memory history and every surface —
+        // keeps the original (redacting model input is out of scope).
+        let scrubbed = crate::redact::scrub_event(&ev);
+        let redacted = scrubbed.as_ref() != &ev && matches!(&ev, Event::ToolCallDone { .. });
         self.store
-            .rollout_append(&self.id, &ev)
+            .rollout_append(&self.id, scrubbed.as_ref())
             .map_err(|error| CoreError::Store { error })?;
         let _ = self.tx.send(ev).await;
+        // T28.4: a tool result the scrub changed raises the notice right
+        // behind it — PostToolUse's per-call signal, emitted where the
+        // change is detected so streamed output cannot dodge it either.
+        if redacted {
+            let notice = Event::Notice {
+                level: Level::Security,
+                text: "tool output contained a secret-shaped string; redacted in the rollout"
+                    .into(),
+            };
+            self.store
+                .rollout_append(&self.id, &notice)
+                .map_err(|error| CoreError::Store { error })?;
+            let _ = self.tx.send(notice).await;
+        }
         Ok(())
     }
 
@@ -465,6 +504,22 @@ impl Session {
 
     /// Feeds one submission into the state machine.
     pub async fn submit(&self, sub: Submission) -> Result<(), CoreError> {
+        // T22.3: `SessionStart` runs once per session, as late as the first
+        // submission — `build` cannot await and the surface installs the
+        // hook runner (`set_hook`) only after `Session::new` returns. Its
+        // `additionalContext` rides in `system[3]` from here on.
+        if let Some(source) = self.inner.lock().await.startup.take() {
+            let outcome = hooks::fire_configured(
+                self,
+                HookEvent::SessionStart,
+                serde_json::json!({ "source": source }),
+            )
+            .await;
+            if let HookOutcome::Modify { input } = outcome {
+                let (_, context) = hooks::prompt_rewrite(String::new(), input);
+                self.inner.lock().await.startup_context = context.unwrap_or_default();
+            }
+        }
         match sub {
             Submission::UserTurn {
                 text,
@@ -521,11 +576,18 @@ impl Session {
                 code,
                 conversation,
             } => self.rewind(to_turn, code, conversation).await,
+            Submission::Background { call_id } => self.background(call_id).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
                     .await
                     .map(|_| ())
+            }
+            // T25.6: `/init [--force]` scaffolds AGENTS.md; the write asks
+            // first, like any other model-initiated write.
+            Submission::Command { command } if command.name == "init" => {
+                let force = command.args.iter().any(|a| a == "--force" || a == "force");
+                self.run_init(force).await
             }
             Submission::Shutdown => {
                 // T10.2: optional cheap extraction first; a failure warns but
@@ -860,7 +922,7 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives) = {
+        let (history, calls_so_far, discovered, marks, archives, startup_context) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -868,6 +930,7 @@ impl Session {
                 inner.discovered.clone(),
                 inner.turn_marks.iter().map(|m| m.start).collect::<Vec<_>>(),
                 inner.archives.clone(),
+                inner.startup_context.clone(),
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -880,13 +943,6 @@ impl Session {
             inner.provider_calls += 1;
             inner.round += 1;
         }
-        let req_messages = crate::context::microcompact(
-            &history,
-            &marks,
-            self.config.context.keep_turns,
-            self.config.context.microcompact_after_turns,
-            &archives,
-        );
         // T9.1: every provider call routes through the Router; the gate
         // already passed in `run_turn`, so only a bad provider name can fail
         // here and it is turn-fatal, never silent.
@@ -905,16 +961,57 @@ impl Session {
                 return Ok(Step::Done);
             }
         };
-        let mut req = assemble_with(
-            &req_messages,
-            &self.config,
-            route.tier,
-            &self.tools,
-            &discovered,
-            &self.cwd,
-            "",
+        // One assembly for the first try and T28.3's pre-call retry, so the
+        // retried request differs only in the history it is given.
+        let build = |history: &[Message], marks: &[usize], microcompact_after: u32| {
+            let req_messages = crate::context::microcompact(
+                history,
+                marks,
+                self.config.context.keep_turns,
+                microcompact_after,
+                &archives,
+            );
+            let mut req = assemble_with(
+                &req_messages,
+                &self.config,
+                route.tier,
+                &self.tools,
+                &discovered,
+                &self.cwd,
+                "",
+            );
+            req.model = route.model.clone();
+            // T22.3: `SessionStart` hook context goes into `system[3]` — the
+            // volatile block after the last cache breakpoint (§1.9), so the
+            // cached prefix stays byte-stable.
+            if !startup_context.is_empty() {
+                req.system[3].text.push_str(&startup_context);
+            }
+            req
+        };
+        let first = build(
+            &history,
+            &marks,
+            self.config.context.microcompact_after_turns,
         );
-        req.model = route.model.clone();
+        let req = match self.fit_request(first, build).await? {
+            compact::Fit::Fits(req) => req,
+            compact::Fit::TooBig(tokens) => {
+                self.emit(Event::Notice {
+                    level: Level::Budget,
+                    text: format!(
+                        "request not sent: ~{tokens} tokens is over compact_at {} × max_context {} \
+                         even after compaction; the last {} turn(s) are kept verbatim",
+                        self.config.context.compact_at,
+                        self.provider.capabilities().max_context,
+                        self.config.context.keep_turns,
+                    ),
+                })
+                .await?;
+                self.finish(turn, StopReason::Budget).await?;
+                return Ok(Step::Done);
+            }
+        };
         let provider_span = tracing::info_span!(
             parent: &tracing::Span::current(),
             "chat",
@@ -1278,7 +1375,7 @@ pub(crate) fn captured_json(value: &serde_json::Value) -> Option<String> {
 /// OpenTelemetry GenAI convention wants `gen_ai.response.finish_reasons` to
 /// be a stable identifier, so this never uses `Debug`, whose output would
 /// leak Rust spelling (`Some(EndTurn)`) and change with the enum.
-fn stop_reason_name(stop: &StopReason) -> &'static str {
+pub(crate) fn stop_reason_name(stop: &StopReason) -> &'static str {
     match stop {
         StopReason::EndTurn => "end_turn",
         StopReason::MaxTurns => "max_turns",
@@ -1477,5 +1574,105 @@ impl Archive for MemoryStore {
     }
     async fn get(&self, id: &cox_protocol::ArchiveId) -> Result<Vec<u8>, StoreError> {
         self.archive_get(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use cox_protocol::config::HookConfig;
+    use cox_provider::scripted::Scripted;
+    use serde_json::Value;
+
+    use super::*;
+
+    /// Records every hook call and always continues (T22.3's claims).
+    #[derive(Default)]
+    struct Probe(StdMutex<Vec<(HookEvent, Value)>>);
+
+    #[async_trait::async_trait]
+    impl Hook for Probe {
+        async fn run(&self, event: HookEvent, payload: Value, _timeout: Duration) -> HookOutcome {
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((event, payload));
+            HookOutcome::Continue
+        }
+    }
+
+    /// A session over one scripted reply whose hook config enables exactly
+    /// the events in `configured` (T22.3 dispatches its two new ones only
+    /// where a user configured them).
+    fn open(configured: &[&str]) -> (Session, Arc<Probe>) {
+        let mut config = cox_protocol::Config::default();
+        for name in configured {
+            config.hooks.events.insert(
+                (*name).to_string(),
+                vec![HookConfig {
+                    command: "true".into(),
+                    ..HookConfig::default()
+                }],
+            );
+        }
+        let store = Arc::new(MemoryStore::new());
+        let provider =
+            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        let session = Session::new(
+            config,
+            provider,
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-turn"),
+        )
+        .expect("session");
+        let probe = Arc::new(Probe::default());
+        session.set_hook(probe.clone());
+        (session, probe)
+    }
+
+    #[tokio::test]
+    async fn session_start_hook_runs_once() {
+        let (session, probe) = open(&["SessionStart"]);
+        for _ in 0..2 {
+            session
+                .submit(Submission::SetEffort { effort: None })
+                .await
+                .expect("submit");
+        }
+        let seen = probe.0.lock().unwrap_or_else(|e| e.into_inner());
+        let starts: Vec<&Value> = seen
+            .iter()
+            .filter(|(e, _)| *e == HookEvent::SessionStart)
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(starts.len(), 1, "one dispatch per session, whatever runs");
+        assert_eq!(starts[0]["source"], "startup");
+        assert_eq!(starts[0]["session_id"], session.id().to_string());
+        assert_eq!(starts[0]["cwd"], "/tmp/cox-turn");
+    }
+
+    #[tokio::test]
+    async fn notification_hook_gets_turn_done_payload() {
+        let (session, probe) = open(&["Notification"]);
+        session
+            .submit(Submission::UserTurn {
+                text: "hi".into(),
+                attachments: vec![],
+                confirm_think: false,
+            })
+            .await
+            .expect("turn");
+        let seen = probe.0.lock().unwrap_or_else(|e| e.into_inner());
+        let (_, payload) = seen
+            .iter()
+            .find(|(e, _)| *e == HookEvent::Notification)
+            .expect("Notification fired for TurnDone");
+        assert_eq!(payload["kind"], "turn_done");
+        assert_eq!(payload["title"], "Turn done");
+        assert_eq!(payload["message"], "end_turn");
+        assert_eq!(payload["hook_event_name"], "Notification");
     }
 }

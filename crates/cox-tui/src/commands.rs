@@ -6,6 +6,8 @@
 
 use cox_protocol::types::{Effort, ModelId, PermissionMode, SlashCommand, Submission, Tier};
 
+use crate::keymap::Keymap;
+
 /// `(name, usage, what it does)`; the palette lists the names in this order.
 pub const COMMANDS: &[(&str, &str, &str)] = &[
     (
@@ -30,6 +32,12 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "go back to an earlier turn: code, conversation or both",
     ),
     ("cost", "/cost", "what this session has spent"),
+    ("context", "/context", "where the next request's tokens go"),
+    (
+        "autocompact",
+        "/autocompact",
+        "the compaction threshold and its config source",
+    ),
     (
         "permissions",
         "/permissions [default|plan|auto|bypass]",
@@ -53,6 +61,21 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("mcp", "/mcp", "MCP servers and their tools"),
     ("doctor", "/doctor", "check the install"),
     ("clear", "/clear", "new session, same directory"),
+    (
+        "fork",
+        "/fork [turn]",
+        "new child session with the history up to a turn (default: all)",
+    ),
+    (
+        "handoff",
+        "/handoff <objective>",
+        "new child session seeded with a cheap summary and the objective",
+    ),
+    (
+        "init",
+        "/init [--force]",
+        "scaffold AGENTS.md for this repo",
+    ),
     ("todo", "/todo", "toggle the todo panel"),
     ("tasks", "/tasks", "list running background tasks"),
     ("vim", "/vim", "toggle vim keys"),
@@ -64,6 +87,77 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("help", "/help", "this list"),
     ("quit", "/quit", "exit"),
 ];
+
+/// Where a key applies (T24.6): the composer with no turn, a running turn,
+/// a modal that takes the keys (approval, question, picker), or an overlay
+/// drawn over the transcript (help, diff).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Context {
+    Idle,
+    Running,
+    Modal,
+    Overlay,
+}
+
+impl Context {
+    pub const ALL: [Context; 4] = [
+        Context::Idle,
+        Context::Running,
+        Context::Modal,
+        Context::Overlay,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Context::Idle => "idle",
+            Context::Running => "running",
+            Context::Modal => "modal",
+            Context::Overlay => "overlay",
+        }
+    }
+}
+
+/// `(key, action, context)`: the one keymap the footer hints, the `?`
+/// overlay, `/help` and `docs/getting-started.md` all read, and the default
+/// `keymap::Keymap` (T25.5). Within a context the first rows are the footer
+/// hints, so order matters; an action's rows stay together.
+pub const KEYMAP: &[(&str, &str, Context)] = &[
+    ("Enter", "send", Context::Idle),
+    ("Tab", "mode.cycle", Context::Idle),
+    ("@", "file", Context::Idle),
+    ("/", "command", Context::Idle),
+    ("?", "help", Context::Idle),
+    ("Shift+Enter", "newline", Context::Idle),
+    ("Alt+Enter", "newline", Context::Idle),
+    ("Ctrl+Enter", "newline", Context::Idle),
+    ("Ctrl+R", "history", Context::Idle),
+    ("Ctrl+T", "thinking", Context::Idle),
+    ("Ctrl+O", "transcript", Context::Idle),
+    ("Ctrl+E", "expand", Context::Idle),
+    ("Ctrl+G", "diff", Context::Idle),
+    ("Ctrl+C", "quit", Context::Idle),
+    ("Ctrl+D", "quit", Context::Idle),
+    ("Esc", "interrupt", Context::Running),
+    ("Ctrl+C", "interrupt", Context::Running),
+    ("Ctrl+B", "background", Context::Running),
+    ("Ctrl+O", "transcript", Context::Running),
+    ("Alt+Enter", "send.now", Context::Running),
+    ("Ctrl+Enter", "send.now", Context::Running),
+    ("Ctrl+U", "unqueue", Context::Running),
+    ("Enter", "choose", Context::Modal),
+    ("Esc", "close", Context::Modal),
+    ("Up", "previous", Context::Modal),
+    ("Down", "next", Context::Modal),
+    ("Esc", "close", Context::Overlay),
+    ("?", "close", Context::Overlay),
+    ("PageUp", "scroll.up", Context::Overlay),
+    ("PageDown", "scroll.down", Context::Overlay),
+];
+
+/// An action id as the footer and overlay print it: `mode.cycle` → `mode cycle`.
+pub fn label(action: &str) -> String {
+    action.replace('.', " ")
+}
 
 /// What a parsed command asks for.
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +178,10 @@ pub enum Action {
     Resume,
     /// Open the rewind timeline (T26.2); `Esc Esc` on an empty composer too.
     Rewind,
+    /// `/fork [turn]` (T26.3): `None` keeps every turn.
+    Fork(Option<u32>),
+    /// `/handoff <objective>` (T26.3).
+    Handoff(String),
     /// Set the permission mode on the screen and in the core.
     Mode(PermissionMode),
     /// Toggle vim keys in the composer.
@@ -146,6 +244,18 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
         "rewind" => Action::Rewind,
+        // `T7` as the rewind timeline prints it, or a bare `7`.
+        "fork" => match args.first() {
+            None => Action::Fork(None),
+            Some(arg) => match arg.trim_start_matches(['T', 't']).parse::<u32>() {
+                Ok(turn) if turn > 0 => Action::Fork(Some(turn)),
+                _ => Action::Notice(format!("/fork [turn]: `{arg}` is not a turn number")),
+            },
+        },
+        "handoff" => match joined() {
+            Some(objective) => Action::Handoff(objective),
+            None => Action::Notice("/handoff needs an objective".into()),
+        },
         "vim" => Action::Vim,
         "theme" => Action::Theme(joined()),
         "help" => Action::Help,
@@ -160,14 +270,22 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
     })
 }
 
-/// `/help`: one line per command.
-pub fn help() -> String {
+/// `/help`: the keymap as bound now, one line per context, then one line
+/// per command.
+pub fn help(keymap: &Keymap) -> String {
+    let keys = Context::ALL.iter().map(|ctx| {
+        let rows: Vec<String> = keymap
+            .rows(*ctx)
+            .into_iter()
+            .map(|(k, a)| format!("{k} {}", label(a)))
+            .collect();
+        format!("{:8} {}", ctx.name(), rows.join(" · "))
+    });
     let width = COMMANDS.iter().map(|(_, u, _)| u.len()).max().unwrap_or(0);
-    COMMANDS
+    let commands = COMMANDS
         .iter()
-        .map(|(_, usage, what)| format!("{usage:width$}  {what}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .map(|(_, usage, what)| format!("{usage:width$}  {what}"));
+    keys.chain(commands).collect::<Vec<_>>().join("\n")
 }
 
 fn tier_named(s: &str) -> Option<Tier> {
@@ -195,5 +313,64 @@ pub fn next_mode(mode: PermissionMode) -> PermissionMode {
         PermissionMode::Default => PermissionMode::Plan,
         PermissionMode::Plan => PermissionMode::Auto,
         PermissionMode::Auto | PermissionMode::Bypass => PermissionMode::Default,
+    }
+}
+
+/// `/autocompact`'s line: the threshold and the config layer that set it —
+/// `source` is `cox config show --sources`' `source_of` layer name.
+pub fn autocompact(compact_at: f64, source: &str) -> String {
+    let layer = match source {
+        "project" => "project config",
+        "user" => "user config",
+        other => other,
+    };
+    format!("compact_at = {compact_at} ({layer})")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T26.3: `/fork` takes an optional turn in either spelling the
+    /// timeline uses; `/handoff` needs its objective.
+    #[test]
+    fn fork_and_handoff_parse_their_arguments() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(p("/fork"), Some(Action::Fork(None)));
+        assert_eq!(p("/fork T3"), Some(Action::Fork(Some(3))));
+        assert_eq!(p("/fork 3"), Some(Action::Fork(Some(3))));
+        assert!(matches!(p("/fork later"), Some(Action::Notice(_))));
+        assert!(matches!(p("/fork 0"), Some(Action::Notice(_))));
+        assert_eq!(
+            p("/handoff ship the parser"),
+            Some(Action::Handoff("ship the parser".into()))
+        );
+        assert!(matches!(p("/handoff"), Some(Action::Notice(_))));
+    }
+
+    /// T24.6: `docs/getting-started.md`'s keymap table is `KEYMAP`, row for
+    /// row, and ends where `KEYMAP` ends (a blank line follows it).
+    #[test]
+    fn keymap_table_matches_docs() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/getting-started.md");
+        let doc = std::fs::read_to_string(path).expect("getting-started.md");
+        let mut table = String::from("| Key | Action | Context |\n| --- | --- | --- |\n");
+        for (key, action, ctx) in KEYMAP {
+            table.push_str(&format!("| `{key}` | {action} | {} |\n", ctx.name()));
+        }
+        assert!(
+            doc.contains(&format!("{table}\n")),
+            "docs/getting-started.md's keymap table differs from KEYMAP; expected:\n{table}"
+        );
+    }
+
+    /// T25.7: `/autocompact` names the project config layer, the same data
+    /// `cox config show --sources` prints.
+    #[test]
+    fn autocompact_line_names_the_project_config_layer() {
+        assert_eq!(
+            autocompact(0.75, "project"),
+            "compact_at = 0.75 (project config)"
+        );
     }
 }

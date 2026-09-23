@@ -266,6 +266,10 @@ async fn drive(
                 continue;
             }
         };
+        // T28.4: this surface prints, so every event passes through the one
+        // redaction helper first; folding the scrubbed copy keeps `result`,
+        // the alias and `text` output scrubbed without a second pass.
+        let ev = cox_core::redact::scrub_event(&ev).into_owned();
         if format == Format::StreamJson {
             writeln!(out, "{}", serde_json::to_string(&ev)?)?;
         }

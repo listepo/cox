@@ -2,6 +2,8 @@
 //! and hooks from a Claude Code setup, read-only, as one config layer the
 //! binary merges above `.cox` project config. Only the keys cox understands
 //! are lifted; everything else in the file is ignored, never an error.
+//! `~/.claude/keybindings.json` (T25.5) is read here too, for the same
+//! reason: one module owns what cox lifts from a Claude Code setup.
 
 use std::collections::HashMap;
 use std::fs;
@@ -107,6 +109,53 @@ pub fn load(paths: &[PathBuf]) -> ClaudeSettings {
         s.files.push(path.clone());
     }
     s
+}
+
+/// Claude Code's keybindings as `(key, action)` pairs, for the TUI to map
+/// onto its own actions (it knows which exist in both).
+#[derive(Debug, Default, PartialEq)]
+pub struct ClaudeKeybindings {
+    pub bindings: Vec<(String, String)>,
+    pub notices: Vec<String>,
+}
+
+/// `{ "bindings": [ { "context": "Chat", "bindings": { "ctrl+s": "chat:submit" } } ] }`.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct KeybindingsFile {
+    bindings: Vec<KeyContext>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct KeyContext {
+    bindings: serde_json::Map<String, Value>,
+}
+
+/// `<claude_home>/keybindings.json`, every context block flattened. A
+/// `null` action unbinds one of Claude's own defaults, which means nothing
+/// to cox, so it is dropped; a file that is not that shape is a notice.
+pub fn keybindings(claude_home: &Path) -> ClaudeKeybindings {
+    let path = claude_home.join("keybindings.json");
+    let mut out = ClaudeKeybindings::default();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return out;
+    };
+    match serde_json::from_str::<KeybindingsFile>(&text) {
+        Ok(file) => {
+            out.bindings = file
+                .bindings
+                .into_iter()
+                .flat_map(|c| c.bindings)
+                .filter_map(|(key, action)| Some((key, action.as_str()?.to_string())))
+                .collect();
+        }
+        Err(e) => out.notices.push(format!(
+            "claude keybindings {} skipped: {e}",
+            path.display()
+        )),
+    }
+    out
 }
 
 impl ClaudeSettings {

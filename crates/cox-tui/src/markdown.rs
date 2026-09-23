@@ -371,6 +371,7 @@ mod tests {
             glyphs,
             show_thinking: false,
             show_diffs: true,
+            diff: crate::diff::Mode::Auto,
             tick: 0,
             marks: false,
             colors: crate::theme::Theme::dark(),

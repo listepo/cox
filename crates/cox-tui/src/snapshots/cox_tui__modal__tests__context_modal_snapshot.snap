@@ -1,0 +1,17 @@
+---
+source: crates/cox-tui/src/modal.rs
+expression: "crate::view::buffer_to_string(term.backend().buffer())"
+---
+ context · 68210 / 200000 tokens · cached 51000
+ tools            ##                |          21500
+ system                             |           3200
+ instructions                       |            120
+ skills                             |              0
+ memory                             |              0
+ volatile                           |            240
+ history verbatim ####              |          41000
+ history pointers                   |           1250
+ summary                            |            900
+ total            ########          |          68210
+ cached           ######            |          51000
+                                    ^ compact_at = 0.75 = 150000 tokens

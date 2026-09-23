@@ -11,12 +11,14 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use common::{drain, spawn_turn};
 use cox_core::{History, MemoryStore, Session};
-use cox_protocol::errors::ProviderError;
-use cox_protocol::traits::{Provider, Store as _};
+use cox_protocol::errors::{ProviderError, ToolError};
+use cox_protocol::traits::{Provider, Store as _, Tool, ToolCx};
 use cox_protocol::types::{
-    Caps, Event, ItemKind, Job, ModelId, ProviderEvent, ProviderId, Request, Submission, Usage,
+    Caps, CompactReason, Concurrency, Content, Event, ItemKind, Job, Level, ModelId, ProviderEvent,
+    ProviderId, Request, Risk, StopReason, Submission, ToolOutput, ToolSpec, Usage,
 };
 use cox_provider::scripted::Scripted;
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -252,3 +254,212 @@ async fn compact_focus_is_passed_to_summarizer() {
 }
 
 // (MemoryStore ignores the session key, so tests read with a dummy id.)
+
+/// `Scripted` behind a finite window, recording every request it is sent;
+/// `Scripted` itself reports an unbounded one, so nothing would trigger.
+struct Capped {
+    inner: Scripted,
+    max_context: u32,
+    sent: Mutex<Vec<Request>>,
+}
+
+#[async_trait]
+impl Provider for Capped {
+    fn id(&self) -> ProviderId {
+        self.inner.id()
+    }
+    fn capabilities(&self) -> Caps {
+        // No exact count: the heuristic alone decides, so the thresholds
+        // below are deterministic.
+        Caps {
+            max_context: self.max_context,
+            count_tokens: false,
+            ..self.inner.capabilities()
+        }
+    }
+    async fn stream(
+        &self,
+        req: Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
+        self.sent.lock().expect("lock").push(req.clone());
+        self.inner.stream(req, sink, cancel).await
+    }
+    async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+        self.inner.count_tokens(req).await
+    }
+}
+
+/// Read-only; returns `self.0` bytes on one line.
+struct Big(usize);
+
+#[async_trait]
+impl Tool for Big {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "big".into(),
+            description: "large output".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+            deferred: false,
+            risk: Risk::ReadOnly,
+            concurrency: Concurrency::Parallel,
+        }
+    }
+    fn subject(&self, _input: &Value) -> String {
+        "big".into()
+    }
+    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput {
+            text: "y".repeat(self.0),
+            is_error: false,
+            diff: None,
+            structured: None,
+        })
+    }
+}
+
+/// ⌈bytes/4⌉ of a request: the heuristic the pre-call check uses.
+fn tokens(req: &Request) -> u32 {
+    (serde_json::to_vec(req).expect("json").len() as u32).div_ceil(4)
+}
+
+/// Three turns of `big_tool_output_mid_turn`: a 16 000-byte first prompt,
+/// then turn 3 calls `big` (`output` bytes). Returns turn 3's events.
+async fn big_mid_turn(
+    output: usize,
+    max_context: u32,
+) -> (Vec<Event>, Arc<Capped>, Arc<MemoryStore>, Session) {
+    let mut config = cox_protocol::Config::default();
+    config.context.tool_output_visible_bytes = 128_000;
+    let provider = Arc::new(Capped {
+        inner: Scripted::from_toml(&common::scenario("big_tool_output_mid_turn"), "")
+            .expect("scenario"),
+        max_context,
+        sent: Mutex::new(Vec::new()),
+    });
+    let mut tools = common::tools();
+    tools.push(Arc::new(Big(output)));
+    let store = Arc::new(MemoryStore::new());
+    let session = Session::new(
+        config,
+        provider.clone(),
+        tools,
+        store.clone(),
+        store.clone(),
+        PathBuf::from("/tmp/cox-turn"),
+    )
+    .expect("session");
+    let mut rx = session.events().expect("events");
+    user_turn(&session, &mut rx, &"x".repeat(16_000)).await;
+    user_turn(&session, &mut rx, "t1").await;
+    let events = user_turn(&session, &mut rx, "t2").await;
+    (events, provider, store, session)
+}
+
+/// 0.75 × 8 800 = 6 600 tokens. The three turn-3 requests measure ~4 600
+/// (first call), ~8 700 (after a 16 000-byte result) and ~4 700 once the
+/// first turn's 16 000-byte prompt is summarised, so only the second
+/// crosses the threshold and compaction brings it back under.
+const WINDOW: u32 = 8_800;
+
+#[tokio::test]
+async fn big_tool_output_mid_turn_compacts_before_call() {
+    let (events, provider, store, session) = big_mid_turn(16_000, WINDOW).await;
+    let at = |want: &dyn Fn(&Event) -> bool| events.iter().position(want).expect("event");
+    let done = at(&|e| matches!(e, Event::ToolCallDone { .. }));
+    let compacted = at(&|e| {
+        matches!(
+            e,
+            Event::Compacted {
+                reason: CompactReason::PreCall,
+                ..
+            }
+        )
+    });
+    let next_call = events[done..]
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                Event::ItemStarted {
+                    kind: ItemKind::AssistantMessage { .. },
+                    ..
+                }
+            )
+        })
+        .expect("a call after the tool")
+        + done;
+    assert!(
+        done < compacted && compacted < next_call,
+        "compacted mid-turn, before the call"
+    );
+    assert!(matches!(
+        events.last(),
+        Some(Event::TurnDone {
+            stop: StopReason::EndTurn,
+            ..
+        })
+    ));
+    let sent = provider.sent.lock().expect("lock").clone();
+    let jobs: Vec<Job> = sent.iter().map(|r| r.job).collect();
+    assert_eq!(
+        jobs,
+        [Job::Main, Job::Main, Job::Main, Job::Compact, Job::Main]
+    );
+    let last = sent.last().expect("final call");
+    assert!(f64::from(tokens(last)) < 0.75 * f64::from(WINDOW));
+    // The summary replaced turn 1; turns 2 and 3 went out verbatim, the big
+    // result included (never a pointer: it is inside the last two turns).
+    let history = session.history().await;
+    assert_eq!(&last.messages[..], &history[..last.messages.len()]);
+    assert!(matches!(&history[0].content[0], Content::Text { text } if text.contains("read big")));
+    assert!(last.messages.iter().all(|m| {
+        m.content
+            .iter()
+            .all(|c| !matches!(c, Content::Text { text } if text.starts_with("xxx")))
+    }));
+    assert!(last.messages.iter().any(|m| {
+        m.content
+            .iter()
+            .any(|c| matches!(c, Content::ToolResult { content, .. } if content.len() >= 16_000))
+    }));
+    // The summary call is billed like every other request.
+    assert_eq!(store.usage_rows().len(), sent.len());
+}
+
+#[tokio::test]
+async fn pre_call_still_over_after_compaction_stops_with_budget() {
+    // 40 000 bytes stay in the kept turns, so no compaction can fit them.
+    let (events, provider, _, _) = big_mid_turn(40_000, WINDOW).await;
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::Compacted {
+            reason: CompactReason::PreCall,
+            ..
+        }
+    )));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::Notice { level: Level::Budget, text } if text.contains("request not sent")
+    )));
+    assert!(matches!(
+        events.last(),
+        Some(Event::TurnDone {
+            stop: StopReason::Budget,
+            ..
+        })
+    ));
+    let jobs: Vec<Job> = provider
+        .sent
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|r| r.job)
+        .collect();
+    assert_eq!(
+        jobs,
+        [Job::Main, Job::Main, Job::Main, Job::Compact],
+        "nothing sent after"
+    );
+}

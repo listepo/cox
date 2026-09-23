@@ -67,6 +67,17 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// T25.5: `<cox_home>/keybindings.toml` over whatever `<claude_home>/
+/// keybindings.json` binds that cox also has. Shared by the TUI session and
+/// `doctor` so both see the same map; a missing file is just the defaults.
+pub fn keymap(cox_home: &Path, claude_home: &Path) -> cox_tui::keymap::Loaded {
+    let toml = std::fs::read_to_string(cox_home.join("keybindings.toml")).ok();
+    let claude = claude_settings::keybindings(claude_home);
+    let mut loaded = cox_tui::keymap::load(toml.as_deref(), &claude.bindings);
+    loaded.warnings.extend(claude.notices);
+    loaded
+}
+
 /// The user config file: `<cox_home>/config.toml`.
 pub fn user_config_path() -> PathBuf {
     cox_home().join("config.toml")
@@ -109,6 +120,7 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("permission-mode", "permissions.mode"),
         ("approve", "permissions.approval"),
         ("budget", "budget.session_usd"),
+        ("profile", "core.profile"),
         ("cwd", "core.workspace_roots"),
         ("add-dir", "core.workspace_roots"),
         // T27.3: resolved once in `main` into `--cwd`/`--add-dir`.
@@ -117,7 +129,9 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("verbose", "core.log_level"),
         ("no-hooks", "hooks.enabled"),
         ("no-mcp", "mcp.enabled"),
-        // `cox run` (plan.md §1.12 `cox run` row).
+        ("plain", "tui.screen_reader"),
+        // `cox init` (plan.md T25.6) headlessly.
+        ("force", "runtime.force"),
         ("prompt", "runtime.prompt"),
         ("output-format", "runtime.output_format"),
         ("max-turns", "core.max_turns"),
@@ -126,6 +140,8 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("continue", "runtime.continue"),
         ("resume", "runtime.resume"),
         ("deep", "runtime.deep"),
+        // `cox stats --project` (T28.2): a read-only scope flag, not config.
+        ("project", "runtime.project"),
     ])
 }
 
@@ -198,6 +214,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
     if let Some(budget) = cli.budget {
         set_dotted(&mut root, keys["budget"], JsonValue::from(budget));
     }
+    if let Some(profile) = &cli.profile {
+        set_dotted(&mut root, keys["profile"], JsonValue::from(profile.clone()));
+    }
     if !cli.add_dir.is_empty() || cli.cwd.is_some() {
         let mut roots: Vec<JsonValue> = cli
             .add_dir
@@ -225,6 +244,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
     }
     if cli.no_mcp {
         set_dotted(&mut root, keys["no-mcp"], JsonValue::from(false));
+    }
+    if cli.plain {
+        set_dotted(&mut root, keys["plain"], JsonValue::from(true));
     }
     root
 }
@@ -388,8 +410,10 @@ fn build_figment(
         // provider (cox-provider::from_env), not config keys. `COX_HOME`
         // overrides `core.home` directly below. `COX_EXPECT_SANDBOX` pins the
         // backend a sandbox test asserts (CI sets it globally), so it must
-        // not leak into the config tree as `expect.sandbox` either. The
-        // ignore list matches pre-split keys (`EXPECT_SANDBOX`, not dotted).
+        // not leak into the config tree as `expect.sandbox` either.
+        // `COX_PLAIN` and `COX_AX_STARTUP_QUIET_MS` are read by the plain
+        // surface (T29.1) itself. The ignore list matches pre-split keys
+        // (`EXPECT_SANDBOX`, not dotted).
         Env::prefixed("COX_")
             .ignore(&[
                 "home",
@@ -397,6 +421,8 @@ fn build_figment(
                 "scenario",
                 "cassettes",
                 "expect_sandbox",
+                "plain",
+                "ax_startup_quiet_ms",
             ])
             .split("_"),
     ));
@@ -545,6 +571,19 @@ mod tests {
                 missing.push(long.to_string());
             }
         }
+        // T25.6: `cox init --force` registers its flag like `run`'s own.
+        let init = cmd.find_subcommand("init").expect("init subcommand exists");
+        for arg in init.get_arguments() {
+            if arg.is_positional() {
+                continue;
+            }
+            if let Some(long) = arg.get_long()
+                && !excluded.contains(&long)
+                && !map.contains_key(long)
+            {
+                missing.push(long.to_string());
+            }
+        }
         assert!(
             missing.is_empty(),
             "flags missing a config-key mapping: {missing:?}"
@@ -612,6 +651,8 @@ mod tests {
                 ("COX_EXPECT_SANDBOX", Some("bwrap")),
                 ("COX_PROVIDER", Some("scripted")),
                 ("COX_SCENARIO", Some("/tmp/scenario.toml")),
+                ("COX_PLAIN", Some("1")),
+                ("COX_AX_STARTUP_QUIET_MS", Some("300")),
             ],
             || {
                 let cli = parse(&[]);

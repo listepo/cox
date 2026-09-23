@@ -369,7 +369,11 @@ async fn run_one(
         tracing::Span::current().record("gen_ai.tool.call.arguments", content);
     }
     let (out_tx, mut out_rx) = mpsc::channel::<String>(32);
-    let mut cx = ToolCx {
+    // T27.1: `Submission::Background` (or `bash(background: true)`) may
+    // detach this call into a task; the card stops streaming once it does.
+    let subject = tool.subject(&input);
+    let (input, detach) = session.arm_detach(id, &tool.spec().name, input).await;
+    let cx = ToolCx {
         roots: session.config.core.workspace_roots.clone(),
         writable_roots: session.writable_roots().to_vec(),
         cwd: session.cwd.clone(),
@@ -388,8 +392,15 @@ async fn run_one(
     };
     let pump = session.clone_handle();
     let pump_id = id;
+    let pump_detach = detach.clone();
     tokio::spawn(async move {
-        while let Some(delta) = out_rx.recv().await {
+        loop {
+            let delta = tokio::select! {
+                biased;
+                _ = pump_detach.cancelled() => None,
+                delta = out_rx.recv() => delta,
+            };
+            let Some(delta) = delta else { break };
             let _ = pump
                 .emit(Event::ToolCallOutput {
                     call_id: pump_id,
@@ -409,10 +420,29 @@ async fn run_one(
         .then(|| input.clone());
     let hook_input = input.clone();
     // T26.1: pre-images before the call can change anything.
-    let pending = checkpoint::before(session, turn, id, tool.as_ref(), &input).await;
-    let call = |input: Value| async { tool.call(input, &cx).await };
-    let mut output = call(input).await.unwrap_or_else(error_output);
-    if let (Some(input), Some(detail)) = (retry, sandbox_denial(&output)) {
+    let mut pending = Some(checkpoint::before(session, turn, id, tool.as_ref(), &input).await);
+    let running = {
+        let tool = tool.clone();
+        let call = async move {
+            let output = tool.call(input, &cx).await.unwrap_or_else(error_output);
+            (output, cx)
+        };
+        tokio::spawn(call.instrument(tracing::Span::current()))
+    };
+    let at = crate::tasks::Detachable {
+        turn,
+        call: id,
+        tool: tool.spec().name,
+        subject,
+    };
+    let (mut output, cx) = match session
+        .wait_or_detach(at, running, detach, &mut pending)
+        .await
+    {
+        Ok(ran) => ran,
+        Err(pointer) => return (id, pointer),
+    };
+    if let (Some(input), Some(detail), Some(mut cx)) = (retry, sandbox_denial(&output), cx) {
         let call = ToolCall {
             id,
             name: tool.spec().name,
@@ -426,7 +456,9 @@ async fn run_one(
             output = tool.call(input, &cx).await.unwrap_or_else(error_output);
         }
     }
-    checkpoint::after(session, turn, id, pending).await;
+    if let Some(pending) = pending {
+        checkpoint::after(session, turn, id, pending).await;
+    }
     // §1.8 step vii: informational; the verdict is not applied.
     let event = if output.is_error {
         HookEvent::PostToolUseFailure
@@ -550,7 +582,7 @@ async fn run_one(
     (id, result)
 }
 
-fn error_output(e: ToolError) -> ToolOutput {
+pub(crate) fn error_output(e: ToolError) -> ToolOutput {
     ToolOutput {
         text: e.to_string(),
         is_error: true,

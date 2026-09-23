@@ -16,5 +16,5 @@ expression: "shot(\"running_tool\", &mut state)"
 
 
 
->  message · @ file · / command
- ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 2 tasks · [default] · work
+> Esc interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter send now · Ctrl+U unqueue
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · ⎇ main +12 −3 · [default] · working

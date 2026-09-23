@@ -1,0 +1,8 @@
+# T27.1: a foreground `sleep` the PTY test moves to the background with
+# `Ctrl+B`; the second turn is the model carrying on without its result.
+[[turn]]
+text = "sleeping"
+tool_calls = [{ name = "bash", input = { command = "echo begin; sleep 6; echo woke" } }]
+
+[[turn]]
+text = "moved on"

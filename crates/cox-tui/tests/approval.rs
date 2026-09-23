@@ -162,3 +162,31 @@ fn modal_edit_resubmits_the_command_as_decision_edit() {
     assert!(key(&mut state, KeyCode::Esc).is_empty());
     assert!(state.modal.is_some());
 }
+
+/// T24.5: an `edit` awaiting approval shows its `old` → `new` through the
+/// same diff renderer as the edit card, word diff included, above the keys.
+#[test]
+fn modal_edit_approval_shows_the_proposed_diff() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let call = ToolCall {
+        id: CallId::new(),
+        name: "edit".into(),
+        input: serde_json::json!({
+            "path": "src/lib.rs",
+            "old": "fn keep() {}\nfn old() -> u8 { 1 }",
+            "new": "fn keep() {}\nfn new() -> u8 { 2 }",
+        }),
+        risk: Risk::Write,
+        subject: "src/lib.rs".into(),
+    };
+    update(
+        &mut state,
+        Msg::Event(Event::ApprovalRequired {
+            call,
+            why: Why::Risk { risk: Risk::Write },
+        }),
+    );
+    let frame = buffer_to_string(&render(&state, 60, 14));
+    assert!(frame.contains("[y]es  [s]ession  [n]o"), "{frame}");
+    insta::assert_snapshot!(frame);
+}

@@ -86,6 +86,11 @@ pub struct CoreConfig {
     pub parallel_tools: u32,
     /// `core.log_level`: a `tracing` filter string.
     pub log_level: String,
+    /// `core.profile`: the assembled-prefix profile, `""` (default) or
+    /// `"minimal"` (T30.1: the core eight tools plus `expand`/`tool_search`,
+    /// a ≤300-token system prompt, no skills or memory index;
+    /// `cox --profile minimal`).
+    pub profile: String,
 }
 
 impl Default for CoreConfig {
@@ -96,6 +101,7 @@ impl Default for CoreConfig {
             max_turns: 200,
             parallel_tools: 4,
             log_level: "info".to_string(),
+            profile: String::new(),
         }
     }
 }
@@ -497,6 +503,10 @@ pub struct ContextConfig {
     pub memory_budget_tokens: u32,
     /// Whether non-core tools are deferred (found via `tool_search`).
     pub deferred_tools: bool,
+    /// `context.system_prompt`: which embedded system prompt assembly uses,
+    /// `"default"` or `"minimal"` (T30.1: the ≤300-token prompt; profiles
+    /// set this, users normally set `core.profile` instead).
+    pub system_prompt: String,
 }
 
 impl Default for ContextConfig {
@@ -512,6 +522,7 @@ impl Default for ContextConfig {
             instruction_budget_tokens: 8000,
             memory_budget_tokens: 800,
             deferred_tools: true,
+            system_prompt: "default".to_string(),
         }
     }
 }
@@ -625,6 +636,8 @@ pub struct TuiConfig {
     pub inline: bool,
     /// `collapsed` | `hidden` | `full`.
     pub show_thinking: String,
+    /// The plain, screen-reader-friendly surface instead of the TUI (T29.1).
+    pub screen_reader: bool,
     /// Whether mouse input (scroll, click) is enabled.
     pub mouse: bool,
     /// `auto` | `unicode` | `ascii`: the glyph set the TUI prints.
@@ -636,6 +649,9 @@ pub struct TuiConfig {
     /// A syntect theme name for code, diffs and file output; empty follows
     /// `theme`, and an unknown name warns and follows `theme` too.
     pub syntax_theme: String,
+    /// `auto` | `side` | `stacked` (T24.5): side-by-side diffs from 120
+    /// columns, or never; an unknown value is `auto`.
+    pub diff: String,
     /// Whether the status line polls git for the branch and `+n −m` (T15.2).
     pub git: bool,
     /// `[tui.caps]` (T23.0): overrides one named `cox_tui::term::Caps`
@@ -651,11 +667,13 @@ impl Default for TuiConfig {
             theme: "auto".to_string(),
             inline: true,
             show_thinking: "collapsed".to_string(),
+            screen_reader: false,
             mouse: true,
             glyphs: "auto".to_string(),
             icons: HashMap::new(),
             color: "auto".to_string(),
             syntax_theme: String::new(),
+            diff: "auto".to_string(),
             git: true,
             caps: HashMap::new(),
         }
@@ -831,8 +849,45 @@ fn generate_config_docs(toml: &str) -> String {
             None => out.push_str(&format!("- `{key}` = `{value}`\n")),
         }
     }
+    out.push_str(KEYBINDINGS_DOCS);
     out
 }
+
+/// `~/.cox/keybindings.toml` (T25.5) is its own file, not a `default.toml`
+/// table, so its reference is written here and appended after the keys;
+/// `cox-tui`'s keymap tests pin every action id to it.
+#[cfg(test)]
+const KEYBINDINGS_DOCS: &str = "\
+## `~/.cox/keybindings.toml`
+
+Rebinds the TUI's keys (T25.5). Each line is an action id and a key, or a list of keys; \
+dotted ids may be written as TOML tables. The keys you give replace the action's defaults, \
+in every context the action has (`idle`, `running`), and take the key from whatever action \
+held it by default. A missing file means the defaults in `docs/getting-started.md`.
+
+```toml
+send = \"ctrl+enter\"
+newline = [\"enter\", \"shift+enter\"]
+mode.cycle = \"shift+tab\"
+```
+
+- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, \
+`thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`. `@`, `/`, `Ctrl+R` and the \
+keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a \
+character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, \
+`pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
+- A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a \
+terminal that reports it (kitty keyboard protocol, see `cox doctor`).
+- `~/.claude/keybindings.json` is read first, for the actions both tools have: \
+`chat:submit` → `send`, `chat:newline` → `newline`, `chat:sendNow` → `send.now`, \
+`chat:cancel` → `interrupt`, `chat:cycleMode` → `mode.cycle`, \
+`app:toggleTranscript` → `transcript`, `task:background` → `background`, \
+`app:exit` → `quit`. Its keys are added beside the defaults; this file still wins. \
+Other Claude actions and chords are skipped.
+- An unknown action, a bad key or a file that is not TOML is a warning in the transcript and \
+is skipped. `cox doctor` lists those and any key two of your bindings both claim.
+";
 
 #[cfg(test)]
 mod tests {

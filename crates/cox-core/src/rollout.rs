@@ -294,7 +294,7 @@ fn append_tool_use(messages: &mut Vec<Message>, call: &ToolCall) {
 #[cfg(test)]
 mod tests {
     use cox_protocol::ids::{CallId, ItemId, TurnId};
-    use cox_protocol::types::{ItemKind, StopReason, ToolResult};
+    use cox_protocol::types::{CompactReason, ItemKind, StopReason, ToolResult};
 
     use super::*;
 
@@ -333,6 +333,7 @@ mod tests {
                 dropped: vec![drop],
                 before_tokens: 10,
                 after_tokens: 2,
+                reason: CompactReason::Manual,
             },
         ];
         let h = History::from_events(&events);
@@ -379,6 +380,7 @@ mod tests {
                 dropped: vec![old],
                 before_tokens: 10,
                 after_tokens: 2,
+                reason: CompactReason::Manual,
             },
         ];
 

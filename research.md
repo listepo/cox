@@ -185,6 +185,30 @@ are ceiling-shaped, not field averages; `prefix` counts emulated
 cache-write bytes, not billed tokens. No mechanism measured 0, so none is
 flagged for removal.
 
+### 4.7 Footprint (filled by T30.2, 2026-09-23, `just footprint`)
+
+| Metric | Darwin-arm64 | How |
+|---|---|---|
+| cold start (`cox --version`, median of 5) | 11.0 ms | `date +%s%N` around the process |
+| first frame (scripted `stream-json`, median of 3) | 40.0 ms | spawn to first event on stdout |
+| replay RSS peak (30 turns, 60 provider calls) | 26.4 MiB | `/usr/bin/time -l`, max over turns |
+| binary size (`target/release/cox`) | 43.9 MiB | `cargo build --release -p cox` |
+
+Method: `scripts/footprint.sh`; baseline `scripts/footprint.json` (keyed by
+OS-arch); CI runs `footprint.sh --check` and fails on a >20% regression of
+any metric. Replay: every `evals/token/sessions/*.jsonl` line becomes a
+`Scripted` scenario per user turn, run back to back through `--resume` with
+real `read`/`grep`/`glob` over a workspace copy — the corpus is 30 user
+turns / 60 provider calls, not 50 (the card's number predates the corpus;
+context still grows across turns, which is what RSS measures). Caveats:
+timings are machine- and load-dependent (CI compares per-runner, not against
+this table); no network, no key, scripted provider only. Comparative numbers
+for other agents are out of scope here — their footprint threads move weekly:
+[Claude Code performance degradation #19452](https://github.com/anthropics/claude-code/issues/19452),
+[Claude Code high memory usage #8836](https://github.com/anthropics/claude-code/issues/8836),
+[Codex CLI memory leak #9345](https://github.com/openai/codex/issues/9345),
+[Codex 12GB on startup (forum)](https://community.openai.com/t/codex-consuming-12gb-memory-for-5-minutes-on-startup-macos/1376282).
+
 ## 5. Testability patterns adopted
 1. `Provider` trait with `Scripted` and `Replay` (cassette) implementations; cassettes re-recorded on demand and redacted. Temperature 0 and seeds do not give bit-exact replay across providers; replaying the event log does. [high]
 2. Golden `Event` JSONL for loop scenarios (`insta`); the rollout file and the fixture are the same format. [design]
@@ -301,7 +325,7 @@ Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~
 | Capability | Mechanism | Support | ratatui/crossterm 0.30.2/0.29 |
 |---|---|---|---|
 | Distinct `Shift+Enter`/`Ctrl+Enter` | Kitty keyboard protocol | Kitty, Ghostty, foot, Alacritty, iTerm2, WezTerm, Rio, Warp; not tmux | `PushKeyboardEnhancementFlags` ✔ (no-op where unsupported) |
-| Flicker-free `insert_before` | scrolling regions | VT100-class terminals | ratatui feature `scrolling-regions` ✔ present, **not enabled** in cox |
+| Flicker-free `insert_before` | scrolling regions | VT100-class terminals | ratatui feature `scrolling-regions` ✔ present, **enabled** in cox (T23.2, 2026-09-24): 40 → 0 full-viewport repaints for 40 inserted cells on the vt100 PTY fixture. Caveat: the `vt100` crate (0.16 `grid.rs` `scroll_up`) keeps no scrollback for lines scrolled off a DECSTBM region; the feature's premise (ratatui#1341) is that real terminals save lines leaving a region whose top is row 1, not re-verified per terminal here, so PTY tests that read scrollback must model that |
 | Clipboard over SSH/tmux | OSC 52 | Alacritty, Ghostty, Kitty, WezTerm, tmux forwards | crossterm feature `osc52` → `CopyToClipboard` ✔ present, not enabled |
 | Hyperlinks | OSC 8 | iTerm2, Terminal.app 13+, Ghostty, Kitty, WezTerm, Alacritty, VTE | no widget in ratatui; emit the sequence around a span (`hyperrat` exists) |
 | Desktop notification | OSC 9 / OSC 777 / BEL | iTerm2, WezTerm, Ghostty, Kitty, Warp (OSC 9) | raw write |

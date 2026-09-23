@@ -12,6 +12,7 @@ mod doctor;
 mod expand_cmd;
 mod ext_cmd;
 mod mcp_cmd;
+mod plain;
 mod record;
 mod resume;
 mod run;
@@ -47,6 +48,7 @@ fn main() -> anyhow::Result<()> {
                 &servers,
                 &loaded.config.tui.theme,
                 &loaded.config.tui.caps,
+                &loaded.config,
             );
             drop(telemetry);
             std::process::exit(code);
@@ -77,6 +79,11 @@ fn main() -> anyhow::Result<()> {
             std::process::exit(code);
         }
         Some(Command::Acp) => acp_cmd::run(&cli, &cwd),
+        Some(Command::Init(args)) => {
+            let code = session::run_init(&cli, &cwd, args.force)?;
+            drop(telemetry);
+            std::process::exit(code);
+        }
         Some(Command::Sessions(args)) => {
             let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
             sessions::run(&home, args)?;
@@ -95,6 +102,12 @@ fn main() -> anyhow::Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(self_update::run(version))?;
             Ok(())
+        }
+        // T29.1: `--plain`, `tui.screen_reader` or `COX_PLAIN=1`.
+        None if loaded.config.tui.screen_reader
+            || std::env::var("COX_PLAIN").is_ok_and(|v| v == "1") =>
+        {
+            plain::run(&cli, &cwd)
         }
         None => session::run_tui(&cli, &cwd),
     }

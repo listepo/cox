@@ -95,9 +95,15 @@ sha2 = "0.11"
 
 # cox-ext
 serde_yaml = "0.9"
+# T22.3: hook `matcher` regexes; `regex` 1.x is already built in this tree
+# (syntect/fancy-regex, tree-sitter), so this adds no new crate to the lock.
+regex = "1"
 
 # cox-tui
-ratatui = "0.30.2"
+# T23.2: `scrolling-regions` makes the inline viewport's `insert_before`
+# scroll the rows above the viewport (DECSTBM) instead of clearing and
+# repainting the viewport for every finished cell; same pinned version.
+ratatui = { version = "0.30.2", features = ["scrolling-regions"] }
 # T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the
 # same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine).
 pulldown-cmark = { version = "0.13", default-features = false }

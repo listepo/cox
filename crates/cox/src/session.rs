@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use cox_core::{History, Session};
 use cox_protocol::Config;
-use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{Hook, Provider, Store as _, Tool};
-use cox_protocol::types::Submission;
+use cox_protocol::ids::{ItemId, SessionId};
+use cox_protocol::traits::{Hook, Provider, SessionRow, Store as _, Tool};
+use cox_protocol::types::{Event, ItemKind, Job, Level, Submission};
 use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
 use cox_provider::openai::chat::OpenAiChatProvider;
 use cox_provider::openai::responses::OpenAiResponsesProvider;
@@ -82,10 +82,40 @@ pub async fn open(
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
+    // T27.3: a worktree session's project is still the main checkout, so
+    // the sessions of one repository see each other whatever tree they edit.
+    let project = project_root(cwd).await;
+    // T22.2: `SKILL.md` files are discovered once per session build; the
+    // `skill` tool hands bodies out on demand, and a broken skill is a
+    // warning and skipped, never fatal (D14).
+    let claude_home = config_load::home_dir().join(".claude");
+    let found = cox_ext::skills::discover(&cox_ext::skills::skill_dirs(
+        Some(&home),
+        Some(&claude_home),
+        Some(&project),
+    ));
+    for notice in &found.notices {
+        eprintln!("cox: warning: {notice}");
+    }
     let mut all = tools(answer, &store, mdir);
     if let Some(tx) = questions {
         all = with_question_surface(all, tx);
     }
+    // T22.2: the deferred `skill` tool hands skill bodies out on demand
+    // (its spec is `deferred`, `ReadOnly`; broken skills are skipped above,
+    // D14). `tool_search` answers from the spec list it was built with, so
+    // its index is rebuilt over the full set — the swap-by-name shape of
+    // `with_question_surface` — or the deferred `skill` could never be
+    // discovered (D6d).
+    all.push(Arc::new(cox_ext::skills::SkillTool::new(found.skills)));
+    let specs: Vec<_> = all.iter().map(|t| t.spec()).collect();
+    all = all
+        .into_iter()
+        .map(|t| match t.spec().name.as_str() {
+            "tool_search" => Arc::new(ToolSearchTool::new(specs.clone())) as Arc<dyn Tool>,
+            _ => t,
+        })
+        .collect();
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd, interactive).await);
     }
@@ -120,9 +150,6 @@ pub async fn open(
             cwd.to_path_buf(),
         )) as Arc<dyn Hook>
     });
-    // T27.3: a worktree session's project is still the main checkout, so
-    // the sessions of one repository see each other whatever tree they edit.
-    let project = project_root(cwd).await;
     session.set_hook(Arc::new(
         cox_ext::presence::PresenceHook::new(
             home.clone(),
@@ -246,26 +273,197 @@ async fn mcp_tools(config: &Config, cwd: &Path, interactive: bool) -> Vec<Arc<dy
     tools
 }
 
-/// `/sessions` and `/resume` rows: this project's sessions, newest first.
-/// A store that will not open is an empty list, not a failed start.
+/// `/sessions` and `/resume` rows: this project's sessions, newest first,
+/// forks and handoffs indented under their parent (T26.3). Row zero is the
+/// project header from the one SQL aggregate in `Store::project_totals`
+/// (T28.2). A store that will not open is an empty list, not a failed start.
 fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
     let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
     let now = crate::sessions::now_secs();
-    Store::open(home)
-        .and_then(|store| store.list_sessions(200))
-        .unwrap_or_default()
+    let store = Store::open(home).ok();
+    let Some(store) = store.as_ref() else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(String, String)> = Vec::new();
+    let tree = store.sessions_tree(200).unwrap_or_default();
+    let kept: Vec<&cox_store::queries::TreeRow> = tree
+        .iter()
+        .filter(|row| Path::new(&row.info.cwd).starts_with(&project))
+        .collect();
+    if !kept.is_empty() {
+        let slug = cox_ext::memory::slug_for(cwd);
+        let totals = store.project_totals(&slug).ok();
+        let (sessions, cost) =
+            totals.map_or((kept.len() as i64, 0.0), |t| (t.sessions, t.cost_usd));
+        rows.push((
+            String::new(),
+            cox_tui::picker::project_header(&slug, sessions, cost),
+        ));
+    }
+    rows.extend(kept.into_iter().map(|row| {
+        let entry = cox_tui::picker::session_entry(
+            row.depth,
+            row.info.title.as_deref(),
+            &row.info.cwd,
+            &crate::sessions::age_of(&row.info.updated_at, now),
+            row.info.cost_usd,
+        );
+        (row.info.id.clone(), entry)
+    }));
+    rows
+}
+
+/// `/fork` and `/handoff` (T26.3): a new session with `parent_id` whose own
+/// rollout opens with `events`, so a later `--resume` of the child rebuilds
+/// the same history from its file. The parent's rollout is only read.
+fn seed_child(
+    store: &Store,
+    cwd: &Path,
+    parent: SessionId,
+    events: &[Event],
+) -> anyhow::Result<(SessionId, History)> {
+    let id = SessionId::new();
+    store.session_create(&SessionRow {
+        id,
+        created_at: String::new(),
+        cwd: cwd.to_path_buf(),
+        project_slug: String::new(),
+        title: None,
+        parent_id: Some(parent),
+        rollout_path: PathBuf::new(),
+    })?;
+    let started = Event::SessionStarted {
+        session: id,
+        config_digest: String::new(),
+        cwd: cwd.to_path_buf(),
+    };
+    for ev in std::iter::once(&started).chain(events) {
+        store.rollout_append(&id, ev)?;
+    }
+    Ok((id, History::from_events(events)))
+}
+
+/// `/fork [turn]`: the parent's events up to the end of main turn `turn`
+/// (all of them for `None`), minus its `SessionStarted`, which names the
+/// parent. A `Rewound` or `Compacted` inside the kept span replays as-is.
+fn fork(
+    home: &Path,
+    cwd: &Path,
+    parent: SessionId,
+    turn: Option<u32>,
+) -> anyhow::Result<(SessionId, History)> {
+    let store = Store::open(home)?;
+    let (events, _) = store.rollout_read_with_truncation(&parent)?;
+    let kept: Vec<Event> = events
         .into_iter()
-        .filter(|info| Path::new(&info.cwd).starts_with(&project))
-        .map(|info| {
-            let row = cox_tui::picker::session_entry(
-                info.title.as_deref(),
-                &info.cwd,
-                &crate::sessions::age_of(&info.updated_at, now),
-                info.cost_usd,
-            );
-            (info.id, row)
+        .take_while(|ev| match (ev, turn) {
+            (
+                Event::TurnStarted {
+                    seq,
+                    job: Job::Main,
+                    ..
+                },
+                Some(turn),
+            ) => *seq <= turn,
+            _ => true,
         })
-        .collect()
+        .filter(|ev| !matches!(ev, Event::SessionStarted { .. }))
+        .collect();
+    seed_child(&store, cwd, parent, &kept)
+}
+
+/// `/handoff <objective>`: the child's first history item is one `Summary`
+/// (compaction's item kind) carrying the parent's summary and the
+/// objective. A summariser that returned nothing still hands the objective
+/// over, and says so in the item.
+fn handoff(
+    home: &Path,
+    cwd: &Path,
+    parent: SessionId,
+    objective: &str,
+    summary: Option<&str>,
+) -> anyhow::Result<(SessionId, History)> {
+    let summary = summary.unwrap_or("(no summary: the summariser returned nothing)");
+    let item = ItemId::new();
+    let events = [
+        Event::ItemStarted {
+            item,
+            kind: ItemKind::Summary {
+                text: format!(
+                    "[Handoff from session {parent}]\n\n{summary}\n\nObjective: {objective}"
+                ),
+            },
+        },
+        Event::ItemDone { item },
+    ];
+    seed_child(&Store::open(home)?, cwd, parent, &events)
+}
+
+/// `--continue` / `--resume <id>` for the interactive surfaces (the TUI and
+/// `--plain`, T29.1): the session to reopen and its rebuilt history.
+pub(crate) fn resume_from_flags(
+    cli: &Cli,
+    home: &Path,
+    cwd: &Path,
+) -> anyhow::Result<Option<(SessionId, History)>> {
+    if cli.r#continue {
+        let id = Store::open(home)?.latest_session_for_cwd(cwd)?;
+        let history = resume::from_home(home, &id.to_string())?;
+        Ok(Some((id, history)))
+    } else if let Some(id_str) = &cli.resume {
+        let id: SessionId = id_str.parse()?;
+        let history = resume::from_home(home, id_str)?;
+        Ok(Some((id, history)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// `cox init [--force]` (T25.6): scaffold `AGENTS.md` headlessly over the
+/// same core path the interactive `/init` drives, then print where it
+/// landed. Exit 0 when the file was written, 1 when it was refused (an
+/// existing `AGENTS.md` without `--force`) or denied.
+pub fn run_init(cli: &Cli, cwd: &Path, force: bool) -> anyhow::Result<i32> {
+    let rt = tokio::runtime::Runtime::new()?;
+    let (session, _) = rt.block_on(open(cli, cwd, None, None, |_| {}, None, false))?;
+    let mut events = session
+        .events()
+        .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
+    let running = {
+        let session = session.clone();
+        rt.spawn(async move { session.run_init(force).await })
+    };
+    let mut written = false;
+    let mut refused = false;
+    while let Some(ev) = rt.block_on(events.recv()) {
+        match &ev {
+            Event::Notice { text, .. } if text.starts_with("wrote AGENTS.md") => {
+                println!("{text}");
+                written = true;
+            }
+            Event::Notice {
+                level: Level::Warn,
+                text,
+            } if text.contains("already exists") => {
+                println!("cox init: {text}");
+                refused = true;
+            }
+            Event::ApprovalRequired { call, .. } => {
+                let session = session.clone();
+                let call_id = call.id;
+                rt.block_on(session.submit(Submission::Approve {
+                    call_id,
+                    decision: cox_protocol::types::Decision::Allow,
+                }))?;
+            }
+            _ => {}
+        }
+        if written || refused {
+            break;
+        }
+    }
+    drop(running);
+    Ok(i32::from(!written))
 }
 
 /// Runs the interactive TUI until the user quits.
@@ -284,18 +482,10 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             let _ = config_cmd::set(&key, &value);
         }
     });
-    let mut resume_spec = if cli.r#continue {
-        let id = Store::open(&home)?.latest_session_for_cwd(cwd)?;
-        let history = resume::from_home(&home, &id.to_string())?;
-        Some((id, history))
-    } else if let Some(id_str) = &cli.resume {
-        let id: SessionId = id_str.parse()?;
-        let history = resume::from_home(&home, id_str)?;
-        Some((id, history))
-    } else {
-        None
-    };
+    let mut resume_spec = resume_from_flags(cli, &home, cwd)?;
     let mut first = true;
+    // What `/fork`/`/handoff` did, shown atop the next session's transcript.
+    let mut announce: Option<(Level, String)> = None;
     loop {
         let seed = resume_spec.as_ref().map(|(_, history)| history.clone());
         // T22.1: the TUI is the only surface with somewhere to show a
@@ -312,8 +502,50 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         ))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
+        // T28.1: the status line names the spend over the session cap.
+        state.status.budget_cap_usd = config.budget.session_usd;
+        state.status.budget_warn_at = config.budget.warn_at;
+        // T22.2: markdown commands from `.claude/commands`/`.cox/commands`
+        // join the `/` palette after the built-ins; a broken file is a
+        // warning and skipped (D14).
+        let cmds = cox_ext::commands::discover(&cox_ext::commands::command_dirs(
+            Some(&home),
+            Some(&config_load::home_dir().join(".claude")),
+            Some(&project),
+        ));
+        for notice in &cmds.notices {
+            eprintln!("cox: warning: {notice}");
+        }
+        state.commands.extend(cmds.commands.iter().map(|c| {
+            let usage = match &c.argument_hint {
+                Some(hint) => format!("/{} <{hint}>", c.name),
+                None => format!("/{}", c.name),
+            };
+            (
+                c.name.clone(),
+                usage,
+                c.description.clone().unwrap_or_default(),
+            )
+        }));
+        // T25.5: rebound keys drive dispatch, hints, `?` and `/help` alike.
+        let keys = config_load::keymap(&home, &config_load::home_dir().join(".claude"));
+        for text in keys.warnings {
+            state.transcript.push(cox_tui::state::Cell::Notice {
+                level: cox_protocol::types::Level::Warn,
+                text,
+            });
+        }
+        for skipped in &keys.skipped {
+            tracing::debug!("{skipped}");
+        }
+        state.keymap = keys.keymap;
         if let Some(history) = seed {
             state.transcript_from_history(&history);
+        }
+        if let Some((level, text)) = announce.take() {
+            state
+                .transcript
+                .push(cox_tui::state::Cell::Notice { level, text });
         }
         state.files = cox_tools::glob::workspace_files(cwd);
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
@@ -391,6 +623,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.theme_catalog = catalog;
         state.syntax_names = syntax_names;
         state.show_thinking = config.tui.show_thinking == "full";
+        state.diff_mode = cox_tui::diff::Mode::parse(&config.tui.diff);
         state.marks = cli.verbose > 0;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
@@ -478,13 +711,54 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             persist_tx.clone(),
         ))?;
         poll.abort();
+        // `/handoff`'s summary is the parent's `compact` call, so it runs
+        // while the parent still has its provider and ledger.
+        let summary = match &outcome {
+            cox_tui::app::TuiOutcome::Handoff { objective } => {
+                rt.block_on(quit.handoff_summary(objective))
+            }
+            _ => None,
+        };
         // The TUI never shut the core down, so `SessionEnd` hooks and the
         // presence record outlived the window (T16.2).
         rt.block_on(quit.submit(Submission::Shutdown))?;
-        match outcome {
+        let parent = quit.id();
+        let (child, what) = match outcome {
             cox_tui::app::TuiOutcome::Clear => continue,
             cox_tui::app::TuiOutcome::Quit => break,
-        }
+            cox_tui::app::TuiOutcome::Fork { turn } => {
+                let at = turn.map_or_else(|| "the latest turn".into(), |t| format!("T{t}"));
+                (fork(&home, cwd, parent, turn), format!("fork at {at}"))
+            }
+            cox_tui::app::TuiOutcome::Handoff { objective } => {
+                let child = handoff(&home, cwd, parent, &objective, summary.as_deref());
+                let what = match summary {
+                    Some(_) => "handoff".to_string(),
+                    None => "handoff (no summary: the summariser returned nothing)".into(),
+                };
+                (child, what)
+            }
+        };
+        // Fail open: a child that cannot be built puts the user back in the
+        // parent rather than ending the program.
+        (resume_spec, announce) = match child {
+            Ok((id, history)) => (
+                Some((id, history)),
+                Some((
+                    Level::Info,
+                    format!("{what}: session {id}, child of {parent}"),
+                )),
+            ),
+            Err(e) => (
+                resume::from_home(&home, &parent.to_string())
+                    .ok()
+                    .map(|history| (parent, history)),
+                Some((
+                    Level::Warn,
+                    format!("{what} failed: {e}; still in {parent}"),
+                )),
+            ),
+        };
     }
     if cli.worktree.is_some() {
         offer_worktree_removal(&rt, cwd);
@@ -780,6 +1054,128 @@ mod tests {
             provider_for(&deepseek_config("smoke-signals")).is_err(),
             "unknown api bails at startup, not mid-turn"
         );
+    }
+
+    fn scripted_session(home: &Path, work: &Path, scenario: &str) -> (Session, Arc<Store>) {
+        let store = Arc::new(Store::open(home).expect("store"));
+        let provider: Arc<dyn Provider> =
+            Arc::new(cox_provider::scripted::Scripted::from_toml(scenario, "").expect("scenario"));
+        let session = Session::new(
+            Config::default(),
+            provider,
+            vec![],
+            store.clone(),
+            store.clone(),
+            work.to_path_buf(),
+        )
+        .expect("session");
+        (session, store)
+    }
+
+    async fn user_turn(session: &Session, text: &str) {
+        session
+            .submit(Submission::UserTurn {
+                text: text.into(),
+                attachments: vec![],
+                confirm_think: false,
+            })
+            .await
+            .expect("turn");
+    }
+
+    fn texts(history: &History) -> Vec<String> {
+        history
+            .messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(|c| match c {
+                cox_protocol::types::Content::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn depth_of(store: &Store, id: SessionId) -> Option<usize> {
+        let tree = store.sessions_tree(50).expect("tree");
+        tree.iter()
+            .find(|r| r.info.id == id.to_string())
+            .map(|r| r.depth)
+    }
+
+    /// T26.3: `/fork T1` after two turns starts a child of the session with
+    /// only the first turn; the child's own rollout rebuilds the same
+    /// history (a later `--resume`), and a bare `/fork` keeps every turn.
+    #[tokio::test]
+    async fn fork_creates_child_with_truncated_history() {
+        let home = tempfile::tempdir().expect("home");
+        let work = tempfile::tempdir().expect("work");
+        let (session, store) = scripted_session(
+            home.path(),
+            work.path(),
+            "[[turn]]\ntext = \"a1\"\n[[turn]]\ntext = \"a2\"\n",
+        );
+        user_turn(&session, "one").await;
+        user_turn(&session, "two").await;
+        let parent = session.id();
+
+        let (child, history) = fork(home.path(), work.path(), parent, Some(1)).expect("fork");
+        assert_eq!(texts(&history), ["one", "a1"]);
+        assert_eq!(history.turns, 1, "the child keeps counting from T1");
+        let resumed = resume::from_home(home.path(), &child.to_string()).expect("resume");
+        assert_eq!(resumed.messages, history.messages);
+        assert_eq!(depth_of(&store, parent), Some(0));
+        assert_eq!(depth_of(&store, child), Some(1));
+
+        let (_, all) = fork(home.path(), work.path(), parent, None).expect("fork all");
+        assert_eq!(texts(&all), ["one", "a1", "two", "a2"]);
+    }
+
+    /// T26.3: `/handoff` asks the parent's `compact` job (cheap tier, in the
+    /// ledger) for a summary; the child's first and only history item is
+    /// that summary plus the objective, as a `Summary` item, not a turn.
+    #[tokio::test]
+    async fn handoff_seeds_summary() {
+        let home = tempfile::tempdir().expect("home");
+        let work = tempfile::tempdir().expect("work");
+        let (session, store) = scripted_session(
+            home.path(),
+            work.path(),
+            "[[turn]]\ntext = \"a1\"\n[[turn]]\ntext = \"we said hello\"\n",
+        );
+        user_turn(&session, "hello").await;
+        let parent = session.id();
+
+        let summary = session.handoff_summary("ship it").await;
+        assert_eq!(summary.as_deref(), Some("we said hello"));
+        let usage = store.usage_for_session(&parent).expect("usage");
+        assert!(
+            usage
+                .iter()
+                .any(|u| u.job == Job::Compact && u.tier == cox_protocol::types::Tier::Cheap),
+            "the summary is a cheap-tier compact call: {usage:?}"
+        );
+        assert_eq!(session.history().await.len(), 2, "the parent is untouched");
+
+        let (child, history) = handoff(
+            home.path(),
+            work.path(),
+            parent,
+            "ship it",
+            summary.as_deref(),
+        )
+        .expect("handoff");
+        let [text] = texts(&history).try_into().expect("one seed item");
+        assert!(text.contains("we said hello") && text.ends_with("Objective: ship it"));
+        assert!(history.turn_marks.is_empty(), "the seed is not a user turn");
+        let (events, _) = store.rollout_read_with_truncation(&child).expect("rollout");
+        assert!(matches!(
+            events.get(1),
+            Some(Event::ItemStarted {
+                kind: ItemKind::Summary { .. },
+                ..
+            })
+        ));
+        assert_eq!(depth_of(&store, child), Some(1));
     }
 
     struct NoopArchive;

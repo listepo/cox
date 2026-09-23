@@ -203,6 +203,89 @@ fn command_slash_effort_sets_or_clears_the_session_effort() {
 }
 
 #[test]
+fn status_at_60_100_160_columns() {
+    use cox_tui::state::GitStatus;
+    use cox_tui::status::line_at;
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 4.2, 82_000);
+    state.status.cache_ratio = 0.6;
+    state.git = Some(GitStatus {
+        branch: "main".into(),
+        added: 12,
+        removed: 3,
+    });
+    // Full width: every segment, in display order.
+    let wide = line_at(&state, 160).to_string();
+    assert!(wide.contains("sonnet-5"), "{wide}");
+    assert!(wide.contains("ctx "), "{wide}");
+    assert!(wide.contains("$4.20/5"), "{wide}");
+    assert!(wide.contains("workspace-write"), "{wide}");
+    assert!(wide.contains("0 tasks"), "{wide}");
+    assert!(wide.contains("cache 60%"), "{wide}");
+    assert!(wide.contains("⎇ main +12 −3"), "{wide}");
+    insta::assert_snapshot!("status_wide_160", wide);
+    // Medium: the droppable cache, tasks, effort and sandbox segments fall
+    // off, in that order.
+    let mid = line_at(&state, 90).to_string();
+    assert!(mid.contains("ctx "), "{mid}");
+    assert!(!mid.contains("cache 60%"), "{mid}");
+    assert!(mid.contains("⎇ main"), "{mid}");
+    insta::assert_snapshot!("status_mid_100", mid);
+    // Narrow: only model, ctx, cost and the mode slot stay.
+    let narrow = line_at(&state, 60).to_string();
+    assert!(narrow.contains("ctx "), "{narrow}");
+    assert!(!narrow.contains("workspace-write"), "{narrow}");
+    assert!(narrow.contains("$4.20/5"), "{narrow}");
+    insta::assert_snapshot!("status_narrow_60", narrow);
+}
+
+/// T28.1: `$` names the spend over the session cap and warns past `warn_at`;
+/// the effort badge shows only when `/effort` overrode the tier default.
+#[test]
+fn status_cost_warns_past_warn_at_and_badges_effort() {
+    use cox_protocol::types::Effort;
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 0.1, 10);
+    let calm = cox_tui::status::line(&state).to_string();
+    assert!(calm.contains("$0.10/5"), "{calm}");
+    assert!(!calm.contains("effort:"), "{calm}");
+    state.status.cost_usd = 4.5;
+    let over = cox_tui::status::line(&state);
+    assert!(over.to_string().contains("$4.50/5"), "{}", over.to_string());
+    let cost = over
+        .spans
+        .iter()
+        .find(|s| s.content.contains('$'))
+        .expect("cost span");
+    assert_eq!(
+        cost.style.fg,
+        Some(state.theme.warn),
+        "past warn_at the cost takes theme.warn"
+    );
+    state.status.effort = Some(Effort::Xhigh);
+    let badged = cox_tui::status::line(&state).to_string();
+    assert!(badged.contains("effort:xhigh"), "{badged}");
+}
+
+/// T28.1: the `ctx` bar fills its cached share in the accent colour.
+#[test]
+fn status_ctx_bar_marks_the_cached_share_in_accent() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 0.1, 10);
+    state.status.cache_ratio = 0.6;
+    let line = cox_tui::status::line(&state);
+    let bar: Vec<_> = line
+        .spans
+        .iter()
+        .filter(|s| s.content.contains('▰') || s.content.contains('▱'))
+        .collect();
+    assert_eq!(bar.len(), 2, "one span per share: {line:?}");
+    assert_eq!(bar[0].content, "▰▰▰", "60% of five cells: {line:?}");
+    assert_eq!(bar[0].style.fg, Some(state.theme.accent));
+    assert_eq!(bar[1].style.fg, Some(state.theme.text));
+}
+
+#[test]
 fn status_line_shows_the_git_segment_only_inside_a_repository() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     turn(&mut state, "claude-sonnet-5", 0.1, 10);
@@ -217,9 +300,19 @@ fn status_line_shows_the_git_segment_only_inside_a_repository() {
     );
     let with = cox_tui::status::line(&state).to_string();
     let g = state.glyphs;
-    let head = format!(" {} main +12 {}3 {} ", g.branch, g.minus, g.sep);
-    assert!(with.starts_with(&head), "{with}");
-    assert!(with.ends_with(plain.trim_start()), "{with}");
+    // The git counts ride the mode slot at the end; the rest of the row is
+    // the same row as without a repository.
+    let tail = format!(
+        "{} {} main +12 {}3 {} [default]",
+        g.sep, g.branch, g.minus, g.sep
+    );
+    assert!(with.ends_with(&tail), "{with}");
+    let head = with[..with.len() - tail.len()].trim_end().to_string();
+    let without_mode = plain
+        .trim_start()
+        .to_string()
+        .replace(&format!(" {} [default]", g.sep), "");
+    assert_eq!(head, without_mode, "{with} vs {plain}");
     update(&mut state, Msg::Git(None));
     assert_eq!(cox_tui::status::line(&state).to_string(), plain);
 }
@@ -238,12 +331,12 @@ fn status_line_names_the_worktree_after_the_branch() {
     });
     state.worktree = Some("t42".into());
     let line = cox_tui::status::line(&state).to_string();
-    assert!(line.contains("⎇ t42 +1 −0 · ⧉ t42 · "), "{line}");
+    assert!(line.ends_with("· ⎇ t42 +1 −0 · ⧉ t42 · [plan]"), "{line}");
     state.glyphs = cox_tui::glyph::ASCII;
     assert!(
         cox_tui::status::line(&state)
             .to_string()
-            .contains("# t42 +1 -0 | wt t42 | "),
+            .ends_with("| # t42 +1 -0 | wt t42 | [plan]"),
         "{}",
         cox_tui::status::line(&state)
     );

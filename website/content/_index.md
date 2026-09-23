@@ -14,4 +14,6 @@ description: "A modular terminal coding agent in Rust — one binary, four surfa
 
 Build from the repo with [mise](https://mise.jdx.dev/): `mise exec -- cargo build -p cox`. Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, run `cox doctor`, then start with `cox` or `cox run -p`.
 
+Lean by measure, not by claim: cox starts in 11 ms and peaks at 26.4 MiB RSS over a 30-turn scripted replay (`just footprint`; numbers in `research.md` §4.7, CI fails on a 20% regression).
+
 Read the [documentation](/docs/) for configuration, architecture, and observability.

@@ -139,6 +139,8 @@ fn task_completed_drops_it_from_the_status_count() {
             task: tasks[0],
             result_item: ItemId::new(),
             cost_usd: 0.01,
+            exit_code: None,
+            archive: None,
         }),
     );
     assert_eq!(state.tasks.len(), 1);

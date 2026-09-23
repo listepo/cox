@@ -63,7 +63,8 @@ struct BashInput {
     /// Seconds before the command is sent SIGTERM, then SIGKILL (default 120).
     #[serde(default)]
     timeout_s: Option<u64>,
-    /// Run detached and return a task id; the output is archived when it finishes.
+    /// Run as a background task and return its id at once; the exit code and
+    /// the archived output arrive as a notice when it finishes.
     #[serde(default)]
     background: bool,
 }
@@ -203,15 +204,19 @@ impl Tool for BashTool {
         // under `on-failure` (T4.3).
         let confined = cx.sandbox.mode != SandboxMode::DangerFullAccess
             && crate::sandbox::backend(cx.sandbox.linux_backend).is_some();
-        let structured = (confined && run.ended.is_none() && run.code != Some(0))
+        let denied = (confined && run.ended.is_none() && run.code != Some(0))
             .then(|| denial(&text))
-            .flatten()
-            .map(|line| serde_json::json!({ "sandbox_denied": line }));
+            .flatten();
+        // `exit_code` is what a detached run's `TaskCompleted` reports (T27.1).
+        let mut structured = serde_json::json!({ "exit_code": run.code });
+        if let Some(line) = denied {
+            structured["sandbox_denied"] = Value::String(line);
+        }
         Ok(ToolOutput {
             is_error: run.ended.is_some() || run.code != Some(0),
             text,
             diff: None,
-            structured,
+            structured: Some(structured),
         })
     }
 }
@@ -234,9 +239,10 @@ fn denial(text: &str) -> Option<String> {
         .map(|line| line.trim().chars().take(200).collect())
 }
 
-/// Spawns the command detached from the turn: it outlives cancellation and
-/// its full output lands in the archive under this call. `TaskCreated`/
-/// `TaskCompleted` and a way to fetch the row by task id arrive with T9.2.
+/// Spawns the command detached, for callers with no task registry (`cox
+/// mcp`): it outlives cancellation and its full output lands in the archive
+/// under this call. Inside a session the core strips `background` and runs
+/// the call as a task instead (T27.1), so this path never sees a session.
 fn background(cmd: Cmd, timeout: Duration, cx: &ToolCx) -> ToolOutput {
     let task = TaskId::new();
     let (cwd, roots, writable_roots, sandbox) = (

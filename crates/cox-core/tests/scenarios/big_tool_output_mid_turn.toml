@@ -1,0 +1,17 @@
+# T28.3: turn 3's `big` result pushes the next request over
+# `compact_at × max_context`; the compact job answers before that call.
+[[turn]]
+text = "first"
+
+[[turn]]
+text = "second"
+
+[[turn]]
+text = "reading"
+tool_calls = [{ name = "big", input = {} }]
+
+[[turn]]
+text = "## Goal\nread big\n## Decisions\nnone\n## Files touched\nnone\n## Open todo\nnone\n## Errors seen\nnone\n## Next step\nfinish"
+
+[[turn]]
+text = "done"

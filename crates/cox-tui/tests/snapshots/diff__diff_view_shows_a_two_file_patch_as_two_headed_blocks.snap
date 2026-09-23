@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/diff.rs
-assertion_line: 32
 expression: "buffer_to_string(&render(&state, 60, 18))"
 ---
  git diff HEAD · PageUp/PageDown scroll · Esc closes
@@ -19,5 +18,5 @@ expression: "buffer_to_string(&render(&state, 60, 18))"
    # cox
   +
   +A coxswain.
->  message · @ file · / command
- - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks ·
+> Esc close · PageUp scroll up · PageDown scroll down
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]

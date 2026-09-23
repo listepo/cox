@@ -30,6 +30,9 @@ pub struct Row {
     pub turns: i64,
     /// Ledger cost in USD.
     pub cost_usd: f64,
+    /// `0` for a root; a fork or handoff sits one deeper than its parent
+    /// (T26.3). `--grep` results are flat.
+    pub depth: usize,
 }
 
 /// One session's stored record: the `sessions` row plus what the ledger
@@ -125,11 +128,16 @@ pub fn detail_of(info: &SessionInfo, usage: &[UsageRow]) -> Detail {
     }
 }
 
-/// Shapes listing rows with `now_secs` injected, so tests pin time.
-pub fn list_rows(infos: &[SessionInfo], now_secs: u64) -> Vec<Row> {
+/// Shapes listing rows from `(session, depth)` pairs with `now_secs`
+/// injected, so tests pin time.
+pub fn list_rows<'a>(
+    infos: impl IntoIterator<Item = (&'a SessionInfo, usize)>,
+    now_secs: u64,
+) -> Vec<Row> {
     infos
-        .iter()
-        .map(|info| Row {
+        .into_iter()
+        .map(|(info, depth)| Row {
+            depth,
             id: info.id.clone(),
             title: info.title.clone().unwrap_or_else(|| "untitled".into()),
             cwd: info.cwd.clone(),
@@ -218,14 +226,16 @@ pub fn run(home: &Path, args: &SessionsArgs) -> anyhow::Result<()> {
         let mut infos = store.list_sessions(1000)?;
         infos.retain(|info| ids.contains(&info.id));
         infos.truncate(limit as usize);
-        return print_sessions(&list_rows(&infos, now_secs()), Some(&hits), args.json);
+        let rows = list_rows(infos.iter().map(|info| (info, 0)), now_secs());
+        return print_sessions(&rows, Some(&hits), args.json);
     }
-    let infos = store.list_sessions(limit)?;
-    if infos.is_empty() {
+    let tree = store.sessions_tree(limit)?;
+    if tree.is_empty() {
         println!("No sessions found");
         return Ok(());
     }
-    print_sessions(&list_rows(&infos, now_secs()), None, args.json)
+    let rows = list_rows(tree.iter().map(|r| (&r.info, r.depth)), now_secs());
+    print_sessions(&rows, None, args.json)
 }
 
 fn print_detail(detail: &Detail, json: bool) -> anyhow::Result<()> {
@@ -291,14 +301,14 @@ fn print_sessions(rows: &[Row], hits: Option<&[RolloutHit]>, json: bool) -> anyh
         return Ok(());
     }
     println!(
-        "{:<26} {:<20} {:<24} {:<6} {:<5} COST",
+        "{:<30} {:<20} {:<24} {:<6} {:<5} COST",
         "ID", "TITLE", "CWD", "AGE", "TURNS"
     );
-    println!("{}", "-".repeat(100));
+    println!("{}", "-".repeat(104));
     for row in rows {
         println!(
-            "{:<26} {:<20} {:<24} {:<6} {:<5} ${:.4}",
-            row.id,
+            "{:<30} {:<20} {:<24} {:<6} {:<5} ${:.4}",
+            format!("{}{}", cox_tui::picker::tree_prefix(row.depth), row.id),
             truncate(&row.title, 20),
             truncate(&row.cwd, 24),
             row.age,
@@ -411,9 +421,10 @@ mod tests {
     #[test]
     fn sessions_list_rows_shape() {
         let rows = list_rows(
-            &[info("abc", "2026-09-03T11:00:00Z")],
+            [(&info("abc", "2026-09-03T11:00:00Z"), 1)],
             20699 * 86400 + 12 * 3600,
         );
+        assert_eq!(rows[0].depth, 1);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "untitled");
         assert_eq!(rows[0].age, "1h");

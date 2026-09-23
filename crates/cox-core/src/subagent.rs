@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 use crate::budget;
 use crate::hooks;
 use crate::session::Session;
+use crate::tasks::cost_detail;
 
 /// A subagent shape: which job it reports as, which tools it may use, how
 /// long it may run and how big its answer may be.
@@ -259,7 +260,9 @@ impl Tool for AgentTool {
             })
             .await
             .map_err(core_error)?;
-        self.parent.register_task(task, label.clone(), tier).await;
+        self.parent
+            .register_task(task, label.clone(), tier, crate::tasks::TaskKind::Agent)
+            .await;
         if input
             .get("background")
             .and_then(Value::as_bool)
@@ -288,10 +291,12 @@ impl Tool for AgentTool {
                         task,
                         result_item: ItemId::new(),
                         cost_usd,
+                        exit_code: None,
+                        archive: None,
                     })
                     .await;
                 let _ = parent
-                    .publish_task_result(task, &bg_label, &answer, cost_usd)
+                    .publish_task_result(task, &bg_label, &answer, &cost_detail(cost_usd))
                     .await;
                 let _ = hooks::fire(
                     &parent,
@@ -338,6 +343,8 @@ impl Tool for AgentTool {
                 task,
                 result_item: ItemId::new(),
                 cost_usd,
+                exit_code: None,
+                archive: None,
             })
             .await
             .map_err(core_error)?;
@@ -543,7 +550,7 @@ fn rank(r: Risk) -> u8 {
     }
 }
 
-fn first_line(text: &str) -> String {
+pub(crate) fn first_line(text: &str) -> String {
     let line = text.lines().next().unwrap_or_default().trim();
     line.chars().take(60).collect()
 }

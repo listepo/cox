@@ -6,41 +6,29 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.2 | todo | P0 | 2 | 0% | |
-| T22.3 | todo | P0 | 2 | 0% | |
+| T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.7 | todo | P1 | 1 | 0% | |
-| T23.2 | todo | P1 | 2 | 0% | |
+| T22.7 | done | P1 | 1 | 0% | |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
-| T23.7 | todo | P2 | 3 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.5 | todo | P1 | 3 | 0% | |
-| T24.6 | todo | P1 | 2 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
-| T24.8 | todo | P1 | 1 | 0% | |
+| T24.8 | done | P1 | 1 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.4 | todo | P1 | 3 | 0% | |
-| T25.5 | todo | P1 | 3 | 0% | |
-| T25.6 | todo | P1 | 2 | 0% | |
-| T25.7 | todo | P0 | 2 | 0% | |
+| T25.6 | done | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
-| T26.3 | todo | P1 | 3 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
-| T27.1 | todo | P1 | 3 | 0% | |
 | T27.2 | todo | P1 | 2 | 0% | |
 | T27.4 | todo | P3 | 2 | 0% | |
-| T28.1 | todo | P1 | 2 | 0% | |
-| T28.2 | todo | P2 | 1 | 0% | |
-| T28.3 | todo | P1 | 3 | 0% | |
-| T28.4 | todo | P1 | 2 | 0% | |
-| T29.1 | todo | P2 | 3 | 0% | |
+| T28.1 | done | P1 | 2 | 0% | |
+| T28.2 | done | P2 | 1 | 0% | |
+| T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
-| T30.1 | todo | P2 | 2 | 0% | |
-| T30.2 | todo | P2 | 2 | 0% | |
+| T30.1 | done | P2 | 2 | 0% | |
+| T30.2 | done | P2 | 2 | 0% | Claude Code / claude-haiku-4-5 |
 | T30.3 | todo | P2 | 2 | 0% | |
 
 ## Reference
@@ -101,8 +89,8 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
-| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4) |
-| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2, crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25 |
+| `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
+| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
@@ -123,6 +111,7 @@ pub enum Submission {
     SetPermissionMode(PermissionMode),                        // default | plan | auto | bypass
     Command(SlashCommand),                                    // parsed by the surface, executed by the core
     HookResult { hook_id: String, outcome: HookOutcome },     // hook runner is outside the core
+    Background { call_id: CallId },                           // Ctrl+B: detach a running bash/agent call into a task (T27.1)
     Shutdown,
 }
 
@@ -139,9 +128,9 @@ pub enum Event {
     ToolCallDone      { call_id: CallId, result: ToolResult },// ToolResult { ok: bool, visible: String, archive: Option<ArchiveRef>, bytes: u64, duration_ms: u64, diff: Option<Diff> }
     ItemDone      { item: ItemId },
     Usage         { turn: TurnId, usage: Usage },
-    Compacted     { summary: ItemId, dropped: Vec<ItemId>, before_tokens: u32, after_tokens: u32 },
+    Compacted     { summary: ItemId, dropped: Vec<ItemId>, before_tokens: u32, after_tokens: u32, reason: CompactReason }, // CompactReason: PreCall | PostTurn | Manual | ContextTooLong ("pre-call" …); absent in old rollouts = post-turn
     TaskCreated   { task: TaskId, label: String, tier: Tier },
-    TaskCompleted { task: TaskId, result_item: ItemId, cost_usd: f64 },
+    TaskCompleted { task: TaskId, result_item: ItemId, cost_usd: f64, exit_code: Option<i32>, archive: Option<ArchiveId> }, // exit code + archive: shell tasks (T27.1)
     ModelSwitched { tier: Tier, from: ModelId, to: ModelId },
     Notice        { level: Level, text: String },            // Level: Info | Warn | Budget | Security
     TurnDone      { turn: TurnId, stop: StopReason },        // EndTurn | MaxTurns | Interrupted | Budget | Refusal { detail } | Error
@@ -476,7 +465,7 @@ Token accounting per call writes `context_tokens` (input + cache read + cache wr
 
 ### 1.10 Compaction and microcompaction
 
-Trigger: after `TurnDone`, when `context_tokens_last_call ≥ context.compact_at × max_context`, or on `/compact [focus]`, or when a provider returns a context-length error (then compaction runs before retrying once).
+Trigger: after `TurnDone`, when `context_tokens_last_call ≥ context.compact_at × max_context` (`post-turn`, checked at the next turn's start), or on `/compact [focus]` (`manual`), or when a provider returns a context-length error (`context-too-long`; compaction runs before retrying once), or before any provider call inside a turn whose assembled request estimates at or over that threshold (`pre-call`, T28.3: ⌈bytes/4⌉, refined by `Provider::count_tokens` within 10 % of it; microcompaction of every result outside `keep_turns` first, then compaction and one re-assembly; still over → `Notice(Budget)` + `TurnDone{Budget}`). `Compacted.reason` names which.
 
 Algorithm (append-only, D6f):
 1. `PreCompact` hooks run with `{trigger, focus}`; a hook may `Block` (compaction skipped, notice shown).
@@ -543,7 +532,7 @@ Every flag maps to a config key (T0.3 test); `--permission-mode bypass` and `--s
 | `@` | file picker (nucleo) | `/` at line start | command palette |
 | `y` / `s` / `n` / `e` in approval modal | allow / allow for session / deny / edit command | `Ctrl+R` | prompt history search |
 | `PageUp/PageDown`, mouse wheel | scroll transcript | `Ctrl+L` | redraw |
-| `Ctrl+G` | diff view: the working tree against `HEAD`, per-file blocks; `PageUp/PageDown` scroll, `Esc` closes (T15.3) | | |
+| `Ctrl+G` | diff view: the working tree against `HEAD`, per-file blocks; `PageUp/PageDown` scroll, `Esc` closes (T15.3) | `Ctrl+B` | move the running `bash`/`agent` call to the background; the turn goes on (T27.1) |
 
 Slash commands (parsed in the surface, executed as `Submission::Command`): `/model [tier] [model]`, `/effort [low|high|xhigh]` (session-wide, clamped per model, T16.4), `/think <prompt>` (confirm dialog with price), `/compact [focus]`, `/cost`, `/permissions`, `/sandbox <mode>`, `/resume`, `/sessions`, `/expand <id>`, `/agents` (live sessions in this workspace, T16.3), `/skills`, `/hooks`, `/mcp`, `/doctor`, `/clear` (new session, same cwd), `/vim`, `/help`, `/quit`. Markdown files in `.claude/commands` and `.cox/commands` appear in the same palette (T7.3).
 
@@ -976,34 +965,6 @@ ok
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
 
-#### T22.2 Skills index and file commands reach the session
-
-Model: sonnet · Status: open · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
-Goal: `skills::index` is the last block of `system[2]`, `SkillTool` is in the tool list, `.claude/commands` and `.cox/commands` are in the `/` palette and submit as `Submission::Command`.
-Files: `crates/cox/src/session.rs`, `crates/cox-core/src/context.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) In the binary's session builder call `cox_ext::skills::discover(&skill_dirs(..))` once, pass `skills::index(&skills)` into the core's instruction block (`Loaded.block` + index, same slot, index last so a user without skills has an unchanged prefix). (2) Register `SkillTool::new(skills)` in the tool list (deferred, `ReadOnly`). (3) `cox_ext::commands::discover(..)` (already used by `ext_cmd.rs`) → `State.commands` extension: `(name, usage, description)` triples appended after the built-in `COMMANDS`; choosing one inserts `/name ` and `Enter` submits `Submission::Command { name, args }` (T5.5 parser already handles unknown names as `Command`). (4) `allowed-tools` of an invoked skill narrows the engine for the turn: pass `structured.allowed_tools` from the `SkillTool` result into `Session::set_turn_tools` (add if absent).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core prefix_bytes_identical_between_turns skills_index_is_in_system_2
-mise exec -- cargo nextest run -p cox-tui palette_lists_file_commands
-```
-Done when: the fixture skill `greeting` appears in the first request's `system[2]` and its body only after `skill{"name":"greeting"}`; snapshot `frames__composer_slash_palette` shows a file command; `cox ext list` output unchanged.
-Out of scope: skill marketplaces, `/skills install`.
-
-#### T22.3 `SessionStart` and `Notification` hooks fire; `matcher` accepts a regex
-
-Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P0 · Complexity: 2
-Goal: the two configured-but-silent events run; a `matcher` that is not a plain tool name is compiled as a regex (Claude Code semantics).
-Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/hooks.rs`, `crates/cox-ext/src/hooks.rs`.
-Steps: (1) `Session::new` runs `HookEvent::SessionStart` after `SessionStarted` is emitted (payload: `session_id`, `cwd`, `source: "startup"|"resume"|"clear"`); `additionalContext` from stdout is appended to the volatile block (`system[3]`) exactly as T16.2 does for `PermissionRequest`. (2) `Notification` fires on `ApprovalRequired`, `TurnDone` and `ask_user` (payload `kind`, `message`, `title`); its stdout is ignored (observe-only). (3) `matcher`: try exact tool name; if it contains a regex metacharacter compile with `regex` (already a workspace dep); invalid regex → `Notice(Warn)` naming the hook, hook skipped (fail open, D14). (4) Update `docs/config.md` hook table.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core session_start_hook_runs_once notification_hook_gets_turn_done_payload
-mise exec -- cargo nextest run -p cox-ext matcher_regex_matches_bash_or_edit
-```
-Done when: shell-stub hooks in a `COX_HOME` scratch tree write both payloads to a file once per session; a broken regex is a warning, not a failure.
-Out of scope: `PreModelSwitch`/`PostModelSwitch` and other events cox does not list in §1.6.
-
 #### T22.4 Mouse: wire `tui.mouse` or delete the key
 
 Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
@@ -1018,33 +979,7 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
 
-#### T22.7 Leftover audit
-
-Model: haiku · Status: open · Depends: T22.1, T22.2, T22.3, T22.4, T22.5, T22.6 · Size: docs · Priority: P1 · Complexity: 1
-Goal: every "Not done:" line in `done.md` is either a task in §3, closed by P22, or recorded as a deliberate won't-do in `docs/compat.md` with one sentence why.
-Files: `docs/compat.md`, `scripts/leftovers.sh` (new), `plan.md` (§6 note only).
-Steps: (1) `scripts/leftovers.sh` extracts every `Not done:` sentence with its task id from `done.md`. (2) For each item: mark `closed by T..` when a P22 task covers it, `task T..` when a §3 card covers it, else add a row to a "Known leftovers" table in `docs/compat.md` (`task | leftover | why it stays`). (3) The script exits non-zero when an item is in none of the three sets; wire it into `just check`.
-Check:
-```bash
-bash scripts/leftovers.sh
-```
-Done when: the script exits 0 and `docs/compat.md` lists every remaining leftover with a reason.
-Out of scope: fixing any leftover — that is a card, not this audit.
-
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
-
-#### T23.2 Flicker-free scrollback (`scrolling-regions`)
-
-Model: sonnet · Status: open · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
-Goal: `insert_before` scrolls the region above the viewport instead of repainting everything.
-Files: `Cargo.toml`, `crates/cox-tui/tests/shell.rs`.
-Steps: (1) Add `scrolling-regions` to the ratatui feature list (verified present in 0.30.2, ledger #29). (2) PTY test: stream 40 finished cells through the real binary with the scripted provider and count full-viewport repaints in the vt100 screen diff (a repaint = every viewport row rewritten in one frame); assert ≤ 1 per inserted cell. (3) Record the before/after count in the commit message; if the count does not drop on the vt100 parser, keep the feature off and record why in §6 (falsifier).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
-```
-Done when: the test passes with the feature on and the number in the commit message is lower than before.
-Out of scope: resize handling (T23.7).
 
 #### T23.3 OSC 8 hyperlinks
 
@@ -1100,19 +1035,6 @@ mise exec -- cargo nextest run -p cox-tui progress_sequence_follows_turn_state
 Done when: the sequence test passes and the PTY e2e on a terminal without the capability sees no `9;4`.
 Out of scope: percentages (a turn has no known length).
 
-#### T23.7 Resize hardening
-
-Model: sonnet · Status: open · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
-Goal: a resize mid-stream leaves no duplicated or stale lines in scrollback (ratatui #2086 class).
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/tests/shell.rs`.
-Steps: (1) On `Input::Resize`, set `state.resizing = true`, skip `insert_before` and `draw` until the next tick with a stable size (two identical size reads 16 ms apart), then `terminal.clear()` of the viewport region and a full redraw. (2) Re-measure the inline viewport height (`VIEWPORT_ROWS` clamped to the new height − 2). (3) PTY test resizes 120×40 → 80×24 while a reply streams, then asserts the vt100 scrollback contains each finished cell exactly once.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
-```
-Done when: the test passes on macOS and Linux CI.
-Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (documented in `docs/compat.md`).
-
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
 #### T24.3 `two-face` syntax set
@@ -1129,32 +1051,6 @@ mise exec -- cargo build --release -p cox && ls -l target/release/cox
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
 
-#### T24.5 Word-level and side-by-side diffs
-
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~200 · Priority: P1 · Complexity: 3
-Goal: intra-line changes are highlighted; side-by-side when the viewport is ≥ 120 columns; one renderer serves the edit card, the approval modal and `Ctrl+G`.
-Files: `crates/cox-tui/src/diff.rs`, `crates/cox-tui/src/cells.rs`, `config/default.toml`.
-Steps: (1) `diff.rs`: for each replaced pair of lines run `similar::TextDiff::from_words` (workspace dep) and emit `Span`s with `theme.diff_add`/`diff_del` on the changed words only, dim on the unchanged; cap word-diff at 400 characters per line (fall back to line colour). (2) `Layout::Side { left, right }` when `width ≥ 120` and `tui.diff = auto|side`; `Stacked` otherwise; gutter with line numbers in `theme.dim`. (3) The edit card, the approval modal's diff and `Ctrl+G` call the one `diff::render(&Diff, width, &Theme, layout)`. (4) `tui.diff = "auto"` documented.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test diff word_diff_highlights_changed_words side_by_side_at_140_columns stacked_at_80_columns
-```
-Done when: three snapshots exist, `docs/screenshots/diff_view.svg` is regenerated, and the approval modal uses the same output.
-Out of scope: syntax highlighting inside side-by-side (kept for stacked only if the size limit bites; say so).
-
-#### T24.6 Footer hints and `?` help
-
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
-Goal: the composer placeholder row shows 3–5 context-dependent hints; `?` on an empty composer opens the full keymap overlay from the one table that also feeds `/help` and the docs.
-Files: `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
-Steps: (1) `commands.rs`: `pub const KEYMAP: &[(&str, &str, Context)]` (`key`, `action`, `Idle|Running|Modal|Overlay`) — the single source; `/help` renders it; a doc test asserts `docs/getting-started.md`'s keymap table matches. (2) `view.rs`: placeholder = the first 3–5 entries for the current context (`Enter send · Shift+Tab mode · @ file · / command · ? help` idle; `Esc stop · Ctrl+B background · Ctrl+O transcript` running). (3) `modal.rs`: `Help` overlay listing `KEYMAP` grouped by context, `Esc`/`?` closes; `?` only when the composer is empty (otherwise it is a character).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hints_follow_context keymap_table_matches_docs
-```
-Done when: the overlay snapshot exists and the doc test pins `docs/getting-started.md`.
-Out of scope: keybinding customisation (T25.5 extends the same table).
-
 #### T24.7 Motion and narrow-width polish
 
 Model: sonnet · Status: open · Depends: T24.1 · Size: ~120 · Priority: P2 · Complexity: 2
@@ -1168,24 +1064,11 @@ mise exec -- cargo nextest run -p cox-tui --test cells reduced_motion_spinner_is
 Done when: both snapshots exist and `docs/config.md` documents `tui.motion`.
 Out of scope: tachyonfx-style effects (none planned).
 
-#### T24.8 Screenshots and gallery
-
-Model: haiku · Status: open · Depends: T24.2, T24.4, T24.5, T24.6, T22.1 · Size: docs · Priority: P1 · Complexity: 1
-Goal: `just screenshots` covers every new state and the website gallery lists them.
-Files: `crates/cox-tui/tests/screenshots.rs`, `website/content/docs/screens.md` (or the existing gallery page), `README.md`.
-Steps: (1) Add screen tests: theme picker, tool card ×3, side-by-side diff, help overlay, question modal, queued messages (after T25.1), rewind timeline (after T26.2 — leave a TODO row if not yet landed). (2) Run `just screenshots`; commit the SVGs. (3) Gallery page: one image per state with a one-line caption; README picks the tool-card frame.
-Check:
-```bash
-just screenshots && git status --short docs/screenshots | wc -l
-```
-Done when: every screen test has an SVG and the website build (`hugo --minify`) succeeds.
-Out of scope: animated GIFs.
-
 ### P25 — Composer and flow (goal: the keys a Claude Code or Codex user already has in their fingers)
 
 #### T25.2 `Shift+Tab` mode cycle and plan-mode view
 
-Model: sonnet · Status: open · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
+Model: sonnet · Status: in progress · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
 Goal: `Shift+Tab` cycles default → plan → auto; `Tab` completes `@`/`/` only; the composer prompt and status line show the mode; in plan mode denied writes render as a dim "planned" line instead of an error card.
 Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/cells.rs`.
 Steps: (1) Move the mode cycle from `Tab` to `BackTab` (crossterm reports `Shift+Tab` as `KeyCode::BackTab` everywhere, Kitty or not); `Tab` in the composer triggers picker completion when a `@`/`/` token is under the cursor, else inserts nothing. (2) Prompt glyph per mode from the glyph table: `>` default, `▷` plan, `»` auto, `!` bypass, coloured with `theme.mode_*`. (3) `cells.rs`: a `ToolCallDone` whose result is `denied: plan mode` renders `▷ planned: edit src/lib.rs` in `theme.dim` (no error tint). (4) §1.13 table updated.
@@ -1210,60 +1093,6 @@ mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_ou
 Done when: the loop scenarios pass and the next request after `!ls` is byte-identical to the one before it (prefix invariant).
 Out of scope: an interactive shell (T15.4 completion already helps the line).
 
-#### T25.4 Vim, second half
-
-Model: sonnet · Status: open · Depends: — · Size: ~200 · Priority: P1 · Complexity: 3
-Goal: motions, counts, operators, text objects, visual modes and undo/redo; `Esc` in normal mode never interrupts the turn.
-Files: `crates/cox-tui/src/vim.rs`, `crates/cox-tui/src/composer.rs`.
-Steps: (1) Motions `w b e 0 ^ $ gg G h j k l` with counts. (2) Operators `d c y` with motions and `dd cc yy`, `p P`, `x X`, `u` / `Ctrl+R` over `tui-textarea-2`'s history. (3) Text objects `iw aw i" a" i' a' i( a( i[ a[ i{ a{`. (4) `v` and `V` visual modes with `d y c`. (5) `Esc` in normal mode is a no-op (interrupt stays on `Ctrl+C` and on `Esc` in insert mode as today); the status line shows `-- NORMAL --`/`-- VISUAL --`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test vim
-```
-Done when: a 20-row table test (`rstest`) covers every item above and `docs/getting-started.md` lists the vim keys.
-Out of scope: `.` repeat, macros, registers.
-
-#### T25.5 Keybindings file
-
-Model: sonnet · Status: open · Depends: T24.6 · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `~/.cox/keybindings.toml` rebinds any action in the keymap table; Claude Code's `keybindings.json` is imported read-only for the actions that exist in both; conflicts are reported by `doctor`.
-Files: `crates/cox-tui/src/keymap.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-ext/src/claude_settings.rs`.
-Steps: (1) `keymap.rs`: `Action` enum generated from `KEYMAP` (T24.6), `Binding { key, modifiers, context }`, parser for `"ctrl+enter"`, `"shift+tab"`, `"alt+m"`; `Keymap::resolve(KeyEvent, Context) -> Option<Action>`. (2) `state.rs` dispatches through `Keymap` instead of the literal `match` (the literal table becomes the default `Keymap`). (3) `claude_settings.rs`: read `~/.claude/keybindings.json` (`{ "bindings": [{ "key", "command", "when" }] }`) and map the commands cox has (`send`, `newline`, `interrupt`, `mode.cycle`, `transcript`, `help`); unknown commands ignored with a debug log. (4) `doctor`: two actions on one key in one context → warning naming both.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui keymap_parses_chords keymap_rebinds_send claude_keybindings_import_maps_known_commands
-```
-Done when: rebinding `send` to `ctrl+enter` works in the PTY e2e and `docs/config.md` documents the file.
-Out of scope: chords (`ctrl+x ctrl+s`), per-mode vim remaps.
-
-#### T25.6 `/init`
-
-Model: sonnet · Status: open · Depends: — · Size: ~140 · Priority: P1 · Complexity: 2
-Goal: writes an `AGENTS.md` skeleton for the repo on the `cheap` tier after showing the diff for approval; never overwrites without `--force`.
-Files: `crates/cox-tui/src/commands.rs`, `crates/cox-core/src/init.rs` (new), `crates/cox/src/session.rs`.
-Steps: (1) `init.rs`: detect manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `mise.toml`, `justfile`) and derive build/test/lint commands; render a template (`# <name>`, layout table from the top-level directories, commands, "conventions" left as a `cheap`-tier summary of the README if present). (2) `Submission::Command { name: "init" }` → the core runs the `cheap` job `init`, then emits an `ApprovalRequired` for the `write` of `AGENTS.md` (the existing diff modal shows it). (3) `cox init [--force]` subcommand for headless use.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core init_detects_cargo_and_just init_refuses_to_overwrite
-COX_HOME=/tmp/cox-scratch COX_PROVIDER=scripted mise exec -- cargo run -q -- init --cwd fixtures/init-sample
-```
-Done when: the fixture repo gets an `AGENTS.md` matching a snapshot and a second run refuses.
-Out of scope: rewriting an existing `AGENTS.md`.
-
-#### T25.7 `/context`
-
-Model: sonnet · Status: open · Depends: — · Size: ~150 · Priority: P0 · Complexity: 2
-Goal: a modal shows where the next request's tokens go — tool specs, system prompt, instruction files, skills index, memory, history (verbatim / pointers / summary), and the cached share; `/autocompact` shows the threshold and its config source.
-Files: `crates/cox-core/src/context.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
-Steps: (1) `context::assemble` returns `Breakdown { tools, system, instructions, skills, memory, volatile, history_verbatim, history_pointers, summary, total, cached_estimate }` alongside the `Request` (estimates from the T1.8 estimator; the last `Usage.cache_read_tokens` gives the cached share). (2) `Submission::Command { name: "context" }` → `Event::Notice(Info)` carrying the breakdown as `structured` JSON. (3) `modal.rs`: a bar per segment scaled to `max_context`, numbers right-aligned, the compaction threshold as a marker; `/autocompact` prints `compact_at = 0.75 (project config)` from `cox config show --sources` data.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core breakdown_sums_to_estimate
-mise exec -- cargo nextest run -p cox-tui context_modal_snapshot
-```
-Done when: the modal snapshot exists and `breakdown.total` equals the estimator's request total.
-Out of scope: per-file instruction attribution (one line per instruction file is enough).
-
 #### T25.8 Cross-session prompt history
 
 Model: sonnet · Status: open · Depends: — · Size: ~90 · Priority: P2 · Complexity: 2
@@ -1279,20 +1108,6 @@ Out of scope: a global (cross-project) history.
 
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
 
-#### T26.3 `/fork` and `/handoff`
-
-Model: sonnet · Status: open · Depends: T26.2 · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `/fork [turn]` starts a new session with the history up to that turn; `/handoff <objective>` starts a new session seeded with a cheap-tier summary plus the objective; both appear as children in `/sessions`.
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-store/src/queries.rs`.
-Steps: (1) `/fork`: `resume::from_home` loads the rollout, truncates at the turn (default: current), and `Session::resume`-style injection (T17.1) creates the child with `parent_id = <this>`; the TUI switches to it like `/clear` does. (2) `/handoff <text>`: run the `compact` job on the `cheap` tier with the focus "hand off: <objective>" to produce the seed summary; the child's first history item is that summary (as a `Summary` item, same as compaction). (3) `/sessions` and `cox sessions` show children indented under their parent (`queries::sessions_tree`).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox fork_creates_child_with_truncated_history handoff_seeds_summary
-mise exec -- cargo nextest run -p cox-store sessions_tree_nests_children
-```
-Done when: both commands work in the PTY e2e with the scripted provider and the sessions picker snapshot shows nesting.
-Out of scope: merging a fork back.
-
 #### T26.4 `/undo`, `/redo`
 
 Model: haiku · Status: open · Depends: T26.2 · Size: ~60 · Priority: P2 · Complexity: 1
@@ -1307,19 +1122,6 @@ Done when: the test passes and the fold line of a tool card mentions `/undo` aft
 Out of scope: multi-step redo history.
 
 ### P27 — Agents you can see (goal: no "raw scaffolding noise")
-
-#### T27.1 `bash` background tasks and `Ctrl+B`
-
-Model: sonnet · Status: open · Depends: — · Size: ~160 · Priority: P1 · Complexity: 3
-Goal: `bash(background: true)` joins the T9.2 task registry (id, progress, completion event, archive by task id) instead of just detaching; `Ctrl+B` moves a running foreground `bash` or `agent` call to the background and unblocks the composer.
-Files: `crates/cox-core/src/tasks.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `tasks.rs` gains `TaskKind::Shell`; `bash`'s `background()` path returns the `TaskId` line the `agent` path already returns and streams its output into the archive under that id; `TaskCompleted` carries exit code and archive id. (2) `Submission::Background { call_id }`: the core detaches the running call into a task (the tool keeps its cancellation token, now task-scoped as in `tasks.rs`), returns a pointer result to the model immediately (`background task <id> started`), and the turn continues. (3) `Ctrl+B` in the TUI while a tool card is pending → `Cmd::Submit(Background)`; `/tasks` already lists tasks — add exit code and `expand` hint.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core bash_background_registers_task ctrl_b_detaches_running_call
-```
-Done when: the scenarios pass and the PTY e2e shows the composer accepting input while a backgrounded `sleep` runs.
-Out of scope: persisting tasks across restarts.
 
 #### T27.2 Approvals labelled by source; agent cards
 
@@ -1351,72 +1153,7 @@ Out of scope: cloud schedules.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
-#### T28.1 Status-line segments
-
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
-Goal: `ctx` is a mini bar with the cached share in the accent colour; `$` shows spend over the session cap; effort and mode badges; segments drop from the right on narrow terminals in a documented order.
-Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/theme.rs`, `docs/getting-started.md`.
-Steps: (1) `ctx ▰▰▰▱▱ 41%` where filled cells in `theme.accent` mark cached tokens and `theme.text` uncached (from the last `Usage`). (2) `$0.83/5` (cap from `budget.session_usd`, `theme.warn` above `warn_at`). (3) Badges `[plan]`, `effort:xhigh` when non-default. (4) Drop order at narrow widths: git counts → cache → tasks → effort → model → cost → ctx (documented); a `--plain` variant (T29.1) prints the same text once per turn.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test status status_at_60_100_160_columns
-```
-Done when: three snapshots exist and `docs/screenshots/finished_turn.svg` is regenerated.
-Out of scope: a user-scripted status line (Claude Code style) — a later card if asked.
-
-#### T28.2 Project cost aggregate
-
-Model: haiku · Status: open · Depends: — · Size: ~90 · Priority: P2 · Complexity: 1
-Goal: `/sessions` and `cox sessions` show per-project totals from one SQL aggregate; `cox stats --project`.
-Files: `crates/cox-store/src/queries.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox/src/stats.rs`.
-Steps: (1) `queries::project_totals(slug) -> { sessions, turns, cost_usd, tokens }` as one `GROUP BY` over `usage` joined to `sessions` (Diesel). (2) The sessions picker header shows `this project · 14 sessions · $12.40`. (3) `cox stats --project [slug]` table.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-store project_totals_match_sum_of_sessions
-```
-Done when: the picker snapshot has the header and `cox stats --project` prints it.
-Out of scope: budgets per project (config already caps per session and month).
-
-#### T28.3 Pre-emptive compaction
-
-Model: opus · Status: open · Depends: — · Size: ~150 · Priority: P1 · Complexity: 3
-Goal: a request that would exceed the threshold is compacted *before* the provider call inside a turn, not after `TurnDone`; the last two turns stay verbatim.
-Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/compact.rs`, `crates/cox-core/tests/scenarios/`.
-Steps: (1) In the turn loop after `assemble` (step 3a) and before `provider.stream`: `estimate(req)` (or `count_tokens` when `Caps.count_tokens` and the estimate is within 10 % of the threshold) compared with `compact_at × max_context`. (2) Over → run microcompaction first (older tool results → pointers, T8.2); still over → full compaction on the `cheap` tier with `keep_turns` (D6f), then re-assemble once; still over → `TurnDone{Budget}` with a `Notice` naming the size. (3) `Event::Compacted` carries `reason: "pre-call"|"post-turn"`. (4) Scenario `big_tool_output_mid_turn_compacts_before_call`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core big_tool_output_mid_turn_compacts_before_call compaction_keeps_last_two_turns_verbatim
-```
-Done when: the scenario passes, invariant 5 passes, and `research.md` §4.6 gets a row for the mechanism from `just bench`.
-Out of scope: changing the compaction summary prompt.
-
-#### T28.4 Unconditional redaction of what leaves the session
-
-Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
-Goal: the `record --redact` patterns become one helper applied to rollouts, `cox.log`, `stream-json`, `cox sessions --grep` output and archive export — never to what the model needs for the task; a tool result containing a secret pattern raises `Notice(Security)`.
-Files: `crates/cox-core/src/redact.rs` (new), `crates/cox-store/src/rollout.rs`, `crates/cox/src/run.rs`.
-Steps: (1) Move the T1.5 patterns (`sk-…`, `Bearer …`, AWS `AKIA…`, GitHub `ghp_…`, PEM blocks) into `redact::scrub(&str) -> Cow<str>` with a table test; `cox record` uses it. (2) `rollout_append` scrubs `TextDelta`/`ToolCallOutput`/`ItemDone` text before writing (the in-memory history is untouched); `stream-json` and `cox sessions --grep` and `cox expand` output pass through it; the tracing layer scrubs fields. (3) `PostToolUse`: when `scrub` changed the output, emit `Notice(Security, "tool output contained a secret-shaped string; redacted in the rollout")`. (4) `docs/how-it-works.md` documents what is and is not scrubbed.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core redact_table rollout_never_contains_key_patterns
-```
-Done when: a scenario whose scripted tool output contains `sk-abc…` produces a rollout without it and the model still sees it.
-Out of scope: redacting model *input* (would break tasks that legitimately handle keys).
-
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
-
-#### T29.1 `--plain` surface
-
-Model: sonnet · Status: open · Depends: T22.1 · Size: ~200 · Priority: P2 · Complexity: 3
-Goal: `cox --plain` (also `COX_PLAIN=1`, `tui.screen_reader = true`) is a fifth consumer of the event stream: flat labelled lines, numbered prompts, no cursor movement, BEL on completion, full scrollback.
-Files: `crates/cox/src/plain.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/session.rs`.
-Steps: (1) `plain.rs`: read stdin lines, map events to `you:`, `cox:`, `thinking:` (only when `show_thinking = full`), `tool: <name> <subject>` + result head/tail, `error:`, `question:` with numbered options, `approve? [1] allow [2] session [3] deny`, `cost: …` once per turn; markdown tables as `Header: value`; never rewrite a line. (2) `Ctrl+C` interrupts, second quits (same semantics). (3) BEL after `TurnDone` and before a prompt. (4) `COX_AX_STARTUP_QUIET_MS` optional delay before the first prompt (Claude Code parity for assistive tech).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox --test plain plain_transcript_snapshot plain_has_no_csi_cursor_moves
-```
-Done when: the PTY transcript snapshot exists and contains no `CSI … H/J/K` sequences.
-Out of scope: pickers (`@`, `/`) — plain mode takes paths and commands as typed text.
 
 #### T29.2 Reduced motion and daltonized themes
 
@@ -1432,32 +1169,6 @@ Done when: both snapshots exist and the docs section is present.
 Out of scope: a colour-vision simulator.
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.1 `profile = "minimal"`
-
-Model: sonnet · Status: open · Depends: T22.2 · Size: ~140 · Priority: P2 · Complexity: 2
-Goal: a config profile whose assembled prefix is ≤ 1 000 tokens; `doctor` prints the prefix token count for the active profile; a test pins the cap.
-Files: `config/default.toml`, `crates/cox-core/src/context.rs`, `crates/cox/src/doctor.rs`.
-Steps: (1) `[profiles.minimal]`: `context.deferred_tools = true` with the core eight only, `system_prompt = "minimal"` (a second embedded prompt ≤ 300 tokens), `instruction_budget_tokens = 2000`, no skills index, no memory index; `cox --profile minimal` and `core.profile` key. (2) `context::assemble` honours the profile (the prefix layout §1.9 is unchanged — blocks are just smaller or empty). (3) `doctor`: `prefix: 912 tokens (profile minimal)` using the T1.8 estimator. (4) Test `minimal_prefix_under_1000_tokens` over the fixtures workspace.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core minimal_prefix_under_1000_tokens prefix_bytes_identical_between_turns
-```
-Done when: the test passes and `docs/config.md` documents profiles.
-Out of scope: automatic profile selection.
-
-#### T30.2 Footprint benchmark
-
-Model: haiku · Status: open · Depends: — · Size: ~120 · Priority: P2 · Complexity: 2
-Goal: `just footprint` measures cold start to first frame, RSS after a 50-turn scripted replay, and binary size; the numbers land in `research.md` §4.7 and the website; CI fails on a 20 % regression.
-Files: `scripts/footprint.sh` (new), `.github/workflows/ci.yml`, `research.md`.
-Steps: (1) `footprint.sh`: `hyperfine`-free timing with `date +%s%N` around `cox --version` and around a PTY run to the first frame (`script`/`expect` not required: use `cox run -p` with the scripted provider and `stream-json` to the first event); RSS via `/usr/bin/time -l` (macOS) or `-v` (Linux) over `evals/token/sessions/*.jsonl` replay; `ls -l target/release/cox`. (2) `footprint.json` baseline committed; CI job compares and fails above +20 %. (3) `research.md` §4.7 table and a website line ("starts in N ms, M MiB after 50 turns").
-Check:
-```bash
-just footprint
-```
-Done when: the script prints the three numbers, the baseline file exists, and the CI job is green on `main`.
-Out of scope: comparative numbers for other agents (they change weekly; link their issues instead).
 
 #### T30.3 Eval run with a verification step
 

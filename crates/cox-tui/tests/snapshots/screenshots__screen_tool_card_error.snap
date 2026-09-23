@@ -1,0 +1,26 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"tool_card_error\", &mut state)"
+---
+› run the failing build
+⚙ bash cargo build · 41ms
+│ error[E0308]: mismatched types
+│  --> src/loop.rs:9:9
+│   |
+│   = note: build failed
+│ ✗ 78B 41ms
+
+
+
+
+
+
+
+
+
+
+
+
+
+> Esc interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter send now · Ctrl+U unqueue
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · ⎇ main +12 −3 · [default] · working

@@ -61,11 +61,14 @@ impl CheckResult {
 /// `tui_theme` is `config.tui.theme`, shown (and queried when `"auto"`) by
 /// `check_terminal`; `tui_caps` is `config.tui.caps` (T23.0), the `[tui.caps]`
 /// overrides `check_terminal` reports alongside the detected/queried value.
+/// `config` is the loaded config: `check_prefix` (T30.1) assembles the active
+/// profile's prefix and reports its T1.8 estimate.
 pub fn run(
     json: bool,
     mcp: &HashMap<String, McpServerConfig>,
     tui_theme: &str,
     tui_caps: &HashMap<String, bool>,
+    config: &cox_protocol::Config,
 ) -> i32 {
     let mut results = Vec::new();
 
@@ -101,6 +104,15 @@ pub fn run(
 
     // .claude/settings.json found.
     results.push(check_claude_settings());
+
+    // Assembled-prefix token count for the active profile (T30.1).
+    results.push(check_prefix(config));
+
+    // Keybindings file and the Claude import: bad entries and clashes (T25.5).
+    results.push(check_keybindings(
+        &home,
+        &crate::config_load::home_dir().join(".claude"),
+    ));
 
     // One row per HTTP MCP server: is its token usable?
     let mut names: Vec<&String> = mcp
@@ -434,6 +446,25 @@ fn check_prices() -> CheckResult {
     prices_status(table.prices(), today_ymd())
 }
 
+/// T25.5: the same map the TUI would build; a warning for every entry it
+/// skipped and every key two user bindings both claim in one context.
+fn check_keybindings(cox_home: &std::path::Path, claude_home: &std::path::Path) -> CheckResult {
+    let loaded = crate::config_load::keymap(cox_home, claude_home);
+    let mut problems = loaded.warnings;
+    problems.extend(loaded.keymap.conflicts());
+    if problems.is_empty() {
+        return CheckResult::ok("keybindings", "no conflicts".to_string());
+    }
+    CheckResult::warn(
+        "keybindings",
+        problems.join("; "),
+        format!(
+            "edit {} (docs/config.md, keybindings)",
+            cox_home.join("keybindings.toml").display()
+        ),
+    )
+}
+
 fn check_claude_settings() -> CheckResult {
     // Walk up from cwd to find .claude/settings.json.
     let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -453,6 +484,20 @@ fn check_claude_settings() -> CheckResult {
         ".claude/settings.json not found".to_string(),
         "create ~/.claude/settings.json or a project-local .claude/settings.json if you need custom permissions or hooks".to_string(),
     )
+}
+
+/// The assembled-prefix token count for the active profile (T30.1): an
+/// empty-history request through `cox_core::assemble` priced by the T1.8
+/// estimator, so `doctor` names what the next turn will actually send.
+fn check_prefix(config: &cox_protocol::Config) -> CheckResult {
+    let req = cox_core::assemble(&[], config, &[], std::path::Path::new("."), "");
+    let tokens = cox_provider::tokens::estimate(&req).tokens;
+    let profile = if config.core.profile.is_empty() {
+        "default"
+    } else {
+        config.core.profile.as_str()
+    };
+    CheckResult::ok("prefix", format!("{tokens} tokens (profile {profile})"))
 }
 
 fn output_human(results: &[CheckResult]) -> bool {
@@ -495,6 +540,26 @@ mod tests {
 
         let has_fail = results.iter().any(|r| r.status == "fail");
         assert!(has_fail);
+    }
+
+    #[test]
+    fn doctor_warns_on_keybinding_conflicts() {
+        let cox = tempfile::tempdir().expect("tempdir");
+        let claude = tempfile::tempdir().expect("tempdir");
+        let ok = check_keybindings(cox.path(), claude.path());
+        assert_eq!(
+            (ok.status.as_str(), ok.detail.as_str()),
+            ("ok", "no conflicts")
+        );
+        std::fs::write(
+            cox.path().join("keybindings.toml"),
+            "send = \"ctrl+o\"\ntranscript = \"ctrl+o\"\n",
+        )
+        .expect("write");
+        let warn = check_keybindings(cox.path(), claude.path());
+        assert_eq!(warn.status, "warn");
+        assert!(warn.detail.contains("send"), "{}", warn.detail);
+        assert!(warn.detail.contains("transcript"), "{}", warn.detail);
     }
 
     #[test]

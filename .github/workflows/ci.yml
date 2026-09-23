@@ -92,9 +92,29 @@ jobs:
           cargo install cargo-audit --locked
           cargo audit
 
+  # plan.md T30.2: `bash scripts/footprint.sh --check` fails when any metric
+  # regresses more than 20% against scripts/footprint.json (keyed by
+  # OS-arch plus `-ci`, so each runner compares against a baseline measured on
+  # a runner, never against a laptop's; T30.4).
+  footprint:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: footprint regression check
+        run: bash scripts/footprint.sh --check
+
   revert-on-failure:
     name: revert-on-failure
-    needs: [test, sandbox-landlock, deny, audit]
+    needs: [test, sandbox-landlock, deny, audit, footprint]
     if: >-
       always()
       && github.event_name == 'push'

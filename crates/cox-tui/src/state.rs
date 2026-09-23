@@ -7,17 +7,18 @@ use std::collections::VecDeque;
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, StopReason,
-    Submission, Tier, ToolCall, ToolResult,
+    Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
+    SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::banner::Banner;
 use crate::cells::Look;
 use crate::color::Depth;
-use crate::commands::{self, Action, COMMANDS};
+use crate::commands::{self, Action, COMMANDS, Context};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
+use crate::keymap::{self, Keymap};
 use crate::markdown;
 use crate::modal::{Approval, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
@@ -25,6 +26,7 @@ use crate::status::parse_todo;
 use crate::tasks;
 use crate::term::Caps;
 use crate::theme::{Theme, ThemeFile};
+use crate::vim::Mode;
 
 /// One transcript entry. A finished cell leaves the viewport for the
 /// terminal's own scrollback (`State::take_finished`).
@@ -91,6 +93,15 @@ pub struct Status {
     pub busy: bool,
     /// Last call's cache share 0..=1 (T8.3), shown as `cache N%`.
     pub cache_ratio: f64,
+    /// Session spend cap, in USD (T28.1); the binary sets it from
+    /// `budget.session_usd`, so `$` names the spend over the cap.
+    pub budget_cap_usd: f64,
+    /// Fraction of the cap that warns (T28.1); the binary sets it from
+    /// `budget.warn_at`, and the cost segment turns `theme.warn` past it.
+    pub budget_warn_at: f64,
+    /// `/effort` override for the session (T28.1); `SetEffort` keeps it here
+    /// next to the mode the composer already shows, and the line badges it.
+    pub effort: Option<Effort>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +116,9 @@ pub enum Modal {
         text: String,
         scroll: usize,
     },
+    /// `?` on an empty composer (T24.6): `KEYMAP` grouped by context, drawn
+    /// over the transcript like the diff view.
+    Help,
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -129,6 +143,9 @@ pub struct State {
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
     pub tasks: Vec<(TaskId, String)>,
+    /// Recently finished tasks as `/tasks` lines: exit code and the
+    /// `/expand` id of a shell task's output (T27.1).
+    pub finished_tasks: Vec<String>,
     /// Lines scrolled up from the bottom of the transcript.
     pub scroll: usize,
     pub banner: Option<Banner>,
@@ -137,8 +154,10 @@ pub struct State {
     /// Local branch names for `git checkout <Tab>` (T15.4); the runtime
     /// lists them at start, like `files`.
     pub git_branches: Vec<String>,
-    /// Names the `/` palette offers; T7.3 appends markdown commands.
-    pub commands: Vec<String>,
+    /// The `/` palette as `(name, usage, description)`: the built-in
+    /// `COMMANDS` first, then T22.2's markdown file commands appended by the
+    /// runtime. A name beyond `COMMANDS` submits `Submission::Command`.
+    pub commands: Vec<(String, String, String)>,
     /// A first idle `Ctrl+C` arms; the second quits.
     pub ctrl_c_armed: bool,
     /// 100 ms ticks since start; spinners and elapsed times read it.
@@ -164,6 +183,8 @@ pub struct State {
     pub theme: Theme,
     /// `Ctrl+O`: diffs shown in full rather than as their `+n −m` header.
     pub show_diffs: bool,
+    /// `tui.diff` (T24.5); the binary sets it from config.
+    pub diff_mode: crate::diff::Mode,
     /// `Ctrl+E` (T24.4): the last tool cell still in the viewport, expanded
     /// past its fold rather than head/tail. `view.rs` is the only reader
     /// that knows which cell is last, so it turns this into `Look.expand_last`.
@@ -214,6 +235,9 @@ pub struct State {
     /// now (T25.1); the next `TurnDone{Interrupted}` consumes it and joins
     /// the whole queue into one turn instead of leaving it queued.
     pub send_now: bool,
+    /// The keys (T25.5): `KEYMAP` with `~/.cox/keybindings.toml` and Claude
+    /// Code's `keybindings.json` over it; the binary loads it.
+    pub keymap: Keymap,
 }
 
 /// Ticks (100 ms each) two `Esc`s may be apart to count as `Esc Esc`.
@@ -269,6 +293,12 @@ pub enum Cmd {
     Submit(Submission),
     Quit,
     Clear,
+    /// `/fork [turn]` (T26.3): leave for a child session with the history
+    /// up to `turn` (`None`: all of it); the binary builds it.
+    Fork(Option<u32>),
+    /// `/handoff <objective>` (T26.3): leave for a child session seeded
+    /// with a cheap-tier summary of this one plus the objective.
+    Handoff(String),
     Copy(String),
     Ask(Ask),
     /// `ask_user`'s answer for `call`; `None` is `Esc` (dismissed). The
@@ -300,15 +330,22 @@ impl State {
                 sandbox,
                 busy: false,
                 cache_ratio: 0.0,
+                budget_cap_usd: 5.0,
+                budget_warn_at: 0.8,
+                effort: None,
             },
             modal: None,
             mode,
             tasks: Vec::new(),
+            finished_tasks: Vec::new(),
             scroll: 0,
             banner: None,
             files: Vec::new(),
             git_branches: Vec::new(),
-            commands: COMMANDS.iter().map(|(n, ..)| n.to_string()).collect(),
+            commands: COMMANDS
+                .iter()
+                .map(|(n, u, d)| (n.to_string(), u.to_string(), d.to_string()))
+                .collect(),
             ctrl_c_armed: false,
             turns: Vec::new(),
             current_seq: 0,
@@ -323,6 +360,7 @@ impl State {
             caps: Caps::default(),
             theme: Theme::dark(),
             show_diffs: true,
+            diff_mode: crate::diff::Mode::Auto,
             expanded_last: false,
             todo: Vec::new(),
             show_todo: false,
@@ -337,6 +375,7 @@ impl State {
             theme_prev: None,
             queue: VecDeque::new(),
             send_now: false,
+            keymap: Keymap::default(),
         }
     }
 
@@ -407,12 +446,23 @@ impl State {
             glyphs: self.glyphs,
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,
+            diff: self.diff_mode,
             tick: self.tick,
             marks: self.marks,
             colors: self.theme,
             // The generic look shared by a whole render pass does not know
             // which cell is last; `view.rs` overrides it for that one index.
             expand_last: None,
+        }
+    }
+
+    /// Which `KEYMAP` context the keys are in right now (T24.6).
+    pub fn context(&self) -> Context {
+        match &self.modal {
+            Some(Modal::Diff { .. } | Modal::Help) => Context::Overlay,
+            Some(_) => Context::Modal,
+            None if self.status.busy => Context::Running,
+            None => Context::Idle,
         }
     }
 
@@ -425,6 +475,16 @@ impl State {
             turn.cell_at = turn.cell_at.saturating_sub(n);
         }
         self.transcript.drain(..n).collect()
+    }
+
+    /// The newest `bash` or `agent` call still waiting for its result.
+    fn detachable_call(&self) -> Option<CallId> {
+        self.transcript.iter().rev().find_map(|c| match c {
+            Cell::Tool {
+                call, result: None, ..
+            } if matches!(call.name.as_str(), "bash" | "agent") => Some(call.id),
+            _ => None,
+        })
     }
 
     fn tool_mut(&mut self, id: CallId) -> Option<&mut Cell> {
@@ -499,43 +559,27 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         return Vec::new();
     }
     state.ctrl_c_armed = false;
-    if ctrl && key.code == KeyCode::Char('d') {
-        return vec![Cmd::Quit];
-    }
-    if ctrl && key.code == KeyCode::Char('t') {
-        state.show_thinking = !state.show_thinking;
-        return Vec::new();
-    }
-    if ctrl && key.code == KeyCode::Char('o') {
-        state.show_diffs = !state.show_diffs;
-        return Vec::new();
-    }
-    if ctrl && key.code == KeyCode::Char('e') {
-        state.expanded_last = !state.expanded_last;
-        return Vec::new();
-    }
-    if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {
-        return vec![Cmd::Ask(Ask::GitDiff)];
-    }
-    // `Ctrl+U` on an empty composer pops the queue's tail back for editing
-    // (T25.1); a non-empty composer keeps its usual line-kill behaviour.
-    if ctrl && key.code == KeyCode::Char('u') && state.modal.is_none() && state.composer.is_empty()
-    {
-        if let Some(text) = state.queue.pop_back() {
-            state.composer.set_text(&text);
-        }
-        return Vec::new();
-    }
+    // A `git` line completes on `Tab` (T15.4) before `Tab` means anything else.
     if key.code == KeyCode::Tab && state.modal.is_none() {
-        // A `git` line completes (T15.4); any other Tab cycles the mode.
         let line = state.composer.text();
         let found = picker::candidates(&line, state);
-        if found.is_empty() {
-            return set_mode(state, commands::next_mode(state.mode));
+        if !found.is_empty() {
+            let picker = Picker::open(Kind::Shell, found).with_query(picker::last_word(&line));
+            state.modal = Some(Modal::Picker(picker));
+            return Vec::new();
         }
-        let picker = Picker::open(Kind::Shell, found).with_query(picker::last_word(&line));
-        state.modal = Some(Modal::Picker(picker));
-        return Vec::new();
+    }
+    // T25.5: every other key the TUI owns goes through the keymap; a key it
+    // does not claim falls through to the modal or the composer.
+    let base = if state.status.busy {
+        Context::Running
+    } else {
+        Context::Idle
+    };
+    if let Some(action) = state.keymap.resolve(key, base)
+        && let Some(cmds) = run(state, action, key)
+    {
+        return cmds;
     }
     match state.modal.take() {
         Some(Modal::Approval(mut approval)) => match approval.key(key) {
@@ -637,7 +681,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         }
         Some(Modal::Diff { text, scroll }) => {
             let scroll = match key.code {
-                KeyCode::Esc => return Vec::new(),
+                KeyCode::Esc | KeyCode::Char('?') => return Vec::new(),
                 KeyCode::Char('g') if ctrl => return Vec::new(),
                 KeyCode::PageDown => {
                     (scroll + DIFF_PAGE).min(text.lines().count().saturating_sub(1))
@@ -648,15 +692,16 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll });
             Vec::new()
         }
-        None => {
-            // Esc while a turn runs interrupts it; otherwise it reaches the
-            // composer (vim's normal mode wants it).
-            if key.code == KeyCode::Esc && state.status.busy {
-                return vec![Cmd::Submit(Submission::Interrupt)];
+        Some(Modal::Help) => {
+            if !matches!(key.code, KeyCode::Esc | KeyCode::Char('?')) {
+                state.modal = Some(Modal::Help);
             }
-            // `Esc Esc` on an empty composer opens the rewind timeline
+            Vec::new()
+        }
+        None => {
+            // `Esc Esc` on an idle empty composer opens the rewind timeline
             // (T26.2); a lone Esc still reaches the composer for vim.
-            if key.code == KeyCode::Esc && state.composer.is_empty() {
+            if key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty() {
                 let armed = state.esc_armed.take();
                 if armed.is_some_and(|t| state.tick.saturating_sub(t) <= ESC_ESC_TICKS) {
                     return open_rewind(state);
@@ -665,51 +710,126 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             } else {
                 state.esc_armed = None;
             }
-            match state.composer.key(key, state.status.busy) {
-                Edit::Submit(text) => {
-                    let tier = state.status.tier.unwrap_or(Tier::Code);
-                    match commands::parse(&text, tier) {
-                        Some(action) => act(state, action),
-                        // A turn is running: queue instead of submitting
-                        // (T25.1). A slash command still runs immediately
-                        // above — `/clear` in particular must reach the
-                        // queue it is about to empty.
-                        None if state.status.busy => {
-                            state.queue.push_back(text);
-                            Vec::new()
-                        }
-                        None => vec![Cmd::Submit(Submission::UserTurn {
-                            text,
-                            attachments: Vec::new(),
-                            confirm_think: false,
-                        })],
-                    }
-                }
-                Edit::SendNow(text) => send_now(state, text),
-                Edit::OpenFiles => {
-                    state.modal = Some(Modal::Picker(Picker::open(
-                        Kind::Files,
-                        state.files.clone(),
-                    )));
+            // An `Enter` no binding claims (`send` moved elsewhere) is a
+            // newline rather than the composer's own submit.
+            if key.code == KeyCode::Enter {
+                return compose(state, KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
+            }
+            compose(state, key)
+        }
+    }
+}
+
+/// A keymap action (T25.5); `None` leaves the key to the modal or the
+/// composer. With a modal open only the view toggles and quit act, and a
+/// binding on a plain character acts only on an empty composer.
+fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<Cmd>> {
+    use keymap::Action as A;
+    let plain = matches!(key.code, KeyCode::Char(_))
+        && !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+    let global = matches!(action, A::Quit | A::Thinking | A::Transcript | A::Expand);
+    if (plain && !state.composer.is_empty()) || (state.modal.is_some() && !global) {
+        return None;
+    }
+    let enter = |modifiers| KeyEvent::new(KeyCode::Enter, modifiers);
+    Some(match action {
+        A::Quit => vec![Cmd::Quit],
+        A::Thinking => toggle(&mut state.show_thinking),
+        A::Transcript => toggle(&mut state.show_diffs),
+        A::Expand => toggle(&mut state.expanded_last),
+        A::Diff => vec![Cmd::Ask(Ask::GitDiff)],
+        // `Ctrl+B` (T27.1): the newest pending `bash`/`agent` card becomes a
+        // background task; the turn goes on without waiting for it.
+        A::Background => {
+            let call_id = state.detachable_call()?;
+            vec![Cmd::Submit(Submission::Background { call_id })]
+        }
+        // The queue's tail back for editing (T25.1); a non-empty composer
+        // keeps its usual line-kill.
+        A::Unqueue => {
+            if !state.composer.is_empty() {
+                return None;
+            }
+            if let Some(text) = state.queue.pop_back() {
+                state.composer.set_text(&text);
+            }
+            Vec::new()
+        }
+        A::Help => {
+            state.modal = Some(Modal::Help);
+            Vec::new()
+        }
+        A::ModeCycle => set_mode(state, commands::next_mode(state.mode)),
+        // In vim's normal and visual modes `Esc` never interrupts (T25.4):
+        // there it only cancels a pending command; `Ctrl+C` still does.
+        A::Interrupt => {
+            let vim_owns_esc = state.composer.vim_mode().is_some_and(|m| m != Mode::Insert);
+            if key.code == KeyCode::Esc && vim_owns_esc {
+                return None;
+            }
+            vec![Cmd::Submit(Submission::Interrupt)]
+        }
+        // The composer decides what an `Enter` does; these hand it the one
+        // each action means, whatever key was bound.
+        A::Send => compose(state, enter(KeyModifiers::NONE)),
+        A::Newline => compose(state, enter(KeyModifiers::SHIFT)),
+        A::SendNow => compose(state, enter(KeyModifiers::ALT)),
+    })
+}
+
+fn toggle(flag: &mut bool) -> Vec<Cmd> {
+    *flag = !*flag;
+    Vec::new()
+}
+
+/// A key for the composer, and what its `Edit` means for the session.
+fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+    match state.composer.key(key, state.status.busy) {
+        Edit::Submit(text) => {
+            let tier = state.status.tier.unwrap_or(Tier::Code);
+            // T22.2: a file command's name reaches the core as
+            // `Submission::Command`; the T5.5 parser owns the
+            // built-ins and would answer these with a notice.
+            match file_command(&state.commands, &text).or_else(|| commands::parse(&text, tier)) {
+                Some(action) => act(state, action),
+                // A turn is running: queue instead of submitting
+                // (T25.1). A slash command still runs immediately
+                // above — `/clear` in particular must reach the
+                // queue it is about to empty.
+                None if state.status.busy => {
+                    state.queue.push_back(text);
                     Vec::new()
                 }
-                Edit::OpenCommands => {
-                    state.modal = Some(Modal::Picker(Picker::open(
-                        Kind::Commands,
-                        state.commands.clone(),
-                    )));
-                    Vec::new()
-                }
-                Edit::OpenHistory => {
-                    // Newest first: the entry wanted is usually the last one.
-                    let mut history = state.composer.history().to_vec();
-                    history.reverse();
-                    state.modal = Some(Modal::Picker(Picker::open(Kind::History, history)));
-                    Vec::new()
-                }
-                Edit::Nothing => Vec::new(),
+                None => vec![Cmd::Submit(Submission::UserTurn {
+                    text,
+                    attachments: Vec::new(),
+                    confirm_think: false,
+                })],
             }
         }
+        Edit::SendNow(text) => send_now(state, text),
+        Edit::OpenFiles => {
+            state.modal = Some(Modal::Picker(Picker::open(
+                Kind::Files,
+                state.files.clone(),
+            )));
+            Vec::new()
+        }
+        Edit::OpenCommands => {
+            let names = state.commands.iter().map(|(n, ..)| n.clone()).collect();
+            state.modal = Some(Modal::Picker(Picker::open(Kind::Commands, names)));
+            Vec::new()
+        }
+        Edit::OpenHistory => {
+            // Newest first: the entry wanted is usually the last one.
+            let mut history = state.composer.history().to_vec();
+            history.reverse();
+            state.modal = Some(Modal::Picker(Picker::open(Kind::History, history)));
+            Vec::new()
+        }
+        Edit::Nothing => Vec::new(),
     }
 }
 
@@ -831,10 +951,33 @@ fn agents_list(agents: &[Presence]) -> String {
         .join("\n")
 }
 
+/// T22.2: a `/name args` line naming a file command — something
+/// `State.commands` carries beyond the built-in `COMMANDS`, which the T5.5
+/// parser owns — submits `Submission::Command` for the core, the same shape
+/// the parser already produces for built-ins without a dedicated arm.
+fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Action> {
+    let mut words = line.strip_prefix('/')?.split_whitespace();
+    let name = words.next()?;
+    if COMMANDS.iter().any(|(n, ..)| *n == name) {
+        return None;
+    }
+    commands.iter().any(|(n, ..)| n == name).then(|| {
+        Action::Submit(Submission::Command {
+            command: SlashCommand {
+                name: name.to_string(),
+                args: words.map(str::to_string).collect(),
+            },
+        })
+    })
+}
+
 /// A slash command's effect; anything the core owns becomes a `Submit`.
 fn act(state: &mut State, action: Action) -> Vec<Cmd> {
     match action {
         Action::Submit(sub) => {
+            if let Submission::SetEffort { effort } = &sub {
+                state.status.effort = *effort;
+            }
             if let Submission::Command { command } = &sub
                 && command.name == "clear"
             {
@@ -845,7 +988,10 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         }
         Action::Quit => return vec![Cmd::Quit],
         Action::Mode(mode) => return set_mode(state, mode),
-        Action::Help => notice(state, Level::Info, commands::help()),
+        Action::Help => {
+            let text = commands::help(&state.keymap);
+            notice(state, Level::Info, text);
+        }
         Action::Cost => {
             let s = &state.status;
             let text = format!(
@@ -855,7 +1001,11 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             notice(state, Level::Info, text);
         }
         Action::Todo => state.show_todo = !state.show_todo,
-        Action::Tasks => notice(state, Level::Info, tasks::list(&state.tasks)),
+        Action::Tasks => notice(
+            state,
+            Level::Info,
+            tasks::list(&state.tasks, &state.finished_tasks),
+        ),
         Action::Vim => {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);
@@ -880,6 +1030,22 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         }
         Action::Notice(text) => notice(state, Level::Warn, text),
         Action::Rewind => return open_rewind(state),
+        // A running turn would be cut mid-write, so both wait for it.
+        Action::Fork(_) | Action::Handoff(_) if state.status.busy => {
+            notice(state, Level::Warn, "interrupt the turn first".into());
+        }
+        Action::Fork(Some(turn)) if !state.turns.iter().any(|t| t.seq == turn) => {
+            let text = format!("fork: no turn T{turn}; /rewind lists them");
+            notice(state, Level::Warn, text);
+        }
+        Action::Fork(turn) => {
+            state.queue.clear();
+            return vec![Cmd::Fork(turn)];
+        }
+        Action::Handoff(objective) => {
+            state.queue.clear();
+            return vec![Cmd::Handoff(objective)];
+        }
         Action::Theme(Some(name)) => {
             if state.theme_rows.contains(&name) {
                 return apply_theme_choice(state, &name);
@@ -1005,7 +1171,23 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }
         }
         Event::TaskCreated { task, label, .. } => state.tasks.push((task, label)),
-        Event::TaskCompleted { task, .. } => state.tasks.retain(|(t, _)| *t != task),
+        Event::TaskCompleted {
+            task,
+            exit_code,
+            archive,
+            ..
+        } => {
+            if let Some(i) = state.tasks.iter().position(|(t, _)| *t == task) {
+                let (_, label) = state.tasks.remove(i);
+                let line = tasks::finished_line(task, &label, exit_code, archive);
+                state.finished_tasks.push(line);
+                let over = state
+                    .finished_tasks
+                    .len()
+                    .saturating_sub(tasks::FINISHED_KEPT);
+                state.finished_tasks.drain(..over);
+            }
+        }
         Event::Notice { level, text } => state.transcript.push(Cell::Notice { level, text }),
         Event::Error { error, fatal } => state.transcript.push(Cell::Error {
             text: error.to_string(),
@@ -1306,5 +1488,84 @@ mod tests {
         assert!(cmds.is_empty());
         assert_eq!(state.composer.text(), "second");
         assert_eq!(state.queue, VecDeque::from(["first".to_string()]));
+    }
+
+    /// T22.2: a markdown file command joins the `/` palette after the
+    /// built-ins, a chosen row inserts `/name `, and `Enter` submits it as
+    /// `Submission::Command { name, args }` — args tokenized like any line.
+    #[test]
+    fn palette_lists_file_commands() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.commands.push((
+            "review".into(),
+            "/review [pr]".into(),
+            "review a pull request".into(),
+        ));
+        assert_eq!(
+            state.commands.first().map(|(n, ..)| n.as_str()),
+            Some("model"),
+            "built-in COMMANDS come first"
+        );
+        assert_eq!(
+            state.commands.last().map(|(n, ..)| n.as_str()),
+            Some("review"),
+            "file commands are appended after them"
+        );
+
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        for c in "rev".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        let rows = match &state.modal {
+            Some(Modal::Picker(p)) => p.matches.clone(),
+            other => panic!("the palette is open, got {other:?}"),
+        };
+        assert!(rows.contains(&"review".to_string()), "{rows:?}");
+
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert_eq!(state.composer.text(), "/review ");
+        for c in "pr-1".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::Command {
+                command: SlashCommand {
+                    name: "review".into(),
+                    args: vec!["pr-1".into()],
+                },
+            })]
+        );
+    }
+
+    /// T27.1: `Ctrl+B` backgrounds the newest pending `bash` card; with no
+    /// such card it is not swallowed as a background request.
+    #[test]
+    fn ctrl_b_backgrounds_the_pending_bash_card() {
+        use cox_protocol::types::{Risk, ToolCall};
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let ctrl_b = || Msg::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+        // A pending call only exists inside a running turn, and `Ctrl+B` is a
+        // running-turn key (T25.5).
+        state.status.busy = true;
+        assert_eq!(update(&mut state, ctrl_b()), Vec::new());
+        let call_id = CallId::new();
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallRequested {
+                call: ToolCall {
+                    id: call_id,
+                    name: "bash".into(),
+                    input: serde_json::json!({"command": "sleep 5"}),
+                    risk: Risk::Exec,
+                    subject: "sleep 5".into(),
+                },
+            }),
+        );
+        assert_eq!(
+            update(&mut state, ctrl_b()),
+            vec![Cmd::Submit(Submission::Background { call_id })]
+        );
     }
 }
