@@ -325,7 +325,7 @@ Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~
 | Capability | Mechanism | Support | ratatui/crossterm 0.30.2/0.29 |
 |---|---|---|---|
 | Distinct `Shift+Enter`/`Ctrl+Enter` | Kitty keyboard protocol | Kitty, Ghostty, foot, Alacritty, iTerm2, WezTerm, Rio, Warp; not tmux | `PushKeyboardEnhancementFlags` ✔ (no-op where unsupported) |
-| Flicker-free `insert_before` | scrolling regions | VT100-class terminals | ratatui feature `scrolling-regions` ✔ present, **not enabled** in cox |
+| Flicker-free `insert_before` | scrolling regions | VT100-class terminals | ratatui feature `scrolling-regions` ✔ present, **enabled** in cox (T23.2, 2026-09-24): 40 → 0 full-viewport repaints for 40 inserted cells on the vt100 PTY fixture. Caveat: the `vt100` crate (0.16 `grid.rs` `scroll_up`) keeps no scrollback for lines scrolled off a DECSTBM region; the feature's premise (ratatui#1341) is that real terminals save lines leaving a region whose top is row 1, not re-verified per terminal here, so PTY tests that read scrollback must model that |
 | Clipboard over SSH/tmux | OSC 52 | Alacritty, Ghostty, Kitty, WezTerm, tmux forwards | crossterm feature `osc52` → `CopyToClipboard` ✔ present, not enabled |
 | Hyperlinks | OSC 8 | iTerm2, Terminal.app 13+, Ghostty, Kitty, WezTerm, Alacritty, VTE | no widget in ratatui; emit the sequence around a span (`hyperrat` exists) |
 | Desktop notification | OSC 9 / OSC 777 / BEL | iTerm2, WezTerm, Ghostty, Kitty, Warp (OSC 9) | raw write |
