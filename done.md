@@ -3386,3 +3386,19 @@ clean for every file this task touched; pre-existing diffs from T28.1 in crates/
 $ real `cox` binary, scratch COX_HOME, COX_PROVIDER=scripted, 120x40 -> 80x24 after five turns (throwaway PTY run, not committed)
 all seven turns in scrollback exactly once; no stale status or composer lines
 ```
+
+#### T30.4 CI footprint baseline
+
+Model: Claude Code / claude-opus-5-5 · Status: done 2026-09-24 · Depends: T30.2 · Size: ~15 · Priority: P2 · Complexity: 1
+Goal: `footprint --check` in CI compares a runner against a baseline measured on a runner, not against the laptop that wrote `scripts/footprint.json`.
+Why: PR #34's `footprint (macos-15)` failed on `first_frame_ms` (baseline 40.0 from the creator's Mac, 60.1 on the runner), while the same branch on the Mac measured 38.4 ms and passed. The runner is faster at cold start (7.5 vs 11.0 ms) and slower at first frame, so no single machine's numbers fit both. The creator chose a separate CI baseline over dropping `--check` in CI.
+Change: `scripts/footprint.sh` keys the baseline as `<OS-arch>-ci` when `CI` is set (GitHub Actions sets `CI=true`); `scripts/footprint.json` gains `Darwin-arm64-ci` with the numbers of that `macos-15` run (PR #34, run 35927365093). The local `Darwin-arm64` key and `just footprint` are unchanged. `Linux-x86_64-ci` has no entry yet, so that job warns and exits 0 until someone runs `--write` on a runner.
+Check:
+```text
+$ bash -n scripts/footprint.sh
+syntax ok
+$ CI=true → key Darwin-arm64-ci; CI unset → key Darwin-arm64
+$ bash scripts/footprint.sh --check   # local Mac, PR #34 branch
+first_frame_ms: baseline 40.0, now 38.4 — footprint: no metric regressed >20%
+```
+Known limit: the CI baseline is one run; if runner noise alone crosses 20 %, refresh it from a runner with `--write` rather than widening the threshold.
