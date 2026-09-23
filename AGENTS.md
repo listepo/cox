@@ -12,6 +12,7 @@
 
 ```bash
 mise exec -- cargo nextest run --workspace   # unit, snapshot and e2e; no network, no API key
+just test                                    # the same, then a lossless dunnage cleanup of target/
 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 mise exec -- cargo fmt --check
 mise exec -- cargo insta review              # after an intentional TUI/transcript change
