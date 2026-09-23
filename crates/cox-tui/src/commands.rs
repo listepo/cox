@@ -6,6 +6,8 @@
 
 use cox_protocol::types::{Effort, ModelId, PermissionMode, SlashCommand, Submission, Tier};
 
+use crate::keymap::Keymap;
+
 /// `(name, usage, what it does)`; the palette lists the names in this order.
 pub const COMMANDS: &[(&str, &str, &str)] = &[
     (
@@ -116,8 +118,9 @@ impl Context {
 }
 
 /// `(key, action, context)`: the one keymap the footer hints, the `?`
-/// overlay, `/help` and `docs/getting-started.md` all read. Within a
-/// context the first five rows are the footer hints, so order matters.
+/// overlay, `/help` and `docs/getting-started.md` all read, and the default
+/// `keymap::Keymap` (T25.5). Within a context the first rows are the footer
+/// hints, so order matters; an action's rows stay together.
 pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Enter", "send", Context::Idle),
     ("Tab", "mode.cycle", Context::Idle),
@@ -135,12 +138,12 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Ctrl+C", "quit", Context::Idle),
     ("Ctrl+D", "quit", Context::Idle),
     ("Esc", "interrupt", Context::Running),
+    ("Ctrl+C", "interrupt", Context::Running),
     ("Ctrl+B", "background", Context::Running),
     ("Ctrl+O", "transcript", Context::Running),
     ("Alt+Enter", "send.now", Context::Running),
-    ("Ctrl+U", "unqueue", Context::Running),
     ("Ctrl+Enter", "send.now", Context::Running),
-    ("Ctrl+C", "interrupt", Context::Running),
+    ("Ctrl+U", "unqueue", Context::Running),
     ("Enter", "choose", Context::Modal),
     ("Esc", "close", Context::Modal),
     ("Up", "previous", Context::Modal),
@@ -150,14 +153,6 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("PageUp", "scroll.up", Context::Overlay),
     ("PageDown", "scroll.down", Context::Overlay),
 ];
-
-/// `KEYMAP`'s `(key, action)` rows for `ctx`, in table order.
-pub fn keys_for(ctx: Context) -> impl Iterator<Item = (&'static str, &'static str)> {
-    KEYMAP
-        .iter()
-        .filter(move |(.., c)| *c == ctx)
-        .map(|(k, a, _)| (*k, *a))
-}
 
 /// An action id as the footer and overlay print it: `mode.cycle` → `mode cycle`.
 pub fn label(action: &str) -> String {
@@ -275,10 +270,13 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
     })
 }
 
-/// `/help`: the keymap, one line per context, then one line per command.
-pub fn help() -> String {
+/// `/help`: the keymap as bound now, one line per context, then one line
+/// per command.
+pub fn help(keymap: &Keymap) -> String {
     let keys = Context::ALL.iter().map(|ctx| {
-        let rows: Vec<String> = keys_for(*ctx)
+        let rows: Vec<String> = keymap
+            .rows(*ctx)
+            .into_iter()
             .map(|(k, a)| format!("{k} {}", label(a)))
             .collect();
         format!("{:8} {}", ctx.name(), rows.join(" · "))

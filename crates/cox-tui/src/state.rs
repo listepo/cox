@@ -18,6 +18,7 @@ use crate::color::Depth;
 use crate::commands::{self, Action, COMMANDS, Context};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
+use crate::keymap::{self, Keymap};
 use crate::markdown;
 use crate::modal::{Approval, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
@@ -234,6 +235,9 @@ pub struct State {
     /// now (T25.1); the next `TurnDone{Interrupted}` consumes it and joins
     /// the whole queue into one turn instead of leaving it queued.
     pub send_now: bool,
+    /// The keys (T25.5): `KEYMAP` with `~/.cox/keybindings.toml` and Claude
+    /// Code's `keybindings.json` over it; the binary loads it.
+    pub keymap: Keymap,
 }
 
 /// Ticks (100 ms each) two `Esc`s may be apart to count as `Esc Esc`.
@@ -371,6 +375,7 @@ impl State {
             theme_prev: None,
             queue: VecDeque::new(),
             send_now: false,
+            keymap: Keymap::default(),
         }
     }
 
@@ -554,59 +559,27 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         return Vec::new();
     }
     state.ctrl_c_armed = false;
-    if ctrl && key.code == KeyCode::Char('d') {
-        return vec![Cmd::Quit];
-    }
-    if ctrl && key.code == KeyCode::Char('t') {
-        state.show_thinking = !state.show_thinking;
-        return Vec::new();
-    }
-    if ctrl && key.code == KeyCode::Char('o') {
-        state.show_diffs = !state.show_diffs;
-        return Vec::new();
-    }
-    if ctrl && key.code == KeyCode::Char('e') {
-        state.expanded_last = !state.expanded_last;
-        return Vec::new();
-    }
-    if ctrl && key.code == KeyCode::Char('g') && state.modal.is_none() {
-        return vec![Cmd::Ask(Ask::GitDiff)];
-    }
-    // `Ctrl+B` (T27.1): the newest pending `bash`/`agent` card becomes a
-    // background task; the turn goes on without waiting for it.
-    if ctrl
-        && key.code == KeyCode::Char('b')
-        && state.modal.is_none()
-        && let Some(call_id) = state.detachable_call()
-    {
-        return vec![Cmd::Submit(Submission::Background { call_id })];
-    }
-    // `Ctrl+U` on an empty composer pops the queue's tail back for editing
-    // (T25.1); a non-empty composer keeps its usual line-kill behaviour.
-    if ctrl && key.code == KeyCode::Char('u') && state.modal.is_none() && state.composer.is_empty()
-    {
-        if let Some(text) = state.queue.pop_back() {
-            state.composer.set_text(&text);
-        }
-        return Vec::new();
-    }
-    // `?` opens the keymap overlay (T24.6) only on an empty composer;
-    // anywhere else it is a character.
-    if key.code == KeyCode::Char('?') && !ctrl && state.modal.is_none() && state.composer.is_empty()
-    {
-        state.modal = Some(Modal::Help);
-        return Vec::new();
-    }
+    // A `git` line completes on `Tab` (T15.4) before `Tab` means anything else.
     if key.code == KeyCode::Tab && state.modal.is_none() {
-        // A `git` line completes (T15.4); any other Tab cycles the mode.
         let line = state.composer.text();
         let found = picker::candidates(&line, state);
-        if found.is_empty() {
-            return set_mode(state, commands::next_mode(state.mode));
+        if !found.is_empty() {
+            let picker = Picker::open(Kind::Shell, found).with_query(picker::last_word(&line));
+            state.modal = Some(Modal::Picker(picker));
+            return Vec::new();
         }
-        let picker = Picker::open(Kind::Shell, found).with_query(picker::last_word(&line));
-        state.modal = Some(Modal::Picker(picker));
-        return Vec::new();
+    }
+    // T25.5: every other key the TUI owns goes through the keymap; a key it
+    // does not claim falls through to the modal or the composer.
+    let base = if state.status.busy {
+        Context::Running
+    } else {
+        Context::Idle
+    };
+    if let Some(action) = state.keymap.resolve(key, base)
+        && let Some(cmds) = run(state, action, key)
+    {
+        return cmds;
     }
     match state.modal.take() {
         Some(Modal::Approval(mut approval)) => match approval.key(key) {
@@ -726,21 +699,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         None => {
-            // Esc while a turn runs interrupts it; otherwise it reaches the
-            // composer (vim's normal mode wants it). In vim's normal and
-            // visual modes it never interrupts (T25.4): there it only
-            // cancels a pending command, and `Ctrl+C` still interrupts.
-            let vim_owns_esc = state.composer.vim_mode().is_some_and(|m| m != Mode::Insert);
-            if key.code == KeyCode::Esc && state.status.busy {
-                if !vim_owns_esc {
-                    return vec![Cmd::Submit(Submission::Interrupt)];
-                }
-                state.composer.key(key, true);
-                return Vec::new();
-            }
-            // `Esc Esc` on an empty composer opens the rewind timeline
+            // `Esc Esc` on an idle empty composer opens the rewind timeline
             // (T26.2); a lone Esc still reaches the composer for vim.
-            if key.code == KeyCode::Esc && state.composer.is_empty() {
+            if key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty() {
                 let armed = state.esc_armed.take();
                 if armed.is_some_and(|t| state.tick.saturating_sub(t) <= ESC_ESC_TICKS) {
                     return open_rewind(state);
@@ -749,54 +710,126 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             } else {
                 state.esc_armed = None;
             }
-            match state.composer.key(key, state.status.busy) {
-                Edit::Submit(text) => {
-                    let tier = state.status.tier.unwrap_or(Tier::Code);
-                    // T22.2: a file command's name reaches the core as
-                    // `Submission::Command`; the T5.5 parser owns the
-                    // built-ins and would answer these with a notice.
-                    match file_command(&state.commands, &text)
-                        .or_else(|| commands::parse(&text, tier))
-                    {
-                        Some(action) => act(state, action),
-                        // A turn is running: queue instead of submitting
-                        // (T25.1). A slash command still runs immediately
-                        // above — `/clear` in particular must reach the
-                        // queue it is about to empty.
-                        None if state.status.busy => {
-                            state.queue.push_back(text);
-                            Vec::new()
-                        }
-                        None => vec![Cmd::Submit(Submission::UserTurn {
-                            text,
-                            attachments: Vec::new(),
-                            confirm_think: false,
-                        })],
-                    }
-                }
-                Edit::SendNow(text) => send_now(state, text),
-                Edit::OpenFiles => {
-                    state.modal = Some(Modal::Picker(Picker::open(
-                        Kind::Files,
-                        state.files.clone(),
-                    )));
+            // An `Enter` no binding claims (`send` moved elsewhere) is a
+            // newline rather than the composer's own submit.
+            if key.code == KeyCode::Enter {
+                return compose(state, KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
+            }
+            compose(state, key)
+        }
+    }
+}
+
+/// A keymap action (T25.5); `None` leaves the key to the modal or the
+/// composer. With a modal open only the view toggles and quit act, and a
+/// binding on a plain character acts only on an empty composer.
+fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<Cmd>> {
+    use keymap::Action as A;
+    let plain = matches!(key.code, KeyCode::Char(_))
+        && !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+    let global = matches!(action, A::Quit | A::Thinking | A::Transcript | A::Expand);
+    if (plain && !state.composer.is_empty()) || (state.modal.is_some() && !global) {
+        return None;
+    }
+    let enter = |modifiers| KeyEvent::new(KeyCode::Enter, modifiers);
+    Some(match action {
+        A::Quit => vec![Cmd::Quit],
+        A::Thinking => toggle(&mut state.show_thinking),
+        A::Transcript => toggle(&mut state.show_diffs),
+        A::Expand => toggle(&mut state.expanded_last),
+        A::Diff => vec![Cmd::Ask(Ask::GitDiff)],
+        // `Ctrl+B` (T27.1): the newest pending `bash`/`agent` card becomes a
+        // background task; the turn goes on without waiting for it.
+        A::Background => {
+            let call_id = state.detachable_call()?;
+            vec![Cmd::Submit(Submission::Background { call_id })]
+        }
+        // The queue's tail back for editing (T25.1); a non-empty composer
+        // keeps its usual line-kill.
+        A::Unqueue => {
+            if !state.composer.is_empty() {
+                return None;
+            }
+            if let Some(text) = state.queue.pop_back() {
+                state.composer.set_text(&text);
+            }
+            Vec::new()
+        }
+        A::Help => {
+            state.modal = Some(Modal::Help);
+            Vec::new()
+        }
+        A::ModeCycle => set_mode(state, commands::next_mode(state.mode)),
+        // In vim's normal and visual modes `Esc` never interrupts (T25.4):
+        // there it only cancels a pending command; `Ctrl+C` still does.
+        A::Interrupt => {
+            let vim_owns_esc = state.composer.vim_mode().is_some_and(|m| m != Mode::Insert);
+            if key.code == KeyCode::Esc && vim_owns_esc {
+                return None;
+            }
+            vec![Cmd::Submit(Submission::Interrupt)]
+        }
+        // The composer decides what an `Enter` does; these hand it the one
+        // each action means, whatever key was bound.
+        A::Send => compose(state, enter(KeyModifiers::NONE)),
+        A::Newline => compose(state, enter(KeyModifiers::SHIFT)),
+        A::SendNow => compose(state, enter(KeyModifiers::ALT)),
+    })
+}
+
+fn toggle(flag: &mut bool) -> Vec<Cmd> {
+    *flag = !*flag;
+    Vec::new()
+}
+
+/// A key for the composer, and what its `Edit` means for the session.
+fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+    match state.composer.key(key, state.status.busy) {
+        Edit::Submit(text) => {
+            let tier = state.status.tier.unwrap_or(Tier::Code);
+            // T22.2: a file command's name reaches the core as
+            // `Submission::Command`; the T5.5 parser owns the
+            // built-ins and would answer these with a notice.
+            match file_command(&state.commands, &text).or_else(|| commands::parse(&text, tier)) {
+                Some(action) => act(state, action),
+                // A turn is running: queue instead of submitting
+                // (T25.1). A slash command still runs immediately
+                // above — `/clear` in particular must reach the
+                // queue it is about to empty.
+                None if state.status.busy => {
+                    state.queue.push_back(text);
                     Vec::new()
                 }
-                Edit::OpenCommands => {
-                    let names = state.commands.iter().map(|(n, ..)| n.clone()).collect();
-                    state.modal = Some(Modal::Picker(Picker::open(Kind::Commands, names)));
-                    Vec::new()
-                }
-                Edit::OpenHistory => {
-                    // Newest first: the entry wanted is usually the last one.
-                    let mut history = state.composer.history().to_vec();
-                    history.reverse();
-                    state.modal = Some(Modal::Picker(Picker::open(Kind::History, history)));
-                    Vec::new()
-                }
-                Edit::Nothing => Vec::new(),
+                None => vec![Cmd::Submit(Submission::UserTurn {
+                    text,
+                    attachments: Vec::new(),
+                    confirm_think: false,
+                })],
             }
         }
+        Edit::SendNow(text) => send_now(state, text),
+        Edit::OpenFiles => {
+            state.modal = Some(Modal::Picker(Picker::open(
+                Kind::Files,
+                state.files.clone(),
+            )));
+            Vec::new()
+        }
+        Edit::OpenCommands => {
+            let names = state.commands.iter().map(|(n, ..)| n.clone()).collect();
+            state.modal = Some(Modal::Picker(Picker::open(Kind::Commands, names)));
+            Vec::new()
+        }
+        Edit::OpenHistory => {
+            // Newest first: the entry wanted is usually the last one.
+            let mut history = state.composer.history().to_vec();
+            history.reverse();
+            state.modal = Some(Modal::Picker(Picker::open(Kind::History, history)));
+            Vec::new()
+        }
+        Edit::Nothing => Vec::new(),
     }
 }
 
@@ -955,7 +988,10 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         }
         Action::Quit => return vec![Cmd::Quit],
         Action::Mode(mode) => return set_mode(state, mode),
-        Action::Help => notice(state, Level::Info, commands::help()),
+        Action::Help => {
+            let text = commands::help(&state.keymap);
+            notice(state, Level::Info, text);
+        }
         Action::Cost => {
             let s = &state.status;
             let text = format!(
@@ -1510,6 +1546,9 @@ mod tests {
         use cox_protocol::types::{Risk, ToolCall};
         let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
         let ctrl_b = || Msg::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+        // A pending call only exists inside a running turn, and `Ctrl+B` is a
+        // running-turn key (T25.5).
+        state.status.busy = true;
         assert_eq!(update(&mut state, ctrl_b()), Vec::new());
         let call_id = CallId::new();
         update(

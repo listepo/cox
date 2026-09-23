@@ -108,6 +108,12 @@ pub fn run(
     // Assembled-prefix token count for the active profile (T30.1).
     results.push(check_prefix(config));
 
+    // Keybindings file and the Claude import: bad entries and clashes (T25.5).
+    results.push(check_keybindings(
+        &home,
+        &crate::config_load::home_dir().join(".claude"),
+    ));
+
     // One row per HTTP MCP server: is its token usable?
     let mut names: Vec<&String> = mcp
         .iter()
@@ -440,6 +446,25 @@ fn check_prices() -> CheckResult {
     prices_status(table.prices(), today_ymd())
 }
 
+/// T25.5: the same map the TUI would build; a warning for every entry it
+/// skipped and every key two user bindings both claim in one context.
+fn check_keybindings(cox_home: &std::path::Path, claude_home: &std::path::Path) -> CheckResult {
+    let loaded = crate::config_load::keymap(cox_home, claude_home);
+    let mut problems = loaded.warnings;
+    problems.extend(loaded.keymap.conflicts());
+    if problems.is_empty() {
+        return CheckResult::ok("keybindings", "no conflicts".to_string());
+    }
+    CheckResult::warn(
+        "keybindings",
+        problems.join("; "),
+        format!(
+            "edit {} (docs/config.md, keybindings)",
+            cox_home.join("keybindings.toml").display()
+        ),
+    )
+}
+
 fn check_claude_settings() -> CheckResult {
     // Walk up from cwd to find .claude/settings.json.
     let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -515,6 +540,26 @@ mod tests {
 
         let has_fail = results.iter().any(|r| r.status == "fail");
         assert!(has_fail);
+    }
+
+    #[test]
+    fn doctor_warns_on_keybinding_conflicts() {
+        let cox = tempfile::tempdir().expect("tempdir");
+        let claude = tempfile::tempdir().expect("tempdir");
+        let ok = check_keybindings(cox.path(), claude.path());
+        assert_eq!(
+            (ok.status.as_str(), ok.detail.as_str()),
+            ("ok", "no conflicts")
+        );
+        std::fs::write(
+            cox.path().join("keybindings.toml"),
+            "send = \"ctrl+o\"\ntranscript = \"ctrl+o\"\n",
+        )
+        .expect("write");
+        let warn = check_keybindings(cox.path(), claude.path());
+        assert_eq!(warn.status, "warn");
+        assert!(warn.detail.contains("send"), "{}", warn.detail);
+        assert!(warn.detail.contains("transcript"), "{}", warn.detail);
     }
 
     #[test]

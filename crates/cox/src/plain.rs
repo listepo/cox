@@ -232,7 +232,10 @@ impl Plain {
             Some(Action::Mode(mode)) => Submission::SetPermissionMode { mode },
             Some(Action::Quit) => return Ok(Next::Quit),
             Some(Action::Help) => {
-                self.line("help", &commands::help())?;
+                // Plain mode reads whole lines, so no keybinding applies;
+                // the default keys still say what the TUI would do.
+                let keys = cox_tui::keymap::Keymap::default();
+                self.line("help", &commands::help(&keys))?;
                 return Ok(Next::Prompt);
             }
             Some(Action::Cost) => {

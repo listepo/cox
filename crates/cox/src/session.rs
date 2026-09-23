@@ -527,6 +527,18 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                 c.description.clone().unwrap_or_default(),
             )
         }));
+        // T25.5: rebound keys drive dispatch, hints, `?` and `/help` alike.
+        let keys = config_load::keymap(&home, &config_load::home_dir().join(".claude"));
+        for text in keys.warnings {
+            state.transcript.push(cox_tui::state::Cell::Notice {
+                level: cox_protocol::types::Level::Warn,
+                text,
+            });
+        }
+        for skipped in &keys.skipped {
+            tracing::debug!("{skipped}");
+        }
+        state.keymap = keys.keymap;
         if let Some(history) = seed {
             state.transcript_from_history(&history);
         }

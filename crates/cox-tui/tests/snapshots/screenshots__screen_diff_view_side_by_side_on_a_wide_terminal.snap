@@ -15,5 +15,5 @@ expression: "wide_shot(\"diff_view_side_by_side\", &mut state)"
   14  }                                                               │14  }
 
 
-> Esc close · ? close · PageUp scroll up · PageDown scroll down
+> Esc close · PageUp scroll up · PageDown scroll down
 - · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · 0 tasks · cache 0% · ⎇ main +12 −3 · [default]

@@ -67,6 +67,17 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// T25.5: `<cox_home>/keybindings.toml` over whatever `<claude_home>/
+/// keybindings.json` binds that cox also has. Shared by the TUI session and
+/// `doctor` so both see the same map; a missing file is just the defaults.
+pub fn keymap(cox_home: &Path, claude_home: &Path) -> cox_tui::keymap::Loaded {
+    let toml = std::fs::read_to_string(cox_home.join("keybindings.toml")).ok();
+    let claude = claude_settings::keybindings(claude_home);
+    let mut loaded = cox_tui::keymap::load(toml.as_deref(), &claude.bindings);
+    loaded.warnings.extend(claude.notices);
+    loaded
+}
+
 /// The user config file: `<cox_home>/config.toml`.
 pub fn user_config_path() -> PathBuf {
     cox_home().join("config.toml")

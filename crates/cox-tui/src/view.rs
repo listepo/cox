@@ -45,13 +45,16 @@ fn queue_lines(state: &State) -> Vec<Line<'static>> {
     lines
 }
 
-/// The empty composer's line (T24.6): the first `KEYMAP` rows of the
-/// context the keys are in, dim, in place of a fixed placeholder — up to
-/// five, fewer when they would not fit in `width` (never under three).
+/// The empty composer's line (T24.6): the first keymap rows of the context
+/// the keys are in, one per action (T25.5: as bound now), dim, in place of
+/// a fixed placeholder — up to five, fewer when they would not fit in
+/// `width` (never under three).
 fn hints(state: &State, width: u16) -> Line<'static> {
     let sep = format!(" {} ", state.glyphs.sep);
+    let mut rows = state.keymap.rows(state.context());
+    rows.dedup_by_key(|(_, action)| *action);
     let mut text = String::new();
-    for (n, (key, action)) in commands::keys_for(state.context()).take(5).enumerate() {
+    for (n, (key, action)) in rows.into_iter().take(5).enumerate() {
         let hint = format!("{key} {}", commands::label(action));
         let next = if n == 0 { hint } else { format!("{sep}{hint}") };
         if n >= 3 && text.len() + next.len() > usize::from(width) {
@@ -118,7 +121,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             (lines, offset)
         }
         Some(Modal::Help) => (
-            crate::modal::help_lines(&state.glyphs, &state.theme, area.width),
+            crate::modal::help_lines(&state.glyphs, &state.theme, &state.keymap, area.width),
             0,
         ),
         _ => {

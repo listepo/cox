@@ -70,3 +70,34 @@ fn claude_settings_paths_follow_claude_precedence() {
         ]
     );
 }
+
+/// T25.5: `keybindings.json` context blocks flatten to `(key, action)`
+/// pairs; a `null` unbinding is dropped, a broken file is a notice, and a
+/// missing one is nothing at all.
+#[test]
+fn claude_keybindings_json_flattens_context_blocks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    assert_eq!(
+        cox_ext::claude_settings::keybindings(dir.path()),
+        Default::default()
+    );
+    let json = r#"{ "$schema": "x", "bindings": [
+        { "context": "Chat", "bindings": { "ctrl+s": "chat:submit", "ctrl+g": null } },
+        { "context": "Global", "bindings": { "ctrl+o": "app:toggleTranscript" } } ] }"#;
+    std::fs::write(dir.path().join("keybindings.json"), json).expect("write");
+    let k = cox_ext::claude_settings::keybindings(dir.path());
+    assert_eq!(
+        k.bindings,
+        [
+            ("ctrl+s".to_string(), "chat:submit".to_string()),
+            ("ctrl+o".to_string(), "app:toggleTranscript".to_string()),
+        ]
+    );
+    std::fs::write(dir.path().join("keybindings.json"), "{ nope").expect("write");
+    assert_eq!(
+        cox_ext::claude_settings::keybindings(dir.path())
+            .notices
+            .len(),
+        1
+    );
+}

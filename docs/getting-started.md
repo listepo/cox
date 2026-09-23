@@ -47,12 +47,12 @@ five rows for where you are (idle, a running turn, a modal, an overlay).
 | `Ctrl+C` | quit | idle |
 | `Ctrl+D` | quit | idle |
 | `Esc` | interrupt | running |
+| `Ctrl+C` | interrupt | running |
 | `Ctrl+B` | background | running |
 | `Ctrl+O` | transcript | running |
 | `Alt+Enter` | send.now | running |
-| `Ctrl+U` | unqueue | running |
 | `Ctrl+Enter` | send.now | running |
-| `Ctrl+C` | interrupt | running |
+| `Ctrl+U` | unqueue | running |
 | `Enter` | choose | modal |
 | `Esc` | close | modal |
 | `Up` | previous | modal |

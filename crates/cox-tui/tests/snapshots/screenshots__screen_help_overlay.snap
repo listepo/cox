@@ -7,8 +7,8 @@ Every key, grouped by context.
 [info] idle     Enter send · Tab mode cycle · @ file · / command · ? help · Shift+Enter newline ·
 Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O transcript ·
 Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
-       running  Esc interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter send now · Ctrl+U
-       unqueue · Ctrl+Enter send now · Ctrl+C interrupt
+       running  Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter
+        send now · Ctrl+Enter send now · Ctrl+U unqueue
        modal    Enter choose · Esc close · Up previous · Down next
        overlay  Esc close · ? close · PageUp scroll up · PageDown scroll down
        /model [cheap|code|think] [model]                        switch a tier's model
