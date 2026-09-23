@@ -1094,6 +1094,7 @@ mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hint
 ```
 Done when: the overlay snapshot exists and the doc test pins `docs/getting-started.md`.
 Out of scope: keybinding customisation (T25.5 extends the same table).
+Execution plan: (a) `commands.rs`: `Context { Idle, Running, Modal, Overlay }`, `KEYMAP` rows `(key, action id, context)` for the keys `state.rs`/`composer.rs`/`modal.rs` handle today (`Tab` stays the mode key until T25.2 lands), `keys_for(ctx)`, `/help` = keymap grouped by context + the command list; test `keymap_table_matches_docs` builds the markdown table from `KEYMAP` and asserts `docs/getting-started.md` contains it verbatim. (b) `state.rs` (a fourth file, unavoidable: the key lives there): `Modal::Help`, `State::context()`, `?` on an empty composer with no modal opens it, `Esc`/`?` close it. (c) `modal.rs`: `help_lines` packs each context's rows into width-wrapped lines. (d) `view.rs`: an empty composer draws the first five rows of the current context as dim hints instead of the textarea placeholder; `Modal::Help` draws over the transcript like the diff view. (e) Snapshots: `help_overlay_snapshot`, `placeholder_hints_follow_context`; accept the placeholder change in existing snapshots. Verify with the Check, then nextest/clippy/fmt.
 
 #### T24.7 Motion and narrow-width polish
 
