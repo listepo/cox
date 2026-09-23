@@ -996,6 +996,7 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaint
 Done when: the test passes with the feature on and the number in the commit message is lower than before.
 Out of scope: resize handling (T23.7).
 Approval: the creator approved enabling ratatui's `scrolling-regions` feature (2026-09-24).
+Execution plan: (1) `cox-tui` has no `cox` binary to spawn, so `src/bin/kitty_probe.rs` (the T23.1 probe that already drives `cox_tui::app::run` under a PTY) gains a `COX_PROBE_SCENARIO=cells` mode that feeds 40 finished `Notice` cells on its feed channel, one per loop iteration, then quits. (2) `tests/shell.rs`: fold the T23.1 PTY reader into one shared harness (spawn, `CSI 6n` answers, vt100 parser, raw capture, wait for exit with a 30 s deadline) and add `pty_insert_before_repaints_at_most_once_per_cell`: replay the raw bytes offline, split them into frames at ratatui's per-draw cursor show/hide, seed every screen row with a sentinel before each frame, and count a frame as a full-viewport repaint when at least the viewport's 15 rows lost every sentinel. (3) Measure with the feature off, then add `scrolling-regions` to the workspace ratatui entry and measure again; assert the stricter bound the numbers justify; both numbers go into the commit message. If the count does not drop, revert the feature and record the falsifier in §6. (4) Update `research.md` (the "not enabled" row), §1 and `toolchain.md` if they list ratatui features. Verify with the Check and the three workspace commands.
 
 #### T23.3 OSC 8 hyperlinks
 
