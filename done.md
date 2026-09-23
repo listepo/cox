@@ -2711,3 +2711,7 @@ $ mise exec -- cargo fmt --check
 $ COX_HOME=<scratch> mise exec -- cargo run -p cox -- doctor
      unaffected (T25.1 only changed the interactive TUI session path)
 ```
+
+#### T57 Clean up target dirs with dunnage after tests
+
+`just test` now ends with `just dunnage` (a just post-dependency). `dunnage run target` compresses and dedupes `./target` losslessly — it never deletes and keeps mtimes, so nothing rebuilds. Exit code 2 (a build held the lock) counts as success; a checkout with no `target/` yet or a machine without `dunnage` is a no-op with an install hint. dunnage is installed with `ketch install dunnage`; `toolchain.md` lists ketch and dunnage and gains a `ketch` package table; `AGENTS.md` names `just test` under Commands.

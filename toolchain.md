@@ -13,6 +13,14 @@ Programs the project uses and the direct packages from its manifests.
 | cargo | mise (pin rust) | Rust builds and dependencies | https://github.com/rust-lang/cargo |
 | cargo-nextest | global (cargo install / brew) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
+| ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
+| dunnage | ketch | `just test` ends with a lossless cleanup of `target/` | https://github.com/listepo/dunnage |
+
+## ketch
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| dunnage | global | https://github.com/listepo/dunnage | Lossless `target/` cleanup after tests |
 
 ## cargo
 

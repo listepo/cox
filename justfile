@@ -5,8 +5,15 @@ check:
     mise exec -- cargo fmt --check
     mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 
-test:
+test: && dunnage
     mise exec -- cargo nextest run --workspace
+
+# Lossless cleanup of ./target (compress + dedupe); never deletes. A no-op without dunnage.
+dunnage:
+    #!/usr/bin/env sh
+    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    [ -d target ] || exit 0
+    dunnage run target || test $? -eq 2
 
 snap:
     mise exec -- cargo insta review
