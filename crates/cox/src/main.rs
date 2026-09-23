@@ -48,6 +48,7 @@ fn main() -> anyhow::Result<()> {
                 &servers,
                 &loaded.config.tui.theme,
                 &loaded.config.tui.caps,
+                &loaded.config,
             );
             drop(telemetry);
             std::process::exit(code);

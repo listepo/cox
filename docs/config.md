@@ -9,6 +9,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `max_turns` = `200` — per UserTurn, counts provider calls
 - `parallel_tools` = `4`
 - `log_level` = `"info"` — tracing filter; file log at ~/.cox/logs/cox.log
+- `profile` = `""` — "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
 ## `[tiers.cheap]`
 
 - `provider` = `"anthropic"`
@@ -116,6 +117,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `instruction_budget_tokens` = `8000`
 - `memory_budget_tokens` = `800`
 - `deferred_tools` = `true`
+- `system_prompt` = `"default"` — default | minimal (T30.1); `core.profile = "minimal"` implies it
 ## `[permissions]`
 
 - `mode` = `"default"` — default | plan | auto | bypass (bypass only via flag)

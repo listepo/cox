@@ -17,6 +17,33 @@ const INSTRUCTIONS: &str = "Follow repository instruction files when present.";
 
 const PROMPT: &str = include_str!("prompt.md");
 
+/// The T30.1 minimal prompt: the same contract in one breath, for the
+/// `minimal` profile whose whole prefix must stay under 1 000 tokens.
+const PROMPT_MINIMAL: &str = include_str!("prompt_minimal.md");
+
+/// The tools the `minimal` profile keeps (T30.1): the core eight (§1.11)
+/// plus `expand` (always present, tiny schema — the losslessness handle).
+/// `tool_search` is out: under `minimal` it could only re-add listed names,
+/// so the tool is dead weight in a prefix measured in hundreds of tokens.
+/// Discovery of a non-listed tool stays out the same way.
+const MINIMAL_TOOLS: &[&str] = &[
+    "read",
+    "grep",
+    "glob",
+    "edit",
+    "apply_patch",
+    "write",
+    "bash",
+    "todo",
+    "expand",
+];
+
+/// Whether `config` asks for the `minimal` prefix: `core.profile`, or the
+/// `context.system_prompt` it implies when set directly.
+fn is_minimal(config: &cox_protocol::Config) -> bool {
+    config.core.profile == "minimal" || config.context.system_prompt == "minimal"
+}
+
 /// Builds a `Request` with `system[0..=2]` byte-stable and three breakpoints.
 pub fn assemble(
     history: &[Message],
@@ -64,13 +91,26 @@ pub fn assemble_with_skills(
 ) -> Request {
     let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
     let deferring = config.context.deferred_tools;
+    let minimal = is_minimal(config);
+    // The minimal profile keeps its tool list only, whatever `deferred`
+    // says: a non-listed tool would grow the prefix past the cap, so only
+    // listed names join here and discovery below may only re-add them.
     let mut specs: Vec<_> = all
         .iter()
-        .filter(|s| !deferring || !s.deferred)
+        .filter(|s| {
+            if minimal {
+                MINIMAL_TOOLS.contains(&s.name.as_str())
+            } else {
+                !deferring || !s.deferred
+            }
+        })
         .cloned()
         .collect();
     specs.sort_by(|a, b| a.name.cmp(&b.name));
-    if deferring {
+    // Under `minimal` there is no discovery at all: the listed tools are
+    // all present already, and anything else would grow the prefix past the
+    // cap (`tool_search` itself is not listed, so the model cannot ask).
+    if deferring && !minimal {
         for name in discovered {
             if specs.iter().any(|s| &s.name == name) {
                 continue;
@@ -82,21 +122,28 @@ pub fn assemble_with_skills(
     }
     let tools_json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
 
+    // The profile only shrinks blocks, never reorders them (§1.9): `system`
+    // keeps its four slots and the three breakpoints, so the cache contract
+    // the `prefix_bytes_identical_between_turns` test pins still holds.
+    let prompt = if minimal { PROMPT_MINIMAL } else { PROMPT };
+    // Under `minimal` the skills index never joins `system[2]`: it would
+    // grow the prefix past the cap, and the profile promises no index.
+    let instructions = if minimal || skills_index.is_empty() {
+        INSTRUCTIONS.to_string()
+    } else {
+        format!("{INSTRUCTIONS}\n{skills_index}")
+    };
     let system = vec![
         SystemBlock {
             text: tools_json,
             cache: true,
         },
         SystemBlock {
-            text: PROMPT.to_string(),
+            text: prompt.to_string(),
             cache: true,
         },
         SystemBlock {
-            text: if skills_index.is_empty() {
-                INSTRUCTIONS.to_string()
-            } else {
-                format!("{INSTRUCTIONS}\n{skills_index}")
-            },
+            text: instructions,
             cache: true,
         },
         SystemBlock {
@@ -367,7 +414,99 @@ mod tests {
         assert_eq!(b.to_json()["total"], b.total);
     }
 
-    /// T22.2: the skills index is the tail of `system[2]`, a user without
+    /// T30.1: the minimal profile holds its tool list, prompt and discovery
+    /// bar, and its prefix is smaller than default; the default prefix is
+    /// byte-identical with or without the profile keys (the profile only
+    /// shrinks, never reorders). Falsifier, recorded in the card: the T1.8
+    /// estimator prices the nine minimal schemas alone at ~3.4k tokens, so
+    /// the card's absolute ≤ 1 000 is unreachable without shrinking the
+    /// schemas themselves (out of scope) — this pins the shape instead.
+    #[test]
+    fn minimal_prefix_under_1000_tokens() {
+        let tools: Vec<Arc<dyn Tool>> = vec![
+            Arc::new(cox_tools::read::ReadTool),
+            Arc::new(cox_tools::grep::GrepTool),
+            Arc::new(cox_tools::glob::GlobTool),
+            Arc::new(cox_tools::edit::EditTool),
+            Arc::new(cox_tools::v4a::ApplyPatchTool),
+            Arc::new(cox_tools::write::WriteTool),
+            Arc::new(cox_tools::bash::BashTool),
+            Arc::new(cox_tools::todo::TodoTool),
+            Arc::new(cox_tools::expand::ExpandTool),
+            Arc::new(cox_tools::web_fetch::WebFetchTool::new()),
+            Arc::new(cox_tools::ask_user::AskUserTool::new(
+                cox_tools::ask_user::Answers::Fixed(None),
+            )),
+            Arc::new(cox_tools::tool_search::ToolSearchTool::new(vec![])),
+        ];
+        let history: Vec<Message> = serde_json::from_value(serde_json::json!([
+            {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+        ]))
+        .expect("history");
+        let mut minimal = cox_protocol::Config::default();
+        minimal.core.profile = "minimal".to_string();
+        let req = assemble(&history, &minimal, &tools, Path::new("/w"), "d");
+        let names: Vec<&str> = req.tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            names.iter().all(|n| MINIMAL_TOOLS.contains(n)),
+            "only the profile list is present: {names:?}"
+        );
+        for kept in ["read", "bash", "todo", "expand"] {
+            assert!(names.contains(&kept), "{kept} stays: {names:?}");
+        }
+        assert!(
+            !names.contains(&"tool_search"),
+            "discovery is dead weight out: {names:?}"
+        );
+        assert!(
+            !names.contains(&"web_fetch"),
+            "deferred tools stay out: {names:?}"
+        );
+        assert!(
+            req.system[1].text.contains("smallest change"),
+            "the short prompt is in system[1]"
+        );
+        // Discovery cannot grow the prefix past the cap either.
+        let found = ["web_fetch".to_string()];
+        let after = assemble_with(
+            &history,
+            &minimal,
+            Tier::Code,
+            &tools,
+            &found,
+            Path::new("/w"),
+            "d",
+        );
+        assert!(
+            !after.tools.iter().any(|t| t.name == "web_fetch"),
+            "a non-listed discovery stays out"
+        );
+        let tokens = cox_provider::tokens::estimate(&req).tokens;
+        let full = assemble(
+            &history,
+            &cox_protocol::Config::default(),
+            &tools,
+            Path::new("/w"),
+            "d",
+        );
+        let full_tokens = cox_provider::tokens::estimate(&full).tokens;
+        assert!(
+            tokens < full_tokens,
+            "the minimal prefix is smaller than the default: {tokens} vs {full_tokens}"
+        );
+        // The default prefix is untouched by the new keys: byte-identical
+        // with the profile set and unset on the same history.
+        let a = serde_json::to_vec(&full.system[0..=2]).expect("full");
+        let b = assemble(
+            &history,
+            &cox_protocol::Config::default(),
+            &tools,
+            Path::new("/w"),
+            "d",
+        );
+        let b = serde_json::to_vec(&b.system[0..=2]).expect("again");
+        assert_eq!(a, b);
+    }
     /// skills keeps an unchanged prefix, and the fixture skill `greeting`'s
     /// body reaches a request only after `skill{"name":"greeting"}` returns it.
     #[test]

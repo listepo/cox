@@ -109,6 +109,7 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("permission-mode", "permissions.mode"),
         ("approve", "permissions.approval"),
         ("budget", "budget.session_usd"),
+        ("profile", "core.profile"),
         ("cwd", "core.workspace_roots"),
         ("add-dir", "core.workspace_roots"),
         // T27.3: resolved once in `main` into `--cwd`/`--add-dir`.
@@ -201,6 +202,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
     }
     if let Some(budget) = cli.budget {
         set_dotted(&mut root, keys["budget"], JsonValue::from(budget));
+    }
+    if let Some(profile) = &cli.profile {
+        set_dotted(&mut root, keys["profile"], JsonValue::from(profile.clone()));
     }
     if !cli.add_dir.is_empty() || cli.cwd.is_some() {
         let mut roots: Vec<JsonValue> = cli

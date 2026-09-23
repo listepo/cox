@@ -86,6 +86,11 @@ pub struct CoreConfig {
     pub parallel_tools: u32,
     /// `core.log_level`: a `tracing` filter string.
     pub log_level: String,
+    /// `core.profile`: the assembled-prefix profile, `""` (default) or
+    /// `"minimal"` (T30.1: the core eight tools plus `expand`/`tool_search`,
+    /// a ≤300-token system prompt, no skills or memory index;
+    /// `cox --profile minimal`).
+    pub profile: String,
 }
 
 impl Default for CoreConfig {
@@ -96,6 +101,7 @@ impl Default for CoreConfig {
             max_turns: 200,
             parallel_tools: 4,
             log_level: "info".to_string(),
+            profile: String::new(),
         }
     }
 }
@@ -497,6 +503,10 @@ pub struct ContextConfig {
     pub memory_budget_tokens: u32,
     /// Whether non-core tools are deferred (found via `tool_search`).
     pub deferred_tools: bool,
+    /// `context.system_prompt`: which embedded system prompt assembly uses,
+    /// `"default"` or `"minimal"` (T30.1: the ≤300-token prompt; profiles
+    /// set this, users normally set `core.profile` instead).
+    pub system_prompt: String,
 }
 
 impl Default for ContextConfig {
@@ -512,6 +522,7 @@ impl Default for ContextConfig {
             instruction_budget_tokens: 8000,
             memory_budget_tokens: 800,
             deferred_tools: true,
+            system_prompt: "default".to_string(),
         }
     }
 }

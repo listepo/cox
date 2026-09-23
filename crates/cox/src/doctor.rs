@@ -61,11 +61,14 @@ impl CheckResult {
 /// `tui_theme` is `config.tui.theme`, shown (and queried when `"auto"`) by
 /// `check_terminal`; `tui_caps` is `config.tui.caps` (T23.0), the `[tui.caps]`
 /// overrides `check_terminal` reports alongside the detected/queried value.
+/// `config` is the loaded config: `check_prefix` (T30.1) assembles the active
+/// profile's prefix and reports its T1.8 estimate.
 pub fn run(
     json: bool,
     mcp: &HashMap<String, McpServerConfig>,
     tui_theme: &str,
     tui_caps: &HashMap<String, bool>,
+    config: &cox_protocol::Config,
 ) -> i32 {
     let mut results = Vec::new();
 
@@ -101,6 +104,9 @@ pub fn run(
 
     // .claude/settings.json found.
     results.push(check_claude_settings());
+
+    // Assembled-prefix token count for the active profile (T30.1).
+    results.push(check_prefix(config));
 
     // One row per HTTP MCP server: is its token usable?
     let mut names: Vec<&String> = mcp
@@ -453,6 +459,20 @@ fn check_claude_settings() -> CheckResult {
         ".claude/settings.json not found".to_string(),
         "create ~/.claude/settings.json or a project-local .claude/settings.json if you need custom permissions or hooks".to_string(),
     )
+}
+
+/// The assembled-prefix token count for the active profile (T30.1): an
+/// empty-history request through `cox_core::assemble` priced by the T1.8
+/// estimator, so `doctor` names what the next turn will actually send.
+fn check_prefix(config: &cox_protocol::Config) -> CheckResult {
+    let req = cox_core::assemble(&[], config, &[], std::path::Path::new("."), "");
+    let tokens = cox_provider::tokens::estimate(&req).tokens;
+    let profile = if config.core.profile.is_empty() {
+        "default"
+    } else {
+        config.core.profile.as_str()
+    };
+    CheckResult::ok("prefix", format!("{tokens} tokens (profile {profile})"))
 }
 
 fn output_human(results: &[CheckResult]) -> bool {

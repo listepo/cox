@@ -46,6 +46,10 @@ pub struct Cli {
     /// Override `budget.session_usd`.
     #[arg(long, global = true, value_name = "USD")]
     pub budget: Option<f64>,
+    /// Assembled-prefix profile: `minimal` keeps the core tools, the short
+    /// system prompt and no skills/memory index (T30.1).
+    #[arg(long, global = true, value_name = "NAME")]
+    pub profile: Option<String>,
     /// Run as if started from this directory.
     #[arg(long, global = true, value_name = "DIR")]
     pub cwd: Option<PathBuf>,

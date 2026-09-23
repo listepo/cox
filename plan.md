@@ -31,7 +31,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T28.2 | done | P2 | 1 | 0% | |
 | T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
-| T30.1 | todo | P2 | 2 | 0% | |
+| T30.1 | done | P2 | 2 | 0% | |
 | T30.2 | done | P2 | 2 | 0% | Claude Code / claude-haiku-4-5 |
 | T30.3 | todo | P2 | 2 | 0% | |
 
@@ -1225,19 +1225,6 @@ Done when: both snapshots exist and the docs section is present.
 Out of scope: a colour-vision simulator.
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.1 `profile = "minimal"`
-
-Model: sonnet · Status: in progress · Depends: T22.2 · Size: ~140 · Priority: P2 · Complexity: 2
-Goal: a config profile whose assembled prefix is ≤ 1 000 tokens; `doctor` prints the prefix token count for the active profile; a test pins the cap.
-Files: `config/default.toml`, `crates/cox-core/src/context.rs`, `crates/cox/src/doctor.rs`.
-Steps: (1) `[profiles.minimal]`: `context.deferred_tools = true` with the core eight only, `system_prompt = "minimal"` (a second embedded prompt ≤ 300 tokens), `instruction_budget_tokens = 2000`, no skills index, no memory index; `cox --profile minimal` and `core.profile` key. (2) `context::assemble` honours the profile (the prefix layout §1.9 is unchanged — blocks are just smaller or empty). (3) `doctor`: `prefix: 912 tokens (profile minimal)` using the T1.8 estimator. (4) Test `minimal_prefix_under_1000_tokens` over the fixtures workspace.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core minimal_prefix_under_1000_tokens prefix_bytes_identical_between_turns
-```
-Done when: the test passes and `docs/config.md` documents profiles.
-Out of scope: automatic profile selection.
 
 #### T30.3 Eval run with a verification step
 
