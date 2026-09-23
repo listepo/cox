@@ -9,12 +9,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | done | P1 | 1 | 0% | |
-| T23.2 | todo | P1 | 2 | 0% | |
+| T23.2 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
-| T23.7 | todo | P2 | 3 | 0% | |
+| T23.7 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T24.6 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T24.7 | todo | P2 | 2 | 0% | |
@@ -987,7 +987,7 @@ Out of scope: drag selection inside the TUI (the terminal's own selection covers
 
 #### T23.2 Flicker-free scrollback (`scrolling-regions`)
 
-Model: sonnet · Status: open · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
+Model: opus · Status: in progress · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
 Goal: `insert_before` scrolls the region above the viewport instead of repainting everything.
 Files: `Cargo.toml`, `crates/cox-tui/tests/shell.rs`.
 Steps: (1) Add `scrolling-regions` to the ratatui feature list (verified present in 0.30.2, ledger #29). (2) PTY test: stream 40 finished cells through the real binary with the scripted provider and count full-viewport repaints in the vt100 screen diff (a repaint = every viewport row rewritten in one frame); assert ≤ 1 per inserted cell. (3) Record the before/after count in the commit message; if the count does not drop on the vt100 parser, keep the feature off and record why in §6 (falsifier).
@@ -997,6 +997,7 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaint
 ```
 Done when: the test passes with the feature on and the number in the commit message is lower than before.
 Out of scope: resize handling (T23.7).
+Approval: the creator approved enabling ratatui's `scrolling-regions` feature (2026-09-24).
 
 #### T23.3 OSC 8 hyperlinks
 
@@ -1054,7 +1055,7 @@ Out of scope: percentages (a turn has no known length).
 
 #### T23.7 Resize hardening
 
-Model: sonnet · Status: open · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
+Model: opus · Status: in progress · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
 Goal: a resize mid-stream leaves no duplicated or stale lines in scrollback (ratatui #2086 class).
 Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/tests/shell.rs`.
 Steps: (1) On `Input::Resize`, set `state.resizing = true`, skip `insert_before` and `draw` until the next tick with a stable size (two identical size reads 16 ms apart), then `terminal.clear()` of the viewport region and a full redraw. (2) Re-measure the inline viewport height (`VIEWPORT_ROWS` clamped to the new height − 2). (3) PTY test resizes 120×40 → 80×24 while a reply streams, then asserts the vt100 scrollback contains each finished cell exactly once.
