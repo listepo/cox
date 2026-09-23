@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T22.7 | done | P1 | 1 | 0% | |
-| T23.2 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
@@ -982,21 +981,6 @@ Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
-
-#### T23.2 Flicker-free scrollback (`scrolling-regions`)
-
-Model: opus · Status: in progress · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
-Goal: `insert_before` scrolls the region above the viewport instead of repainting everything.
-Files: `Cargo.toml`, `crates/cox-tui/tests/shell.rs`.
-Steps: (1) Add `scrolling-regions` to the ratatui feature list (verified present in 0.30.2, ledger #29). (2) PTY test: stream 40 finished cells through the real binary with the scripted provider and count full-viewport repaints in the vt100 screen diff (a repaint = every viewport row rewritten in one frame); assert ≤ 1 per inserted cell. (3) Record the before/after count in the commit message; if the count does not drop on the vt100 parser, keep the feature off and record why in §6 (falsifier).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
-```
-Done when: the test passes with the feature on and the number in the commit message is lower than before.
-Out of scope: resize handling (T23.7).
-Approval: the creator approved enabling ratatui's `scrolling-regions` feature (2026-09-24).
-Execution plan: (1) `cox-tui` has no `cox` binary to spawn, so `src/bin/kitty_probe.rs` (the T23.1 probe that already drives `cox_tui::app::run` under a PTY) gains a `COX_PROBE_SCENARIO=cells` mode that feeds 40 finished `Notice` cells on its feed channel, one per loop iteration, then quits. (2) `tests/shell.rs`: fold the T23.1 PTY reader into one shared harness (spawn, `CSI 6n` answers, vt100 parser, raw capture, wait for exit with a 30 s deadline) and add `pty_insert_before_repaints_at_most_once_per_cell`: replay the raw bytes offline, split them into frames at ratatui's per-draw cursor show/hide, seed every screen row with a sentinel before each frame, and count a frame as a full-viewport repaint when at least the viewport's 15 rows lost every sentinel. (3) Measure with the feature off, then add `scrolling-regions` to the workspace ratatui entry and measure again; assert the stricter bound the numbers justify; both numbers go into the commit message. If the count does not drop, revert the feature and record the falsifier in §6. (4) Update `research.md` (the "not enabled" row), §1 and `toolchain.md` if they list ratatui features. Verify with the Check and the three workspace commands.
 
 #### T23.3 OSC 8 hyperlinks
 

@@ -1,7 +1,6 @@
 # Todo
 
 - T22.4. Mouse: wire `tui.mouse` or delete the key
-- T23.2. Flicker-free scrollback (`scrolling-regions`)
 - T23.3. OSC 8 hyperlinks
 - T23.4. OSC 52 clipboard
 - T23.5. Notifications

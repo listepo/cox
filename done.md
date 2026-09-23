@@ -3326,4 +3326,33 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 clean
 $ mise exec -- cargo fmt --check
 clean
+
+#### T23.2 Flicker-free scrollback (`scrolling-regions`)
+
+Model: opus · Status: done 2026-09-24 · Depends: — · Size: ~40 + test · Priority: P1 · Complexity: 2
+Goal: `insert_before` scrolls the region above the viewport instead of repainting everything.
+Files: `Cargo.toml`, `crates/cox-tui/tests/shell.rs`.
+Steps: (1) Add `scrolling-regions` to the ratatui feature list (verified present in 0.30.2, ledger #29). (2) PTY test: stream 40 finished cells through the real binary with the scripted provider and count full-viewport repaints in the vt100 screen diff (a repaint = every viewport row rewritten in one frame); assert ≤ 1 per inserted cell. (3) Record the before/after count in the commit message; if the count does not drop on the vt100 parser, keep the feature off and record why in §6 (falsifier).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
+```
+Done when: the test passes with the feature on and the number in the commit message is lower than before.
+Out of scope: resize handling (T23.7).
+Approval: the creator approved enabling ratatui's `scrolling-regions` feature (2026-09-24).
+Execution plan: (1) `cox-tui` has no `cox` binary to spawn, so `src/bin/kitty_probe.rs` (the T23.1 probe that already drives `cox_tui::app::run` under a PTY) gains a `COX_PROBE_SCENARIO=cells` mode that feeds 40 finished `Notice` cells on its feed channel, one per loop iteration, then quits. (2) `tests/shell.rs`: fold the T23.1 PTY reader into one shared harness (spawn, `CSI 6n` answers, vt100 parser, raw capture, wait for exit with a 30 s deadline) and add `pty_insert_before_repaints_at_most_once_per_cell`: replay the raw bytes offline, split them into frames at ratatui's per-draw cursor show/hide, seed every screen row with a sentinel before each frame, and count a frame as a full-viewport repaint when at least the viewport's 15 rows lost every sentinel. (3) Measure with the feature off, then add `scrolling-regions` to the workspace ratatui entry and measure again; assert the stricter bound the numbers justify; both numbers go into the commit message. If the count does not drop, revert the feature and record the falsifier in §6. (4) Update `research.md` (the "not enabled" row), §1 and `toolchain.md` if they list ratatui features. Verify with the Check and the three workspace commands.
+
+Deviations: the card names "the real binary with the scripted provider", but `cox-tui` tests cannot spawn `cox` (no `CARGO_BIN_EXE_cox` outside `crates/cox`), so `src/bin/kitty_probe.rs` (the T23.1 probe that already runs `cox_tui::app::run` under a PTY) gained a `COX_PROBE_SCENARIO=cells` mode that feeds 40 `Notice` cells; a third file beyond the card's two. The T23.1 PTY reader was folded into one shared harness in `tests/shell.rs` rather than copied, so the test file grew by ~100 lines. The assertion is tighter than the card's "≤ 1 per inserted cell" (which the build without the feature also met: exactly 40 for 40): at most 1 for the whole run, so the test fails if the feature is dropped. `Cargo.lock` gains lock-only entries for ratatui's weak optional termion backend (nothing new is compiled; `cargo deny check licenses bans` ok). Finding recorded in `research.md`: the `vt100` fixture keeps no scrollback for lines scrolled off a DECSTBM region.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_insert_before_repaints_at_most_once_per_cell
+PASS cox-tui::shell pty_insert_before_repaints_at_most_once_per_cell — 1 passed
+full-viewport repaints for 40 inserted cells: before (feature off) 40, after (feature on) 0; 3 runs each, identical
+$ mise exec -- cargo nextest run --workspace
+802 tests run: 802 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean for every file this task touched; pre-existing diffs from T28.1 in crates/cox-tui/src/status.rs and crates/cox-tui/tests/status.rs (left untouched)
 ```
