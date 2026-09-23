@@ -10,7 +10,6 @@
 - T24.3. `two-face` syntax set
 - T24.6. Footer hints and `?` help
 - T24.7. Motion and narrow-width polish
-- T24.8. Screenshots and gallery
 - T25.2. `Shift+Tab` mode cycle and plan-mode view
 - T25.3. `!` shell line
 - T25.5. Keybindings file

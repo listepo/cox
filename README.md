@@ -33,6 +33,8 @@ What the TUI looks like: [docs/screenshots](docs/screenshots) holds one SVG per 
 
 ![A streamed reply after a read tool](docs/screenshots/streaming_reply.svg)
 
+![A folded tool card with the head/tail output and the expand hint](docs/screenshots/tool_card_folded.svg)
+
 ## Design principles
 
 - **One event stream.** `Submission` values enter a pure core state machine and typed `Event` values leave it. Every surface consumes the same events.

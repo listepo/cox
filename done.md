@@ -3177,3 +3177,27 @@ $ COX_HOME=$(mktemp -d) cargo run -q --bin cox -- stats --project
 No usage records found
 ```
 
+
+#### T24.8 Screenshots and gallery
+
+Model: haiku · Status: done 2026-09-23 · Depends: T24.2, T24.4, T24.5, T24.6, T22.1 · Size: docs · Priority: P1 · Complexity: 1
+Goal: `just screenshots` covers every new state and the website gallery lists them.
+Files: `crates/cox-tui/tests/screenshots.rs`, `website/content/docs/screens.md` (or the existing gallery page), `README.md`.
+Steps: (1) Add screen tests: theme picker, tool card ×3, side-by-side diff, help overlay, question modal, queued messages (after T25.1), rewind timeline (after T26.2 — leave a TODO row if not yet landed). (2) Run `just screenshots`; commit the SVGs. (3) Gallery page: one image per state with a one-line caption; README picks the tool-card frame.
+Check:
+```bash
+just screenshots && git status --short docs/screenshots | wc -l
+```
+Done when: every screen test has an SVG and the website build (`hugo --minify`) succeeds.
+Out of scope: animated GIFs.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test screenshots
+20 passed (11 existing + 9 new: theme picker, tool card x3, side-by-side diff, question modal, queued messages, rewind timeline, help overlay)
+$ just screenshots && git status --short docs/screenshots | wc -l
+9 (8 new SVGs + help_overlay.svg)
+$ hugo --minify (website/)
+built in 17 ms; 20 screenshots/* in docs/screens/index.html
+```
+

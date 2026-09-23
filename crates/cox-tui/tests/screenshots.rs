@@ -9,12 +9,13 @@ use std::path::Path;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, ItemId, TaskId, TurnId};
 use cox_protocol::types::{
-    Event, ItemKind, Job, Level, ModelId, PermissionMode, Risk, SandboxMode, StopReason, Tier,
-    ToolCall, ToolResult, Usage, Why,
+    CheckpointFile, CheckpointKind, Event, ItemKind, Job, Level, ModelId, PermissionMode, Risk,
+    SandboxMode, StopReason, Tier, ToolCall, ToolResult, Usage, Why,
 };
 use cox_tui::cells::cell_lines;
 use cox_tui::state::{GitStatus, Msg, State, update};
 use cox_tui::svg::buffer_to_svg;
+use cox_tui::theme;
 use cox_tui::view::{buffer_to_string, view};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
@@ -203,6 +204,82 @@ fn shot(name: &str, state: &mut State) -> String {
         std::fs::write(dir.join(format!("{name}.svg")), svg).unwrap();
     }
     buffer_to_string(&buf)
+}
+
+/// Wide enough for the side-by-side diff (T24.5 splits at 120 columns).
+const WIDE_COLS: u16 = 140;
+
+/// One hunk with a replaced pair, so the word diff has something to mark.
+const WIDE_PATCH: &str = "diff --git a/src/loop.rs b/src/loop.rs\n--- a/src/loop.rs\n+++ b/src/loop.rs\n@@ -10,5 +10,5 @@\n fn step(&mut self) {\n-    let total = price * count;\n-    self.log(total);\n+    let total = price * quantity + tax;\n     self.emit(total);\n+    self.ledger.record(total);\n }\n";
+
+/// The terminal at `WIDE_COLS` columns; the SVG lands beside the rest.
+fn wide_shot(name: &str, state: &mut State) -> String {
+    let look = state.look(WIDE_COLS);
+    let scrollback: Vec<Line<'static>> = state
+        .take_finished()
+        .iter()
+        .flat_map(|c| cell_lines(c, &look))
+        .collect();
+    let above = u16::try_from(scrollback.len()).unwrap();
+    let mut buf = Buffer::empty(Rect::new(0, 0, WIDE_COLS, above + VIEWPORT));
+    Paragraph::new(scrollback).render(Rect::new(0, 0, WIDE_COLS, above), &mut buf);
+    let cursor = view(state, Rect::new(0, above, WIDE_COLS, VIEWPORT), &mut buf);
+    cox_tui::color::map_buffer(&mut buf, state.depth);
+    if let Ok(dir) = std::env::var("COX_SCREENSHOTS") {
+        let dir = Path::new(&dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let svg = buffer_to_svg(&buf, cursor, state.dark);
+        std::fs::write(dir.join(format!("{name}.svg")), svg).unwrap();
+    }
+    buffer_to_string(&buf)
+}
+
+/// One finished user turn with `files` checkpointed paths, feeding the
+/// rewind timeline the way `tests/rewind.rs` does.
+fn rewind_turn(state: &mut State, seq: u32, text: &str, files: usize) {
+    let turn = TurnId::new();
+    ev(
+        state,
+        Event::TurnStarted {
+            seq,
+            turn,
+            job: Job::Main,
+            tier: Tier::Code,
+            model: ModelId("claude-sonnet-5".into()),
+        },
+    );
+    ev(
+        state,
+        Event::ItemStarted {
+            item: ItemId::new(),
+            kind: ItemKind::UserMessage {
+                text: text.into(),
+                attachments: Vec::new(),
+            },
+        },
+    );
+    if files > 0 {
+        ev(
+            state,
+            Event::Checkpoint {
+                turn,
+                call: Some(CallId::new()),
+                files: (0..files)
+                    .map(|i| CheckpointFile {
+                        path: format!("/w/f{i}.rs").into(),
+                        kind: CheckpointKind::Pre,
+                    })
+                    .collect(),
+            },
+        );
+    }
+    ev(
+        state,
+        Event::TurnDone {
+            turn,
+            stop: StopReason::EndTurn,
+        },
+    );
 }
 
 #[test]
@@ -414,4 +491,183 @@ fn screen_light_theme_reply() {
     usage(&mut state, turn, 9_800, 9_000, 0.02);
     end_turn(&mut state, turn);
     insta::assert_snapshot!(shot("light_theme", &mut state));
+}
+
+/// `/theme` (T24.2): the picker over the built-ins, live over the session.
+#[test]
+fn screen_theme_picker_over_the_built_ins() {
+    let mut state = fresh();
+    user(&mut state, "make it yours");
+    let turn = start_turn(&mut state);
+    reply(
+        &mut state,
+        "Pick a theme — the screen previews each row.",
+        true,
+    );
+    end_turn(&mut state, turn);
+    state.theme_rows = vec![
+        "cox-dark".into(),
+        "cox-light".into(),
+        "system".into(),
+        "syntax: Solarized (dark)".into(),
+    ];
+    state.theme_catalog = theme::BUILT_IN_THEMES
+        .iter()
+        .map(|(name, src)| {
+            theme::parse_theme_file(src)
+                .map(|file| ((*name).to_string(), file))
+                .expect("built-in theme parses")
+        })
+        .collect();
+    type_line(&mut state, "/theme");
+    insta::assert_snapshot!(shot("theme_picker", &mut state));
+}
+
+/// Tool card, pending: the spinner rail and elapsed time (T24.4).
+#[test]
+fn screen_tool_card_pending() {
+    let mut state = fresh();
+    user(&mut state, "build it");
+    start_turn(&mut state);
+    tool(
+        &mut state,
+        "bash",
+        "cargo build --workspace",
+        Risk::Exec,
+        "   Compiling cox-protocol v0.1.0\n   Compiling cox-core v0.1.0\n",
+    );
+    for _ in 0..23 {
+        update(&mut state, Msg::Tick);
+    }
+    insta::assert_snapshot!(shot("tool_card_pending", &mut state));
+}
+
+/// Tool card, folded ok: a long output collapses to head/tail (T24.4).
+#[test]
+fn screen_tool_card_folded() {
+    let mut state = fresh();
+    user(&mut state, "list the tree");
+    start_turn(&mut state);
+    let body = (1..=20)
+        .map(|n| format!("src/file{n:02}.rs"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let call = tool(&mut state, "bash", "seq 20", Risk::Exec, &body);
+    tool_done(&mut state, call, &body);
+    insta::assert_snapshot!(shot("tool_card_folded", &mut state));
+}
+
+/// Tool card, error: a failed call renders its output whole (T24.4).
+#[test]
+fn screen_tool_card_error() {
+    let mut state = fresh();
+    user(&mut state, "run the failing build");
+    start_turn(&mut state);
+    let body = "error[E0308]: mismatched types\n --> src/loop.rs:9:9\n  |\n  = note: build failed";
+    let id = CallId::new();
+    ev(
+        &mut state,
+        Event::ToolCallRequested {
+            call: ToolCall {
+                id,
+                name: "bash".into(),
+                input: serde_json::json!({"command": "cargo build"}),
+                risk: Risk::Exec,
+                subject: "cargo build".into(),
+            },
+        },
+    );
+    ev(
+        &mut state,
+        Event::ToolCallOutput {
+            call_id: id,
+            delta: body.into(),
+        },
+    );
+    ev(
+        &mut state,
+        Event::ToolCallDone {
+            call_id: id,
+            result: ToolResult {
+                ok: false,
+                visible: body.into(),
+                archive: None,
+                bytes: u64::try_from(body.len()).unwrap_or(u64::MAX),
+                duration_ms: 41,
+                diff: None,
+            },
+        },
+    );
+    insta::assert_snapshot!(shot("tool_card_error", &mut state));
+}
+
+/// Side-by-side diff (T24.5): a wide viewport splits old and new panes.
+#[test]
+fn screen_diff_view_side_by_side_on_a_wide_terminal() {
+    let mut state = fresh();
+    update(
+        &mut state,
+        Msg::Key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL)),
+    );
+    update(&mut state, Msg::Diff(Some(WIDE_PATCH.into())));
+    insta::assert_snapshot!(wide_shot("diff_view_side_by_side", &mut state));
+}
+
+/// `ask_user` (T22.1): the question modal over the running turn.
+#[test]
+fn screen_question_modal() {
+    let mut state = fresh();
+    user(&mut state, "deploy it");
+    start_turn(&mut state);
+    update(
+        &mut state,
+        Msg::Question {
+            call: CallId::new(),
+            question: "which environment?".into(),
+            options: vec!["staging".into(), "production".into()],
+        },
+    );
+    insta::assert_snapshot!(shot("question_modal", &mut state));
+}
+
+/// Queued messages (T25.1): typed while a turn runs, shown above the composer.
+#[test]
+fn screen_queued_messages_above_the_composer() {
+    let mut state = fresh();
+    user(&mut state, "start the build");
+    start_turn(&mut state);
+    tool(
+        &mut state,
+        "bash",
+        "cargo build --workspace",
+        Risk::Exec,
+        "   Compiling cox-core v0.1.0\n",
+    );
+    state.status.busy = true;
+    type_line(&mut state, "also run clippy after");
+    type_line(&mut state, "and check the docs build");
+    insta::assert_snapshot!(shot("queued_messages", &mut state));
+}
+
+/// Rewind timeline (T26.2): the newest-first turn list over the transcript.
+#[test]
+fn screen_rewind_timeline() {
+    let mut state = fresh();
+    rewind_turn(&mut state, 1, "add the cache column", 3);
+    rewind_turn(&mut state, 2, "snapshot the status line", 0);
+    type_line(&mut state, "/rewind");
+    insta::assert_snapshot!(shot("rewind_timeline", &mut state));
+}
+
+/// `/help` (T24.6): the keymap table from the one `COMMANDS` source,
+// rendered as a notice cell over the finished turn.
+#[test]
+fn screen_help_overlay() {
+    let mut state = fresh();
+    user(&mut state, "what can I press here");
+    let turn = start_turn(&mut state);
+    reply(&mut state, "Every key, grouped by context.", true);
+    end_turn(&mut state, turn);
+    type_line(&mut state, "/help");
+    insta::assert_snapshot!(shot("help_overlay", &mut state));
 }

@@ -1,0 +1,20 @@
+---
+source: crates/cox-tui/tests/screenshots.rs
+expression: "shot(\"question_modal\", &mut state)"
+---
+› deploy it
+
+
+
+
+
+
+
+
+
+
+ ask_user which environment?
+ 1) staging  2) production
+ > ▏   Enter sends · Esc dismisses
+>  message · @ file · / command
+ ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [question] · wor
