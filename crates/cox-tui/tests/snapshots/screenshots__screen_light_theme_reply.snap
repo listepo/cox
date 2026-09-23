@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
+assertion_line: 493
 expression: "shot(\"light_theme\", &mut state)"
 ---
 › show me the provider trait
@@ -25,4 +26,4 @@ The Replay and Scripted providers are what the tests use.
 
 
 >  message · @ file · / command
- ⎇ main +12 −3 · sonnet-5 · ctx 9% · cache 48% · $0.02 · workspace-write · 0 tasks · [default]
+sonnet-5 · ctx ▰▰▱▱▱ 9% · $0.02/5 · workspace-write · ⎇ main +12 −3 · [default]

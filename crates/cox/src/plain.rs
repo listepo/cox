@@ -74,6 +74,15 @@ pub fn run(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         turn_usd: 0.0,
         turn_tokens: [0, 0],
         session_usd: 0.0,
+        tui: {
+            let mut tui = cox_tui::state::State::new(
+                loaded.config.permissions.mode,
+                loaded.config.sandbox.mode,
+            );
+            tui.status.budget_cap_usd = loaded.config.budget.session_usd;
+            tui.status.budget_warn_at = loaded.config.budget.warn_at;
+            tui
+        },
     };
     if let Some(id) = resumed {
         plain.line("notice", &format!("resumed session {id}"))?;
@@ -103,6 +112,10 @@ struct Plain {
     /// This turn's context (input + cache) and output tokens.
     turn_tokens: [u32; 2],
     session_usd: f64,
+    /// The TUI status row's source of truth (T28.1): `Usage` fills the
+    /// context and cache share, `TurnStarted` the model, and `TurnDone`
+    /// prints `status::plain_text` — the same segments as the TUI row.
+    tui: cox_tui::state::State,
 }
 
 impl Plain {
@@ -241,6 +254,9 @@ impl Plain {
 
     fn event(&mut self, ev: Event) -> std::io::Result<()> {
         match ev {
+            Event::TurnStarted { model, .. } => {
+                self.tui.status.model = model.to_string();
+            }
             Event::ItemStarted { item, kind } => match kind {
                 ItemKind::AssistantMessage { text } => {
                     self.texts.insert(item, ("cox", text));
@@ -285,6 +301,9 @@ impl Plain {
                 self.turn_tokens[0] += usage.context_tokens();
                 self.turn_tokens[1] += usage.output_tokens;
                 self.session_usd += usage.cost_usd;
+                self.tui.status.cost_usd = self.session_usd;
+                self.tui.status.context_tokens = usage.context_tokens();
+                self.tui.status.cache_ratio = cox_core::cache_diag::ratio_of(&usage);
             }
             Event::Compacted {
                 before_tokens,
@@ -312,6 +331,10 @@ impl Plain {
                         self.session_usd
                     ),
                 )?;
+                // T28.1: the same segments the TUI status line shows, once
+                // per turn, so `--plain` carries the row a screen reader
+                // cannot watch update in place.
+                self.line("status", &cox_tui::status::plain_text(&self.tui))?;
             }
             _ => {}
         }

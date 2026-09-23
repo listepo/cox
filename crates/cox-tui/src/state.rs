@@ -7,8 +7,8 @@ use std::collections::VecDeque;
 
 use cox_protocol::ids::{CallId, ItemId, TaskId};
 use cox_protocol::types::{
-    Content, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode, SlashCommand,
-    StopReason, Submission, Tier, ToolCall, ToolResult,
+    Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
+    SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -92,6 +92,15 @@ pub struct Status {
     pub busy: bool,
     /// Last call's cache share 0..=1 (T8.3), shown as `cache N%`.
     pub cache_ratio: f64,
+    /// Session spend cap, in USD (T28.1); the binary sets it from
+    /// `budget.session_usd`, so `$` names the spend over the cap.
+    pub budget_cap_usd: f64,
+    /// Fraction of the cap that warns (T28.1); the binary sets it from
+    /// `budget.warn_at`, and the cost segment turns `theme.warn` past it.
+    pub budget_warn_at: f64,
+    /// `/effort` override for the session (T28.1); `SetEffort` keeps it here
+    /// next to the mode the composer already shows, and the line badges it.
+    pub effort: Option<Effort>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,6 +323,9 @@ impl State {
                 sandbox,
                 busy: false,
                 cache_ratio: 0.0,
+                budget_cap_usd: 5.0,
+                budget_warn_at: 0.8,
+                effort: None,
             },
             modal: None,
             mode,
@@ -904,6 +916,9 @@ fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Act
 fn act(state: &mut State, action: Action) -> Vec<Cmd> {
     match action {
         Action::Submit(sub) => {
+            if let Submission::SetEffort { effort } = &sub {
+                state.status.effort = *effort;
+            }
             if let Submission::Command { command } = &sub
                 && command.name == "clear"
             {

@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
+assertion_line: 413
 expression: "shot(\"todo_panel\", &mut state)"
 ---
 › plan the ledger work
@@ -20,4 +21,4 @@ Three steps; starting the second.
  [~] add the cache-write column
  [ ] snapshot the status line
 >  message · @ file · / command
- ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

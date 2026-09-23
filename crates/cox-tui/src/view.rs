@@ -146,7 +146,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Layout::horizontal([Constraint::Length(2), Constraint::Min(1)]).areas(composer);
     Line::raw(">").render(prompt, buf);
     state.composer.widget().render(text, buf);
-    status::line(state).render(status, buf);
+    status::line_at(state, status.width).render(status, buf);
 
     // One place for every colour on the screen, the composer widget and the
     // syntect spans included.

@@ -1,5 +1,6 @@
 ---
 source: crates/cox/tests/plain.rs
+assertion_line: 126
 expression: transcript()
 ---
 <BEL>you: go
@@ -10,6 +11,7 @@ result: ok, 1 line
   wrote [WORK]/a.txt (1 bytes)
 cox: file: a.txt; state: written
 cost: $#.#### this turn, $#.#### session, #### in / ## out tokens
+status: scripted · ctx ▱▱▱▱▱ 1% · $0.00/5 · workspace-write · 0 tasks · cache 0% · [default]
 <BEL>you: ^C
 notice: press Ctrl+C again to quit
 you: ^C

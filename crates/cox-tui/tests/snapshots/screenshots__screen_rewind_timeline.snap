@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
+assertion_line: 659
 expression: "shot(\"rewind_timeline\", &mut state)"
 ---
 › add the cache column
@@ -18,4 +19,4 @@ expression: "shot(\"rewind_timeline\", &mut state)"
  ▸ T2 · 0 files · "snapshot the status line"
    T1 · 3 files · "add the cache column"
 >  message · @ file · / command
- ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

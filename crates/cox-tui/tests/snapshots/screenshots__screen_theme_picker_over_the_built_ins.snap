@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
+assertion_line: 523
 expression: "shot(\"theme_picker\", &mut state)"
 ---
 › make it yours
@@ -18,4 +19,4 @@ Pick a theme — the screen previews each row.
    system
    syntax: Solarized (dark)
 >  message · @ file · / command
- ⎇ main +12 −3 · sonnet-5 · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks · [default]
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

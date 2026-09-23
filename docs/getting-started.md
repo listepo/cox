@@ -58,6 +58,23 @@ Not supported: `.` repeat, macros and registers.
 Costs land in `cox stats`. Screenshots of TUI states live in
 [screenshots/](screenshots/).
 
+## Status line
+
+One row under the composer, e.g.
+`sonnet-5 · ctx ▰▰▰▱▱ 41% · $0.83/5 · workspace-write · 0 tasks · [plan]`:
+
+- `ctx` is a five-cell mini bar with the context share and percent; the
+  filled cells mark the cached share of the last call.
+- `$` is the session spend over the session cap (`budget.session_usd`); it
+  warns once past `budget.warn_at`.
+- `[plan]` is the permission mode badge; `effort:xhigh` appears only when
+  `/effort` overrode the tier default.
+- `cox --plain` prints the same segments as one `status: …` line per turn.
+
+Narrow terminals drop segments from the right in this order: git counts →
+cache → tasks → effort → sandbox → model → cost → ctx (the `ctx` bar and the
+mode badge never drop).
+
 ## Status
 
 cox is under active development. APIs, configuration, and install paths are not

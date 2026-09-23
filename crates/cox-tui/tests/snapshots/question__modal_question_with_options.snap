@@ -9,4 +9,4 @@ expression: "buffer_to_string(&render(&state, 60, 7))"
  1) staging  2) production
  > ▏   Enter sends · Esc dismisses
 >  message · @ file · / command
- - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks ·
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [question]

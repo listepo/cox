@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
+assertion_line: 306
 expression: "shot(\"streaming_reply\", &mut state)"
 ---
 › read src/loop.rs and summarize it
@@ -25,4 +26,4 @@ Nothing in this file touches the network
 
 
 >  message · @ file · / command
- ⎇ main +12 −3 · sonnet-5 · ctx 15% · cache 39% · $0.07 · workspace-write · 0 tasks · [default] · wo
+sonnet-5 · ctx ▰▰▱▱▱ 15% · $0.07/5 · ⎇ main +12 −3 · [default] · working

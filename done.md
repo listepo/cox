@@ -3224,3 +3224,25 @@ $ COX_HOME=/tmp/cox-scratch COX_PROVIDER=scripted COX_SCENARIO=crates/cox-core/t
 wrote AGENTS.md (473 bytes); rerun refuses without --force
 ```
 
+
+#### T28.1 Status-line segments
+
+Model: sonnet · Status: done 2026-09-23 · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
+Goal: `ctx` is a mini bar with the cached share in the accent colour; `$` shows spend over the session cap; effort and mode badges; segments drop from the right on narrow terminals in a documented order.
+Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/theme.rs`, `docs/getting-started.md`.
+Steps: (1) `ctx ▰▰▰▱▱ 41%` where filled cells in `theme.accent` mark cached tokens and `theme.text` uncached (from the last `Usage`). (2) `$0.83/5` (cap from `budget.session_usd`, `theme.warn` above `warn_at`). (3) Badges `[plan]`, `effort:xhigh` when non-default. (4) Drop order at narrow widths: git counts → cache → tasks → effort → model → cost → ctx (documented); a `--plain` variant (T29.1) prints the same text once per turn.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test status status_at_60_100_160_columns
+```
+Done when: three snapshots exist and `docs/screenshots/finished_turn.svg` is regenerated.
+Out of scope: a user-scripted status line (Claude Code style) — a later card if asked.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test status status_at_60_100_160_columns
+12 passed (3 width snapshots: status_wide_160, status_mid_100, status_narrow_60)
+$ mise exec -- cargo nextest run -p cox-tui -p cox
+281 passed, 1 skipped (incl. tui_e2e with width-fitted row, plain_transcript with status: line)
+```
+

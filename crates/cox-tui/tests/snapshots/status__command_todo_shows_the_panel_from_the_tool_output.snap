@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/tests/status.rs
+assertion_line: 184
 expression: "buffer_to_string(&render(&state, 60, 8))"
 ---
 ⚙ todo 3 items · 1ms
@@ -9,4 +10,4 @@ expression: "buffer_to_string(&render(&state, 60, 8))"
  [~] write cells
  [ ] snapshots
 >  message · @ file · / command
- - · ctx 0% · cache 0% · $0.00 · workspace-write · 0 tasks ·
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]

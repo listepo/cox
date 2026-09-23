@@ -27,7 +27,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 0% | |
 | T27.4 | todo | P3 | 2 | 0% | |
-| T28.1 | todo | P1 | 2 | 0% | |
+| T28.1 | done | P1 | 2 | 0% | |
 | T28.2 | done | P2 | 1 | 0% | |
 | T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
@@ -1208,19 +1208,6 @@ Done when: both tests pass and `docs/getting-started.md` documents the command.
 Out of scope: cloud schedules.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
-
-#### T28.1 Status-line segments
-
-Model: sonnet · Status: in progress · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
-Goal: `ctx` is a mini bar with the cached share in the accent colour; `$` shows spend over the session cap; effort and mode badges; segments drop from the right on narrow terminals in a documented order.
-Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/theme.rs`, `docs/getting-started.md`.
-Steps: (1) `ctx ▰▰▰▱▱ 41%` where filled cells in `theme.accent` mark cached tokens and `theme.text` uncached (from the last `Usage`). (2) `$0.83/5` (cap from `budget.session_usd`, `theme.warn` above `warn_at`). (3) Badges `[plan]`, `effort:xhigh` when non-default. (4) Drop order at narrow widths: git counts → cache → tasks → effort → model → cost → ctx (documented); a `--plain` variant (T29.1) prints the same text once per turn.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test status status_at_60_100_160_columns
-```
-Done when: three snapshots exist and `docs/screenshots/finished_turn.svg` is regenerated.
-Out of scope: a user-scripted status line (Claude Code style) — a later card if asked.
 
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 

@@ -502,6 +502,9 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         ))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
+        // T28.1: the status line names the spend over the session cap.
+        state.status.budget_cap_usd = config.budget.session_usd;
+        state.status.budget_warn_at = config.budget.warn_at;
         // T22.2: markdown commands from `.claude/commands`/`.cox/commands`
         // join the `/` palette after the built-ins; a broken file is a
         // warning and skipped (D14).
