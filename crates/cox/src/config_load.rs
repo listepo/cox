@@ -127,6 +127,8 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("continue", "runtime.continue"),
         ("resume", "runtime.resume"),
         ("deep", "runtime.deep"),
+        // `cox stats --project` (T28.2): a read-only scope flag, not config.
+        ("project", "runtime.project"),
     ])
 }
 

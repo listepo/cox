@@ -20,7 +20,6 @@
 - T27.2. Approvals labelled by source; agent cards
 - T27.4. `/loop`
 - T28.1. Status-line segments
-- T28.2. Project cost aggregate
 - T29.2. Reduced motion and daltonized themes
 - T30.1. `profile = "minimal"`
 - T30.3. Eval run with a verification step

@@ -28,7 +28,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T27.2 | todo | P1 | 2 | 0% | |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T28.1 | todo | P1 | 2 | 0% | |
-| T28.2 | todo | P2 | 1 | 0% | |
+| T28.2 | done | P2 | 1 | 0% | |
 | T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
 | T30.1 | todo | P2 | 2 | 0% | |
@@ -1248,20 +1248,6 @@ mise exec -- cargo nextest run -p cox-tui --test status status_at_60_100_160_col
 ```
 Done when: three snapshots exist and `docs/screenshots/finished_turn.svg` is regenerated.
 Out of scope: a user-scripted status line (Claude Code style) — a later card if asked.
-
-#### T28.2 Project cost aggregate
-
-Model: haiku · Status: open · Depends: — · Size: ~90 · Priority: P2 · Complexity: 1
-Goal: `/sessions` and `cox sessions` show per-project totals from one SQL aggregate; `cox stats --project`.
-Files: `crates/cox-store/src/queries.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox/src/stats.rs`.
-Steps: (1) `queries::project_totals(slug) -> { sessions, turns, cost_usd, tokens }` as one `GROUP BY` over `usage` joined to `sessions` (Diesel). (2) The sessions picker header shows `this project · 14 sessions · $12.40`. (3) `cox stats --project [slug]` table.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-store project_totals_match_sum_of_sessions
-```
-Done when: the picker snapshot has the header and `cox stats --project` prints it.
-Out of scope: budgets per project (config already caps per session and month).
-
 
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 

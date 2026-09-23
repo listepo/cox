@@ -7,13 +7,48 @@
 use std::collections::{HashMap, HashSet};
 
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Double, Text};
+use diesel::sql_types::{BigInt, Double, Nullable, Text};
 
 use cox_protocol::{SessionId, StoreError};
 
 use super::Store;
 use crate::fts::SessionInfo;
 use crate::schema::sessions;
+
+/// One project's ledger totals: the single `GROUP BY` row
+/// [`Store::project_totals`] returns. `tokens` is the `context_tokens`
+/// sum (what the models saw, §1.9), `turns` the usage-row count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectTotals {
+    /// Distinct sessions with at least one usage row.
+    pub sessions: i64,
+    /// Usage rows aggregated.
+    pub turns: i64,
+    /// Summed cost in USD.
+    pub cost_usd: f64,
+    /// Summed `context_tokens`.
+    pub tokens: i64,
+}
+
+/// One `sql_query` row for [`Store::project_totals`]: the single `GROUP BY`
+/// row over `usage` joined to `sessions`. Same `sql_query` +
+/// `QueryableByName` shape as [`TierJobRow`] below (D9: SQL stays in
+/// `cox-store`).
+#[derive(Debug, Clone, PartialEq, diesel::QueryableByName)]
+struct ProjectTotalsRow {
+    /// Distinct sessions with at least one usage row.
+    #[diesel(sql_type = BigInt)]
+    sessions: i64,
+    /// Usage rows aggregated.
+    #[diesel(sql_type = BigInt)]
+    turns: i64,
+    /// Summed cost in USD.
+    #[diesel(sql_type = Nullable<Double>)]
+    cost_usd: Option<f64>,
+    /// Summed `context_tokens`.
+    #[diesel(sql_type = Nullable<BigInt>)]
+    tokens: Option<i64>,
+}
 
 /// One [`Store::sessions_tree`] row: a session and how deep it nests.
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +134,60 @@ pub enum Period {
 }
 
 impl Store {
+    /// Every project slug with at least one usage row, oldest spend first —
+    /// the scope list for `cox stats --project` with no slug.
+    pub fn project_slugs(&self) -> Result<Vec<String>, StoreError> {
+        #[derive(diesel::QueryableByName)]
+        struct SlugRow {
+            #[diesel(sql_type = Text)]
+            slug: String,
+        }
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let rows: Vec<SlugRow> = diesel::sql_query(
+            "SELECT sessions.project_slug AS slug FROM usage \
+             INNER JOIN sessions ON usage.session_id = sessions.id \
+             GROUP BY sessions.project_slug ORDER BY MIN(usage.created_at)",
+        )
+        .load(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(rows.into_iter().map(|r| r.slug).collect())
+    }
+
+    /// One project's ledger totals in a single query: `usage` joined to
+    /// `sessions` on the slug, grouped once. Sessions without a usage row
+    /// contribute nothing (they cost nothing).
+    pub fn project_totals(&self, slug: &str) -> Result<ProjectTotals, StoreError> {
+        // One `sql_query` like `usage_by_period` below: `SUM()` over the
+        // integer columns widens to `Numeric` on SQLite, whose typed-DSL
+        // mapping needs the `numeric` feature, while the `sql_query` path
+        // reads the sums back as `BigInt` exactly as `usage_by_period` does.
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let row: Option<ProjectTotalsRow> = diesel::sql_query(
+            "SELECT COUNT(DISTINCT sessions.id) AS sessions, COUNT(usage.id) AS turns, \
+             SUM(usage.cost_usd) AS cost_usd, SUM(usage.context_tokens) AS tokens \
+             FROM usage INNER JOIN sessions ON usage.session_id = sessions.id \
+             WHERE sessions.project_slug = ? GROUP BY sessions.project_slug",
+        )
+        .bind::<Text, _>(slug)
+        .get_result(&mut *conn)
+        .optional()
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(match row {
+            Some(row) => ProjectTotals {
+                sessions: row.sessions,
+                turns: row.turns,
+                cost_usd: row.cost_usd.unwrap_or(0.0),
+                tokens: row.tokens.unwrap_or(0),
+            },
+            None => ProjectTotals {
+                sessions: 0,
+                turns: 0,
+                cost_usd: 0.0,
+                tokens: 0,
+            },
+        })
+    }
+
     /// Usage grouped by period, tier and job, oldest bucket first.
     pub fn usage_by_period(&self, period: Period) -> Result<Vec<TierJobRow>, StoreError> {
         // Fixed strings only — no user input reaches the format.
@@ -210,9 +299,31 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use cox_protocol::{SessionRow, Store as _};
+    use cox_protocol::{Job, ModelId, ProviderId, Tier, Usage};
+    use cox_protocol::{SessionRow, Store as _, UsageRow};
 
     use super::*;
+
+    fn usage_row(session: SessionId, turn: u32, context: u32, cost: f64) -> UsageRow {
+        UsageRow {
+            session_id: session,
+            turn,
+            job: Job::Main,
+            tier: Tier::Code,
+            provider: ProviderId::Anthropic,
+            model: ModelId("claude-sonnet-5".into()),
+            effort: None,
+            usage: Usage {
+                input_tokens: context,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                estimated: false,
+                cost_usd: cost,
+                latency_ms: 1,
+            },
+        }
+    }
 
     fn create(store: &Store, parent: Option<SessionId>) -> SessionId {
         // `updated_at` has millisecond resolution; keep the order strict.
@@ -263,6 +374,48 @@ mod tests {
         assert!(
             page.iter().all(|r| r.depth == 0),
             "a parent outside the page makes its child a root: {page:?}"
+        );
+    }
+
+    /// T28.2: the project aggregate is one `GROUP BY` row whose totals equal
+    /// the sum of the sessions' rows; an unknown slug totals zero.
+    #[test]
+    fn project_totals_match_sum_of_sessions() {
+        let home = tempfile::tempdir().expect("home");
+        let store = Store::open(home.path()).expect("store");
+        let first = create(&store, None);
+        let second = create(&store, None);
+        store
+            .usage_insert(&usage_row(first, 1, 100, 0.01))
+            .expect("insert 1");
+        store
+            .usage_insert(&usage_row(first, 2, 200, 0.02))
+            .expect("insert 2");
+        store
+            .usage_insert(&usage_row(second, 1, 50, 0.005))
+            .expect("insert 3");
+
+        let totals = store.project_totals("work").expect("totals");
+        assert_eq!(
+            totals,
+            ProjectTotals {
+                sessions: 2,
+                turns: 3,
+                cost_usd: 0.035,
+                tokens: 350,
+            },
+            "one GROUP BY row equals the sum of the sessions' rows: {totals:?}"
+        );
+
+        let empty = store.project_totals("no-such-project").expect("empty");
+        assert_eq!(
+            empty,
+            ProjectTotals {
+                sessions: 0,
+                turns: 0,
+                cost_usd: 0.0,
+                tokens: 0,
+            }
         );
     }
 }

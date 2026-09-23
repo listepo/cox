@@ -14,7 +14,6 @@ use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
 use cox_provider::openai::chat::OpenAiChatProvider;
 use cox_provider::openai::responses::OpenAiResponsesProvider;
 use cox_store::Store;
-use cox_store::queries::TreeRow;
 use cox_tools::ask_user::{Answers, AskUserTool, Question as AskUserQuestion};
 use cox_tools::bash::BashTool;
 use cox_tools::edit::EditTool;
@@ -275,27 +274,43 @@ async fn mcp_tools(config: &Config, cwd: &Path, interactive: bool) -> Vec<Arc<dy
 }
 
 /// `/sessions` and `/resume` rows: this project's sessions, newest first,
-/// forks and handoffs indented under their parent (T26.3).
-/// A store that will not open is an empty list, not a failed start.
+/// forks and handoffs indented under their parent (T26.3). Row zero is the
+/// project header from the one SQL aggregate in `Store::project_totals`
+/// (T28.2). A store that will not open is an empty list, not a failed start.
 fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
     let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
     let now = crate::sessions::now_secs();
-    Store::open(home)
-        .and_then(|store| store.sessions_tree(200))
-        .unwrap_or_default()
-        .into_iter()
+    let store = Store::open(home).ok();
+    let Some(store) = store.as_ref() else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(String, String)> = Vec::new();
+    let tree = store.sessions_tree(200).unwrap_or_default();
+    let kept: Vec<&cox_store::queries::TreeRow> = tree
+        .iter()
         .filter(|row| Path::new(&row.info.cwd).starts_with(&project))
-        .map(|TreeRow { info, depth }| {
-            let row = cox_tui::picker::session_entry(
-                depth,
-                info.title.as_deref(),
-                &info.cwd,
-                &crate::sessions::age_of(&info.updated_at, now),
-                info.cost_usd,
-            );
-            (info.id, row)
-        })
-        .collect()
+        .collect();
+    if !kept.is_empty() {
+        let slug = cox_ext::memory::slug_for(cwd);
+        let totals = store.project_totals(&slug).ok();
+        let (sessions, cost) =
+            totals.map_or((kept.len() as i64, 0.0), |t| (t.sessions, t.cost_usd));
+        rows.push((
+            String::new(),
+            cox_tui::picker::project_header(&slug, sessions, cost),
+        ));
+    }
+    rows.extend(kept.into_iter().map(|row| {
+        let entry = cox_tui::picker::session_entry(
+            row.depth,
+            row.info.title.as_deref(),
+            &row.info.cwd,
+            &crate::sessions::age_of(&row.info.updated_at, now),
+            row.info.cost_usd,
+        );
+        (row.info.id.clone(), entry)
+    }));
+    rows
 }
 
 /// `/fork` and `/handoff` (T26.3): a new session with `parent_id` whose own

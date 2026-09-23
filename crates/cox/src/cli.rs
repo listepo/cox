@@ -180,6 +180,9 @@ pub struct StatsArgs {
     /// Group usage by month, broken down by tier and job.
     #[arg(long)]
     pub month: bool,
+    /// Print totals for one project slug (or every project when omitted).
+    #[arg(long, value_name = "SLUG")]
+    pub project: Option<Option<String>>,
     /// Machine-readable JSON output.
     #[arg(long)]
     pub json: bool,

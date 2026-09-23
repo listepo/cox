@@ -157,10 +157,16 @@ pub fn run(home: &Path, args: &StatsArgs) -> anyhow::Result<()> {
     if args.json && args.csv {
         anyhow::bail!("--json and --csv are mutually exclusive");
     }
-    if args.session.is_some() && (args.day || args.month) {
-        anyhow::bail!("--session cannot be combined with --day or --month");
+    if args.session.is_some() && (args.day || args.month || args.project.is_some()) {
+        anyhow::bail!("--session cannot be combined with --day, --month or --project");
+    }
+    if args.project.is_some() && (args.day || args.month || args.cache) {
+        anyhow::bail!("--project cannot be combined with --day, --month or --cache");
     }
     let store = Store::open(home)?;
+    if let Some(project) = &args.project {
+        return run_project(&store, project.as_deref(), args);
+    }
     if let Some(session_id) = &args.session {
         let session: SessionId = session_id.parse()?;
         let rows = store.usage_for_session(&session)?;
@@ -243,6 +249,63 @@ fn run_session(
     println!("context-token-turns: {}", summary.context_token_turns);
     print_tier_job(&summary.by_tier_job);
     print_top_tools(&tools);
+    Ok(())
+}
+
+/// `cox stats --project [slug]` (T28.2): per-project totals from one SQL
+/// aggregate each. `None` lists every project with spend.
+fn run_project(store: &Store, slug: Option<&str>, args: &StatsArgs) -> anyhow::Result<()> {
+    use cox_store::queries::ProjectTotals;
+    let slugs: Vec<String> = match slug {
+        Some(slug) => vec![slug.to_string()],
+        None => store.project_slugs()?,
+    };
+    let mut totals: Vec<(String, ProjectTotals)> = Vec::with_capacity(slugs.len());
+    for slug in slugs {
+        totals.push((slug.clone(), store.project_totals(&slug)?));
+    }
+    totals.retain(|(_, t)| t.turns > 0);
+    if totals.is_empty() {
+        println!("No usage records found");
+        return Ok(());
+    }
+    if args.json {
+        println!(
+            "{}",
+            render_json(&serde_json::json!(
+                totals
+                    .iter()
+                    .map(|(slug, t)| serde_json::json!({
+                        "project": slug, "sessions": t.sessions, "turns": t.turns,
+                        "cost_usd": t.cost_usd, "tokens": t.tokens,
+                    }))
+                    .collect::<Vec<_>>()
+            ))
+        );
+        return Ok(());
+    }
+    if args.csv {
+        let mut out = String::from("project,sessions,turns,cost_usd,tokens\n");
+        for (slug, t) in &totals {
+            out.push_str(&format!(
+                "{},{},{},{:.4},{}\n",
+                slug, t.sessions, t.turns, t.cost_usd, t.tokens,
+            ));
+        }
+        print!("{out}");
+        return Ok(());
+    }
+    println!(
+        "{:<24} {:<8} {:<7} {:<12} {:<12}",
+        "Project", "Sessions", "Turns", "Cost", "Tokens"
+    );
+    println!("{}", "-".repeat(70));
+    for (slug, t) in &totals {
+        println!(
+            "{:<24} {:<8} {:<7} ${:<11.4} {:<12}",
+            slug, t.sessions, t.turns, t.cost_usd, t.tokens,
+        );
+    }
     Ok(())
 }
 

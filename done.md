@@ -3153,3 +3153,27 @@ leftovers: ok: 33 items across 33 tasks, every one closed, tasked, or recorded
 $ bash -n scripts/leftovers.sh && echo ok
 ok
 ```
+
+#### T28.2 Project cost aggregate
+
+Model: haiku · Status: open · Depends: — · Size: ~90 · Priority: P2 · Complexity: 1
+Goal: `/sessions` and `cox sessions` show per-project totals from one SQL aggregate; `cox stats --project`.
+Files: `crates/cox-store/src/queries.rs`, `crates/cox-tui/src/picker.rs`, `crates/cox/src/stats.rs`.
+Steps: (1) `queries::project_totals(slug) -> { sessions, turns, cost_usd, tokens }` as one `GROUP BY` over `usage` joined to `sessions` (Diesel). (2) The sessions picker header shows `this project · 14 sessions · $12.40`. (3) `cox stats --project [slug]` table.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-store project_totals_match_sum_of_sessions
+```
+Done when: the picker snapshot has the header and `cox stats --project` prints it.
+Out of scope: budgets per project (config already caps per session and month).
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-store project_totals
+PASS cox-store queries::tests::project_totals_match_sum_of_sessions (1 passed)
+$ mise exec -- cargo nextest run -p cox-tui picker_
+9 passed (incl. picker_project_header_names_sessions_and_cost)
+$ COX_HOME=$(mktemp -d) cargo run -q --bin cox -- stats --project
+No usage records found
+```
+

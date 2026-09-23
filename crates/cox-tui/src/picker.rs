@@ -147,6 +147,12 @@ pub fn tree_prefix(depth: usize) -> String {
     }
 }
 
+/// The `/sessions` picker header (T28.2): the project totals from the one
+/// SQL aggregate in `Store::project_totals`, so the list names its cost.
+pub fn project_header(slug: &str, sessions: i64, cost_usd: f64) -> String {
+    format!("this project {slug} · {sessions} sessions · ${cost_usd:.2}")
+}
+
 /// One `/resume` row: title (or `untitled`), cwd, coarse age and cost;
 /// a fork or handoff is indented under its parent by `depth`.
 pub fn session_entry(
@@ -344,6 +350,20 @@ mod tests {
             ],
         );
         assert_eq!(picker.matches.len(), 2);
+    }
+
+    /// T28.2: the `/sessions` header names the project totals from the one
+    /// SQL aggregate, so the list shows its own cost.
+    #[test]
+    fn picker_project_header_names_sessions_and_cost() {
+        assert_eq!(
+            project_header("cox", 14, 12.40),
+            "this project cox · 14 sessions · $12.40"
+        );
+        assert_eq!(
+            project_header("cox", 0, 0.0),
+            "this project cox · 0 sessions · $0.00"
+        );
     }
 
     /// T26.3's Done-when: the `/resume` picker shows a fork under its
