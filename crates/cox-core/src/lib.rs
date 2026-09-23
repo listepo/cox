@@ -12,6 +12,7 @@ mod compact;
 mod context;
 mod dedup;
 mod hooks;
+pub mod init;
 pub mod memory_extract;
 pub mod permission;
 pub mod redact;

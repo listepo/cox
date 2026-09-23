@@ -3201,3 +3201,26 @@ $ hugo --minify (website/)
 built in 17 ms; 20 screenshots/* in docs/screens/index.html
 ```
 
+
+#### T25.6 `/init`
+
+Model: sonnet · Status: done 2026-09-23 · Depends: — · Size: ~140 · Priority: P1 · Complexity: 2
+Goal: writes an `AGENTS.md` skeleton for the repo on the `cheap` tier after showing the diff for approval; never overwrites without `--force`.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-core/src/init.rs` (new), `crates/cox/src/session.rs`.
+Steps: (1) `init.rs`: detect manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `mise.toml`, `justfile`) and derive build/test/lint commands; render a template (`# <name>`, layout table from the top-level directories, commands, "conventions" left as a `cheap`-tier summary of the README if present). (2) `Submission::Command { name: "init" }` → the core runs the `cheap` job `init`, then emits an `ApprovalRequired` for the `write` of `AGENTS.md` (the existing diff modal shows it). (3) `cox init [--force]` subcommand for headless use.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core init_detects_cargo_and_just init_refuses_to_overwrite
+COX_HOME=/tmp/cox-scratch COX_PROVIDER=scripted mise exec -- cargo run -q -- init --cwd fixtures/init-sample
+```
+Done when: the fixture repo gets an `AGENTS.md` matching a snapshot and a second run refuses.
+Out of scope: rewriting an existing `AGENTS.md`.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core init_detects_cargo_and_just init_refuses_to_overwrite
+3 passed (init_parse_ls_handles_pty_columns_and_the_exit_trailer, init_detects_cargo_and_just, init_refuses_to_overwrite)
+$ COX_HOME=/tmp/cox-scratch COX_PROVIDER=scripted COX_SCENARIO=crates/cox-core/tests/scenarios/text_only.toml cargo run -q --bin cox -- init --cwd fixtures/init-sample
+wrote AGENTS.md (473 bytes); rerun refuses without --force
+```
+

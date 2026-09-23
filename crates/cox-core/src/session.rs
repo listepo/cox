@@ -583,6 +583,12 @@ impl Session {
                     .await
                     .map(|_| ())
             }
+            // T25.6: `/init [--force]` scaffolds AGENTS.md; the write asks
+            // first, like any other model-initiated write.
+            Submission::Command { command } if command.name == "init" => {
+                let force = command.args.iter().any(|a| a == "--force" || a == "force");
+                self.run_init(force).await
+            }
             Submission::Shutdown => {
                 // T10.2: optional cheap extraction first; a failure warns but
                 // never fails the shutdown. `SessionEnd` fires after, either way.

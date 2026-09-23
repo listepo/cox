@@ -419,6 +419,53 @@ pub(crate) fn resume_from_flags(
     }
 }
 
+/// `cox init [--force]` (T25.6): scaffold `AGENTS.md` headlessly over the
+/// same core path the interactive `/init` drives, then print where it
+/// landed. Exit 0 when the file was written, 1 when it was refused (an
+/// existing `AGENTS.md` without `--force`) or denied.
+pub fn run_init(cli: &Cli, cwd: &Path, force: bool) -> anyhow::Result<i32> {
+    let rt = tokio::runtime::Runtime::new()?;
+    let (session, _) = rt.block_on(open(cli, cwd, None, None, |_| {}, None, false))?;
+    let mut events = session
+        .events()
+        .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
+    let running = {
+        let session = session.clone();
+        rt.spawn(async move { session.run_init(force).await })
+    };
+    let mut written = false;
+    let mut refused = false;
+    while let Some(ev) = rt.block_on(events.recv()) {
+        match &ev {
+            Event::Notice { text, .. } if text.starts_with("wrote AGENTS.md") => {
+                println!("{text}");
+                written = true;
+            }
+            Event::Notice {
+                level: Level::Warn,
+                text,
+            } if text.contains("already exists") => {
+                println!("cox init: {text}");
+                refused = true;
+            }
+            Event::ApprovalRequired { call, .. } => {
+                let session = session.clone();
+                let call_id = call.id;
+                rt.block_on(session.submit(Submission::Approve {
+                    call_id,
+                    decision: cox_protocol::types::Decision::Allow,
+                }))?;
+            }
+            _ => {}
+        }
+        if written || refused {
+            break;
+        }
+    }
+    drop(running);
+    Ok(i32::from(!written))
+}
+
 /// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;

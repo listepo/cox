@@ -69,6 +69,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "/handoff <objective>",
         "new child session seeded with a cheap summary and the objective",
     ),
+    (
+        "init",
+        "/init [--force]",
+        "scaffold AGENTS.md for this repo",
+    ),
     ("todo", "/todo", "toggle the todo panel"),
     ("tasks", "/tasks", "list running background tasks"),
     ("vim", "/vim", "toggle vim keys"),

@@ -78,6 +78,11 @@ fn main() -> anyhow::Result<()> {
             std::process::exit(code);
         }
         Some(Command::Acp) => acp_cmd::run(&cli, &cwd),
+        Some(Command::Init(args)) => {
+            let code = session::run_init(&cli, &cwd, args.force)?;
+            drop(telemetry);
+            std::process::exit(code);
+        }
         Some(Command::Sessions(args)) => {
             let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
             sessions::run(&home, args)?;

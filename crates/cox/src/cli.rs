@@ -100,6 +100,8 @@ pub enum Command {
     Mcp(McpArgs),
     /// Agent Client Protocol server on stdio.
     Acp,
+    /// Scaffold an AGENTS.md for the repo.
+    Init(InitArgs),
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
     Ext(ExtArgs),
     /// Self-update the binary.
@@ -284,6 +286,14 @@ pub enum ConfigAction {
     },
     /// Print the user config file path.
     Path,
+}
+
+/// `cox init [--force]` (plan.md T25.6): scaffold `AGENTS.md` headlessly.
+#[derive(Args, Debug, Clone)]
+pub struct InitArgs {
+    /// Overwrite an existing `AGENTS.md` instead of refusing.
+    #[arg(long)]
+    pub force: bool,
 }
 
 /// `cox ext [list]` (plan.md §1.12/T9.3): bare `ext` prints the human

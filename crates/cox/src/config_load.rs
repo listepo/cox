@@ -118,7 +118,8 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("no-hooks", "hooks.enabled"),
         ("no-mcp", "mcp.enabled"),
         ("plain", "tui.screen_reader"),
-        // `cox run` (plan.md §1.12 `cox run` row).
+        // `cox init` (plan.md T25.6) headlessly.
+        ("force", "runtime.force"),
         ("prompt", "runtime.prompt"),
         ("output-format", "runtime.output_format"),
         ("max-turns", "core.max_turns"),
@@ -545,6 +546,19 @@ mod tests {
         }
         let run = cmd.find_subcommand("run").expect("run subcommand exists");
         for arg in run.get_arguments() {
+            if arg.is_positional() {
+                continue;
+            }
+            if let Some(long) = arg.get_long()
+                && !excluded.contains(&long)
+                && !map.contains_key(long)
+            {
+                missing.push(long.to_string());
+            }
+        }
+        // T25.6: `cox init --force` registers its flag like `run`'s own.
+        let init = cmd.find_subcommand("init").expect("init subcommand exists");
+        for arg in init.get_arguments() {
             if arg.is_positional() {
                 continue;
             }

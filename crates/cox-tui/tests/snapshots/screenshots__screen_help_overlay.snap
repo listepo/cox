@@ -32,6 +32,7 @@ Every key, grouped by context.
        up to a turn (default: all)
        /handoff <objective>                                     new child session seeded with a
        cheap summary and the objective
+       /init [--force]                                          scaffold AGENTS.md for this repo
        /todo                                                    toggle the todo panel
        /tasks                                                   list running background tasks
        /vim                                                     toggle vim keys
