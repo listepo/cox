@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
-assertion_line: 649
 expression: "shot(\"queued_messages\", &mut state)"
 ---
 › start the build
@@ -17,5 +16,5 @@ expression: "shot(\"queued_messages\", &mut state)"
 
  ⏸ also run clippy after
  ⏸ and check the docs build
->  message · @ file · / command
+> Esc interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter send now · Ctrl+U unqueue
 sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · ⎇ main +12 −3 · [default] · working

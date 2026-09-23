@@ -22,6 +22,46 @@ In the TUI: `y` / `s` / `n` answer approval prompts, `/model` switches tiers,
 `/compact` compacts context now. Headless scripts use `cox run -p`; editors use
 `cox acp`; other agents can call `cox mcp`.
 
+## Keys
+
+`?` on an empty composer shows this table over the transcript; `/help`
+prints it with the slash commands. The composer's empty line shows the first
+five rows for where you are (idle, a running turn, a modal, an overlay).
+`Ctrl+C` twice quits when idle. A running turn falls back to the idle keys.
+
+| Key | Action | Context |
+| --- | --- | --- |
+| `Enter` | send | idle |
+| `Tab` | mode.cycle | idle |
+| `@` | file | idle |
+| `/` | command | idle |
+| `?` | help | idle |
+| `Shift+Enter` | newline | idle |
+| `Alt+Enter` | newline | idle |
+| `Ctrl+Enter` | newline | idle |
+| `Ctrl+R` | history | idle |
+| `Ctrl+T` | thinking | idle |
+| `Ctrl+O` | transcript | idle |
+| `Ctrl+E` | expand | idle |
+| `Ctrl+G` | diff | idle |
+| `Ctrl+C` | quit | idle |
+| `Ctrl+D` | quit | idle |
+| `Esc` | interrupt | running |
+| `Ctrl+B` | background | running |
+| `Ctrl+O` | transcript | running |
+| `Alt+Enter` | send.now | running |
+| `Ctrl+U` | unqueue | running |
+| `Ctrl+Enter` | send.now | running |
+| `Ctrl+C` | interrupt | running |
+| `Enter` | choose | modal |
+| `Esc` | close | modal |
+| `Up` | previous | modal |
+| `Down` | next | modal |
+| `Esc` | close | overlay |
+| `?` | close | overlay |
+| `PageUp` | scroll.up | overlay |
+| `PageDown` | scroll.down | overlay |
+
 ## Vim keys
 
 Set `tui.vim = true` or type `/vim` to toggle vim keys in the composer. The

@@ -15,7 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crate::banner::Banner;
 use crate::cells::Look;
 use crate::color::Depth;
-use crate::commands::{self, Action, COMMANDS};
+use crate::commands::{self, Action, COMMANDS, Context};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
 use crate::markdown;
@@ -115,6 +115,9 @@ pub enum Modal {
         text: String,
         scroll: usize,
     },
+    /// `?` on an empty composer (T24.6): `KEYMAP` grouped by context, drawn
+    /// over the transcript like the diff view.
+    Help,
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -448,6 +451,16 @@ impl State {
         }
     }
 
+    /// Which `KEYMAP` context the keys are in right now (T24.6).
+    pub fn context(&self) -> Context {
+        match &self.modal {
+            Some(Modal::Diff { .. } | Modal::Help) => Context::Overlay,
+            Some(_) => Context::Modal,
+            None if self.status.busy => Context::Running,
+            None => Context::Idle,
+        }
+    }
+
     /// Finished cells at the head of the transcript, removed so the runtime
     /// can push them into scrollback in order; a streaming cell holds
     /// everything behind it in the viewport.
@@ -577,6 +590,13 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         }
         return Vec::new();
     }
+    // `?` opens the keymap overlay (T24.6) only on an empty composer;
+    // anywhere else it is a character.
+    if key.code == KeyCode::Char('?') && !ctrl && state.modal.is_none() && state.composer.is_empty()
+    {
+        state.modal = Some(Modal::Help);
+        return Vec::new();
+    }
     if key.code == KeyCode::Tab && state.modal.is_none() {
         // A `git` line completes (T15.4); any other Tab cycles the mode.
         let line = state.composer.text();
@@ -688,7 +708,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         }
         Some(Modal::Diff { text, scroll }) => {
             let scroll = match key.code {
-                KeyCode::Esc => return Vec::new(),
+                KeyCode::Esc | KeyCode::Char('?') => return Vec::new(),
                 KeyCode::Char('g') if ctrl => return Vec::new(),
                 KeyCode::PageDown => {
                     (scroll + DIFF_PAGE).min(text.lines().count().saturating_sub(1))
@@ -697,6 +717,12 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 _ => scroll,
             };
             state.modal = Some(Modal::Diff { text, scroll });
+            Vec::new()
+        }
+        Some(Modal::Help) => {
+            if !matches!(key.code, KeyCode::Esc | KeyCode::Char('?')) {
+                state.modal = Some(Modal::Help);
+            }
             Vec::new()
         }
         None => {

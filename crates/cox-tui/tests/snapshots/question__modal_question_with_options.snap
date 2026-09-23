@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/question.rs
-assertion_line: 33
 expression: "buffer_to_string(&render(&state, 60, 7))"
 ---
 
@@ -8,5 +7,5 @@ expression: "buffer_to_string(&render(&state, 60, 7))"
  ask_user which environment?
  1) staging  2) production
  > ▏   Enter sends · Esc dismisses
->  message · @ file · / command
+> Enter choose · Esc close · Up previous · Down next
 - · ctx ▱▱▱▱▱ 0% · $0.00/5 · [question]

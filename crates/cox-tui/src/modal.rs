@@ -4,7 +4,8 @@
 //! `state` so the key table and the drawing sit together and one snapshot
 //! covers both. The `/context` modal (T25.7) lives here for the same reason.
 //! An `edit` call's proposed change prints through `diff::lines` (T24.5),
-//! the renderer the edit card and `Ctrl+G` use.
+//! the renderer the edit card and `Ctrl+G` use. The `?` keymap overlay
+//! (T24.6) draws here too, from `commands::KEYMAP`.
 
 use cox_protocol::ids::CallId;
 use cox_protocol::types::{Decision, Diff, ToolCall, Why};
@@ -13,6 +14,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::cells::Look;
+use crate::commands::{Context, keys_for, label};
 use crate::diff;
 use crate::glyph::Glyphs;
 use crate::text::sanitize;
@@ -163,6 +165,40 @@ impl Approval {
         out.push(Line::raw(keys));
         out
     }
+}
+
+/// The `?` overlay (T24.6): `KEYMAP` by context, a bold header per context
+/// and its rows packed into as few `width`-column lines as fit, so the whole
+/// table stays inside the inline viewport.
+pub fn help_lines(g: &Glyphs, theme: &Theme, width: u16) -> Vec<Line<'static>> {
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let mut out = vec![Line::styled(
+        format!(" keys {} Esc or ? closes", g.sep),
+        bold,
+    )];
+    for ctx in Context::ALL {
+        out.push(Line::styled(format!(" {}", ctx.name()), bold));
+        let (mut spans, mut used): (Vec<Span<'static>>, usize) = (Vec::new(), 0);
+        let dim = Style::default().fg(theme.dim);
+        for (key, action) in keys_for(ctx) {
+            let label = label(action);
+            let cell = key.len() + 1 + label.len();
+            if used > 0 && used + 3 + cell > usize::from(width) {
+                out.push(Line::from(std::mem::take(&mut spans)));
+                used = 0;
+            }
+            if used == 0 {
+                spans.push(Span::raw("   "));
+            } else {
+                spans.push(Span::styled(format!(" {} ", g.sep), dim));
+            }
+            spans.push(Span::styled(key, Style::default().fg(theme.accent)));
+            spans.push(Span::styled(format!(" {label}"), dim));
+            used += 3 + cell;
+        }
+        out.push(Line::from(spans));
+    }
+    out
 }
 
 /// `ask_user`'s answer, once a key decides it.

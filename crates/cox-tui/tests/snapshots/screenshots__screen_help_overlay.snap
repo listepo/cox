@@ -1,11 +1,17 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
-assertion_line: 672
 expression: "shot(\"help_overlay\", &mut state)"
 ---
 › what can I press here
 Every key, grouped by context.
-[info] /model [cheap|code|think] [model]                        switch a tier's model
+[info] idle     Enter send · Tab mode cycle · @ file · / command · ? help · Shift+Enter newline ·
+Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O transcript ·
+Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
+       running  Esc interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter send now · Ctrl+U
+       unqueue · Ctrl+Enter send now · Ctrl+C interrupt
+       modal    Enter choose · Esc close · Up previous · Down next
+       overlay  Esc close · ? close · PageUp scroll up · PageDown scroll down
+       /model [cheap|code|think] [model]                        switch a tier's model
        /think <prompt>                                          one turn on the think tier, price
        confirmed first
        /effort [low|high|xhigh]                                 effort for the rest of the session;
@@ -52,5 +58,5 @@ Every key, grouped by context.
 
 
 
->  message · @ file · / command
+> Enter send · Tab mode cycle · @ file · / command · ? help
 sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

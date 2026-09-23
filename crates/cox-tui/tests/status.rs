@@ -252,7 +252,11 @@ fn status_cost_warns_past_warn_at_and_badges_effort() {
     state.status.cost_usd = 4.5;
     let over = cox_tui::status::line(&state);
     assert!(over.to_string().contains("$4.50/5"), "{}", over.to_string());
-    let cost = over.spans.iter().find(|s| s.content.contains('$')).expect("cost span");
+    let cost = over
+        .spans
+        .iter()
+        .find(|s| s.content.contains('$'))
+        .expect("cost span");
     assert_eq!(
         cost.style.fg,
         Some(state.theme.warn),
@@ -298,10 +302,16 @@ fn status_line_shows_the_git_segment_only_inside_a_repository() {
     let g = state.glyphs;
     // The git counts ride the mode slot at the end; the rest of the row is
     // the same row as without a repository.
-    let tail = format!("{} {} main +12 {}3 {} [default]", g.sep, g.branch, g.minus, g.sep);
+    let tail = format!(
+        "{} {} main +12 {}3 {} [default]",
+        g.sep, g.branch, g.minus, g.sep
+    );
     assert!(with.ends_with(&tail), "{with}");
     let head = with[..with.len() - tail.len()].trim_end().to_string();
-    let without_mode = plain.trim_start().to_string().replace(&format!(" {} [default]", g.sep), "");
+    let without_mode = plain
+        .trim_start()
+        .to_string()
+        .replace(&format!(" {} [default]", g.sep), "");
     assert_eq!(head, without_mode, "{with} vs {plain}");
     update(&mut state, Msg::Git(None));
     assert_eq!(cox_tui::status::line(&state).to_string(), plain);
