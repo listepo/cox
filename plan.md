@@ -16,12 +16,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.6 | todo | P3 | 1 | 0% | |
 | T23.7 | todo | P2 | 3 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.6 | todo | P1 | 2 | 0% | |
+| T24.6 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | done | P1 | 1 | 0% | |
 | T25.2 | todo | P0 | 2 | 0% | |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.5 | todo | P1 | 3 | 0% | |
+| T25.5 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T25.6 | done | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
@@ -1083,7 +1083,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T24.6 Footer hints and `?` help
 
-Model: sonnet · Status: open · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
+Model: opus · Status: in progress · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
 Goal: the composer placeholder row shows 3–5 context-dependent hints; `?` on an empty composer opens the full keymap overlay from the one table that also feeds `/help` and the docs.
 Files: `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
 Steps: (1) `commands.rs`: `pub const KEYMAP: &[(&str, &str, Context)]` (`key`, `action`, `Idle|Running|Modal|Overlay`) — the single source; `/help` renders it; a doc test asserts `docs/getting-started.md`'s keymap table matches. (2) `view.rs`: placeholder = the first 3–5 entries for the current context (`Enter send · Shift+Tab mode · @ file · / command · ? help` idle; `Esc stop · Ctrl+B background · Ctrl+O transcript` running). (3) `modal.rs`: `Help` overlay listing `KEYMAP` grouped by context, `Esc`/`?` closes; `?` only when the composer is empty (otherwise it is a character).
@@ -1138,7 +1138,7 @@ Out of scope: an interactive shell (T15.4 completion already helps the line).
 
 #### T25.5 Keybindings file
 
-Model: sonnet · Status: open · Depends: T24.6 · Size: ~160 · Priority: P1 · Complexity: 3
+Model: opus · Status: in progress · Depends: T24.6 · Size: ~160 · Priority: P1 · Complexity: 3
 Goal: `~/.cox/keybindings.toml` rebinds any action in the keymap table; Claude Code's `keybindings.json` is imported read-only for the actions that exist in both; conflicts are reported by `doctor`.
 Files: `crates/cox-tui/src/keymap.rs` (new), `crates/cox-tui/src/state.rs`, `crates/cox-ext/src/claude_settings.rs`.
 Steps: (1) `keymap.rs`: `Action` enum generated from `KEYMAP` (T24.6), `Binding { key, modifiers, context }`, parser for `"ctrl+enter"`, `"shift+tab"`, `"alt+m"`; `Keymap::resolve(KeyEvent, Context) -> Option<Action>`. (2) `state.rs` dispatches through `Keymap` instead of the literal `match` (the literal table becomes the default `Keymap`). (3) `claude_settings.rs`: read `~/.claude/keybindings.json` (`{ "bindings": [{ "key", "command", "when" }] }`) and map the commands cox has (`send`, `newline`, `interrupt`, `mode.cycle`, `transcript`, `help`); unknown commands ignored with a debug log. (4) `doctor`: two actions on one key in one context → warning naming both.
