@@ -13,7 +13,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
-| T23.7 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
 | T24.8 | done | P1 | 1 | 0% | |
@@ -1035,20 +1034,6 @@ mise exec -- cargo nextest run -p cox-tui progress_sequence_follows_turn_state
 ```
 Done when: the sequence test passes and the PTY e2e on a terminal without the capability sees no `9;4`.
 Out of scope: percentages (a turn has no known length).
-
-#### T23.7 Resize hardening
-
-Model: opus · Status: in progress · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
-Goal: a resize mid-stream leaves no duplicated or stale lines in scrollback (ratatui #2086 class).
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/tests/shell.rs`.
-Steps: (1) On `Input::Resize`, set `state.resizing = true`, skip `insert_before` and `draw` until the next tick with a stable size (two identical size reads 16 ms apart), then `terminal.clear()` of the viewport region and a full redraw. (2) Re-measure the inline viewport height (`VIEWPORT_ROWS` clamped to the new height − 2). (3) PTY test resizes 120×40 → 80×24 while a reply streams, then asserts the vt100 scrollback contains each finished cell exactly once.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
-```
-Done when: the test passes on macOS and Linux CI.
-Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (documented in `docs/compat.md`).
-Execution plan: (1) `app.rs`: every loop iteration compares the backend size with the size the `Terminal` was built for; a difference (an `Input::Resize` or a size read) starts settling, a local in `run` (not a `State` field: nothing in `update`/`view` needs it) holding the last read and when it was taken. While settling, no `take_finished`/`insert_before`/`draw` runs, so finished cells wait in `State` and ratatui's own `autoresize` (which clears the whole screen on a narrower width) never fires. (2) On a tick whose size read equals the previous one taken at least 16 ms earlier: query the cursor, subtract the cursor's row offset inside the old viewport (tracked after every draw; a draw that shows no cursor parks it on the viewport's top-left), clear from that row down (the old viewport region only), and rebuild the `Terminal` with `Viewport::Inline(VIEWPORT_ROWS.min(height − 2))`; the same helper builds the first one. Then the queued cells go in and the frame is drawn in full. (3) `kitty_probe.rs`: `COX_PROBE_SCENARIO=resize` feeds 12 cells, starts an assistant reply, streams until the terminal size changes, then finishes the reply and feeds 4 more cells. (4) `tests/shell.rs`: `pty_resize_mid_stream_keeps_scrollback_unique` spawns at 120×40, waits (30 s deadline) for the streaming reply on screen, resizes the vt100 parser and the PTY to 80×24 together, and asserts every cell and the reply appear exactly once across scrollback and screen. The harness models two things real terminals do that the `vt100` crate does not: a shrink keeps the cursor row visible by scrolling the top rows into scrollback, and lines scrolled off a DECSTBM region whose top is row 1 are kept (see the T23.2 note in `research.md`). Verify with the Check, the three workspace commands and a manual run against a scratch `COX_HOME`; Linux CI is not reachable from here.
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 

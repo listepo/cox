@@ -5,7 +5,6 @@
 - T23.4. OSC 52 clipboard
 - T23.5. Notifications
 - T23.6. OSC 9;4 progress
-- T23.7. Resize hardening
 - T24.3. `two-face` syntax set
 - T24.7. Motion and narrow-width polish
 - T25.2. `Shift+Tab` mode cycle and plan-mode view

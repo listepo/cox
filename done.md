@@ -3356,3 +3356,33 @@ clean
 $ mise exec -- cargo fmt --check
 clean for every file this task touched; pre-existing diffs from T28.1 in crates/cox-tui/src/status.rs and crates/cox-tui/tests/status.rs (left untouched)
 ```
+
+#### T23.7 Resize hardening
+
+Model: opus · Status: done 2026-09-24 · Depends: T23.2 · Size: ~80 · Priority: P2 · Complexity: 3
+Goal: a resize mid-stream leaves no duplicated or stale lines in scrollback (ratatui #2086 class).
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/tests/shell.rs`.
+Steps: (1) On `Input::Resize`, set `state.resizing = true`, skip `insert_before` and `draw` until the next tick with a stable size (two identical size reads 16 ms apart), then `terminal.clear()` of the viewport region and a full redraw. (2) Re-measure the inline viewport height (`VIEWPORT_ROWS` clamped to the new height − 2). (3) PTY test resizes 120×40 → 80×24 while a reply streams, then asserts the vt100 scrollback contains each finished cell exactly once.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
+```
+Done when: the test passes on macOS and Linux CI.
+Out of scope: tmux pane-resize quirks beyond what the vt100 fixture reproduces (documented in `docs/compat.md`).
+Execution plan: (1) `app.rs`: every loop iteration compares the backend size with the size the `Terminal` was built for; a difference (an `Input::Resize` or a size read) starts settling, a local in `run` (not a `State` field: nothing in `update`/`view` needs it) holding the last read and when it was taken. While settling, no `take_finished`/`insert_before`/`draw` runs, so finished cells wait in `State` and ratatui's own `autoresize` (which clears the whole screen on a narrower width) never fires. (2) On a tick whose size read equals the previous one taken at least 16 ms earlier: query the cursor, subtract the cursor's row offset inside the old viewport (tracked after every draw; a draw that shows no cursor parks it on the viewport's top-left), clear from that row down (the old viewport region only), and rebuild the `Terminal` with `Viewport::Inline(VIEWPORT_ROWS.min(height − 2))`; the same helper builds the first one. Then the queued cells go in and the frame is drawn in full. (3) `kitty_probe.rs`: `COX_PROBE_SCENARIO=resize` feeds 12 cells, starts an assistant reply, streams until the terminal size changes, then finishes the reply and feeds 4 more cells. (4) `tests/shell.rs`: `pty_resize_mid_stream_keeps_scrollback_unique` spawns at 120×40, waits (30 s deadline) for the streaming reply on screen, resizes the vt100 parser and the PTY to 80×24 together, and asserts every cell and the reply appear exactly once across scrollback and screen. The harness models two things real terminals do that the `vt100` crate does not: a shrink keeps the cursor row visible by scrolling the top rows into scrollback, and lines scrolled off a DECSTBM region whose top is row 1 are kept (see the T23.2 note in `research.md`). Verify with the Check, the three workspace commands and a manual run against a scratch `COX_HOME`; Linux CI is not reachable from here.
+
+Deviations: the settling state is a local in `app::run`, not a `state.resizing` field, because nothing in `update`/`view` reads it (and `state.rs` stays untouched). It starts on any size change the loop sees, not only on `Input::Resize`, so a tick that reaches `draw` before the resize event arrives cannot trigger ratatui's `autoresize` (which clears the whole screen on a narrower width). The scenario runs through `src/bin/kitty_probe.rs` (`COX_PROBE_SCENARIO=resize`) for the same reason as T23.2: `cox-tui` tests cannot spawn `cox`. That adds a third file, and `docs/compat.md` records the leftovers. The size is over the card's ~80: `app.rs` +~70, the probe +~40, and the PTY harness in `tests/shell.rs` +~190. The harness models two behaviours of xterm-class terminals that `vt100` 0.16 lacks: a height shrink scrolls the top rows into scrollback so the cursor row stays visible, and lines scrolled off a DECSTBM region whose top is row 1 are kept. It also resizes only at a frame boundary. Without that, a resize that lands halfway through a frame moves the cursor away from the row the app parked it on, which is a real race; it is recorded in `docs/compat.md`. Without the fix the test lost cell-04…cell-12. With the fix but without the viewport clear, the stale frame showed up twice. Linux CI was not run from the macOS host.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_resize_mid_stream_keeps_scrollback_unique
+PASS cox-tui::shell pty_resize_mid_stream_keeps_scrollback_unique — 1 passed (40 stress runs, plus 20 under CPU load, all passed)
+$ mise exec -- cargo nextest run --workspace
+803 tests run: 803 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean for every file this task touched; pre-existing diffs from T28.1 in crates/cox-tui/src/status.rs and crates/cox-tui/tests/status.rs (left untouched)
+$ real `cox` binary, scratch COX_HOME, COX_PROVIDER=scripted, 120x40 -> 80x24 after five turns (throwaway PTY run, not committed)
+all seven turns in scrollback exactly once; no stale status or composer lines
+```
