@@ -3272,3 +3272,30 @@ $ COX_HOME=/tmp/cox-scratch cargo run -q --bin cox -- --profile minimal doctor |
 prefix: ok 58 tokens (profile minimal)
 ```
 
+#### T24.6 Footer hints and `?` help
+
+Model: opus · Status: done 2026-09-24 · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
+Goal: the composer placeholder row shows 3–5 context-dependent hints; `?` on an empty composer opens the full keymap overlay from the one table that also feeds `/help` and the docs.
+Files: `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/commands.rs`.
+Steps: (1) `commands.rs`: `pub const KEYMAP: &[(&str, &str, Context)]` (`key`, `action`, `Idle|Running|Modal|Overlay`) — the single source; `/help` renders it; a doc test asserts `docs/getting-started.md`'s keymap table matches. (2) `view.rs`: placeholder = the first 3–5 entries for the current context (`Enter send · Shift+Tab mode · @ file · / command · ? help` idle; `Esc stop · Ctrl+B background · Ctrl+O transcript` running). (3) `modal.rs`: `Help` overlay listing `KEYMAP` grouped by context, `Esc`/`?` closes; `?` only when the composer is empty (otherwise it is a character).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hints_follow_context keymap_table_matches_docs
+```
+Done when: the overlay snapshot exists and the doc test pins `docs/getting-started.md`.
+Out of scope: keybinding customisation (T25.5 extends the same table).
+Execution plan: (a) `commands.rs`: `Context { Idle, Running, Modal, Overlay }`, `KEYMAP` rows `(key, action id, context)` for the keys `state.rs`/`composer.rs`/`modal.rs` handle today (`Tab` stays the mode key until T25.2 lands), `keys_for(ctx)`, `/help` = keymap grouped by context + the command list; test `keymap_table_matches_docs` builds the markdown table from `KEYMAP` and asserts `docs/getting-started.md` contains it verbatim. (b) `state.rs` (a fourth file, unavoidable: the key lives there): `Modal::Help`, `State::context()`, `?` on an empty composer with no modal opens it, `Esc`/`?` close it. (c) `modal.rs`: `help_lines` packs each context's rows into width-wrapped lines. (d) `view.rs`: an empty composer draws the first five rows of the current context as dim hints instead of the textarea placeholder; `Modal::Help` draws over the transcript like the diff view. (e) Snapshots: `help_overlay_snapshot`, `placeholder_hints_follow_context`; accept the placeholder change in existing snapshots. Verify with the Check, then nextest/clippy/fmt.
+
+Notes: `Tab` stays the `mode.cycle` key in `KEYMAP` because T25.2 (`Shift+Tab`) is not on `main` yet; T25.2 changes that one row and the docs table. The hints fit the composer width: five when they fit, never fewer than three. `/help` stays a notice (keymap by context, then the commands); `?` opens the overlay. Size: ~200 LOC of code and tests, over the ~120 estimate because the 30-row `KEYMAP` table and its docs twin are data. Four source files instead of three: `state.rs` holds the key dispatch, so `Modal::Help`, `State::context()` and the `?` key had to go there. The placeholder change re-accepted the existing snapshots that show the composer, and `docs/screenshots/*.svg` were regenerated with `just screenshots`. The commit also applies `cargo fmt` to `status.rs` and `tests/status.rs` (left unformatted by T28.1 on `main`) so that `cargo fmt --check` passes.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui help_overlay_snapshot placeholder_hints_follow_context keymap_table_matches_docs
+3 passed (view::tests::help_overlay_snapshot, view::tests::placeholder_hints_follow_context, commands::tests::keymap_table_matches_docs)
+$ mise exec -- cargo nextest run --workspace
+804 tests run: 804 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
