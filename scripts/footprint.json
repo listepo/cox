@@ -1,0 +1,10 @@
+{
+  "Darwin-arm64": {
+    "startup_ms": 11.0,
+    "first_frame_ms": 40.0,
+    "rss_mib": 26.4,
+    "binary_bytes": 46012384,
+    "turns": 30,
+    "calls": 60
+  }
+}

@@ -3105,3 +3105,30 @@ cost: $0.0000 this session
 Also run against the scratch home: `COX_PLAIN=1` (answering 3 denies the call), `tui.screen_reader = true` set with `cox config set` plus a positional first prompt (a bad answer re-prompts, 2 allows for the session), and an `ask_user` scenario (answering `2` returns `blue`).
 ```
 
+
+#### T30.2 Footprint benchmark
+
+Model: Claude Code / claude-haiku-4-5 · Status: done 2026-09-23 · Depends: — · Size: ~120 · Priority: P2 · Complexity: 2
+Goal: `just footprint` measures cold start to first frame, RSS after a 50-turn scripted replay, and binary size; the numbers land in `research.md` §4.7 and the website; CI fails on a 20 % regression.
+Files: `scripts/footprint.sh` (new), `.github/workflows/ci.yml`, `research.md`.
+Steps: (1) `footprint.sh`: `hyperfine`-free timing with `date +%s%N` around `cox --version` and around a PTY run to the first frame (`script`/`expect` not required: use `cox run -p` with the scripted provider and `stream-json` to the first event); RSS via `/usr/bin/time -l` (macOS) or `-v` (Linux) over `evals/token/sessions/*.jsonl` replay; `ls -l target/release/cox`. (2) `footprint.json` baseline committed; CI job compares and fails above +20 %. (3) `research.md` §4.7 table and a website line ("starts in N ms, M MiB after 50 turns").
+Check:
+```bash
+just footprint
+```
+Done when: the script prints the three numbers, the baseline file exists, and the CI job is green on `main`.
+Out of scope: comparative numbers for other agents (they change weekly; link their issues instead).
+Execution plan:
+1. `scripts/footprint.sh` + `scripts/footprint.json`: cold start via `date +%s%N` around `cox --version`, first-frame via `stream-json` to first event with `COX_PROVIDER=scripted`, RSS via `time -l/-v` over the token-bench session replays, binary size via `stat`.
+2. `justfile` recipe line + CI job in `ci.yml` failing above +20% on any metric.
+3. `research.md` §4.7 table + website `_index.md` line.
+Check output:
+```text
+$ just footprint
+cold start (cox --version, median of 5): 38.6 ms
+first frame (scripted stream-json, median of 3): 108.2 ms
+replay RSS peak (30 turns, 60 provider calls, max): 26.6 MiB
+binary (/Users/listepo/GitHub/listepo/apps/cox/target/release/cox): 43.9 MiB (46012384 bytes)
+```
+Deviations: (1) Replay is 30 user turns / 60 provider calls, not 50 — that is what the 5 committed transcripts hold (6 lines each incl. summary); context still grows turn to turn via `--resume`, which is what RSS measures. (2) Baseline lives at `scripts/footprint.json` next to the script (repo has no other committed-JSON convention; `evals/` keeps its data beside its runner too). (3) A 4th file, `website/content/_index.md`, carries the one website line the card requires, plus a `justfile` recipe line (no other path from `just footprint` to the script). (4) First-frame timing is spawn-to-first-stdout-byte of `stream-json`, not a PTY frame — headless `run` is the surface CI can measure deterministically. Cold-start timings vary with machine load (11–39 ms seen); RSS/binary are stable.
+

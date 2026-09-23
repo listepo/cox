@@ -17,6 +17,12 @@ eval *args:
 bench:
     mise exec -- cargo run -q -p cox --example bench
 
+# Footprint benchmark (plan.md T30.2): cold start, first frame, replay RSS
+# peak and binary size. `--write` refreshes scripts/footprint.json (commit
+# the result); `--check` fails on a >20% regression vs the baseline (CI).
+footprint *args:
+    bash scripts/footprint.sh {{args}}
+
 # Optimized single-binary build (fat LTO, one codegen unit, stripped) and its
 # size. Same profile cargo-dist ships, so what you measure is what users get.
 # Ask cargo for the target dir rather than assuming ./target — a shared

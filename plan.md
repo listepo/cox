@@ -32,7 +32,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
 | T30.1 | todo | P2 | 2 | 0% | |
-| T30.2 | todo | P2 | 2 | 0% | |
+| T30.2 | done | P2 | 2 | 0% | Claude Code / claude-haiku-4-5 |
 | T30.3 | todo | P2 | 2 | 0% | |
 
 ## Reference
@@ -1305,19 +1305,6 @@ mise exec -- cargo nextest run -p cox-core minimal_prefix_under_1000_tokens pref
 ```
 Done when: the test passes and `docs/config.md` documents profiles.
 Out of scope: automatic profile selection.
-
-#### T30.2 Footprint benchmark
-
-Model: haiku · Status: open · Depends: — · Size: ~120 · Priority: P2 · Complexity: 2
-Goal: `just footprint` measures cold start to first frame, RSS after a 50-turn scripted replay, and binary size; the numbers land in `research.md` §4.7 and the website; CI fails on a 20 % regression.
-Files: `scripts/footprint.sh` (new), `.github/workflows/ci.yml`, `research.md`.
-Steps: (1) `footprint.sh`: `hyperfine`-free timing with `date +%s%N` around `cox --version` and around a PTY run to the first frame (`script`/`expect` not required: use `cox run -p` with the scripted provider and `stream-json` to the first event); RSS via `/usr/bin/time -l` (macOS) or `-v` (Linux) over `evals/token/sessions/*.jsonl` replay; `ls -l target/release/cox`. (2) `footprint.json` baseline committed; CI job compares and fails above +20 %. (3) `research.md` §4.7 table and a website line ("starts in N ms, M MiB after 50 turns").
-Check:
-```bash
-just footprint
-```
-Done when: the script prints the three numbers, the baseline file exists, and the CI job is green on `main`.
-Out of scope: comparative numbers for other agents (they change weekly; link their issues instead).
 
 #### T30.3 Eval run with a verification step
 

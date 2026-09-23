@@ -24,5 +24,4 @@
 - T28.2. Project cost aggregate
 - T29.2. Reduced motion and daltonized themes
 - T30.1. `profile = "minimal"`
-- T30.2. Footprint benchmark
 - T30.3. Eval run with a verification step
