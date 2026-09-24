@@ -3584,3 +3584,31 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T26.4 `/undo`, `/redo`
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: T26.2 · Size: ~60 · Priority: P2 · Complexity: 1
+Goal: aliases for a one-step code-only rewind and its inverse.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-core/src/session.rs`.
+Steps: (1) `/undo` = `Rewind { to_turn: current − 1, code: true, conversation: false }`. (2) `/redo` = restore the checkpoints written *by* the last rewind (they carry `call_id = NULL` and a `rewind` marker row) — one step. (3) Both in the palette and `/help`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core undo_then_redo_is_identity
+```
+Execution plan: (1) `cox-tui` `commands.rs`: `/undo`, `/redo` actions, palette and `/help` rows; `state.rs`: `/undo` submits `Rewind { to_turn: <last user turn>, code: true, conversation: false }` (the start of the last turn — "current − 1" read as the turn before the next one), `/redo` submits a new `Submission::Redo`. (2) `cox-protocol`: `Submission::Redo` (+ roundtrip case, regenerated `docs/protocol.jsonschema`). (3) `cox-core` `rewind.rs`: `redo()` finds the last `Turn` marker; if its rows are a rewind's own writes (`call = None`, non-marker) and it is not the rewind a `/redo` itself wrote, it rewinds code to that turn — one step; otherwise a `Warn` notice. (4) `cells.rs`: an ok card with a diff ends its result line with `/undo`. Test `undo_then_redo_is_identity` in `crates/cox-core/tests/rewind.rs` over an in-memory-disk checkpointer.
+Done when: the test passes and the fold line of a tool card mentions `/undo` after an edit.
+Out of scope: multi-step redo history.
+
+Deviations: `/undo` rewinds code to the start of the last user turn (`to_turn` = that turn's `seq`). The card's "current − 1" is read as the turn before the next one: rewinding to `seq − 1` would also undo the turn before it. `/redo` needed a new `Submission::Redo` (in §1.2, with a roundtrip case and a regenerated `docs/protocol.jsonschema`), because only the core knows the turn number a rewind wrote its own pre-images under. It stays a thin call to the existing `rewind(seq, code, !conversation)`. No marker row was added. A rewind's writes are already recognisable: they sit under the latest `Turn` marker, and every row under it has `call = None`. `Inner.redone` remembers the turn a redo wrote under, so a second `/redo` warns instead of toggling. After any new user turn, `/redo` warns as well. The `/undo` hint goes on the result line of every successful card that carries a diff. The shared TUI test helper `common::type_line` now returns Enter's `Cmd`s. Files beyond the card's two: `cox-protocol` `types.rs`, `rewind.rs`, `cells.rs`, `state.rs`, tests (`cox-core/tests/rewind.rs`, `cox-tui/tests/rewind.rs`, `tests/common`), snapshots (the approval diff, the daltonized frames, the help overlay) and `docs/screenshots/help_overlay.svg`.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core undo_then_redo_is_identity
+1 test run: 1 passed
+$ mise exec -- cargo nextest run --workspace
+839 tests run: 839 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```

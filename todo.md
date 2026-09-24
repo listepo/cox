@@ -5,7 +5,6 @@
 - T23.6. OSC 9;4 progress
 - T24.3. `two-face` syntax set
 - T25.8. Cross-session prompt history
-- T26.4. `/undo`, `/redo`
 - T27.2. Approvals labelled by source; agent cards
 - T27.4. `/loop`
 - T30.3. Eval run with a verification step
