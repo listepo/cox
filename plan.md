@@ -12,7 +12,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.6 | todo | P3 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
-| T25.3 | in progress | P1 | 2 | 10% | Claude Code / claude-opus-5-5 |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 0% | |
@@ -1041,20 +1040,6 @@ Done when: both snapshots exist and `docs/config.md` documents `tui.motion`.
 Out of scope: tachyonfx-style effects (none planned).
 
 ### P25 — Composer and flow (goal: the keys a Claude Code or Codex user already has in their fingers)
-
-#### T25.3 `!` shell line
-
-Model: Claude Code / claude-opus-5-5 · Status: in progress · Depends: — · Size: ~110 · Priority: P1 · Complexity: 2
-Goal: a composer line starting with `!` runs through the `bash` tool (same sandbox, rules and archive) as a user-initiated card; the result reaches the model only with `!!`.
-Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`.
-Steps: (1) `commands.rs`: `!cmd` → `Action::Shell { cmd, share: false }`, `!!cmd` → `share: true`. (2) `Submission::UserShell { command, share }` (new protocol variant, §1.2 amendment in the commit): the core runs the `bash` tool through the permission engine and sandbox exactly like a model call, emits the usual `ToolCall*` events with `origin: User`, and appends a `UserMessage` with the output only when `share`. (3) The card shows `$ cmd` as its header; `Esc` cancels through the same token.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_out_of_history bang_bang_line_enters_history
-```
-Done when: the loop scenarios pass and the next request after `!ls` is byte-identical to the one before it (prefix invariant).
-Out of scope: an interactive shell (T15.4 completion already helps the line).
-Execution plan: (a) `cox-protocol` `Submission::UserShell { command, share }` + roundtrip case. (b) `cox-core` `Session::user_shell`: refused with a warning unless `Idle`; fresh cancel token; `turn::run_tools` with one `bash` call (hooks, engine, sandbox, archive as for the model); on `share` push one user message `$ cmd` + visible output, following `publish_task_result`. (c) `cox-core/tests/user_shell.rs`: history before/after `!` serializes byte-identical; `!!` adds one message. (d) `cox-tui`: `commands::parse` maps `!`/`!!` to `Action::Shell`; `State` remembers the pending command, the matching `ToolCallRequested` becomes a `Cell::Tool { user: true }` drawn as `$ cmd`, and marks the TUI busy until its `ToolCallDone`, so `Esc` interrupts it. Deviation: the user origin lives on the TUI cell, not on `ToolCall` (an `origin` field touches ~45 literals); `crates/cox/src/session.rs` needs no change.
 
 #### T25.8 Cross-session prompt history
 
