@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="864" height="564" viewBox="0 0 864 564" font-family="SF Mono, Menlo, DejaVu Sans Mono, Consolas, monospace" font-size="14">
 <rect width="100%" height="100%" rx="8" fill="#1e1e1e"/>
-<text x="12.0" y="25.0" textLength="840.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">› list the tree                                                                                     </text>
-<text x="12.0" y="43.0" textLength="840.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">⚙ bash seq 20 · 12ms                                                                                </text>
+<text x="12.0" y="25.0" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" font-weight="bold">› list the tree</text>
+<text x="12.0" y="43.0" textLength="168.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">⚙ bash seq 20 · 12ms</text>
 <text x="12.0" y="61.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
 <text x="28.8" y="61.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">src/file01.rs                                                                                     </text>
 <text x="12.0" y="79.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
@@ -14,8 +14,8 @@
 <text x="28.8" y="133.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">src/file05.rs                                                                                     </text>
 <text x="12.0" y="151.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
 <text x="28.8" y="151.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">src/file06.rs                                                                                     </text>
-<text x="12.0" y="169.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
-<text x="28.8" y="169.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">… 9 more lines                                                                                    </text>
+<text x="12.0" y="169.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd" fill-opacity="0.6">│ </text>
+<text x="28.8" y="169.0" textLength="117.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" fill-opacity="0.6">… 9 more lines</text>
 <text x="12.0" y="187.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
 <text x="28.8" y="187.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">src/file16.rs                                                                                     </text>
 <text x="12.0" y="205.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
@@ -26,8 +26,8 @@
 <text x="28.8" y="241.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">src/file19.rs                                                                                     </text>
 <text x="12.0" y="259.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
 <text x="28.8" y="259.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">src/file20.rs                                                                                     </text>
-<text x="12.0" y="277.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd">│ </text>
-<text x="28.8" y="277.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">✓ 279B 12ms                                                                                       </text>
+<text x="12.0" y="277.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#11a8cd" fill-opacity="0.6">│ </text>
+<text x="28.8" y="277.0" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" fill-opacity="0.6">✓ 279B 12ms</text>
 <text x="12.0" y="529.0" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">&gt; </text>
 <text x="28.8" y="529.0" textLength="823.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#666666">Esc interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter send now · Ctrl+U unqueue       </text>
 <text x="12.0" y="547.0" textLength="840.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" fill-opacity="0.6">sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · ⎇ main +12 −3 · [default] · working                             </text>

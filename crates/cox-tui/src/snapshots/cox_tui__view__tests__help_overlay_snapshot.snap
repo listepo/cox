@@ -4,7 +4,7 @@ expression: "buffer_to_string(&render(&state, 80, 15))"
 ---
  keys · Esc or ? closes
  idle
-   Enter send · Tab mode cycle · @ file · / command · ? help
+   Enter send · Shift+Tab mode cycle · @ file · / command · ? help
    Shift+Enter newline · Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history
    Ctrl+T thinking · Ctrl+O transcript · Ctrl+E expand · Ctrl+G diff
    Ctrl+C quit · Ctrl+D quit

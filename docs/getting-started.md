@@ -32,7 +32,7 @@ five rows for where you are (idle, a running turn, a modal, an overlay).
 | Key | Action | Context |
 | --- | --- | --- |
 | `Enter` | send | idle |
-| `Tab` | mode.cycle | idle |
+| `Shift+Tab` | mode.cycle | idle |
 | `@` | file | idle |
 | `/` | command | idle |
 | `?` | help | idle |

@@ -5,5 +5,5 @@ expression: "buffer_to_string(&render(&state, 60, 5))"
 title ␛ clip ␛ up ␛ bell ␇ rtl ⇄exe zw a∅b
 
 
-> Enter send · Tab mode cycle · @ file · / command
+> Enter send · Shift+Tab mode cycle · @ file · / command
 - · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="864" height="312" viewBox="0 0 864 312" font-family="SF Mono, Menlo, DejaVu Sans Mono, Consolas, monospace" font-size="14">
 <rect width="100%" height="100%" rx="8" fill="#1e1e1e"/>
-<text x="12.0" y="25.0" textLength="840.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4">› run the tests                                                                                     </text>
+<text x="12.0" y="25.0" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" font-weight="bold">› run the tests</text>
 <text x="12.0" y="223.0" textLength="310.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#e5e510" font-weight="bold"> approve bash cargo test --workspace?</text>
 <text x="12.0" y="241.0" textLength="210.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4" fill-opacity="0.6"> exec risk needs approval</text>
 <text x="12.0" y="259.0" textLength="840.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="#d4d4d4"> [y]es  [s]ession  [n]o  [e]dit                                                                     </text>

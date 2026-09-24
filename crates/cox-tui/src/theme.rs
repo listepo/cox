@@ -17,6 +17,7 @@
 
 use std::path::Path;
 
+use cox_protocol::types::PermissionMode;
 use ratatui::style::Color;
 use toml_edit::{DocumentMut, Item};
 
@@ -53,6 +54,17 @@ pub struct Theme {
 pub const ALERT_FG: Color = Color::Black;
 
 impl Theme {
+    /// The tint of the composer prompt in `mode` (T25.2); the default mode
+    /// is plain text so only a mode that changes what runs stands out.
+    pub fn mode(&self, mode: PermissionMode) -> Color {
+        match mode {
+            PermissionMode::Default => self.text,
+            PermissionMode::Plan => self.mode_plan,
+            PermissionMode::Auto => self.mode_auto,
+            PermissionMode::Bypass => self.mode_bypass,
+        }
+    }
+
     /// The colours this crate used before T24.1, given a name instead of a
     /// literal at each call site — the token values below are exactly what
     /// used to sit inline, so a dark-theme render is unchanged.

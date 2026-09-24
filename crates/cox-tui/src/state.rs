@@ -568,6 +568,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             state.modal = Some(Modal::Picker(picker));
             return Vec::new();
         }
+        // T25.2: `Tab` completes the `@`/`/` token under the cursor with the
+        // picker typing the sigil would have opened, its query pre-filled.
+        if let Some((sigil, query)) = state.composer.take_token() {
+            let picker = match sigil {
+                '@' => Picker::open(Kind::Files, state.files.clone()),
+                _ => Picker::open(
+                    Kind::Commands,
+                    state.commands.iter().map(|(n, ..)| n.clone()).collect(),
+                ),
+            };
+            state.modal = Some(Modal::Picker(picker.with_query(&query)));
+            return Vec::new();
+        }
     }
     // T25.5: every other key the TUI owns goes through the keymap; a key it
     // does not claim falls through to the modal or the composer.
@@ -631,6 +644,11 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 // that opened it, as the user meant.
                 Pick::Closed if key.code == KeyCode::Backspace && picker.kind != Kind::Shell => {
                     state.composer.key(key, state.status.busy);
+                }
+                // `Esc` gives back what was typed after the sigil, so a
+                // `Tab` that found nothing costs no text (T25.2).
+                Pick::Closed if matches!(picker.kind, Kind::Files | Kind::Commands) => {
+                    state.composer.insert(&picker.query);
                 }
                 Pick::Closed => {}
                 Pick::Chosen(choice) if picker.kind == Kind::Rewind => {

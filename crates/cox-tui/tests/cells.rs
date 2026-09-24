@@ -283,3 +283,36 @@ fn ctrl_e_expands_last_card() {
         "the previously hidden tail should now be visible:\n{expanded}"
     );
 }
+
+/// T25.2 step 3: plan mode refusing an `edit` is one dim `planned` line with
+/// the plan glyph, not a red card with the denial as its body.
+#[test]
+fn plan_mode_denial_renders_as_planned_line() {
+    let mut s = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
+    let id = requested(&mut s, "edit", "src/lib.rs", Risk::Write);
+    update(
+        &mut s,
+        Msg::Event(Event::ToolCallDone {
+            call_id: id,
+            result: ToolResult {
+                ok: false,
+                visible: "permission denied: plan mode: only read-only tools run; \
+                          describe the change instead"
+                    .into(),
+                archive: None,
+                bytes: 0,
+                duration_ms: 0,
+                diff: None,
+            },
+        }),
+    );
+    let lines = cell_lines(tool_cell(&s), &s.look(WIDTH));
+    assert_eq!(lines.len(), 1);
+    assert!(
+        lines[0]
+            .spans
+            .iter()
+            .all(|sp| sp.style.fg == Some(s.theme.dim))
+    );
+    insta::assert_snapshot!(text(&s, tool_cell(&s)), @"▷ planned: edit src/lib.rs");
+}

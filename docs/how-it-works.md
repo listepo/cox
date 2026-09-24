@@ -130,7 +130,7 @@ assert!(matches!(
 keeps it compiling. A matching doctest on
 `cox_protocol::types::Submission` covers the `UserTurn` JSON shape.)
 
-`plan` permission mode (`Tab` in the TUI) denies every non-`ReadOnly`
+`plan` permission mode (`Shift+Tab` in the TUI) denies every non-`ReadOnly`
 call without prompting, so the model learns to describe the change
 instead of making it.
 

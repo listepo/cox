@@ -416,7 +416,11 @@ mod tests {
         assert_eq!(shown("alt+m"), "Alt+M");
         let map = Keymap::default();
         let backtab = key(KeyCode::BackTab, s);
-        assert_eq!(map.resolve(backtab, Context::Idle), None);
+        assert_eq!(map.resolve(backtab, Context::Idle), Some(Action::ModeCycle));
+        assert_eq!(
+            map.resolve(key(KeyCode::Tab, KeyModifiers::NONE), Context::Idle),
+            None
+        );
         assert_eq!(
             map.resolve(key(KeyCode::Char('?'), s), Context::Idle),
             Some(Action::Help)

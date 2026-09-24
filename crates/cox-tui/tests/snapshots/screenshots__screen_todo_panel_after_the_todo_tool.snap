@@ -19,5 +19,5 @@ Three steps; starting the second.
  [x] read the cost ledger
  [~] add the cache-write column
  [ ] snapshot the status line
-> Enter send · Tab mode cycle · @ file · / command · ? help
+> Enter send · Shift+Tab mode cycle · @ file · / command · ? help
 sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]
