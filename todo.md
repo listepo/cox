@@ -8,5 +8,4 @@
 - T26.4. `/undo`, `/redo`
 - T27.2. Approvals labelled by source; agent cards
 - T27.4. `/loop`
-- T29.2. Reduced motion and daltonized themes
 - T30.3. Eval run with a verification step
