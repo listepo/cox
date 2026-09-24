@@ -179,6 +179,13 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_strips_model_osc8() {
+        let link = "\u{1b}]8;;https://evil.test\u{1b}\\click\u{1b}]8;;\u{1b}\\ me";
+        assert_eq!(sanitize(link), "click me");
+        assert_eq!(sanitize("\u{9d}8;;file:///etc\u{9c}x"), "x");
+    }
+
+    #[test]
     fn truncate_counts_columns_not_bytes() {
         assert_eq!(truncate("漢字漢字", 5), "漢字…");
         assert_eq!(truncate("short", 10), "short");

@@ -513,7 +513,8 @@ mod tests {
     #[test]
     fn no_color_literal_outside_theme() {
         let src = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src"));
-        let exempt = ["theme.rs", "color.rs", "svg.rs", "markdown.rs"];
+        // `link.rs` holds a sentinel the terminal never sees, not a colour.
+        let exempt = ["theme.rs", "color.rs", "svg.rs", "markdown.rs", "link.rs"];
         let mut offenders = Vec::new();
         for entry in std::fs::read_dir(src).expect("read cox-tui/src") {
             let entry = entry.expect("dir entry");
