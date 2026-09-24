@@ -5,14 +5,16 @@
 //! this crate; the presets are plain data here for the same reason.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{ItemId, TaskId};
 use cox_protocol::traits::{Tool, ToolCx, Worktree};
 use cox_protocol::types::{
-    Concurrency, Content, Event, HookEvent, HookOutcome, Job, Message, ModelId, ProviderEvent,
-    Request, Risk, Role, Submission, SystemBlock, Tier, ToolOutput, ToolSpec,
+    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Message,
+    ModelId, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock, Tier, ToolCall,
+    ToolOutput, ToolSpec, Why,
 };
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -76,11 +78,16 @@ pub fn slice(parent_cap: f64, parent_spent: f64, requested: Option<f64>) -> f64 
 /// `agent`: delegates a task to a child session and returns its answer.
 pub struct AgentTool {
     parent: Session,
+    /// Children spawned so far; numbers their names (`explore-2`, T27.2).
+    spawned: AtomicU32,
 }
 
 impl AgentTool {
     pub(crate) fn new(parent: Session) -> Self {
-        Self { parent }
+        Self {
+            parent,
+            spawned: AtomicU32::new(0),
+        }
     }
 
     fn preset(input: &Value) -> Result<Preset, ToolError> {
@@ -240,6 +247,11 @@ impl Tool for AgentTool {
             return Err(ToolError::Io);
         };
         let label = format!("{}: {}", preset.name, first_line(&task_text));
+        let name = format!(
+            "{}-{}",
+            preset.name,
+            self.spawned.fetch_add(1, Ordering::Relaxed) + 1
+        );
         // SubagentStart gates both paths; a Block means the task never existed.
         if let HookOutcome::Block { reason } = hooks::fire(
             &self.parent,
@@ -273,6 +285,7 @@ impl Tool for AgentTool {
             let bg_label = label.clone();
             tokio::spawn(async move {
                 let io = RunIo {
+                    name,
                     preset,
                     tier,
                     events,
@@ -325,6 +338,7 @@ impl Tool for AgentTool {
             child,
             task_text,
             RunIo {
+                name,
                 preset,
                 tier,
                 events,
@@ -370,6 +384,41 @@ impl Tool for AgentTool {
     }
 }
 
+/// T27.2: the child's own event stream has no surface, so its prompt is
+/// raised on the parent's, labelled with the agent, and the parent's
+/// `Submission::Approve` for that call is handed back to the child. If the
+/// child is cancelled first it answers itself `Deny`, and the relayed
+/// `ApprovalDecided` closes the prompt.
+async fn relay_approval(parent: &Session, child: &Session, call: ToolCall, why: Why, io: &RunIo) {
+    let id = call.id;
+    let decision = parent.relay_decision(id).await;
+    let source = Source {
+        session: child.id(),
+        agent: Some(io.name.clone()),
+        preset: Some(io.preset.name.to_string()),
+    };
+    let asked = parent.emit(Event::ApprovalRequired {
+        call,
+        why,
+        source: Some(source),
+    });
+    if asked.await.is_err() {
+        return;
+    }
+    let child = child.clone();
+    tokio::spawn(async move {
+        let decision = decision.await.unwrap_or(Decision::Deny {
+            reason: "session closed".into(),
+        });
+        let _ = child
+            .submit(Submission::Approve {
+                call_id: id,
+                decision,
+            })
+            .await;
+    });
+}
+
 /// What one child run produced, foreground or background.
 struct TaskOutcome {
     answer: String,
@@ -380,6 +429,8 @@ struct TaskOutcome {
 
 /// How one child run is driven and observed.
 struct RunIo {
+    /// `<preset>-<n>`: how its approvals are labelled on the parent's surface.
+    name: String,
     preset: Preset,
     tier: Tier,
     events: mpsc::Receiver<Event>,
@@ -428,6 +479,14 @@ async fn run_task(
                     let _ = io.progress.send(format!("[{}] {}\n", io.preset.name, call.name)).await;
                 }
                 Some(Event::TurnDone { .. }) => break Ok(()),
+                Some(Event::ApprovalRequired { call, why, .. }) => {
+                    relay_approval(parent, &child, call, why, &io).await;
+                }
+                // Closes the prompt the relay opened on the parent's surface;
+                // a rule's verdict never opened one.
+                Some(ev @ Event::ApprovalDecided { by: DecidedBy::User, .. }) => {
+                    let _ = parent.emit(ev).await;
+                }
                 Some(_) => {}
                 None => break Err(ToolError::Io),
             },

@@ -336,8 +336,9 @@ async fn drive_prompt(
     let stop = loop {
         match bcast.recv().await {
             Ok(Event::TurnDone { stop, .. }) => break stop,
-            Ok(Event::ApprovalRequired { call, why }) => {
-                let decision = ask_permission(&conn, acp_id, &call, &why).await;
+            Ok(Event::ApprovalRequired { call, why, source }) => {
+                let agent = source.and_then(|s| s.agent);
+                let decision = ask_permission(&conn, acp_id, &call, &why, agent).await;
                 let _ = live
                     .cox
                     .submit(Submission::Approve {
@@ -368,16 +369,22 @@ async fn drive_prompt(
 }
 
 /// `ApprovalRequired` → `session/request_permission` with allow,
-/// allow-always and reject options.
+/// allow-always and reject options; a subagent's prompt (T27.2) names it
+/// in the title, the one field every client shows.
 async fn ask_permission(
     conn: &ConnectionTo<Client>,
     acp_id: &SessionId,
     call: &ToolCall,
     why: &Why,
+    agent: Option<String>,
 ) -> Decision {
     let _ = why;
+    let title = match agent {
+        Some(agent) => format!("{agent} asks: {} {}", call.name, call.subject),
+        None => format!("{} {}", call.name, call.subject),
+    };
     let fields = agent_client_protocol::schema::v1::ToolCallUpdateFields::new()
-        .title(Some(format!("{} {}", call.name, call.subject)))
+        .title(Some(title))
         .status(Some(
             agent_client_protocol::schema::v1::ToolCallStatus::Pending,
         ));

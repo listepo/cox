@@ -589,6 +589,21 @@ pub enum HookOutcome {
     },
 }
 
+/// The session an approval comes from (T27.2). A subagent's is relayed to
+/// its parent's surface, so the prompt names the agent that is asking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Source {
+    /// The session whose call waits.
+    pub session: SessionId,
+    /// The subagent's name (`explore-2`); `None` for the session the user
+    /// is talking to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// The subagent's preset (`explore`, `shell`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+}
+
 /// What one cox process on a workspace is doing right now (plan.md A14).
 /// Written by `cox_ext::presence` from the hook seam, read by every other
 /// session of the same project and by the TUI's `/agents`.
@@ -811,6 +826,10 @@ pub enum Event {
         call: ToolCall,
         /// Why it needs one.
         why: Why,
+        /// Who is asking (T27.2); `None` only on rollout lines written
+        /// before the field existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<Source>,
     },
     /// A pending approval was decided.
     ApprovalDecided {
@@ -1217,7 +1236,7 @@ mod tests {
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into() } })]
-    #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into() }, why: Why::Risk { risk: Risk::Exec } })]
+    #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into() }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None } })]

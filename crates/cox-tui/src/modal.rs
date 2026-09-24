@@ -34,6 +34,8 @@ pub struct Approval {
     pub why: Why,
     /// `e`: the command as edited so far; the cursor sits at its end.
     pub editing: Option<String>,
+    /// The subagent asking (T27.2); `None` for the session itself.
+    pub agent: Option<String>,
 }
 
 impl Approval {
@@ -42,7 +44,14 @@ impl Approval {
             call,
             why,
             editing: None,
+            agent: None,
         }
+    }
+
+    /// Labels the prompt with the subagent it came from.
+    pub fn from_agent(mut self, agent: Option<String>) -> Self {
+        self.agent = agent;
+        self
     }
 
     fn editable(&self) -> bool {
@@ -136,14 +145,22 @@ impl Approval {
             None if self.editable() => " [y]es  [s]ession  [n]o  [e]dit".to_string(),
             None => " [y]es  [s]ession  [n]o".to_string(),
         };
-        let mut out = vec![Line::styled(
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let mut header = Line::styled(
             format!(
                 " approve {} {}?",
                 sanitize(&self.call.name),
                 sanitize(&self.call.subject)
             ),
-            Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
-        )];
+            bold.fg(theme.warn),
+        );
+        if let Some(agent) = &self.agent {
+            let asks = format!(" {} asks:", sanitize(agent));
+            header
+                .spans
+                .insert(0, Span::styled(asks, bold.fg(theme.agent)));
+        }
+        let mut out = vec![header];
         if let Some(d) = self.proposed() {
             let look = Look {
                 show_diffs: true,

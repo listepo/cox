@@ -86,6 +86,9 @@ expression: value
     "why": {
       "type": "risk",
       "risk": "write"
+    },
+    "source": {
+      "session": "<id>"
     }
   },
   {

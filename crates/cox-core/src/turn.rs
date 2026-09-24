@@ -11,8 +11,8 @@ use cox_protocol::ids::{CallId, ItemId, TurnId};
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
-    ModelId, Risk, Role, SandboxMode, SandboxPolicy, StopReason, ToolCall, ToolOutput, ToolResult,
-    Usage, Why,
+    ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall, ToolOutput,
+    ToolResult, Usage, Why,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -307,6 +307,13 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
         .emit(Event::ApprovalRequired {
             call: call.clone(),
             why,
+            // A subagent's prompt is relabelled by `subagent::run_task`
+            // on its way to the parent's surface.
+            source: Some(Source {
+                session: session.id(),
+                agent: None,
+                preset: None,
+            }),
         })
         .await?;
     let cancel = session.cancel_token();
