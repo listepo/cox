@@ -577,6 +577,7 @@ impl Session {
                 conversation,
             } => self.rewind(to_turn, code, conversation).await,
             Submission::Background { call_id } => self.background(call_id).await,
+            Submission::UserShell { command, share } => self.user_shell(command, share).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
@@ -1309,6 +1310,54 @@ impl Session {
             model,
         })
         .await
+    }
+
+    /// A composer `!` line (T25.3). The call takes the model's path
+    /// (`run_tools`: `PreToolUse`, the engine, the sandbox, the archive) so
+    /// a user command is no more trusted than a model one. Refused outside
+    /// `Idle`: a shell result landing mid-turn would split a tool_use from
+    /// its tool_result in history.
+    async fn user_shell(&self, command: String, share: bool) -> Result<(), CoreError> {
+        let busy = {
+            let mut inner = self.inner.lock().await;
+            let busy = inner.state != State::Idle;
+            if !busy {
+                inner.state = State::RunningTools;
+            }
+            busy
+        };
+        if busy {
+            return self
+                .emit(Event::Notice {
+                    level: Level::Warn,
+                    text: "a turn is running; `!` waits until it ends".into(),
+                })
+                .await;
+        }
+        {
+            // A previous `Esc` left the token cancelled.
+            let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
+            *c = CancellationToken::new();
+        }
+        let input = serde_json::json!({ "command": command });
+        let ran = run_tools(
+            self,
+            TurnId::new(),
+            vec![(CallId::new(), "bash".into(), input)],
+        )
+        .await;
+        let mut inner = self.inner.lock().await;
+        inner.state = State::Idle;
+        let results = ran?;
+        if share && let Some((_, result)) = results.first() {
+            inner.history.push(Message {
+                role: Role::User,
+                content: vec![Content::Text {
+                    text: format!("$ {command}\n{}", result.visible),
+                }],
+            });
+        }
+        Ok(())
     }
 
     pub(crate) async fn set_state(&self, state: State) {

@@ -101,6 +101,7 @@ pub enum Submission {
     Command(SlashCommand),                                    // parsed by the surface, executed by the core
     HookResult { hook_id: String, outcome: HookOutcome },     // hook runner is outside the core
     Background { call_id: CallId },                           // Ctrl+B: detach a running bash/agent call into a task (T27.1)
+    UserShell { command: String, share: bool },               // composer `!`/`!!`: bash via the engine and sandbox; history only on share (T25.3)
     Shutdown,
 }
 

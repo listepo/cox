@@ -2358,6 +2358,29 @@
         ]
       },
       {
+        "description": "A composer `!` line (T25.3): `bash` runs under the same hooks,\npermission engine and sandbox as a model call. Only `share` (`!!`)\nlets the output into history; otherwise the next request is\nbyte-identical to the one before it.",
+        "type": "object",
+        "properties": {
+          "command": {
+            "description": "The command line, without the `!`/`!!`.",
+            "type": "string"
+          },
+          "share": {
+            "description": "`!!`: append the output to history for the model.",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "const": "user_shell"
+          }
+        },
+        "required": [
+          "type",
+          "command",
+          "share"
+        ]
+      },
+      {
         "description": "Wind down the session cleanly.",
         "type": "object",
         "properties": {
