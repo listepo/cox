@@ -658,6 +658,9 @@ pub struct TuiConfig {
     /// ends, an approval waits or `ask_user` asks — `auto` only while the
     /// terminal is unfocused; an unknown value is `auto`.
     pub notify: String,
+    /// `full` | `reduced` (T24.7): `reduced` stops the running-tool spinner
+    /// and its ticking elapsed time; an unknown value is `full`.
+    pub motion: String,
     /// `[tui.caps]` (T23.0): overrides one named `cox_tui::term::Caps`
     /// field (`osc8 = false`) for a terminal `Caps::detect`/`query` guesses
     /// wrong about. An unrecognised name is ignored, not rejected.
@@ -680,6 +683,7 @@ impl Default for TuiConfig {
             diff: "auto".to_string(),
             git: true,
             notify: "auto".to_string(),
+            motion: "full".to_string(),
             caps: HashMap::new(),
         }
     }

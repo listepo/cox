@@ -33,6 +33,8 @@ pub struct Look {
     pub diff: diff::Mode,
     /// Ticks (100 ms) since start; drives the spinner and elapsed time.
     pub tick: u64,
+    /// `tui.motion = reduced` (T24.7): nothing on screen moves by itself.
+    pub still: bool,
     /// Leave `text::sanitize` markers where something was removed.
     pub marks: bool,
     /// The semantic colour tokens (T24.1) every styled span picks from,
@@ -156,6 +158,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             // a failed call is red top to bottom without a second lookup.
             let phase_ok = result.as_ref().map(|r| r.ok);
             let (rail_glyph, tint) = match phase_ok {
+                None if look.still => (g.spin(0), look.colors.tool),
                 None => (g.spin(look.tick), look.colors.tool),
                 Some(true) => (g.quote, look.colors.tool),
                 Some(false) => (g.quote, look.colors.error),
@@ -193,7 +196,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                     link::mark(Span::raw(subject)),
                     Span::raw(tail),
                 ]),
-                false => Line::raw(text::truncate(&full, width)),
+                false => Line::raw(text::truncate(&full, width, g.ellipsis)),
             };
             let mut lines = vec![head.style(Style::default().fg(tint))];
             let out: Vec<&str> = output.lines().collect();
@@ -262,11 +265,11 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                 }
                 None => {
                     let elapsed = look.tick.saturating_sub(*started);
-                    lines.push(rail(
-                        dim(format!("{}.{}s", elapsed / 10, elapsed % 10)),
-                        rail_glyph,
-                        rail_style,
-                    ));
+                    let shown = match look.still {
+                        true => "running".to_string(),
+                        false => format!("{}.{}s", elapsed / 10, elapsed % 10),
+                    };
+                    lines.push(rail(dim(shown), rail_glyph, rail_style));
                 }
             }
             lines

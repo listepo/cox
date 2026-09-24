@@ -625,6 +625,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.syntax_names = syntax_names;
         state.show_thinking = config.tui.show_thinking == "full";
         state.diff_mode = cox_tui::diff::Mode::parse(&config.tui.diff);
+        state.still = config.tui.motion == "reduced";
         state.notify = cox_tui::state::Notify::parse(&config.tui.notify);
         state.marks = cli.verbose > 0;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);

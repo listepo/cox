@@ -196,6 +196,8 @@ pub struct State {
     pub show_todo: bool,
     /// `-v`: show a glyph where `text::sanitize` removed something.
     pub marks: bool,
+    /// `tui.motion = reduced` (T24.7); the binary sets it from config.
+    pub still: bool,
     /// The other live sessions of this project (T16.3); the runtime feeds them.
     pub agents: Vec<Presence>,
     /// This project's recent sessions as `(id, picker row)`, newest first;
@@ -408,6 +410,7 @@ impl State {
             todo: Vec::new(),
             show_todo: false,
             marks: false,
+            still: false,
             agents: Vec::new(),
             sessions: Vec::new(),
             git: None,
@@ -496,6 +499,7 @@ impl State {
             show_diffs: self.show_diffs,
             diff: self.diff_mode,
             tick: self.tick,
+            still: self.still,
             marks: self.marks,
             colors: self.theme,
             // The generic look shared by a whole render pass does not know

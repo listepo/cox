@@ -464,6 +464,7 @@ mod tests {
             show_diffs: true,
             diff: Mode::Auto,
             tick: 0,
+            still: false,
             marks: false,
             colors: crate::theme::Theme::dark(),
             expand_last: None,

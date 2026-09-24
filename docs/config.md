@@ -155,6 +155,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `diff` = `"auto"` — auto | side | stacked — edit cards, the approval modal and Ctrl+G split old and new side by side from 120 columns (auto and side alike; narrower stays stacked), stacked never splits; replaced lines highlight the changed words (T24.5)
 - `git` = `true` — branch and +n -m in the status line, polled every 2 s
 - `notify` = `"auto"` — auto | always | off — OSC 9 (OSC 777 on VTE) plus BEL when a turn ends, an approval waits or ask_user asks; auto only while the terminal is unfocused (focus reporting), always regardless, off never (T23.5)
+- `motion` = `"full"` — full | reduced — reduced draws a running tool's spinner as one still glyph and replaces its ticking elapsed time with `running` (T24.7)
 - `caps` = `{}` — [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
 ## `[hooks]`
 
