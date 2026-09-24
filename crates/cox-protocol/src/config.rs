@@ -654,6 +654,10 @@ pub struct TuiConfig {
     pub diff: String,
     /// Whether the status line polls git for the branch and `+n −m` (T15.2).
     pub git: bool,
+    /// `auto` | `always` | `off` (T23.5): ring the terminal when a turn
+    /// ends, an approval waits or `ask_user` asks — `auto` only while the
+    /// terminal is unfocused; an unknown value is `auto`.
+    pub notify: String,
     /// `[tui.caps]` (T23.0): overrides one named `cox_tui::term::Caps`
     /// field (`osc8 = false`) for a terminal `Caps::detect`/`query` guesses
     /// wrong about. An unrecognised name is ignored, not rejected.
@@ -675,6 +679,7 @@ impl Default for TuiConfig {
             syntax_theme: String::new(),
             diff: "auto".to_string(),
             git: true,
+            notify: "auto".to_string(),
             caps: HashMap::new(),
         }
     }

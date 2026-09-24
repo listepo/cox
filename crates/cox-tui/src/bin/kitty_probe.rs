@@ -27,10 +27,10 @@ use std::time::Duration;
 use cox_core::{MemoryStore, Session};
 use cox_protocol::Config;
 use cox_protocol::errors::ProviderError;
-use cox_protocol::ids::ItemId;
+use cox_protocol::ids::{ItemId, TurnId};
 use cox_protocol::traits::Provider;
 use cox_protocol::types::{
-    Caps, Event, ItemKind, Level, ProviderEvent, ProviderId, Request, Usage,
+    Caps, Event, ItemKind, Level, ProviderEvent, ProviderId, Request, StopReason, Usage,
 };
 use cox_protocol::types::{PermissionMode, SandboxMode};
 use cox_tui::state::{Msg, State};
@@ -91,6 +91,11 @@ async fn main() {
 
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     state.caps.kitty_keyboard = kitty;
+    // The notify scenario needs a terminal that shows OSC 9 and reports focus.
+    if std::env::var("COX_PROBE_SCENARIO").as_deref() == Ok("notify") {
+        state.caps.osc9 = true;
+        state.caps.focus = true;
+    }
 
     let (feed_tx, feed_rx) = mpsc::channel::<Msg>(4);
     let (ask_tx, _ask_rx) = mpsc::channel::<cox_tui::state::Ask>(4);
@@ -133,6 +138,18 @@ async fn main() {
                 let _ = feed_tx.send(Msg::Event(Event::ItemDone { item })).await;
                 for n in 13..=16 {
                     let _ = feed_tx.send(notice(n)).await;
+                }
+            }
+            // T23.5: one turn ends with focus lost, one with focus held;
+            // only the first may ring.
+            "notify" => {
+                for focused in [false, true] {
+                    let _ = feed_tx.send(Msg::Focus(focused)).await;
+                    let turn = TurnId::new();
+                    let stop = StopReason::EndTurn;
+                    let _ = feed_tx
+                        .send(Msg::Event(Event::TurnDone { turn, stop }))
+                        .await;
                 }
             }
             _ => {}

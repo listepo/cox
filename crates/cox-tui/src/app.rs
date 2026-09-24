@@ -16,8 +16,9 @@ use cox_protocol::errors::CoreError;
 use cox_protocol::ids::CallId;
 use crossterm::cursor::MoveTo;
 use crossterm::event::{
-    DisableBracketedPaste, EnableBracketedPaste, Event as Input, KeyEventKind,
-    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
+    Event as Input, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
@@ -113,9 +114,15 @@ pub async fn run(
             )
         )?;
     }
+    // T23.5: focus reports decide whether `tui.notify = auto` rings.
+    let focus = state.caps.focus;
+    if focus {
+        execute!(io::stdout(), EnableFocusChange)?;
+    }
+    let vte = crate::term::is_vte(&|k| std::env::var(k).ok());
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore(kitty);
+        restore(kitty, focus);
         hook(info);
     }));
     let mut terminal = inline_terminal(crossterm::terminal::size()?.1)?;
@@ -139,6 +146,8 @@ pub async fn run(
                     Input::Key(k) if k.kind != KeyEventKind::Release => Msg::Key(k),
                     Input::Paste(text) => Msg::Paste(text),
                     Input::Resize(w, h) => Msg::Resize(w, h),
+                    Input::FocusGained => Msg::Focus(true),
+                    Input::FocusLost => Msg::Focus(false),
                     _ => continue,
                 },
                 ev = rx.recv() => match ev {
@@ -199,6 +208,13 @@ pub async fn run(
                     Cmd::PersistConfig { key, value } => {
                         let _ = persist.try_send((key, value));
                     }
+                    Cmd::Notify { title, body } => {
+                        use std::io::Write;
+                        let bytes = crate::term::notification(&state.caps, vte, &title, &body);
+                        let mut out = io::stdout();
+                        out.write_all(bytes.as_bytes())?;
+                        out.flush()?;
+                    }
                 }
             }
             // While a resize settles nothing is drawn or inserted: finished
@@ -254,7 +270,7 @@ pub async fn run(
     }
     .await;
     stop.store(true, Ordering::Relaxed);
-    restore(kitty);
+    restore(kitty, focus);
     result
 }
 
@@ -308,10 +324,14 @@ fn spawn_input(stop: Arc<AtomicBool>) -> tokio::sync::mpsc::Receiver<io::Result<
 /// Leaves the terminal usable whatever happened; safe to call twice. `kitty`
 /// pops the Kitty keyboard protocol flags first — popping when nothing was
 /// pushed is a no-op on every terminal that implements the spec, but `run`
-/// only pays for the round trip when its own push actually happened.
-fn restore(kitty: bool) {
+/// only pays for the round trip when its own push actually happened; `focus`
+/// likewise turns off the focus reports only `run` turned on.
+fn restore(kitty: bool, focus: bool) {
     if kitty {
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+    }
+    if focus {
+        let _ = execute!(io::stdout(), DisableFocusChange);
     }
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     let _ = disable_raw_mode();

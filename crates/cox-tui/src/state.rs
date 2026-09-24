@@ -238,6 +238,32 @@ pub struct State {
     /// The keys (T25.5): `KEYMAP` with `~/.cox/keybindings.toml` and Claude
     /// Code's `keybindings.json` over it; the binary loads it.
     pub keymap: Keymap,
+    /// `tui.notify` (T23.5); the binary sets it from config.
+    pub notify: Notify,
+    /// Whether the terminal has focus, from focus reporting (DECSET 1004);
+    /// assumed until the terminal says otherwise.
+    pub focused: bool,
+}
+
+/// `tui.notify` (T23.5): when a finished turn, an approval or a question
+/// rings the terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Notify {
+    /// Only while the terminal is unfocused.
+    Auto,
+    Always,
+    Off,
+}
+
+impl Notify {
+    /// An unknown value is `Auto`, like `diff::Mode::parse`.
+    pub fn parse(s: &str) -> Notify {
+        match s {
+            "always" => Notify::Always,
+            "off" => Notify::Off,
+            _ => Notify::Auto,
+        }
+    }
 }
 
 /// Ticks (100 ms each) two `Esc`s may be apart to count as `Esc Esc`.
@@ -278,6 +304,8 @@ pub enum Msg {
         question: String,
         options: Vec<String>,
     },
+    /// The terminal gained (`true`) or lost focus (T23.5).
+    Focus(bool),
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -313,6 +341,11 @@ pub enum Cmd {
     PersistConfig {
         key: String,
         value: String,
+    },
+    /// Ring the terminal (T23.5); `app.rs` picks OSC 9/777 by `Caps`.
+    Notify {
+        title: String,
+        body: String,
     },
 }
 
@@ -376,6 +409,8 @@ impl State {
             queue: VecDeque::new(),
             send_now: false,
             keymap: Keymap::default(),
+            notify: Notify::Auto,
+            focused: true,
         }
     }
 
@@ -533,10 +568,31 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
             question,
             options,
         } => {
+            let cmds = notify(state, format!("question: {question}"));
             state.modal = Some(Modal::Question(Question::new(call, question, options)));
+            cmds
+        }
+        Msg::Focus(focused) => {
+            state.focused = focused;
             Vec::new()
         }
     }
+}
+
+/// `Cmd::Notify` for `body` when `tui.notify` says to ring now (T23.5).
+fn notify(state: &State, body: String) -> Vec<Cmd> {
+    let ring = match state.notify {
+        Notify::Always => true,
+        Notify::Auto => !state.focused,
+        Notify::Off => false,
+    };
+    if !ring {
+        return Vec::new();
+    }
+    vec![Cmd::Notify {
+        title: "cox".to_string(),
+        body,
+    }]
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
@@ -1162,6 +1218,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }
         }
         Event::ApprovalRequired { call, why } => {
+            cmds = notify(state, format!("approval: {} {}", call.name, call.subject));
             state.modal = Some(Modal::Approval(Approval::new(call, why)));
         }
         Event::ApprovalDecided { .. } => state.modal = None,
@@ -1175,7 +1232,11 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
         }
         Event::TurnDone { stop, .. } => {
             state.status.busy = false;
-            cmds = turn_done_cmds(state, stop);
+            // An interrupt is the user's own doing; they are already here.
+            if stop != StopReason::Interrupted {
+                cmds = notify(state, "turn done".to_string());
+            }
+            cmds.extend(turn_done_cmds(state, stop));
         }
         Event::Usage { usage, .. } => {
             state.status.cost_usd += usage.cost_usd;
@@ -1585,5 +1646,64 @@ mod tests {
             update(&mut state, ctrl_b()),
             vec![Cmd::Submit(Submission::Background { call_id })]
         );
+    }
+
+    /// T23.5: `auto` rings on a finished turn, an approval and a question
+    /// only while the terminal is unfocused; `always` ignores focus, `off`
+    /// never rings, and an interrupt the user made never does.
+    #[test]
+    fn update_emits_notify_only_when_unfocused() {
+        let turn_done = |stop| {
+            Msg::Event(Event::TurnDone {
+                turn: TurnId::new(),
+                stop,
+            })
+        };
+        let rings = |cmds: &[Cmd]| cmds.iter().any(|c| matches!(c, Cmd::Notify { .. }));
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        assert!(!rings(&update(&mut state, turn_done(StopReason::EndTurn))));
+
+        update(&mut state, Msg::Focus(false));
+        assert_eq!(
+            update(&mut state, turn_done(StopReason::EndTurn)),
+            vec![Cmd::Notify {
+                title: "cox".into(),
+                body: "turn done".into(),
+            }]
+        );
+        assert!(!rings(&update(
+            &mut state,
+            turn_done(StopReason::Interrupted)
+        )));
+        let call = ToolCall {
+            id: CallId::new(),
+            name: "bash".into(),
+            input: serde_json::Value::Null,
+            risk: cox_protocol::types::Risk::Exec,
+            subject: "cargo test".into(),
+        };
+        let why = cox_protocol::types::Why::Risk {
+            risk: cox_protocol::types::Risk::Exec,
+        };
+        let cmds = update(
+            &mut state,
+            Msg::Event(Event::ApprovalRequired { call, why }),
+        );
+        assert!(
+            matches!(&cmds[..], [Cmd::Notify { body, .. }] if body == "approval: bash cargo test")
+        );
+        let question = Msg::Question {
+            call: CallId::new(),
+            question: "which?".into(),
+            options: Vec::new(),
+        };
+        assert!(rings(&update(&mut state, question)));
+
+        update(&mut state, Msg::Focus(true));
+        state.notify = Notify::Always;
+        assert!(rings(&update(&mut state, turn_done(StopReason::EndTurn))));
+        state.notify = Notify::Off;
+        update(&mut state, Msg::Focus(false));
+        assert!(!rings(&update(&mut state, turn_done(StopReason::EndTurn))));
     }
 }
