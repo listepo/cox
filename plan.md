@@ -6,29 +6,20 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.2 | done | P0 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.7 | done | P1 | 1 | 0% | |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.5 | todo | P0 | 2 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
-| T24.8 | done | P1 | 1 | 0% | |
-| T25.2 | todo | P0 | 2 | 0% | |
+| T25.2 | in progress | P0 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T25.3 | todo | P1 | 2 | 0% | |
-| T25.6 | done | P1 | 2 | 0% | |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 0% | |
 | T27.4 | todo | P3 | 2 | 0% | |
-| T28.1 | done | P1 | 2 | 0% | |
-| T28.2 | done | P2 | 1 | 0% | |
-| T28.4 | done | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T29.2 | todo | P2 | 1 | 0% | |
-| T30.1 | done | P2 | 2 | 0% | |
-| T30.2 | done | P2 | 2 | 0% | Claude Code / claude-haiku-4-5 |
 | T30.3 | todo | P2 | 2 | 0% | |
 
 ## Reference
@@ -1068,7 +1059,7 @@ Out of scope: tachyonfx-style effects (none planned).
 
 #### T25.2 `Shift+Tab` mode cycle and plan-mode view
 
-Model: sonnet · Status: in progress · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
+Model: claude-opus-5-5 · Status: in progress · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
 Goal: `Shift+Tab` cycles default → plan → auto; `Tab` completes `@`/`/` only; the composer prompt and status line show the mode; in plan mode denied writes render as a dim "planned" line instead of an error card.
 Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/cells.rs`.
 Steps: (1) Move the mode cycle from `Tab` to `BackTab` (crossterm reports `Shift+Tab` as `KeyCode::BackTab` everywhere, Kitty or not); `Tab` in the composer triggers picker completion when a `@`/`/` token is under the cursor, else inserts nothing. (2) Prompt glyph per mode from the glyph table: `>` default, `▷` plan, `»` auto, `!` bypass, coloured with `theme.mode_*`. (3) `cells.rs`: a `ToolCallDone` whose result is `denied: plan mode` renders `▷ planned: edit src/lib.rs` in `theme.dim` (no error tint). (4) §1.13 table updated.
@@ -1079,6 +1070,7 @@ mise exec -- cargo nextest run -p cox-tui --test cells plan_mode_denial_renders_
 ```
 Done when: snapshots for the three prompts exist and `docs/getting-started.md` says `Shift+Tab`.
 Out of scope: a plan document view (the model's plan is ordinary markdown).
+Execution plan: (a) `commands.rs` KEYMAP row `Tab` → `Shift+Tab` for `mode.cycle` (the keymap already normalises `BackTab`); (b) `state.rs::on_key`: after the git completion, `Tab` with an `@word`/`/word` token before the cursor strips the query and opens the Files/Commands picker with it; `composer.rs`: a bare `Tab` inserts nothing; (c) `glyph.rs`: `prompt`/`plan`/`auto`/`bypass` glyphs + `Glyphs::mode`; `view.rs` draws the prompt glyph in `theme.mode_*`; (d) `cells.rs`: a failed result starting `permission denied: plan mode` renders one dim `▷ planned: <tool> <subject>` line; (e) tests in `tests/keys.rs`, `tests/cells.rs`, fix Tab-based tests, snapshots; docs `getting-started.md`, `how-it-works.md`, §1.13.
 
 #### T25.3 `!` shell line
 
