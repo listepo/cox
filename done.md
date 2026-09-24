@@ -3720,3 +3720,35 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 $ mise exec -- cargo fmt --check
      clean
 ```
+
+#### T23.8 `cargo run` picks `cox` again
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: T23.1 · Size: ~5 · Priority: P1 · Complexity: 1
+Goal: the documented `COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor` runs `cox` instead of failing with "could not determine which binary to run ... available binaries: cox, kitty_probe", and the T23.1 PTY tests still spawn `kitty_probe`.
+Files: `Cargo.toml`.
+Steps: (1) The root manifest is virtual, so `default-run` (a `[package]` key) is not available; add `default-members = ["crates/cox"]` to `[workspace]`, which is the set bare `cargo run`/`build` resolve against. `kitty_probe` stays where it is: every test/lint command in `AGENTS.md`, `justfile` and CI already passes `--workspace` or `-p`, so it is still built and `CARGO_BIN_EXE_kitty_probe` still resolves.
+Check:
+```bash
+# doctor exits 1 without an API key; the Check is that `cox` ran at all.
+out="$(COX_HOME="$(mktemp -d)" mise exec -- cargo run -q -- doctor 2>&1 || true)"
+grep -q '^toolchain: ' <<<"$out"
+mise exec -- cargo nextest run -p cox-tui --test shell
+```
+Execution plan: edit `Cargo.toml` `[workspace]`; run the Check, then nextest/clippy/fmt under `mise exec`; confirm `cargo fmt --check` still covers every member.
+Done when: the Check passes and the three workspace commands are clean.
+Deviations: first claimed and committed as T23.7 in a separate worktree; renumbered to T23.8 because T23.7 is "Resize hardening". The `Check` was rewritten while the task was open: `doctor` exits 1 without an API key, so the check greps its `toolchain:` row instead of the exit code.
+Out of scope: moving or feature-gating `kitty_probe` (either needs more code and the test would have to opt in to a feature).
+
+Check output:
+```
+$ out="$(COX_HOME="$(mktemp -d)" mise exec -- cargo run -q -- doctor 2>&1 || true)"; grep -q '^toolchain: ' <<<"$out"
+exit 0 (doctor itself exits 1: no API key in the scratch home)
+$ mise exec -- cargo nextest run -p cox-tui --test shell
+7 tests run: 7 passed, 0 skipped
+$ mise exec -- cargo nextest run --workspace
+841 tests run: 841 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
