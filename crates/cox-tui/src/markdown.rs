@@ -67,6 +67,7 @@ pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
     let mut r = Renderer {
         theme: look.theme,
         glyphs: look.glyphs,
+        width: usize::from(look.width),
         ..Renderer::default()
     };
     let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
@@ -84,6 +85,8 @@ pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
 struct Renderer {
     theme: &'static str,
     glyphs: Glyphs,
+    /// The viewport; a table wider than it becomes records (T24.7).
+    width: usize,
     lines: Vec<Line<'static>>,
     cur: Vec<Span<'static>>,
     styles: Vec<Style>,
@@ -300,7 +303,8 @@ impl Renderer {
             }
             TagEnd::Table => {
                 if let Some((rows, _)) = self.table.take() {
-                    self.lines.extend(table_lines(&rows, &self.glyphs));
+                    self.lines
+                        .extend(table_lines(&rows, &self.glyphs, self.width));
                     self.lines.push(Line::default());
                 }
             }
@@ -346,8 +350,10 @@ pub fn highlight(token: &str, rows: &[&str], theme: &str) -> Vec<Line<'static>> 
         .collect()
 }
 
-/// Columns padded to their widest cell, header bold over a rule.
-fn table_lines(rows: &[Vec<String>], g: &Glyphs) -> Vec<Line<'static>> {
+/// Columns padded to their widest cell, header bold over a rule; wider
+/// than `width`, `Header: value` records instead, since a wrapped table row
+/// no longer lines up with anything.
+fn table_lines(rows: &[Vec<String>], g: &Glyphs, width: usize) -> Vec<Line<'static>> {
     let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
     let widths: Vec<usize> = (0..cols)
         .map(|c| {
@@ -358,6 +364,13 @@ fn table_lines(rows: &[Vec<String>], g: &Glyphs) -> Vec<Line<'static>> {
                 .unwrap_or(0)
         })
         .collect();
+    let natural = widths.iter().sum::<usize>() + 2 * cols.saturating_sub(1);
+    if let Some((head, body)) = rows.split_first()
+        && !body.is_empty()
+        && natural > width
+    {
+        return record_lines(head, body);
+    }
     let fmt = |r: &Vec<String>| {
         (0..cols)
             .map(|c| {
@@ -393,6 +406,26 @@ fn table_lines(rows: &[Vec<String>], g: &Glyphs) -> Vec<Line<'static>> {
     out
 }
 
+/// Each row as one `Header: value` line per column, a blank line between
+/// rows (Codex's narrow-table fallback).
+fn record_lines(head: &[String], body: &[Vec<String>]) -> Vec<Line<'static>> {
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let mut out = Vec::new();
+    for (i, row) in body.iter().enumerate() {
+        if i > 0 {
+            out.push(Line::default());
+        }
+        for (c, value) in row.iter().enumerate() {
+            let key = head.get(c).map_or("", String::as_str);
+            out.push(Line::from(vec![
+                Span::styled(format!("{key}:"), bold),
+                Span::raw(format!(" {value}")),
+            ]));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,6 +443,7 @@ mod tests {
             show_diffs: true,
             diff: crate::diff::Mode::Auto,
             tick: 0,
+            still: false,
             marks: false,
             colors: crate::theme::Theme::dark(),
             expand_last: None,

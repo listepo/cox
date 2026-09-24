@@ -130,6 +130,48 @@ fn cell_tool_running_shows_spinner_and_elapsed() {
     ));
 }
 
+/// T24.7: under `tui.motion = reduced` a running card is the same frame
+/// whatever the tick — one still rail glyph, `running` for the clock.
+#[test]
+fn reduced_motion_spinner_is_static() {
+    let mut s = replay();
+    s.still = true;
+    let bash = |s: &State| {
+        text(
+            s,
+            cell(
+                s,
+                |c| matches!(c, Cell::Tool { call, .. } if call.name == "bash"),
+            ),
+        )
+    };
+    let before = bash(&s);
+    for _ in 0..7 {
+        update(&mut s, Msg::Tick);
+    }
+    assert_eq!(bash(&s), before);
+    insta::assert_snapshot!(before);
+}
+
+/// T24.7: a table wider than the viewport reads as `Header: value`
+/// records; one that fits stays a table.
+#[test]
+fn table_falls_back_to_records_at_50_columns() {
+    let md = "| crate | owns | depends on |\n| --- | --- | --- |\n\
+              | cox-core | the agent loop as a state machine | cox-protocol |\n\
+              | cox-tui | the ratatui app in TEA form | cox-core, cox-protocol |\n";
+    let s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let render = |width| {
+        cox_tui::markdown::render(md, &s.look(width))
+            .iter()
+            .map(|l| l.to_string().trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert!(render(120).starts_with("crate "), "{}", render(120));
+    insta::assert_snapshot!(render(50));
+}
+
 #[test]
 fn cell_notice_error_and_summary() {
     let s = replay();

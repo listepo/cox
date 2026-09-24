@@ -141,12 +141,13 @@ fn skip_string(chars: &[char], mut i: usize) -> usize {
     i
 }
 
-/// `s` cut to at most `width` columns by display width, `…` marking the cut.
-pub fn truncate(s: &str, width: usize) -> String {
+/// `s` cut to at most `width` columns by display width, `ellipsis` (the
+/// glyph table's, so an ASCII terminal gets `...`) marking the cut.
+pub fn truncate(s: &str, width: usize, ellipsis: &str) -> String {
     if s.width() <= width {
         return s.to_string();
     }
-    let room = width.saturating_sub(1);
+    let room = width.saturating_sub(ellipsis.width());
     let mut acc = 0;
     let mut out = String::new();
     for c in s.chars() {
@@ -157,7 +158,7 @@ pub fn truncate(s: &str, width: usize) -> String {
         acc += w;
         out.push(c);
     }
-    out.push('…');
+    out.push_str(ellipsis);
     out
 }
 
@@ -187,7 +188,8 @@ mod tests {
 
     #[test]
     fn truncate_counts_columns_not_bytes() {
-        assert_eq!(truncate("漢字漢字", 5), "漢字…");
-        assert_eq!(truncate("short", 10), "short");
+        assert_eq!(truncate("漢字漢字", 5, "…"), "漢字…");
+        assert_eq!(truncate("short", 10, "…"), "short");
+        assert_eq!(truncate("abcdefgh", 6, "..."), "abc...");
     }
 }
