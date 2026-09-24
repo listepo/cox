@@ -7,7 +7,6 @@
 - T23.6. OSC 9;4 progress
 - T24.3. `two-face` syntax set
 - T24.7. Motion and narrow-width polish
-- T25.2. `Shift+Tab` mode cycle and plan-mode view
 - T25.3. `!` shell line
 - T25.8. Cross-session prompt history
 - T26.4. `/undo`, `/redo`

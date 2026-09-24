@@ -3402,3 +3402,34 @@ $ bash scripts/footprint.sh --check   # local Mac, PR #34 branch
 first_frame_ms: baseline 40.0, now 38.4 — footprint: no metric regressed >20%
 ```
 Known limit: the CI baseline is one run; if runner noise alone crosses 20 %, refresh it from a runner with `--write` rather than widening the threshold.
+
+#### T25.2 `Shift+Tab` mode cycle and plan-mode view
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: T23.1 · Size: ~120 · Priority: P0 · Complexity: 2
+Goal: `Shift+Tab` cycles default → plan → auto; `Tab` completes `@`/`/` only; the composer prompt and status line show the mode; in plan mode denied writes render as a dim "planned" line instead of an error card.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/cells.rs`.
+Steps: (1) Move the mode cycle from `Tab` to `BackTab` (crossterm reports `Shift+Tab` as `KeyCode::BackTab` everywhere, Kitty or not); `Tab` in the composer triggers picker completion when a `@`/`/` token is under the cursor, else inserts nothing. (2) Prompt glyph per mode from the glyph table: `>` default, `▷` plan, `»` auto, `!` bypass, coloured with `theme.mode_*`. (3) `cells.rs`: a `ToolCallDone` whose result is `denied: plan mode` renders `▷ planned: edit src/lib.rs` in `theme.dim` (no error tint). (4) §1.13 table updated.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test keys backtab_cycles_modes tab_completes_mention
+mise exec -- cargo nextest run -p cox-tui --test cells plan_mode_denial_renders_as_planned_line
+```
+Done when: snapshots for the three prompts exist and `docs/getting-started.md` says `Shift+Tab`.
+Out of scope: a plan document view (the model's plan is ordinary markdown).
+Execution plan: (a) `commands.rs` KEYMAP row `Tab` → `Shift+Tab` for `mode.cycle` (the keymap already normalises `BackTab`); (b) `state.rs::on_key`: after the git completion, `Tab` with an `@word`/`/word` token before the cursor strips the query and opens the Files/Commands picker with it; `composer.rs`: a bare `Tab` inserts nothing; (c) `glyph.rs`: `prompt`/`plan`/`auto`/`bypass` glyphs + `Glyphs::mode`; `view.rs` draws the prompt glyph in `theme.mode_*`; (d) `cells.rs`: a failed result starting `permission denied: plan mode` renders one dim `▷ planned: <tool> <subject>` line; (e) tests in `tests/keys.rs`, `tests/cells.rs`, fix Tab-based tests, snapshots; docs `getting-started.md`, `how-it-works.md`, §1.13.
+
+Deviations: the prompt glyphs join the glyph table as `prompt`/`plan`/`auto`/`bypass` (ASCII `>` `~` `>>` `!`, overridable in `[tui.icons]`), and `Theme::mode` picks the tint (`text` for default). `Esc` in the `@`/`/` picker now gives the typed query back to the composer, so a `Tab` that finds nothing costs no text. The planned line matches the result prefix `permission denied: plan mode` that `cox-core` writes (constant `PLAN_DENIAL` in `cells.rs`); no protocol change. The files touched exceed the card's three (`commands.rs`, `composer.rs`, `glyph.rs`, `theme.rs`, `keymap.rs` test) because the binding lives in `KEYMAP` and the prompt in `glyph`/`theme`. Found on the way: `cells::wrap` rebuilt lines from spans and dropped the `Line`'s own style, so every `Line::styled` cell (a failed tool header, dim lines, notices, the bold user line) drew uncoloured; each span now inherits it (`wrap_keeps_the_line_style_on_every_span`), and `just screenshots` regenerated `docs/screenshots/`.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test keys backtab_cycles_modes tab_completes_mention
+PASS cox-tui::keys backtab_cycles_modes; PASS cox-tui::keys tab_completes_mention
+$ mise exec -- cargo nextest run -p cox-tui --test cells plan_mode_denial_renders_as_planned_line
+PASS cox-tui::cells plan_mode_denial_renders_as_planned_line
+$ mise exec -- cargo nextest run --workspace
+818 tests run: 818 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
