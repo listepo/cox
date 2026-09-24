@@ -24,7 +24,7 @@ use crate::modal::{Approval, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
-use crate::term::Caps;
+use crate::term::{Caps, Progress};
 use crate::theme::{Theme, ThemeFile};
 use crate::vim::Mode;
 
@@ -198,6 +198,8 @@ pub struct State {
     pub marks: bool,
     /// `tui.motion = reduced` (T24.7); the binary sets it from config.
     pub still: bool,
+    /// The OSC 9;4 state last sent (T23.6), so only a change is written.
+    pub progress: Progress,
     /// The other live sessions of this project (T16.3); the runtime feeds them.
     pub agents: Vec<Presence>,
     /// This project's recent sessions as `(id, picker row)`, newest first;
@@ -357,6 +359,8 @@ pub enum Cmd {
         key: String,
         value: String,
     },
+    /// OSC 9;4 tab progress (T23.6); only sent when `caps.osc9_4`.
+    Progress(Progress),
     /// Ring the terminal (T23.5); `app.rs` picks OSC 9/777 by `Caps`.
     Notify {
         title: String,
@@ -414,6 +418,7 @@ impl State {
             show_todo: false,
             marks: false,
             still: false,
+            progress: Progress::Idle,
             agents: Vec::new(),
             sessions: Vec::new(),
             past_prompts: Vec::new(),
@@ -558,6 +563,29 @@ impl State {
 }
 
 pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
+    let mut cmds = step(state, msg);
+    cmds.extend(progress(state));
+    cmds
+}
+
+/// T23.6: the tab's progress follows what `state` now shows, sent only
+/// when it changes and only to a terminal that draws it.
+fn progress(state: &mut State) -> Option<Cmd> {
+    if !state.caps.osc9_4 {
+        return None;
+    }
+    let want = match (state.status.busy, &state.modal) {
+        (false, _) => Progress::Idle,
+        (true, Some(Modal::Approval(_) | Modal::Question(_))) => Progress::Paused,
+        (true, _) => Progress::Busy,
+    };
+    (want != state.progress).then(|| {
+        state.progress = want;
+        Cmd::Progress(want)
+    })
+}
+
+fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
     match msg {
         Msg::Key(key) => on_key(state, key),
         Msg::Paste(text) => {
@@ -1791,5 +1819,76 @@ mod tests {
         state.notify = Notify::Off;
         update(&mut state, Msg::Focus(false));
         assert!(!rings(&update(&mut state, turn_done(StopReason::EndTurn))));
+    }
+
+    /// T23.6: busy on a turn, paused while an approval waits, busy again
+    /// once it is answered, cleared when the turn ends — each only once,
+    /// and nothing at all for a terminal without OSC 9;4.
+    #[test]
+    fn progress_sequence_follows_turn_state() {
+        let turn = TurnId::new();
+        let events = || {
+            let call = ToolCall {
+                id: CallId::new(),
+                name: "bash".into(),
+                input: serde_json::Value::Null,
+                risk: cox_protocol::types::Risk::Exec,
+                subject: "cargo test".into(),
+            };
+            let call_id = call.id;
+            vec![
+                Event::TurnStarted {
+                    seq: 1,
+                    turn,
+                    job: cox_protocol::types::Job::Main,
+                    tier: cox_protocol::types::Tier::Code,
+                    model: cox_protocol::types::ModelId("m".into()),
+                },
+                Event::TextDelta {
+                    item: cox_protocol::ids::ItemId::new(),
+                    text: "working".into(),
+                },
+                Event::ApprovalRequired {
+                    call,
+                    why: cox_protocol::types::Why::Risk {
+                        risk: cox_protocol::types::Risk::Exec,
+                    },
+                    source: None,
+                },
+                Event::ApprovalDecided {
+                    call_id,
+                    decision: cox_protocol::types::Decision::Allow,
+                    by: cox_protocol::types::DecidedBy::User,
+                },
+                Event::TurnDone {
+                    turn,
+                    stop: StopReason::EndTurn,
+                },
+            ]
+        };
+        let progress = |state: &mut State| -> Vec<Progress> {
+            events()
+                .into_iter()
+                .flat_map(|ev| update(state, Msg::Event(ev)))
+                .filter_map(|c| match c {
+                    Cmd::Progress(p) => Some(p),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.caps.osc9_4 = true;
+        assert_eq!(
+            progress(&mut state),
+            [
+                Progress::Busy,
+                Progress::Paused,
+                Progress::Busy,
+                Progress::Idle
+            ]
+        );
+        let mut plain = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        assert!(progress(&mut plain).is_empty());
+        assert_eq!(crate::term::progress(Progress::Busy), "\x1b]9;4;3;0\x1b\\");
     }
 }

@@ -176,6 +176,28 @@ impl Caps {
     }
 }
 
+/// Where a turn is, as OSC 9;4 shows it on the tab or taskbar (T23.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Progress {
+    #[default]
+    Idle,
+    /// A turn runs; its length is unknown, so indeterminate.
+    Busy,
+    /// A turn waits on the user (an approval, an `ask_user` question).
+    Paused,
+}
+
+/// The OSC 9;4 bytes for `p` in ConEmu/Windows Terminal numbering: 0
+/// clears, 3 is indeterminate, 4 is paused. The caller checks
+/// `Caps::osc9_4`; a terminal without it may print the bytes.
+pub fn progress(p: Progress) -> &'static str {
+    match p {
+        Progress::Idle => "\x1b]9;4;0;0\x1b\\",
+        Progress::Busy => "\x1b]9;4;3;0\x1b\\",
+        Progress::Paused => "\x1b]9;4;4;0\x1b\\",
+    }
+}
+
 /// Whether the terminal is VTE-based (GNOME Terminal, Tilix, …), which
 /// shows OSC 777 notifications and ignores OSC 9 (T23.5).
 pub fn is_vte(env: &dyn Fn(&str) -> Option<String>) -> bool {
