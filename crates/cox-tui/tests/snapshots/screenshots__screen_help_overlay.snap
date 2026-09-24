@@ -4,9 +4,9 @@ expression: "shot(\"help_overlay\", &mut state)"
 ---
 › what can I press here
 Every key, grouped by context.
-[info] idle     Enter send · Tab mode cycle · @ file · / command · ? help · Shift+Enter newline ·
-Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O transcript ·
-Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
+[info] idle     Enter send · Shift+Tab mode cycle · @ file · / command · ? help · Shift+Enter
+newline · Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O
+transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
        running  Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter
         send now · Ctrl+Enter send now · Ctrl+U unqueue
        modal    Enter choose · Esc close · Up previous · Down next
@@ -58,5 +58,5 @@ Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
 
 
 
-> Enter send · Tab mode cycle · @ file · / command · ? help
+> Enter send · Shift+Tab mode cycle · @ file · / command · ? help
 sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

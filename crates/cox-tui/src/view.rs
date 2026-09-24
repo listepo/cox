@@ -170,7 +170,11 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
 
     let [prompt, text] =
         Layout::horizontal([Constraint::Length(2), Constraint::Min(1)]).areas(composer);
-    Line::raw(">").render(prompt, buf);
+    Line::styled(
+        state.glyphs.mode(state.mode),
+        Style::default().fg(state.theme.mode(state.mode)),
+    )
+    .render(prompt, buf);
     if state.composer.text().is_empty() {
         hints(state, text.width).render(text, buf);
     } else {
@@ -239,7 +243,7 @@ mod tests {
         let idle = buffer_to_string(&render(&state, 90, 4));
         state.status.busy = true;
         let running = buffer_to_string(&render(&state, 90, 4));
-        assert!(idle.contains("Enter send · Tab mode cycle · @ file · / command · ? help"));
+        assert!(idle.contains("Enter send · Shift+Tab mode cycle · @ file · / command · ? help"));
         assert!(running.contains("Esc interrupt · Ctrl+B background · Ctrl+O transcript"));
         insta::assert_snapshot!(format!("{idle}\n---\n{running}"));
     }

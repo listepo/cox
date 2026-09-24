@@ -6,6 +6,7 @@
 //! markdown, the status line and the pickers print one agreed set.
 
 use cox_protocol::config::TuiConfig;
+use cox_protocol::types::PermissionMode;
 use unicode_width::UnicodeWidthStr;
 
 use crate::text;
@@ -51,6 +52,12 @@ pub struct Glyphs {
     pub ellipsis: &'static str,
     /// Brackets a compaction summary.
     pub dash: &'static str,
+    /// The composer prompt per permission mode (T25.2): default, plan,
+    /// auto, bypass — the mode is readable where the user is typing.
+    pub prompt: &'static str,
+    pub plan: &'static str,
+    pub auto: &'static str,
+    pub bypass: &'static str,
     /// Frames of the running-tool spinner, in order.
     pub spinner: &'static [&'static str],
 }
@@ -76,6 +83,10 @@ pub const UNICODE: Glyphs = Glyphs {
     caret: "▏",
     ellipsis: "…",
     dash: "—",
+    prompt: ">",
+    plan: "▷",
+    auto: "»",
+    bypass: "!",
     spinner: &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
 };
 
@@ -100,6 +111,10 @@ pub const ASCII: Glyphs = Glyphs {
     caret: "_",
     ellipsis: "...",
     dash: "-",
+    prompt: ">",
+    plan: "~",
+    auto: ">>",
+    bypass: "!",
     spinner: &["|", "/", "-", "\\"],
 };
 
@@ -158,9 +173,23 @@ impl Glyphs {
             "caret" => &mut self.caret,
             "ellipsis" => &mut self.ellipsis,
             "dash" => &mut self.dash,
+            "prompt" => &mut self.prompt,
+            "plan" => &mut self.plan,
+            "auto" => &mut self.auto,
+            "bypass" => &mut self.bypass,
             _ => return,
         };
         *field = glyph;
+    }
+
+    /// The composer prompt for `mode`.
+    pub fn mode(&self, mode: PermissionMode) -> &'static str {
+        match mode {
+            PermissionMode::Default => self.prompt,
+            PermissionMode::Plan => self.plan,
+            PermissionMode::Auto => self.auto,
+            PermissionMode::Bypass => self.bypass,
+        }
     }
 
     /// Frame `tick` of the spinner.
@@ -219,7 +248,8 @@ mod tests {
         let g = ASCII;
         let all: Vec<&str> = vec![
             g.user, g.attach, g.tool, g.think, g.ok, g.fail, g.diff, g.branch, g.minus, g.bullet,
-            g.quote, g.rule, g.sep, g.cursor, g.caret, g.ellipsis, g.dash,
+            g.quote, g.rule, g.sep, g.cursor, g.caret, g.ellipsis, g.dash, g.prompt, g.plan,
+            g.auto, g.bypass,
         ];
         for s in all.iter().chain(g.spinner) {
             assert!(s.is_ascii(), "{s:?} is not ASCII");

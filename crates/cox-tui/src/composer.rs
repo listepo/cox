@@ -99,6 +99,27 @@ impl Composer {
         self.area.insert_str(text);
     }
 
+    /// `Tab` on an `@word` (anywhere) or a `/word` (the whole first line so
+    /// far) just before the cursor (T25.2): removes `word` and returns the
+    /// sigil and `word`, leaving the sigil for the picker's choice to follow
+    /// exactly as when the picker was opened by typing it.
+    pub fn take_token(&mut self) -> Option<(char, String)> {
+        let (row, col) = self.area.cursor();
+        let line = self.area.lines().get(row)?;
+        let before: String = line.chars().take(col).collect();
+        let word = before.rsplit(char::is_whitespace).next().unwrap_or("");
+        let sigil = word.chars().next()?;
+        let whole_line = row == 0 && word.len() == before.len();
+        if !(sigil == '@' || (sigil == '/' && whole_line)) {
+            return None;
+        }
+        let query = word[sigil.len_utf8()..].to_string();
+        for _ in query.chars() {
+            self.area.delete_char();
+        }
+        Some((sigil, query))
+    }
+
     /// Inserts at the cursor: a paste, or what a picker chose.
     pub fn insert(&mut self, text: &str) {
         self.area.insert_str(text);
@@ -156,6 +177,9 @@ impl Composer {
                 self.area.insert_char('/');
                 Edit::OpenCommands
             }
+            // `Tab` completes an `@`/`/` token (`state::on_key`) and never
+            // types a tab character into the prompt (T25.2).
+            KeyCode::Tab => Edit::Nothing,
             KeyCode::Up if row == 0 && !self.history.is_empty() => {
                 let last = self.history.len().saturating_sub(1);
                 let ix = self.browsing.map_or(last, |i| i.saturating_sub(1));

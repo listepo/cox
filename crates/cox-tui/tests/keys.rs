@@ -229,3 +229,60 @@ fn tick_advances_the_clock_and_resize_asks_nothing() {
     assert_eq!(state.tick, 3);
     assert!(update(&mut state, Msg::Resize(80, 24)).is_empty());
 }
+
+/// T25.2: `Shift+Tab` (`BackTab`, with or without `SHIFT`) cycles default →
+/// plan → auto → default, and the composer prompt follows the mode.
+#[test]
+fn backtab_cycles_modes() {
+    let mut s = state();
+    let mut prompts = Vec::new();
+    for want in [
+        PermissionMode::Plan,
+        PermissionMode::Auto,
+        PermissionMode::Default,
+    ] {
+        prompts.push(buffer_to_string(&render(&s, 40, 3)));
+        let cmds = update(
+            &mut s,
+            Msg::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
+        );
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(
+                cox_protocol::types::Submission::SetPermissionMode { mode: want }
+            )]
+        );
+        assert_eq!(s.mode, want);
+    }
+    insta::assert_snapshot!(prompts.join("\n---\n"));
+    // A bare `Tab` with nothing to complete neither cycles nor types.
+    assert!(key(&mut s, KeyCode::Tab).is_empty());
+    assert_eq!(s.mode, PermissionMode::Default);
+    assert_eq!(s.composer.text(), "");
+}
+
+/// T25.2: `Tab` on an `@word` opens the file picker with `word` as its query
+/// and the choice replaces it; on a leading `/word` it opens the palette.
+#[test]
+fn tab_completes_mention() {
+    let mut s = state();
+    s.files = ["README.md", "src/main.rs"].map(String::from).to_vec();
+    s.composer.set_text("look at @mai");
+    key(&mut s, KeyCode::Tab);
+    match &s.modal {
+        Some(Modal::Picker(p)) => {
+            assert_eq!((p.kind, p.query.as_str()), (Kind::Files, "mai"));
+            assert_eq!(p.matches, ["src/main.rs"]);
+        }
+        other => panic!("no file picker: {other:?}"),
+    }
+    key(&mut s, KeyCode::Enter);
+    assert_eq!(s.composer.text(), "look at @src/main.rs ");
+
+    s.composer.set_text("/hel");
+    key(&mut s, KeyCode::Tab);
+    assert!(matches!(&s.modal, Some(Modal::Picker(p)) if p.kind == Kind::Commands));
+    // `Esc` gives the query back rather than losing what was typed.
+    key(&mut s, KeyCode::Esc);
+    assert_eq!(s.composer.text(), "/hel");
+}

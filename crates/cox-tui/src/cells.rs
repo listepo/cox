@@ -52,6 +52,10 @@ pub struct Look {
 const HEAD: usize = 6;
 const TAIL: usize = 5;
 
+/// How a plan-mode refusal reaches a tool result: `cox-core`'s `turn.rs`
+/// prefixes `permission denied: ` to `permission::Engine`'s plan-mode reason.
+const PLAN_DENIAL: &str = "permission denied: plan mode";
+
 fn dim(s: impl Into<String>) -> Line<'static> {
     Line::styled(s.into(), Style::default().add_modifier(Modifier::DIM))
 }
@@ -121,6 +125,21 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             .lines()
             .map(|l| dim(format!("{} {l}", g.think)))
             .collect(),
+        // T25.2: plan mode refusing a write is the mode working, not a
+        // failure — one dim line saying what would have run, no error card.
+        Cell::Tool {
+            call,
+            result: Some(r),
+            ..
+        } if !r.ok && r.visible.starts_with(PLAN_DENIAL) => vec![Line::styled(
+            format!(
+                "{} planned: {} {}",
+                g.plan,
+                clean(&call.name),
+                clean(&call.subject)
+            ),
+            Style::default().fg(look.colors.dim),
+        )],
         Cell::Tool {
             call,
             output,
@@ -290,8 +309,11 @@ pub fn wrap(lines: Vec<Line<'static>>, width: u16) -> Vec<Line<'static>> {
         };
         let mut cur: Vec<Span<'static>> = Vec::new();
         let mut col = 0;
+        // A `Line::styled` keeps its style on the line, not the spans; the
+        // rebuilt lines are plain, so each span inherits it here.
+        let base = line.style;
         for span in line.spans {
-            let style = span.style;
+            let style = base.patch(span.style);
             for word in span.content.split_inclusive(' ') {
                 let w = word.trim_end().width();
                 if col > 0 && col + w > width {
@@ -351,6 +373,13 @@ mod tests {
     fn wrap_splits_a_word_wider_than_the_row_by_display_width() {
         let lines = wrap(vec![Line::raw("ééééééé 漢字漢字")], 4);
         assert_eq!(text(&lines), ["éééé", "ééé ", "漢字", "漢字"]);
+    }
+
+    #[test]
+    fn wrap_keeps_the_line_style_on_every_span() {
+        let red = Style::default().fg(ratatui::style::Color::Red);
+        let lines = wrap(vec![Line::styled("aa bb", red)], 3);
+        assert!(lines.iter().flat_map(|l| &l.spans).all(|s| s.style == red));
     }
 
     #[test]

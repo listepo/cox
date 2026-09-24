@@ -123,7 +123,7 @@ impl Context {
 /// hints, so order matters; an action's rows stay together.
 pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Enter", "send", Context::Idle),
-    ("Tab", "mode.cycle", Context::Idle),
+    ("Shift+Tab", "mode.cycle", Context::Idle),
     ("@", "file", Context::Idle),
     ("/", "command", Context::Idle),
     ("?", "help", Context::Idle),
@@ -307,7 +307,7 @@ fn mode_named(s: &str) -> Option<PermissionMode> {
     }
 }
 
-/// `Tab`: default → plan → auto → default (§1.13).
+/// `Shift+Tab`: default → plan → auto → default (§1.13).
 pub fn next_mode(mode: PermissionMode) -> PermissionMode {
     match mode {
         PermissionMode::Default => PermissionMode::Plan,

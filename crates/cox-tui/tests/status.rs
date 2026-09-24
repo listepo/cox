@@ -10,7 +10,7 @@ use cox_protocol::types::{
 use cox_tui::commands::{self, Action, COMMANDS};
 use cox_tui::state::{Cell, Cmd, GitStatus, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn turn(state: &mut State, model: &str, cost: f64, input: u32) {
     let turn = TurnId::new();
@@ -129,7 +129,7 @@ fn command_lines_map_to_their_submissions() {
 }
 
 #[test]
-fn command_help_lists_every_command_and_tab_cycles_the_mode() {
+fn command_help_lists_every_command_and_shift_tab_cycles_the_mode() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::ReadOnly);
     assert!(submit(&mut state, "/help").is_empty());
     let Some(Cell::Notice { text, .. }) = state.transcript.last() else {
@@ -142,7 +142,10 @@ fn command_help_lists_every_command_and_tab_cycles_the_mode() {
         );
     }
     assert_eq!(
-        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Tab))),
+        update(
+            &mut state,
+            Msg::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        ),
         vec![Cmd::Submit(Submission::SetPermissionMode {
             mode: PermissionMode::Plan
         })]
