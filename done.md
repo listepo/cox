@@ -3608,3 +3608,33 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T25.8 Cross-session prompt history
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: — · Size: ~90 · Priority: P2 · Complexity: 2
+Goal: `Ctrl+R` searches the user turns of every session of this project (newest first) through `rollout_fts`.
+Files: `crates/cox-tui/src/picker.rs`, `crates/cox/src/session.rs`.
+Steps: (1) `Store::rollout_search(project_slug, query, limit)` exists for `cox sessions --grep`; the binary feeds `Kind::History` candidates from it on open and re-queries as the user types (debounced 100 ms through `Msg::Tick`). (2) Rows show `2d ago · <first 80 chars>`; `Enter` inserts the text. (3) Current-session entries come first, unchanged.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui history_picker_lists_other_sessions_after_current
+```
+Execution plan: (1) `cox-store` `fts.rs`: `user_prompts(limit)` — the first `rollout_fts` row of every `(session, turn > 0)`, newest first; the core indexes the user text before anything else of a turn, so no schema change. (2) `crates/cox/src/session.rs`: next to `project_sessions`, `project_prompts` keeps the rows of this project's other sessions (cwd under the git root, not the current id), deduplicated, as `("2d ago · <first 80 chars>", text)` in `State.past_prompts`. (3) `state.rs`: `Ctrl+R` lists the composer's own history first, unchanged, then those rows; choosing one inserts its full text. nucleo ranks the loaded rows as the user types instead of an FTS re-query per keystroke — the same picker path as `/resume`, no debounce machinery. Tests: store unit test for `user_prompts`, TUI snapshot `history_picker_lists_other_sessions_after_current`.
+Done when: the picker snapshot shows both groups.
+Out of scope: a global (cross-project) history.
+
+Deviations: there is no `Store::rollout_search(project_slug, …)` re-query per keystroke with a 100 ms debounce. At startup the binary loads the project's other-session prompts once into `State.past_prompts`, next to `project_sessions` (up to 500 rows, each text once). nucleo then ranks them as the user types. This is the same picker path `/resume` uses: there is no new `Cmd`/`Msg` round-trip, and an empty query keeps "current first, then newest". Prompts come from a new `Store::user_prompts`, which takes the first `rollout_fts` row of each `(session, turn > 0)`. The core indexes a turn's user text before anything else of that turn, so no schema change or migration was needed. A turn whose prompt was empty (attachments only) would surface its first indexed text instead. "This project" means the same thing it does for `/resume`: the session's cwd is under the git root. The row reads `2d ago · <first line, 80 columns>`, with `now` and dates left bare, and Enter inserts the full multi-line text. Files beyond the card's two: `cox-store` `fts.rs` (query and unit test), `cox-tui` `state.rs` and `tests/keys.rs`. Not done: no manual TUI run. The cox-mcp test `oauth_refresh_failure_is_a_warning` timed out once under full-suite load; it is unrelated and passes on its own and in a `-p cox-mcp` run.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui history_picker_lists_other_sessions_after_current
+1 test run: 1 passed
+$ mise exec -- cargo nextest run -p cox-store user_prompts
+1 test run: 1 passed
+$ mise exec -- cargo nextest run --workspace
+841 tests run: 840 passed, 1 failed (cox-mcp oauth_refresh_failure_is_a_warning, 5 s timeout under load; 9/9 pass in three `-p cox-mcp` reruns), 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```

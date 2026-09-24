@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T25.8 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T27.2 | todo | P1 | 2 | 60% | |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 0% | |
@@ -1011,20 +1010,6 @@ Done when: the two snapshots show highlighting and the release binary grows by l
 Out of scope: language auto-detection beyond file extension and first-line shebang.
 
 ### P25 — Composer and flow (goal: the keys a Claude Code or Codex user already has in their fingers)
-
-#### T25.8 Cross-session prompt history
-
-Model: claude-opus-5-5 · Status: in progress · Depends: — · Size: ~90 · Priority: P2 · Complexity: 2
-Goal: `Ctrl+R` searches the user turns of every session of this project (newest first) through `rollout_fts`.
-Files: `crates/cox-tui/src/picker.rs`, `crates/cox/src/session.rs`.
-Steps: (1) `Store::rollout_search(project_slug, query, limit)` exists for `cox sessions --grep`; the binary feeds `Kind::History` candidates from it on open and re-queries as the user types (debounced 100 ms through `Msg::Tick`). (2) Rows show `2d ago · <first 80 chars>`; `Enter` inserts the text. (3) Current-session entries come first, unchanged.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui history_picker_lists_other_sessions_after_current
-```
-Execution plan: (1) `cox-store` `fts.rs`: `user_prompts(limit)` — the first `rollout_fts` row of every `(session, turn > 0)`, newest first; the core indexes the user text before anything else of a turn, so no schema change. (2) `crates/cox/src/session.rs`: next to `project_sessions`, `project_prompts` keeps the rows of this project's other sessions (cwd under the git root, not the current id), deduplicated, as `("2d ago · <first 80 chars>", text)` in `State.past_prompts`. (3) `state.rs`: `Ctrl+R` lists the composer's own history first, unchanged, then those rows; choosing one inserts its full text. nucleo ranks the loaded rows as the user types instead of an FTS re-query per keystroke — the same picker path as `/resume`, no debounce machinery. Tests: store unit test for `user_prompts`, TUI snapshot `history_picker_lists_other_sessions_after_current`.
-Done when: the picker snapshot shows both groups.
-Out of scope: a global (cross-project) history.
 
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
 
