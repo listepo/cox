@@ -1,7 +1,6 @@
 # Todo
 
 - T22.4. Mouse: wire `tui.mouse` or delete the key
-- T23.3. OSC 8 hyperlinks
 - T23.4. OSC 52 clipboard
 - T23.6. OSC 9;4 progress
 - T24.3. `two-face` syntax set

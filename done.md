@@ -3496,3 +3496,31 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T23.3 OSC 8 hyperlinks
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: T23.0 · Size: ~120 · Priority: P1 · Complexity: 2
+Goal: `path:line` in tool headers and markdown links are clickable when `caps.osc8`; emitted after `text::sanitize`, never from model text.
+Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/src/text.rs`.
+Steps: (1) `text.rs`: `pub struct Link { text: String, target: String }` that only the renderer constructs; `sanitize` keeps stripping any OSC 8 that arrives in input. (2) `cells.rs`: tool headers for `read`/`edit`/`write`/`apply_patch`/`grep` wrap the subject in `Link { target: file://<confined absolute path>#L<line> }`; markdown `[text](https://…)` becomes `Link` for `http(s)` only. (3) `view.rs`/`app.rs`: when drawing a `Link` and `caps.osc8`, write `ESC ] 8 ; ; target ST` before and `ESC ] 8 ; ; ST` after the span (a `Span` with a custom marker rendered by the backend hook; ratatui has no widget — implement in the `insert_before` writer and the frame writer, one helper). (4) `tui.hyperlinks = true` config key (default true) as the manual switch.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui osc8_emitted_only_when_supported sanitize_strips_model_osc8
+```
+Execution plan: (1) new `link.rs` (works on the drawn `Buffer`, not strings): `mark(span)` tags a span with a reserved underline colour; `apply(buf, cwd, emit)` clears the mark and, when `emit`, rewrites each marked run as one OSC 8 cell (`ForcedWidth`) with the rest `Skip` — the ratatui diff counts escape bytes as width otherwise. The target is derived from the drawn text: `http(s)` as is, or a path lexically inside `cwd` with `#L<n>` from a `:n` suffix. (2) `cells.rs` marks the subject of `read`/`write`/`edit`/`apply_patch` headers when the header fits; `markdown.rs` marks `http(s)` link destinations, shown as `text (url)` when they differ. (3) `view()` and `insert_before` call `link::apply` before `color::map_buffer`; `State.cwd` set by `crates/cox`. (4) Existing `[tui.caps] osc8` is the switch — no second key. Tests: `osc8_emitted_only_when_supported`, `sanitize_strips_model_osc8`, a view test that model text never links.
+Done when: a snapshot rendered with `caps.osc8 = true` contains `\x1b]8;;file://` around a read path and none around any model-supplied text.
+Out of scope: opening links from the keyboard (terminals handle the click).
+
+Deviations: the helper is a new `link.rs` that works on the drawn `Buffer` instead of a `Link` type in `text.rs`. A renderer marks a span with a reserved underline colour. `link::apply` then clears the mark and, with `caps.osc8`, rewrites each marked run as one cell carrying the whole escape. That cell uses `CellDiffOption::ForcedWidth` and the cells after it use `Skip`, because ratatui counts the escape bytes as columns and would otherwise break its diff. The frame and `insert_before` both call the one helper before `color::map_buffer`. The target comes from the drawn text itself: an `http(s)` URL as written, or a path lexically inside `State.cwd` as `file://…`, with `#L<n>` only from a `:n` suffix in the subject. `grep` headers are not linked, because their subject is a pattern and not a path. A header that has to be truncated is not linked. A marked run that touches the right edge is not linked either, since it may be half of a wrapped URL. A markdown link whose text differs from its URL renders as `text (url)`, so the link target is always visible. There is no `tui.hyperlinks` key: the existing `[tui.caps] osc8 = false` (T23.0) is the manual switch. `theme.rs` exempts `link.rs` from the colour-literal test, because its mark colour never reaches the terminal. Extra files beyond the card: `link.rs`, `lib.rs`, `state.rs` (`cwd`), `view.rs`, `app.rs`, `theme.rs`, `crates/cox/src/session.rs` and `tests/frames.rs`. Not done: no manual run of the TUI in a real terminal.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui osc8_emitted_only_when_supported sanitize_strips_model_osc8
+2 tests run: 2 passed (plus osc8_links_tool_paths_but_never_model_text)
+$ mise exec -- cargo nextest run --workspace
+832 tests run: 832 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
