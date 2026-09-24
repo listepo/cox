@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T23.4 | todo | P2 | 1 | 0% | |
 | T23.6 | todo | P3 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
-| T24.7 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T25.8 | todo | P2 | 2 | 0% | |
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
@@ -1011,20 +1010,6 @@ mise exec -- cargo build --release -p cox && ls -l target/release/cox
 ```
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
-
-#### T24.7 Motion and narrow-width polish
-
-Model: claude-opus-5-5 · Status: in progress · Depends: T24.1 · Size: ~120 · Priority: P2 · Complexity: 2
-Goal: `tui.motion = full|reduced`; markdown tables fall back to `key: value` records under 60 columns; long headers truncate with the glyph-table ellipsis.
-Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/markdown.rs`, `config/default.toml`.
-Steps: (1) `reduced`: the spinner is the static `glyphs.busy` glyph, no elapsed-time shimmer, the thinking cell does not animate its fold marker. (2) `markdown.rs`: when a table's natural width exceeds the viewport, render each row as `Header: value` lines separated by a blank line (Codex's fallback). (3) `cells.rs`: headers use `text::truncate` with the ellipsis glyph at `width − 1`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test cells reduced_motion_spinner_is_static table_falls_back_to_records_at_50_columns
-```
-Execution plan: (1) `cox-protocol` `TuiConfig.motion` (`full` default) + `default.toml` row (and `docs/config.md` if generated from it); `State.still` set by `crates/cox`, carried as `Look.still`. Reduced: a running tool's rail is the spinner's first frame, and its elapsed line reads `running` instead of a 100 ms counter. (The thinking fold marker has no animation today — nothing to stop.) (2) `markdown.rs`: the renderer knows `look.width`; a table whose natural width exceeds it renders `Header: value` records, a blank line between rows. (3) `text::truncate` takes the glyph-table ellipsis; the tool header passes `g.ellipsis`. Tests in `tests/cells.rs`: `reduced_motion_spinner_is_static`, `table_falls_back_to_records_at_50_columns` (insta).
-Done when: both snapshots exist and `docs/config.md` documents `tui.motion`.
-Out of scope: tachyonfx-style effects (none planned).
 
 ### P25 — Composer and flow (goal: the keys a Claude Code or Codex user already has in their fingers)
 

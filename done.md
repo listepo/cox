@@ -3524,3 +3524,31 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T24.7 Motion and narrow-width polish
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: T24.1 · Size: ~120 · Priority: P2 · Complexity: 2
+Goal: `tui.motion = full|reduced`; markdown tables fall back to `key: value` records under 60 columns; long headers truncate with the glyph-table ellipsis.
+Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/markdown.rs`, `config/default.toml`.
+Steps: (1) `reduced`: the spinner is the static `glyphs.busy` glyph, no elapsed-time shimmer, the thinking cell does not animate its fold marker. (2) `markdown.rs`: when a table's natural width exceeds the viewport, render each row as `Header: value` lines separated by a blank line (Codex's fallback). (3) `cells.rs`: headers use `text::truncate` with the ellipsis glyph at `width − 1`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui --test cells reduced_motion_spinner_is_static table_falls_back_to_records_at_50_columns
+```
+Execution plan: (1) `cox-protocol` `TuiConfig.motion` (`full` default) + `default.toml` row (and `docs/config.md` if generated from it); `State.still` set by `crates/cox`, carried as `Look.still`. Reduced: a running tool's rail is the spinner's first frame, and its elapsed line reads `running` instead of a 100 ms counter. (The thinking fold marker has no animation today — nothing to stop.) (2) `markdown.rs`: the renderer knows `look.width`; a table whose natural width exceeds it renders `Header: value` records, a blank line between rows. (3) `text::truncate` takes the glyph-table ellipsis; the tool header passes `g.ellipsis`. Tests in `tests/cells.rs`: `reduced_motion_spinner_is_static`, `table_falls_back_to_records_at_50_columns` (insta).
+Done when: both snapshots exist and `docs/config.md` documents `tui.motion`.
+Out of scope: tachyonfx-style effects (none planned).
+
+Deviations: the thinking cell's fold marker has no animation, so reduced motion has nothing to stop there. There is no separate `glyphs.busy` glyph: a running card under `reduced` shows the spinner's first frame, and its elapsed line reads `running` instead of the 100 ms counter. The status line's `working` was already static. The narrow-table fallback triggers when the table's natural width exceeds the viewport, not at a fixed 60 columns. That covers the goal's "under 60 columns" for any table that does not fit. A header-only table stays a table. `text::truncate` now takes the glyph table's ellipsis, and its only caller, the tool header, passes `g.ellipsis`. The unicode `…` therefore still lands in the last column, and ASCII gets `...`. `config/default.toml` is a symlink to `crates/cox-protocol/default.toml`, and `docs/config.md` gained the `motion` bullet. Files beyond the card's three: `cox-protocol` `config.rs`, `state.rs`, `text.rs`, `diff.rs` (test `Look`), `crates/cox/src/session.rs` and `tests/cells.rs`.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test cells reduced_motion_spinner_is_static table_falls_back_to_records_at_50_columns
+2 tests run: 2 passed
+$ mise exec -- cargo nextest run --workspace
+834 tests run: 834 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
