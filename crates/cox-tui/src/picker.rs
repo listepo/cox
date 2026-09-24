@@ -172,6 +172,17 @@ pub fn session_entry(
     )
 }
 
+/// One `Ctrl+R` row from another session (T25.8): that session's coarse
+/// age and the prompt's first line, cut to 80 columns.
+pub fn prompt_entry(age: &str, text: &str) -> String {
+    let age = match age.ends_with(['m', 'h', 'd']) {
+        true => format!("{age} ago"),
+        false => age.to_string(),
+    };
+    let first = crate::text::sanitize(text.lines().next().unwrap_or_default());
+    format!("{age} · {}", crate::text::truncate(&first, 80, "..."))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Picker {
     pub kind: Kind,

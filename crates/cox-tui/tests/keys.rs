@@ -62,6 +62,33 @@ fn ctrl_r_lists_history_newest_first_and_a_choice_refills_the_composer() {
     assert_eq!(state.composer.text(), "first");
 }
 
+/// T25.8: `Ctrl+R` lists this session's own lines first, unchanged, then
+/// the prompts of the project's other sessions with their age; choosing
+/// one of those puts its whole text back, not the row.
+#[test]
+fn history_picker_lists_other_sessions_after_current() {
+    let mut state = state();
+    type_line(&mut state, "first");
+    type_line(&mut state, "second");
+    state.past_prompts = [
+        ("2d", "fix the login bug\nand add a test"),
+        ("now", "add a cache column"),
+    ]
+    .iter()
+    .map(|(age, text)| (cox_tui::picker::prompt_entry(age, text), text.to_string()))
+    .collect();
+    assert!(update(&mut state, ctrl('r')).is_empty());
+    let Some(Modal::Picker(picker)) = &state.modal else {
+        panic!("Ctrl+R opens the history picker: {:?}", state.modal);
+    };
+    insta::assert_snapshot!(picker.matches.join("\n"));
+    for _ in 0..2 {
+        key(&mut state, KeyCode::Down);
+    }
+    assert!(key(&mut state, KeyCode::Enter).is_empty());
+    assert_eq!(state.composer.text(), "fix the login bug\nand add a test");
+}
+
 #[test]
 fn approval_decided_by_a_rule_closes_the_modal() {
     let mut state = state();

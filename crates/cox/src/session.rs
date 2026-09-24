@@ -2,6 +2,7 @@
 //! store and the built-in tool set. Kept out of `main.rs` so the TUI and
 //! `cox run -p` (T6.1) assemble the same session the same way.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -313,6 +314,35 @@ fn project_sessions(home: &Path, cwd: &Path) -> Vec<(String, String)> {
     rows
 }
 
+/// `Ctrl+R`'s other-session rows (T25.8): the prompts typed in this
+/// project's other sessions, newest first and each text once, as
+/// `(picker row, full text)`. Best-effort like `project_sessions`.
+fn project_prompts(home: &Path, cwd: &Path, me: SessionId) -> Vec<(String, String)> {
+    let project = config_load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let Ok(store) = Store::open(home) else {
+        return Vec::new();
+    };
+    let now = crate::sessions::now_secs();
+    let me = me.to_string();
+    let ages: HashMap<String, String> = store
+        .list_sessions(1000)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.id != me && Path::new(&s.cwd).starts_with(&project))
+        .map(|s| (s.id, crate::sessions::age_of(&s.updated_at, now)))
+        .collect();
+    let mut seen = HashSet::new();
+    store
+        .user_prompts(5000)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| Some((ages.get(&p.session_id)?, p.text)))
+        .filter(|(_, text)| seen.insert(text.clone()))
+        .take(500)
+        .map(|(age, text)| (cox_tui::picker::prompt_entry(age, &text), text))
+        .collect()
+}
+
 /// `/fork` and `/handoff` (T26.3): a new session with `parent_id` whose own
 /// rollout opens with `events`, so a later `--resume` of the child rebuilds
 /// the same history from its file. The parent's rollout is only read.
@@ -552,6 +582,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
         state.worktree = cli.worktree.clone();
         state.sessions = project_sessions(&home, cwd);
+        state.past_prompts = project_prompts(&home, cwd, session.id());
         state.composer.set_vim(config.tui.vim);
         // T22.6/T24.2: `"auto"` and a named theme both query the terminal's
         // OSC 11 background once, before raw mode; `"light"`/`"dark"` are
