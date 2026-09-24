@@ -7,6 +7,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T22.4 | todo | P1 | 2 | 0% | |
+| T22.8 | in progress | P1 | 1 | 10% | Claude Code / claude-opus-5-5 |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
@@ -963,6 +964,20 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
 
+#### T22.8 Deterministic MCP refresh-failure test
+
+Model: claude-opus-5-5 · Status: in progress · Depends: T22.5 · Size: ~10 · Priority: P1 · Complexity: 1
+Goal: `cox-mcp` `client::tests::oauth_refresh_failure_is_a_warning` never fails on a loaded machine; it still proves that a rejected refresh with no login prompt is exactly the `token expired, run \`cox mcp login srv\`` notice, with no client and no tools.
+Cause: the test passes `prompt: None`, so `connect_all`'s whole budget is the bare 5 s handshake timeout (its sibling `oauth_401_then_token_then_200` gets 5 s + `LOGIN_TIMEOUT`). The connect makes about seven round trips to wiremock and takes ~25 ms. It passed 3 of 3 full-workspace runs and 300 of 300 runs under 48 CPU hogs (max 0.76 s). A process stall past 5 s, such as memory pressure or other worktrees building, wins the race instead: with the token endpoint delayed 6 s, the test fails at 5.02 s with `mcp server \`srv\` skipped: no handshake within 5s`. rmcp has no timer of its own on this path.
+Files: `crates/cox-mcp/src/client.rs`.
+Steps: (1) The test passes a connect budget that a stall cannot reach (60 s, named, with the reason in a comment) instead of 5 s. The timeout branch is not what the test proves. (2) Leave `connect_all` and the sibling test unchanged.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-mcp oauth_refresh_failure_is_a_warning
+```
+Done when: the check and the workspace gate pass; the same 6 s token-endpoint delay no longer fails the test.
+Out of scope: a test of the `no handshake within` notice itself; changing the production budget.
+
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
 #### T23.4 OSC 52 clipboard
@@ -1106,6 +1121,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A25 §3 P21 — TypeSafe Jev as a decision model (T21.0 scope gate). Why: user request to restore and improve the Jev note that was lost in an uncommitted working-copy overwrite of `plan.md`. Effect: new phase P21 with one `open` scope-gate task T21.0 (`docs/design/v0.2-jev.md`, Problem / The field / cox / Falsifiers / Review), mirroring the P19 gate shape: design doc first, no `crates/` changes, no new §1.1 dependency until the doc fixes the boundary (Jev answers never bypass the permission engine; fail open like hooks/skills/MCP). Restores the lost facts in their correct form — Jev is TypeSafe's System One decision model (state + Choice/Score/Noul questions in, probabilities + confidence out, `POST /v1/systemone` in its own JSON format, Python/JS SDKs, no OpenAPI; LangChain middleware and Vercel AI Gateway integrations; keys via waitlist at `console.typesafe.ai`; docs index at `docs.typesafe.ai/llms.txt`) — and maps the candidate call sites (router pick, permission classification, compaction/memory salience, skill suggestion) to the cookbook patterns (intent routing, confidence-gated routing, skill suggestion, LLM guardrails).
 - A26 `research.md` §8, `docs/design/improvement-plan-2026.md`, `ideas.md` — field survey of terminal coding agents (2026-09-22) and a proposed improvement plan. Why: user request to research what agent CLIs/TUIs ship in 2026, compare with cox and plan how to be more convenient and better-looking than the field. Effect: research §8 records the survey (four research agents, author-verified cox column and crate facts, ledger #29–36); the design doc holds nine proposed phases P22–P30 (trust fixes for dead config keys and the fixed-answer `ask_user`; terminal capabilities; themes and tool cards; message queue and `Shift+Tab`; checkpoints and `/rewind`; visible agents; context and cost visibility; `--plain`; lean profile and footprint) as task cards in the §2 format, with priorities, dependencies needing approval (§7 of the doc) and falsifiers; `ideas.md` lists the phases. No task is added to the §3 table or `todo.md`; no decision in §0 changes; nothing moves until the creator approves a phase.
 - A27 §3 P22–P30, top table, `todo.md`, `ideas.md`, §3.0, §5 M6 — the improvement plan approved and moved into the plan (2026-09-22). Why: the creator approved the A26 proposal and asked for every task in `plan.md` with concrete step-by-step instructions and a complexity rating. Effect: 48 tasks total: 44 open and 4 done (T22.5, T26.1, T26.2, T27.3); the cards use the §2 format (Model, Depends, Size, Priority, Complexity, Goal, Files, numbered Steps, bash Check, Done when, Out of scope), and the same ids appear in the top table and `todo.md`; `ideas.md` keeps only the unapproved later gates; `docs/design/improvement-plan-2026.md` keeps the survey, principles, pitch, non-goals and falsifiers and points to §3 for the cards. Cards were corrected against the code before the move: `ask_user` already has `Answers::Surface` (T22.1 wires it), background agents are already concurrent (T9.2) so T27.1 is about `bash` tasks and `Ctrl+B`, `SessionStart`/`Notification` already exist in `HookEvent` (T22.3 fires them), `similar` is already a workspace dependency (T24.5). Four new dependencies still need approval before their task starts: ratatui `scrolling-regions` feature (T23.2), crossterm `osc52` feature (T23.4), `terminal-colorsaurus` (T22.6), `two-face` (T24.3); each card names it. No decision in §0 changes; §1.13 keymap rows and §1.2 protocol variants that a card adds (`Submission::UserShell`, `Rewind`, `Background`; `Event::Checkpoint`, `Rewound`) are amended in that task's commit.
+- A28 §3 P22, T22.8 — `cox-mcp` `oauth_refresh_failure_is_a_warning` failed twice in loaded `cargo nextest run --workspace` runs (~5.5 s). Its assertion is about how an error is classified, but the whole connect ran under the bare 5 s handshake budget. Why: user request to find the real cause and make the test deterministic without weakening it. Effect: a test-only change. The test gets a connect budget a stall cannot reach; `connect_all`, the production budget and the sibling OAuth test are unchanged.
 
 ## 7. Risk register
 
