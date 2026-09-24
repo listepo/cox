@@ -257,8 +257,16 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
                         .as_ref()
                         .map(|a| format!(" {sep} cox expand {}", a.id))
                         .unwrap_or_default();
+                    // T26.4: a change the user can take back says how.
+                    let undo = match r.ok && r.diff.is_some() {
+                        true => format!(" {sep} /undo"),
+                        false => String::new(),
+                    };
                     lines.push(rail(
-                        dim(format!("{mark} {}B {}ms{expand}", r.bytes, r.duration_ms)),
+                        dim(format!(
+                            "{mark} {}B {}ms{expand}{undo}",
+                            r.bytes, r.duration_ms
+                        )),
                         rail_glyph,
                         rail_style,
                     ));

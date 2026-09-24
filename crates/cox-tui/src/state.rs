@@ -1137,6 +1137,17 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             })];
         }
         Action::Rewind => return open_rewind(state),
+        Action::Undo => match state.turns.last() {
+            Some(t) => {
+                return vec![Cmd::Submit(Submission::Rewind {
+                    to_turn: t.seq,
+                    code: true,
+                    conversation: false,
+                })];
+            }
+            None => notice(state, Level::Warn, "undo: no turn yet".into()),
+        },
+        Action::Redo => return vec![Cmd::Submit(Submission::Redo)],
         // A running turn would be cut mid-write, so both wait for it.
         Action::Fork(_) | Action::Handoff(_) if state.status.busy => {
             notice(state, Level::Warn, "interrupt the turn first".into());

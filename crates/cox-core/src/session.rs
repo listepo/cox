@@ -93,6 +93,9 @@ pub(crate) struct Inner {
     /// Monotonic turn counter for the FTS index (T10.3) and the
     /// `checkpoints` rows (T26.1).
     pub(crate) turn_seq: u32,
+    /// The turn a `/redo` wrote its pre-images under (T26.4), so a second
+    /// `/redo` does not undo the first.
+    pub(crate) redone: Option<u32>,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// Whether this turn already compacted after a context-length error.
@@ -340,6 +343,7 @@ impl Session {
                 turn_marks,
                 archives: HashMap::new(),
                 turn_seq: turns,
+                redone: None,
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
@@ -576,6 +580,7 @@ impl Session {
                 code,
                 conversation,
             } => self.rewind(to_turn, code, conversation).await,
+            Submission::Redo => self.redo().await,
             Submission::Background { call_id } => self.background(call_id).await,
             Submission::UserShell { command, share } => self.user_shell(command, share).await,
             Submission::Command { command } if command.name == "compact" => {

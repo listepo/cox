@@ -178,3 +178,27 @@ fn rewound_conversation_cuts_the_transcript_at_the_turn() {
     );
     assert_eq!(state.turns.len(), 1);
 }
+
+/// T26.4: `/undo` is a code-only rewind of the last turn, `/redo` the
+/// core's one-step way back; with no turn yet `/undo` only says so.
+#[test]
+fn undo_and_redo_submit_one_step() {
+    let mut empty = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    assert!(common::type_line(&mut empty, "/undo").is_empty());
+    assert!(
+        matches!(empty.transcript.last(), Some(Cell::Notice { text, .. }) if text.starts_with("undo:"))
+    );
+    let mut state = two_turns();
+    assert!(matches!(
+        common::type_line(&mut state, "/undo")[..],
+        [Cmd::Submit(Submission::Rewind {
+            to_turn: 2,
+            code: true,
+            conversation: false,
+        })]
+    ));
+    assert!(matches!(
+        common::type_line(&mut state, "/redo")[..],
+        [Cmd::Submit(Submission::Redo)]
+    ));
+}

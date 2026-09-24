@@ -79,6 +79,45 @@ impl Session {
         .await
     }
 
+    /// Handles `Submission::Redo` (T26.4): a rewind writes the files it is
+    /// about to overwrite under a turn of its own, so rewinding code to that
+    /// turn puts them back. Only when that rewind is the last thing that
+    /// happened — a user turn since has its own marker — and was not itself
+    /// a redo, so `/redo` twice does not toggle.
+    pub(crate) async fn redo(&self) -> Result<(), CoreError> {
+        let rows = self
+            .store
+            .checkpoint_list(&self.id)
+            .map_err(|error| CoreError::Store { error })?;
+        let last = rows
+            .iter()
+            .rev()
+            .find(|r| r.kind == CheckpointKind::Turn)
+            .map(|r| r.turn);
+        let redone = self.inner.lock().await.redone;
+        let target = last.filter(|&seq| {
+            let mut own = rows
+                .iter()
+                .filter(|r| r.turn == seq && r.kind != CheckpointKind::Turn)
+                .peekable();
+            redone != Some(seq) && own.peek().is_some() && own.all(|r| r.call.is_none())
+        });
+        let Some(seq) = target else {
+            return self
+                .emit(Event::Notice {
+                    level: Level::Warn,
+                    text:
+                        "redo: nothing to redo; only the step right after /undo or /rewind can be"
+                            .into(),
+                })
+                .await;
+        };
+        self.rewind(seq, true, false).await?;
+        let mut inner = self.inner.lock().await;
+        inner.redone = Some(inner.turn_seq);
+        Ok(())
+    }
+
     /// Writes the earliest pre-image of every file touched since `to_turn`
     /// back, under a fresh turn number so the rewind's own pre-images make
     /// it undoable. Returns `(restored, skipped)`.

@@ -744,6 +744,9 @@ pub enum Submission {
         /// Drop the conversation from `to_turn` on (append-only: a marker, not an edit).
         conversation: bool,
     },
+    /// `/redo` (T26.4): put back the files the last rewind restored, when
+    /// nothing has happened since it. One step; a warning otherwise.
+    Redo,
     /// `Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a
     /// background task; the model gets a pointer result and the turn goes on.
     Background {
@@ -1282,6 +1285,7 @@ mod tests {
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
+    #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");

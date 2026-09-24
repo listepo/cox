@@ -10,7 +10,7 @@ expression: "format!(\"{expanded}\\n---\\n{collapsed}\")"
   -fn old() {}
   +fn new() {}
    fn keep() {}
-│ ✓ 0B 1ms
+│ ✓ 0B 1ms · /undo
 ⚙ edit README.md · +2 −0 · 1ms
   ± README.md  +2 −0
   --- a/README.md
@@ -19,11 +19,11 @@ expression: "format!(\"{expanded}\\n---\\n{collapsed}\")"
    # cox
   +
   +A coxswain.
-│ ✓ 0B 1ms
+│ ✓ 0B 1ms · /undo
 ---
 ⚙ edit src/lib.rs · +1 −1 · 1ms
   ± src/lib.rs  +1 −1
-│ ✓ 0B 1ms
+│ ✓ 0B 1ms · /undo
 ⚙ edit README.md · +2 −0 · 1ms
   ± README.md  +2 −0
-│ ✓ 0B 1ms
+│ ✓ 0B 1ms · /undo

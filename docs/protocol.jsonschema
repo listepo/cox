@@ -2378,6 +2378,19 @@
         ]
       },
       {
+        "description": "`/redo` (T26.4): put back the files the last rewind restored, when\nnothing has happened since it. One step; a warning otherwise.",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "redo"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      {
         "description": "`Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a\nbackground task; the model gets a pointer result and the turn goes on.",
         "type": "object",
         "properties": {
