@@ -9,7 +9,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T22.4 | todo | P1 | 2 | 0% | |
 | T23.3 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T23.5 | todo | P0 | 2 | 0% | |
+| T23.5 | in progress | P0 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T23.6 | todo | P3 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T24.7 | todo | P2 | 2 | 0% | |
@@ -1000,7 +1000,7 @@ Out of scope: paste (bracketed paste already exists), native clipboard crates.
 
 #### T23.5 Notifications
 
-Model: sonnet · Status: open · Depends: T23.0, T22.3 · Size: ~120 · Priority: P0 · Complexity: 2
+Model: claude-opus-5-5 · Status: in progress · Depends: T23.0, T22.3 · Size: ~120 · Priority: P0 · Complexity: 2
 Goal: `TurnDone`, `ApprovalRequired` and a question while the terminal is unfocused ring the terminal (OSC 9 or 777 plus BEL); `tui.notify = auto|always|off`.
 Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `config/default.toml`.
 Steps: (1) `app.rs`: `EnableFocusChange` when `caps.focus`; `Input::FocusGained/FocusLost` → `Msg::Focus(bool)`. (2) `state.rs`: `Cmd::Notify { title, body }` emitted on the three events when `notify == always` or (`auto` and unfocused). (3) `app.rs` writes `ESC ] 9 ; body BEL` (OSC 777 `notify;title;body` when `TERM_PROGRAM`/`VTE_VERSION` say VTE) followed by `BEL`; the `Notification` hook (T22.3) gets the same payload. (4) `docs/config.md` row and a `doctor` line.
@@ -1011,6 +1011,7 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_turn_done_writes_osc9
 ```
 Done when: the PTY e2e sees `\x1b]9;` after `TurnDone` with focus lost and nothing with focus held.
 Out of scope: OS-native notification daemons.
+Execution plan: `term.rs` gets the pure pieces (`is_vte`, `notify_via` for doctor, `notification` building OSC 777/OSC 9 + BEL with every control stripped from title and body); `state.rs` gets `Msg::Focus`, `State.focused`, `Notify` (`tui.notify`), `Cmd::Notify` emitted on `TurnDone` (not `Interrupted`), `ApprovalRequired` and `Msg::Question`; `app.rs` enables/disables focus reporting when `caps.focus` and writes the bytes; `TuiConfig.notify` + `default.toml` row (docs/config.md regenerated); `crates/cox` sets `state.notify` and doctor prints `notify via …`. The `Notification` hook already fires in `cox-core` (T22.3). Tests: unit `update_emits_notify_only_when_unfocused`, `notification_picks_the_sequence_and_strips_controls`, PTY `pty_turn_done_writes_osc9` through a `notify` scenario in `kitty_probe`.
 
 #### T23.6 OSC 9;4 progress
 

@@ -176,6 +176,41 @@ impl Caps {
     }
 }
 
+/// Whether the terminal is VTE-based (GNOME Terminal, Tilix, …), which
+/// shows OSC 777 notifications and ignores OSC 9 (T23.5).
+pub fn is_vte(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    env("VTE_VERSION").is_some()
+}
+
+/// What `notification` writes on this terminal, for `cox doctor`.
+pub fn notify_via(caps: &Caps, vte: bool) -> &'static str {
+    match (vte, caps.osc9) {
+        (true, _) => "OSC 777 + BEL",
+        (false, true) => "OSC 9 + BEL",
+        (false, false) => "BEL",
+    }
+}
+
+/// The bytes that ring the terminal (T23.5): an OSC 777 (VTE) or OSC 9
+/// desktop notification when the terminal shows one, then a `BEL` so a
+/// terminal without either still flags the tab. `title` and `body` can
+/// carry tool and model text, so every control character goes — one left
+/// in would end the OSC early and turn the rest into terminal input.
+pub fn notification(caps: &Caps, vte: bool, title: &str, body: &str) -> String {
+    let clean = |s: &str| -> String {
+        crate::text::sanitize(s)
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect()
+    };
+    let osc = match (vte, caps.osc9) {
+        (true, _) => format!("\x1b]777;notify;{};{}\x07", clean(title), clean(body)),
+        (false, true) => format!("\x1b]9;{}\x07", clean(body)),
+        (false, false) => String::new(),
+    };
+    format!("{osc}\x07")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,6 +480,24 @@ mod tests {
             caps.truecolor,
             "an untouched field keeps its detected value"
         );
+    }
+
+    #[test]
+    fn notification_picks_the_sequence_and_strips_controls() {
+        let osc9 = Caps {
+            osc9: true,
+            ..Caps::default()
+        };
+        let body = "rm -rf x\x07\x1b]9;pwned\x1b\\";
+        assert_eq!(
+            notification(&osc9, false, "cox", body),
+            "\x1b]9;rm -rf x\x07\x07"
+        );
+        assert_eq!(
+            notification(&osc9, true, "cox", "turn done"),
+            "\x1b]777;notify;cox;turn done\x07\x07"
+        );
+        assert_eq!(notification(&Caps::default(), false, "cox", "x"), "\x07");
     }
 
     #[test]

@@ -458,3 +458,24 @@ fn pty_resize_mid_stream_keeps_scrollback_unique() {
         );
     }
 }
+
+/// T23.5: with focus lost, `TurnDone` writes OSC 9 then BEL; with focus held
+/// the same event writes nothing. Focus reporting is switched on and off.
+#[test]
+fn pty_turn_done_writes_osc9() {
+    let raw = pty::run_probe(&[("COX_PROBE_SCENARIO", "notify")], 24, 80);
+    let has = |needle: &[u8]| raw.windows(needle.len()).filter(|w| *w == needle).count();
+    let shown = String::from_utf8_lossy(&raw);
+    assert_eq!(has(b"\x1b]9;turn done\x07\x07"), 1, "{shown:?}");
+    assert_eq!(has(b"\x1b]9;"), 1, "rang with focus held: {shown:?}");
+    assert_eq!(
+        has(b"\x1b[?1004h"),
+        1,
+        "focus reporting not enabled: {shown:?}"
+    );
+    assert_eq!(
+        has(b"\x1b[?1004l"),
+        1,
+        "focus reporting not disabled: {shown:?}"
+    );
+}

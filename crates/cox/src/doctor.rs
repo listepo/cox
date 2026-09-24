@@ -307,6 +307,12 @@ fn check_terminal(tui_theme: &str, tui_caps: &HashMap<String, bool>) -> CheckRes
         })
         .collect();
     details.push(caps_report.join(", "));
+    // T23.5: what `tui.notify` writes on this terminal.
+    let vte = cox_tui::term::is_vte(&env_fn);
+    details.push(format!(
+        "notify via {}",
+        cox_tui::term::notify_via(&caps, vte)
+    ));
 
     CheckResult::ok("terminal", details.join(", "))
 }
