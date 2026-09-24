@@ -8,7 +8,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T23.6 | in progress | P3 | 1 | 0% | Claude Code / claude-opus-5-5 |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
 | T27.4 | todo | P3 | 2 | 0% | |
@@ -979,20 +978,6 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_copy_writes_osc52
 ```
 Done when: the PTY e2e sees `\x1b]52;c;` with the base64 of the cell text.
 Out of scope: paste (bracketed paste already exists), native clipboard crates.
-
-#### T23.6 OSC 9;4 progress
-
-Model: claude-opus-5-5 · Status: in progress · Depends: T23.0 · Size: ~50 · Priority: P3 · Complexity: 1
-Goal: indeterminate progress in the tab or taskbar while a turn runs, cleared on idle, only when `caps.osc9_4`.
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) `Cmd::Progress(Option<u8>)`: `Some(0)` with state 3 (indeterminate) on `TurnStarted`, `None` (state 0) on `TurnDone`/`Error`; approval pending → state 4 (paused). (2) `app.rs` writes `ESC ] 9 ; 4 ; <state> ; <pct> ST`. (3) Config `tui.progress = true`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui progress_sequence_follows_turn_state
-```
-Execution plan: (1) `term.rs`: `Progress { Idle, Busy, Paused }` and `progress(p)`, the `ESC ] 9 ; 4 ; <0|3|4> ; 0 ST` bytes. (2) `state.rs`: after every `update`, when `caps.osc9_4`, the wanted state — idle unless busy; paused while an approval or `ask_user` modal waits — is compared with `State.progress` and a `Cmd::Progress` goes out only on a change. (3) `app.rs` writes it; `restore` clears it on exit so a quit mid-turn leaves no spinning tab. The existing `[tui.caps] osc9_4 = false` is the manual switch — no `tui.progress` key. Tests: `progress_sequence_follows_turn_state` (state.rs unit test), a PTY e2e in `tests/shell.rs` asserting no `9;4` without the capability.
-Done when: the sequence test passes and the PTY e2e on a terminal without the capability sees no `9;4`.
-Out of scope: percentages (a turn has no known length).
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
