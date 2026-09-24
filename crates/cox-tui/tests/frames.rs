@@ -286,3 +286,54 @@ fn composer_slash_palette() {
     assert!(state.modal.is_none());
     assert!(state.composer.is_empty());
 }
+
+/// T23.3: a running `read` card links its path; the model's own text — a
+/// path and a raw OSC 8 of its own — links nothing.
+#[test]
+fn osc8_links_tool_paths_but_never_model_text() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::ReadOnly);
+    state.caps.osc8 = true;
+    state.cwd = "/work".into();
+    let (reply, call_id) = (ItemId::new(), CallId::new());
+    let events = [
+        Event::ItemStarted {
+            item: reply,
+            kind: ItemKind::AssistantMessage {
+                text: String::new(),
+            },
+        },
+        Event::TextDelta {
+            item: reply,
+            text: "see src/lib.rs and \u{1b}]8;;https://evil.test\u{1b}\\here\u{1b}]8;;\u{1b}\\\n"
+                .into(),
+        },
+        Event::ToolCallRequested {
+            call: ToolCall {
+                id: call_id,
+                name: "read".into(),
+                input: serde_json::json!({"path": "src/main.rs"}),
+                risk: Risk::ReadOnly,
+                subject: "src/main.rs".into(),
+            },
+        },
+    ];
+    for ev in events {
+        update(&mut state, Msg::Event(ev));
+    }
+    let buf = render(&state, 60, 12);
+    let links: Vec<&str> = buf
+        .content
+        .iter()
+        .map(|c| c.symbol())
+        .filter(|s| s.contains("\u{1b}]8"))
+        .collect();
+    assert_eq!(
+        links,
+        ["\u{1b}]8;;file:///work/src/main.rs\u{1b}\\src/main.rs\u{1b}]8;;\u{1b}\\"],
+        "{}",
+        buffer_to_string(&buf)
+    );
+    state.caps.osc8 = false;
+    let plain = render(&state, 60, 12);
+    assert!(plain.content.iter().all(|c| !c.symbol().contains('\u{1b}')));
+}

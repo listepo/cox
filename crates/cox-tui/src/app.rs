@@ -244,6 +244,7 @@ pub async fn run(
                 // viewport; it is written straight to the terminal.
                 terminal.insert_before(height, |buf| {
                     Paragraph::new(lines).render(buf.area, buf);
+                    crate::link::apply(buf, &state.cwd, state.caps.osc8);
                     crate::color::map_buffer(buf, depth);
                 })?;
             }

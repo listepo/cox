@@ -11,6 +11,7 @@ pub mod composer;
 pub mod diff;
 pub mod glyph;
 pub mod keymap;
+pub mod link;
 pub mod markdown;
 pub mod modal;
 pub mod picker;

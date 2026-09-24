@@ -250,6 +250,9 @@ pub struct State {
     /// Whether the terminal has focus, from focus reporting (DECSET 1004);
     /// assumed until the terminal says otherwise.
     pub focused: bool,
+    /// The session's directory; `link::apply` links file paths under it
+    /// (T23.3). Empty until the binary sets it, and then nothing is a file link.
+    pub cwd: std::path::PathBuf,
 }
 
 /// `tui.notify` (T23.5): when a finished turn, an approval or a question
@@ -419,6 +422,7 @@ impl State {
             send_now: false,
             keymap: Keymap::default(),
             notify: Notify::Auto,
+            cwd: std::path::PathBuf::new(),
             focused: true,
         }
     }

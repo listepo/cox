@@ -10,6 +10,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::diff;
 use crate::glyph::Glyphs;
+use crate::link;
 use crate::markdown;
 use crate::state::Cell;
 use crate::text;
@@ -80,10 +81,12 @@ fn bash_exit_code(output: &str) -> Option<&str> {
     Some(code)
 }
 
+/// Tools whose subject is the one file they read or change.
+const FILE_TOOLS: [&str; 4] = ["read", "write", "edit", "apply_patch"];
+
 /// The syntect token for a tool whose output is the file named by its
 /// subject; `None` for every other tool, whose output is not source text.
 fn file_token(name: &str, subject: &str) -> Option<String> {
-    const FILE_TOOLS: [&str; 4] = ["read", "write", "edit", "apply_patch"];
     if !FILE_TOOLS.contains(&name) {
         return None;
     }
@@ -160,26 +163,39 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             let rail_style = Style::default().fg(tint);
             let output = clean(output);
             // T25.3: the user's own `!` line reads as the shell prompt it is.
-            let mut header = match user {
-                true => format!("$ {}", clean(&call.subject)),
-                false => format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject)),
+            let (lead, subject) = match user {
+                true => ("$ ".to_string(), clean(&call.subject)),
+                false => (
+                    format!("{} {} ", g.tool, clean(&call.name)),
+                    clean(&call.subject),
+                ),
             };
+            let mut tail = String::new();
             if let Some(r) = result {
                 if let Some(d) = r.diff.as_ref() {
                     let (added, removed) = diff::counts(&d.unified);
-                    header.push_str(&format!(" {sep} +{added} {}{removed}", g.minus));
+                    tail.push_str(&format!(" {sep} +{added} {}{removed}", g.minus));
                 }
-                header.push_str(&format!(" {sep} {}ms", r.duration_ms));
+                tail.push_str(&format!(" {sep} {}ms", r.duration_ms));
                 if call.name == "bash"
                     && let Some(code) = bash_exit_code(&output)
                 {
-                    header.push_str(&format!(" {sep} exit {code}"));
+                    tail.push_str(&format!(" {sep} exit {code}"));
                 }
             }
-            let mut lines = vec![Line::styled(
-                text::truncate(&header, usize::from(look.width.max(1))),
-                Style::default().fg(tint),
-            )];
+            // T23.3: a file tool's subject is a link when the header fits;
+            // a truncated one would link a path cut short.
+            let full = format!("{lead}{subject}{tail}");
+            let width = usize::from(look.width.max(1));
+            let head = match FILE_TOOLS.contains(&call.name.as_str()) && full.width() <= width {
+                true => Line::from(vec![
+                    Span::raw(lead),
+                    link::mark(Span::raw(subject)),
+                    Span::raw(tail),
+                ]),
+                false => Line::raw(text::truncate(&full, width)),
+            };
+            let mut lines = vec![head.style(Style::default().fg(tint))];
             let out: Vec<&str> = output.lines().collect();
             // A tool that prints a file prints source: highlight it by the
             // subject's extension, railed like plain output.

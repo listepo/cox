@@ -182,6 +182,8 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     }
     status::line_at(state, status.width).render(status, buf);
 
+    // T23.3: marks become hyperlinks (or nothing) before the frame leaves.
+    crate::link::apply(buf, &state.cwd, state.caps.osc8);
     // One place for every colour on the screen, the composer widget and the
     // syntect spans included.
     crate::color::map_buffer(buf, state.depth);

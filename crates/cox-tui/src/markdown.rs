@@ -94,6 +94,8 @@ struct Renderer {
     /// Open table: rows so far and the cell being filled.
     table: Option<(Vec<Vec<String>>, String)>,
     quote: usize,
+    /// Open `http(s)` link (T23.3): its URL and where its text starts in `cur`.
+    link: Option<(String, usize)>,
 }
 
 impl Renderer {
@@ -113,6 +115,32 @@ impl Renderer {
         } else {
             self.cur.push(Span::styled(s.to_string(), self.style()));
         }
+    }
+
+    /// T23.3: the URL is what becomes a hyperlink, so it is always on
+    /// screen — an autolink is its own text, any other link gets ` (url)`.
+    /// A link cannot hide where it goes behind friendlier words.
+    fn end_link(&mut self) {
+        let Some((url, at)) = self.link.take() else {
+            return;
+        };
+        let text: String = self
+            .cur
+            .get(at..)
+            .unwrap_or_default()
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        if text == url {
+            for span in self.cur.iter_mut().skip(at) {
+                *span = crate::link::mark(std::mem::take(span));
+            }
+            return;
+        }
+        let style = self.style();
+        self.cur.push(Span::styled(" (", style));
+        self.cur.push(crate::link::mark(Span::styled(url, style)));
+        self.cur.push(Span::styled(")", style));
     }
 
     fn flush(&mut self) {
@@ -208,7 +236,12 @@ impl Renderer {
             Tag::Emphasis => self.push(Modifier::ITALIC),
             Tag::Strong => self.push(Modifier::BOLD),
             Tag::Strikethrough => self.push(Modifier::CROSSED_OUT),
-            Tag::Link { .. } => self.push(Modifier::UNDERLINED),
+            Tag::Link { dest_url, .. } => {
+                self.push(Modifier::UNDERLINED);
+                if dest_url.starts_with("https://") || dest_url.starts_with("http://") {
+                    self.link = Some((dest_url.into_string(), self.cur.len()));
+                }
+            }
             Tag::Table(_) => {
                 self.blank();
                 self.table = Some((Vec::new(), String::new()));
@@ -250,8 +283,12 @@ impl Renderer {
                     self.blank();
                 }
             }
-            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough | TagEnd::Link => {
+            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => {
                 self.styles.pop();
+            }
+            TagEnd::Link => {
+                self.styles.pop();
+                self.end_link();
             }
             TagEnd::TableCell => {
                 if let Some((rows, cell)) = &mut self.table {
