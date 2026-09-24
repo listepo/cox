@@ -337,3 +337,85 @@ fn osc8_links_tool_paths_but_never_model_text() {
     let plain = render(&state, 60, 12);
     assert!(plain.content.iter().all(|c| !c.symbol().contains('\u{1b}')));
 }
+
+/// T29.2: the built-in daltonized theme `name` on an edit card with a diff
+/// and a failed call. The snapshot is the frame plus each row's 24-bit
+/// foregrounds; the assertions are the point — added lines and success
+/// read blue, removed lines and failure orange, so no red/green pair is
+/// left to tell apart.
+fn daltonized(name: &str) -> String {
+    let catalog = cox_tui::theme::catalog(std::path::Path::new("/does/not/exist"));
+    let resolved = cox_tui::theme::resolve(name, None, &catalog);
+    assert!(resolved.warning.is_none(), "{name} is built in");
+    let t = resolved.theme;
+    let blue = |c: Color| matches!(c, Color::Rgb(r, _, b) if b > r);
+    let orange = |c: Color| matches!(c, Color::Rgb(r, g, b) if r > g && g > b);
+    assert!(blue(t.ok) && blue(t.diff_add), "{name}: {t:?}");
+    assert!(orange(t.error) && orange(t.diff_del), "{name}: {t:?}");
+
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    state.theme = t;
+    state.dark = resolved.dark;
+    state.show_diffs = true;
+    let card = |name: &str, subject: &str, ok: bool, diff: Option<&str>| Cell::Tool {
+        call: Box::new(ToolCall {
+            id: CallId::new(),
+            name: name.into(),
+            input: serde_json::json!({}),
+            risk: Risk::Write,
+            subject: subject.into(),
+        }),
+        output: String::new(),
+        result: Some(ToolResult {
+            ok,
+            visible: String::new(),
+            archive: None,
+            bytes: 0,
+            duration_ms: 4,
+            diff: diff.map(|u| cox_protocol::types::Diff {
+                path: subject.into(),
+                unified: u.into(),
+            }),
+        }),
+        started: 0,
+        user: false,
+    };
+    state.transcript.push(card(
+        "edit",
+        "src/a.rs",
+        true,
+        Some("--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-let x = 1;\n+let x = 2;\n"),
+    ));
+    state.transcript.push(card("bash", "false", false, None));
+    let buf = render(&state, 60, 12);
+    let a = buf.area;
+    let rows: Vec<String> = (a.top()..a.bottom())
+        .map(|y| {
+            let mut seen: Vec<String> = Vec::new();
+            for x in a.left()..a.right() {
+                if let Color::Rgb(r, g, b) = buf[(x, y)].fg {
+                    let hex = format!("#{r:02x}{g:02x}{b:02x}");
+                    if !seen.contains(&hex) {
+                        seen.push(hex);
+                    }
+                }
+            }
+            seen.join(" ")
+        })
+        .collect();
+    format!(
+        "{}\n----\n{}",
+        buffer_to_string(&buf),
+        rows.join("\n").trim_end()
+    )
+}
+
+#[test]
+fn daltonized_dark() {
+    insta::assert_snapshot!(daltonized("cox-dark-daltonized"));
+}
+
+#[test]
+fn daltonized_light() {
+    insta::assert_snapshot!(daltonized("cox-light-daltonized"));
+}

@@ -193,3 +193,10 @@ mode.cycle = "shift+tab"
 - A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a terminal that reports it (kitty keyboard protocol, see `cox doctor`).
 - `~/.claude/keybindings.json` is read first, for the actions both tools have: `chat:submit` → `send`, `chat:newline` → `newline`, `chat:sendNow` → `send.now`, `chat:cancel` → `interrupt`, `chat:cycleMode` → `mode.cycle`, `app:toggleTranscript` → `transcript`, `task:background` → `background`, `app:exit` → `quit`. Its keys are added beside the defaults; this file still wins. Other Claude actions and chords are skipped.
 - An unknown action, a bad key or a file that is not TOML is a warning in the transcript and is skipped. `cox doctor` lists those and any key two of your bindings both claim.
+
+## Accessibility
+
+- `--plain` (or `tui.screen_reader = true`, or `COX_PLAIN=1`) swaps the TUI for flat labelled lines a screen reader can follow: numbered prompts, no cursor movement, and a BEL when a turn ends.
+- `tui.motion = "reduced"` stops everything that moves by itself. A running tool shows one still glyph and `running` instead of a spinner and a ticking clock.
+- `tui.theme = "cox-dark-daltonized"` or `"cox-light-daltonized"` are the built-in themes without a red/green pair. Added lines and success are blue; removed lines and failure are orange. Every state also keeps its glyph (`✓`, `✗`, `+`, `−`), so colour is never the only signal. `/theme` previews both.
+- `NO_COLOR` (set and non-empty, while `tui.color` is `"auto"`), or `tui.color = "none"`, prints no colour at all and leaves the terminal's own.
