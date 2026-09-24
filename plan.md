@@ -14,7 +14,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T26.4 | todo | P2 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
 | T27.4 | todo | P3 | 2 | 0% | |
-| T29.2 | todo | P2 | 1 | 0% | |
+| T29.2 | in progress | P2 | 1 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | todo | P2 | 2 | 0% | |
 
 ## Reference
@@ -1079,7 +1079,7 @@ Out of scope: cloud schedules.
 
 #### T29.2 Reduced motion and daltonized themes
 
-Model: haiku · Status: open · Depends: T24.2, T24.7 · Size: ~60 · Priority: P2 · Complexity: 1
+Model: claude-opus-5-5 · Status: in progress · Depends: T24.2, T24.7 · Size: ~60 · Priority: P2 · Complexity: 1
 Goal: `cox-dark-daltonized` and `cox-light-daltonized` theme files ship built in; `tui.motion = reduced` is documented with them.
 Files: `crates/cox-tui/src/theme.rs` (embedded theme files), `docs/config.md`, `crates/cox-tui/tests/frames.rs`.
 Steps: (1) Two theme files using blue/orange for add/del and ok/error (no red/green pair). (2) Frame snapshot per theme. (3) An "Accessibility" section in `docs/config.md` listing `--plain`, `tui.motion`, the two themes and `NO_COLOR`.
@@ -1087,6 +1087,7 @@ Check:
 ```bash
 mise exec -- cargo nextest run -p cox-tui --test frames daltonized_dark daltonized_light
 ```
+Execution plan: (1) `assets/themes/cox-dark-daltonized.toml` and `cox-light-daltonized.toml` (Okabe–Ito hues: blue for ok/diff_add, orange for error/diff_del, reddish purple for agents, yellow for warn), added to `BUILT_IN_THEMES`. (2) `tests/frames.rs`: `daltonized_dark`/`daltonized_light` resolve the built-in, render an edit card with a diff and a failed call, snapshot the frame plus each row's 24-bit foregrounds, and assert add/ok are blue-dominant and del/error orange. (3) `docs/config.md` "Accessibility" section: `--plain`, `tui.motion`, the two themes, `NO_COLOR`.
 Done when: both snapshots exist and the docs section is present.
 Out of scope: a colour-vision simulator.
 
