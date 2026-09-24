@@ -20,6 +20,8 @@
 //! deliver, so no provider has to run. `COX_PROBE_SCENARIO=resize`
 //! (T23.7) feeds 12 cells, starts a reply, waits for the terminal to be
 //! resized, then finishes the reply and feeds 4 more cells.
+//! `COX_PROBE_SCENARIO=progress` (T23.6) starts and ends one turn;
+//! `COX_PROBE_OSC9_4=1` says the terminal draws OSC 9;4 progress.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +32,8 @@ use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::{ItemId, TurnId};
 use cox_protocol::traits::Provider;
 use cox_protocol::types::{
-    Caps, Event, ItemKind, Level, ProviderEvent, ProviderId, Request, StopReason, Usage,
+    Caps, Event, ItemKind, Job, Level, ModelId, ProviderEvent, ProviderId, Request, StopReason,
+    Tier, Usage,
 };
 use cox_protocol::types::{PermissionMode, SandboxMode};
 use cox_tui::state::{Msg, State};
@@ -91,6 +94,7 @@ async fn main() {
 
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     state.caps.kitty_keyboard = kitty;
+    state.caps.osc9_4 = std::env::var("COX_PROBE_OSC9_4").as_deref() == Ok("1");
     // The notify scenario needs a terminal that shows OSC 9 and reports focus.
     if std::env::var("COX_PROBE_SCENARIO").as_deref() == Ok("notify") {
         state.caps.osc9 = true;
@@ -151,6 +155,21 @@ async fn main() {
                         .send(Msg::Event(Event::TurnDone { turn, stop }))
                         .await;
                 }
+            }
+            "progress" => {
+                let turn = TurnId::new();
+                let started = Event::TurnStarted {
+                    seq: 1,
+                    turn,
+                    job: Job::Main,
+                    tier: Tier::Code,
+                    model: ModelId("m".into()),
+                };
+                let _ = feed_tx.send(Msg::Event(started)).await;
+                let stop = StopReason::EndTurn;
+                let _ = feed_tx
+                    .send(Msg::Event(Event::TurnDone { turn, stop }))
+                    .await;
             }
             _ => {}
         }

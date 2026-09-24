@@ -479,3 +479,25 @@ fn pty_turn_done_writes_osc9() {
         "focus reporting not disabled: {shown:?}"
     );
 }
+
+/// T23.6: a terminal that draws OSC 9;4 sees one indeterminate state for
+/// the turn, a clear when it ends and another on exit; one that does not
+/// sees no OSC 9;4 at all.
+#[test]
+fn pty_progress_only_with_the_capability() {
+    let scenario = ("COX_PROBE_SCENARIO", "progress");
+    let with = pty::run_probe(&[scenario, ("COX_PROBE_OSC9_4", "1")], 24, 80);
+    let count =
+        |raw: &[u8], needle: &[u8]| raw.windows(needle.len()).filter(|w| *w == needle).count();
+    let shown = String::from_utf8_lossy(&with);
+    assert_eq!(count(&with, b"\x1b]9;4;3;0\x1b\\"), 1, "{shown:?}");
+    assert_eq!(count(&with, b"\x1b]9;4;0;0\x1b\\"), 2, "{shown:?}");
+    let without = pty::run_probe(&[scenario], 24, 80);
+    assert_eq!(
+        // `]` too: SGR's `39;49m` contains `9;4`.
+        count(&without, b"\x1b]9;4"),
+        0,
+        "{:?}",
+        String::from_utf8_lossy(&without)
+    );
+}

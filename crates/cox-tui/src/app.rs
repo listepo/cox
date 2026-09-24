@@ -116,13 +116,15 @@ pub async fn run(
     }
     // T23.5: focus reports decide whether `tui.notify = auto` rings.
     let focus = state.caps.focus;
+    // T23.6: a quit mid-turn must not leave the tab spinning.
+    let progress = state.caps.osc9_4;
     if focus {
         execute!(io::stdout(), EnableFocusChange)?;
     }
     let vte = crate::term::is_vte(&|k| std::env::var(k).ok());
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore(kitty, focus);
+        restore(kitty, focus, progress);
         hook(info);
     }));
     let mut terminal = inline_terminal(crossterm::terminal::size()?.1)?;
@@ -208,6 +210,12 @@ pub async fn run(
                     Cmd::PersistConfig { key, value } => {
                         let _ = persist.try_send((key, value));
                     }
+                    Cmd::Progress(p) => {
+                        use std::io::Write;
+                        let mut out = io::stdout();
+                        out.write_all(crate::term::progress(p).as_bytes())?;
+                        out.flush()?;
+                    }
                     Cmd::Notify { title, body } => {
                         use std::io::Write;
                         let bytes = crate::term::notification(&state.caps, vte, &title, &body);
@@ -271,7 +279,7 @@ pub async fn run(
     }
     .await;
     stop.store(true, Ordering::Relaxed);
-    restore(kitty, focus);
+    restore(kitty, focus, progress);
     result
 }
 
@@ -326,8 +334,15 @@ fn spawn_input(stop: Arc<AtomicBool>) -> tokio::sync::mpsc::Receiver<io::Result<
 /// pops the Kitty keyboard protocol flags first — popping when nothing was
 /// pushed is a no-op on every terminal that implements the spec, but `run`
 /// only pays for the round trip when its own push actually happened; `focus`
-/// likewise turns off the focus reports only `run` turned on.
-fn restore(kitty: bool, focus: bool) {
+/// likewise turns off the focus reports only `run` turned on, and
+/// `progress` clears an OSC 9;4 state only a capable terminal was sent.
+fn restore(kitty: bool, focus: bool, progress: bool) {
+    if progress {
+        use std::io::Write;
+        let mut out = io::stdout();
+        let _ = out.write_all(crate::term::progress(crate::term::Progress::Idle).as_bytes());
+        let _ = out.flush();
+    }
     if kitty {
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
     }
