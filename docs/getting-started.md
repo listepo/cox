@@ -19,7 +19,9 @@ export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
 ```
 
 In the TUI: `y` / `s` / `n` answer approval prompts, `/model` switches tiers,
-`/compact` compacts context now. Headless scripts use `cox run -p`; editors use
+`/compact` compacts context now. `!cmd` runs a shell line through the same
+sandbox and rules as the model's `bash`, kept out of the conversation; `!!cmd`
+also hands its output to the model. Headless scripts use `cox run -p`; editors use
 `cox acp`; other agents can call `cox mcp`.
 
 ## Keys

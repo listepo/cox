@@ -3,9 +3,11 @@
 //! prints shows up as a snapshot diff rather than in a user's terminal.
 
 use cox_protocol::ids::CallId;
-use cox_protocol::types::{Event, PermissionMode, Risk, SandboxMode, ToolCall, ToolResult};
+use cox_protocol::types::{
+    Event, PermissionMode, Risk, SandboxMode, Submission, ToolCall, ToolResult,
+};
 use cox_tui::cells::cell_lines;
-use cox_tui::state::{Cell, Msg, State, update};
+use cox_tui::state::{Cell, Cmd, Msg, State, update};
 use cox_tui::view::{buffer_to_string, view};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
@@ -315,4 +317,44 @@ fn plan_mode_denial_renders_as_planned_line() {
             .all(|sp| sp.style.fg == Some(s.theme.dim))
     );
     insta::assert_snapshot!(text(&s, tool_cell(&s)), @"▷ planned: edit src/lib.rs");
+}
+
+/// T25.3: a `!!` line submits `UserShell`, its `bash` card reads `$ cmd`
+/// and keeps the TUI busy until it is done; a line typed meanwhile waits
+/// behind it and then goes out as a turn.
+#[test]
+fn bang_line_card_reads_as_a_shell_prompt() {
+    let enter = || Msg::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    s.composer.insert("!!ls -1");
+    assert_eq!(
+        update(&mut s, enter()),
+        vec![Cmd::Submit(Submission::UserShell {
+            command: "ls -1".into(),
+            share: true,
+        })]
+    );
+    let id = requested(&mut s, "bash", "ls -1", Risk::Exec);
+    assert!(s.status.busy);
+    insta::assert_snapshot!(text(&s, tool_cell(&s)).lines().next().unwrap_or(""), @"$ ls -1");
+    s.composer.insert("next");
+    assert!(update(&mut s, enter()).is_empty());
+    let cmds = update(
+        &mut s,
+        Msg::Event(Event::ToolCallDone {
+            call_id: id,
+            result: ToolResult {
+                ok: true,
+                visible: String::new(),
+                archive: None,
+                bytes: 0,
+                duration_ms: 3,
+                diff: None,
+            },
+        }),
+    );
+    assert!(!s.status.busy);
+    assert!(
+        matches!(&cmds[..], [Cmd::Submit(Submission::UserTurn { text, .. })] if text == "next")
+    );
 }

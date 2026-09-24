@@ -145,6 +145,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             output,
             result,
             started,
+            user,
         } => {
             let sep = g.sep;
             // The card's phase: no result yet, a result that succeeded, or
@@ -158,7 +159,11 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             };
             let rail_style = Style::default().fg(tint);
             let output = clean(output);
-            let mut header = format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject));
+            // T25.3: the user's own `!` line reads as the shell prompt it is.
+            let mut header = match user {
+                true => format!("$ {}", clean(&call.subject)),
+                false => format!("{} {} {}", g.tool, clean(&call.name), clean(&call.subject)),
+            };
             if let Some(r) = result {
                 if let Some(d) = r.diff.as_ref() {
                     let (added, removed) = diff::counts(&d.unified);

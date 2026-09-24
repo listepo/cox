@@ -191,11 +191,31 @@ pub enum Action {
     Theme(Option<String>),
     /// Something to tell the user without leaving the TUI.
     Notice(String),
+    /// `!cmd` / `!!cmd` (T25.3): run `cmd` through the `bash` tool; `share`
+    /// lets the output into history.
+    Shell {
+        cmd: String,
+        share: bool,
+    },
 }
 
-/// `None` when `line` is not a slash command; `tier` is the one `/model`
-/// switches when the first argument does not name one.
+/// `None` when `line` is neither a slash command nor a `!` shell line;
+/// `tier` is the one `/model` switches when the first argument does not
+/// name one.
 pub fn parse(line: &str, tier: Tier) -> Option<Action> {
+    if let Some(rest) = line.strip_prefix('!') {
+        let (share, cmd) = match rest.strip_prefix('!') {
+            Some(cmd) => (true, cmd.trim()),
+            None => (false, rest.trim()),
+        };
+        return Some(match cmd.is_empty() {
+            true => Action::Notice("`!` needs a command".into()),
+            false => Action::Shell {
+                cmd: cmd.into(),
+                share,
+            },
+        });
+    }
     let rest = line.strip_prefix('/')?;
     let mut words = rest.split_whitespace();
     let name = words.next()?;
@@ -330,6 +350,22 @@ pub fn autocompact(compact_at: f64, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T25.3: `!` runs a shell line, `!!` also hands its output to the model.
+    #[test]
+    fn bang_lines_parse_to_shell_with_share_on_double_bang() {
+        let p = |line| parse(line, Tier::Code);
+        let shell = |cmd: &str, share| {
+            Some(Action::Shell {
+                cmd: cmd.into(),
+                share,
+            })
+        };
+        assert_eq!(p("!ls -la"), shell("ls -la", false));
+        assert_eq!(p("!! git status "), shell("git status", true));
+        assert!(matches!(p("!"), Some(Action::Notice(_))));
+        assert!(matches!(p("!! "), Some(Action::Notice(_))));
+    }
 
     /// T26.3: `/fork` takes an optional turn in either spelling the
     /// timeline uses; `/handoff` needs its objective.

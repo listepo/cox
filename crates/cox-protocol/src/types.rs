@@ -735,6 +735,16 @@ pub enum Submission {
         /// The running call to detach.
         call_id: CallId,
     },
+    /// A composer `!` line (T25.3): `bash` runs under the same hooks,
+    /// permission engine and sandbox as a model call. Only `share` (`!!`)
+    /// lets the output into history; otherwise the next request is
+    /// byte-identical to the one before it.
+    UserShell {
+        /// The command line, without the `!`/`!!`.
+        command: String,
+        /// `!!`: append the output to history for the model.
+        share: bool,
+    },
     /// Wind down the session cleanly.
     Shutdown,
 }
@@ -1252,6 +1262,7 @@ mod tests {
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
+    #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
     #[case::shutdown(Submission::Shutdown)]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");

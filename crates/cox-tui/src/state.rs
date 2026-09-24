@@ -53,6 +53,8 @@ pub enum Cell {
         result: Option<ToolResult>,
         /// `State::tick` when the call was requested; elapsed time is ticks.
         started: u64,
+        /// A composer `!` line (T25.3) rather than the model asked for it.
+        user: bool,
     },
     Notice {
         level: Level,
@@ -231,6 +233,11 @@ pub struct State {
     /// `view.rs` shows them above the composer and each natural `TurnDone`
     /// pops one into the next turn.
     pub queue: VecDeque<String>,
+    /// T25.3: a `!` line submitted and not yet requested; the next `bash`
+    /// call is its card.
+    pub shell: Option<String>,
+    /// The running `!` call; the TUI is busy until it is done.
+    pub shell_call: Option<CallId>,
     /// Set when `Ctrl+Enter`/`Alt+Enter` interrupts a running turn to send
     /// now (T25.1); the next `TurnDone{Interrupted}` consumes it and joins
     /// the whole queue into one turn instead of leaving it queued.
@@ -407,6 +414,8 @@ impl State {
             syntax_names: Vec::new(),
             theme_prev: None,
             queue: VecDeque::new(),
+            shell: None,
+            shell_call: None,
             send_now: false,
             keymap: Keymap::default(),
             notify: Notify::Auto,
@@ -1103,6 +1112,22 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             state.modal = Some(Modal::Picker(Picker::open(Kind::Sessions, rows)));
         }
         Action::Notice(text) => notice(state, Level::Warn, text),
+        // The core refuses one mid-turn anyway; saying so here keeps the
+        // pending card from latching onto the turn's next `bash` call.
+        Action::Shell { .. } if state.status.busy => {
+            notice(
+                state,
+                Level::Warn,
+                "a turn is running; `!` waits until it ends".into(),
+            );
+        }
+        Action::Shell { cmd, share } => {
+            state.shell = Some(cmd.clone());
+            return vec![Cmd::Submit(Submission::UserShell {
+                command: cmd,
+                share,
+            })];
+        }
         Action::Rewind => return open_rewind(state),
         // A running turn would be cut mid-write, so both wait for it.
         Action::Fork(_) | Action::Handoff(_) if state.status.busy => {
@@ -1191,12 +1216,20 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 *done = true;
             }
         }
-        Event::ToolCallRequested { call } => state.transcript.push(Cell::Tool {
-            call: Box::new(call),
-            output: String::new(),
-            result: None,
-            started: state.tick,
-        }),
+        Event::ToolCallRequested { call } => {
+            let user = call.name == "bash" && state.shell.take().is_some();
+            if user {
+                state.shell_call = Some(call.id);
+                state.status.busy = true;
+            }
+            state.transcript.push(Cell::Tool {
+                call: Box::new(call),
+                output: String::new(),
+                result: None,
+                started: state.tick,
+                user,
+            });
+        }
         Event::ToolCallOutput { call_id, delta } => {
             if let Some(Cell::Tool { output, .. }) = state.tool_mut(call_id) {
                 output.push_str(&delta);
@@ -1216,6 +1249,19 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             if let Some(todo) = todo {
                 state.todo = todo;
             }
+            // A `!` line has no `TurnDone`; its card closing ends it, and
+            // a message queued behind it goes out as a turn would release it.
+            if state.shell_call == Some(call_id) {
+                state.shell_call = None;
+                state.status.busy = false;
+                if let Some(text) = state.queue.pop_front() {
+                    cmds.push(Cmd::Submit(Submission::UserTurn {
+                        text,
+                        attachments: Vec::new(),
+                        confirm_think: false,
+                    }));
+                }
+            }
         }
         Event::ApprovalRequired { call, why } => {
             cmds = notify(state, format!("approval: {} {}", call.name, call.subject));
@@ -1227,6 +1273,8 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
         } => {
             state.current_seq = seq;
             state.status.busy = true;
+            // A `!` the core refused never got its card.
+            state.shell = None;
             state.status.tier = Some(tier);
             state.status.model = model.to_string();
         }

@@ -99,6 +99,7 @@ fn frame_mono_theme_renders_notices_and_a_tool_card() {
         output: "README.md\n".into(),
         result: None,
         started: 0,
+        user: false,
     });
     insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 8)));
 }
