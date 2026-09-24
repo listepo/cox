@@ -3433,3 +3433,38 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T23.5 Notifications
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: T23.0, T22.3 · Size: ~120 · Priority: P0 · Complexity: 2
+Goal: `TurnDone`, `ApprovalRequired` and a question while the terminal is unfocused ring the terminal (OSC 9 or 777 plus BEL); `tui.notify = auto|always|off`.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `config/default.toml`.
+Steps: (1) `app.rs`: `EnableFocusChange` when `caps.focus`; `Input::FocusGained/FocusLost` → `Msg::Focus(bool)`. (2) `state.rs`: `Cmd::Notify { title, body }` emitted on the three events when `notify == always` or (`auto` and unfocused). (3) `app.rs` writes `ESC ] 9 ; body BEL` (OSC 777 `notify;title;body` when `TERM_PROGRAM`/`VTE_VERSION` say VTE) followed by `BEL`; the `Notification` hook (T22.3) gets the same payload. (4) `docs/config.md` row and a `doctor` line.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui update_emits_notify_only_when_unfocused
+mise exec -- cargo nextest run -p cox-tui --test shell pty_turn_done_writes_osc9
+```
+Done when: the PTY e2e sees `\x1b]9;` after `TurnDone` with focus lost and nothing with focus held.
+Out of scope: OS-native notification daemons.
+Execution plan: `term.rs` gets the pure pieces (`is_vte`, `notify_via` for doctor, `notification` building OSC 777/OSC 9 + BEL with every control stripped from title and body); `state.rs` gets `Msg::Focus`, `State.focused`, `Notify` (`tui.notify`), `Cmd::Notify` emitted on `TurnDone` (not `Interrupted`), `ApprovalRequired` and `Msg::Question`; `app.rs` enables/disables focus reporting when `caps.focus` and writes the bytes; `TuiConfig.notify` + `default.toml` row (docs/config.md regenerated); `crates/cox` sets `state.notify` and doctor prints `notify via …`. The `Notification` hook already fires in `cox-core` (T22.3). Tests: unit `update_emits_notify_only_when_unfocused`, `notification_picks_the_sequence_and_strips_controls`, PTY `pty_turn_done_writes_osc9` through a `notify` scenario in `kitty_probe`.
+
+Deviations: the `Notification` hook needed no TUI change — `cox-core` already fires it on the same three events (T22.3), so step 3's "same payload" holds without a second path. An interrupted turn does not ring (the user caused it and is at the keyboard). VTE is detected by `VTE_VERSION` alone (GNOME Terminal sets no `TERM_PROGRAM`) and is read in `app.rs` rather than added as a `Caps` field. A terminal with neither OSC 9 nor VTE still gets the `BEL`. Inside tmux the OSC is not wrapped for passthrough (tmux forwards BEL; OSC 9 depends on `allow-passthrough`). The PTY scenario feeds `Msg::Focus` through the probe's feed channel instead of writing `CSI O` into the PTY, so the ordering against `TurnDone` is deterministic; the real `FocusGained`/`FocusLost` mapping is two lines in `app.rs`. Files beyond the card's three: `term.rs`, `kitty_probe.rs`, `tests/shell.rs`, `cox-protocol` config + `docs/config.md` (generated), `crates/cox` session and doctor. Found on the way, not fixed: `cargo run -- doctor` (the AGENTS.md command) fails with "could not determine which binary to run" since `kitty_probe` became a second binary; `cargo run --bin cox -- doctor` works.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui update_emits_notify_only_when_unfocused
+PASS
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_turn_done_writes_osc9
+PASS (exactly one `ESC ]9;turn done BEL BEL`, `?1004h` and `?1004l` once each)
+$ mise exec -- cargo nextest run --workspace
+821 tests run: 821 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> TERM=xterm-256color cargo run --bin cox -- doctor
+TERM_PROGRAM=iTerm.app: notify via OSC 9 + BEL
+VTE_VERSION=7600: notify via OSC 777 + BEL
+TERM_PROGRAM=Apple_Terminal: notify via BEL
+```
