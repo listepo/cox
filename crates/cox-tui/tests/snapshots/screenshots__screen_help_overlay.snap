@@ -19,6 +19,8 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
        /compact [focus]                                         compact the context now
        /rewind                                                  go back to an earlier turn: code,
        conversation or both
+       /undo                                                    undo the last turn's file changes
+       /redo                                                    redo what /undo took back
        /cost                                                    what this session has spent
        /context                                                 where the next request's tokens go
        /autocompact                                             the compaction threshold and its

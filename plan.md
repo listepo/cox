@@ -98,6 +98,7 @@ pub enum Submission {
     HookResult { hook_id: String, outcome: HookOutcome },     // hook runner is outside the core
     Background { call_id: CallId },                           // Ctrl+B: detach a running bash/agent call into a task (T27.1)
     UserShell { command: String, share: bool },               // composer `!`/`!!`: bash via the engine and sandbox; history only on share (T25.3)
+    Redo,                                                     // /redo: rewind code to the last rewind's own pre-images, one step (T26.4)
     Shutdown,
 }
 

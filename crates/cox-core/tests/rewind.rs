@@ -292,3 +292,118 @@ async fn rewind_refuses_unknown_turns_with_a_notice() {
     };
     assert_eq!(text, "rewind: no turn T5; this session has T1..T1");
 }
+
+/// A workspace that lives in a map: pre-images read it, restores write it,
+/// so what a rewind and a redo leave behind can be compared byte for byte.
+#[derive(Default)]
+struct Disk {
+    files: Mutex<std::collections::BTreeMap<PathBuf, Vec<u8>>>,
+}
+
+impl Disk {
+    fn set(&self, files: &[(&str, &str)]) {
+        *self.files.lock().expect("lock") = files
+            .iter()
+            .map(|(p, b)| {
+                (
+                    PathBuf::from("/tmp/cox-turn").join(p),
+                    b.as_bytes().to_vec(),
+                )
+            })
+            .collect();
+    }
+
+    fn snapshot(&self) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        self.files.lock().expect("lock").clone()
+    }
+}
+
+#[async_trait]
+impl Checkpointer for Disk {
+    async fn preimages(&self, roots: &[PathBuf], _cwd: &Path, paths: &[String]) -> Vec<PreImage> {
+        let files = self.files.lock().expect("lock");
+        paths
+            .iter()
+            .map(|p| {
+                let path = roots[0].join(p);
+                let before = match files.get(&path) {
+                    Some(bytes) => Before::Bytes(bytes.clone()),
+                    None => Before::Absent,
+                };
+                PreImage { path, before }
+            })
+            .collect()
+    }
+    async fn snapshot(&self, _roots: &[PathBuf]) -> Result<Snapshot, ToolError> {
+        Ok(Snapshot::default())
+    }
+    async fn changes(&self, _b: &Snapshot, _a: &Snapshot) -> Result<Vec<Change>, ToolError> {
+        Ok(vec![])
+    }
+    async fn restore(
+        &self,
+        _roots: &[PathBuf],
+        _cwd: &Path,
+        path: &Path,
+        bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        let mut files = self.files.lock().expect("lock");
+        match bytes {
+            Some(b) => files.insert(path.to_path_buf(), b.to_vec()),
+            None => files.remove(path),
+        };
+        Ok(())
+    }
+}
+
+/// Every event up to the next `Notice`, returned as that notice's text.
+async fn notice(rx: &mut tokio::sync::mpsc::Receiver<Event>) -> String {
+    match until_rewound(rx).await.pop() {
+        Some(Event::Notice { text, .. }) => text,
+        other => panic!("no notice: {other:?}"),
+    }
+}
+
+/// T26.4: `/undo` is a code-only rewind of the last turn; `/redo` right
+/// after it puts back exactly what was there, and only once.
+#[tokio::test]
+async fn undo_then_redo_is_identity() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = Arc::new(Disk::default());
+    disk.set(&[("a.rs", "old")]);
+    session.set_checkpointer(disk.clone());
+    turn(&session, &mut rx, "edit a.rs and new.rs").await;
+    // What the turn's tools wrote; `touch` itself writes nothing here.
+    disk.set(&[("a.rs", "now"), ("new.rs", "fresh")]);
+    let edited = disk.snapshot();
+
+    session.submit(Submission::Redo).await.expect("redo");
+    assert!(notice(&mut rx).await.starts_with("redo: nothing to redo"));
+    assert_eq!(disk.snapshot(), edited, "a refused redo writes nothing");
+
+    session
+        .submit(Submission::Rewind {
+            to_turn: 1,
+            code: true,
+            conversation: false,
+        })
+        .await
+        .expect("undo");
+    notice(&mut rx).await;
+    assert_eq!(
+        disk.snapshot(),
+        [(PathBuf::from("/tmp/cox-turn/a.rs"), b"old".to_vec())].into()
+    );
+
+    session.submit(Submission::Redo).await.expect("redo");
+    assert!(notice(&mut rx).await.starts_with("rewound"));
+    assert_eq!(disk.snapshot(), edited);
+
+    session.submit(Submission::Redo).await.expect("redo twice");
+    assert!(notice(&mut rx).await.starts_with("redo: nothing to redo"));
+    assert_eq!(
+        disk.snapshot(),
+        edited,
+        "a second redo does not undo the first"
+    );
+}

@@ -31,6 +31,8 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "/rewind",
         "go back to an earlier turn: code, conversation or both",
     ),
+    ("undo", "/undo", "undo the last turn's file changes"),
+    ("redo", "/redo", "redo what /undo took back"),
     ("cost", "/cost", "what this session has spent"),
     ("context", "/context", "where the next request's tokens go"),
     (
@@ -178,6 +180,10 @@ pub enum Action {
     Resume,
     /// Open the rewind timeline (T26.2); `Esc Esc` on an empty composer too.
     Rewind,
+    /// `/undo` (T26.4): a code-only rewind of the last turn.
+    Undo,
+    /// `/redo` (T26.4): one step back out of the last rewind.
+    Redo,
     /// `/fork [turn]` (T26.3): `None` keeps every turn.
     Fork(Option<u32>),
     /// `/handoff <objective>` (T26.3).
@@ -264,6 +270,8 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
         "rewind" => Action::Rewind,
+        "undo" => Action::Undo,
+        "redo" => Action::Redo,
         // `T7` as the rewind timeline prints it, or a bare `7`.
         "fork" => match args.first() {
             None => Action::Fork(None),

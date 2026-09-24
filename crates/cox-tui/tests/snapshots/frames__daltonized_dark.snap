@@ -9,7 +9,7 @@ expression: "daltonized(\"cox-dark-daltonized\")"
   @@ -1 +1 @@
   -let x = 1;
   +let x = 2;
-│ ✓ 0B 4ms
+│ ✓ 0B 4ms · /undo
 ⚙ bash false · 4ms
 │ ✗ 0B 4ms
 > Enter send · Shift+Tab mode cycle · @ file · / command
