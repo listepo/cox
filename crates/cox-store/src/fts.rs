@@ -51,6 +51,16 @@ struct HitRow {
     snippet: String,
 }
 
+/// One prompt the user typed (T25.8): the session it was typed in, and the
+/// text.
+#[derive(Debug, Clone, PartialEq, QueryableByName)]
+pub struct UserPrompt {
+    #[diesel(sql_type = Text)]
+    pub session_id: String,
+    #[diesel(sql_type = Text)]
+    pub text: String,
+}
+
 #[derive(QueryableByName)]
 struct SessionRowLite {
     #[diesel(sql_type = Text)]
@@ -116,6 +126,23 @@ impl Store {
             .collect())
     }
 
+    /// The user's own prompts across every session, newest first (T25.8).
+    /// The core indexes a turn's user text before anything else of that
+    /// turn, so the first row of each `(session, turn)` is the prompt; turn
+    /// 0 holds text indexed before any turn and is left out. A plain scan,
+    /// not a `MATCH`, which is why it is SQL over the FTS5 table (D9).
+    pub fn user_prompts(&self, limit: i64) -> Result<Vec<UserPrompt>, StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::sql_query(
+            "SELECT session_id, text FROM rollout_fts WHERE rowid IN \
+             (SELECT MIN(rowid) FROM rollout_fts WHERE turn > 0 GROUP BY session_id, turn) \
+             ORDER BY rowid DESC LIMIT ?",
+        )
+        .bind::<BigInt, _>(limit)
+        .load(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)
+    }
+
     /// One session's ledger row, for `cox sessions <id>`.
     pub fn session_info(&self, id: &SessionId) -> Result<SessionInfo, StoreError> {
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
@@ -166,4 +193,42 @@ pub(crate) fn sanitize_match(q: &str) -> String {
         .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cox_protocol::traits::Store as _;
+
+    #[test]
+    fn user_prompts_are_each_turns_first_text_newest_first() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let (a, b) = (SessionId::new(), SessionId::new());
+        for (session, turn, text) in [
+            (a, 0, "summary before any turn"),
+            (a, 1, "add a cache"),
+            (a, 1, "the assistant's reply"),
+            (b, 1, "fix the login bug"),
+            (a, 2, "now test it"),
+        ] {
+            store
+                .rollout_index_text(&session, turn, text)
+                .expect("index");
+        }
+        let prompts: Vec<_> = store
+            .user_prompts(10)
+            .expect("prompts")
+            .into_iter()
+            .map(|p| (p.session_id == a.to_string(), p.text))
+            .collect();
+        assert_eq!(
+            prompts,
+            [
+                (true, "now test it".to_string()),
+                (false, "fix the login bug".to_string()),
+                (true, "add a cache".to_string()),
+            ]
+        );
+    }
 }

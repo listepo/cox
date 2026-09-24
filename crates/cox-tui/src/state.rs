@@ -203,6 +203,9 @@ pub struct State {
     /// This project's recent sessions as `(id, picker row)`, newest first;
     /// the runtime fills them like `files` (T16.5).
     pub sessions: Vec<(String, String)>,
+    /// `Ctrl+R`'s other-session prompts as `(picker row, full text)`,
+    /// newest first; the runtime fills them like `sessions` (T25.8).
+    pub past_prompts: Vec<(String, String)>,
     /// The branch and line counts the runtime polls; `None` outside a
     /// repository, so the line is unchanged there.
     pub git: Option<GitStatus>,
@@ -413,6 +416,7 @@ impl State {
             still: false,
             agents: Vec::new(),
             sessions: Vec::new(),
+            past_prompts: Vec::new(),
             git: None,
             worktree: None,
             theme_rows: Vec::new(),
@@ -754,7 +758,15 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         let text = format!("to resume: cox --resume {id}");
                         notice(state, Level::Info, text);
                     }
-                    Kind::History => state.composer.set_text(&choice),
+                    Kind::History => {
+                        let text = state
+                            .past_prompts
+                            .iter()
+                            .find(|(row, _)| *row == choice)
+                            .map_or(choice.as_str(), |(_, text)| text.as_str())
+                            .to_string();
+                        state.composer.set_text(&text);
+                    }
                     // `Themes` is intercepted by its own guarded arm above
                     // and never reaches this generic one.
                     Kind::Rewind | Kind::RewindWhat | Kind::Themes => {}
@@ -917,6 +929,8 @@ fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             // Newest first: the entry wanted is usually the last one.
             let mut history = state.composer.history().to_vec();
             history.reverse();
+            // T25.8: this project's other sessions after this one's own.
+            history.extend(state.past_prompts.iter().map(|(row, _)| row.clone()));
             state.modal = Some(Modal::Picker(Picker::open(Kind::History, history)));
             Vec::new()
         }
