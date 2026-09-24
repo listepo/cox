@@ -7,7 +7,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T22.8 | in progress | P1 | 1 | 10% | Claude Code / claude-opus-5-5 |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
@@ -963,20 +962,6 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 ```
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
-
-#### T22.8 Deterministic MCP refresh-failure test
-
-Model: claude-opus-5-5 · Status: in progress · Depends: T22.5 · Size: ~10 · Priority: P1 · Complexity: 1
-Goal: `cox-mcp` `client::tests::oauth_refresh_failure_is_a_warning` never fails on a loaded machine; it still proves that a rejected refresh with no login prompt is exactly the `token expired, run \`cox mcp login srv\`` notice, with no client and no tools.
-Cause: the test passes `prompt: None`, so `connect_all`'s whole budget is the bare 5 s handshake timeout (its sibling `oauth_401_then_token_then_200` gets 5 s + `LOGIN_TIMEOUT`). The connect makes about seven round trips to wiremock and takes ~25 ms. It passed 3 of 3 full-workspace runs and 300 of 300 runs under 48 CPU hogs (max 0.76 s). A process stall past 5 s, such as memory pressure or other worktrees building, wins the race instead: with the token endpoint delayed 6 s, the test fails at 5.02 s with `mcp server \`srv\` skipped: no handshake within 5s`. rmcp has no timer of its own on this path.
-Files: `crates/cox-mcp/src/client.rs`.
-Steps: (1) The test passes a connect budget that a stall cannot reach (60 s, named, with the reason in a comment) instead of 5 s. The timeout branch is not what the test proves. (2) Leave `connect_all` and the sibling test unchanged.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-mcp oauth_refresh_failure_is_a_warning
-```
-Done when: the check and the workspace gate pass; the same 6 s token-endpoint delay no longer fails the test.
-Out of scope: a test of the `no handshake within` notice itself; changing the production budget.
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
