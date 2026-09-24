@@ -859,8 +859,27 @@ fn generate_config_docs(toml: &str) -> String {
         }
     }
     out.push_str(KEYBINDINGS_DOCS);
+    out.push_str(ACCESSIBILITY_DOCS);
     out
 }
+
+/// T29.2: the switches that make cox usable without sight, motion or
+/// red/green, gathered in one place; they live in three tables and a flag.
+#[cfg(test)]
+const ACCESSIBILITY_DOCS: &str = "
+## Accessibility
+
+- `--plain` (or `tui.screen_reader = true`, or `COX_PLAIN=1`) swaps the TUI for flat labelled \
+lines a screen reader can follow: numbered prompts, no cursor movement, and a BEL when a turn ends.
+- `tui.motion = \"reduced\"` stops everything that moves by itself. A running tool shows one \
+still glyph and `running` instead of a spinner and a ticking clock.
+- `tui.theme = \"cox-dark-daltonized\"` or `\"cox-light-daltonized\"` are the built-in themes \
+without a red/green pair. Added lines and success are blue; removed lines and failure are orange. \
+Every state also keeps its glyph (`✓`, `✗`, `+`, `−`), so colour is never the only signal. \
+`/theme` previews both.
+- `NO_COLOR` (set and non-empty, while `tui.color` is `\"auto\"`), or `tui.color = \"none\"`, \
+prints no colour at all and leaves the terminal's own.
+";
 
 /// `~/.cox/keybindings.toml` (T25.5) is its own file, not a `default.toml`
 /// table, so its reference is written here and appended after the keys;

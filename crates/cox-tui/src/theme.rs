@@ -353,11 +353,20 @@ fn parse_color(s: &str) -> Option<Color> {
     })
 }
 
-/// The three built-ins (T24.2 step 2), embedded so `/theme` always has
-/// something to offer even with an empty `~/.cox/themes/`.
+/// The built-ins (T24.2 step 2, T29.2's daltonized pair), embedded so
+/// `/theme` always has something to offer even with an empty
+/// `~/.cox/themes/`.
 pub const BUILT_IN_THEMES: &[(&str, &str)] = &[
     ("cox-dark", include_str!("../assets/themes/cox-dark.toml")),
     ("cox-light", include_str!("../assets/themes/cox-light.toml")),
+    (
+        "cox-dark-daltonized",
+        include_str!("../assets/themes/cox-dark-daltonized.toml"),
+    ),
+    (
+        "cox-light-daltonized",
+        include_str!("../assets/themes/cox-light-daltonized.toml"),
+    ),
     ("system", include_str!("../assets/themes/system.toml")),
 ];
 
@@ -617,7 +626,16 @@ system = { dark = "4" }
             .into_iter()
             .map(|(n, _)| n)
             .collect();
-        assert_eq!(names, ["cox-dark", "cox-light", "system"]);
+        assert_eq!(
+            names,
+            [
+                "cox-dark",
+                "cox-light",
+                "cox-dark-daltonized",
+                "cox-light-daltonized",
+                "system"
+            ]
+        );
     }
 
     #[test]

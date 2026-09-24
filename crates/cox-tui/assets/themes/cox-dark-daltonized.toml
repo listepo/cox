@@ -1,0 +1,22 @@
+# T29.2 built-in: `cox-dark` without its red/green pair, for red-green
+# colour vision. Okabe–Ito hues: blue for ok and added lines, orange for
+# errors and removed lines, reddish purple for agents, yellow for warnings.
+# Every state still carries its glyph or word, so colour is never the only
+# signal; this only keeps the colour from contradicting it.
+variant = "dark"
+syntax = "base16-ocean.dark"
+
+[tokens]
+accent = { dark = "#7aa2f7", light = "#2e5aac" }
+user = { dark = "#7aa2f7", light = "#2e5aac" }
+agent = { dark = "#cc79a7", light = "#8e3b73" }
+tool = { dark = "#7dcfff", light = "#0f4b6e" }
+ok = { dark = "#56b4e9", light = "#0060a8" }
+warn = { dark = "#f0e442", light = "#6f6400" }
+error = { dark = "#e69f00", light = "#b35a00" }
+diff_add = { dark = "#56b4e9", light = "#0060a8" }
+diff_del = { dark = "#e69f00", light = "#b35a00" }
+diff_hunk = { dark = "#bb9af7", light = "#6b3fa0" }
+selection = { dark = "#7dcfff", light = "#0f4b6e" }
+border = { dark = "#3b4261", light = "#c0c6e8" }
+dim = { dark = "#565f89", light = "#8991b8" }
