@@ -3468,3 +3468,31 @@ TERM_PROGRAM=iTerm.app: notify via OSC 9 + BEL
 VTE_VERSION=7600: notify via OSC 777 + BEL
 TERM_PROGRAM=Apple_Terminal: notify via BEL
 ```
+
+#### T25.3 `!` shell line
+
+Model: Claude Code / claude-opus-5-5 · Status: done 2026-09-24 · Depends: — · Size: ~110 · Priority: P1 · Complexity: 2
+Goal: a composer line starting with `!` runs through the `bash` tool (same sandbox, rules and archive) as a user-initiated card; the result reaches the model only with `!!`.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`.
+Steps: (1) `commands.rs`: `!cmd` → `Action::Shell { cmd, share: false }`, `!!cmd` → `share: true`. (2) `Submission::UserShell { command, share }` (new protocol variant, §1.2 amendment in the commit): the core runs the `bash` tool through the permission engine and sandbox exactly like a model call, emits the usual `ToolCall*` events with `origin: User`, and appends a `UserMessage` with the output only when `share`. (3) The card shows `$ cmd` as its header; `Esc` cancels through the same token.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_out_of_history bang_bang_line_enters_history
+```
+Done when: the loop scenarios pass and the next request after `!ls` is byte-identical to the one before it (prefix invariant).
+Out of scope: an interactive shell (T15.4 completion already helps the line).
+Execution plan: (a) `cox-protocol` `Submission::UserShell { command, share }` + roundtrip case. (b) `cox-core` `Session::user_shell`: refused with a warning unless `Idle`; fresh cancel token; `turn::run_tools` with one `bash` call (hooks, engine, sandbox, archive as for the model); on `share` push one user message `$ cmd` + visible output, following `publish_task_result`. (c) `cox-core/tests/user_shell.rs`: history before/after `!` serializes byte-identical; `!!` adds one message. (d) `cox-tui`: `commands::parse` maps `!`/`!!` to `Action::Shell`; `State` remembers the pending command, the matching `ToolCallRequested` becomes a `Cell::Tool { user: true }` drawn as `$ cmd`, and marks the TUI busy until its `ToolCallDone`, so `Esc` interrupts it. Deviation: the user origin lives on the TUI cell, not on `ToolCall` (an `origin` field touches ~45 literals); `crates/cox/src/session.rs` needs no change.
+
+Deviations: the user origin lives on the TUI's `Cell::Tool { user }`, not as `origin: User` on `ToolCall` — that field would touch ~45 struct literals across crates for a flag only the TUI draws; the TUI links the pending `!` line to the next `bash` `ToolCallRequested` and clears the link on `TurnStarted`. `crates/cox/src/session.rs` needed no change (the TUI submits straight to the core). The core refuses a `!` outside `Idle` with a warning, since a result landing mid-turn would split a tool_use from its tool_result; the TUI refuses it while busy first. A `!!` message is a plain user message (`$ cmd` + the visible, possibly archived-and-shortened output), the `publish_task_result` precedent; it is not written to the rollout, so a resumed session does not carry it. Files beyond the card's three: `cox-protocol` types + `docs/protocol.jsonschema` (generated), `cox-core` session + `tests/user_shell.rs`, `cox-tui` cells + two test files, `docs/getting-started.md`. Not done: no manual run of the TUI binary; the core scenarios drive the real `BashTool` instead.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-core bang_line_runs_sandboxed_and_stays_out_of_history bang_bang_line_enters_history
+2 tests run: 2 passed
+$ mise exec -- cargo nextest run --workspace
+826 tests run: 826 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
