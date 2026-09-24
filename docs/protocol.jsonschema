@@ -171,6 +171,17 @@
             "description": "Why it needs one.",
             "$ref": "#/$defs/Why"
           },
+          "source": {
+            "description": "Who is asking (T27.2); `None` only on rollout lines written\nbefore the field existed.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Source"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "type": {
             "type": "string",
             "const": "approval_required"
@@ -1157,6 +1168,33 @@
             "type": "string",
             "const": "never"
           }
+        ]
+      },
+      "Source": {
+        "description": "The session an approval comes from (T27.2). A subagent's is relayed to\nits parent's surface, so the prompt names the agent that is asking.",
+        "type": "object",
+        "properties": {
+          "session": {
+            "description": "The session whose call waits.",
+            "$ref": "#/$defs/SessionId"
+          },
+          "agent": {
+            "description": "The subagent's name (`explore-2`); `None` for the session the user\nis talking to.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preset": {
+            "description": "The subagent's preset (`explore`, `shell`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "session"
         ]
       },
       "Decision": {

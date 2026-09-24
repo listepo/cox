@@ -357,6 +357,7 @@ fn screen_bash_approval_modal() {
                 subject: "cargo test --workspace".into(),
             },
             why: Why::Risk { risk: Risk::Exec },
+            source: None,
         },
     );
     insta::assert_snapshot!(shot("approval_modal", &mut state));

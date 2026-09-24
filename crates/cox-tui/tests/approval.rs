@@ -4,12 +4,13 @@
 
 use std::path::PathBuf;
 
-use cox_protocol::ids::CallId;
+use cox_protocol::ids::{CallId, SessionId};
 use cox_protocol::types::{
-    Decision, Diff, Event, PermissionMode, Risk, SandboxMode, Submission, ToolCall, ToolResult, Why,
+    Decision, Diff, Event, PermissionMode, Risk, SandboxMode, Source, Submission, ToolCall,
+    ToolResult, Why,
 };
 use cox_tui::cells::cell_lines;
-use cox_tui::state::{Cmd, Msg, State, update};
+use cox_tui::state::{Cmd, Modal, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -79,6 +80,10 @@ fn diff_two_files() {
 }
 
 fn bash_approval() -> (State, CallId) {
+    bash_approval_from(None)
+}
+
+fn bash_approval_from(source: Option<Source>) -> (State, CallId) {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     let call_id = CallId::new();
     let call = ToolCall {
@@ -95,9 +100,27 @@ fn bash_approval() -> (State, CallId) {
             why: Why::RuleAsk {
                 rule: "Bash(git push:*)".into(),
             },
+            source,
         }),
     );
     (state, call_id)
+}
+
+/// T27.2: a subagent's prompt names it in the agent colour; the main
+/// session's prompt (`modal_bash_approval`) has no prefix.
+#[test]
+fn approval_modal_shows_source_agent() {
+    let (state, _) = bash_approval_from(Some(Source {
+        session: SessionId::new(),
+        agent: Some("explore-2".into()),
+        preset: Some("explore".into()),
+    }));
+    let Some(Modal::Approval(approval)) = &state.modal else {
+        panic!("approval modal open");
+    };
+    let header = &approval.lines(&state.look(60))[0];
+    assert_eq!(header.spans[0].style.fg, Some(state.theme.agent));
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 7)));
 }
 
 #[test]
@@ -184,6 +207,7 @@ fn modal_edit_approval_shows_the_proposed_diff() {
         Msg::Event(Event::ApprovalRequired {
             call,
             why: Why::Risk { risk: Risk::Write },
+            source: None,
         }),
     );
     let frame = buffer_to_string(&render(&state, 60, 14));

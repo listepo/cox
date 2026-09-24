@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use common::{drain, open, run_with, scenario, spawn_turn, tool_results};
 use cox_protocol::errors::WorktreeError;
 use cox_protocol::traits::{Worktree, Worktrees};
-use cox_protocol::types::{Content, Event, Job, Tier};
+use cox_protocol::types::{Content, Decision, Event, Job, Source, Submission, Tier};
 
 /// A `Worktrees` that records what the loop asked for and answers with a
 /// fixed path, so no git runs in this test.
@@ -240,4 +240,62 @@ async fn tasks_two_background_agents_run_concurrently() {
             .all(|(ok, text)| *ok && text.contains("background task")),
         "{results:?}"
     );
+}
+
+/// T27.2: a child's escalated call reaches the parent's stream labelled
+/// with the agent (not the parent's own session), the parent's `Approve`
+/// unblocks the child, and the decision is relayed back so the prompt
+/// closes.
+#[tokio::test]
+async fn subagent_approval_carries_source() {
+    let (session, _store, mut rx) = open(
+        &scenario("subagent_approval"),
+        cox_protocol::Config::default(),
+    );
+    let running = spawn_turn(&session, "run the tests");
+    let (call_id, source) = loop {
+        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("event timeout")
+            .expect("event stream closed");
+        let Event::ApprovalRequired { call, source, .. } = ev else {
+            continue;
+        };
+        let source = source.expect("source");
+        if source.agent.is_some() {
+            break (call.id, source);
+        }
+        // The parent's own `agent` call asks first, unlabelled.
+        assert_eq!(source.session, session.id());
+        session
+            .submit(Submission::Approve {
+                call_id: call.id,
+                decision: Decision::Allow,
+            })
+            .await
+            .expect("approve agent");
+    };
+    let Source {
+        session: asking,
+        agent,
+        preset,
+    } = source;
+    assert_ne!(asking, session.id());
+    assert_eq!(agent.as_deref(), Some("shell-1"));
+    assert_eq!(preset.as_deref(), Some("shell"));
+    session
+        .submit(Submission::Approve {
+            call_id,
+            decision: Decision::Allow,
+        })
+        .await
+        .expect("approve");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::ApprovalDecided { call_id: id, .. } if *id == call_id))
+    );
+    assert_eq!(tool_results(&events), [(true, "tests ran".to_string())]);
 }

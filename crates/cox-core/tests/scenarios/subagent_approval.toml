@@ -1,0 +1,17 @@
+# Parent delegates to a shell child whose exec call needs the user.
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "run the tests", preset = "shell", tools = ["shell"] } }]
+
+# child: an exec call the default policy escalates
+[[turn]]
+text = "running"
+tool_calls = [{ name = "shell", input = { cmd = "cargo test" } }]
+
+# child: answer
+[[turn]]
+text = "tests ran"
+
+# parent
+[[turn]]
+text = "done"

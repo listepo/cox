@@ -690,6 +690,15 @@ impl Session {
         rx
     }
 
+    /// Parks a subagent's call (T27.2) until this session's surface answers
+    /// it. Unlike `await_decision` the state stays as it is: this session
+    /// is still running the `agent` call that owns the child.
+    pub(crate) async fn relay_decision(&self, call_id: CallId) -> oneshot::Receiver<Decision> {
+        let (tx, rx) = oneshot::channel();
+        self.inner.lock().await.pending.insert(call_id, tx);
+        rx
+    }
+
     /// Records an `AllowForSession` grant.
     pub(crate) async fn grant(&self, tool: String, subject: String) {
         self.inner.lock().await.grants.push((tool, subject));

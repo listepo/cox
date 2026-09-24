@@ -77,6 +77,7 @@ fn approval_decided_by_a_rule_closes_the_modal() {
                 subject: "cargo test".into(),
             },
             why: Why::Risk { risk: Risk::Exec },
+            source: None,
         }),
     );
     assert!(matches!(state.modal, Some(Modal::Approval(_))));

@@ -1263,9 +1263,10 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 }
             }
         }
-        Event::ApprovalRequired { call, why } => {
+        Event::ApprovalRequired { call, why, source } => {
             cmds = notify(state, format!("approval: {} {}", call.name, call.subject));
-            state.modal = Some(Modal::Approval(Approval::new(call, why)));
+            let agent = source.and_then(|s| s.agent);
+            state.modal = Some(Modal::Approval(Approval::new(call, why).from_agent(agent)));
         }
         Event::ApprovalDecided { .. } => state.modal = None,
         Event::TurnStarted {
@@ -1735,7 +1736,11 @@ mod tests {
         };
         let cmds = update(
             &mut state,
-            Msg::Event(Event::ApprovalRequired { call, why }),
+            Msg::Event(Event::ApprovalRequired {
+                call,
+                why,
+                source: None,
+            }),
         );
         assert!(
             matches!(&cmds[..], [Cmd::Notify { body, .. }] if body == "approval: bash cargo test")
