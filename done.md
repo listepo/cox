@@ -3642,3 +3642,33 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T23.6 OSC 9;4 progress
+
+Model: claude-opus-5-5 · Status: done 2026-09-24 · Depends: T23.0 · Size: ~50 · Priority: P3 · Complexity: 1
+Goal: indeterminate progress in the tab or taskbar while a turn runs, cleared on idle, only when `caps.osc9_4`.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) `Cmd::Progress(Option<u8>)`: `Some(0)` with state 3 (indeterminate) on `TurnStarted`, `None` (state 0) on `TurnDone`/`Error`; approval pending → state 4 (paused). (2) `app.rs` writes `ESC ] 9 ; 4 ; <state> ; <pct> ST`. (3) Config `tui.progress = true`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui progress_sequence_follows_turn_state
+```
+Execution plan: (1) `term.rs`: `Progress { Idle, Busy, Paused }` and `progress(p)`, the `ESC ] 9 ; 4 ; <0|3|4> ; 0 ST` bytes. (2) `state.rs`: after every `update`, when `caps.osc9_4`, the wanted state — idle unless busy; paused while an approval or `ask_user` modal waits — is compared with `State.progress` and a `Cmd::Progress` goes out only on a change. (3) `app.rs` writes it; `restore` clears it on exit so a quit mid-turn leaves no spinning tab. The existing `[tui.caps] osc9_4 = false` is the manual switch — no `tui.progress` key. Tests: `progress_sequence_follows_turn_state` (state.rs unit test), a PTY e2e in `tests/shell.rs` asserting no `9;4` without the capability.
+Done when: the sequence test passes and the PTY e2e on a terminal without the capability sees no `9;4`.
+Out of scope: percentages (a turn has no known length).
+
+Deviations: `Cmd::Progress` carries a three-state `term::Progress` (`Idle`, `Busy`, `Paused`) instead of `Option<u8>`, because a turn has no percentage to send. The progress is not set in each event arm. After every `update`, it is derived from what `State` shows: idle unless busy, and paused while an approval or `ask_user` modal is open. It is sent only when it changes, so an approval relayed from a subagent pauses the tab as well. `restore` also clears the progress on exit, including from the panic hook, so quitting mid-turn does not leave the tab spinning. There is no `tui.progress` key: the existing `[tui.caps] osc9_4 = false` (T23.0) is the manual switch, as `osc8` is for T23.3. The escape ends with ST (`ESC \`). The PTY e2e drives `kitty_probe` through a new `progress` scenario and a `COX_PROBE_OSC9_4` switch. It matches on `ESC ] 9;4` because SGR's `39;49m` contains the bytes `9;4`. Files beyond the card's two: `term.rs`, `src/bin/kitty_probe.rs` and `tests/shell.rs`.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui progress_sequence_follows_turn_state
+1 test run: 1 passed
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_progress_only_with_the_capability
+1 test run: 1 passed
+$ mise exec -- cargo nextest run --workspace
+843 tests run: 843 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
