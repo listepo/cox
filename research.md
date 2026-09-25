@@ -138,6 +138,31 @@ Claude Code auto-compacts near the window and reloads instruction files after; `
 ### 4.3 Why an own provider layer (D3)
 Candidate crates: rig-core 0.42 (multi-provider, opinionated), genai 0.7-beta, async-openai 0.41, community `anthropic` 0.0.8 (2024, unofficial, stale — ledger #20). What decides cost and correctness in 2026 is wire-level: `cache_control` placement, thinking blocks replayed unchanged on the same model, `effort`, `fallbacks`, `stop_details`, server tools, per-message system blocks. None of the frameworks track all of these, and each provider is ~500 LOC. Codex hand-rolls its client and uses `eventsource-stream` for SSE (§1.3). Verdict: own layer, `eventsource-stream` for SSE, `wiremock` + recorded `.sse` fixtures for tests.
 
+### 4.3.1 SDKs, specs and logins for the Claude Code and Codex providers (checked 2026-09-25)
+Question: before hand-writing a provider, is there (1) a maintained Rust SDK, else (2) a machine-readable spec to generate from? And can cox log in the way Claude Code and Codex do (subscription OAuth)? Every row was checked against the primary source on 2026-09-25 unless marked.
+
+| Item | Finding | Source |
+|---|---|---|
+| Official Rust SDK, Anthropic | none; official SDKs are Python, TypeScript, Go, Java, Ruby, C#, PHP | https://github.com/anthropics (org repo list) |
+| Official Rust SDK, OpenAI | none | https://github.com/openai (org repo list) |
+| `async-openai` | 0.42.0, released 2026-09-09; hand-written "based on OpenAI OpenAPI spec", struct and field names copied from it; typed Responses API incl. streaming events (`responses` feature → `response-types`); custom base URL; raw JSON escape hatches (`extra_body`, BYOT, `serde_json::Value`) | https://crates.io/api/v1/crates/async-openai ; https://github.com/64bit/async-openai (README, CONTRIBUTING.md) |
+| Community Anthropic crates | none maintained with cache_control, thinking replay and server tools; `anthropic` 0.0.8 is stale (ledger #20) | crates.io search; §4.3 |
+| Codex model client (`codex-rs`) | crates `codex-api` (Responses request + SSE), `codex-client` (transport, retry), `codex-protocol` (wire types, Rust → TS via `ts-rs`), `codex-model-provider-info`, `codex-login`; hand-written; none published on crates.io; Apache-2.0; 180+ workspace crates, no stability contract | https://github.com/openai/codex `codex-rs/Cargo.toml`, `codex-rs/codex-api/src/endpoint/responses.rs`; https://crates.io/api/v1/crates?q=codex |
+| Codex endpoints | `https://api.openai.com/v1/responses` (API key) and `https://chatgpt.com/backend-api/codex/responses` (ChatGPT login), same request code, SSE only | `codex-rs/codex-api/src/provider.rs`; `codex-rs/model-provider-info/src/lib.rs:77` |
+| Codex ChatGPT login | OAuth PKCE (S256), token endpoint `https://auth.openai.com/oauth/token`, Codex's own client id, local callback on port 1455 (fallback 1457), tokens in `$CODEX_HOME/auth.json`, requests carry `Authorization: Bearer` + `ChatGPT-Account-ID` | `codex-rs/login/src/auth/manager.rs`, `login/src/oauth/authorization.rs`, `login/src/server.rs`, `login/src/auth/storage.rs`, `model-provider/src/bearer_auth_provider.rs` |
+| Third-party use of the ChatGPT login | no OpenAI document permits or forbids it: **not found** | OpenAI docs and terms searched; nothing primary |
+| Claude Code auth modes | Console API key; Claude Pro/Max/Team/Enterprise login; Bedrock; Vertex; Microsoft Foundry; gateway | https://code.claude.com/docs/en/authentication |
+| Third-party use of a Claude subscription | **forbidden**: "Anthropic does not permit third-party developers to offer Claude.ai login into their own applications" | https://code.claude.com/docs/en/legal-and-compliance |
+| Claude Code OAuth endpoints, client id, beta header | not published by Anthropic; only community reverse-engineering: **unverified** | https://code.claude.com/docs/en/authentication (absent) |
+| Claude Code SDK dependency | the npm package ships a native binary with no declared `dependencies`; which SDK it bundles is not visible | https://registry.npmjs.org/@anthropic-ai/claude-code/latest (2.1.282) |
+| Anthropic OpenAPI spec | `openapi_spec_url` removed from `anthropic-sdk-python/.stats.yml` in commit `f9b0cf28` (2026-09-03); the last linked Stainless URL still answers: OpenAPI 3.1.0, contains `MessageStreamEvent` and `content_block_delta`. A snapshot, not a maintained pointer | https://github.com/anthropics/anthropic-sdk-python/commit/f9b0cf28 ; https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-465bff21a179090915396565d1ae8f705cf8596e2ec920eb121072f25b8a7d68.yml |
+| OpenAI OpenAPI spec | `openai/openai-openapi`, `main`, `openapi.yaml`/`openapi.json`, OpenAPI 3.1.0, MIT, ~3.7 MB, contains `ResponseStreamEvent` | https://github.com/openai/openai-openapi |
+| progenitor | 0.15.0 (2026-09-10); OpenAPI 3.0.x only (via `openapiv3` 2.2); no SSE support documented | https://crates.io/api/v1/crates/progenitor ; README |
+| typify | 0.8.0 (2026-09-09); JSON Schema → serde types; used in cox since T30.10 | https://crates.io/api/v1/crates/typify ; https://github.com/oxidecomputer/typify |
+| OpenAPI 3.1 + SSE Rust generator | none maintained found: **not found** (README-level search only) | progenitor, openapi-generator READMEs |
+
+Reading: no vendor ships Rust. For OpenAI a maintained typed crate exists (`async-openai`); for Anthropic only the spec exists, and only as an unlinked snapshot, so generation is from a vendored copy (T30.10 does this for the stream types). Subscription login: Anthropic forbids it in writing; OpenAI is silent.
+
 ### 4.4 Routing evidence (D5)
 Copilot's auto model selection is praised because it is explicit, priced (10 % discount) and switchable; Claude Code's Haiku delegation is complained about because it is silent. aider's `--weak-model` (commits, summaries) and OpenCode's small model for titles are the same pattern. Jobs that tolerate a small model, by consensus of the surveyed tools: titles, summaries, commit messages, compaction, search/explore, tool-result summarisation, classification. Effect-size numbers from the survey ("4.2× savings", "Codex 3–4× fewer tokens than Claude Code") are unsourced and dropped. [med]
 
@@ -354,7 +379,7 @@ Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~
 - **System-prompt tax**: Pi keeps the prompt under ~1 000 tokens by shipping nothing optional; `oh-my-pi` adds the rest as extensions. cox's deferred tools (D6d) are the same idea half-done: the skills index, memory index and instruction files still ride in every request. [high]
 - **Copy fidelity**: Claude Code drops GFM features on copy (#26390); Codex falls back to key/value for cramped tables. [high]
 - **Windows**: image paste, sandbox and MCP install remain the weakest area for everyone. [high]
-- **Policy**: Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (enforced 2026-04-04); Codex's ChatGPT-plan login is sanctioned. cox must not implement consumer-subscription OAuth for Anthropic; API keys and the keyring stay the path. [med — secondary sources; treat as policy until the official page is read]
+- **Policy**: Anthropic forbids third-party apps from offering Claude.ai login or routing requests through Free/Pro/Max credentials (https://code.claude.com/docs/en/legal-and-compliance, checked 2026-09-25). cox does not implement Claude subscription OAuth; API keys and the keyring stay the path. OpenAI neither permits nor forbids third-party use of Codex's ChatGPT login in any document found (§4.3.1). [high for Anthropic, unverified for OpenAI]
 
 ### 8.3 Terminal capabilities (author-verified against vendored sources where marked ✔)
 
@@ -441,6 +466,7 @@ Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, 
 | 31 | crossterm 0.29 exposes `PushKeyboardEnhancementFlags` | confirmed by author | `crossterm-0.29.0/src/event.rs` |
 | 32 | cox `tui.mouse`, `tui.theme = "auto"` are read but have no effect; `ask_user` in the TUI is `Answers::Fixed`; skills index and custom commands are only in `cox ext list`; `SessionStart` hook never fires | confirmed by author | `crates/cox/src/session.rs`, `crates/cox-tui/src/app.rs`, `crates/cox-core/src` grep on 2026-09-22 |
 | 33 | Gemini CLI retired into a closed-source Antigravity CLI (June 2026) | [med] | developers.googleblog.com (agent A/D), not read by the author |
-| 34 | Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (2026-04-04) | [med] | secondary sources only (agent D); read the official policy before any login work |
+| 34 | Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (2026-04-04) | confirmed in substance, date unverified | https://code.claude.com/docs/en/legal-and-compliance (checked 2026-09-25): third parties may not offer Claude.ai login or route requests through plan credentials; the enforcement date is from secondary press only |
 | 35 | Vendor model names quoted by reviewers (e.g. "GPT-6 Astra") and star counts (OpenCode 140–172 k, Pi 104–140 k) | [unverified] | vary by source; directional only |
 | 36 | Codex CLI checkpoints/rewind | [unverified] | no documentation found by agent D |
+| 37 | Codex's ChatGPT-plan login is sanctioned for third-party clients | [unverified] | no OpenAI document found either way (2026-09-25); `codex-rs/login` shows the flow uses Codex's own OAuth client id |

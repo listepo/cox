@@ -8,6 +8,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T30.9 | todo | P1 | 3 | 0% | |
 | T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
+| T30.11 | todo | P1 | 3 | 0% | |
+| T30.12 | todo | P1 | 4 | 0% | |
 
 ## Reference
 
@@ -21,7 +23,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 |---|----------|-------------------------------|
 | D1 | **One Cargo workspace, one static binary, ten in-tree crates (§1). No WASM or dylib plugin host in v0.1.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
 | D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP and the JSONL rollout are four consumers of one event stream. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
-| D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
+| D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. **Where wire types come from (A40):** (1) a maintained Rust SDK's *types* when one exists (OpenAI: `async-openai` types only), else (2) types generated with typify from the vendor's published spec, vendored in the repo (Anthropic), else (3) hand-written. Transport, retry, SSE state machine, `ProviderEvent` mapping and the ledger stay ours in every case; SDK code is a `wire` module inside the provider, extracted to a crate only when a second consumer appears. Login: API keys only — Claude subscription OAuth is forbidden to third parties (R§4.3.1); ChatGPT login waits for an OpenAI document permitting it. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
 | D4 | **Adopt existing formats verbatim instead of inventing ones.** `AGENTS.md` (and `CLAUDE.md`) hierarchy; Agent Skills `SKILL.md`; Claude Code hook JSON protocol and `.claude/settings.json` permission-rule syntax (`Bash(npm run test:*)`), `.claude/commands/*.md`, `.claude/agents/*.md`; `.mcp.json`; Codex `apply_patch` (V4A) grammar; `--output-format stream-json`. cox-native equivalents live under `.cox/` with the same schemas. | A user with a Claude Code or Codex setup gets cox for free, and the rtok hook stack works unchanged (R§3). Every one of these is documented and already read by ≥ 2 agents. |
 | D5 | **Route by job tier, never by guesswork, never up.** Three tiers in config: `cheap` (default `claude-haiku-4-5`; any local model), `code` (default `claude-sonnet-5`; `claude-opus-5` when the user picks it or the task is flagged large), `think` (`claude-fable-5-1`, only via `/think` or `--deep`, always confirmed). Jobs pinned to `cheap`: session title, compaction summary, tool-result summarisation, commit message, memory extraction, explore/search subagents, background shell and HTTP subagents, hook-driven LLM calls. Every request carries a `job` tag into the ledger. | User constraint. Claude Code's silent Haiku delegation is its most-cited complaint (R§2.1); Copilot's auto-routing is praised because it is explicit and discounted. Anthropic's own guidance: measure the capable model at lower `effort` before building a cascade, because caches are model-scoped (R§4.4). |
 | D6 | **Token economy is core, not a plugin.** (a) every tool output is archived before the model sees it; the model sees head/tail + `expand <id>`; (b) identical read/grep within N turns returns "unchanged, see #id"; (c) `read` has `lines=` and `mode=outline` (tree-sitter); (d) tool schemas beyond the core eight are deferred and found through a `tool_search` tool; (e) prefix is byte-stable: tools → system → instruction files → last cache breakpoint → volatile; (f) compaction is append-only, keeps the last two turns verbatim, runs on `cheap`; (g) one per-request `usage` row with cache read/write; (h) session and monthly budget caps. Metric: *context-token-turns*. | rtok measured 3–40 % real savings from external hooks against 60–95 % vendor claims; the difference is that hooks cannot touch what the model sees. A native agent can (R§4.1–4.2). Minimum cacheable prefix is 512 tokens on the Claude 5 family and 4 096 on Haiku 4.5, so one volatile byte in the system prompt costs the whole cache (R§6 ledger #21). |
@@ -667,6 +669,30 @@ Goal: one real Terminal-Bench 2.x subset run with cox, inside a $1 budget the cr
 Plan: to be written when claimed: a Harbor installed-agent in `cox_evals.tbench` that copies a Linux `cox` build into the container and passes the key; per-task budget cap so the whole subset stays under $1; check free disk first (11 GB free at the time of writing; TB images are 0.5–2 GB each).
 Done when: `research.md` §5.3 has the TB subset's pass rate, tokens and ledger cost; T30.3 then closes.
 
+#### T30.11 OpenAI Responses wire types from async-openai
+
+Model: - · Status: open · Depends: - · Size: ~200 · Priority: P1 · Complexity: 3
+Goal: `openai/responses.rs` (the Codex-replacement backend) builds requests and parses stream events with `async-openai`'s Responses types instead of hand-written structs and `Value` walks (A40 step 1). Transport, retry, SSE framing, the `ProviderEvent` mapping and usage/ledger stay ours.
+Plan: to be written when claimed. Step 0 is a gate: add `async-openai` with `default-features = false` and only the Responses types feature; run `cargo tree -p cox-provider -e normal` and confirm it pulls no second HTTP stack (reqwest/hyper/tokio versions other than ours). If it does, stop and ask the creator (fallback: typify over a vendored `openai-openapi` subset, as in T30.12).
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider
+```
+Done when: every OpenAI Responses fixture replays with byte-identical snapshots, unknown events and fields are still ignored (test), and `async-openai` has rows in plan §1.1, `toolchain.md` and `rust.md`.
+Out of scope: OpenAI Chat (`chat.rs`), ChatGPT-account login.
+
+#### T30.12 Anthropic wire types generated from the vendored OpenAPI spec
+
+Model: - · Status: open · Depends: T30.10 · Size: ~300 (+ vendored spec) · Priority: P1 · Complexity: 4
+Goal: the Anthropic backend (the Claude Code replacement) gets request *and* stream types generated with typify from Anthropic's own OpenAPI 3.1 spec, vendored in the repo, replacing T30.10's hand-curated schema subset (A40 step 2).
+Plan: to be written when claimed. Outline: vendor the last published Stainless snapshot (URL in R§4.3.1; record its sha256 beside it) under `crates/cox-provider/schema/`; a small extraction script turns `components.schemas` reachable from the Messages request and `MessageStreamEvent` into one JSON Schema (`$defs`, refs rewritten) that `typify::import_types!` consumes; the extracted file is committed and a test fails when it is stale against the vendored spec; `request.rs` serializes through the generated request types where they express what cox sends (`cache_control`, thinking, `effort`, tools) and keeps a raw-JSON escape hatch for anything the snapshot lacks.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider
+```
+Done when: all Anthropic request and stream snapshots are byte-identical, the T30.10 wire tests pass against the generated types, and re-vendoring is one documented command.
+Out of scope: subscription OAuth (forbidden, R§4.3.1), Bedrock/Vertex.
+
 #### T30.3 Eval run with a verification step
 
 Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
@@ -749,6 +775,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A37 §3 P30, T30.6, T30.3 — new card T30.6 (the Anthropic stream emits `ToolUseEnd` on a tool block's `content_block_stop`) ahead of T30.3. Why: without it every Anthropic tool call is dropped; found by T30.3's first live task; the creator chose fixing it first. Effect: T30.3 step (3) runs after T30.6. `openai/chat.rs` never emits `ToolUseEnd` either; that is a separate, larger fix (interleaved calls by index) proposed to the creator, not part of T30.6.
 - A38 §3 P30, T30.7–T30.9 — the eval scripts become a uv-managed Python package with tests (T30.7, T30.8), and the Terminal-Bench part of T30.3 becomes T30.9 (Harbor agent, colima, $1 budget). Why: the creator asked for the scripts to be a proper package with tests before TB; the old adapter could not run for real. Effect: T30.3 closes after T30.9; `just eval` runs through uv.
 - A39 §3 P30, T30.10 — the Anthropic stream wire types are generated with typify from a curated JSON Schema subset of Anthropic's OpenAPI spec; the SSE → `ProviderEvent` mapping stays hand-written. Why: the creator chose typify-generated types over a hand-written `Value` walk or a full generated SDK (none exists for Rust that handles SSE). Effect: one build-time proc-macro dependency; D3 unchanged.
+- A40 §0 D3, §3 P30, T30.11–T30.12 — D3 gains an order for where provider wire types come from: a maintained SDK's types, else typify over the vendor's vendored spec, else hand-written; transport, SSE mapping and the ledger stay ours; SDK code is a `wire` module inside the provider. Login stays API-key only: Anthropic forbids third-party Claude subscription login in writing, OpenAI documents nothing for ChatGPT login (R§4.3.1). Why: the creator asked providers to check for an SDK or a generatable spec before hand-writing, starting with the Claude Code and Codex replacements. Effect: `async-openai` (types only) and a vendored Anthropic spec enter the provider crate.
 
 ## 7. Risk register
 
