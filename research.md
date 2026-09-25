@@ -246,6 +246,42 @@ tool failed outside `--cwd` (plan §1.6 says empty means git-root-else-cwd;
 now resolved in `session::open`); eval runs pass `--no-hooks --no-mcp`
 because ambient repo servers add startup noise to every task.
 
+#### Live run with and without the verify preset (T30.3, 2026-09-25)
+
+`claude-sonnet-5`, the 10 in-repo tasks, `--approve never
+--permission-mode auto`. Cost and tokens are the per-task ledger rows
+(`usage`, what `cox stats` reads), summed; the harness's own
+per-task rounding gives $0.0516 / $0.0628.
+
+| Configuration | Pass | Provider calls | Input | Output | Cache read | Cache write | Cost |
+|---|---|---|---|---|---|---|---|
+| baseline (`--no-hooks`) | 9/10 | 21 | 42 | 951 | 173 260 | 2 932 | $0.0515 |
+| `--preset verify` | 9/10 | 25 | 50 | 1 273 | 208 382 | 3 300 | $0.0626 |
+
+The one failure is the same task in both: `append-line` exits 2 because
+the model first tried a writing `bash` command, which `--approve never`
+denies ("Exec calls require approval"), then finished with `edit`; the
+file is correct but the harness scores any denial as a failure. The
+preset costs +22 % here and changes no outcome: nine of the ten tasks are
+one tool call and one answer, so there is nothing for a test hook to
+catch, and on `append-line` it doubled the calls (4 → 8). These tasks are
+too small to show a verification benefit; Terminal-Bench is where it
+would.
+
+Getting here took three fixes the offline suite could not see: an
+org-level key needs `anthropic-workspace-id` (T30.4); no production path
+priced a call, so every ledger row was $0 (T30.5); the Anthropic stream
+never emitted `ToolUseEnd`, so every tool call was dropped (T30.6). The
+harness overrides `HOME`, which hides the macOS keychain, so the key has
+to come from the environment:
+
+```bash
+ANTHROPIC_API_KEY="$(security find-generic-password -s cox -a anthropic -w)" \
+  python3 evals/run.py --provider anthropic --model claude-sonnet-5 [--preset verify]
+```
+
+Terminal-Bench 2.x: not run yet.
+
 ## 6. Fact-check ledger
 | # | Claim (report) | Verdict | Correction / source |
 |---|---|---|---|

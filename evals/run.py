@@ -174,27 +174,38 @@ def run_task(task, *, cox_bin, dry_run, provider, model, preset=None):
     except subprocess.TimeoutExpired:
         return result(task, False, 0.0, 0, time.time() - started, "timeout")
     out_file.write_text(proc.stdout)
-    cost, turns = 0.0, 0
+    cost, turns, tokens = 0.0, 0, {}
     try:
         payload = json.loads(proc.stdout or "{}")
         cost = float(payload.get("cost_usd", 0.0))
         turns = int(payload.get("turns", 0))
-    except (ValueError, TypeError):
+        tokens = {k: int(v) for k, v in (payload.get("usage") or {}).items()}
+    except (ValueError, TypeError, AttributeError):
         pass
     if proc.returncode != 0:
         return result(task, False, cost, turns, time.time() - started,
-                       f"cox exit {proc.returncode}")
+                       f"cox exit {proc.returncode}", tokens)
     check_env = dict(os.environ, COX_OUT=str(out_file))
     check = subprocess.run(["sh", "-c", task.get("check") or "true"],
                            cwd=work, env=check_env, capture_output=True, text=True)
     ok = check.returncode == 0
     return result(task, ok, cost, turns, time.time() - started,
-                  "" if ok else f"check failed: {check.stderr.strip() or check.stdout.strip()}")
+                  "" if ok else f"check failed: {check.stderr.strip() or check.stdout.strip()}",
+                  tokens)
 
 
-def result(task, ok, cost, turns, seconds, note):
+def result(task, ok, cost, turns, seconds, note, tokens=None):
     return {"name": task["name"], "pass": ok, "cost_usd": cost,
-            "turns": turns, "seconds": round(seconds, 1), "note": note}
+            "turns": turns, "seconds": round(seconds, 1), "note": note,
+            "tokens": tokens or {}}
+
+
+TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+
+
+def token_line(tokens):
+    """`in/out/cache-read/cache-write`, the four counts the ledger keeps."""
+    return "/".join(str(tokens.get(k, 0)) for k in TOKEN_KEYS)
 
 
 def main(argv=None):
@@ -225,10 +236,13 @@ def main(argv=None):
         results.append(res)
         flag = "PASS" if res["pass"] else "FAIL"
         print(f'{res["name"]:20} {flag:4}  ${res["cost_usd"]:.4f}'
-              f'  turns={res["turns"]}  {res["seconds"]}s  {res["note"]}')
+              f'  turns={res["turns"]}  tok={token_line(res["tokens"])}'
+              f'  {res["seconds"]}s  {res["note"]}')
     passed = sum(1 for r in results if r["pass"])
     total_cost = sum(r["cost_usd"] for r in results)
-    print(f"{passed}/{len(results)} passed  total cost ${total_cost:.4f}")
+    total_tokens = {k: sum(r["tokens"].get(k, 0) for r in results) for k in TOKEN_KEYS}
+    print(f"{passed}/{len(results)} passed  total cost ${total_cost:.4f}"
+          f"  tokens in/out/cache-read/cache-write {token_line(total_tokens)}")
     return 0 if passed == len(results) else 1
 
 
