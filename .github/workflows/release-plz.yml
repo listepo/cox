@@ -47,7 +47,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           token: ${{ secrets.RELEASE_PLZ_TOKEN }}
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.120.0
       # A release PR is written against the last released version, so proposing
       # one while a release is still being published would compare against a
       # tag that does not exist yet and bump from the wrong place. The merge
