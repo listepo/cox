@@ -127,11 +127,13 @@ One row under the composer, e.g.
   warns once past `budget.warn_at`.
 - `[plan]` is the permission mode badge; `effort:xhigh` appears only when
   `/effort` overrode the tier default.
+- `↻ 4m12s` appears only while a `/loop` is running: the time left until its
+  next turn. It disappears the moment no loop is active.
 - `cox --plain` prints the same segments as one `status: …` line per turn.
 
-Narrow terminals drop segments from the right in this order: git counts →
-cache → tasks → effort → sandbox → model → cost → ctx (the `ctx` bar and the
-mode badge never drop).
+Narrow terminals drop segments from the right in this order: loop countdown →
+git counts → cache → tasks → effort → sandbox → model → cost → ctx (the `ctx`
+bar and the mode badge never drop).
 
 ## Status
 

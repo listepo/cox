@@ -8,7 +8,7 @@ use cox_protocol::types::{
     ToolResult, Usage,
 };
 use cox_tui::commands::{self, Action, COMMANDS};
-use cox_tui::state::{Cell, Cmd, GitStatus, Msg, State, update};
+use cox_tui::state::{Cell, Cmd, GitStatus, Loop, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -318,6 +318,33 @@ fn status_line_shows_the_git_segment_only_inside_a_repository() {
     assert_eq!(head, without_mode, "{with} vs {plain}");
     update(&mut state, Msg::Git(None));
     assert_eq!(cox_tui::status::line(&state).to_string(), plain);
+}
+
+/// T27.7: an active `/loop` shows the time left until its next turn, dropped
+/// before `cache` when the line narrows; nothing shows without one.
+#[test]
+fn status_shows_loop_countdown() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 0.1, 10);
+    state.status.cache_ratio = 0.6;
+    let without = cox_tui::status::line(&state).to_string();
+    assert!(!without.contains('↻'), "{without}");
+    state.active_loop = Some(Loop {
+        prompt: "go".into(),
+        interval_ticks: 3_000,
+        next_at: state.tick + 2_520, // 252.0s
+        budget_usd: 5.0,
+        started_cost_usd: 0.0,
+        iterations: 0,
+    });
+    let with = cox_tui::status::line(&state).to_string();
+    assert!(with.contains("↻ 4m12s"), "{with}");
+    // Narrower than the wide line but wide enough to keep `cache`: the
+    // countdown, being the right-most droppable segment, is gone first.
+    let width = (with.len() - 1) as u16;
+    let mid = cox_tui::status::line_at(&state, width).to_string();
+    assert!(!mid.contains('↻'), "{mid}");
+    assert!(mid.contains("cache 60%"), "{mid}");
 }
 
 /// T27.3: a worktree session shows `⧉ <name>` right after the branch
