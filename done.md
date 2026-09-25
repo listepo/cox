@@ -454,3 +454,37 @@ Deviations:
 Check:
 - A call planted in the anthropic and session test modules made `no_test_reads_the_real_keychain` fail; the plant was then reverted.
 - `cargo nextest run --workspace`: 913 passed, 3 skipped; clippy and fmt clean.
+
+#### T30.24 `cox-models`: one model catalog
+
+Depends: T30.20, T30.23 · Size: ~200 · Files: new crate `crates/cox-models`, `cox-provider/src/usage.rs`, `crates/cox/tests/deps.rs`
+Goal: one pure catalog: model id → context window, max output, efforts, capabilities (tools, adaptive thinking, reasoning-effort parameter) and price (item 3).
+Plan:
+1. Built-in rows are embedded from the files T30.20's script writes.
+2. `[providers.<name>].models` and a user `prices.toml` override them by id.
+3. `PriceTable` moves into the catalog; `Priced` looks prices up through it.
+4. `deps.rs`: `cox-models` depends only on `cox-protocol`, and `cox-core` may depend on it.
+Check:
+- tests for the override order, built-in < config < user file;
+- `usage_prices_toml_parses_and_has_all_tier_models` passes against the catalog.
+Status: done 2026-09-26
+
+What landed:
+- New pure crate `crates/cox-models`.
+  - `price.rs`: `Price`, `PriceError` and `PriceTable` moved from `cox-provider/src/usage.rs`. The private `from_str` became `pub fn parse`, because clippy's `should_implement_trait` fires on a public `from_str`.
+  - `catalog.rs`: `Capabilities`, `ModelRow` (id, context window, max output, efforts, capabilities, price) and `Catalog`.
+    - `Catalog::builtin()` reads the embedded `default.toml` model arrays and `prices.toml`.
+    - `Catalog::load(config, user_prices)` layers built-in < config < user price file. An empty `efforts` list in config means "any", so it does not clear a built-in row's efforts.
+- `cox-provider::usage` re-exports the price types and keeps `Priced`, `ledger_row` and `load_price_table(path)`. That last one is the one disk read, moved out of the pure crate with the same fallback: found → parse; not found → embedded; other error → `Io`. Doctor calls it.
+- `deps.rs`: `cox-models` depends only on `cox-protocol`; `cox-provider` may use `cox-models`; `cox-core` may, but does not yet.
+- Docs: an AGENTS.md layout row, the plan.md §1.1 row and dependency sentence, and `docs/design/providers.md` item 3 "Implemented (T30.24)".
+
+Deviations:
+- `capabilities` and `max_output` stay `None`, because `cox-vendor models` does not emit them yet. T30.25 and T30.26 are their first readers.
+- About 250 new lines in `catalog.rs`, tests included, over the ~200 estimate; `price.rs` is a move.
+
+Check:
+- The override-order tests pass: built-in < config < user file, both directions; a config row keeps the built-in efforts; a user-priced id gets a row.
+- `usage_prices_toml_parses_and_has_all_tier_models` passes in `cox-models`.
+- `cargo nextest run --workspace`: 920 passed, 3 skipped; clippy and fmt clean.
+- `COX_HOME=<tmp> cargo run --bin cox -- doctor` shows `prices: ✓ oldest verified_on 2026-09-02`, as before.

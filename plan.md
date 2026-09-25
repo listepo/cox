@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
-| T30.24 | in progress | P1 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T30.25 | todo | P1 | 3 | 0% | |
 | T30.26 | todo | P1 | 3 | 0% | |
 | T30.27 | todo | P2 | 2 | 0% | |
@@ -84,6 +83,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow, dotenvy 0.15 |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
+| `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12, typify 0.8 (build.rs: Anthropic wire types from the vendored spec, T30.10/T30.12), async-openai 0.42 (`response-types` only, T30.11) |
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
@@ -94,7 +94,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`; `cox-core` → `cox-protocol` only; `cox-provider`, `cox-tools`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only. No crate below `cox` depends on `cox-core`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-models`, `cox-tools`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-provider` → `cox-protocol`, `cox-models`. No crate below `cox` depends on `cox-core`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -724,19 +724,6 @@ Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
 Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
-
-#### T30.24 `cox-models`: one model catalog
-
-Depends: T30.20, T30.23 · Size: ~200 · Files: new crate `crates/cox-models`, `cox-provider/src/usage.rs`, `crates/cox/tests/deps.rs`
-Goal: one pure catalog: model id → context window, max output, efforts, capabilities (tools, adaptive thinking, reasoning-effort parameter) and price (item 3).
-Plan:
-1. Built-in rows are embedded from the files T30.20's script writes.
-2. `[providers.<name>].models` and a user `prices.toml` override them by id.
-3. `PriceTable` moves into the catalog; `Priced` looks prices up through it.
-4. `deps.rs`: `cox-models` depends only on `cox-protocol`, and `cox-core` may depend on it.
-Check:
-- tests for the override order, built-in < config < user file;
-- `usage_prices_toml_parses_and_has_all_tier_models` passes against the catalog.
 
 #### T30.25 `Caps` and adaptive thinking from the catalog
 

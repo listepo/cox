@@ -7,6 +7,9 @@ license.workspace = true
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# T30.24: the model/price catalog moved out of usage.rs into its own pure
+# crate; Priced/ledger_row still price every call through it.
+cox-models = { path = "../cox-models", version = "0.1.2" }
 async-trait = { workspace = true }
 keyring = { workspace = true }
 reqwest = { workspace = true }

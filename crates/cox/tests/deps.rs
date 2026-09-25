@@ -109,13 +109,25 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-protocol"]
     );
 
-    // cox-core depends only on cox-protocol among workspace crates.
-    let core_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    // cox-models (T30.24: the model/price catalog) depends only on
+    // cox-protocol among workspace crates.
+    let models_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-models"]
+            .iter()
+            .all(|d| models_allowed.contains(d.as_str())),
+        "cox-models may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-models"]
+    );
+
+    // cox-core depends only on cox-protocol among workspace crates (and may
+    // depend on cox-models once a card actually wires the catalog in).
+    let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
     assert!(
         deps["cox-core"]
             .iter()
             .all(|d| core_allowed.contains(d.as_str())),
-        "cox-core may only depend on cox-protocol among workspace crates, found {:?}",
+        "cox-core may only depend on cox-protocol/cox-models among workspace crates, found {:?}",
         deps["cox-core"]
     );
 
@@ -129,16 +141,25 @@ fn no_crate_below_cox_depends_on_core() {
         );
     }
 
-    // provider/tools/mcp/store/ext depend only on cox-protocol: this is the
-    // rule the test is named for — none of them may reach cox-core.
+    // cox-provider additionally depends on cox-models: `Priced` prices
+    // every call through the catalog's `PriceTable` (T30.24).
+    let provider_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
+    let provider_deps = &deps["cox-provider"];
+    assert!(
+        !provider_deps.contains("cox-core"),
+        "cox-provider must not depend on cox-core"
+    );
+    assert!(
+        provider_deps
+            .iter()
+            .all(|dep| provider_allowed.contains(dep.as_str())),
+        "cox-provider may only depend on cox-protocol/cox-models among workspace crates, found {provider_deps:?}"
+    );
+
+    // tools/mcp/store/ext depend only on cox-protocol: this is the rule the
+    // test is named for — none of them may reach cox-core.
     let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
-    for crate_name in [
-        "cox-provider",
-        "cox-tools",
-        "cox-mcp",
-        "cox-store",
-        "cox-ext",
-    ] {
+    for crate_name in ["cox-tools", "cox-mcp", "cox-store", "cox-ext"] {
         let d = &deps[crate_name];
         assert!(
             !d.contains("cox-core"),

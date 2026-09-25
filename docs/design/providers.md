@@ -96,6 +96,8 @@ Routing (`Router::pick`) and costing (`Priced`) are already single and stay that
    - Built-in rows are embedded, the way `prices.toml` is today, and written only by T30.20's script from models.dev (A48). `[providers.<name>].models` entries and a user `prices.toml` override them by id.
    - `Caps` is derived from the catalog. The literals `200_000`, `128_000` and `400_000` and the prefix table are deleted.
    - A local server's loaded context (T30.16) is one more override source.
+
+   Implemented (T30.24): `cox-models` (`crates/cox-models`) holds `Catalog::builtin()`/`Catalog::load(config, user_prices_toml)`, merging `ModelRow { id, context_window, max_output, efforts, capabilities, price }` in the order above — `Capabilities` and `max_output` are `Option`/absent everywhere today because no data source emits them yet (T30.25/T30.26 are the first readers). `Price`/`PriceError`/`PriceTable` moved here too, unchanged; `cox-provider::usage` keeps only `load_price_table` (the one place that still reads a price file from disk, since this crate does no I/O), `ledger_row` and `Priced`, which prices calls through the same `PriceTable` as before (no cost-number change). `crates/cox/tests/deps.rs`: `cox-models` depends only on `cox-protocol`; `cox-provider` may additionally depend on `cox-models`; `cox-core` may too (not yet used). `Caps`/adaptive-thinking derivation from `ModelRow` and the doctor sync row are still T30.25/T30.27.
 4. **One effort map.** The mapping `effort_for(api, Effort, &caps) -> Option<WireEffort>` lives in `cox-models`, next to the catalog.
    - Anthropic: `output_config.effort` plus adaptive thinking when the catalog says so.
    - Responses: `reasoning.effort`.

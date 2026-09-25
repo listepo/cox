@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use cox_protocol::Store as _;
 use cox_protocol::config::McpServerConfig;
-use cox_provider::usage::{Price, PriceTable};
+use cox_provider::usage::{Price, load_price_table};
 
 /// One check result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -500,7 +500,7 @@ fn prices_status(prices: &[Price], today: (u32, u32, u32)) -> CheckResult {
 }
 
 fn check_prices() -> CheckResult {
-    let table = match PriceTable::load("/nonexistent/cox-doctor-prices.toml") {
+    let table = match load_price_table("/nonexistent/cox-doctor-prices.toml") {
         Ok(table) => table,
         Err(err) => {
             return CheckResult::warn(

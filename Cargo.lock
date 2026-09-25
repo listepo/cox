@@ -893,6 +893,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-models"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "figment",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "cox-protocol"
 version = "0.1.2"
 dependencies = [
@@ -917,6 +927,7 @@ dependencies = [
  "async-openai",
  "async-trait",
  "bytes",
+ "cox-models",
  "cox-protocol",
  "eventsource-stream",
  "figment",

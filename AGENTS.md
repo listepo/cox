@@ -26,6 +26,7 @@ COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against you
 | `crates/cox` | clap surface and dispatch — nothing else |
 | `crates/cox-protocol` | `Submission`, `Event`, `Item`, config and tool-schema types; every type that crosses a crate boundary |
 | `crates/cox-core` | the agent loop as a state machine: turns, context assembly, compaction, permission engine, hooks, model routing, budget. No I/O except through traits |
+| `crates/cox-models` | the model catalog: id → context window, max output, efforts, capabilities and price, merged from built-in rows, config and a user price file. Pure — depends only on `cox-protocol`, no I/O beyond parsing an embedded/caller-supplied string |
 | `crates/cox-provider` | `Provider` trait + Anthropic Messages, OpenAI Responses/Chat (also Ollama, vLLM, LM Studio, OpenRouter), `Replay`/`Scripted` providers for tests |
 | `crates/cox-tools` | built-in tools and the sandbox (Seatbelt, Landlock/bwrap): read, edit, write, bash, grep, glob, outline, web, todo, ask_user, agent |
 | `crates/cox-mcp` | MCP client over `rmcp`; `.mcp.json` / config discovery; OAuth |
