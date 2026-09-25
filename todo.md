@@ -3,7 +3,6 @@
 - T30.15. LM Studio provider: the chat loop over `/v1/messages`
 - T30.16. LM Studio native API: loaded context, capabilities, load on demand
 - T30.13. cox vs Claude Code vs Terminus 2 on the same local model
-- T30.22. One `Transport` descriptor in every provider section
 - T30.23. Provider constructors take `&Transport`
 - T30.24. `cox-models`: one model catalog
 - T30.25. `Caps` and adaptive thinking from the catalog

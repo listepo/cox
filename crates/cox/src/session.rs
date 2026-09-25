@@ -1094,6 +1094,7 @@ mod tests {
                 model: "deepseek-v4-pro".into(),
                 context_window: 1_000_000,
                 models: vec![],
+                ..Default::default()
             },
         );
         cfg

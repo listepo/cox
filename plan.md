@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T30.22 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T30.23 | todo | P1 | 3 | 0% | |
 | T30.24 | todo | P1 | 4 | 0% | |
 | T30.25 | todo | P1 | 3 | 0% | |
@@ -725,18 +724,6 @@ Plan:
 Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
-
-#### T30.22 One `Transport` descriptor in every provider section
-
-Depends: T30.21 · Size: ~120 · Files: `cox-protocol/src/config.rs`, the committed config schema, `crates/cox/src/config_load.rs`
-Goal: every `[providers.*]` table, native or compatible, has the same `base_url`, `api_key_env`, `timeout_s` and `max_retries`, through one flattened `Transport` struct (item 1).
-Plan:
-1. Add `Transport` with defaults equal to today's values.
-2. `#[serde(flatten)]` it into the Anthropic, OpenAI, Local, Jev and compatible sections, and drop their duplicate fields.
-3. Regenerate the schema.
-Check:
-- the config-schema drift test passes;
-- `default.toml` and a config written before this change load to the same values (a round-trip test).
 
 #### T30.23 Provider constructors take `&Transport`
 

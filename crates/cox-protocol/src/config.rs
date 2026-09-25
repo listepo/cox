@@ -324,6 +324,57 @@ impl ProvidersConfig {
     }
 }
 
+/// The four transport knobs every `[providers.*]` section carries, native
+/// or compatible (`docs/design/providers.md` "Target shape" item 1, T30.22):
+/// where the vendor's API lives, which env var holds the key, and how long
+/// / how many times to retry before giving up.
+///
+/// Each section keeps these as its own flat fields — `base_url = …` stays a
+/// section-level TOML key, not a nested `[providers.<name>.transport]`
+/// table — rather than `#[serde(flatten)] transport: Transport`, because
+/// serde refuses to combine `#[serde(flatten)]` with
+/// `#[serde(deny_unknown_fields)]` on the *same* struct (the flattened map
+/// would have to swallow the "unknown fields" `deny_unknown_fields` exists
+/// to reject). Keeping the fields flat and generating a `transport()`
+/// accessor via [`impl_transport`] gets every section the same one-`Transport`-
+/// value view the target shape asks for, without giving up the typo check.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Transport {
+    /// API base URL.
+    pub base_url: String,
+    /// Env var holding the API key; falls back to the keyring entry
+    /// `cox/<section>`. Neither present builds a keyless client (no
+    /// `Authorization` header), not a startup error (T30.21) — that is
+    /// what a local server with no auth (or `api_key_env = ""`) needs.
+    pub api_key_env: String,
+    /// Request timeout, in seconds.
+    pub timeout_s: u32,
+    /// Max retries for retryable errors.
+    pub max_retries: u32,
+}
+
+/// Generates a `transport()` accessor for a provider-section struct that
+/// carries [`Transport`]'s four fields as its own flat `base_url`,
+/// `api_key_env`, `timeout_s` and `max_retries` fields. See [`Transport`]'s
+/// doc comment for why this is a macro over flat fields instead of
+/// `#[serde(flatten)]`.
+macro_rules! impl_transport {
+    ($ty:ty) => {
+        impl $ty {
+            /// This section's transport knobs as one value (T30.22); every
+            /// constructor takes `&Transport` from T30.23 on.
+            pub fn transport(&self) -> Transport {
+                Transport {
+                    base_url: self.base_url.clone(),
+                    api_key_env: self.api_key_env.clone(),
+                    timeout_s: self.timeout_s,
+                    max_retries: self.max_retries,
+                }
+            }
+        }
+    };
+}
+
 /// `[providers.anthropic]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -359,6 +410,8 @@ impl Default for AnthropicProviderConfig {
     }
 }
 
+impl_transport!(AnthropicProviderConfig);
+
 /// `[providers.openai]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -371,6 +424,11 @@ pub struct OpenAiProviderConfig {
     pub api_key_env: String,
     /// Which OpenAI API shape to use: `"responses"` or `"chat"`.
     pub api: String,
+    /// Request timeout, in seconds (T30.22; wired into the Chat/Responses
+    /// clients in T30.23 — carrying the knob here changes nothing yet).
+    pub timeout_s: u32,
+    /// Max retries for retryable errors (T30.22/T30.23, as above).
+    pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
 }
@@ -381,10 +439,19 @@ impl Default for OpenAiProviderConfig {
             base_url: "https://api.openai.com/v1".to_string(),
             api_key_env: "OPENAI_API_KEY".to_string(),
             api: "responses".to_string(),
+            // Matches `retry::Policy::default()` (`max_retries: 4`), which
+            // is what the Chat/Responses clients already retry with today,
+            // and Anthropic's `timeout_s` convention — the clients build a
+            // timeout-less `reqwest::Client::new()` today, so this value
+            // takes effect only once T30.23 reads it.
+            timeout_s: 120,
+            max_retries: 4,
             models: Vec::new(),
         }
     }
 }
+
+impl_transport!(OpenAiProviderConfig);
 
 /// `[providers.local]` (Ollama/vLLM/LM Studio/OpenRouter-shaped).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -392,12 +459,21 @@ impl Default for OpenAiProviderConfig {
 pub struct LocalProviderConfig {
     /// API base URL.
     pub base_url: String,
+    /// Env var holding the API key; empty (the default) means no key —
+    /// most local servers need none. LM Studio's `LM_API_TOKEN` (T30.15)
+    /// is the first thing to set this to something non-empty.
+    pub api_key_env: String,
     /// API shape; local servers are typically `"chat"`.
     pub api: String,
     /// The model id the local server serves.
     pub model: String,
     /// Context window, since local servers usually don't report it.
     pub context_window: u32,
+    /// Request timeout, in seconds (T30.22; see `OpenAiProviderConfig` —
+    /// not yet wired into the client).
+    pub timeout_s: u32,
+    /// Max retries for retryable errors (T30.22, as above).
+    pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
 }
@@ -406,13 +482,21 @@ impl Default for LocalProviderConfig {
     fn default() -> Self {
         Self {
             base_url: "http://localhost:11434/v1".to_string(),
+            api_key_env: String::new(),
             api: "chat".to_string(),
             model: "qwen3-coder".to_string(),
             context_window: 32768,
+            // Same rationale as `OpenAiProviderConfig::default`: matches
+            // `retry::Policy::default()` and today's unwired, timeout-less
+            // client.
+            timeout_s: 120,
+            max_retries: 4,
             models: Vec::new(),
         }
     }
 }
+
+impl_transport!(LocalProviderConfig);
 
 /// `[providers.typesafe]` (TypeSafe Jev System One, type-1 native, T21.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -446,6 +530,8 @@ impl Default for JevProviderConfig {
     }
 }
 
+impl_transport!(JevProviderConfig);
+
 /// Any other `[providers.<name>]` table: an OpenAI-compatible (Type-2)
 /// provider in the opencode custom-provider shape
 /// (`docs/design/providers.md`). Same wire client as `local`, different
@@ -467,6 +553,11 @@ pub struct CompatibleProviderConfig {
     pub model: String,
     /// Fallback context window for models absent from `models`.
     pub context_window: u32,
+    /// Request timeout, in seconds (T30.22; see `OpenAiProviderConfig` —
+    /// not yet wired into the client).
+    pub timeout_s: u32,
+    /// Max retries for retryable errors (T30.22, as above).
+    pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
 }
@@ -479,10 +570,15 @@ impl Default for CompatibleProviderConfig {
             api: "chat".to_string(),
             model: String::new(),
             context_window: 32768,
+            // Same rationale as `OpenAiProviderConfig::default`.
+            timeout_s: 120,
+            max_retries: 4,
             models: Vec::new(),
         }
     }
 }
+
+impl_transport!(CompatibleProviderConfig);
 
 /// `[context]` (plan.md §1.6/§1.9/§1.10).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -1019,5 +1115,134 @@ mod tests {
         }"#;
         let cfg: HooksConfig = serde_json::from_str(with_event).expect("flatten captures it");
         assert_eq!(cfg.events["PreToolUse"][0].command, "echo hi");
+    }
+
+    #[test]
+    fn every_provider_section_transport_matches_documented_defaults() {
+        // T30.22: every section — native and compatible — exposes the same
+        // four knobs as one `Transport` value. Anthropic/Jev keep their
+        // pre-existing numbers; openai/local/compatible get the newly
+        // documented ones (matching `retry::Policy::default()`'s
+        // `max_retries: 4` and Anthropic's `timeout_s` convention).
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.providers.anthropic.transport(),
+            Transport {
+                base_url: "https://api.anthropic.com".to_string(),
+                api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.openai.transport(),
+            Transport {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key_env: "OPENAI_API_KEY".to_string(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.local.transport(),
+            Transport {
+                base_url: "http://localhost:11434/v1".to_string(),
+                api_key_env: String::new(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.typesafe.transport(),
+            Transport {
+                base_url: "https://api.typesafe.ai".to_string(),
+                api_key_env: "TYPESAFE_API_KEY".to_string(),
+                timeout_s: 30,
+                max_retries: 2,
+            }
+        );
+        assert_eq!(
+            CompatibleProviderConfig::default().transport(),
+            Transport {
+                base_url: String::new(),
+                api_key_env: String::new(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn local_provider_api_key_env_defaults_to_empty() {
+        // Empty means "no key" (most local servers need none); LM Studio's
+        // `LM_API_TOKEN` (T30.15) is the first thing to set it.
+        assert_eq!(Config::default().providers.local.api_key_env, "");
+    }
+
+    #[test]
+    fn provider_sections_without_the_new_transport_keys_load_to_documented_defaults() {
+        // A config written before T30.22 named none of the keys this task
+        // added (`timeout_s`/`max_retries` on openai/local/compatible,
+        // `api_key_env` on local). `#[serde(default)]` must still load it,
+        // landing on the same values `default.toml` now writes out loud —
+        // the round-trip this task's Check asks for.
+        use figment::providers::Format as _;
+        let old = r#"
+            [providers.openai]
+            base_url = "https://api.openai.com/v1"
+            api_key_env = "OPENAI_API_KEY"
+            api = "responses"
+
+            [providers.local]
+            base_url = "http://localhost:11434/v1"
+            api = "chat"
+            model = "qwen3-coder"
+            context_window = 32768
+
+            [providers.deepseek]
+            base_url = "https://api.deepseek.com"
+            api_key_env = "DEEPSEEK_API_KEY"
+            api = "chat"
+            model = "deepseek-v4-pro"
+            context_window = 1000000
+        "#;
+        let cfg: Config = figment::Figment::from(figment::providers::Toml::string(old))
+            .extract()
+            .expect("pre-T30.22-shaped config still parses");
+        assert_eq!(
+            cfg.providers.openai.transport(),
+            Config::default().providers.openai.transport()
+        );
+        assert_eq!(cfg.providers.local.api_key_env, "");
+        assert_eq!(
+            cfg.providers.local.transport(),
+            Config::default().providers.local.transport()
+        );
+        let deepseek = cfg.providers.custom["deepseek"].transport();
+        assert_eq!(deepseek.base_url, "https://api.deepseek.com");
+        assert_eq!(deepseek.api_key_env, "DEEPSEEK_API_KEY");
+        assert_eq!(deepseek.timeout_s, 120);
+        assert_eq!(deepseek.max_retries, 4);
+    }
+
+    #[test]
+    fn unknown_key_in_a_provider_section_is_still_rejected() {
+        // Every section struct keeps `deny_unknown_fields` even though the
+        // *container* `ProvidersConfig` cannot (its `custom` flatten
+        // forbids combining the two — see `Transport`'s doc comment): a
+        // typo inside a known section is still a hard error, for the three
+        // sections this task added fields to as much as for Anthropic.
+        let bad = r#"{
+            "base_url": "https://api.openai.com/v1",
+            "api_key_env": "OPENAI_API_KEY",
+            "api": "responses",
+            "timeout_s": 120,
+            "max_retries": 4,
+            "models": [],
+            "timeotu_s": 1
+        }"#;
+        let err =
+            serde_json::from_str::<OpenAiProviderConfig>(bad).expect_err("typo must be rejected");
+        assert!(format!("{err}").contains("timeotu_s"), "{err}");
     }
 }

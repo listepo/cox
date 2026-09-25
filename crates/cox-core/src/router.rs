@@ -232,6 +232,7 @@ mod tests {
                         efforts: vec![Effort::High, Effort::Xhigh],
                     },
                 ],
+                ..Default::default()
             },
         );
         cfg
