@@ -1,28 +1,26 @@
 
 
-#### T30.5 Price every provider call
+#### T30.6 Anthropic tool calls reach the core
 
-Model: claude-opus-5-5 · Status: done 2026-09-25 · Blocks: T30.3 · Size: ~90 · Priority: P0 · Complexity: 2
-Goal: every `usage` row carries the cost from `prices.toml`. Today no production path calls `usage::ledger_row` (only its tests do), so every row is written with `cost_usd = 0`: `cox stats` reads $0, budget caps never fire, and T30.3 has no cost to record. Found by the T30.4 live check (8 317 cache-write tokens, `cost_usd: 0.0`).
-Files: `crates/cox-provider/src/usage.rs`, `crates/cox/src/session.rs`.
-Plan: (1) `PriceTable::apply(&model, &mut Usage)` — the priced/unknown rule `ledger_row` already has, extracted so both share it; (2) `usage::Priced`, a `Provider` decorator: forwards every `ProviderEvent`, pricing the `Usage` event and the returned `Usage` by `req.model`, so the five core call sites (turn, compaction, memory, init, subagent) get cost without touching them; (3) `session::provider_for` wraps every real provider in `Priced` with `PriceTable::load(<COX_HOME>/prices.toml)` (embedded table when absent); test doubles stay unwrapped, their scenarios script their own cost; (4) regression test: a scripted inner provider through `Priced` yields a non-zero cost on both the event and the return value, and an unknown model is `estimated`; (5) live: `cox run -p "say hi"` shows a non-zero `cost_usd` and `cox stats` agrees.
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Blocks: T30.3 · Size: ~40 · Priority: P0 · Complexity: 1
+Goal: a `tool_use` block from the Anthropic stream becomes a tool call. `AnthropicStream` emits `ToolUseStart` and the input deltas but nothing on `content_block_stop`, and `turn::consume_provider` commits a call only on `ToolUseEnd`, so every Anthropic tool call is dropped and the turn ends with empty text (`end_turn`). The fixture snapshots were recorded with the bug and never show `ToolUseEnd`. Found by T30.3's first live task (`create-file`: 72 output tokens, no file).
+Files: `crates/cox-provider/src/anthropic/stream.rs`, `fixtures/anthropic/live_tool_use.sse` (new, a real `claude-sonnet-5` stream), the two tool-call snapshots.
+Plan: (1) `content_block_stop` of a `ToolUse` block emits `ToolUseEnd`; text/thinking blocks still emit nothing; (2) test `anthropic_stream_tool_block_stop_ends_the_call` on the live fixture: the event after the last input delta is `ToolUseEnd`, and the joined input parses to `{"path":"hello.txt","content":"hi"}`; (3) accept the updated `one_tool_call`/`parallel_tool_calls` snapshots; (4) live: the `create-file` eval task passes.
 Check:
 ```bash
-mise exec -- cargo nextest run -p cox-provider usage
+mise exec -- cargo nextest run -p cox-provider anthropic::stream
 ```
-Done when: the live run's `cost_usd` is non-zero and matches `cox stats`.
-What landed (`1a0bc87`): `PriceTable::apply` (the priced/unknown rule, now shared by `ledger_row`) and `PriceTable::embedded`; `usage::Priced`, a `Provider` decorator that forwards every event and prices both the `Usage` event and the returned `Usage` by `req.model`; `session::provider_for` wraps every real client in `Priced` (the match moved to `backend_for`), test doubles stay unwrapped. Tests `priced_provider_costs_both_the_event_and_the_return`, `priced_provider_flags_an_unknown_model_as_estimated`.
-Deviations: prices come from the embedded table only; the card's `<COX_HOME>/prices.toml` override was dropped as unrequested (no doc or task names it). No wiring test in `crates/cox`: `provider_for` returns `Arc<dyn Provider>` and a real client needs a key or a server, so the wiring is proven by the live run below.
+Done when: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --only create-file` passes.
+What landed (`9c29639`): `AnthropicStream::feed` emits `ToolUseEnd` when a `content_block_stop` closes a `tool_use` block (text/thinking still emit nothing); `fixtures/anthropic/live_tool_use.sse` is a real `claude-sonnet-5` stream; test `anthropic_stream_tool_block_stop_ends_the_call`; the `one_tool_call` and `parallel_tool_calls` snapshots gained exactly one `tool_use_end` per call.
 Check:
 ```text
-$ mise exec -- cargo nextest run -p cox-provider usage
-     Summary [ 0.017s] 10 tests run: 10 passed, 89 skipped
-$ COX_HOME=<scratch> cox run -p "say hi" --output-format json --provider anthropic --tier code=claude-sonnet-5
-{... "usage":{"input_tokens":2,"output_tokens":18,"cache_read_tokens":0,"cache_write_tokens":8317},"cost_usd":0.0209765, ... "exit_code":0}
-$ COX_HOME=<scratch> cox stats
-all code main 1 2 0 $0.0210
+$ mise exec -- cargo nextest run -p cox-provider anthropic::stream
+     8 tests run: 8 passed (after `cargo insta accept`)
+$ ANTHROPIC_API_KEY=<keychain cox/anthropic> python3 evals/run.py --provider anthropic --model claude-sonnet-5 --only create-file
+create-file PASS $0.0237  turns=2  5.3s
+1/1 passed  total cost $0.0237
 $ mise exec -- cargo nextest run --workspace
-     Summary [ 44.427s] 865 tests run: 865 passed, 3 skipped
+     Summary [ 26.982s] 866 tests run: 866 passed, 3 skipped
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
      clean
 $ mise exec -- cargo fmt --check

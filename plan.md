@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.6 | in progress | P0 | 1 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,18 +658,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.6 Anthropic tool calls reach the core
-
-Model: claude-opus-5-5 · Status: in progress · Blocks: T30.3 · Size: ~40 · Priority: P0 · Complexity: 1
-Goal: a `tool_use` block from the Anthropic stream becomes a tool call. `AnthropicStream` emits `ToolUseStart` and the input deltas but nothing on `content_block_stop`, and `turn::consume_provider` commits a call only on `ToolUseEnd`, so every Anthropic tool call is dropped and the turn ends with empty text (`end_turn`). The fixture snapshots were recorded with the bug and never show `ToolUseEnd`. Found by T30.3's first live task (`create-file`: 72 output tokens, no file).
-Files: `crates/cox-provider/src/anthropic/stream.rs`, `fixtures/anthropic/live_tool_use.sse` (new, a real `claude-sonnet-5` stream), the two tool-call snapshots.
-Plan: (1) `content_block_stop` of a `ToolUse` block emits `ToolUseEnd`; text/thinking blocks still emit nothing; (2) test `anthropic_stream_tool_block_stop_ends_the_call` on the live fixture: the event after the last input delta is `ToolUseEnd`, and the joined input parses to `{"path":"hello.txt","content":"hi"}`; (3) accept the updated `one_tool_call`/`parallel_tool_calls` snapshots; (4) live: the `create-file` eval task passes.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-provider anthropic::stream
-```
-Done when: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --only create-file` passes.
 
 #### T30.3 Eval run with a verification step
 
