@@ -14,6 +14,10 @@ cox-sandbox = { path = "../cox-sandbox", version = "0.1.2" }
 # T32.6: the pure V4A parse/match/stage engine; this crate keeps the
 # apply_patch Tool impl (path::confine, atomic_write).
 cox-patch = { path = "../cox-patch", version = "0.1.2" }
+# T32.4: `outline` (AST signature extraction) and bash's parser setup
+# (`parse_bash`) moved to their own crate; `outline` is re-exported at its
+# old path (`crates/cox-tools/src/lib.rs`) so existing callers keep working.
+cox-syntax = { path = "../cox-syntax", version = "0.1.2" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
@@ -25,15 +29,8 @@ grep-searcher = { workspace = true }
 grep-regex = { workspace = true }
 globset = { workspace = true }
 nucleo = { workspace = true }
-# T3.2 (`read` mode=outline): AST-based signature extraction for rs/ts/tsx/py/go.
-tree-sitter = { workspace = true }
-tree-sitter-rust = { workspace = true }
-tree-sitter-typescript = { workspace = true }
-tree-sitter-python = { workspace = true }
-tree-sitter-go = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
-tree-sitter-bash = { workspace = true }
 nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
 # T3.8 (`web_fetch`): HTTP client with a hard timeout; shares the workspace rustls pin with cox-provider.
 reqwest = { workspace = true }

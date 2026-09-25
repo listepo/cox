@@ -140,6 +140,14 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-sandbox"]
     );
 
+    // cox-syntax (T32.4) is a pure parsing engine (tree-sitter and its
+    // five grammars): no workspace-crate dependencies at all.
+    assert!(
+        deps["cox-syntax"].is_empty(),
+        "cox-syntax must not depend on any other workspace crate, found {:?}",
+        deps["cox-syntax"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in).
     let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
@@ -208,8 +216,9 @@ fn no_crate_below_cox_depends_on_core() {
     }
 
     // cox-tools additionally depends on cox-sandbox (T32.3: path::confine
-    // and the sandbox backends) and cox-patch (T32.6: the V4A engine).
-    let tools_allowed: HashSet<&str> = ["cox-protocol", "cox-sandbox", "cox-patch"]
+    // and the sandbox backends), cox-patch (T32.6: the V4A engine) and
+    // cox-syntax (T32.4: outline and parse_bash).
+    let tools_allowed: HashSet<&str> = ["cox-protocol", "cox-sandbox", "cox-patch", "cox-syntax"]
         .into_iter()
         .collect();
     let tools_deps = &deps["cox-tools"];
@@ -221,6 +230,6 @@ fn no_crate_below_cox_depends_on_core() {
         tools_deps
             .iter()
             .all(|dep| tools_allowed.contains(dep.as_str())),
-        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch among workspace crates, found {tools_deps:?}"
+        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax among workspace crates, found {tools_deps:?}"
     );
 }

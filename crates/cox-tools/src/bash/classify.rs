@@ -2,10 +2,13 @@
 //! tree-sitter-bash walk that splits the line on `;`, `&&`, `||` and pipes
 //! and keeps the riskiest segment. Separate from the runner because the
 //! permission engine rates a command line before anything runs, and tests
-//! drive it without a PTY.
+//! drive it without a PTY. Parser setup (`parse_bash`) lives in
+//! `cox-syntax` (T32.4: tree-sitter is the only reason that crate exists);
+//! this file keeps the risk walk itself, since it is domain logic, not
+//! parsing.
 
 use cox_protocol::Risk;
-use tree_sitter::{Node, Parser};
+use cox_syntax::Node;
 
 /// Commands that cannot change anything cox does not already show the model.
 const READ_ONLY: &[&str] = &[
@@ -79,14 +82,7 @@ const HARMLESS_DEVICES: &[&str] = &["/dev/null", "/dev/stdout", "/dev/stderr", "
 
 /// The riskiest thing `command` can do, or `Exec` when it cannot be parsed.
 pub fn classify(command: &str) -> Risk {
-    let mut parser = Parser::new();
-    if parser
-        .set_language(&tree_sitter_bash::LANGUAGE.into())
-        .is_err()
-    {
-        return Risk::Exec;
-    }
-    let Some(tree) = parser.parse(command, None) else {
+    let Some(tree) = cox_syntax::parse_bash(command) else {
         return Risk::Exec;
     };
     let mut risk = if tree.root_node().has_error() || command.trim().is_empty() {

@@ -4,7 +4,9 @@
 //! directly by the loop. The same rule puts the `/rewind` pre-image reader
 //! (`checkpoint`) here. The sandbox (Seatbelt, Landlock/bwrap) and
 //! `path::confine` live in `cox-sandbox` (T32.3), re-exported here at their
-//! old paths.
+//! old paths. Tree-sitter and its grammars live in `cox-syntax` (T32.4);
+//! `outline` is re-exported the same way, and `bash/classify.rs` calls into
+//! it for parsing while keeping its own risk walk here.
 
 pub mod ask_user;
 pub mod bash;
@@ -15,7 +17,6 @@ pub mod git;
 pub mod glob;
 pub mod grep;
 pub mod memory;
-pub mod outline;
 pub mod read;
 pub mod todo;
 pub mod tool_search;
@@ -30,6 +31,12 @@ pub mod write;
 /// for existing callers.
 pub use cox_sandbox::path;
 pub use cox_sandbox::sandbox;
+
+/// T32.4: `outline` (AST signature extraction) moved to `cox-syntax`
+/// (dependency (a): tree-sitter and its five grammars are each a C build);
+/// re-exported here at the old path so `cox_tools::outline::outline` keeps
+/// working for existing callers (`read.rs`).
+pub use cox_syntax::outline;
 
 use std::path::PathBuf;
 use std::sync::Arc;
