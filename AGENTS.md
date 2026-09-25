@@ -78,7 +78,7 @@ Any provider. Runtime routing (`plan.md` D5) and agent work follow the same rule
 
 ## Before you call it done
 
-1. `cargo nextest run`, `cargo clippy`, `cargo fmt --check` clean under `mise exec`.
+1. `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` clean under `mise exec` (`default-members` makes bare `cargo` commands cover only `cox`).
 2. Non-trivial logic left a test behind that fails if the logic breaks.
 3. You ran the real binary against a `COX_HOME` scratch tree if the change touches sessions, tools, the sandbox or config.
 4. You reported what you did *not* do, if anything was skipped.

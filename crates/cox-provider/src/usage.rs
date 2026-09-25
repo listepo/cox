@@ -193,11 +193,13 @@ mod tests {
             cfg.tiers.code.model.clone(),
             cfg.tiers.think.model.clone(),
             cfg.providers.local.model.clone(),
+            cfg.providers.typesafe.model.clone(),
         ];
         for section in [
             &cfg.providers.anthropic.models,
             &cfg.providers.openai.models,
             &cfg.providers.local.models,
+            &cfg.providers.typesafe.models,
         ] {
             want.extend(section.iter().map(|m| m.id.clone()));
         }
