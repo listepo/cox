@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.4 | in progress | P1 | 1 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,18 +658,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.4 Anthropic workspace header
-
-Model: claude-opus-5-5 · Status: in progress · Blocks: T30.3 · Size: ~40 · Priority: P1 · Complexity: 1
-Goal: a key that is not scoped to a workspace works. Such a key gets `400 bad_request` ("must include the anthropic-workspace-id header") on every call, which blocked T30.3's paid run at $0.
-Files: `crates/cox-provider/src/anthropic/mod.rs`, `website/content/docs/getting-started.md`.
-Plan: (1) `AnthropicProvider.workspace_id: Option<String>`, resolved in `new()` from `ANTHROPIC_WORKSPACE_ID` (blank = unset), the same env-first rule as the key; not secret, so no keyring entry; (2) `headers()` sends `anthropic-workspace-id` only when set; a non-ASCII value is `Auth`, like the key; (3) tests: header present when set, absent when unset; (4) one line in getting-started; (5) live check: `cox run -p "say hi" --provider anthropic` with the creator's key.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-provider anthropic
-```
-Done when: the live check answers instead of the 400.
 
 #### T30.3 Eval run with a verification step
 

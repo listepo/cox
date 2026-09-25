@@ -4261,3 +4261,28 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 $ mise exec -- cargo fmt --check
      clean
 ```
+
+#### T30.4 Anthropic workspace header
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Blocks: T30.3 · Size: ~40 · Priority: P1 · Complexity: 1
+Goal: a key that is not scoped to a workspace works. Such a key gets `400 bad_request` ("must include the anthropic-workspace-id header") on every call, which blocked T30.3's paid run at $0.
+Files: `crates/cox-provider/src/anthropic/mod.rs`, `website/content/docs/getting-started.md`.
+Plan: (1) `AnthropicProvider.workspace_id: Option<String>`, resolved in `new()` from `ANTHROPIC_WORKSPACE_ID` (blank = unset), the same env-first rule as the key; not secret, so no keyring entry; (2) `headers()` sends `anthropic-workspace-id` only when set; a non-ASCII value is `Auth`, like the key; (3) tests: header present when set, absent when unset; (4) one line in getting-started; (5) live check: `cox run -p "say hi" --provider anthropic` with the creator's key.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider anthropic
+```
+Done when: the live check answers instead of the 400.
+What landed (`6117b9c`): `AnthropicProvider.workspace_id`, resolved by `resolve_workspace_id()` from `ANTHROPIC_WORKSPACE_ID` (trimmed, blank = unset); `headers()` sends `anthropic-workspace-id` only when set and maps an invalid value to `Auth`. Tests `workspace_header_is_sent_only_when_configured`, `blank_workspace_env_means_unset`. `website/content/docs/getting-started.md` names the variable.
+Deviations: the live check ran with a workspace-scoped key the creator issued in the meantime (answered `Hi!`, exit 0, no 400), so the header path itself is covered by unit tests only; the org-level key it was written for was replaced in the keyring before it could be re-run.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-provider anthropic
+     Summary [ 13.245s] 24 tests run: 24 passed, 73 skipped
+$ mise exec -- cargo nextest run --workspace
+     Summary [ 93.031s] 863 tests run: 863 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
