@@ -42,7 +42,7 @@ tracing-appender = "0.2"
 # NOTE: tracing-opentelemetry 0.33 requires opentelemetry 0.32. Dropped
 # experimental_use_tracing_span_context (removed upstream; 0.32 attaches
 # trace context by default).
-opentelemetry = { version = "0.32", default-features = false, features = ["trace", "logs"] }
+opentelemetry = { version = "0.33", default-features = false, features = ["trace", "logs"] }
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace", "logs"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace", "logs"] }
 tracing-opentelemetry = { version = "0.33", default-features = false }
