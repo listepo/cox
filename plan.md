@@ -7,7 +7,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T27.5 | todo | P2 | 2 | 0% | |
-| T27.6 | todo | P3 | 2 | 0% | |
+| T27.6 | in progress | P3 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T27.7 | todo | P3 | 1 | 0% | |
 | T22.9 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
@@ -672,7 +672,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T27.6 `cox run --loop`
 
-Model: - · Status: open · Depends: T27.4 · Size: ~100 · Priority: P3 · Complexity: 2
+Model: claude-sonnet-5 · Status: in progress · Depends: T27.4 · Size: ~100 · Priority: P3 · Complexity: 2
 Goal: `cox run --loop <interval> -p "…" --max-iterations N` repeats the headless prompt on a timer, the `cox run` counterpart to T27.4's TUI `/loop` (split out of it, §6 A31, because it needs a fourth file over that task's ≤3-file cap).
 Files: `crates/cox/src/cli.rs`, `crates/cox/src/run.rs`.
 Steps: (1) `RunArgs` gains `--loop <interval>` (same `s|m|h` grammar as `/loop`) and `--max-iterations <N>` (required with `--loop`; `run.rs` rejects one without the other before opening a session). (2) `run.rs`'s `run()`: with `--loop`, repeat the existing single-prompt `drive()` call every interval instead of once, folding each iteration's `Outcome` into a running total (cost, tokens, turns) the same shape `Outcome::summary()` already prints; stop and exit `EXIT_OK` after `--max-iterations` turns or `EXIT_BUDGET` once cumulative cost reaches `budget.session_usd` (reuse the core's existing budget stop, `StopReason::Budget`, rather than a second cap). (3) `Ctrl+C` during a wait between iterations exits cleanly with whatever iterations completed already printed.
@@ -682,6 +682,7 @@ mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
 ```
 Done when: the test passes, `cox run --help` shows both flags, and `docs/getting-started.md`'s headless section mentions `--loop`.
 Out of scope: cloud schedules; a per-iteration budget distinct from `budget.session_usd` (T27.4's TUI `/loop` already covers a loop-scoped cap; this is scripts, where the session cap is the natural stop).
+Execution plan: reuse T27.4's `parse_interval` (`crates/cox-tui/src/commands.rs`) instead of a second parser -- `crates/cox` already depends on `cox-tui` (`session.rs` uses several of its helpers), so make the function `pub` rather than duplicating the grammar. `crates/cox/src/config_load.rs`'s existing `config_every_flag_has_a_config_key` test walks every `run` subcommand flag, so the two new ones need `flag_key_map` rows (`runtime.loop`, `runtime.max_iterations`, per-invocation like `deep`/`continue`) -- that test makes `config_load.rs` an unavoidable third file, so touching `commands.rs` for the one-line `pub` puts this task at 4 source files against its own <=3 convention; noted as a deviation rather than a split, since duplicating the interval grammar was the explicit alternative to avoid. `run.rs`: restructure `drive()` to take `&Session` plus the already-taken `mpsc::Receiver<Event>` (session events can only be taken once) instead of pulling both itself, so a new `run_loop()` can call it repeatedly on the same session/receiver -- this is also what makes the core's own cumulative `budget.session_usd` tracking double as the loop's cap, no second one needed. Add `Outcome::merge` to fold an iteration's ledger into the running total. Tests: a unit test in `run.rs` (`run_loop_stops_after_max_iterations`) builds a `Session` directly with `cox_provider::scripted::Scripted` and `cox_core::MemoryStore` (same pattern as `cox-core::session::tests`) and drives `run_loop` with a 1ms interval -- no real sleep, no network; a second unit test covers `Outcome::merge`. Verify: the Check test, the full gate, and the real binary against a scratch `COX_HOME` for both `run --help` and an actual `--loop 1s --max-iterations 2` run against the scripted provider.
 
 #### T27.5 `/agents` rollout overlay
 
