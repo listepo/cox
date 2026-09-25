@@ -196,6 +196,66 @@ cox needs for compaction, today a hand-set `context_window`), tool-use and
 reasoning capabilities, load state, and loading a model with an explicit
 context length before a session starts.
 
+### 4.3.3 Providers, models, prices and effort as they stand (T30.17, repo at db1f313, checked 2026-09-25)
+The source for every row is the repository itself, at the commit named in the heading.
+
+| Concern | Where | What it does today | Divergence |
+|---|---|---|---|
+| Provider sections | `cox-protocol/src/config.rs:280-480` | Named sections `anthropic`, `openai`, `local` and `typesafe` (Jev), plus flattened `[providers.<name>]` `CompatibleProviderConfig`. `models_for` (310-325) matches the four names by hand, then falls through to `custom`. | Knobs differ by section. `timeout_s`/`max_retries` exist only on Anthropic and Jev. `cache_ttl` exists only on Anthropic. `context_window` exists only on Local and Compatible. `api` exists on OpenAI, Local and Compatible. A pinned `model` exists on Local, Jev and Compatible. |
+| Construction | `cox/src/session.rs:833-934` | `backend_for` has one match arm per family. `openai_shaped` (909) is shared by the OpenAI-wire arms only. | Local takes the whole config struct (861). Anthropic and Jev have bespoke constructors. |
+| Keys | `anthropic/mod.rs:170-171`; `session.rs:855,875,896` | Anthropic always uses `ANTHROPIC_API_KEY` or keyring `cox/anthropic`. Jev resolves its section's `api_key_env`, then the keyring. OpenAI and Compatible read `std::env::var(api_key_env)` only. | `providers.anthropic.api_key_env` is never read. OpenAI and Compatible have no keyring fallback (A9 deferred it). |
+| Retry, timeout | `AnthropicProvider::new` (`anthropic/mod.rs:86`), Jev | Anthropic and Jev take a `retry::Policy` from config. Chat and Responses wrap `stream_with_retry` with `Policy::default()`. | Retry is configurable for two of five families. |
+| Context window | `anthropic/mod.rs:198` (200 000), `jev.rs:381` (128 000), `session.rs:857` (400 000 OpenAI default), `responses.rs:531` (from config) | `Caps.max_context` is a literal per provider unless Responses finds a configured model. | A second source of truth next to `ProviderModel.context_window`. A larger configured window on Anthropic is ignored. |
+| Thinking capability | `anthropic/request.rs:40,403` `ADAPTIVE_THINKING_PREFIXES` | A model-name prefix list decides `thinking: adaptive`. | A third model table, disjoint from `ProviderModel` and `prices.toml`. |
+| Effort | `types.rs:111` `Effort {Low, High, Xhigh}`; `router.rs:164` `clamp_effort`; `request.rs:140,394`; `responses.rs:96,287`; `config.rs:263` | The router clamps the level to `ProviderModel.efforts`. Anthropic sends `output_config.effort` plus adaptive thinking. Responses sends `reasoning.effort`. | Chat, Local and Compatible send no effort. Jev accepts the level but does not map it. The models.dev `medium` collapses into `High`. Each wire has its own `effort()` fn. |
+| Prices | `cox-provider/src/usage.rs:36-233` | `PriceTable` comes from `prices.toml` and is keyed by the bare model id. `Priced` wraps any `Provider` and prices each `Usage`. | This path is already unified. A model in `providers.*.models` can have no price row: it is costed at 0 with `estimated=true` and warned about once. Only a unit test (`usage.rs:255-291`) checks catalog/price sync. |
+| Usage | `types.rs` `Usage`; `anthropic/stream.rs:255,316`; `chat.rs:406`; `responses.rs:454` | There is one struct. | Only Anthropic fills `cache_write_tokens`. The Chat and Responses APIs do not bill cache writes, so 0 is correct there. |
+| Model id and routing | `types.rs:979` `ModelId(String)`; `cli.rs:28-36`; `config_load.rs:113-117,186-196`; `router.rs:88-157` | `Router::pick` resolves tier → provider → model → effort in one place. | `--provider`/`--model` retarget only the `code` tier. Nothing parses a `vendor/model` id, although `ProviderModel.id` documents the form for gateways. |
+
+Conclusions for the design (`docs/design/providers.md` § Target shape):
+
+1. Two pieces are already unified and stay as they are: the router's resolution and the `Priced` cost path.
+2. The splits are at construction time: which knobs a section has, how its key resolves, and where the model facts live.
+3. One descriptor per section and one model catalog remove the literals and the prefix table. `Caps` then comes from the catalog.
+
+### 4.3.4 Crate split: measurements (T30.18, repo at db1f313, checked 2026-09-25)
+The source is the repository at the commit named in the heading. LOC counts come from `wc -l` over each crate's `*.rs` files, tests included. The internal graph comes from `use crate::…` lines. The workspace lists `members = ["crates/*"]` (`Cargo.toml:3`), so a new crate directory is picked up without editing the manifest.
+
+| Crate | LOC | Largest modules | Heavy or platform deps |
+|---|---|---|---|
+| `cox` | 8 066 | `session.rs` 1311, `config_load.rs` 804, `plain.rs` 651, `doctor.rs` 650, `stats.rs` 597, `telemetry.rs` 287 | clap, figment, toml_edit; opentelemetry ×5 (feature `otel`, on by default, `crates/cox/Cargo.toml:10-16`) |
+| `cox-protocol` | 3 331 | `types.rs`, `config.rs`, `traits.rs` | serde, schemars |
+| `cox-core` | 12 451 | `session.rs` 1741, `init.rs` 667, `subagent.rs` 651, `turn.rs` 624, `context.rs` 602, `permission/*` 448, `rollout.rs` 446, `compact.rs` 435, `router.rs` 352 | globset |
+| `cox-provider` | 6 941 (src) | `openai/chat.rs` 1042, `openai/responses.rs` 986, `anthropic/*` 2070, `jev.rs` 554, `usage.rs` 473, `scripted.rs` 451, `tokens.rs` 360, `replay.rs` 302, `retry.rs` 248, `http.rs` 159, `sse.rs` 88 | reqwest, tiktoken-rs, async-openai, typify (build) |
+| `cox-tools` | 9 201 | `bash/*` 893, `v4a/*` 987, `sandbox/*` 714, `memory.rs` 610, `git.rs` 600, `grep.rs` 507, `checkpoint.rs` 416, `glob.rs` 366, `web_fetch.rs` 365, `path.rs` 209, `outline.rs` 195 | tree-sitter + 5 grammars (`outline.rs`, `bash/classify.rs:8,84`), ignore / grep-searcher / grep-regex (`grep.rs:15-17`), nucleo (`glob.rs:16`), reqwest (`web_fetch` only, `Cargo.toml:31-32`), nix, landlock and seccompiler (Linux) |
+| `cox-mcp` | 1 717 | client, server | rmcp, reqwest |
+| `cox-store` | 1 930 | | diesel, libsqlite3-sys |
+| `cox-ext` | 2 816 | instructions, skills, commands, subagents, hooks | serde_yaml |
+| `cox-tui` | 14 508 | `state.rs` 2548, `theme.rs` 724, `term.rs` 589, `diff.rs` 569, `markdown.rs` 538, `keymap.rs` 514 | ratatui, crossterm, syntect + two-face, pulldown-cmark, terminal-colorsaurus |
+| `cox-acp` | 1 390 | one adapter | agent-client-protocol |
+
+Findings:
+
+- **The core's cycle.** `cox-core`: `session.rs` ↔ `turn.rs` import each other, and `init`, `subagent`, `compact`, `memory_extract` and `rewind` hang off `session`. This mass cannot be split without redesigning the loop.
+  - Leaves with no `use crate::`: `permission/*`, `router.rs`, `rollout.rs`, `budget.rs` (55), `cache_diag.rs` (172), `dedup.rs` (209), `redact.rs` (261), `truncate.rs` (119).
+- **The TUI.** `cox-tui`: `state.rs` is the TEA hub, with 15 internal imports.
+  - Leaves with no `use crate::`: `theme`, `color`, `svg`, `term`, `text`, `vim`, `link`, `tasks`.
+  - `markdown` and `diff` import two crate modules each.
+- **A guard reached from outside the TUI.** The headless surface imports the TUI crate for one function: `crates/cox/src/plain.rs:21` `use cox_tui::text::sanitize`. `cox-tools/src/git.rs:8` routes git output through the same guard.
+  - The two other `sanitize` names are unrelated helpers, not copies of the guard: `cox-ext/src/memory.rs:193` sanitizes a file name, and `cox-store/src/fts.rs:191` sanitizes an FTS query.
+- **Syntax parsing.** `cox-tools`: tree-sitter serves both `outline.rs` and the bash classifier (`bash/classify.rs:84`). A syntax crate must take both, or the grammars stay in `cox-tools`.
+- **The patch engine.** `v4a/apply.rs` does file I/O, so the patch engine is an adapter, not a pure crate.
+- **The dependency test.** `crates/cox/tests/deps.rs` (152 lines) enforces the DAG through `cargo metadata`:
+  - `cox-protocol` depends on nothing;
+  - `cox-core` depends only on `cox-protocol`;
+  - `cox-tui` and `cox-acp` depend only on `cox-core` and `cox-protocol`;
+  - the adapters never depend on `cox-core`;
+  - only `cox-store` may depend on diesel.
+
+  Any new crate needs a rule there. D1 (`plan.md:25`) fixes "ten in-tree crates".
+- **Shared packages.** `packages/`: only `packages/crates/file-backup` exists, and cox has no matching code to replace with it.
+- **Build time.** Not measured yet. The gain from moving heavy dependencies behind their own crates is expected, not shown. The first extraction card records `cargo build --timings` before and after.
+
 ### 4.4 Routing evidence (D5)
 Copilot's auto model selection is praised because it is explicit, priced (10 % discount) and switchable; Claude Code's Haiku delegation is complained about because it is silent. aider's `--weak-model` (commits, summaries) and OpenCode's small model for titles are the same pattern. Jobs that tolerate a small model, by consensus of the surveyed tools: titles, summaries, commit messages, compaction, search/explore, tool-result summarisation, classification. Effect-size numbers from the survey ("4.2× savings", "Codex 3–4× fewer tokens than Claude Code") are unsourced and dropped. [med]
 

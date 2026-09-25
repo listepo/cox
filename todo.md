@@ -1,7 +1,23 @@
 # Todo
 
-- T30.17. One model of providers, models, prices and effort (design)
-- T30.18. Split the workspace into as many crates as pay off (design)
 - T30.15. LM Studio provider: the chat loop over `/v1/messages`
 - T30.16. LM Studio native API: loaded context, capabilities, load on demand
 - T30.13. cox vs Claude Code vs Terminus 2 on the same local model
+- T30.19. Vendored data through saved scripts: the Anthropic spec
+- T30.20. Vendored data through saved scripts: prices and model lists from models.dev
+- T31.1. `cox-sanitize`: the terminal-text guard in its own crate
+- T31.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
+- T31.3. `cox-sandbox`: `sandbox::Policy` and `path::confine`
+- T31.4. `cox-syntax`: tree-sitter and its grammars
+- T31.5. `cox-search`: grep and glob
+- T31.6. `cox-patch`: the V4A patch engine
+- T31.7. `cox-web`: `web_fetch`
+- T31.8. `cox-permission`: the permission engine
+- T31.9. `cox-telemetry`: tracing setup and the OpenTelemetry stack
+- T31.10. `cox-tokens`: token counting
+- T31.11. `cox-provider-testkit`: scripted and replay providers
+- T31.12. `cox-provider-http`: HTTP, retry, SSE and key resolution
+- T31.13. `cox-provider-anthropic`
+- T31.14. `cox-provider-openai`
+- T31.15. `cox-provider-jev`
+- T31.16. `cox-config`: the one config owner

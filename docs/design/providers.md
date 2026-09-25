@@ -67,3 +67,53 @@ any `.rs` file must change, the registry leaked. Conversely, if a vendor
 ships a wire format none of the three clients parses (fixtures fail to
 produce `ToolUseStart`), that vendor graduates to Type 1 — the split is
 decided by fixture, not by brand.
+
+## Target shape: one model of providers, models, prices and effort (T30.17)
+
+**What the registry left split** (R§4.3.3). The registry unified *which* providers exist. It did not unify *how* each one is built or where model facts live:
+
+- Only two of five families have retry and timeout knobs.
+- Three key paths exist, and one of them ignores its own `api_key_env`.
+- There are three sources for context and capability: `ProviderModel`, the `Caps.max_context` literals, and `ADAPTIVE_THINKING_PREFIXES`.
+- Every wire maps effort ad hoc.
+
+Routing (`Router::pick`) and costing (`Priced`) are already single and stay that way.
+
+**Target.**
+
+1. **One transport descriptor per section.** Every `[providers.*]` table, native or compatible, flattens the same `Transport { base_url, api_key_env, timeout_s, max_retries }`. Section-specific knobs stay beside it, for example Anthropic's `cache_ttl` and the `api` shape. Every constructor takes a `&Transport`. `backend_for` becomes one lookup from the `api` shape to a constructor, not one arm per family.
+2. **One key resolver.** `http::resolve_key(section)` reads the section's `api_key_env`, then the keyring `cox/<section>`, for every section. A local server needs no key: a missing key there is "no auth header", not an error. That is what LM Studio needs (T30.15).
+3. **One model catalog** in a new pure crate `cox-models` (see `crates.md`).
+   - Each row: `id → context_window, max_output, efforts, capabilities (tools, adaptive_thinking, reasoning_effort_param), price`.
+   - Built-in rows are embedded, the way `prices.toml` is today, and written only by T30.20's script from models.dev (A48). `[providers.<name>].models` entries and a user `prices.toml` override them by id.
+   - `Caps` is derived from the catalog. The literals `200_000`, `128_000` and `400_000` and the prefix table are deleted.
+   - A local server's loaded context (T30.16) is one more override source.
+4. **One effort map.** The mapping `effort_for(api, Effort, &caps) -> Option<WireEffort>` lives in `cox-models`, next to the catalog.
+   - Anthropic: `output_config.effort` plus adaptive thinking when the catalog says so.
+   - Responses: `reasoning.effort`.
+   - Chat: the `reasoning_effort` field when the row declares it. Whether the OpenAI Chat API and LM Studio accept it is checked against their API references in that card.
+   - Jev: explicitly `None`.
+
+   `clamp_effort` keeps enforcing the model's supported levels, now from the catalog. `Effort` gains `Medium` so models.dev's four levels map without loss.
+5. **One sync check.** `cox doctor` reports a routable model with no catalog price, instead of relying only on the unit test.
+
+**Kept, with reasons.**
+
+- `ModelId` stays a plain string: gateway ids pass through verbatim, and nothing needs to parse `vendor/model`.
+- `--provider`/`--model` keep retargeting only the `code` tier; `--tier` covers the others.
+- Custom providers keep `ProviderId::Local`, so storage needs no migration.
+- `cache_write_tokens = 0` on Chat and Responses is correct, because those APIs bill no cache writes.
+
+**Migration order** (each step green; proposed cards are in `plan.md` §6 A46):
+
+| Card | Change | Files |
+|---|---|---|
+| U1 | One key resolver for every section | `http.rs`, `anthropic/mod.rs`, `session.rs` |
+| U2 | `Transport` flattened into every section; schema regenerated | `config.rs`, schema, `config_load.rs` |
+| U3 | Constructors take `&Transport`; Chat and Responses get configured retries | `session.rs`, `chat.rs`, `responses.rs` |
+| U4 | `cox-models` crate: catalog types, embedded rows, merge with config and `prices.toml` | new crate, `usage.rs` |
+| U5 | `Caps` and adaptive thinking from the catalog; delete the literals and the prefix table | `anthropic/*`, `jev.rs`, `session.rs` |
+| U6 | `effort_for` in one place; `Effort::Medium` | `cox-models`, `request.rs`, `responses.rs` |
+| U7 | `cox doctor` catalog/price sync row | `doctor.rs` |
+
+T30.15 (LM Studio chat) waits for U1–U3, so it lands as one more `Transport` section and not a sixth divergent one. T30.16 (loaded context) waits for U4–U5, so the server's context feeds the catalog. T30.13 depends on none of this.

@@ -44,6 +44,7 @@ Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; se
 ## Conventions
 
 - Don't duplicate code or logic — find the existing helper and reuse it, or extract one shared helper at the responsible layer.
+- A file no package manager fetches (a vendored API spec, a price or model table, any JSON/YAML data) is written only by a saved, tested Python script under `scripts/vendor` (`cox-vendor`), re-run to update it. No hand download, no pasted rows (`plan.md` A48).
 - Every file opens with a `//!` header saying what the module owns and why it is separate. Comments explain *why*, never *what*.
 - No `unwrap`, `expect`, `panic!`, `todo!` outside tests. Errors are `thiserror` enums per crate; `anyhow` only in `crates/cox`.
 - Tests live in `#[cfg(test)] mod tests` at the bottom of the file, named as the claim they prove (`compaction_keeps_last_two_turns_verbatim`). Transcript and TUI tests are `insta` snapshots. A bug fix adds the narrowest regression test that fails without it.

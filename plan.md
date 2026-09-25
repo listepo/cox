@@ -6,11 +6,27 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.17 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T30.18 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P2 | 3 | 0% | |
+| T30.19 | todo | P1 | 2 | 0% | |
+| T30.20 | todo | P1 | 3 | 0% | |
+| T31.1 | todo | P2 | 2 | 0% | |
+| T31.2 | todo | P2 | 3 | 0% | |
+| T31.3 | todo | P2 | 3 | 0% | |
+| T31.4 | todo | P2 | 3 | 0% | |
+| T31.5 | todo | P2 | 2 | 0% | |
+| T31.6 | todo | P2 | 2 | 0% | |
+| T31.7 | todo | P2 | 2 | 0% | |
+| T31.8 | todo | P2 | 2 | 0% | |
+| T31.9 | todo | P2 | 3 | 0% | |
+| T31.10 | todo | P2 | 2 | 0% | |
+| T31.11 | todo | P2 | 2 | 0% | |
+| T31.12 | todo | P2 | 2 | 0% | |
+| T31.13 | todo | P2 | 3 | 0% | |
+| T31.14 | todo | P2 | 3 | 0% | |
+| T31.15 | todo | P2 | 2 | 0% | |
+| T31.16 | todo | P2 | 3 | 0% | |
 
 ## Reference
 
@@ -22,7 +38,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 
 | # | Decision | Why (evidence in research.md) |
 |---|----------|-------------------------------|
-| D1 | **One Cargo workspace, one static binary, ten in-tree crates (§1). No WASM or dylib plugin host in v0.1.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
+| D1 | **One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`, A47); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
 | D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP and the JSONL rollout are four consumers of one event stream. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
 | D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. **Where wire types come from (A40):** (1) a maintained Rust SDK's *types* when one exists (OpenAI: `async-openai` types only), else (2) types generated with typify from the vendor's published spec, vendored in the repo (Anthropic), else (3) hand-written. Transport, retry, SSE state machine, `ProviderEvent` mapping and the ledger stay ours in every case; SDK code is a `wire` module inside the provider, extracted to a crate only when a second consumer appears. Login: API keys only — Claude subscription OAuth is forbidden to third parties (R§4.3.1); ChatGPT login waits for an OpenAI document permitting it. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
 | D4 | **Adopt existing formats verbatim instead of inventing ones.** `AGENTS.md` (and `CLAUDE.md`) hierarchy; Agent Skills `SKILL.md`; Claude Code hook JSON protocol and `.claude/settings.json` permission-rule syntax (`Bash(npm run test:*)`), `.claude/commands/*.md`, `.claude/agents/*.md`; `.mcp.json`; Codex `apply_patch` (V4A) grammar; `--output-format stream-json`. cox-native equivalents live under `.cox/` with the same schemas. | A user with a Claude Code or Codex setup gets cox for free, and the rtok hook stack works unchanged (R§3). Every one of these is documented and already read by ≥ 2 agents. |
@@ -663,32 +679,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
-#### T30.17 One model of providers, models, prices and effort (design)
-
-Depends: — · Size: design only (≤ 1-page doc + research + follow-up cards)
-Goal: everything about providers, models, prices, reasoning effort, context windows, capabilities, keys and endpoints is represented once and handled by one code path per concern, so a new provider (LM Studio, T30.15) or a new model is an entry, not code. The creator's rule: this area must be as unified as possible. Per D15 the first step is the design, not code.
-Plan:
-1. Map the current state (config sections, provider constructors, key resolution, retries, model metadata, price tables, effort mapping, usage accounting, model-id resolution) with file:line and every divergence; record it in R§4.3.3.
-2. Find what can be decomposed and where the architecture improves: one provider descriptor (endpoint, API shape, auth, retry policy), one model catalog (context window, max output, efforts, capabilities, prices) with one lookup, one effort type mapped per wire in one place, one usage/cost path; which crate owns each (D2/D3 boundaries).
-3. Extend `docs/design/providers.md` (today: the two-type registry, Type 1 native / Type 2 compatible, prices in `prices.toml`) rather than start a new doc: what that design left split, the target shape, what moves where, what is deleted, migration order; the added part stays ≤ 1 page.
-4. Propose the implementation as new cards (≤ 200 LOC / ≤ 3 files each) in a §6 amendment for the creator to approve; mark which existing cards (T30.15, T30.16) should wait for them.
-Check: R§4.3.3 exists and `docs/design/providers.md` has the unification section; every divergence in R§4.3.3 is either addressed by a proposed card or explicitly kept with a reason.
-Done when: the creator has the design and the proposed cards.
-Out of scope: code changes.
-
-#### T30.18 Split the workspace into as many crates as pay off (design)
-
-Depends: — · Size: design only (research + doc + follow-up cards)
-Goal: the creator's rule that the project be split into crates as far as possible. D1 fixed "ten in-tree crates"; this card measures what else can stand alone — per-wire providers, the sandbox, tool groups, core pieces (permission engine, compaction, router, hooks, budget), store, extension loaders, TUI helpers, config loading — and proposes the split. T30.17's provider/model catalog is one of the resulting crates.
-Plan:
-1. Measure every crate: LOC per module, internal `use crate::…` graph, external deps per module; find leaf modules and cycles that block extraction; record in R§4.3.4 with file:line.
-2. For each candidate: what moves, its deps and dependants, what it gains (parallel/incremental builds, heavy deps behind their own crate, reuse from `packages/`, narrower tests) and what it costs; keep the four trust-boundary guards single (AGENTS.md) and the core pure (D2).
-3. `docs/design/crates.md` (≤ 1 page): the target crate graph, what is not split and why, migration order that keeps every step green.
-4. Proposed cards (≤ 200 LOC moved or ≤ 3 crates touched each) and a D1 amendment in §6 for the creator to approve.
-Check: R§4.3.4 and `docs/design/crates.md` exist; every current crate is either split by a proposed card or kept with a reason.
-Done when: the creator has the target graph and the proposed cards.
-Out of scope: moving code before the creator approves.
-
 #### T30.15 LM Studio provider: the chat loop over `/v1/messages`
 
 Depends: — · Size: ~150
@@ -731,6 +721,165 @@ Plan:
 Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
+
+#### T30.19 Vendored data through saved scripts: the Anthropic spec
+
+Depends: — · Size: ~150 Python + tests
+Goal: the creator's rule (A48). A file no package manager fetches is produced only by a saved, tested Python script that is re-run to update it. The first such file is `crates/cox-provider/schema/anthropic-openapi.json`, which today is re-vendored with a hand `curl` from its README.
+Plan:
+1. A uv-managed package `scripts/vendor` (`cox_vendor`, console script `cox-vendor`, Python pinned like `evals`) with a registry of vendored files. It is the one entry point for any later data file.
+2. `cox-vendor anthropic-spec`:
+   - downloads the snapshot URL and checks that the result parses as JSON with an `openapi` key;
+   - writes the file;
+   - rewrites the README's "Downloaded" and "sha256" rows.
+
+   The README's `curl` line becomes this command.
+3. Tests with no network: a stubbed download, one idempotence check (the same bytes give no diff), and one rejection of a non-JSON body.
+4. `just vendor` recipe; `toolchain.md` rows for the package and anything it pulls.
+
+Check: the package's tests pass. Running `cox-vendor anthropic-spec` leaves `git status` clean (same snapshot). `cargo nextest` is green.
+Out of scope: changing the snapshot URL.
+
+#### T30.20 Vendored data through saved scripts: prices and model lists from models.dev
+
+Depends: T30.19 · Size: ~200 Python + tests
+Goal: the rows in `crates/cox-provider/prices.toml` and the `[providers.*].models` lists in `crates/cox-protocol/default.toml` were copied by hand from models.dev (see the `prices.toml` header). They come from a script instead, so updating them is one command.
+Plan:
+1. `cox-vendor models` reads models.dev's public API. Check the endpoint URL and shape against models.dev's own docs and record them in R§4.3.3.
+2. The command regenerates the price rows for the providers and model ids cox lists. It then rewrites the `models` arrays (id, context window, efforts mapped as in `docs/design/providers.md`) in `default.toml` with a comment-preserving TOML editor, leaving every other byte as it is.
+3. The header of `prices.toml` records the source URL and the date.
+4. `--check` prints the diff without writing.
+5. `cox doctor`'s `PRICES_FIX` hint points at the command.
+6. Tests run over a recorded models.dev subset fixture:
+   - rows generated;
+   - comments in `default.toml` kept;
+   - an unknown id reported, not dropped;
+   - idempotent.
+
+Check: the package's tests pass. `cox-vendor models --check` against the fixture shows no diff. `usage_prices_toml_parses_and_has_all_tier_models` and the config-schema drift test pass.
+Out of scope: A46's catalog crate (U4), which reads what this script writes.
+
+### P31 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
+
+Every card in this phase:
+
+1. `git mv`s the named files into `crates/<crate>/`. The new `lib.rs` opens with a `//!` header, and `Cargo.toml` takes only the dependencies those files use.
+2. Leaves a `pub use` at the old path, so callers and the guard names keep working.
+3. Adds the crate's rule to `crates/cox/tests/deps.rs`.
+4. Updates the AGENTS.md layout table (and the trust list for a guard) and the plan.md §1 crate list.
+
+No logic changes. At most three crates are touched. Moved lines do not count toward the 200-LOC limit; edited lines do.
+Common check: the three commands in AGENTS.md are green, `deps.rs` has the crate's rule, and the card's own line holds.
+
+#### T31.1 `cox-sanitize`: the terminal-text guard in its own crate
+
+Depends: — · Moves: `cox-tui/src/text.rs`.
+Why: guard (b) and reuse (d). `crates/cox/src/plain.rs` imports the whole TUI for `sanitize`.
+Plan: `cox-tui` re-exports `text`; `plain.rs` imports `cox_sanitize`. The AGENTS.md trust list names `cox_sanitize::sanitize`.
+Check: `cargo tree -p cox-sanitize` has no workspace dependency.
+
+#### T31.2 `cox-render`: themes, colour, markdown, diff, SVG and glyphs
+
+Depends: T31.1 · Moves: `theme.rs`, `color.rs`, `svg.rs`, `markdown.rs`, `diff.rs`, `glyph.rs` from `cox-tui` (~2.6k).
+Why: dependencies (a), namely syntect, two-face, pulldown-cmark and terminal-colorsaurus.
+Plan:
+1. Before the move, record `cargo build --timings` for two builds: a clean `cox-tui`, and an incremental build after touching `state.rs`.
+2. Move the modules.
+3. Record the same timings again, both in R§4.3.4.
+4. Apply the falsifier in `docs/design/crates.md`.
+
+Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
+
+#### T31.3 `cox-sandbox`: `sandbox::Policy` and `path::confine`
+
+Depends: — · Moves: `cox-tools/src/sandbox/*`, `cox-tools/src/path.rs` (~920).
+Why: dependencies (a) and guard (b).
+Plan: `cox-tools` re-exports `sandbox` and `path`. The AGENTS.md trust list names the new crate.
+Check: landlock and seccompiler appear only in `cox-sandbox/Cargo.toml`.
+
+#### T31.4 `cox-syntax`: tree-sitter and its grammars
+
+Depends: — · Moves: `cox-tools/src/outline.rs` and the parser setup from `bash/classify.rs` (one `parse_bash` fn).
+Why: dependencies (a), namely tree-sitter and five grammar crates, each a C build.
+Check: no `tree_sitter*` dependency is left in `cox-tools/Cargo.toml`; the classifier and outline tests are unchanged.
+
+#### T31.5 `cox-search`: grep and glob
+
+Depends: T31.3 · Moves: `cox-tools/src/grep.rs`, `glob.rs` (~870).
+Why: dependencies (a), namely ignore, grep-searcher, grep-regex and nucleo.
+Check: those four crates appear only in `cox-search/Cargo.toml`. If another tool still uses one of them, the card says so and leaves that dependency shared.
+
+#### T31.6 `cox-patch`: the V4A patch engine
+
+Depends: — · Moves: `cox-tools/src/v4a/*` (~990).
+Why: size (c), a self-contained leaf.
+Check: the `v4a` tests pass unchanged in the new crate.
+
+#### T31.7 `cox-web`: `web_fetch`
+
+Depends: — · Moves: `cox-tools/src/web_fetch.rs`.
+Why: dependencies (a), so reqwest leaves `cox-tools`.
+Check: there is no `reqwest` in `cox-tools/Cargo.toml`.
+
+#### T31.8 `cox-permission`: the permission engine
+
+Depends: — · Moves: `cox-core/src/permission/*` (448).
+Why: guard (b), and it is pure.
+Plan: `cox-core` re-exports `permission`. In `deps.rs`, `cox-core` may depend on `cox-protocol` and `cox-permission`. The AGENTS.md trust list names the new crate.
+Check: `cox-permission` depends only on `cox-protocol`.
+
+#### T31.9 `cox-telemetry`: tracing setup and the OpenTelemetry stack
+
+Depends: — · Moves: `crates/cox/src/telemetry.rs`.
+Why: dependencies (a), five opentelemetry crates.
+Plan: the `otel` feature moves with it; `cox`'s `otel` forwards to it. Errors become a `thiserror` enum, because `anyhow` stays in `crates/cox` only.
+Check: builds with `--no-default-features` and with defaults are both green.
+
+#### T31.10 `cox-tokens`: token counting
+
+Depends: — · Moves: `cox-provider/src/tokens.rs`.
+Why: dependencies (a), namely tiktoken-rs and its BPE data.
+Check: `tiktoken-rs` appears only in `cox-tokens/Cargo.toml`; the `fixtures/count_tokens` tests pass.
+
+#### T31.11 `cox-provider-testkit`: scripted and replay providers
+
+Depends: — · Moves: `cox-provider/src/scripted.rs`, `replay.rs` (~750).
+Why: reuse (d). Every crate's tests use them without needing the real wires.
+Check: each crate takes the testkit as a dev-dependency, or as a normal dependency where a production path uses it today (the card lists which).
+
+#### T31.12 `cox-provider-http`: HTTP, retry, SSE and key resolution
+
+Depends: — · Moves: `cox-provider/src/http.rs`, `retry.rs`, `sse.rs` (~500).
+Why: reuse (d), shared by every wire.
+Check: the retry and SSE tests pass unchanged.
+
+#### T31.13 `cox-provider-anthropic`
+
+Depends: T31.12, and A46 U1–U6 if the creator approves A46, so the wire moves once, already unified.
+Moves: `cox-provider/src/anthropic/*`, `schema/`, `build.rs` (~2.1k).
+Why: dependencies (a) (the typify build step) and size (c).
+Check: the request snapshots are unchanged; the typify build runs only for this crate.
+
+#### T31.14 `cox-provider-openai`
+
+Depends: T31.12, and A46 U1–U6 as in T31.13.
+Moves: `cox-provider/src/openai/*` (~2.2k).
+Why: dependencies (a) (async-openai) and size (c).
+Check: `async-openai` appears only in this crate's `Cargo.toml`.
+
+#### T31.15 `cox-provider-jev`
+
+Depends: T31.12, and A46 U1–U6 as in T31.13.
+Moves: `cox-provider/src/jev.rs`.
+Why: size (c).
+Check: the Jev tests pass unchanged.
+
+#### T31.16 `cox-config`: the one config owner
+
+Depends: — · Moves: `crates/cox/src/config_load.rs`, `config_cmd.rs` (~990).
+Why: size (c) and reuse (d). This one crate owns loading, validation, editing and the schema drift test.
+Plan: `anyhow` becomes a `thiserror` enum; figment and toml_edit move with the files.
+Check: the config-schema drift test lives in the new crate and passes; `cox config` and `cox doctor` behave the same against a `COX_HOME` scratch tree.
 
 ## 4. Definition of done for v0.1
 
@@ -806,6 +955,9 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A43 §3 P30, T30.15–T30.16 — new cards: a built-in `lmstudio` provider whose chat loop runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider (T30.15), and LM Studio's native `/api/v1/models` and `models/load` for the loaded context length, capabilities and load on demand (T30.16), with hand-written types (D3/A40 step 3). Why: the creator asked for LM Studio's own API as a local provider; R§4.3.2 shows the native chat endpoint takes no custom tool schemas, so the native API serves model state and the chat stays on Messages.
 - A44 §3 P30, T30.17 — new card: one model of providers, models, prices and effort; design first (D15), code only through cards the creator approves. Why: the creator's rule that provider, model, price and effort handling be as unified as possible, and the LM Studio provider (T30.15) should land in that shape.
 - A45 §0 D1, §3 P30, T30.18 — new card: design a finer crate split (D1's ten crates are a floor, not a target). Why: the creator's rule that the project be split into crates as far as possible. Effect: D1 changes only through the amendment T30.18 proposes.
+- A46 §3 P30, T30.15, T30.16 — **proposed, awaiting the creator**: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect on approval: U1–U7 enter `roadmap.md` then §3; T30.15 depends on U1–U3 and T30.16 on U4–U5; T30.13 is unaffected.
+- A47 §0 D1, §3 P31 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; C1–C16 are cards T31.1–T31.16 in the new phase P31; the provider wires (T31.13–T31.15) move after A46 U1–U6 if the creator approves A46.
+- A48 §3 P30, AGENTS.md — new cards T30.19–T30.20 and a convention: a file no package manager fetches (a vendored API spec, a price or model table, any JSON/YAML data) is produced only by a saved, tested Python script that is re-run to update it; no hand download, no pasted rows. Why: the creator's rule. Effect: the Anthropic spec (T30.19) and the models.dev-derived `prices.toml` rows and `default.toml` model lists (T30.20) get their scripts; A46 U4's embedded catalog rows come from T30.20's script.
 
 ## 7. Risk register
 
