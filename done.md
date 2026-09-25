@@ -4159,3 +4159,32 @@ unaffected (T27.4 only changed the interactive TUI session path; no `run.rs`/`cl
 
 `cox run --loop <interval> -p "…" --max-iterations N` (the card's headless half, and its `run_loop_stops_after_max_iterations` Check) is not implemented in this commit — see T27.6.
 
+#### T27.6 `cox run --loop`
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T27.4 · Size: ~100 (landed ~185) · Priority: P3 · Complexity: 2
+Goal: `cox run --loop <interval> -p "…" --max-iterations N` repeats the headless prompt on a timer, the `cox run` counterpart to T27.4's TUI `/loop` (split out of it, §6 A31, because it needs a fourth file over that task's ≤3-file cap).
+Files: `crates/cox/src/cli.rs`, `crates/cox/src/run.rs`.
+Steps: (1) `RunArgs` gains `--loop <interval>` (same `s|m|h` grammar as `/loop`) and `--max-iterations <N>` (required with `--loop`; `run.rs` rejects one without the other before opening a session). (2) `run.rs`'s `run()`: with `--loop`, repeat the existing single-prompt `drive()` call every interval instead of once, folding each iteration's `Outcome` into a running total (cost, tokens, turns) the same shape `Outcome::summary()` already prints; stop and exit `EXIT_OK` after `--max-iterations` turns or `EXIT_BUDGET` once cumulative cost reaches `budget.session_usd` (reuse the core's existing budget stop, `StopReason::Budget`, rather than a second cap). (3) `Ctrl+C` during a wait between iterations exits cleanly with whatever iterations completed already printed.
+Done when: the test passes, `cox run --help` shows both flags, and `docs/getting-started.md`'s headless section mentions `--loop`.
+Out of scope: cloud schedules; a per-iteration budget distinct from `budget.session_usd` (T27.4's TUI `/loop` already covers a loop-scoped cap; this is scripts, where the session cap is the natural stop).
+
+What landed (commit `T27.6: cox run --loop`): `crates/cox/src/cli.rs` — `RunArgs` gained `r#loop: Option<String>` (`--loop <INTERVAL>`) and `max_iterations: Option<u32>` (`--max-iterations <N>`). `crates/cox/src/run.rs` — `run()` parses the pair up front (`--loop` and `--max-iterations` must both be present or both absent, checked before opening a session) via `cox_tui::commands::parse_interval` — T27.4's own grammar, reused rather than duplicated; `drive()` was restructured to take `&Session` plus an already-taken `mpsc::Receiver<Event>` instead of pulling both itself (a session's event receiver can only be taken once, so the old shape could not be called twice on the same session), with the `session.events()` take and the Ctrl+C-forwarding task moved up into `run()` so they happen exactly once regardless of `--loop`; a new `run_loop()` calls `drive()` repeatedly on that same session/receiver, folding each iteration's `Outcome` into a running total via a new `Outcome::merge` (sums the ledger fields, keeps the latest text/session/stop) — reusing the same session end to end is also what lets the core's own cumulative `budget.session_usd` tracking (already summed per session) double as the loop's spend cap: `run_loop` stops the moment an iteration's stop reason is `StopReason::Budget`, or after `max_iterations` turns, or if an iteration fails fatally; between iterations it races `tokio::time::sleep(interval)` against a second `tokio::signal::ctrl_c()` listener so `Ctrl+C` during the wait exits the loop cleanly (whatever already ran is what prints — no error, no special exit code). `crates/cox/src/config_load.rs` gained two `flag_key_map` rows (`("loop", "runtime.loop")`, `("max-iterations", "runtime.max_iterations")`) — invocation parameters like `deep`/`continue`, not persisted config — which the existing `config_every_flag_has_a_config_key` test requires for any new `run` flag. `crates/cox-tui/src/commands.rs` — `parse_interval` made `pub` so `crates/cox` (already a `cox-tui` dependent via `session.rs`) can reuse T27.4's interval grammar instead of a second parser. `docs/getting-started.md`'s `## Loop` section gained a paragraph on the headless counterpart. Deviation: this is 4 source files against the task's own ≤3-file convention (`cli.rs`, `run.rs`, plus the unavoidable `config_load.rs` for the flag-key test and the one-line `commands.rs` visibility change) — not split into a second card, because the alternative was literally duplicating the interval-parsing logic the task explicitly said to reuse instead. Landed ~185 lines against the card's ~100 estimate, mostly the two new `run.rs` tests and their doc comments. Discovered while implementing: setting `HOME` (not just `COX_HOME`) when manually exercising `mise exec -- cargo run` breaks `mise`'s own toolchain lookup and triggers a full reinstall of every tool in the global `mise.toml` — the existing `crates/cox/tests/run_cli.rs` harness never hits this because it runs the compiled binary directly, not through `mise exec`; worth remembering for anyone hand-testing this or a future task the same way.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace --no-fail-fast
+Summary: 858 tests run: 858 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- run --help
+shows --loop <INTERVAL> and --max-iterations <N>
+$ COX_HOME=<scratch> COX_PROVIDER=scripted COX_SCENARIO=<3-turn scenario> mise exec -- cargo run -p cox -- --cwd <scratch> run -p hi --loop 1s --max-iterations 2 --output-format json
+{"session":"...","result":"two","turns":2,"stop":{"type":"end_turn"},"denied":0,"exit_code":0}
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- --cwd <scratch> run -p hi --loop 1s
+Error: --loop and --max-iterations must be given together (exit 1)
+```
+
