@@ -422,15 +422,13 @@ fn tsx_read_is_highlighted() {
 fn dockerfile_read_is_highlighted() {
     let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     let id = requested(&mut s, "read", "Dockerfile", Risk::ReadOnly);
-    let dockerfile_content = "FROM rust:latest\nRUN apt-get update\nCOPY . /app\nWORKDIR /app\nRUN cargo build\n";
+    let dockerfile_content =
+        "FROM rust:latest\nRUN apt-get update\nCOPY . /app\nWORKDIR /app\nRUN cargo build\n";
     output(&mut s, id, dockerfile_content);
     done(&mut s, id, true);
 
     let lines = cell_lines(tool_cell(&s), &s.look(WIDTH));
     let painted = lines.iter().skip(1).any(|l| l.spans.len() > 2);
-    assert!(
-        painted,
-        "read of Dockerfile was not highlighted: {lines:?}"
-    );
+    assert!(painted, "read of Dockerfile was not highlighted: {lines:?}");
     insta::assert_snapshot!(text(&s, tool_cell(&s)));
 }
