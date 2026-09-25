@@ -49,6 +49,12 @@
 //! block, and produces no `ProviderEvent`.
 //! ponytail: redacted_thinking dropped silently; add a block kind + event
 //! when a fixture needs to replay one back to the model.
+//!
+//! **Wire types.** Frames deserialize into [`super::wire`], generated from
+//! Anthropic's OpenAPI spec (T30.12). Its block and delta enums are closed,
+//! so `content_block_start` / `content_block_delta` peek at the `type` tag
+//! first and skip kinds cox does not handle before parsing; unknown event
+//! types never reach a parser, and unknown fields are ignored by serde.
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::CallId;
@@ -160,44 +166,49 @@ impl AnthropicStream {
     }
 
     fn on_message_start(&mut self, v: Value) -> Result<Vec<ProviderEvent>, ProviderError> {
-        let body: wire::MessageStartEvent =
-            serde_json::from_value(v).map_err(|_| ProviderError::Parse {
-                line: self.frame_no,
-            })?;
-        let model = body.message.model.unwrap_or_default();
-        if let Some(usage) = &body.message.usage {
-            self.apply_usage(usage);
-        }
+        let body: wire::MessageStartEvent = self.parse(v)?;
+        let usage = &body.message.usage;
+        self.apply_usage(
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens,
+        );
         Ok(vec![ProviderEvent::MessageStart {
-            model: ModelId(model),
+            model: ModelId(body.message.model.0),
         }])
     }
 
     fn on_block_start(&mut self, v: Value) -> Result<Vec<ProviderEvent>, ProviderError> {
-        let body: wire::ContentBlockStartEvent =
-            serde_json::from_value(v).map_err(|_| ProviderError::Parse {
-                line: self.frame_no,
-            })?;
-        let block = body.content_block;
-        match block.type_.as_deref().unwrap_or_default() {
-            "text" => {
+        // The generated block enum is closed: a block kind added after the
+        // spec snapshot would fail it. Peek at the tag first, so any kind
+        // cox does not act on (redacted_thinking, server tools, or one it
+        // has never heard of) is skipped before the typed parse. A frame
+        // with no `content_block` at all still goes on to fail that parse.
+        if let Some(kind) = v.pointer("/content_block/type").and_then(Value::as_str)
+            && !matches!(kind, "text" | "thinking" | "tool_use")
+        {
+            self.current_block = None;
+            return Ok(vec![]);
+        }
+        let body: wire::ContentBlockStartEvent = self.parse(v)?;
+        match body.content_block {
+            wire::ContentBlockStartEventContentBlock::Text { .. } => {
                 self.current_block = Some(BlockKind::Text);
                 Ok(vec![])
             }
-            "thinking" => {
+            wire::ContentBlockStartEventContentBlock::Thinking { .. } => {
                 self.current_block = Some(BlockKind::Thinking);
                 Ok(vec![])
             }
-            "tool_use" => {
+            wire::ContentBlockStartEventContentBlock::ToolUse { name, .. } => {
                 self.current_block = Some(BlockKind::ToolUse);
-                let name = block.name.unwrap_or_default();
                 Ok(vec![ProviderEvent::ToolUseStart {
                     id: CallId::new(),
-                    name,
+                    name: name.unwrap_or_default(),
                 }])
             }
             _ => {
-                // redacted_thinking or an unrecognised future block type.
                 self.current_block = None;
                 Ok(vec![])
             }
@@ -205,42 +216,51 @@ impl AnthropicStream {
     }
 
     fn on_block_delta(&mut self, v: Value) -> Result<Vec<ProviderEvent>, ProviderError> {
-        let body: wire::ContentBlockDeltaEvent =
-            serde_json::from_value(v).map_err(|_| ProviderError::Parse {
-                line: self.frame_no,
-            })?;
-        let delta = body.delta;
-        let event = match delta.type_.as_deref().unwrap_or_default() {
-            "text_delta" => Some(ProviderEvent::TextDelta {
-                text: delta.text.unwrap_or_default(),
-            }),
-            "thinking_delta" => Some(ProviderEvent::ThinkingDelta {
-                text: delta.thinking.unwrap_or_default(),
-            }),
-            "input_json_delta" => Some(ProviderEvent::ToolUseInputDelta {
-                text: delta.partial_json.unwrap_or_default(),
-            }),
-            // signature_delta: see the module header — no ProviderEvent
-            // carries it, so it is consumed and dropped.
-            _ => None,
+        // Same closed-enum peek as `on_block_start`. signature_delta: see
+        // the module header — no ProviderEvent carries it, so it is
+        // consumed and dropped with the other kinds cox does not act on.
+        if let Some(kind) = v.pointer("/delta/type").and_then(Value::as_str)
+            && !matches!(kind, "text_delta" | "thinking_delta" | "input_json_delta")
+        {
+            return Ok(vec![]);
+        }
+        let body: wire::ContentBlockDeltaEvent = self.parse(v)?;
+        let event = match body.delta {
+            wire::ContentBlockDeltaEventDelta::TextDelta { text } => ProviderEvent::TextDelta {
+                text: text.unwrap_or_default(),
+            },
+            wire::ContentBlockDeltaEventDelta::ThinkingDelta { thinking } => {
+                ProviderEvent::ThinkingDelta {
+                    text: thinking.unwrap_or_default(),
+                }
+            }
+            wire::ContentBlockDeltaEventDelta::InputJsonDelta { partial_json } => {
+                ProviderEvent::ToolUseInputDelta {
+                    text: partial_json.unwrap_or_default(),
+                }
+            }
+            _ => return Ok(vec![]),
         };
-        Ok(event.into_iter().collect())
+        Ok(vec![event])
     }
 
     fn on_message_delta(&mut self, v: Value) -> Result<Vec<ProviderEvent>, ProviderError> {
-        let body: wire::MessageDeltaEvent =
-            serde_json::from_value(v).map_err(|_| ProviderError::Parse {
-                line: self.frame_no,
-            })?;
-        if let Some(usage) = &body.usage {
-            self.apply_usage(usage);
-        }
+        let body: wire::MessageDeltaEvent = self.parse(v)?;
+        let usage = &body.usage;
+        self.apply_usage(
+            usage.input_tokens,
+            // The spec gives this one no `minimum`, so it is generated
+            // signed; a negative count is no count.
+            usage.output_tokens.and_then(|n| u64::try_from(n).ok()),
+            usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens,
+        );
         let Some(reason) = body.delta.stop_reason else {
             // A message_delta that only carries usage (no stop yet): not
             // part of the documented shape, but ignoring it is harmless.
             return Ok(vec![]);
         };
-        let stop = if reason == "refusal" {
+        let stop = if reason.0 == "refusal" {
             let detail = body
                 .delta
                 .stop_details
@@ -261,43 +281,54 @@ impl AnthropicStream {
 
     fn on_error(&mut self, v: Value) -> Result<ProviderEvent, ProviderError> {
         // Unlike the other frames, a malformed or absent `error` object is
-        // never a `ProviderError::Parse` here — see the module header on
-        // `error`. Anthropic error bodies never contribute a frame count
-        // failure; falling back to "no error detail" mirrors the old
-        // `Value::get` chain, which also never failed on this frame.
-        let body = serde_json::from_value::<wire::ErrorEvent>(v)
-            .unwrap_or(wire::ErrorEvent { error: None });
-        let error = body.error;
-        let ty = error.as_ref().and_then(|e| e.type_.as_deref());
-        let message = error
-            .as_ref()
-            .and_then(|e| e.message.clone())
-            .unwrap_or_default();
-        let mapped = match ty.unwrap_or_default() {
-            "overloaded_error" => ProviderError::Overloaded,
-            "rate_limit_error" => ProviderError::RateLimited { retry_after: None },
-            "invalid_request_error" => ProviderError::BadRequest { message },
-            "authentication_error" => ProviderError::Auth,
+        // never a `ProviderError::Parse` here: an error frame of a type the
+        // snapshot does not know, or of no recognisable shape, still ends
+        // the call as a generic network error.
+        let mapped = match serde_json::from_value::<wire::ErrorResponse>(v).map(|b| b.error) {
+            Ok(wire::ErrorResponseError::OverloadedError { .. }) => ProviderError::Overloaded,
+            Ok(wire::ErrorResponseError::RateLimitError { .. }) => {
+                ProviderError::RateLimited { retry_after: None }
+            }
+            Ok(wire::ErrorResponseError::InvalidRequestError { message }) => {
+                ProviderError::BadRequest { message }
+            }
+            Ok(wire::ErrorResponseError::AuthenticationError { .. }) => ProviderError::Auth,
             _ => ProviderError::Network,
         };
         Ok(ProviderEvent::Error { error: mapped })
     }
 
-    /// Only overwrites the fields present in `usage` — `message_start`
-    /// carries the input/cache trio, `message_delta` typically carries only
+    /// Deserializes one known frame body into its generated type; failure
+    /// is a `Parse` error at this frame.
+    fn parse<T: serde::de::DeserializeOwned>(&self, v: Value) -> Result<T, ProviderError> {
+        serde_json::from_value(v).map_err(|_| ProviderError::Parse {
+            line: self.frame_no,
+        })
+    }
+
+    /// Only overwrites the counters present — `message_start` carries the
+    /// input/cache trio, `message_delta` typically carries only
     /// `output_tokens`, and neither should blank out what the other set.
-    fn apply_usage(&mut self, usage: &wire::Usage) {
-        if let Some(n) = usage.input_tokens {
-            self.usage.input_tokens = n;
-        }
-        if let Some(n) = usage.output_tokens {
-            self.usage.output_tokens = n;
-        }
-        if let Some(n) = usage.cache_read_input_tokens {
-            self.usage.cache_read_tokens = n;
-        }
-        if let Some(n) = usage.cache_creation_input_tokens {
-            self.usage.cache_write_tokens = n;
+    fn apply_usage(
+        &mut self,
+        input: Option<u64>,
+        output: Option<u64>,
+        cache_read: Option<u64>,
+        cache_write: Option<u64>,
+    ) {
+        let slots = [
+            (input, &mut self.usage.input_tokens),
+            (output, &mut self.usage.output_tokens),
+            (cache_read, &mut self.usage.cache_read_tokens),
+            (cache_write, &mut self.usage.cache_write_tokens),
+        ];
+        for (value, slot) in slots {
+            if let Some(n) = value {
+                // The spec's counters are unbounded integers; the ledger's
+                // are `u32`. A count past four billion tokens saturates
+                // instead of wrapping to a small, cheap-looking number.
+                *slot = u32::try_from(n).unwrap_or(u32::MAX);
+            }
         }
     }
 }
@@ -305,8 +336,8 @@ impl AnthropicStream {
 /// `category: explanation`, falling back to whichever half is present —
 /// both are optional and `stop_details` itself can be `null` even on a
 /// refusal (claude-api skill, `shared/model-migration.md`).
-fn refusal_detail(d: &wire::StopDetails) -> String {
-    let category = d.category.as_deref();
+fn refusal_detail(d: &wire::RefusalStopDetails) -> String {
+    let category = d.category.as_ref().map(|c| c.0.as_str());
     let explanation = d.explanation.as_deref();
     match (category, explanation) {
         (Some(c), Some(e)) => format!("{c}: {e}"),
@@ -462,7 +493,7 @@ mod tests {
 
     #[test]
     fn unknown_fields_and_block_types_are_ignored() {
-        // T30.10: proves the generated `wire` types don't turn an additive
+        // T30.10/T30.12: proves the generated `wire` types don't turn an additive
         // API change (an extra field the schema never declared) or a block
         // kind cox does not know about yet into a `ProviderError::Parse`.
         let mut stream = AnthropicStream::new();

@@ -10,8 +10,8 @@
 
 pub mod request;
 pub mod stream;
-/// Generated wire types (T30.10) — internal to this module; `stream` is the
-/// only consumer.
+/// Wire types generated from the vendored OpenAPI spec (T30.12) — internal
+/// to this module; `request` and `stream` are the only consumers.
 mod wire;
 
 use async_trait::async_trait;
@@ -233,7 +233,7 @@ impl AnthropicProvider {
         // signature (cox-protocol T0.2) carries only the `Request`, so
         // thinking-block replay stays off here — see request.rs's
         // `BuildCfg::thinking_model` doc and this module's `stream` doc.
-        let body = request::build_body(req, self.build_cfg(None));
+        let body = request::build_body(req, self.build_cfg(None))?;
 
         let response = self
             .http

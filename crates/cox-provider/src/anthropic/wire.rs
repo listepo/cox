@@ -1,23 +1,27 @@
-//! Generated Rust types for the Anthropic Messages streaming SSE event
-//! bodies (T30.10). `typify::import_types!` reads
-//! `schema/anthropic-stream.json` (a curated JSON Schema subset, not a full
-//! Anthropic SDK — see the schema's own `$comment` for the source and why
-//! it stays partial) and emits one struct per definition. Nothing here is
-//! hand-written but this header: the SSE → `ProviderEvent` state machine
-//! that uses these types lives in [`super::stream`], unchanged in shape by
-//! this task.
+//! Generated Rust types for the Anthropic Messages API: the request body
+//! (`CreateMessageParams`) and the stream frame bodies (T30.12). `build.rs`
+//! runs typify over the schemas of the vendored OpenAPI spec
+//! (`schema/anthropic-openapi.json`, source and re-vendoring in
+//! `schema/README.md`) that those two reach, and this module includes the
+//! result. Nothing here is hand-written but this header and the tests: the
+//! request translation lives in [`super::request`], the SSE ->
+//! `ProviderEvent` state machine in [`super::stream`].
 
-typify::import_types!(schema = "schema/anthropic-stream.json");
+// Generated code: lints that judge style are the generator's business, and
+// most of the ~280 types are there because the spec reaches them, not
+// because cox uses them.
+#[allow(clippy::all, clippy::pedantic, dead_code, missing_docs, unused)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/anthropic_wire.rs"));
+}
+pub use generated::*;
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::Path;
-
     use super::*;
 
-    /// The schema's own `$comment` says extra fields must never break
-    /// parsing; the corresponding assertion is
+    /// The stream-side types were made tolerant in `build.rs`: extra fields
+    /// never break parsing; the corresponding assertion is
     /// `unknown_fields_on_event_block_and_usage_are_ignored` below.
 
     #[test]
@@ -26,8 +30,8 @@ mod tests {
             "usage":{"input_tokens":25,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
         let event: MessageStartEvent =
             serde_json::from_str(raw).expect("well-formed message_start");
-        assert_eq!(event.message.model.as_deref(), Some("claude-sonnet-5"));
-        let usage = event.message.usage.expect("usage present");
+        assert_eq!(event.message.model.0, "claude-sonnet-5");
+        let usage = event.message.usage;
         assert_eq!(usage.input_tokens, Some(25));
         assert_eq!(usage.output_tokens, Some(1));
         assert_eq!(usage.cache_creation_input_tokens, Some(0));
@@ -40,7 +44,10 @@ mod tests {
             r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#;
         let event: ContentBlockStartEvent =
             serde_json::from_str(raw).expect("well-formed text block");
-        assert_eq!(event.content_block.type_.as_deref(), Some("text"));
+        assert!(matches!(
+            event.content_block,
+            ContentBlockStartEventContentBlock::Text { .. }
+        ));
     }
 
     #[test]
@@ -48,7 +55,10 @@ mod tests {
         let raw = r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#;
         let event: ContentBlockStartEvent =
             serde_json::from_str(raw).expect("well-formed thinking block");
-        assert_eq!(event.content_block.type_.as_deref(), Some("thinking"));
+        assert!(matches!(
+            event.content_block,
+            ContentBlockStartEventContentBlock::Thinking { .. }
+        ));
     }
 
     #[test]
@@ -57,8 +67,10 @@ mod tests {
             "content_block":{"type":"tool_use","id":"toolu_1","name":"write","input":{}}}"#;
         let event: ContentBlockStartEvent =
             serde_json::from_str(raw).expect("well-formed tool_use block");
-        assert_eq!(event.content_block.type_.as_deref(), Some("tool_use"));
-        assert_eq!(event.content_block.name.as_deref(), Some("write"));
+        let ContentBlockStartEventContentBlock::ToolUse { name, .. } = event.content_block else {
+            panic!("expected a tool_use block");
+        };
+        assert_eq!(name.as_deref(), Some("write"));
     }
 
     #[test]
@@ -67,8 +79,10 @@ mod tests {
             r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#;
         let event: ContentBlockDeltaEvent =
             serde_json::from_str(raw).expect("well-formed text_delta");
-        assert_eq!(event.delta.type_.as_deref(), Some("text_delta"));
-        assert_eq!(event.delta.text.as_deref(), Some("hi"));
+        let ContentBlockDeltaEventDelta::TextDelta { text } = event.delta else {
+            panic!("expected a text_delta");
+        };
+        assert_eq!(text.as_deref(), Some("hi"));
     }
 
     #[test]
@@ -77,7 +91,10 @@ mod tests {
             "delta":{"type":"input_json_delta","partial_json":"{\"a\":1}"}}"#;
         let event: ContentBlockDeltaEvent =
             serde_json::from_str(raw).expect("well-formed input_json_delta");
-        assert_eq!(event.delta.partial_json.as_deref(), Some(r#"{"a":1}"#));
+        let ContentBlockDeltaEventDelta::InputJsonDelta { partial_json } = event.delta else {
+            panic!("expected an input_json_delta");
+        };
+        assert_eq!(partial_json.as_deref(), Some(r#"{"a":1}"#));
     }
 
     #[test]
@@ -85,19 +102,24 @@ mod tests {
         let raw = r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}}"#;
         let event: ContentBlockDeltaEvent =
             serde_json::from_str(raw).expect("well-formed thinking_delta");
-        assert_eq!(event.delta.thinking.as_deref(), Some("hm"));
+        let ContentBlockDeltaEventDelta::ThinkingDelta { thinking } = event.delta else {
+            panic!("expected a thinking_delta");
+        };
+        assert_eq!(thinking.as_deref(), Some("hm"));
     }
 
     #[test]
     fn content_block_delta_reads_signature_delta_type() {
         // stream.rs consumes and drops the signature itself (module header:
-        // no ProviderEvent carries it yet); the wire layer still needs to
-        // deserialize the frame without error so dispatch can reach that
-        // no-op arm instead of failing the whole call.
+        // no ProviderEvent carries it yet); the wire type still has to
+        // accept the frame, so a replay that does need it can parse it.
         let raw = r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}"#;
         let event: ContentBlockDeltaEvent =
             serde_json::from_str(raw).expect("well-formed signature_delta");
-        assert_eq!(event.delta.type_.as_deref(), Some("signature_delta"));
+        assert!(matches!(
+            event.delta,
+            ContentBlockDeltaEventDelta::SignatureDelta { .. }
+        ));
     }
 
     #[test]
@@ -106,8 +128,9 @@ mod tests {
             "usage":{"output_tokens":8}}"#;
         let event: MessageDeltaEvent =
             serde_json::from_str(raw).expect("well-formed message_delta");
-        assert_eq!(event.delta.stop_reason.as_deref(), Some("end_turn"));
-        assert_eq!(event.usage.expect("usage present").output_tokens, Some(8));
+        let reason = event.delta.stop_reason.expect("stop_reason present");
+        assert_eq!(reason.0, "end_turn");
+        assert_eq!(event.usage.output_tokens, Some(8));
     }
 
     #[test]
@@ -117,7 +140,7 @@ mod tests {
         let event: MessageDeltaEvent =
             serde_json::from_str(raw).expect("well-formed refusal message_delta");
         let details = event.delta.stop_details.expect("stop_details present");
-        assert_eq!(details.category.as_deref(), Some("cyber"));
+        assert_eq!(details.category.map(|c| c.0).as_deref(), Some("cyber"));
         assert_eq!(
             details.explanation.as_deref(),
             Some("matched a policy classifier")
@@ -127,20 +150,21 @@ mod tests {
     #[test]
     fn error_event_reads_type_and_message() {
         let raw = r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
-        let event: ErrorEvent = serde_json::from_str(raw).expect("well-formed error frame");
-        let error = event.error.expect("error present");
-        assert_eq!(error.type_.as_deref(), Some("overloaded_error"));
-        assert_eq!(error.message.as_deref(), Some("Overloaded"));
+        let event: ErrorResponse = serde_json::from_str(raw).expect("well-formed error frame");
+        let ErrorResponseError::OverloadedError { message } = event.error else {
+            panic!("expected an overloaded_error");
+        };
+        assert_eq!(message, "Overloaded");
     }
 
     #[test]
     fn unknown_fields_on_event_block_and_usage_are_ignored() {
         // Every field here that is not `model` or `usage.*` is a real field
         // from fixtures/anthropic/live_tool_use.sse (container, diagnostics,
-        // service_tier, the nested cache_creation object) that this schema
-        // deliberately does not model. None of them may set
-        // `additionalProperties: false`, so none may cause a deserialize
-        // failure here.
+        // service_tier, the nested cache_creation object) or one the spec
+        // snapshot does not list (`diagnostics`, the top-level extra). The
+        // spec never sets `additionalProperties: false` on a response
+        // schema, so none may cause a deserialize failure here.
         let raw = r#"{
             "type":"message_start",
             "message":{
@@ -159,11 +183,8 @@ mod tests {
         }"#;
         let event: MessageStartEvent =
             serde_json::from_str(raw).expect("unrecognised fields must never break parsing");
-        assert_eq!(event.message.model.as_deref(), Some("claude-sonnet-5"));
-        assert_eq!(
-            event.message.usage.expect("usage present").input_tokens,
-            Some(10)
-        );
+        assert_eq!(event.message.model.0, "claude-sonnet-5");
+        assert_eq!(event.message.usage.input_tokens, Some(10));
     }
 
     #[test]
@@ -178,9 +199,8 @@ mod tests {
 
     #[test]
     fn usage_null_fields_deserialize_to_none() {
-        // `Option<T>`'s own `Deserialize` impl treats an explicit JSON
-        // `null` the same as an absent key regardless of `T` -- this schema
-        // does not need `"type": ["integer", "null"]` to get that for free.
+        // The spec types these `integer | null`; either way an explicit
+        // `null` and an absent key both land as `None`.
         let raw = r#"{"output_tokens":8,"cache_creation_input_tokens":null,"cache_read_input_tokens":null}"#;
         let usage: Usage = serde_json::from_str(raw).expect("explicit nulls parse");
         assert_eq!(usage.cache_creation_input_tokens, None);
@@ -191,13 +211,8 @@ mod tests {
     fn message_start_without_message_fails_to_deserialize() {
         // `message` is the one field `AnthropicStream::on_message_start`
         // (stream.rs) treats as fatal-if-missing (`ProviderError::Parse`);
-        // this is the schema-level half of that contract. `id` is
-        // deliberately NOT required on `ContentBlock` even though every
-        // real tool_use block carries one: `ContentBlock` is shared by
-        // text/thinking/tool_use, cox never reads the wire id (stream.rs
-        // module header: it mints its own `CallId`), and requiring it here
-        // would make every text/thinking block -- which never carries an
-        // `id` -- fail to parse.
+        // build.rs keeps an object payload with no `default` required, and
+        // this is the wire-level half of that contract.
         let raw = r#"{"type":"message_start"}"#;
         let result: Result<MessageStartEvent, _> = serde_json::from_str(raw);
         assert!(result.is_err(), "message is required");
@@ -205,14 +220,9 @@ mod tests {
 
     #[test]
     fn content_block_start_without_content_block_fails_to_deserialize() {
-        // Mutation-checked: dropping `"required": ["content_block"]` from
-        // the schema does not just fail this assertion, it stops the crate
-        // from compiling at all -- `content_block` becomes
-        // `Option<ContentBlock>` and every `.type_`/`.name` access on it,
-        // here and in `stream.rs::on_block_start`, no longer type-checks.
-        // That is a stronger guarantee than this test alone, which is why
-        // it is worth keeping as the schema-level contract even though the
-        // field is also load-bearing at the call site.
+        // `content_block` is required, so the field is not an `Option` and
+        // `stream.rs::on_block_start` matches on it directly; dropping the
+        // requirement would stop the crate compiling, not just this test.
         let raw = r#"{"type":"content_block_start","index":0}"#;
         let result: Result<ContentBlockStartEvent, _> = serde_json::from_str(raw);
         assert!(result.is_err(), "content_block is required");
@@ -226,59 +236,42 @@ mod tests {
     }
 
     #[test]
-    fn unknown_content_block_and_delta_type_still_deserialize_at_the_wire_layer() {
-        // Design choice (plan.md T30.10 step 3): `ContentBlock.type_` and
-        // `Delta.type_` are modelled as an open `String`, not a closed
-        // enum/oneOf, specifically so a block or delta kind cox does not
-        // know about yet still deserializes *here* without error.
-        // Ignoring it is `AnthropicStream::on_block_start` /
-        // `on_block_delta`'s job (stream.rs `_ =>` arms), one layer up --
-        // this test documents that the wire layer never rejects an unknown
-        // `type` value, it only reports it.
+    fn unknown_content_block_and_delta_type_are_rejected_at_the_wire_layer() {
+        // The spec's unions are closed: generated from `oneOf` + a
+        // discriminator, the block and delta enums reject a `type` they do
+        // not list. Tolerating one is `AnthropicStream::on_block_start` /
+        // `on_block_delta`'s job (they peek at the tag before parsing), and
+        // `stream::tests::unknown_fields_and_block_types_are_ignored` proves
+        // it; this test pins that the wire layer alone would not.
         let block = r#"{"type":"content_block_start","index":0,
             "content_block":{"type":"some_future_block"}}"#;
-        let event: ContentBlockStartEvent =
-            serde_json::from_str(block).expect("an unknown block type still deserializes");
-        assert_eq!(
-            event.content_block.type_.as_deref(),
-            Some("some_future_block")
-        );
+        assert!(serde_json::from_str::<ContentBlockStartEvent>(block).is_err());
 
         let delta =
             r#"{"type":"content_block_delta","index":0,"delta":{"type":"some_future_delta"}}"#;
-        let event: ContentBlockDeltaEvent =
-            serde_json::from_str(delta).expect("an unknown delta type still deserializes");
-        assert_eq!(event.delta.type_.as_deref(), Some("some_future_delta"));
+        assert!(serde_json::from_str::<ContentBlockDeltaEvent>(delta).is_err());
     }
 
-    /// Guards the schema file itself against a typo'd `required` entry that
-    /// names a property absent from that same definition's `properties` --
-    /// cheap to check here, and the kind of mistake that would otherwise
-    /// only surface as a confusing typify macro-expansion error.
     #[test]
-    fn schema_required_fields_exist_in_properties() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("schema/anthropic-stream.json");
-        let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {path:?}: {e}"));
-        let schema: serde_json::Value = serde_json::from_str(&raw).expect("schema is valid JSON");
-        let definitions = schema
-            .get("definitions")
-            .and_then(serde_json::Value::as_object)
-            .expect("schema has a top-level \"definitions\" object");
-        for (name, def) in definitions {
-            let Some(required) = def.get("required").and_then(serde_json::Value::as_array) else {
-                continue;
-            };
-            let properties = def
-                .get("properties")
-                .and_then(serde_json::Value::as_object)
-                .unwrap_or_else(|| panic!("{name} has \"required\" but no \"properties\""));
-            for field in required {
-                let field = field.as_str().expect("required entries are strings");
-                assert!(
-                    properties.contains_key(field),
-                    "{name}.required lists {field:?}, which is not in its own properties"
-                );
-            }
-        }
+    fn request_blocks_serialize_with_their_type_tag() {
+        // The request unions are internally tagged (build.rs inlines the
+        // `$ref` members so typify can see each tag), so a block carries
+        // its `type` without cox writing the string by hand.
+        let block = InputContentBlock::ToolResult {
+            cache_control: None,
+            content: Some(RequestToolResultBlockContent::String("ok".into())),
+            is_error: Some(false),
+            tool_use_id: "toolu_1".into(),
+            toolset_name: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&block).expect("serializes"),
+            serde_json::json!({
+                "type": "tool_result",
+                "content": "ok",
+                "is_error": false,
+                "tool_use_id": "toolu_1"
+            })
+        );
     }
 }

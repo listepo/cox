@@ -3,6 +3,15 @@
 //! cost — where `cache_control` lands, whether a thinking block is replayed,
 //! which effort is asked for — is a snapshot test instead of a live call.
 //!
+//! **Wire types.** The body is built as [`wire::CreateMessageParams`], the
+//! type generated from Anthropic's own spec (T30.12), so a field name, a
+//! required field or an enum value (`effort`, `ttl`, image media type) that
+//! does not match the spec is a compile error. Three things then happen on
+//! the serialized JSON, each because the generated type cannot say it:
+//! keys are put back in the order cox has always sent ([`wire_order`]),
+//! `cache_control` is placed ([`place_breakpoints`]), and the raw-JSON
+//! escape hatches ([`Raw`], `fallbacks`) fill in what the snapshot lacks.
+//!
 //! **Breakpoint indexing.** `Request.cache_breakpoints` are indices into the
 //! concatenation `system ++ messages`: `i < system.len()` names
 //! `system[i]`, anything above names `messages[i - system.len()]`. A system
@@ -13,10 +22,11 @@
 //! being an error: context assembly (plan.md §1.9) owns the layout, and a
 //! stale index must never fail a turn.
 
+use cox_protocol::errors::ProviderError;
 use cox_protocol::types::{Content, Effort, Message, ModelId, Request, Role, Thinking};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-use super::CacheTtl;
+use super::{CacheTtl, wire};
 
 /// Anthropic accepts at most four `cache_control` breakpoints per request;
 /// a fifth is a 400. cox plans for three (plan.md §1.9) and clamps here so
@@ -39,6 +49,41 @@ const ADAPTIVE_THINKING_PREFIXES: &[&str] = &[
     "claude-sonnet-4-6",
 ];
 
+/// The key order of each object cox sends. The generated types serialize
+/// fields alphabetically (tag first); request bytes are part of the
+/// cache-stable prefix, so the order fixed before T30.12 is restored.
+/// Keys not listed keep their serialized order after the listed ones.
+const BODY_ORDER: &[&str] = &[
+    "model",
+    "max_tokens",
+    "messages",
+    "stream",
+    "output_config",
+    "system",
+    "tools",
+    "tool_choice",
+    "thinking",
+    "stop_sequences",
+];
+const MESSAGE_ORDER: &[&str] = &["role", "content"];
+/// One list serves every block kind: no two kinds disagree on an order.
+const BLOCK_ORDER: &[&str] = &[
+    "type",
+    "id",
+    "tool_use_id",
+    "name",
+    "text",
+    "thinking",
+    "signature",
+    "input",
+    "content",
+    "is_error",
+    "source",
+];
+const SOURCE_ORDER: &[&str] = &["type", "media_type", "data"];
+const TOOL_ORDER: &[&str] = &["name", "description", "input_schema"];
+const CACHE_CONTROL_ORDER: &[&str] = &["type", "ttl"];
+
 /// The provider-level knobs [`build_body`] needs that are not part of the
 /// `Request` itself.
 #[derive(Debug, Clone, Copy)]
@@ -55,73 +100,148 @@ pub struct BuildCfg<'a> {
     pub thinking_model: Option<&'a ModelId>,
 }
 
+/// A value the snapshot's types cannot hold, written over the typed
+/// placeholder at `messages[message].content[block].<key>` after
+/// serialization. cox-core stores a tool input that was not valid JSON as
+/// `null` (the spec allows only an object), and an image may carry a media
+/// type the snapshot does not list yet; neither is cox's to rewrite.
+struct Raw {
+    message: usize,
+    block: usize,
+    key: &'static str,
+    value: Value,
+}
+
 /// Translates a `Request` into the JSON body for `POST /v1/messages`.
-pub fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Value {
-    let mut system: Vec<Value> = req
-        .system
-        .iter()
-        .map(|b| json!({"type": "text", "text": b.text}))
-        .collect();
-
-    let mut messages: Vec<Value> = req
-        .messages
-        .iter()
-        .map(|m| {
-            json!({
-                "role": match m.role { Role::User => "user", Role::Assistant => "assistant" },
-                "content": content_blocks(m, req, &cfg),
-            })
-        })
-        .collect();
-
-    place_breakpoints(req, cfg.ttl, &mut system, &mut messages);
-
-    let mut body = json!({
-        "model": req.model.0,
-        "max_tokens": req.max_tokens,
-        "messages": messages,
-        "stream": true,
-        "output_config": {"effort": effort(req.effort)},
-    });
-    let obj = body.as_object_mut().expect("json! built an object");
-
-    if !system.is_empty() {
-        obj.insert("system".into(), Value::Array(system));
-    }
-    if !req.tools.is_empty() {
-        let tools: Vec<Value> = req
-            .tools
+///
+/// Fails only if a generated type refuses to serialize, which none of the
+/// ones used here can; the error exists so that is not a panic.
+pub fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Result<Value, ProviderError> {
+    let mut raw = Vec::new();
+    let params = wire::CreateMessageParams {
+        model: wire::Model(req.model.0.clone()),
+        max_tokens: u64::from(req.max_tokens),
+        messages: req
+            .messages
             .iter()
-            .map(|t| {
-                json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "input_schema": t.input_schema,
-                })
+            .enumerate()
+            .map(|(i, m)| wire::InputMessage {
+                role: match m.role {
+                    Role::User => wire::InputMessageRole::User,
+                    Role::Assistant => wire::InputMessageRole::Assistant,
+                },
+                content: wire::InputMessageContent::Array(content_blocks(
+                    i, m, req, &cfg, &mut raw,
+                )),
             })
-            .collect();
-        obj.insert("tools".into(), Value::Array(tools));
+            .collect(),
+        stream: Some(true),
+        output_config: Some(wire::OutputConfig {
+            effort: Some(effort(req.effort)),
+            format: None,
+        }),
+        system: (!req.system.is_empty()).then(|| {
+            wire::CreateMessageParamsSystem::Array(
+                req.system.iter().map(|b| system_block(&b.text)).collect(),
+            )
+        }),
+        tools: req.tools.iter().map(tool).collect(),
         // Never `any`/`tool`: forced tool use is a 400 on the Fable/Mythos
         // tier, and cox routes the same request shape to every model.
-        obj.insert("tool_choice".into(), json!({"type": "auto"}));
+        tool_choice: (!req.tools.is_empty()).then_some(wire::ToolChoice::Auto {
+            disable_parallel_tool_use: None,
+        }),
+        thinking: (req.thinking == Thinking::Adaptive && supports_adaptive_thinking(&req.model))
+            .then_some(wire::ThinkingConfigParam::Adaptive { display: None }),
+        stop_sequences: req.stop_sequences.clone(),
+        cache_control: None,
+        container: None,
+        inference_geo: None,
+        metadata: None,
+        service_tier: None,
+        temperature: None,
+        top_k: None,
+        top_p: None,
+    };
+    let mut body = to_value(&params)?;
+    wire_order(&mut body);
+    for r in raw {
+        if let Some(block) = body
+            .pointer_mut(&format!("/messages/{}/content/{}", r.message, r.block))
+            .and_then(Value::as_object_mut)
+        {
+            block.insert(r.key.into(), r.value);
+        }
     }
-    if req.thinking == Thinking::Adaptive && supports_adaptive_thinking(&req.model) {
-        obj.insert("thinking".into(), json!({"type": "adaptive"}));
-    }
-    if !req.stop_sequences.is_empty() {
-        obj.insert("stop_sequences".into(), json!(req.stop_sequences));
-    }
-    if cfg.fallbacks {
-        // The scalar form: Anthropic picks the substitute by refusal
-        // category, so cox owes no migration when one is deprecated.
+    let mut cache_control = to_value(&wire::CacheControlEphemeral {
+        ttl: Some(match cfg.ttl {
+            CacheTtl::FiveMinutes => wire::CacheControlEphemeralTtl::X5m,
+            CacheTtl::OneHour => wire::CacheControlEphemeralTtl::X1h,
+        }),
+        type_: "ephemeral".into(),
+    })?;
+    in_order(&mut cache_control, CACHE_CONTROL_ORDER);
+    place_breakpoints(req, &cache_control, &mut body);
+    // Raw JSON: `fallbacks` is a beta field the spec snapshot does not list
+    // (`CreateMessageParams` is closed). The scalar form: Anthropic picks the
+    // substitute by refusal category, so cox owes no migration when one is
+    // deprecated.
+    if cfg.fallbacks
+        && let Some(obj) = body.as_object_mut()
+    {
         obj.insert("fallbacks".into(), json!("default"));
     }
-    body
+    Ok(body)
+}
+
+fn to_value<T: serde::Serialize>(v: &T) -> Result<Value, ProviderError> {
+    serde_json::to_value(v).map_err(|e| ProviderError::BadRequest {
+        message: format!("request body: {e}"),
+    })
+}
+
+/// Restores cox's key order ([`BODY_ORDER`] and friends) on a serialized
+/// body. Only the objects cox builds are touched: tool `input` and
+/// `input_schema` are caller data and keep their own order.
+fn wire_order(body: &mut Value) {
+    in_order(body, BODY_ORDER);
+    for_each_in(body, "system", |b| in_order(b, BLOCK_ORDER));
+    for_each_in(body, "tools", |t| in_order(t, TOOL_ORDER));
+    for_each_in(body, "messages", |m| {
+        in_order(m, MESSAGE_ORDER);
+        for_each_in(m, "content", |b| {
+            in_order(b, BLOCK_ORDER);
+            if let Some(source) = b.get_mut("source") {
+                in_order(source, SOURCE_ORDER);
+            }
+        });
+    });
+}
+
+fn for_each_in(v: &mut Value, key: &str, f: impl FnMut(&mut Value)) {
+    if let Some(items) = v.get_mut(key).and_then(Value::as_array_mut) {
+        items.iter_mut().for_each(f);
+    }
+}
+
+fn in_order(v: &mut Value, order: &[&str]) {
+    let Some(map) = v.as_object_mut() else {
+        return;
+    };
+    let mut rest = std::mem::take(map);
+    for key in order {
+        if let Some(value) = rest.shift_remove(*key) {
+            map.insert((*key).to_string(), value);
+        }
+    }
+    map.extend(rest);
 }
 
 /// Sets `cache_control` on the blocks named by `Request.cache_breakpoints`.
-fn place_breakpoints(req: &Request, ttl: CacheTtl, system: &mut [Value], messages: &mut [Value]) {
-    let cache_control = json!({"type": "ephemeral", "ttl": ttl.as_str()});
+/// It works on the serialized body, not the typed one, so a breakpoint on a
+/// message's last block lands whatever that block's kind is, exactly as
+/// before T30.12, and the key goes last in the block.
+fn place_breakpoints(req: &Request, cache_control: &Value, body: &mut Value) {
     let mut placed = 0;
     for &i in &req.cache_breakpoints {
         if placed == MAX_BREAKPOINTS {
@@ -131,11 +251,9 @@ fn place_breakpoints(req: &Request, ttl: CacheTtl, system: &mut [Value], message
             if !req.system[i].cache {
                 continue;
             }
-            system.get_mut(i)
+            body.pointer_mut(&format!("/system/{i}"))
         } else {
-            messages
-                .get_mut(i - req.system.len())
-                .and_then(|m| m.get_mut("content"))
+            body.pointer_mut(&format!("/messages/{}/content", i - req.system.len()))
                 .and_then(Value::as_array_mut)
                 .and_then(|blocks| blocks.last_mut())
         };
@@ -146,60 +264,139 @@ fn place_breakpoints(req: &Request, ttl: CacheTtl, system: &mut [Value], message
     }
 }
 
+fn system_block(text: &str) -> wire::RequestTextBlock {
+    wire::RequestTextBlock {
+        cache_control: None,
+        citations: None,
+        text: text.to_string(),
+        type_: "text".into(),
+    }
+}
+
+fn tool(t: &cox_protocol::types::ToolSpec) -> wire::CreateMessageParamsToolsItem {
+    wire::CreateMessageParamsToolsItem::Tool(wire::Tool {
+        name: t.name.clone(),
+        description: Some(t.description.clone()),
+        input_schema: wire::InputSchema(t.input_schema.clone()),
+        allowed_callers: Vec::new(),
+        cache_control: None,
+        defer_loading: None,
+        eager_input_streaming: None,
+        input_examples: Vec::new(),
+        strict: None,
+        type_: None,
+    })
+}
+
+fn text(text: String) -> wire::InputContentBlock {
+    wire::InputContentBlock::Text {
+        cache_control: None,
+        citations: None,
+        text,
+    }
+}
+
 /// One message's content blocks. Several `Content::ToolResult`s in the same
 /// user message become several `tool_result` blocks in that one message,
 /// which is how Anthropic wants a parallel tool batch answered.
-fn content_blocks(m: &Message, req: &Request, cfg: &BuildCfg<'_>) -> Vec<Value> {
-    m.content
-        .iter()
-        .filter_map(|c| match c {
-            Content::Text { text } => Some(json!({"type": "text", "text": text})),
-            Content::ToolUse { id, name, input } => Some(json!({
-                "type": "tool_use",
-                "id": id.to_string(),
-                "name": name,
-                "input": input,
-            })),
+fn content_blocks(
+    message: usize,
+    m: &Message,
+    req: &Request,
+    cfg: &BuildCfg<'_>,
+    raw: &mut Vec<Raw>,
+) -> Vec<wire::InputContentBlock> {
+    let mut blocks = Vec::new();
+    for c in &m.content {
+        let block = match c {
+            Content::Text { text: t } => text(t.clone()),
+            Content::ToolUse { id, name, input } => {
+                let input = match input {
+                    Value::Object(map) => map.clone(),
+                    other => {
+                        raw.push(Raw {
+                            message,
+                            block: blocks.len(),
+                            key: "input",
+                            value: other.clone(),
+                        });
+                        Map::new()
+                    }
+                };
+                wire::InputContentBlock::ToolUse {
+                    cache_control: None,
+                    caller: None,
+                    id: id.to_string(),
+                    input,
+                    name: name.clone(),
+                    toolset_name: None,
+                }
+            }
             Content::ToolResult {
                 call_id,
                 content,
                 is_error,
-            } => Some(json!({
-                "type": "tool_result",
-                "tool_use_id": call_id.to_string(),
-                "content": content,
-                "is_error": is_error,
-            })),
+            } => wire::InputContentBlock::ToolResult {
+                cache_control: None,
+                content: Some(wire::RequestToolResultBlockContent::String(content.clone())),
+                is_error: Some(*is_error),
+                tool_use_id: call_id.to_string(),
+                toolset_name: None,
+            },
             Content::Image {
                 media_type,
                 data_b64,
-            } => Some(json!({
-                "type": "image",
-                "source": {"type": "base64", "media_type": media_type, "data": data_b64},
-            })),
+            } => {
+                let known = media_type.parse::<wire::Base64ImageSourceMediaType>();
+                if known.is_err() {
+                    raw.push(Raw {
+                        message,
+                        block: blocks.len(),
+                        key: "source",
+                        value: json!({"type": "base64", "media_type": media_type, "data": data_b64}),
+                    });
+                }
+                wire::InputContentBlock::Image {
+                    cache_control: None,
+                    source: wire::RequestImageBlockSource::Base64 {
+                        data: data_b64.clone(),
+                        media_type: known.unwrap_or(wire::Base64ImageSourceMediaType::ImagePng),
+                    },
+                    transformations: None,
+                }
+            }
             // Microcompaction: the model sees the summary and the id it can
             // pass to `expand`, never the archived bytes.
-            Content::Pointer { archive, summary } => Some(json!({
-                "type": "text",
-                "text": format!("[archived: {summary}; expand {}]", archive.id),
-            })),
+            Content::Pointer { archive, summary } => {
+                text(format!("[archived: {summary}; expand {}]", archive.id))
+            }
             // A signature is bound to the model that produced it: replaying
             // one to a different model is at best ignored and at worst a
             // 400, so a block only survives a model switch by being dropped.
-            Content::Thinking { text, signature } => match (signature, cfg.thinking_model) {
-                (Some(sig), Some(produced_by)) if *produced_by == req.model => Some(json!({
-                    "type": "thinking",
-                    "thinking": text,
-                    "signature": sig,
-                })),
-                _ => None,
+            Content::Thinking {
+                text: thought,
+                signature,
+            } => match (signature, cfg.thinking_model) {
+                (Some(sig), Some(produced_by)) if *produced_by == req.model => {
+                    wire::InputContentBlock::Thinking {
+                        signature: sig.clone(),
+                        thinking: thought.clone(),
+                    }
+                }
+                _ => continue,
             },
-        })
-        .collect()
+        };
+        blocks.push(block);
+    }
+    blocks
 }
 
-fn effort(e: Effort) -> &'static str {
-    e.name()
+fn effort(e: Effort) -> wire::EffortLevel {
+    match e {
+        Effort::Low => wire::EffortLevel::Low,
+        Effort::High => wire::EffortLevel::High,
+        Effort::Xhigh => wire::EffortLevel::Xhigh,
+    }
 }
 
 fn supports_adaptive_thinking(model: &ModelId) -> bool {
@@ -216,6 +413,13 @@ mod tests {
     use cox_protocol::types::{ArchiveRef, Concurrency, Job, Risk, SystemBlock, Tier, ToolSpec};
 
     use super::*;
+
+    /// Shadows [`super::build_body`] so every call site, and with it each
+    /// snapshot's recorded expression, reads as it did before it returned a
+    /// `Result`.
+    fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Value {
+        super::build_body(req, cfg).expect("the generated types always serialize")
+    }
 
     /// Fixed ids so the snapshots are byte-stable across runs.
     fn call(n: u8) -> CallId {
