@@ -5,6 +5,8 @@
 //! scrollback and viewport agree. An empty composer shows `KEYMAP` hints
 //! for the current context (T24.6).
 
+use std::ops::Range;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::Style;
@@ -65,6 +67,33 @@ fn hints(state: &State, width: u16) -> Line<'static> {
     Line::styled(text, Style::default().fg(state.theme.dim))
 }
 
+/// T22.9: each tool cell's line range (into the unscrolled transcript) to
+/// the absolute screen rows it occupies once scrolled by `offset` and
+/// clipped to `area` — the space `MouseEvent::row` arrives in, since
+/// ratatui anchors an inline viewport to the real cursor row, not zero.
+fn record_cell_rows(
+    state: &State,
+    spans: &[(Range<usize>, usize)],
+    offset: usize,
+    rows: usize,
+    area: Rect,
+) {
+    let visible = offset..offset + rows;
+    let cell_rows = spans
+        .iter()
+        .filter_map(|(span, i)| {
+            let start = span.start.max(visible.start);
+            let end = span.end.min(visible.end);
+            (start < end).then(|| {
+                let top = area.y + u16::try_from(start - offset).unwrap_or(u16::MAX);
+                let bottom = area.y + u16::try_from(end - offset).unwrap_or(u16::MAX);
+                (top..bottom, *i)
+            })
+        })
+        .collect();
+    *state.cell_rows.borrow_mut() = cell_rows;
+}
+
 /// Draws `state` into `area`; returns where the cursor goes.
 pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     let banner = u16::from(state.banner.is_some());
@@ -117,6 +146,10 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         b.line(&state.theme).render(banner_area, buf);
     }
     let rows = usize::from(transcript.height);
+    // T22.9: cleared every draw; only the plain-transcript arm below
+    // refills it, so a click behind `Diff`/`Help`/`Agents`/`Transcript`
+    // never hits a card that is not actually on screen.
+    state.cell_rows.borrow_mut().clear();
     let (lines, offset): (Vec<Line<'static>>, usize) = match &state.modal {
         // The transcript scrolls from its end; the diff view from its start.
         Some(Modal::Diff { text, scroll }) => {
@@ -162,25 +195,31 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             (lines, offset)
         }
         _ => {
-            // `Ctrl+E` (T24.4) can only reach the last tool cell still in
-            // the viewport; every other cell renders with the plain `look`.
+            // `Ctrl+E` (T24.4) reaches only the last tool cell, still
+            // `Some(bool)` so a folded one keeps its `Ctrl+E` hint; a click
+            // (T22.9) force-opens any other cell already in
+            // `state.expanded`, so an untouched cell renders as before.
             let last_tool = state
                 .transcript
                 .iter()
                 .rposition(|c| matches!(c, Cell::Tool { .. }));
-            let lines: Vec<Line<'static>> = state
-                .transcript
-                .iter()
-                .enumerate()
-                .flat_map(|(i, c)| {
-                    let mut look = look;
-                    if Some(i) == last_tool {
-                        look.expand_last = Some(state.expanded_last);
-                    }
-                    cell_lines(c, &look)
-                })
-                .collect();
+            let mut lines: Vec<Line<'static>> = Vec::new();
+            let mut tool_spans: Vec<(Range<usize>, usize)> = Vec::new();
+            for (i, c) in state.transcript.iter().enumerate() {
+                let mut look = look;
+                if Some(i) == last_tool {
+                    look.expand_last = Some(state.expanded.contains(&i));
+                } else if state.expanded.contains(&i) {
+                    look.expand_last = Some(true);
+                }
+                let start = lines.len();
+                lines.extend(cell_lines(c, &look));
+                if matches!(c, Cell::Tool { .. }) {
+                    tool_spans.push((start..lines.len(), i));
+                }
+            }
             let offset = lines.len().saturating_sub(rows + state.scroll);
+            record_cell_rows(state, &tool_spans, offset, rows, transcript);
             (lines, offset)
         }
     };

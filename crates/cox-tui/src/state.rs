@@ -3,14 +3,18 @@
 //! and core events and executes the `Cmd`s it returns, and a test feeds it
 //! the same `Event`s a real session emits, so every screen is replayable.
 
-use std::collections::VecDeque;
+use std::cell::RefCell;
+use std::collections::{HashSet, VecDeque};
+use std::ops::Range;
 
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use crate::banner::Banner;
 use crate::cells::Look;
@@ -212,10 +216,15 @@ pub struct State {
     pub show_diffs: bool,
     /// `tui.diff` (T24.5); the binary sets it from config.
     pub diff_mode: crate::diff::Mode,
-    /// `Ctrl+E` (T24.4): the last tool cell still in the viewport, expanded
-    /// past its fold rather than head/tail. `view.rs` is the only reader
-    /// that knows which cell is last, so it turns this into `Look.expand_last`.
-    pub expanded_last: bool,
+    /// `Ctrl+E` (T24.4) toggles the last tool cell's index into this set; a
+    /// click (T22.9) toggles whichever cell it lands on. Presence forces
+    /// that cell's output open past its fold; `view.rs` reads it per cell.
+    pub expanded: HashSet<usize>,
+    /// Screen rows each visible tool card occupies, `(rows, transcript
+    /// index)` (T22.9), recorded by `view.rs` on every draw so `on_mouse`
+    /// can hit-test a click — interior mutability, so `view` keeps its
+    /// `&State` every render call site and test already assumes.
+    pub cell_rows: RefCell<Vec<(Range<u16>, usize)>>,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
     pub todo: Vec<(String, String)>,
     pub show_todo: bool,
@@ -477,7 +486,8 @@ impl State {
             theme: Theme::dark(),
             show_diffs: true,
             diff_mode: crate::diff::Mode::Auto,
-            expanded_last: false,
+            expanded: HashSet::new(),
+            cell_rows: RefCell::new(Vec::new()),
             todo: Vec::new(),
             show_todo: false,
             marks: false,
@@ -717,13 +727,28 @@ fn replay_cells(events: Vec<Event>) -> Vec<Cell> {
     scratch.transcript
 }
 
-/// A wheel tick (T22.4). Reuses whichever scroll path the same context's
-/// keyboard already has — `Picker`'s own `Up`/`Down`, the `Diff` modal's
-/// `scroll` field like `PageUp`/`PageDown` — and moves it `WHEEL_LINES` at a
-/// time; the plain transcript has no keyboard path yet (`state.scroll` was
-/// dead until this task), so wheel is its first mover. Anything but a wheel
-/// tick (a click, a drag) is left for the click-to-unfold follow-up.
+/// A wheel tick (T22.4) or a left click (T22.9): a click only acts with no
+/// modal open, like the wheel's own `None` arm below, and only when it
+/// lands inside `cell_rows` — `view.rs`'s record of what is actually on
+/// screen after the last draw — so anywhere else does nothing.
 fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
+    if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+        if state.modal.is_none() {
+            let hit = state
+                .cell_rows
+                .borrow()
+                .iter()
+                .find(|(rows, _)| rows.contains(&ev.row))
+                .map(|&(_, i)| i);
+            if let Some(i) = hit {
+                return toggle_fold(state, i);
+            }
+        }
+        return Vec::new();
+    }
+    // The wheel reuses whichever scroll path the same context's keyboard
+    // already has, moving it `WHEEL_LINES` at a time; the plain transcript
+    // had none (`state.scroll` was dead until T22.4), so wheel is its first.
     let up = match ev.kind {
         MouseEventKind::ScrollUp => true,
         MouseEventKind::ScrollDown => false,
@@ -1073,7 +1098,16 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
         A::Quit => vec![Cmd::Quit],
         A::Thinking => toggle(&mut state.show_thinking),
         A::Transcript => toggle(&mut state.show_diffs),
-        A::Expand => toggle(&mut state.expanded_last),
+        A::Expand => {
+            let last_tool = state
+                .transcript
+                .iter()
+                .rposition(|c| matches!(c, Cell::Tool { .. }));
+            match last_tool {
+                Some(i) => toggle_fold(state, i),
+                None => Vec::new(),
+            }
+        }
         A::Diff => vec![Cmd::Ask(Ask::GitDiff)],
         // `Ctrl+B` (T27.1): the newest pending `bash`/`agent` card becomes a
         // background task; the turn goes on without waiting for it.
@@ -1159,6 +1193,16 @@ fn copy_text(state: &mut State, text: String) -> Vec<Cmd> {
 
 fn toggle(flag: &mut bool) -> Vec<Cmd> {
     *flag = !*flag;
+    Vec::new()
+}
+
+/// Flips transcript index `i`'s membership in `state.expanded` (T22.9),
+/// shared by `Ctrl+E` (always the last tool cell) and a click (whichever
+/// cell `on_mouse` hit-tested).
+fn toggle_fold(state: &mut State, i: usize) -> Vec<Cmd> {
+    if !state.expanded.remove(&i) {
+        state.expanded.insert(i);
+    }
     Vec::new()
 }
 
@@ -2363,6 +2407,84 @@ mod tests {
             panic!("picker closed");
         };
         assert_eq!(picker.selected, 0);
+    }
+
+    /// T22.9: a click on a folded tool card's own rows (from `cell_rows`,
+    /// which `view()` records) forces it open via `state.expanded`, the
+    /// same set `Ctrl+E` flips; a second click folds it back.
+    #[test]
+    fn update_mouse_click_unfolds_card() {
+        use cox_protocol::types::Risk;
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let id = CallId::new();
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallRequested {
+                call: ToolCall {
+                    id,
+                    name: "bash".into(),
+                    input: serde_json::json!({}),
+                    risk: Risk::Exec,
+                    subject: "seq 20".into(),
+                },
+            }),
+        );
+        let body = (1..=20)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallOutput {
+                call_id: id,
+                delta: format!("{body}\n[exit 0 in 8ms]"),
+            }),
+        );
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallDone {
+                call_id: id,
+                result: ToolResult {
+                    ok: true,
+                    visible: String::new(),
+                    archive: None,
+                    bytes: 0,
+                    duration_ms: 8,
+                    diff: None,
+                },
+            }),
+        );
+
+        let area = ratatui::layout::Rect::new(0, 0, 60, 30);
+        let click = |row: u16| {
+            Msg::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 0,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        // Unfolding changes the transcript's line count, so the row to
+        // click is read back from `cell_rows` after each draw.
+        let card_row = |state: &State| -> u16 {
+            let mut buf = ratatui::buffer::Buffer::empty(area);
+            crate::view::view(state, area, &mut buf);
+            state.cell_rows.borrow()[0].0.start
+        };
+
+        let row = card_row(&state);
+        update(&mut state, click(row));
+        assert!(
+            state.expanded.contains(&0),
+            "a click on the folded card should force it open"
+        );
+
+        let row = card_row(&state);
+        update(&mut state, click(row));
+        assert!(
+            !state.expanded.contains(&0),
+            "a second click should fold the card back"
+        );
     }
 
     /// T23.4: `y` on an empty composer copies the last cell still held as
