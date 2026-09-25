@@ -79,8 +79,12 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::Approval(_)) => u16::try_from(approval.len()).unwrap_or(u16::MAX),
         Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
-        // The diff view takes the transcript's rows, not a band of its own.
-        Some(Modal::Diff { .. } | Modal::Help) | None => 0,
+        // The diff view, the agents list and the rollout overlay all take
+        // the transcript's rows (`Context::Overlay`), not a band of their own.
+        Some(
+            Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+        )
+        | None => 0,
     };
     let composer_rows = u16::try_from(state.composer.line_count().clamp(1, 5)).unwrap_or(5);
     let todo_rows = if state.show_todo {
@@ -124,6 +128,39 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             crate::modal::help_lines(&state.glyphs, &state.theme, &state.keymap, area.width),
             0,
         ),
+        // T27.5: `/agents`'s navigable list, one row per `agents_rows` entry;
+        // the selected row is marked the same way `Picker::lines` marks
+        // its own selection.
+        Some(Modal::Agents {
+            rows: agent_rows,
+            selected,
+            ..
+        }) => {
+            let lines: Vec<Line<'static>> = agent_rows
+                .iter()
+                .enumerate()
+                .map(|(i, row)| {
+                    if i == *selected {
+                        Line::styled(
+                            format!(" {} {row}", state.glyphs.cursor),
+                            Style::default().fg(state.theme.selection),
+                        )
+                    } else {
+                        Line::raw(format!("   {row}"))
+                    }
+                })
+                .collect();
+            (lines, 0)
+        }
+        // T27.5: a sibling session's rollout, replayed into `Cell`s by
+        // `state::replay_cells` and drawn through the same `cell_lines`
+        // every other transcript cell goes through — no second renderer.
+        Some(Modal::Transcript { cells, scroll }) => {
+            let lines: Vec<Line<'static>> =
+                cells.iter().flat_map(|c| cell_lines(c, &look)).collect();
+            let offset = (*scroll).min(lines.len().saturating_sub(rows));
+            (lines, offset)
+        }
         _ => {
             // `Ctrl+E` (T24.4) can only reach the last tool cell still in
             // the viewport; every other cell renders with the plain `look`.
@@ -162,7 +199,11 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::Picker(p)) => {
             Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
         }
-        Some(Modal::Diff { .. } | Modal::Help) | None => {}
+        // Drawn over the transcript above, like `Diff`/`Help`; no band here.
+        Some(
+            Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+        )
+        | None => {}
     }
     if !queue.is_empty() {
         Paragraph::new(queue).render(queue_area, buf);

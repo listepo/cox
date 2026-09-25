@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use cox_protocol::ids::{CallId, ItemId, TaskId};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
@@ -121,6 +121,24 @@ pub enum Modal {
     /// `?` on an empty composer (T24.6): `KEYMAP` grouped by context, drawn
     /// over the transcript like the diff view.
     Help,
+    /// `/agents` (T27.5): a navigable list of `agents_rows`, replacing the
+    /// static T27.2 `Notice`. `Up`/`Down` move `selected`; `Enter` on a
+    /// sibling-session row (`ids[selected].is_some()`) asks the runtime for
+    /// its rollout. A task row's id is `None` — no `SessionId` on the wire
+    /// yet (plan.md §3 P27) — so `Enter` on it is a no-op.
+    Agents {
+        rows: Vec<String>,
+        ids: Vec<Option<SessionId>>,
+        selected: usize,
+    },
+    /// `Enter` on an `/agents` sibling-session row (T27.5): that session's
+    /// rollout, replayed into cells the same pipeline a live turn uses
+    /// (`Msg::Rollout`), drawn read-only over the transcript like `Diff`;
+    /// `scroll` is lines from the top. `Esc` closes it.
+    Transcript {
+        cells: Vec<Cell>,
+        scroll: usize,
+    },
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -360,6 +378,11 @@ pub enum Msg {
     /// A wheel tick or click (T22.4); `app.rs` only forwards these once
     /// `tui.mouse` actually enabled capture, so `update` need not re-check it.
     Mouse(MouseEvent),
+    /// The runtime's answer to `Ask::Rollout` (T27.5): a sibling session's
+    /// rollout events, replayed into cells for the read-only `Transcript`
+    /// overlay. `crates/cox/src/session.rs` answers this for real with
+    /// `Store::rollout_read`; a test can also send it directly.
+    Rollout(Vec<Event>),
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -367,6 +390,10 @@ pub enum Msg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
     GitDiff,
+    /// `/agents` (T27.5): a sibling session's rollout, the same read
+    /// `crates/cox/src/resume.rs` does for `--resume` (`Store::rollout_read`);
+    /// `crates/cox/src/session.rs` answers it for real.
+    Rollout(SessionId),
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -559,7 +586,9 @@ impl State {
     /// Which `KEYMAP` context the keys are in right now (T24.6).
     pub fn context(&self) -> Context {
         match &self.modal {
-            Some(Modal::Diff { .. } | Modal::Help) => Context::Overlay,
+            Some(
+                Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+            ) => Context::Overlay,
             Some(_) => Context::Modal,
             None if self.status.busy => Context::Running,
             None => Context::Idle,
@@ -665,7 +694,27 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Mouse(ev) => on_mouse(state, ev),
+        Msg::Rollout(events) => {
+            state.modal = Some(Modal::Transcript {
+                cells: replay_cells(events),
+                scroll: 0,
+            });
+            Vec::new()
+        }
     }
+}
+
+/// Replays a rollout's events through the same `update`/`Msg::Event` path a
+/// live turn uses, into a scratch `State` nobody else sees, so the
+/// `/agents` overlay (T27.5) renders through the identical cell-building
+/// code instead of a second renderer — the same technique `tests/cells.rs`'s
+/// fixture replay already uses.
+fn replay_cells(events: Vec<Event>) -> Vec<Cell> {
+    let mut scratch = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    for ev in events {
+        update(&mut scratch, Msg::Event(ev));
+    }
+    scratch.transcript
 }
 
 /// A wheel tick (T22.4). Reuses whichever scroll path the same context's
@@ -694,7 +743,13 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
                 (*scroll + WHEEL_LINES).min(text.lines().count().saturating_sub(1))
             };
         }
-        Some(Modal::Approval(_) | Modal::Question(_) | Modal::Help) => {}
+        Some(
+            Modal::Approval(_)
+            | Modal::Question(_)
+            | Modal::Help
+            | Modal::Agents { .. }
+            | Modal::Transcript { .. },
+        ) => {}
         None => {
             state.scroll = if up {
                 state.scroll.saturating_add(WHEEL_LINES)
@@ -905,6 +960,68 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             if !matches!(key.code, KeyCode::Esc | KeyCode::Char('?')) {
                 state.modal = Some(Modal::Help);
             }
+            Vec::new()
+        }
+        Some(Modal::Agents {
+            rows,
+            ids,
+            mut selected,
+        }) => {
+            let mut cmds = Vec::new();
+            match key.code {
+                KeyCode::Esc => {}
+                KeyCode::Up => {
+                    selected = selected.saturating_sub(1);
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    });
+                }
+                KeyCode::Down => {
+                    if selected + 1 < rows.len() {
+                        selected += 1;
+                    }
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    });
+                }
+                // A task row's id is `None` (no `SessionId` on the wire
+                // yet, plan.md §3 P27): `Enter` on it just keeps the list.
+                KeyCode::Enter => {
+                    let ask = ids.get(selected).copied().flatten();
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    });
+                    if let Some(id) = ask {
+                        cmds.push(Cmd::Ask(Ask::Rollout(id)));
+                    }
+                }
+                _ => {
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    })
+                }
+            }
+            cmds
+        }
+        Some(Modal::Transcript { cells, scroll }) => {
+            // No upper clamp here (unlike `Diff`'s raw line count): `cells`
+            // wrap at render width, which this pure update has no access
+            // to, and `view.rs` already clamps the offset it actually uses.
+            let scroll = match key.code {
+                KeyCode::Esc | KeyCode::Char('?') => return Vec::new(),
+                KeyCode::PageDown => scroll + DIFF_PAGE,
+                KeyCode::PageUp => scroll.saturating_sub(DIFF_PAGE),
+                _ => scroll,
+            };
+            state.modal = Some(Modal::Transcript { cells, scroll });
             Vec::new()
         }
         None => {
@@ -1186,40 +1303,45 @@ fn open_rewind(state: &mut State) -> Vec<Cmd> {
     Vec::new()
 }
 
-/// `/agents` (T27.2): one card per live agent instead of T16.3's
-/// one-line-per-session list — a sibling cox session (T16.1 presence) or a
-/// subagent/background task this session started (`state.tasks`, fed by
-/// `TaskCreated`/`TaskCompleted`). The narrow card the creator chose over a
-/// new `Event::AgentProgress`: name, preset, tier, cost, elapsed, state.
-/// Presence carries none of preset/tier/cost/elapsed, so those show `-`; a
-/// task's cost shows `-` too while it runs — it is only known once
-/// `TaskCompleted` retires it from `state.tasks`. A subagent's own rollout
-/// overlay (`Enter` on a card) is a follow-up (plan.md §3 P27).
-fn agents_cards(agents: &[Presence], tasks: &[(TaskId, String, Tier, u64)], tick: u64) -> String {
-    if agents.is_empty() && tasks.is_empty() {
-        return "no live agents".into();
-    }
-    let mut cards: Vec<String> = agents
+/// `/agents` (T27.2, one row per T27.5): one row per live agent — a
+/// sibling cox session (T16.1 presence) or a subagent/background task this
+/// session started (`state.tasks`, fed by `TaskCreated`/`TaskCompleted`).
+/// The narrow row the creator chose over a new `Event::AgentProgress`:
+/// name, preset, tier, cost, elapsed, state. Presence carries none of
+/// preset/tier/cost/elapsed, so those show `-`; a task's cost shows `-`
+/// too while it runs — it is only known once `TaskCompleted` retires it
+/// from `state.tasks`. One line each (T27.5: a `Modal::Agents` row cannot
+/// span lines, unlike T27.2's two-line `Notice` card), paired with the
+/// `SessionId` `Enter` fetches a rollout for — `None` for a task, which has
+/// no resumable id on the wire yet (plan.md §3 P27).
+fn agents_rows(
+    agents: &[Presence],
+    tasks: &[(TaskId, String, Tier, u64)],
+    tick: u64,
+) -> Vec<(String, Option<SessionId>)> {
+    let mut rows: Vec<(String, Option<SessionId>)> = agents
         .iter()
         .map(|a| {
-            crate::text::sanitize(&format!(
-                "{}\n  preset - · tier - · cost - · elapsed - · {}",
+            let text = crate::text::sanitize(&format!(
+                "{} · preset - · tier - · cost - · elapsed - · {}",
                 a.session,
                 a.status.name()
-            ))
+            ));
+            (text, Some(a.session))
         })
         .collect();
-    cards.extend(tasks.iter().map(|(_, label, tier, started)| {
+    rows.extend(tasks.iter().map(|(_, label, tier, started)| {
         let preset = label.split_once(": ").map_or("-", |(p, _)| p);
         let elapsed = tick.saturating_sub(*started);
-        crate::text::sanitize(&format!(
-            "{label}\n  preset {preset} · tier {} · cost - · elapsed {}.{}s · running",
+        let text = crate::text::sanitize(&format!(
+            "{label} · preset {preset} · tier {} · cost - · elapsed {}.{}s · running",
             format!("{tier:?}").to_lowercase(),
             elapsed / 10,
             elapsed % 10
-        ))
+        ));
+        (text, None)
     }));
-    cards.join("\n\n")
+    rows
 }
 
 /// T22.2: a `/name args` line naming a file command — something
@@ -1291,11 +1413,21 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);
         }
-        Action::Agents => notice(
-            state,
-            Level::Info,
-            agents_cards(&state.agents, &state.tasks, state.tick),
-        ),
+        // T27.5: an empty list stays the T27.2 `Notice` (nothing to
+        // navigate); otherwise `/agents` opens the navigable overlay.
+        Action::Agents => {
+            let entries = agents_rows(&state.agents, &state.tasks, state.tick);
+            if entries.is_empty() {
+                notice(state, Level::Info, "no live agents".to_string());
+            } else {
+                let (rows, ids) = entries.into_iter().unzip();
+                state.modal = Some(Modal::Agents {
+                    rows,
+                    ids,
+                    selected: 0,
+                });
+            }
+        }
         Action::Sessions => {
             let text = if state.sessions.is_empty() {
                 "no sessions for this project yet".to_string()

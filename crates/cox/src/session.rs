@@ -702,6 +702,20 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                                     break;
                                 }
                             }
+                            // T27.5: `Enter` on an `/agents` sibling-session
+                            // row asks for that session's rollout, the same
+                            // read `crates/cox/src/resume.rs` does for
+                            // `--resume`; a read error (store missing, id
+                            // stale) answers empty rather than killing the
+                            // poll loop the rest of `/agents` still needs.
+                            Some(Ask::Rollout(id)) => {
+                                let events = Store::open(&home)
+                                    .and_then(|store| store.rollout_read(&id))
+                                    .unwrap_or_default();
+                                if feed.send(Msg::Rollout(events)).await.is_err() {
+                                    break;
+                                }
+                            }
                             None => break,
                         },
                         // T22.1: `ask_user`'s surface; the reply sender rides
