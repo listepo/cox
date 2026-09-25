@@ -6,7 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.3 | todo | P2 | 2 | 50% | |
+| T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
 
@@ -661,7 +661,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T30.3 Eval run with a verification step
 
-Model: sonnet · Status: open · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
+Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
 Goal: the T12.1 harness gains a "verify before done" instruction and a `PostToolUse` test-runner hook preset; one Terminal-Bench 2.x run is recorded with its ledger cost.
 Files: `evals/run.py`, `evals/hooks/verify.sh` (new), `research.md`.
 Steps: (1) Harness system addendum: "before reporting done, run the task's tests and show the output"; (2) hook preset: after `edit`/`apply_patch`/`write` run the project's test command when one is detected (`just test`, `cargo nextest`, `npm test`, `pytest`) with a 120 s cap and feed failures back as `additionalContext`; (3) run the 10 in-repo tasks with and without the preset, then one TB 2.x run; record pass rate, cost, and tokens in `research.md` §5.3.
