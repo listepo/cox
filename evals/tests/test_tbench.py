@@ -4,6 +4,7 @@ becomes Harbor's `AgentContext`."""
 
 import asyncio
 import json
+import tomllib
 
 import pytest
 
@@ -126,3 +127,20 @@ def test_run_without_a_payload_is_an_error(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     with pytest.raises(RuntimeError, match="no JSON payload"):
         asyncio.run(agent(tmp_path).run("x", FakeEnv(stdout="panic"), AgentContext()))
+
+
+def test_provider_config_points_cox_at_a_local_server():
+    assert tbench.provider_config("anthropic/m", None) is None
+    assert tomllib.loads(tbench.provider_config("anthropic/org/m", "http://h:1234")) == {
+        "providers": {"anthropic": {"base_url": "http://h:1234"}}}
+    assert tomllib.loads(tbench.provider_config("local/m", "http://h/v1", 4096)) == {
+        "providers": {"local": {"base_url": "http://h/v1", "api": "chat", "model": "m",
+                                "context_window": 4096}}}
+
+
+def test_run_with_a_base_url_uploads_the_config_before_cox_runs(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "local")
+    env = FakeEnv(stdout=json.dumps(PAYLOAD))
+    asyncio.run(agent(tmp_path, base_url="http://host.lima.internal:1234").run("x", env, AgentContext()))
+    assert env.uploads == [(str(tmp_path / "cox-config.toml"), f"{tbench.REMOTE_HOME}/config.toml")]
+    assert "host.lima.internal" in (tmp_path / "cox-config.toml").read_text()

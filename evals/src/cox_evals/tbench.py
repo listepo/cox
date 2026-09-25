@@ -24,6 +24,8 @@ import os
 import shlex
 from pathlib import Path
 
+import tomli_w
+
 from harbor.agents.installed.base import BaseInstalledAgent
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -53,6 +55,25 @@ def command(instruction, model, *, budget_usd, max_turns):
         # raises on any non-zero exit — the usage JSON would be lost with it.
         " || true"
     )
+
+
+def provider_config(model, base_url, context_window=None):
+    """`config.toml` pointing cox's provider at `base_url` (a local or proxy
+    server), or None when cox should use its built-in endpoints.
+
+    `anthropic/<m>` keeps cox on its Anthropic Messages path, which is how it
+    reaches LM Studio: cox's OpenAI Chat path (`local/<m>`) still drops every
+    tool call (ideas.md), so a chat-shape run would measure that bug.
+    """
+    if not base_url:
+        return None
+    provider, _, name = model.partition("/")
+    section = {"base_url": base_url}
+    if provider == "local":
+        section |= {"api": "chat", "model": name}
+        if context_window:
+            section["context_window"] = int(context_window)
+    return tomli_w.dumps({"providers": {provider: section}})
 
 
 def last_json_line(text):
@@ -97,11 +118,15 @@ class CoxAgent(BaseInstalledAgent):
     def name() -> str:
         return "cox"
 
-    def __init__(self, *args, cox_bin=None, budget_usd=0.2, max_turns=40, **kwargs):
+    def __init__(self, *args, cox_bin=None, budget_usd=0.2, max_turns=40,
+                 base_url=None, context_window=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._cox_bin = cox_bin or os.environ.get("COX_LINUX_BIN")
         self._budget_usd = float(budget_usd)
         self._max_turns = int(max_turns)
+        # The URL as seen from inside the task container, not from the host.
+        self._base_url = base_url
+        self._context_window = context_window
 
     def get_version_command(self) -> str | None:
         return f"{REMOTE_BIN} --version"
@@ -125,6 +150,11 @@ class CoxAgent(BaseInstalledAgent):
                 raise RuntimeError(f"{key_name} is not set on the host")
             env[key_name] = key
         await self.exec_as_agent(environment, command=f"mkdir -p {REMOTE_HOME}")
+        config = provider_config(model, self._base_url, self._context_window)
+        if config:
+            local = self.logs_dir / "cox-config.toml"
+            local.write_text(config)
+            await environment.upload_file(local, f"{REMOTE_HOME}/config.toml")
         result = await self.exec_as_agent(
             environment,
             command=command(self.render_instruction(instruction), model,

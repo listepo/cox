@@ -20,6 +20,7 @@ Programs the project uses and the direct packages from its manifests.
 | zig | mise (`mise.toml`) | Linker for `cargo zigbuild`: the Linux cox the Terminal-Bench containers run (T30.9) | https://github.com/ziglang/zig |
 | cargo-zigbuild | mise (`mise.toml`, aqua) | Cross-builds that Linux cox from macOS without a Docker build step | https://github.com/rust-cross/cargo-zigbuild |
 | colima | global (mise) | Docker runtime for Terminal-Bench (the creator's choice) | https://github.com/abiosoft/colima |
+| LM Studio (`lms`) | desktop app | Local model server for the eval matrix (`cox-bench`, provider `lmstudio`): OpenAI Chat and Anthropic Messages endpoints on :1234 | https://lmstudio.ai/docs/developer |
 | docker-cli, docker-compose, docker-buildx | global (mise) | Harbor drives task containers through `docker compose` and `docker buildx build` | https://github.com/docker/cli , https://github.com/docker/compose , https://github.com/docker/buildx |
 
 ## ketch

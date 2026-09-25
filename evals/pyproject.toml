@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 cox-evals = "cox_evals.harness:main"
+cox-bench = "cox_evals.matrix:main"
 
 [project.optional-dependencies]
 tbench = [
