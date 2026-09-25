@@ -1,28 +1,24 @@
 
 
-#### T30.6 Anthropic tool calls reach the core
+#### T30.7 Evals as a Python package
 
-Model: claude-opus-5-5 · Status: done 2026-09-25 · Blocks: T30.3 · Size: ~40 · Priority: P0 · Complexity: 1
-Goal: a `tool_use` block from the Anthropic stream becomes a tool call. `AnthropicStream` emits `ToolUseStart` and the input deltas but nothing on `content_block_stop`, and `turn::consume_provider` commits a call only on `ToolUseEnd`, so every Anthropic tool call is dropped and the turn ends with empty text (`end_turn`). The fixture snapshots were recorded with the bug and never show `ToolUseEnd`. Found by T30.3's first live task (`create-file`: 72 output tokens, no file).
-Files: `crates/cox-provider/src/anthropic/stream.rs`, `fixtures/anthropic/live_tool_use.sse` (new, a real `claude-sonnet-5` stream), the two tool-call snapshots.
-Plan: (1) `content_block_stop` of a `ToolUse` block emits `ToolUseEnd`; text/thinking blocks still emit nothing; (2) test `anthropic_stream_tool_block_stop_ends_the_call` on the live fixture: the event after the last input delta is `ToolUseEnd`, and the joined input parses to `{"path":"hello.txt","content":"hi"}`; (3) accept the updated `one_tool_call`/`parallel_tool_calls` snapshots; (4) live: the `create-file` eval task passes.
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Blocks: T30.8, T30.9 · Size: ~150 · Priority: P1 · Complexity: 2
+Goal: the eval scripts are one uv-managed package instead of loose files with no manifest: `evals/pyproject.toml` (`cox-evals`, `uv_build`), `evals/src/cox_evals/{harness,tbench}.py`, locked in `evals/uv.lock`, run as `uv run --project evals cox-evals …`. Python stays because a Harbor/Terminal-Bench agent has to be a Python class (T30.9).
+Files: `evals/pyproject.toml`, `evals/uv.lock`, `evals/.python-version`, `evals/src/cox_evals/__init__.py`, `harness.py` (was `evals/run.py`), `tbench.py` (was `evals/tbench/adapter.py`), `justfile`, `toolchain.md`, `rust.md` untouched. A package move cannot fit three files; the diff is mostly renames.
+Plan: (1) `git mv` both scripts into `src/cox_evals/` so history follows; (2) the hand-rolled TOML writer (`toml_escape`/`toml_value`/string-built `scenario_toml` and hook config) becomes `tomli-w`, which serialises the same tables; (3) task and hook paths resolve from the package's project root (`EVALS`), unchanged on disk; (4) `just eval` → `uv run --project evals cox-evals {{args}}`; (5) `toolchain.md`: uv, Python, and a `uv` package table (pyyaml, tomli-w, pytest); (6) active docs that name `evals/run.py` (plan T30.3 Check, `research.md` §5.3 reproduce line) point at the new command; `done.md` keeps its history.
 Check:
 ```bash
-mise exec -- cargo nextest run -p cox-provider anthropic::stream
+COX_PROVIDER=scripted uv run --project evals cox-evals --dry-run
 ```
-Done when: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --only create-file` passes.
-What landed (`9c29639`): `AnthropicStream::feed` emits `ToolUseEnd` when a `content_block_stop` closes a `tool_use` block (text/thinking still emit nothing); `fixtures/anthropic/live_tool_use.sse` is a real `claude-sonnet-5` stream; test `anthropic_stream_tool_block_stop_ends_the_call`; the `one_tool_call` and `parallel_tool_calls` snapshots gained exactly one `tool_use_end` per call.
+Done when: the dry run is 10/10 like before the move and `just eval --dry-run` works.
+What landed (`1d8283a`): `evals/pyproject.toml` (`cox-evals` 0.1.0, `uv_build`, script `cox-evals = cox_evals.harness:main`), `evals/.python-version` (3.14), `evals/uv.lock`; `evals/run.py` → `evals/src/cox_evals/harness.py` and `evals/tbench/adapter.py` → `evals/src/cox_evals/tbench.py` via `git mv`; `EVALS` now resolves to the uv project root. `tomli-w` replaced `toml_escape`/`toml_value` and the string-built scenario and hook TOML: parsed with `tomllib`, the output for all 10 tasks and the hook config is identical to the old writer's. `just eval` runs `uv run --project evals cox-evals`. `toolchain.md` gained uv, python and a `uv (evals/)` package table. Active references (T30.3 Check, `research.md` §5.3 reproduce line, `hooks/verify.sh` header) point at the new command.
+Deviations: more than three files, as the card said (a package move is mostly renames). Found and fixed on the way: `python -m cox_evals.tbench --self-test` failed on any machine without `OPENAI_API_KEY` exported, before the move too (`perform_task` refuses to start without the provider's key even though the scripted provider never reads it); the self-test now sets a placeholder. `research.md` §5.3's T12.1 paragraph still names the old paths; it records that run and stays as written.
 Check:
 ```text
-$ mise exec -- cargo nextest run -p cox-provider anthropic::stream
-     8 tests run: 8 passed (after `cargo insta accept`)
-$ ANTHROPIC_API_KEY=<keychain cox/anthropic> python3 evals/run.py --provider anthropic --model claude-sonnet-5 --only create-file
-create-file PASS $0.0237  turns=2  5.3s
-1/1 passed  total cost $0.0237
-$ mise exec -- cargo nextest run --workspace
-     Summary [ 26.982s] 866 tests run: 866 passed, 3 skipped
-$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-     clean
-$ mise exec -- cargo fmt --check
-     clean
+$ COX_PROVIDER=scripted uv run --project evals cox-evals --dry-run
+10/10 passed  total cost $0.0000  tokens in/out/cache-read/cache-write 70362/120/0/0
+$ just eval --dry-run --only create-file
+1/1 passed  total cost $0.0000  tokens in/out/cache-read/cache-write 7401/13/0/0
+$ env -u OPENAI_API_KEY uv run --project evals python -m cox_evals.tbench --self-test --cox-bin target/debug/cox
+self-test ok (shim base)
 ```

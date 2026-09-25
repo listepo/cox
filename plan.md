@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.7 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T30.8 | todo | P1 | 2 | 0% | |
 | T30.9 | todo | P1 | 3 | 0% | |
 | T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
@@ -662,18 +661,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
-#### T30.7 Evals as a Python package
-
-Model: claude-opus-5-5 · Status: in progress · Blocks: T30.8, T30.9 · Size: ~150 · Priority: P1 · Complexity: 2
-Goal: the eval scripts are one uv-managed package instead of loose files with no manifest: `evals/pyproject.toml` (`cox-evals`, `uv_build`), `evals/src/cox_evals/{harness,tbench}.py`, locked in `evals/uv.lock`, run as `uv run --project evals cox-evals …`. Python stays because a Harbor/Terminal-Bench agent has to be a Python class (T30.9).
-Files: `evals/pyproject.toml`, `evals/uv.lock`, `evals/.python-version`, `evals/src/cox_evals/__init__.py`, `harness.py` (was `evals/run.py`), `tbench.py` (was `evals/tbench/adapter.py`), `justfile`, `toolchain.md`, `rust.md` untouched. A package move cannot fit three files; the diff is mostly renames.
-Plan: (1) `git mv` both scripts into `src/cox_evals/` so history follows; (2) the hand-rolled TOML writer (`toml_escape`/`toml_value`/string-built `scenario_toml` and hook config) becomes `tomli-w`, which serialises the same tables; (3) task and hook paths resolve from the package's project root (`EVALS`), unchanged on disk; (4) `just eval` → `uv run --project evals cox-evals {{args}}`; (5) `toolchain.md`: uv, Python, and a `uv` package table (pyyaml, tomli-w, pytest); (6) active docs that name `evals/run.py` (plan T30.3 Check, `research.md` §5.3 reproduce line) point at the new command; `done.md` keeps its history.
-Check:
-```bash
-COX_PROVIDER=scripted uv run --project evals cox-evals --dry-run
-```
-Done when: the dry run is 10/10 like before the move and `just eval --dry-run` works.
-
 #### T30.8 Tests for the eval package
 
 Model: - · Status: open · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 2
@@ -701,7 +688,7 @@ Files: `evals/run.py`, `evals/hooks/verify.sh` (new), `research.md`.
 Steps: (1) Harness system addendum: "before reporting done, run the task's tests and show the output"; (2) hook preset: after `edit`/`apply_patch`/`write` run the project's test command when one is detected (`just test`, `cargo nextest`, `npm test`, `pytest`) with a 120 s cap and feed failures back as `additionalContext`; (3) run the 10 in-repo tasks with and without the preset, then one TB 2.x run; record pass rate, cost, and tokens in `research.md` §5.3.
 Check:
 ```bash
-python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verify
+uv run --project evals cox-evals --provider anthropic --model claude-sonnet-5 --preset verify
 ```
 Done when: §5.3 has the table with both configurations and the run's cost from `cox stats`.
 Out of scope: leaderboard submission.
