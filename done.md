@@ -3730,6 +3730,7 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
      clean
 $ mise exec -- cargo fmt --check
      clean
+Follow-up (A30, 2026-09-25): the default is now `tui.mouse = false`, the creator's decision; the Check's `true` branch sets the key explicitly and is unaffected.
 
 #### T21.1 JevProvider type-1 native
 

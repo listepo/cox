@@ -145,7 +145,7 @@ theme = "auto"                      # auto | dark | light | a built-in (cox-dark
 inline = true
 show_thinking = "collapsed"         # collapsed | hidden | full
 screen_reader = false               # the plain surface (T29.1): flat labelled lines, numbered prompts, no cursor movement, BEL when a turn ends; same as `--plain` or `COX_PLAIN=1`
-mouse = true                        # the wheel scrolls the transcript, the diff view and pickers 3 lines/rows a tick; no in-app toggle key, so false leaves the terminal's own mouse reporting (and text selection) untouched (T22.4)
+mouse = false                       # true: the wheel scrolls the transcript, the diff view and pickers 3 lines/rows a tick; off by default because capture takes the wheel from the terminal's scrollback and plain text selection (T22.4)
 glyphs = "auto"                     # auto | unicode | ascii
 icons = {}                          # [tui.icons] name = "glyph" overrides one symbol
 color = "auto"                      # auto | none | 16 | 256 | true (NO_COLOR forces none)

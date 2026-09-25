@@ -451,7 +451,7 @@ impl State {
             notify: Notify::Auto,
             cwd: std::path::PathBuf::new(),
             focused: true,
-            mouse: true,
+            mouse: false,
         }
     }
 
