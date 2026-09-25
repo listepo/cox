@@ -483,22 +483,28 @@ pub struct OpenAiResponsesProvider {
 }
 
 impl OpenAiResponsesProvider {
-    /// Builds a provider from the `[providers.openai]` section (or any
-    /// compatible section passing `api = "responses"`).
+    /// Builds a client for any `api = "responses"` section — `[providers.
+    /// openai]` or any compatible section passing that shape (T30.23:
+    /// `openai_shaped` in `crates/cox/src/session.rs` is the one
+    /// production caller). `api_key` is already resolved by the caller
+    /// (`None` means no `Authorization` header at all).
     pub fn new(
-        base_url: impl Into<String>,
+        transport: &cox_protocol::config::Transport,
         api_key: Option<String>,
         models: Vec<ProviderModel>,
         context_window: u32,
-    ) -> Self {
-        Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+    ) -> Result<Self, ProviderError> {
+        Ok(Self {
+            base_url: transport.base_url.trim_end_matches('/').to_string(),
             api_key,
             models,
             context_window,
-            http: reqwest::Client::new(),
-            retry: crate::retry::Policy::default(),
-        }
+            http: crate::http::client_with_timeout(transport.timeout_s)?,
+            retry: crate::retry::Policy {
+                max_retries: transport.max_retries,
+                ..Default::default()
+            },
+        })
     }
 
     /// The roomiest known context window: a listed model if the request
@@ -927,8 +933,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client =
-            OpenAiResponsesProvider::new(server.uri(), Some("sk-test".into()), vec![], 400_000);
+        let client = OpenAiResponsesProvider::new(
+            &transport(&server.uri()),
+            Some("sk-test".into()),
+            vec![],
+            400_000,
+        )
+        .expect("client builds");
         let mut req = base("gpt-5.1");
         req.messages = vec![user_text("read a.rs")];
 
@@ -957,11 +968,23 @@ mod tests {
         assert_eq!(usage.cache_read_tokens, 50);
     }
 
+    /// A section's `&Transport` with test-friendly defaults; individual
+    /// tests override `max_retries` where the retry count is what's under
+    /// test.
+    fn transport(base_url: &str) -> cox_protocol::config::Transport {
+        cox_protocol::config::Transport {
+            base_url: base_url.to_string(),
+            api_key_env: String::new(),
+            timeout_s: 120,
+            max_retries: 4,
+        }
+    }
+
     #[test]
     fn responses_context_for_prefers_listed_model() {
         use cox_protocol::config::ProviderModel;
         let client = OpenAiResponsesProvider::new(
-            "https://api.openai.com/v1",
+            &transport("https://api.openai.com/v1"),
             None,
             vec![ProviderModel {
                 id: "gpt-5.5".into(),
@@ -969,18 +992,58 @@ mod tests {
                 efforts: vec![],
             }],
             400_000,
-        );
+        )
+        .expect("client builds");
         assert_eq!(client.context_for("gpt-5.5"), 1_050_000);
         assert_eq!(client.context_for("gpt-unknown"), 400_000);
         assert_eq!(client.capabilities().max_context, 1_050_000);
-        let bare = OpenAiResponsesProvider::new("https://x", None, vec![], 400_000);
+        let bare = OpenAiResponsesProvider::new(&transport("https://x"), None, vec![], 400_000)
+            .expect("client builds");
         assert_eq!(bare.capabilities().max_context, 400_000);
     }
 
     #[test]
     fn responses_provider_defaults_retry_policy() {
-        let provider =
-            OpenAiResponsesProvider::new("https://api.openai.com/v1", None, vec![], 400_000);
+        let provider = OpenAiResponsesProvider::new(
+            &transport("https://api.openai.com/v1"),
+            None,
+            vec![],
+            400_000,
+        )
+        .expect("client builds");
         assert_eq!(provider.retry.max_retries, 4);
+    }
+
+    /// T30.23 Check ("same for Responses if cheap"): a Responses section
+    /// with `max_retries = 0` makes exactly one attempt on a 529.
+    #[tokio::test]
+    async fn responses_529_with_zero_max_retries_makes_one_attempt() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/responses"))
+            .respond_with(wiremock::ResponseTemplate::new(529))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiResponsesProvider {
+            base_url: server.uri(),
+            api_key: None,
+            models: vec![],
+            context_window: 400_000,
+            http: reqwest::Client::new(),
+            retry: crate::retry::Policy {
+                max_retries: 0,
+                base: std::time::Duration::from_millis(1),
+            },
+        };
+        let mut req = base("gpt-5.1");
+        req.messages = vec![user_text("hi")];
+        let (tx, _rx) = mpsc::channel(64);
+        let err = client
+            .stream(req, tx, CancellationToken::new())
+            .await
+            .expect_err("529 exhausts a zero-retry budget");
+        assert!(matches!(err, ProviderError::Overloaded));
+        assert_eq!(server.received_requests().await.map(|r| r.len()), Some(1));
     }
 }

@@ -8,8 +8,28 @@
 //! every backend — a 500 from Anthropic is transient per their own docs, and
 //! treating it as a fatal `BadRequest` retried nothing.
 
+use std::time::Duration;
+
 use cox_protocol::errors::ProviderError;
 use reqwest::header::HeaderValue;
+
+/// How long a TCP/TLS handshake may take before a call is `Network`. Shared
+/// by every backend that builds its own `reqwest::Client` (T30.23) — used to
+/// be duplicated as `anthropic::CONNECT_TIMEOUT`.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Builds the connection-pooled client every network backend uses: a
+/// bounded connect timeout plus a read/idle timeout from the section's
+/// `timeout_s` (`providers.<name>.timeout_s`). The read timeout is the gap
+/// between bytes on an open stream, not a whole-call cap, so a long answer
+/// keeps streaming for minutes without ever going idle.
+pub fn client_with_timeout(timeout_s: u32) -> Result<reqwest::Client, ProviderError> {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(Duration::from_secs(u64::from(timeout_s).max(1)))
+        .build()
+        .map_err(|_| ProviderError::Network)
+}
 
 /// `env_var` first, else the platform keyring entry `cox/<section>` (the
 /// native store per platform, not a mock). Every provider section resolves

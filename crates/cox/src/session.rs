@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use cox_core::{History, Session};
 use cox_protocol::Config;
+use cox_protocol::config::Transport;
 use cox_protocol::ids::{ItemId, SessionId};
 use cox_protocol::traits::{Hook, Provider, SessionRow, Store as _, Tool};
 use cox_protocol::types::{Event, ItemKind, Job, Level, Submission};
@@ -829,7 +830,13 @@ pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>>
     Ok(Arc::new(Priced::new(backend_for(config)?, prices)))
 }
 
-/// The real client `tiers.code.provider` names, before pricing.
+/// The real client `tiers.code.provider` names, before pricing: one lookup
+/// from the section to (api shape, `&Transport`) to a constructor (T30.23),
+/// instead of a bespoke arm per family. Anthropic and Jev stay their own
+/// arms because they carry section-specific knobs no OpenAI-shaped section
+/// has (cache TTL/fallbacks; a decision model); every `api = "chat"` or
+/// `"responses"` section — native `openai`/`local` and any Type-2 compatible
+/// section alike — goes through the one `openai_shaped` constructor.
 fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
     match config.tiers.code.provider.as_str() {
         "anthropic" => {
@@ -838,72 +845,56 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
                 "1h" => CacheTtl::OneHour,
                 _ => CacheTtl::FiveMinutes,
             };
-            let provider = AnthropicProvider::new(
-                a.base_url.clone(),
+            Ok(Arc::new(AnthropicProvider::new(
+                &a.transport(),
                 ttl,
                 a.fallbacks,
-                u64::from(a.timeout_s),
-                a.max_retries,
-                &a.api_key_env,
-            )?;
-            Ok(Arc::new(provider))
+            )?))
+        }
+        // Jev is type-1 native (System One wire, T21.1): its own client,
+        // not an OpenAI shape. The constructor resolves the key itself
+        // (`api_key_env`, else keyring `cox/typesafe`) and fails `Auth`
+        // when neither has one — that is the fail-open path, read as auth,
+        // not transport.
+        "typesafe" => {
+            let t = &config.providers.typesafe;
+            Ok(Arc::new(cox_provider::jev::JevProvider::new(
+                &t.transport(),
+                t.model.clone(),
+            )?))
         }
         "openai" => {
             let o = &config.providers.openai;
-            Ok(openai_shaped(
-                "openai",
-                &o.base_url,
-                // `api_key_env` first, else keyring `cox/openai`; missing
-                // both builds keyless (no `Authorization` header) rather
-                // than failing at startup (T30.21).
-                cox_provider::http::resolve_key(&o.api_key_env, "openai").ok(),
-                o.models.clone(),
-                400_000,
-                &o.api,
-            )?)
+            // No `context_window` field on the native section (it relies
+            // on `models`); 400k is the same fallback `openai_shaped` used
+            // before this lookup existed.
+            openai_shaped("openai", &o.transport(), o.models.clone(), 400_000, &o.api)
         }
-        "local" => Ok(Arc::new(OpenAiChatProvider::new(&config.providers.local))),
-        // Jev is type-1 native (System One wire, T21.1): its own client,
-        // not an OpenAI shape. The constructor resolves the key itself
-        // (TYPESAFE_API_KEY env, else keyring `cox/typesafe`) and fails
-        // `Auth` when neither has one — that is the fail-open path, read
-        // as auth, not transport. A renamed `api_key_env` is honoured the
-        // same way every other section honours it: read the env here and
-        // pass the value down; Jev's client takes it directly.
-        "typesafe" => {
-            let t = &config.providers.typesafe;
-            // Same resolve rule as every other section: `api_key_env` first,
-            // else the keyring entry — via the shared `http` helper so a
-            // missing key reads as `Auth` (the fail-open path), not I/O.
-            let key = cox_provider::http::resolve_key(&t.api_key_env, "typesafe")
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            Ok(Arc::new(cox_provider::jev::JevProvider::with_key(
-                t.base_url.clone(),
-                key,
-                t.model.clone(),
-                u64::from(t.timeout_s),
-                t.max_retries,
-            )))
+        "local" => {
+            let l = &config.providers.local;
+            openai_shaped(
+                "local",
+                &l.transport(),
+                l.models.clone(),
+                l.context_window,
+                &l.api,
+            )
         }
         // Type-2 providers: no code per vendor — the section's `api` picks
-        // the wire client, the section's base URL/key/models configure it.
+        // the wire client, the section's transport/key/models configure it.
         other => {
             let c = config
                 .providers
                 .custom
                 .get(other)
                 .ok_or_else(|| anyhow::anyhow!("unknown provider `{other}` in tiers.code"))?;
-            Ok(openai_shaped(
+            openai_shaped(
                 other,
-                &c.base_url,
-                // Same rule: `api_key_env` first, else keyring `cox/<name>`;
-                // missing both builds keyless — most compatible sections
-                // (and every local/self-hosted gateway) need no key at all.
-                cox_provider::http::resolve_key(&c.api_key_env, other).ok(),
+                &c.transport(),
                 c.models.clone(),
                 c.context_window,
                 &c.api,
-            )?)
+            )
         }
     }
 }
@@ -911,28 +902,32 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
 /// Builds the OpenAI-shaped client the `api` string names for `owner`:
 /// `"responses"` speaks the Responses API, `"chat"` the Chat Completions
 /// subset every compatible vendor speaks. Anything else is a config error
-/// at startup, not a mid-turn 404.
+/// at startup, not a mid-turn 404. The key resolves once, here, the same
+/// way for every caller: `transport.api_key_env` first, else the keyring
+/// entry `cox/<owner>`; missing both builds keyless (no `Authorization`
+/// header) rather than failing at startup (T30.21) — most compatible
+/// sections, and every local/self-hosted gateway, need no key at all.
 fn openai_shaped(
     owner: &str,
-    base_url: &str,
-    api_key: Option<String>,
+    transport: &Transport,
     models: Vec<cox_protocol::config::ProviderModel>,
     context_window: u32,
     api: &str,
 ) -> anyhow::Result<Arc<dyn Provider>> {
+    let api_key = cox_provider::http::resolve_key(&transport.api_key_env, owner).ok();
     match api {
         "responses" => Ok(Arc::new(OpenAiResponsesProvider::new(
-            base_url,
+            transport,
             api_key,
             models,
             context_window,
-        ))),
-        "chat" => Ok(Arc::new(OpenAiChatProvider::from_parts(
-            base_url,
+        )?)),
+        "chat" => Ok(Arc::new(OpenAiChatProvider::new(
+            transport,
             api_key,
             models,
             context_window,
-        ))),
+        )?)),
         _ => anyhow::bail!(
             "unknown api `{api}` for provider `{owner}` (want \"chat\" or \"responses\")"
         ),
@@ -1122,6 +1117,50 @@ mod tests {
             provider_for(&deepseek_config("smoke-signals")).is_err(),
             "unknown api bails at startup, not mid-turn"
         );
+    }
+
+    /// T30.23: `backend_for`'s one lookup still builds the right provider
+    /// kind for every section, native and compatible alike (the deepseek
+    /// cases above cover the "custom section" leg of the same claim).
+    #[test]
+    fn backend_for_builds_the_right_provider_kind_per_section() {
+        // A49: no test may fall through to the real OS keychain. Every
+        // section below names its own env var and sets it before the call,
+        // so `resolve_key`'s env-var branch always wins and its keyring
+        // fallback (`platform_keyring`) is never reached — unlike
+        // `deepseek_config`'s deliberately-missing-key case above (a
+        // pre-existing pattern out of scope here; T30.28).
+        // Safety: cargo nextest runs each #[test] as its own process, so
+        // these env vars cannot race another test's read of them.
+        unsafe {
+            std::env::set_var("COX_TEST_BACKEND_FOR_ANTHROPIC_KEY", "sk-ant-test");
+            std::env::set_var("COX_TEST_BACKEND_FOR_OPENAI_KEY", "sk-openai-test");
+            std::env::set_var("COX_TEST_BACKEND_FOR_LOCAL_KEY", "sk-local-test");
+        }
+
+        let mut anthropic = Config::default();
+        anthropic.providers.anthropic.api_key_env = "COX_TEST_BACKEND_FOR_ANTHROPIC_KEY".into();
+        let p = provider_for(&anthropic).expect("anthropic builds with a resolved key");
+        assert_eq!(p.id(), ProviderId::Anthropic);
+
+        let mut openai = Config::default();
+        openai.tiers.code.provider = "openai".into();
+        openai.providers.openai.api_key_env = "COX_TEST_BACKEND_FOR_OPENAI_KEY".into();
+        let p = provider_for(&openai).expect("openai builds through openai_shaped");
+        assert_eq!(p.id(), ProviderId::OpenAi);
+
+        let mut local = Config::default();
+        local.tiers.code.provider = "local".into();
+        local.providers.local.api_key_env = "COX_TEST_BACKEND_FOR_LOCAL_KEY".into();
+        let p = provider_for(&local)
+            .expect("local goes through the same openai_shaped path as any compatible section");
+        assert_eq!(p.id(), ProviderId::Local);
+
+        unsafe {
+            std::env::remove_var("COX_TEST_BACKEND_FOR_ANTHROPIC_KEY");
+            std::env::remove_var("COX_TEST_BACKEND_FOR_OPENAI_KEY");
+            std::env::remove_var("COX_TEST_BACKEND_FOR_LOCAL_KEY");
+        }
     }
 
     fn scripted_session(home: &Path, work: &Path, scenario: &str) -> (Session, Arc<Store>) {

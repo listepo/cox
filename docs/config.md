@@ -57,8 +57,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `base_url` = `"https://api.openai.com/v1"`
 - `api_key_env` = `"OPENAI_API_KEY"` — else keyring entry "cox/openai"
 - `api` = `"responses"` — "responses" | "chat"
-- `timeout_s` = `120` — not yet wired into the client (T30.23)
-- `max_retries` = `4` — not yet wired into the client (T30.23)
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="gpt-5.1", context_window=400000, efforts=["low", "high"]}, {id="gpt-5.5", context_window=1050000, efforts=["low", "high", "xhigh"]}, {id="gpt-5.6-sol", context_window=1050000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.local]`
 
@@ -67,8 +67,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"qwen3-coder"`
 - `context_window` = `32768` — local servers do not report it
-- `timeout_s` = `120` — not yet wired into the client (T30.23)
-- `max_retries` = `4` — not yet wired into the client (T30.23)
+- `timeout_s` = `600` — higher than a remote section's 120: local prefill is slow (T30.23)
+- `max_retries` = `4`
 - `models` = `[{id="qwen3-coder", context_window=32768, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[providers.typesafe]`
 
@@ -85,8 +85,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"deepseek-v4-pro"`
 - `context_window` = `1000000`
-- `timeout_s` = `120` — not yet wired into the client (T30.23)
-- `max_retries` = `4` — not yet wired into the client (T30.23)
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openrouter]`
 
@@ -95,8 +95,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"anthropic/claude-sonnet-5"`
 - `context_window` = `1000000`
-- `timeout_s` = `120` — not yet wired into the client (T30.23)
-- `max_retries` = `4` — not yet wired into the client (T30.23)
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high"]}]` — curated coding subset; the full 359-model list lives in models.dev
 ## `[providers.moonshot]`
 
@@ -105,8 +105,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"kimi-k2.6"`
 - `context_window` = `262144`
-- `timeout_s` = `120` — not yet wired into the client (T30.23)
-- `max_retries` = `4` — not yet wired into the client (T30.23)
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="kimi-k2.6", context_window=262144, efforts=["low", "high", "xhigh"]}, {id="kimi-k2.7-code", context_window=262144, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[providers.z-ai]`
 
@@ -115,8 +115,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"glm-5.2"`
 - `context_window` = `1000000`
-- `timeout_s` = `120` — not yet wired into the client (T30.23)
-- `max_retries` = `4` — not yet wired into the client (T30.23)
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="glm-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[context]`
 

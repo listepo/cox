@@ -25,6 +25,7 @@
 //! network failure, or low confidence (T21.0).
 
 use async_trait::async_trait;
+use cox_protocol::config::Transport;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
 use cox_protocol::types::{Caps, ProviderEvent, ProviderId, Request, StopReason, Usage};
@@ -240,22 +241,17 @@ pub struct JevProvider {
 }
 
 impl JevProvider {
-    /// Builds a provider with an already-resolved credential. Prefer this
-    /// at session startup, where the config names the env var; [`Self::new`]
-    /// (fixed `TYPESAFE_API_KEY` lookup) stays for tests and direct use.
+    /// Builds a provider from `&Transport` (`providers.typesafe`, T30.23)
+    /// with an already-resolved credential. Prefer [`Self::new`] at session
+    /// startup, where the config names the env var; this stays for tests
+    /// and any caller that already has a key.
     pub fn with_key(
-        base_url: impl Into<String>,
+        transport: &Transport,
         api_key: String,
         model: impl Into<String>,
-        timeout_s: u64,
-        max_retries: u32,
-    ) -> Self {
-        let http = reqwest::Client::builder()
-            .read_timeout(std::time::Duration::from_secs(timeout_s.max(1)))
-            .build()
-            .expect("reqwest builds with a read timeout");
-        Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+    ) -> Result<Self, ProviderError> {
+        Ok(Self {
+            base_url: transport.base_url.trim_end_matches('/').to_string(),
             api_key,
             model: {
                 let m = model.into();
@@ -265,32 +261,23 @@ impl JevProvider {
                     m
                 }
             },
-            http,
+            http: crate::http::client_with_timeout(transport.timeout_s)?,
             retry: crate::retry::Policy {
-                max_retries,
+                max_retries: transport.max_retries,
                 ..Default::default()
             },
-        }
+        })
     }
 
-    /// Builds a provider, resolving the credential from `TYPESAFE_API_KEY`
-    /// or the keyring. Fails with [`ProviderError::Auth`] rather than
-    /// panicking when neither has one — a missing key is the fail-open
-    /// path, and it must read as auth, not as a transport failure.
-    pub fn new(
-        base_url: impl Into<String>,
-        model: impl Into<String>,
-        timeout_s: u64,
-        max_retries: u32,
-    ) -> Result<Self, ProviderError> {
-        let api_key = crate::http::resolve_key("TYPESAFE_API_KEY", "typesafe")?;
-        Ok(Self::with_key(
-            base_url,
-            api_key,
-            model,
-            timeout_s,
-            max_retries,
-        ))
+    /// Builds a provider, resolving the credential from
+    /// `transport.api_key_env` (`TYPESAFE_API_KEY` by default) or the
+    /// keyring entry `cox/typesafe` (T30.21). Fails with
+    /// [`ProviderError::Auth`] rather than panicking when neither has one —
+    /// a missing key is the fail-open path, and it must read as auth, not
+    /// as a transport failure.
+    pub fn new(transport: &Transport, model: impl Into<String>) -> Result<Self, ProviderError> {
+        let api_key = crate::http::resolve_key(&transport.api_key_env, "typesafe")?;
+        Self::with_key(transport, api_key, model)
     }
 
     /// One HTTP attempt; `stream` wraps it in the retry policy. Jev answers

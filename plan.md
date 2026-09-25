@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
-| T30.23 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T30.24 | todo | P1 | 4 | 0% | |
 | T30.25 | todo | P1 | 3 | 0% | |
 | T30.26 | todo | P1 | 3 | 0% | |
@@ -726,14 +725,6 @@ Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
 Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
-
-#### T30.23 Provider constructors take `&Transport`
-
-Depends: T30.22 · Size: ~150 · Files: `crates/cox/src/session.rs`, `cox-provider/src/openai/chat.rs`, `openai/responses.rs`
-Goal: `backend_for` becomes one lookup from `api` shape to constructor. Chat and Responses read `timeout_s` and `max_retries` from the section instead of `Policy::default()`, and the Local provider stops taking the whole config struct (item 1).
-Check:
-- a wiremock test that a Chat section with `max_retries = 0` makes exactly one attempt on a 529;
-- the existing provider tests pass.
 
 #### T30.28 Tests never touch the real keychain
 

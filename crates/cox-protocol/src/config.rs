@@ -424,10 +424,11 @@ pub struct OpenAiProviderConfig {
     pub api_key_env: String,
     /// Which OpenAI API shape to use: `"responses"` or `"chat"`.
     pub api: String,
-    /// Request timeout, in seconds (T30.22; wired into the Chat/Responses
-    /// clients in T30.23 — carrying the knob here changes nothing yet).
+    /// Request timeout, in seconds: the Responses/Chat clients build their
+    /// `reqwest::Client` with this as the read/idle timeout (T30.23).
     pub timeout_s: u32,
-    /// Max retries for retryable errors (T30.22/T30.23, as above).
+    /// Max retries for retryable errors; the Responses/Chat clients' retry
+    /// policy reads this instead of `Policy::default()` (T30.23).
     pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
@@ -439,11 +440,8 @@ impl Default for OpenAiProviderConfig {
             base_url: "https://api.openai.com/v1".to_string(),
             api_key_env: "OPENAI_API_KEY".to_string(),
             api: "responses".to_string(),
-            // Matches `retry::Policy::default()` (`max_retries: 4`), which
-            // is what the Chat/Responses clients already retry with today,
-            // and Anthropic's `timeout_s` convention — the clients build a
-            // timeout-less `reqwest::Client::new()` today, so this value
-            // takes effect only once T30.23 reads it.
+            // Matches `retry::Policy::default()` (`max_retries: 4`) and
+            // Anthropic's `timeout_s` convention.
             timeout_s: 120,
             max_retries: 4,
             models: Vec::new(),
@@ -469,10 +467,13 @@ pub struct LocalProviderConfig {
     pub model: String,
     /// Context window, since local servers usually don't report it.
     pub context_window: u32,
-    /// Request timeout, in seconds (T30.22; see `OpenAiProviderConfig` —
-    /// not yet wired into the client).
+    /// Request timeout, in seconds; the Chat client's read/idle timeout
+    /// (T30.23). Higher than a remote section's default (600 vs. 120):
+    /// local models are slow at prefill, and a 120s read timeout can cut
+    /// off a large prompt before the first byte comes back, on hardware
+    /// that would otherwise finish the call just fine.
     pub timeout_s: u32,
-    /// Max retries for retryable errors (T30.22, as above).
+    /// Max retries for retryable errors (T30.23, as above).
     pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
@@ -486,10 +487,11 @@ impl Default for LocalProviderConfig {
             api: "chat".to_string(),
             model: "qwen3-coder".to_string(),
             context_window: 32768,
-            // Same rationale as `OpenAiProviderConfig::default`: matches
-            // `retry::Policy::default()` and today's unwired, timeout-less
-            // client.
-            timeout_s: 120,
+            // 600s, not the 120s a remote section defaults to: local
+            // prefill on modest hardware can take minutes before the first
+            // streamed byte, and the read timeout would otherwise cut the
+            // call off before it ever gets going (see the field doc).
+            timeout_s: 600,
             max_retries: 4,
             models: Vec::new(),
         }
@@ -553,10 +555,12 @@ pub struct CompatibleProviderConfig {
     pub model: String,
     /// Fallback context window for models absent from `models`.
     pub context_window: u32,
-    /// Request timeout, in seconds (T30.22; see `OpenAiProviderConfig` —
-    /// not yet wired into the client).
+    /// Request timeout, in seconds; the Chat/Responses client's read/idle
+    /// timeout (T30.23). A remote compatible section keeps the 120s
+    /// default — only `local` (T30.23) needs the longer one, for slow
+    /// on-device prefill.
     pub timeout_s: u32,
-    /// Max retries for retryable errors (T30.22, as above).
+    /// Max retries for retryable errors (T30.23, as above).
     pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
@@ -1148,7 +1152,10 @@ mod tests {
             Transport {
                 base_url: "http://localhost:11434/v1".to_string(),
                 api_key_env: String::new(),
-                timeout_s: 120,
+                // 600, not the 120 every other section defaults to
+                // (T30.23): slow local prefill can outrun a 120s read
+                // timeout before the first byte comes back.
+                timeout_s: 600,
                 max_retries: 4,
             }
         );

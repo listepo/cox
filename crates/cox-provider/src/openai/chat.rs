@@ -442,41 +442,29 @@ pub struct OpenAiChatProvider {
 }
 
 impl OpenAiChatProvider {
-    /// Builds a provider from parts; `base_url` loses a trailing slash.
-    pub fn from_parts(
-        base_url: impl Into<String>,
+    /// Builds a client for any `api = "chat"` section — native `local` and
+    /// every Type-2 compatible section alike (T30.23: `openai_shaped` in
+    /// `crates/cox/src/session.rs` is the one production caller for both).
+    /// `api_key` is already resolved by the caller (`None` means no
+    /// `Authorization` header at all — most local/self-hosted gateways
+    /// need none).
+    pub fn new(
+        transport: &cox_protocol::config::Transport,
         api_key: Option<String>,
         models: Vec<cox_protocol::config::ProviderModel>,
         context_window: u32,
-    ) -> Self {
-        Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+    ) -> Result<Self, ProviderError> {
+        Ok(Self {
+            base_url: transport.base_url.trim_end_matches('/').to_string(),
             api_key,
             models,
             context_window,
-            http: reqwest::Client::new(),
-            retry: crate::retry::Policy::default(),
-        }
-    }
-
-    /// Builds a provider from the `[providers.local]` config section.
-    pub fn new(cfg: &cox_protocol::config::LocalProviderConfig) -> Self {
-        Self::from_parts(
-            cfg.base_url.clone(),
-            None,
-            cfg.models.clone(),
-            cfg.context_window,
-        )
-    }
-
-    /// Builds one with an API key (OpenRouter-shaped servers).
-    pub fn with_key(cfg: &cox_protocol::config::LocalProviderConfig, api_key: String) -> Self {
-        Self::from_parts(
-            cfg.base_url.clone(),
-            Some(api_key),
-            cfg.models.clone(),
-            cfg.context_window,
-        )
+            http: crate::http::client_with_timeout(transport.timeout_s)?,
+            retry: crate::retry::Policy {
+                max_retries: transport.max_retries,
+                ..Default::default()
+            },
+        })
     }
 }
 
@@ -1014,11 +1002,23 @@ mod tests {
         assert_eq!(usage.output_tokens, 34);
     }
 
+    /// A section's `&Transport` with test-friendly defaults; individual
+    /// tests override `max_retries` where the retry count is what's under
+    /// test.
+    fn transport(base_url: &str) -> cox_protocol::config::Transport {
+        cox_protocol::config::Transport {
+            base_url: base_url.to_string(),
+            api_key_env: String::new(),
+            timeout_s: 120,
+            max_retries: 4,
+        }
+    }
+
     #[test]
     fn chat_capabilities_span_listed_models() {
         use cox_protocol::config::ProviderModel;
-        let client = OpenAiChatProvider::from_parts(
-            "https://api.deepseek.com",
+        let client = OpenAiChatProvider::new(
+            &transport("https://api.deepseek.com"),
             None,
             vec![ProviderModel {
                 id: "deepseek-v4-pro".into(),
@@ -1026,17 +1026,94 @@ mod tests {
                 efforts: vec![],
             }],
             32_768,
-        );
+        )
+        .expect("client builds");
         assert_eq!(client.capabilities().max_context, 1_000_000);
-        let bare =
-            OpenAiChatProvider::from_parts("http://localhost:11434/v1", None, vec![], 32_768);
+        let bare = OpenAiChatProvider::new(
+            &transport("http://localhost:11434/v1"),
+            None,
+            vec![],
+            32_768,
+        )
+        .expect("client builds");
         assert_eq!(bare.capabilities().max_context, 32_768);
     }
 
     #[test]
     fn chat_provider_defaults_retry_policy() {
-        let client =
-            OpenAiChatProvider::from_parts("http://localhost:11434/v1", None, vec![], 32_768);
+        let client = OpenAiChatProvider::new(
+            &transport("http://localhost:11434/v1"),
+            None,
+            vec![],
+            32_768,
+        )
+        .expect("client builds");
         assert_eq!(client.retry.max_retries, 4);
+    }
+
+    /// T30.23 Check: a Chat section with `max_retries = 0` makes exactly
+    /// one attempt on a 529 — no retry budget, no second request.
+    #[tokio::test]
+    async fn chat_529_with_zero_max_retries_makes_one_attempt() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/chat/completions"))
+            .respond_with(wiremock::ResponseTemplate::new(529))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiChatProvider {
+            base_url: server.uri(),
+            api_key: None,
+            models: vec![],
+            context_window: 32_768,
+            http: reqwest::Client::new(),
+            retry: crate::retry::Policy {
+                max_retries: 0,
+                base: std::time::Duration::from_millis(1),
+            },
+        };
+        let mut req = base("qwen3-coder");
+        req.messages = vec![user_text("hi")];
+        let (tx, _rx) = mpsc::channel(64);
+        let err = client
+            .stream(req, tx, CancellationToken::new())
+            .await
+            .expect_err("529 exhausts a zero-retry budget");
+        assert!(matches!(err, ProviderError::Overloaded));
+        assert_eq!(server.received_requests().await.map(|r| r.len()), Some(1));
+    }
+
+    /// Same Check, `max_retries = 2`: the first attempt plus two retries is
+    /// three requests total.
+    #[tokio::test]
+    async fn chat_529_with_two_max_retries_makes_three_attempts() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/chat/completions"))
+            .respond_with(wiremock::ResponseTemplate::new(529))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiChatProvider {
+            base_url: server.uri(),
+            api_key: None,
+            models: vec![],
+            context_window: 32_768,
+            http: reqwest::Client::new(),
+            retry: crate::retry::Policy {
+                max_retries: 2,
+                base: std::time::Duration::from_millis(1),
+            },
+        };
+        let mut req = base("qwen3-coder");
+        req.messages = vec![user_text("hi")];
+        let (tx, _rx) = mpsc::channel(64);
+        let err = client
+            .stream(req, tx, CancellationToken::new())
+            .await
+            .expect_err("529 exhausts a two-retry budget");
+        assert!(matches!(err, ProviderError::Overloaded));
+        assert_eq!(server.received_requests().await.map(|r| r.len()), Some(3));
     }
 }

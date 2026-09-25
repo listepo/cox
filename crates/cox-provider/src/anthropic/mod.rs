@@ -74,39 +74,29 @@ pub struct AnthropicProvider {
     pub retry: crate::retry::Policy,
 }
 
-/// How long a TCP/TLS handshake may take before the call is `Network`.
-const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-
 impl AnthropicProvider {
-    /// Builds a provider, resolving the credential from `api_key_env`
-    /// (`providers.anthropic.api_key_env`, default `ANTHROPIC_API_KEY`) or
-    /// the keyring entry `cox/anthropic` (T30.21). Fails with
-    /// [`ProviderError::Auth`] rather than panicking when neither has one.
-    /// `timeout_s` is the idle-read timeout between stream chunks
-    /// (`providers.anthropic.timeout_s`), not a whole-call cap: a long
-    /// answer streams for minutes without ever being idle.
+    /// Builds a provider from the section's `&Transport` (`providers.
+    /// anthropic`, T30.23) plus its own section-specific knobs (cache TTL,
+    /// whether to send `fallbacks`). Resolves the credential from
+    /// `transport.api_key_env` (default `ANTHROPIC_API_KEY`) or the keyring
+    /// entry `cox/anthropic` (T30.21). Fails with [`ProviderError::Auth`]
+    /// rather than panicking when neither has one. `transport.timeout_s` is
+    /// the idle-read timeout between stream chunks, not a whole-call cap: a
+    /// long answer streams for minutes without ever being idle.
     pub fn new(
-        base_url: impl Into<String>,
+        transport: &cox_protocol::config::Transport,
         ttl: CacheTtl,
         fallbacks: bool,
-        timeout_s: u64,
-        max_retries: u32,
-        api_key_env: &str,
     ) -> Result<Self, ProviderError> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .read_timeout(std::time::Duration::from_secs(timeout_s.max(1)))
-            .build()
-            .map_err(|_| ProviderError::Network)?;
         Ok(Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
-            api_key: crate::http::resolve_key(api_key_env, "anthropic")?,
+            base_url: transport.base_url.trim_end_matches('/').to_string(),
+            api_key: crate::http::resolve_key(&transport.api_key_env, "anthropic")?,
             workspace_id: resolve_workspace_id(),
             ttl,
             fallbacks,
-            http,
+            http: crate::http::client_with_timeout(transport.timeout_s)?,
             retry: crate::retry::Policy {
-                max_retries,
+                max_retries: transport.max_retries,
                 ..Default::default()
             },
         })
@@ -392,15 +382,14 @@ mod tests {
         // Safety: see `missing_credential_is_auth_error_not_a_panic`.
         unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
         unsafe { std::env::set_var("MY_RENAMED_ANTHROPIC_KEY", "sk-renamed") };
-        let p = AnthropicProvider::new(
-            "https://api.anthropic.com",
-            CacheTtl::FiveMinutes,
-            true,
-            30,
-            1,
-            "MY_RENAMED_ANTHROPIC_KEY",
-        )
-        .expect("builds with the renamed env var");
+        let transport = cox_protocol::config::Transport {
+            base_url: "https://api.anthropic.com".to_string(),
+            api_key_env: "MY_RENAMED_ANTHROPIC_KEY".to_string(),
+            timeout_s: 30,
+            max_retries: 1,
+        };
+        let p = AnthropicProvider::new(&transport, CacheTtl::FiveMinutes, true)
+            .expect("builds with the renamed env var");
         assert_eq!(p.api_key, "sk-renamed");
         unsafe { std::env::remove_var("MY_RENAMED_ANTHROPIC_KEY") };
     }
