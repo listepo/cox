@@ -15,7 +15,7 @@ use cox_ext::claude_settings;
 use cox_protocol::config::DEFAULT_CONFIG_TOML;
 use cox_protocol::{Config, CoreError, PermissionMode, SandboxMode};
 use figment::providers::{Env, Format, Serialized, Toml};
-use figment::value::{Dict, Map as FigMap};
+use figment::value::{Dict, Map as FigMap, Value};
 use figment::{Figment, Metadata, Profile, Provider};
 use serde_json::Value as JsonValue;
 
@@ -449,30 +449,79 @@ fn default_key_tree() -> Dict {
 /// Maps a `COX_`-stripped env name to a dotted key. Splitting on every `_`
 /// would turn `TUI_SHOW_THINKING` into `tui.show.thinking`, so each level
 /// takes the longest known name that is the whole rest or a prefix of it
-/// followed by `_`. Whatever no known name covers (a user-defined tier, a
-/// typo) is split on `_` as before, so it still lands where it did.
+/// followed by `_`. A user-named entry of a table of tables
+/// (`[providers.<name>]`, `[tiers.<name>]`) resolves its fields against the
+/// seeded siblings, so `PROVIDERS_FOO_API_KEY_ENV` is
+/// `providers.foo.api_key_env`. Whatever no known name covers (a typo, an
+/// unknown field) is split on `_` as before, so it still lands where it did.
 fn env_key(tree: &Dict, name: &str) -> String {
     let name = name.to_ascii_lowercase();
-    let mut rest = name.as_str();
-    let mut table = Some(tree);
-    let mut parts: Vec<&str> = Vec::new();
-    while let Some(dict) = table {
-        let hit = dict
-            .iter()
-            .filter(|(key, _)| {
-                rest.strip_prefix(key.as_str())
-                    .is_some_and(|tail| tail.is_empty() || tail.starts_with('_'))
-            })
-            .max_by_key(|(key, _)| key.len());
-        let Some((key, value)) = hit else { break };
-        parts.push(key);
-        rest = rest[key.len()..].strip_prefix('_').unwrap_or("");
-        table = value.as_dict();
-    }
-    if !rest.is_empty() {
-        parts.extend(rest.split('_'));
-    }
+    let mut parts: Vec<String> = Vec::new();
+    resolve_env_parts(tree, &name, &mut parts);
     parts.join(".")
+}
+
+/// One level of [`env_key`]: pushes the dotted parts of `rest` read against
+/// `dict`.
+fn resolve_env_parts(dict: &Dict, rest: &str, parts: &mut Vec<String>) {
+    if rest.is_empty() {
+        return;
+    }
+    if let Some((key, value)) = longest_known_key(dict, rest) {
+        parts.push(key.clone());
+        let tail = rest[key.len()..].strip_prefix('_').unwrap_or("");
+        match value.as_dict() {
+            Some(child) => resolve_env_parts(child, tail, parts),
+            None => split_env_rest(tail, parts),
+        }
+        return;
+    }
+    if let Some(template) = entry_template(dict) {
+        // The entry name may itself hold `_`, so take the shortest name whose
+        // remainder starts with a field the seeded entries know.
+        for (at, _) in rest.match_indices('_') {
+            let tail = &rest[at + 1..];
+            if longest_known_key(&template, tail).is_some() {
+                parts.push(rest[..at].to_string());
+                resolve_env_parts(&template, tail, parts);
+                return;
+            }
+        }
+    }
+    split_env_rest(rest, parts);
+}
+
+/// The longest key of `dict` that is all of `rest` or a prefix of it
+/// followed by `_`.
+fn longest_known_key<'a>(dict: &'a Dict, rest: &str) -> Option<(&'a String, &'a Value)> {
+    dict.iter()
+        .filter(|(key, _)| {
+            rest.strip_prefix(key.as_str())
+                .is_some_and(|tail| tail.is_empty() || tail.starts_with('_'))
+        })
+        .max_by_key(|(key, _)| key.len())
+}
+
+/// The union of the entries' fields when every value of `dict` is a table
+/// (`providers`, `tiers`); `None` for an empty table or one with plain keys.
+fn entry_template(dict: &Dict) -> Option<Dict> {
+    if dict.is_empty() || !dict.values().all(|value| value.as_dict().is_some()) {
+        return None;
+    }
+    let mut template = Dict::new();
+    for entry in dict.values().filter_map(Value::as_dict) {
+        for (key, value) in entry {
+            template.entry(key.clone()).or_insert_with(|| value.clone());
+        }
+    }
+    Some(template)
+}
+
+/// Splits whatever no known name covered on `_`, the pre-T29.3 behaviour.
+fn split_env_rest(rest: &str, parts: &mut Vec<String>) {
+    if !rest.is_empty() {
+        parts.extend(rest.split('_').map(str::to_string));
+    }
 }
 
 fn to_core_error(err: figment::Error) -> CoreError {
@@ -741,6 +790,22 @@ mod tests {
         assert_eq!(env_key(&tree, "TIERS_CODE_MODEL"), "tiers.code.model");
         assert_eq!(env_key(&tree, "TUI_ICONS_TOOL_ICON"), "tui.icons.tool.icon");
         assert_eq!(env_key(&tree, "TIERS_FAST_MODEL"), "tiers.fast.model");
+        assert_eq!(
+            env_key(&tree, "PROVIDERS_FOO_API_KEY_ENV"),
+            "providers.foo.api_key_env"
+        );
+        assert_eq!(
+            env_key(&tree, "PROVIDERS_MY_GATEWAY_BASE_URL"),
+            "providers.my_gateway.base_url"
+        );
+        assert_eq!(
+            env_key(&tree, "TIERS_REVIEW_MAX_TOKENS"),
+            "tiers.review.max_tokens"
+        );
+        assert_eq!(
+            env_key(&tree, "PROVIDERS_FOO_NO_SUCH_FIELD"),
+            "providers.foo.no.such.field"
+        );
     }
 
     #[test]
