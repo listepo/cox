@@ -3702,3 +3702,32 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 $ mise exec -- cargo fmt --check
      clean
 ```
+
+#### T22.4 Mouse: wire `tui.mouse` or delete the key
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
+Goal: with `tui.mouse = true` the wheel scrolls the transcript overlay and pickers and a click on a folded tool card unfolds it; with `false` the terminal keeps native text selection.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `app.rs`: `EnableMouseCapture` after raw mode iff `config.tui.mouse`; `DisableMouseCapture` in the restore path (also on panic hook). (2) `Msg::Mouse(MouseEvent)`: `ScrollUp/ScrollDown` → the same scroll path as `PageUp/PageDown` with 3 lines per tick; `Down(Left)` inside the viewport → hit-test the rendered cell rows (`view` records `cell_rows: Vec<(Range<u16>, CellId)>` in `State` during draw) → toggle fold. (3) `Ctrl+Shift+M`-free design: no toggle key; the config key is the switch, documented in `docs/config.md`. (4) If step 2 exceeds the size limit, deliver wheel scrolling only and file the click as a follow-up card in §6.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui update_mouse_wheel_scrolls_overlay update_mouse_click_unfolds_card
+mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when_disabled
+```
+Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
+Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
+What landed (commit `T22.4: Mouse: wire tui.mouse`): `state.rs` gains `State.mouse: bool` (config-driven, like `still`/`notify`), `Msg::Mouse(MouseEvent)` and a new `on_mouse` that reuses each open context's own scroll path — `Picker::key`'s `Up`/`Down` (3 calls per tick), the `Diff` modal's `scroll` field (same clamp as `PageUp`/`PageDown`, `WHEEL_LINES = 3` instead of `DIFF_PAGE`), and `state.scroll` otherwise, which this task is also the first to ever move (it existed since T5.1 but nothing wrote to it). `app.rs` enables/disables `crossterm::event::{Enable,Disable}MouseCapture` exactly like the existing `kitty`/`focus`/`progress` gates (including the panic hook), and forwards `Input::Mouse` into `Msg::Mouse`. `docs/config.md`'s `tui.mouse` row is regenerated from a new `default.toml` comment (the doc test enforces this; it is not hand-edited).
+Deviations: (1) Step 2's click half (`Down(Left)` hit-testing a folded tool card via `cell_rows`) was cut per step 4 — it needs per-cell fold state (today only the *last* tool cell has one, `expanded_last: bool`) plus `view.rs` recording each cell's rendered row range, which is a materially bigger change than a wheel handler. Proposed §6 follow-up card (recorded here per the 3-file rule, not added to §3): **T22.9 Click-to-unfold a tool card** · Size: ~100 — `State` gains per-cell fold state (a `HashSet<usize>`/`Vec<bool>` keyed by transcript index, not just `expanded_last`) and `view.rs` records `cell_rows: Vec<(Range<u16>, usize)>` while drawing; `on_mouse` hit-tests a `Down(Left)` inside the transcript against it and toggles the matching cell's fold. `update_mouse_click_unfolds_card` (already named by this task's Check) is that follow-up's test. (2) Files beyond the card's three: `crates/cox/src/session.rs` (`state.mouse = config.tui.mouse;`, the one-line wiring every sibling `tui.*` flag already needed — `State` is the only thing `app::run` can read config through), `crates/cox-tui/src/bin/kitty_probe.rs` and `crates/cox-tui/tests/shell.rs` (a `COX_PROBE_MOUSE` switch and the new PTY e2e — `cox-tui` has no binary of its own to spawn under a PTY, same reason T23.1/T23.6 needed the same two files), and `crates/cox-protocol/default.toml` + `docs/config.md` (generated) for the doc comment. No new dependency — `crossterm`'s mouse events need no extra Cargo feature. (3) The named Check ran only its wheel half; `update_mouse_click_unfolds_card` does not exist yet (see the follow-up above) and `pty_no_mouse_capture_when_disabled` also checks the `false` (no-capture) side the Done-when line asks for, beyond what the card's Check literally lists.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui update_mouse_wheel_scrolls_overlay
+        PASS [ 0.009s] (1/1) cox-tui state::tests::update_mouse_wheel_scrolls_overlay
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when_disabled
+        PASS [ 1.022s] (1/1) cox-tui::shell pty_no_mouse_capture_when_disabled
+$ mise exec -- cargo nextest run --workspace
+     Summary [ 8.476s] 845 tests run: 845 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
