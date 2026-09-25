@@ -6,7 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.4 | todo | P1 | 2 | 0% | |
+| T22.4 | in progress | P1 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T23.4 | todo | P2 | 1 | 0% | |
 | T24.3 | todo | P1 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
@@ -951,7 +951,7 @@ ok
 
 #### T22.4 Mouse: wire `tui.mouse` or delete the key
 
-Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
+Model: claude-sonnet-5 · Status: in progress · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
 Goal: with `tui.mouse = true` the wheel scrolls the transcript overlay and pickers and a click on a folded tool card unfolds it; with `false` the terminal keeps native text selection.
 Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
 Steps: (1) `app.rs`: `EnableMouseCapture` after raw mode iff `config.tui.mouse`; `DisableMouseCapture` in the restore path (also on panic hook). (2) `Msg::Mouse(MouseEvent)`: `ScrollUp/ScrollDown` → the same scroll path as `PageUp/PageDown` with 3 lines per tick; `Down(Left)` inside the viewport → hit-test the rendered cell rows (`view` records `cell_rows: Vec<(Range<u16>, CellId)>` in `State` during draw) → toggle fold. (3) `Ctrl+Shift+M`-free design: no toggle key; the config key is the switch, documented in `docs/config.md`. (4) If step 2 exceeds the size limit, deliver wheel scrolling only and file the click as a follow-up card in §6.
@@ -962,6 +962,8 @@ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when
 ```
 Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
 Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
+
+Execution plan: `state.rs` gains `State.mouse: bool` (config-driven, like `still`/`notify`) and `Msg::Mouse(MouseEvent)`, handled by a new `on_mouse` that reuses each context's existing scroll path (`Picker::key` Up/Down, the `Diff` modal's `scroll` field, `state.scroll` otherwise) at 3 lines/items per tick. `app.rs` enables/disables `crossterm::event::{Enable,Disable}MouseCapture` (also on panic) exactly like the existing `kitty`/`focus`/`progress` gates, and forwards `Input::Mouse` into `Msg::Mouse`. `crates/cox/src/session.rs` gets the one-line `state.mouse = config.tui.mouse;` wiring already used for every sibling `tui.*` flag (not in the card's file list, but unavoidable — `State` is the only thing `app::run` can read config through). Per step 4, the click-to-unfold half (needs per-cell fold state and `cell_rows` hit-testing, a materially bigger change) is cut; a follow-up card goes into §6. Verify: `cargo nextest run -p cox-tui update_mouse_wheel_scrolls_overlay` (state.rs unit test) and a new PTY e2e `pty_no_mouse_capture_when_disabled` in `tests/shell.rs` (extends `src/bin/kitty_probe.rs` with a `COX_PROBE_MOUSE` switch, same pattern T23.1/T23.6 used), then the full gate.
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
