@@ -4211,3 +4211,27 @@ $ CARGO_INCREMENTAL=0 mise exec -- cargo fmt --check
 clean
 ```
 
+#### T27.5 `/agents` rollout overlay
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T27.2 · Size: ~150 (landed ~205 across 4 files) · Priority: P2 · Complexity: 2
+Goal: `Enter` on an `/agents` card opens that agent's rollout read-only in the transcript overlay — the half of T27.2 step 3 the creator split out (§6 A29) because it needs `/agents` to stop being a static `Notice`.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`.
+Steps: (1) `/agents` becomes a navigable list (`Context::Overlay`, arrow keys move a cursor) instead of a `Notice`, one row per `agents_cards` (T27.2) entry. (2) `Enter` on a sibling-session row asks the binary — the only side that talks to `cox-store` — for that session's rollout via `Store::rollout_read`, the same read `crates/cox/src/resume.rs` already does for `--resume`, and feeds it back as a new `Msg`; a subagent-task row has no `SessionId` on the wire yet, so it stays disabled until a follow-up gives a subagent its own resumable id. (3) The overlay renders the fed events read-only (no composer, no approvals), reusing `cells`/`view` rendering; `Esc` closes it.
+Done when: the test passes and the overlay has a snapshot.
+Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
+
+What landed (commit `T27.5: /agents rollout overlay`): `crates/cox-tui/src/state.rs` gained `Modal::Agents { rows, ids, selected }` (one line per `agents_rows` entry — `agents_cards` renamed and reshaped from a two-line `String` to `(String, Option<SessionId>)` pairs, since a `Picker` row is one line and the plan wants `Context::Overlay`, not `Context::Modal`) and `Modal::Transcript { cells, scroll }`; `Action::Agents` now opens `Modal::Agents` instead of a `Notice` when any row exists. Arrow keys move `selected`; `Enter` on a sibling-session row (`ids[selected].is_some()`) emits `Cmd::Ask(Ask::Rollout(id))` — a task row's id is `None` (no `SessionId` on the wire yet, plan.md §3 P27) so `Enter` on it is a no-op. The reply lands as a new `Msg::Rollout(Vec<Event>)`, built by `state::replay_cells`: a scratch `State` fed the events through the ordinary `update`/`Msg::Event` path, the same technique `tests/cells.rs`'s fixture replay already uses, so the overlay renders through the identical cell-building code instead of a second renderer. `crates/cox-tui/src/view.rs` draws `Modal::Agents` as a cursor-marked row list (same marking convention as `Picker::lines`) and `Modal::Transcript` by flat-mapping its cells through the existing `cell_lines`, both over the transcript like `Diff`/`Help` (`Context::Overlay`, no band of their own). A 3-files-only split (landing the `cox-tui` half now, leaving the runtime wiring to a follow-up) was drafted but turned out not to save a file: `crates/cox/src/session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout`, whether that edit answers the ask for real or only stubs it — the real `Store::open(&home).and_then(|s| s.rollout_read(&id)).unwrap_or_default()` call (the same read `crates/cox/src/resume.rs` makes for `--resume`; a read error answers empty rather than killing the poll loop the rest of `/agents` still needs) costs the same one match arm as a stub, so the card lands whole across 4 files (`state.rs`, `view.rs`, `crates/cox-tui/tests/agents.rs`, `session.rs`) instead of the nominal 3 (§6 A34) — `crates/cox/src/resume.rs` itself is untouched, since it builds a turn-oriented `History` this overlay does not need. `tests/agents.rs`'s T27.2 snapshot test is renamed `agents_overlay_lists_one_row_per_card` (now reads `Modal::Agents`, not the old `Notice` cell) and gains `agents_overlay_opens_the_selected_rollout`, which drives the list, sends `Enter`, feeds a hand-built `Msg::Rollout` (session.rs answers the real `Ask::Rollout` at runtime; the test proves the replay path), and closes with `Esc`. Three snapshots landed (`agents_overlay_lists_one_row_per_card`, `agents_overlay_list`, `agents_overlay_rollout`); the old `agents__agents_cards_snapshot.snap` was deleted with the rename. Skipped: no `commands.rs`/`KEYMAP` hint entries for the overlay's arrow/Enter/Esc keys (the generic Overlay-context hint line covers it; adding named hints would have meant a fifth file).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_rollout
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace
+Summary: 860 tests run: 860 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ CARGO_INCREMENTAL=0 mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> mise exec -- cargo run --bin cox -- doctor
+clean report (db opens, sandbox ok, git ok; unrelated pre-existing warnings only — no API key, no TERM)
+```

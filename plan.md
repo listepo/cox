@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T27.5 | in progress | P2 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T22.9 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
@@ -667,21 +666,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
 
 ### P27 — Agents you can see (goal: no "raw scaffolding noise")
-
-#### T27.5 `/agents` rollout overlay
-
-Model: claude-sonnet-5 · Status: in progress · Depends: T27.2 · Size: ~150 · Priority: P2 · Complexity: 2
-Goal: `Enter` on an `/agents` card opens that agent's rollout read-only in the transcript overlay — the half of T27.2 step 3 the creator split out (§6 A29) because it needs `/agents` to stop being a static `Notice`.
-Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`.
-Steps: (1) `/agents` becomes a navigable list (`Context::Overlay`, arrow keys move a cursor) instead of a `Notice`, one row per `agents_cards` (T27.2) entry. (2) `Enter` on a sibling-session row asks the binary — the only side that talks to `cox-store` — for that session's rollout via `Store::rollout_read`, the same read `crates/cox/src/resume.rs` already does for `--resume`, and feeds it back as a new `Msg`; a subagent-task row has no `SessionId` on the wire yet, so it stays disabled until a follow-up gives a subagent its own resumable id. (3) The overlay renders the fed events read-only (no composer, no approvals), reusing `cells`/`view` rendering; `Esc` closes it.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_rollout
-```
-Done when: the test passes and the overlay has a snapshot.
-Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
-
-Execution plan: `agents_cards`' two-line-per-card `String` cannot back a navigable list (a `Picker` row is one line, and the plan wants `Context::Overlay`, not `Context::Modal` — a fresh `Modal` kind, not `picker::Kind`). Changing `Action::Agents` to open a modal, plus fixing the T27.2 snapshot test that currently reads the old `Notice` cell, plus the `Msg::Rollout`/`Ask::Rollout` plumbing and its own test, land in `crates/cox-tui/src/state.rs` + `crates/cox-tui/src/view.rs` + `crates/cox-tui/tests/agents.rs`: `Modal::Agents { rows, ids, selected }` (arrow keys, `Enter` on a sibling row emits `Cmd::Ask(Ask::Rollout(id))`) and `Modal::Transcript { cells, scroll }` (fed by a new `Msg::Rollout(Vec<Event>)`, built by replaying the events through the existing `update`/`Msg::Event` path into a scratch `State` — the same technique `tests/cells.rs`'s fixture replay already uses, so no second cell renderer exists). A 3-files-only split (leaving `Ask::Rollout` unanswered for a follow-up) turned out not to save a file: `crates/cox/src/session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler itself requires a fourth-file edit the moment `Ask` grows a variant, whether that edit answers the ask for real or only stubs it. Since the stub and the real read cost the same one match arm (`Store::open(&home).and_then(|s| s.rollout_read(&id))`, the same call `crates/cox/src/resume.rs` makes for `--resume`), this session lands the whole card in one commit across 4 files instead of a split that would not have reduced the file count. Verify: the Check test, `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` (all under `CARGO_INCREMENTAL=0 mise exec --`), plus a real-binary run against a `COX_HOME` scratch tree since `session.rs` changed.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
