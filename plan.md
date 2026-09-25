@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.5 | in progress | P0 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,6 +660,18 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.5 Price every provider call
+
+Model: claude-opus-5-5 · Status: in progress · Blocks: T30.3 · Size: ~90 · Priority: P0 · Complexity: 2
+Goal: every `usage` row carries the cost from `prices.toml`. Today no production path calls `usage::ledger_row` (only its tests do), so every row is written with `cost_usd = 0`: `cox stats` reads $0, budget caps never fire, and T30.3 has no cost to record. Found by the T30.4 live check (8 317 cache-write tokens, `cost_usd: 0.0`).
+Files: `crates/cox-provider/src/usage.rs`, `crates/cox/src/session.rs`.
+Plan: (1) `PriceTable::apply(&model, &mut Usage)` — the priced/unknown rule `ledger_row` already has, extracted so both share it; (2) `usage::Priced`, a `Provider` decorator: forwards every `ProviderEvent`, pricing the `Usage` event and the returned `Usage` by `req.model`, so the five core call sites (turn, compaction, memory, init, subagent) get cost without touching them; (3) `session::provider_for` wraps every real provider in `Priced` with `PriceTable::load(<COX_HOME>/prices.toml)` (embedded table when absent); test doubles stay unwrapped, their scenarios script their own cost; (4) regression test: a scripted inner provider through `Priced` yields a non-zero cost on both the event and the return value, and an unknown model is `estimated`; (5) live: `cox run -p "say hi"` shows a non-zero `cost_usd` and `cox stats` agrees.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider usage
+```
+Done when: the live run's `cost_usd` is non-zero and matches `cox stats`.
+
 #### T30.3 Eval run with a verification step
 
 Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
@@ -737,6 +750,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A33 §3 P22, P27, T22.9, T27.7 — the two parts of approved cards that did not fit their size limits become cards of their own: T22.9 (T22.4's click on a folded tool card unfolds it) and T27.7 (T27.4's `↻ <time>` status-line segment for an active `/loop`). Why: the creator asked for every remaining task that needs no creator input; both halves were already approved as part of T22.4 and T27.4. Effect: two rows in the top table and `todo.md`; no new dependency.
 - A34 §3 P27, T27.5 — T27.5's card listed `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`, but the actual touch is `state.rs` + `view.rs` + `crates/cox-tui/tests/agents.rs` (the T27.2 snapshot test reads `/agents`'s old `Notice` cell and has to change now that it opens a modal) + `crates/cox/src/session.rs` (not `resume.rs`, which builds a turn-oriented `History` this overlay does not need — the poll loop wants the raw `Vec<Event>` `Store::rollout_read` already returns). A 3-files-only split was drafted (§6's earlier text) to land the `cox-tui` half and leave `session.rs` to a follow-up, but `session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout` — a stub costs the same one match arm as the real `Store::rollout_read` call, so the split would not have saved a file. Why: discovered mid-implementation, not planned; plan.md §2's split guidance assumed avoiding the file cost was possible, and it was not. Effect: T27.5 lands whole, 4 files instead of the usual 3 (state.rs, view.rs, tests/agents.rs, session.rs); no follow-up card.
 - A35 §3 P30, T30.4, T30.3 — new card T30.4 (send `anthropic-workspace-id` from `ANTHROPIC_WORKSPACE_ID`) ahead of T30.3. Why: the creator's key is not scoped to a workspace, so every Anthropic call 400s; the creator chose teaching cox the header over issuing a workspace-scoped key. Effect: T30.3 step (3) runs after T30.4.
+- A36 §3 P30, T30.5, T30.3 — new card T30.5 (price every provider call through a `Priced` decorator) ahead of T30.3. Why: T1.7's `ledger_row` was never wired into a production path, so every ledger row costs $0 and budgets never fire; found during T30.4's live check; the creator chose fixing it before the paid eval run. Effect: T30.3 step (3) runs after T30.5; costs recorded before this fix are $0 and stay so (history is append-only).
 
 ## 7. Risk register
 
