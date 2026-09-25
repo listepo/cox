@@ -148,7 +148,10 @@ pub struct State {
     pub status: Status,
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
-    pub tasks: Vec<(TaskId, String)>,
+    /// `(id, label, tier, started)`: `tier` and `started` (`tick` at
+    /// `TaskCreated`) exist only so `/agents` (T27.2) can show a running
+    /// task's tier and elapsed time; `/tasks` still reads just the label.
+    pub tasks: Vec<(TaskId, String, Tier, u64)>,
     /// Recently finished tasks as `/tasks` lines: exit code and the
     /// `/expand` id of a shell task's output (T27.1).
     pub finished_tasks: Vec<String>,
@@ -1108,32 +1111,40 @@ fn open_rewind(state: &mut State) -> Vec<Cmd> {
     Vec::new()
 }
 
-/// `/agents`: one line per live session of this workspace. Its cwd and
-/// paths are another process's input, so they go through `text::sanitize`.
-fn agents_list(agents: &[Presence]) -> String {
-    if agents.is_empty() {
-        return "no other cox sessions in this workspace".into();
+/// `/agents` (T27.2): one card per live agent instead of T16.3's
+/// one-line-per-session list — a sibling cox session (T16.1 presence) or a
+/// subagent/background task this session started (`state.tasks`, fed by
+/// `TaskCreated`/`TaskCompleted`). The narrow card the creator chose over a
+/// new `Event::AgentProgress`: name, preset, tier, cost, elapsed, state.
+/// Presence carries none of preset/tier/cost/elapsed, so those show `-`; a
+/// task's cost shows `-` too while it runs — it is only known once
+/// `TaskCompleted` retires it from `state.tasks`. A subagent's own rollout
+/// overlay (`Enter` on a card) is a follow-up (plan.md §3 P27).
+fn agents_cards(agents: &[Presence], tasks: &[(TaskId, String, Tier, u64)], tick: u64) -> String {
+    if agents.is_empty() && tasks.is_empty() {
+        return "no live agents".into();
     }
-    agents
+    let mut cards: Vec<String> = agents
         .iter()
         .map(|a| {
-            let files = if a.touched.is_empty() {
-                "no files edited yet".to_string()
-            } else {
-                format!("editing {}", a.touched.join(", "))
-            };
             crate::text::sanitize(&format!(
-                "{} pid {} · {} · turn {} · {} · {}",
+                "{}\n  preset - · tier - · cost - · elapsed - · {}",
                 a.session,
-                a.pid,
-                a.status.name(),
-                a.turn,
-                a.cwd.display(),
-                files
+                a.status.name()
             ))
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect();
+    cards.extend(tasks.iter().map(|(_, label, tier, started)| {
+        let preset = label.split_once(": ").map_or("-", |(p, _)| p);
+        let elapsed = tick.saturating_sub(*started);
+        crate::text::sanitize(&format!(
+            "{label}\n  preset {preset} · tier {} · cost - · elapsed {}.{}s · running",
+            format!("{tier:?}").to_lowercase(),
+            elapsed / 10,
+            elapsed % 10
+        ))
+    }));
+    cards.join("\n\n")
 }
 
 /// T22.2: a `/name args` line naming a file command — something
@@ -1186,16 +1197,27 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             notice(state, Level::Info, text);
         }
         Action::Todo => state.show_todo = !state.show_todo,
-        Action::Tasks => notice(
-            state,
-            Level::Info,
-            tasks::list(&state.tasks, &state.finished_tasks),
-        ),
+        Action::Tasks => {
+            let running: Vec<(TaskId, String)> = state
+                .tasks
+                .iter()
+                .map(|(id, label, ..)| (*id, label.clone()))
+                .collect();
+            notice(
+                state,
+                Level::Info,
+                tasks::list(&running, &state.finished_tasks),
+            )
+        }
         Action::Vim => {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);
         }
-        Action::Agents => notice(state, Level::Info, agents_list(&state.agents)),
+        Action::Agents => notice(
+            state,
+            Level::Info,
+            agents_cards(&state.agents, &state.tasks, state.tick),
+        ),
         Action::Sessions => {
             let text = if state.sessions.is_empty() {
                 "no sessions for this project yet".to_string()
@@ -1411,15 +1433,17 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
-        Event::TaskCreated { task, label, .. } => state.tasks.push((task, label)),
+        Event::TaskCreated { task, label, tier } => {
+            state.tasks.push((task, label, tier, state.tick));
+        }
         Event::TaskCompleted {
             task,
             exit_code,
             archive,
             ..
         } => {
-            if let Some(i) = state.tasks.iter().position(|(t, _)| *t == task) {
-                let (_, label) = state.tasks.remove(i);
+            if let Some(i) = state.tasks.iter().position(|(t, ..)| *t == task) {
+                let (_, label, ..) = state.tasks.remove(i);
                 let line = tasks::finished_line(task, &label, exit_code, archive);
                 state.finished_tasks.push(line);
                 let over = state

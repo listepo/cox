@@ -1,13 +1,15 @@
 //! Live sessions in the TUI (T16.3): `/agents` lists the fed records with
 //! their status and files, and the status line counts them only when there
-//! are any.
+//! are any. T27.2 turns that list into one card per live agent — a sibling
+//! session (`Presence`) or a subagent/background task this session started
+//! (`TaskCreated`) — so this file also covers the task half of the card.
 
 mod common;
 
 use std::str::FromStr;
 
-use cox_protocol::ids::SessionId;
-use cox_protocol::types::{PermissionMode, Presence, PresenceStatus, SandboxMode};
+use cox_protocol::ids::{SessionId, TaskId};
+use cox_protocol::types::{Event, PermissionMode, Presence, PresenceStatus, SandboxMode, Tier};
 use cox_tui::state::{Cell, Msg, State, update};
 use cox_tui::status;
 
@@ -42,14 +44,30 @@ fn two() -> Vec<Presence> {
     ]
 }
 
+/// One card per sibling session and one per a live subagent task: name,
+/// preset, tier, cost, elapsed, state (plan.md T27.2's narrow card — model,
+/// tokens and last tool need a new event and are a follow-up).
 #[test]
-fn agents_command_lists_the_fed_records_snapshot() {
+fn agents_cards_snapshot() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     update(&mut state, Msg::Agents(two()));
+    update(
+        &mut state,
+        Msg::Event(Event::TaskCreated {
+            task: TaskId::new(),
+            label: "explore: find the flaky test".into(),
+            tier: Tier::Cheap,
+        }),
+    );
+    for _ in 0..7 {
+        update(&mut state, Msg::Tick);
+    }
     common::type_line(&mut state, "/agents");
     let Some(Cell::Notice { text, .. }) = state.transcript.last() else {
         panic!("no notice cell");
     };
+    // `record`'s session ids are fixed ULIDs, and the task's own id never
+    // prints (only its label does), so the snapshot needs no redaction.
     insta::assert_snapshot!(text);
 }
 
@@ -60,7 +78,7 @@ fn agents_command_says_so_when_alone() {
     let Some(Cell::Notice { text, .. }) = state.transcript.last() else {
         panic!("no notice cell");
     };
-    assert_eq!(text, "no other cox sessions in this workspace");
+    assert_eq!(text, "no live agents");
 }
 
 #[test]
