@@ -16,9 +16,9 @@ use cox_protocol::errors::CoreError;
 use cox_protocol::ids::CallId;
 use crossterm::cursor::MoveTo;
 use crossterm::event::{
-    DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
-    Event as Input, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-    PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture, Event as Input, KeyEventKind, KeyboardEnhancementFlags,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
@@ -121,10 +121,16 @@ pub async fn run(
     if focus {
         execute!(io::stdout(), EnableFocusChange)?;
     }
+    // T22.4: `tui.mouse` is the only switch — no in-app toggle key — so a
+    // terminal that never asked for reports keeps its own text selection.
+    let mouse = state.mouse;
+    if mouse {
+        execute!(io::stdout(), EnableMouseCapture)?;
+    }
     let vte = crate::term::is_vte(&|k| std::env::var(k).ok());
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore(kitty, focus, progress);
+        restore(kitty, focus, progress, mouse);
         hook(info);
     }));
     let mut terminal = inline_terminal(crossterm::terminal::size()?.1)?;
@@ -150,6 +156,7 @@ pub async fn run(
                     Input::Resize(w, h) => Msg::Resize(w, h),
                     Input::FocusGained => Msg::Focus(true),
                     Input::FocusLost => Msg::Focus(false),
+                    Input::Mouse(m) => Msg::Mouse(m),
                     _ => continue,
                 },
                 ev = rx.recv() => match ev {
@@ -183,8 +190,15 @@ pub async fn run(
                     Cmd::Clear => return Ok(TuiOutcome::Clear),
                     Cmd::Fork(turn) => return Ok(TuiOutcome::Fork { turn }),
                     Cmd::Handoff(objective) => return Ok(TuiOutcome::Handoff { objective }),
-                    // Clipboard lands with the transcript cells (T5.3).
-                    Cmd::Copy(_) => {}
+                    // T23.4: `state` only ever emits this when
+                    // `caps.osc52`, so no capability check is needed here —
+                    // `app.rs` just writes the bytes `state` decided on.
+                    Cmd::Copy(text) => {
+                        use std::io::Write;
+                        let mut out = io::stdout();
+                        out.write_all(crate::term::copy(&text).as_bytes())?;
+                        out.flush()?;
+                    }
                     // A request the runtime has not answered yet is still
                     // pending, so a repeat is dropped rather than awaited.
                     Cmd::Ask(what) => {
@@ -279,7 +293,7 @@ pub async fn run(
     }
     .await;
     stop.store(true, Ordering::Relaxed);
-    restore(kitty, focus, progress);
+    restore(kitty, focus, progress, mouse);
     result
 }
 
@@ -334,9 +348,11 @@ fn spawn_input(stop: Arc<AtomicBool>) -> tokio::sync::mpsc::Receiver<io::Result<
 /// pops the Kitty keyboard protocol flags first — popping when nothing was
 /// pushed is a no-op on every terminal that implements the spec, but `run`
 /// only pays for the round trip when its own push actually happened; `focus`
-/// likewise turns off the focus reports only `run` turned on, and
-/// `progress` clears an OSC 9;4 state only a capable terminal was sent.
-fn restore(kitty: bool, focus: bool, progress: bool) {
+/// likewise turns off the focus reports only `run` turned on, `progress`
+/// clears an OSC 9;4 state only a capable terminal was sent, and `mouse`
+/// (T22.4) releases capture only when `tui.mouse` asked for it, so a `false`
+/// config never touches the terminal's mouse reporting at all.
+fn restore(kitty: bool, focus: bool, progress: bool, mouse: bool) {
     if progress {
         use std::io::Write;
         let mut out = io::stdout();
@@ -348,6 +364,9 @@ fn restore(kitty: bool, focus: bool, progress: bool) {
     }
     if focus {
         let _ = execute!(io::stdout(), DisableFocusChange);
+    }
+    if mouse {
+        let _ = execute!(io::stdout(), DisableMouseCapture);
     }
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     let _ = disable_raw_mode();

@@ -140,6 +140,10 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("continue", "runtime.continue"),
         ("resume", "runtime.resume"),
         ("deep", "runtime.deep"),
+        // T27.6: `cox run --loop`/`--max-iterations` are invocation
+        // parameters (the loop's own state), not persisted config.
+        ("loop", "runtime.loop"),
+        ("max-iterations", "runtime.max_iterations"),
         // `cox stats --project` (T28.2): a read-only scope flag, not config.
         ("project", "runtime.project"),
     ])

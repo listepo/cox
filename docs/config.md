@@ -147,7 +147,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `inline` = `true`
 - `show_thinking` = `"collapsed"` — collapsed | hidden | full
 - `screen_reader` = `false` — the plain surface (T29.1): flat labelled lines, numbered prompts, no cursor movement, BEL when a turn ends; same as `--plain` or `COX_PLAIN=1`
-- `mouse` = `true`
+- `mouse` = `true` — the wheel scrolls the transcript, the diff view and pickers 3 lines/rows a tick; no in-app toggle key, so false leaves the terminal's own mouse reporting (and text selection) untouched (T22.4)
 - `glyphs` = `"auto"` — auto | unicode | ascii
 - `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 - `color` = `"auto"` — auto | none | 16 | 256 | true (NO_COLOR forces none)
@@ -188,7 +188,7 @@ newline = ["enter", "shift+enter"]
 mode.cycle = "shift+tab"
 ```
 
-- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
 - Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
 - A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a terminal that reports it (kitty keyboard protocol, see `cox doctor`).
 - `~/.claude/keybindings.json` is read first, for the actions both tools have: `chat:submit` → `send`, `chat:newline` → `newline`, `chat:sendNow` → `send.now`, `chat:cancel` → `interrupt`, `chat:cycleMode` → `mode.cycle`, `app:toggleTranscript` → `transcript`, `task:background` → `background`, `app:exit` → `quit`. Its keys are added beside the defaults; this file still wins. Other Claude actions and chords are skipped.

@@ -83,6 +83,22 @@ impl Outcome {
         })
     }
 
+    /// T27.6: folds one `--loop` iteration's outcome into the running
+    /// total — the ledger fields sum, the latest text/session/stop win,
+    /// matching what `Outcome::summary()` already prints for a single run.
+    fn merge(&mut self, other: Outcome) {
+        self.session = other.session.or(self.session);
+        self.result = other.result;
+        for (total, iter) in self.tokens.iter_mut().zip(other.tokens) {
+            *total += iter;
+        }
+        self.cost_usd += other.cost_usd;
+        self.turns += other.turns;
+        self.denied += other.denied;
+        self.stop = other.stop;
+        self.failed = other.failed;
+    }
+
     /// Folds one event in; returns a Claude-compatible alias line to print
     /// under `stream-json`, when this event has one.
     fn fold(&mut self, ev: &Event) -> Option<Value> {
@@ -142,6 +158,18 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         "stream-json" => Format::StreamJson,
         other => anyhow::bail!("unknown --output-format `{other}` (text | json | stream-json)"),
     };
+    // T27.6: `--loop`/`--max-iterations` are a pair; the interval reuses
+    // the TUI `/loop`'s own grammar (T27.4) instead of a second parser.
+    let loop_spec = match (&args.r#loop, args.max_iterations) {
+        (Some(interval), Some(max_iterations)) => {
+            let interval = cox_tui::commands::parse_interval(interval).ok_or_else(|| {
+                anyhow::anyhow!("invalid --loop interval `{interval}` (expected <n>s|m|h)")
+            })?;
+            Some((interval, max_iterations))
+        }
+        (None, None) => None,
+        _ => anyhow::bail!("--loop and --max-iterations must be given together"),
+    };
     // Headless defaults to `never`: nobody is there to answer an ask.
     let approve_default = cli.approve.is_none();
     let rt = tokio::runtime::Runtime::new()?;
@@ -178,7 +206,31 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
     let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)
         .then(|| Duration::from_secs(u64::from(loaded.config.hooks.timeout_s)));
-    let outcome = rt.block_on(drive(session, prompt, format, approvals, args.deep))?;
+    // The event receiver is taken once and, for `--loop`, shared across
+    // every iteration's `drive` call on the same session — that is also
+    // what lets the core's own `budget.session_usd` tracking (already
+    // cumulative per session) double as the loop's spend cap, instead of
+    // a second one (plan.md §6 A31).
+    let outcome = rt.block_on(async move {
+        let mut rx = session
+            .events()
+            .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
+        let interrupter = session.clone();
+        tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                interrupter.interrupt();
+            }
+        });
+        match loop_spec {
+            Some(loop_spec) => {
+                run_loop(
+                    &session, &mut rx, prompt, format, approvals, args.deep, loop_spec,
+                )
+                .await
+            }
+            None => drive(&session, &mut rx, prompt, format, approvals, args.deep).await,
+        }
+    })?;
     let mut out = std::io::stdout().lock();
     match format {
         Format::Text => writeln!(out, "{}", outcome.result)?,
@@ -193,22 +245,17 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     Ok(outcome.exit_code())
 }
 
+/// Runs one turn to completion on an already-open `session`, reading its
+/// events off the caller's `rx` (taken once — see `run`'s comment — so
+/// `--loop` can call this repeatedly on the same receiver).
 async fn drive(
-    session: Session,
+    session: &Session,
+    rx: &mut mpsc::Receiver<Event>,
     prompt: String,
     format: Format,
     approvals: Option<Duration>,
     deep: bool,
 ) -> anyhow::Result<Outcome> {
-    let mut rx = session
-        .events()
-        .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
-    let interrupter = session.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            interrupter.interrupt();
-        }
-    });
     // T9.1: `--deep` routes the run through think; the flag itself is the
     // confirmation the gate requires.
     if deep {
@@ -305,6 +352,47 @@ async fn drive(
     Ok(outcome)
 }
 
+/// `cox run --loop <interval> -p "…" --max-iterations N` (T27.6, the
+/// headless counterpart of the TUI's `/loop`, T27.4): repeats `drive` on
+/// the same session and folds each iteration's `Outcome` into a running
+/// total. Stops after `max_iterations` turns, the moment a turn's own
+/// stop reason is `StopReason::Budget` (the core already tracks
+/// `budget.session_usd` cumulatively per session, so this needs no
+/// second cap) or fails fatally, or when `Ctrl+C` fires during the wait
+/// between iterations — that exit is clean, not an error.
+async fn run_loop(
+    session: &Session,
+    rx: &mut mpsc::Receiver<Event>,
+    prompt: String,
+    format: Format,
+    approvals: Option<Duration>,
+    deep: bool,
+    // `(interval, max_iterations)`, bundled so the function stays under
+    // clippy's 7-argument limit.
+    loop_spec: (Duration, u32),
+) -> anyhow::Result<Outcome> {
+    let (interval, max_iterations) = loop_spec;
+    let mut total = Outcome::default();
+    for i in 0..max_iterations {
+        let iteration = drive(session, rx, prompt.clone(), format, approvals, deep).await?;
+        total.merge(iteration);
+        if total.failed || matches!(total.stop, Some(StopReason::Budget)) {
+            break;
+        }
+        let last = i + 1 == max_iterations;
+        if !last {
+            let interrupted = tokio::select! {
+                _ = tokio::time::sleep(interval) => false,
+                _ = tokio::signal::ctrl_c() => true,
+            };
+            if interrupted {
+                break;
+            }
+        }
+    }
+    Ok(total)
+}
+
 /// One driver line: `{"approve":"<call_id>"}` or `{"deny":"<call_id>","reason":"…"}`.
 #[derive(serde::Deserialize)]
 struct DriverLine {
@@ -345,5 +433,81 @@ async fn recv_or_pend<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
     match rx {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use cox_core::MemoryStore;
+    use cox_provider::scripted::Scripted;
+
+    use super::*;
+
+    /// A session over a scripted scenario with `turns` scripted replies
+    /// queued up, no tools, no config overrides — enough for `run_loop`
+    /// to drive several turns without touching the network.
+    fn open(turns: usize) -> Session {
+        let scenario = "[[turn]]\ntext = \"ok\"\n".repeat(turns);
+        let store = Arc::new(MemoryStore::new());
+        let provider = Arc::new(Scripted::from_toml(&scenario, "").expect("scenario"));
+        Session::new(
+            cox_protocol::Config::default(),
+            provider,
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-run-loop"),
+        )
+        .expect("session")
+    }
+
+    /// The claim `run_loop`'s card Check names: it stops on its own once
+    /// `max_iterations` turns have run, even though the scenario has more
+    /// scripted replies queued than that — a tiny interval (never really
+    /// slept out) keeps the test instant.
+    #[tokio::test]
+    async fn run_loop_stops_after_max_iterations() {
+        let session = open(3);
+        let mut rx = session.events().expect("events");
+        let outcome = run_loop(
+            &session,
+            &mut rx,
+            "hi".into(),
+            Format::Text,
+            None,
+            false,
+            (Duration::from_millis(1), 2),
+        )
+        .await
+        .expect("run_loop");
+        assert_eq!(outcome.turns, 2);
+        assert_eq!(outcome.exit_code(), EXIT_OK);
+    }
+
+    /// `Outcome::merge` is what turns per-iteration ledgers into the one
+    /// running total `--loop` finally prints.
+    #[test]
+    fn merge_sums_the_ledger_and_keeps_the_latest_text() {
+        let mut total = Outcome {
+            result: "first".into(),
+            tokens: [1, 2, 3, 4],
+            cost_usd: 0.5,
+            turns: 1,
+            ..Outcome::default()
+        };
+        total.merge(Outcome {
+            result: "second".into(),
+            tokens: [1, 1, 1, 1],
+            cost_usd: 0.25,
+            turns: 1,
+            ..Outcome::default()
+        });
+        assert_eq!(total.result, "second");
+        assert_eq!(total.tokens, [2, 3, 4, 5]);
+        assert_eq!(total.cost_usd, 0.75);
+        assert_eq!(total.turns, 2);
     }
 }

@@ -1,5 +1,7 @@
 # cox
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=listepo_cox&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=listepo_cox) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=listepo_cox&metric=coverage)](https://sonarcloud.io/component_measures?id=listepo_cox&metric=coverage) [![Tests](https://img.shields.io/sonar/tests/listepo_cox?server=https%3A%2F%2Fsonarcloud.io&compact_message)](https://sonarcloud.io/component_measures?id=listepo_cox&metric=tests)
+
 > A modular terminal coding agent in Rust.
 
 **cox** is named for the coxswain: it steers the work while models, tools, and extensions row. It is being built as one reliable, testable agent core with several ways to use it: an interactive terminal UI, headless automation, editor integration through ACP, and MCP tools for other agents.
@@ -81,3 +83,11 @@ GitHub Actions builds and deploys the site from `main` to [GitHub Pages](https:/
 | `crates/cox-acp` / `crates/cox-mcp` | Editor and MCP integrations |
 
 For design decisions, milestones, and task checks, see [`plan.md`](plan.md). For evidence behind the design, see [`research.md`](research.md).
+
+## License
+
+You can use this project under **any** of the following licenses, at your choice:
+
+1. [GNU GPLv3](LICENSE): free for open source applications on any platform, including embedded systems.
+2. [Royalty-free License](LICENSE-ROYALTY-FREE.md): free for proprietary desktop, mobile, and web applications, as long as you disclose that your application uses this project. Embedded systems are not covered.
+3. [Commercial license](PRICING.md): for proprietary applications, including embedded systems, without the attribution requirement.

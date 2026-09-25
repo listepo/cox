@@ -22,6 +22,9 @@
 //! resized, then finishes the reply and feeds 4 more cells.
 //! `COX_PROBE_SCENARIO=progress` (T23.6) starts and ends one turn;
 //! `COX_PROBE_OSC9_4=1` says the terminal draws OSC 9;4 progress.
+//! `COX_PROBE_MOUSE=1` (T22.4) sets `tui.mouse`, so `app::run` asks for
+//! mouse capture; needs no scenario of its own since capture is a startup
+//! decision, not something a fed `Msg` drives.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -95,6 +98,9 @@ async fn main() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     state.caps.kitty_keyboard = kitty;
     state.caps.osc9_4 = std::env::var("COX_PROBE_OSC9_4").as_deref() == Ok("1");
+    // T22.4: `tui.mouse`, off by default here like every other probe switch.
+    state.mouse = std::env::var("COX_PROBE_MOUSE").as_deref() == Ok("1");
+    state.caps.osc52 = std::env::var("COX_PROBE_OSC52").as_deref() == Ok("1");
     // The notify scenario needs a terminal that shows OSC 9 and reports focus.
     if std::env::var("COX_PROBE_SCENARIO").as_deref() == Ok("notify") {
         state.caps.osc9 = true;
@@ -170,6 +176,21 @@ async fn main() {
                 let _ = feed_tx
                     .send(Msg::Event(Event::TurnDone { turn, stop }))
                     .await;
+            }
+            // T23.4: a reply still streaming (no `ItemDone`) stays in
+            // `state.transcript` rather than draining to scrollback, so `y`
+            // has a cell to find deterministically — no PTY-timing wait.
+            "copy" => {
+                let item = ItemId::new();
+                let kind = ItemKind::AssistantMessage {
+                    text: String::new(),
+                };
+                let _ = feed_tx
+                    .send(Msg::Event(Event::ItemStarted { item, kind }))
+                    .await;
+                let _ = feed_tx.send(delta(item, "cell text")).await;
+                let y = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+                let _ = feed_tx.send(Msg::Key(y)).await;
             }
             _ => {}
         }

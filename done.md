@@ -3747,8 +3747,561 @@ $ mise exec -- cargo nextest run -p cox-tui --test shell
 7 tests run: 7 passed, 0 skipped
 $ mise exec -- cargo nextest run --workspace
 841 tests run: 841 passed, 3 skipped
+#### T22.4 Mouse: wire `tui.mouse` or delete the key
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
+Goal: with `tui.mouse = true` the wheel scrolls the transcript overlay and pickers and a click on a folded tool card unfolds it; with `false` the terminal keeps native text selection.
+Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `app.rs`: `EnableMouseCapture` after raw mode iff `config.tui.mouse`; `DisableMouseCapture` in the restore path (also on panic hook). (2) `Msg::Mouse(MouseEvent)`: `ScrollUp/ScrollDown` → the same scroll path as `PageUp/PageDown` with 3 lines per tick; `Down(Left)` inside the viewport → hit-test the rendered cell rows (`view` records `cell_rows: Vec<(Range<u16>, CellId)>` in `State` during draw) → toggle fold. (3) `Ctrl+Shift+M`-free design: no toggle key; the config key is the switch, documented in `docs/config.md`. (4) If step 2 exceeds the size limit, deliver wheel scrolling only and file the click as a follow-up card in §6.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui update_mouse_wheel_scrolls_overlay update_mouse_click_unfolds_card
+mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when_disabled
+```
+Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
+Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
+What landed (commit `T22.4: Mouse: wire tui.mouse`): `state.rs` gains `State.mouse: bool` (config-driven, like `still`/`notify`), `Msg::Mouse(MouseEvent)` and a new `on_mouse` that reuses each open context's own scroll path — `Picker::key`'s `Up`/`Down` (3 calls per tick), the `Diff` modal's `scroll` field (same clamp as `PageUp`/`PageDown`, `WHEEL_LINES = 3` instead of `DIFF_PAGE`), and `state.scroll` otherwise, which this task is also the first to ever move (it existed since T5.1 but nothing wrote to it). `app.rs` enables/disables `crossterm::event::{Enable,Disable}MouseCapture` exactly like the existing `kitty`/`focus`/`progress` gates (including the panic hook), and forwards `Input::Mouse` into `Msg::Mouse`. `docs/config.md`'s `tui.mouse` row is regenerated from a new `default.toml` comment (the doc test enforces this; it is not hand-edited).
+Deviations: (1) Step 2's click half (`Down(Left)` hit-testing a folded tool card via `cell_rows`) was cut per step 4 — it needs per-cell fold state (today only the *last* tool cell has one, `expanded_last: bool`) plus `view.rs` recording each cell's rendered row range, which is a materially bigger change than a wheel handler. Proposed §6 follow-up card (recorded here per the 3-file rule, not added to §3): **T22.9 Click-to-unfold a tool card** · Size: ~100 — `State` gains per-cell fold state (a `HashSet<usize>`/`Vec<bool>` keyed by transcript index, not just `expanded_last`) and `view.rs` records `cell_rows: Vec<(Range<u16>, usize)>` while drawing; `on_mouse` hit-tests a `Down(Left)` inside the transcript against it and toggles the matching cell's fold. `update_mouse_click_unfolds_card` (already named by this task's Check) is that follow-up's test. (2) Files beyond the card's three: `crates/cox/src/session.rs` (`state.mouse = config.tui.mouse;`, the one-line wiring every sibling `tui.*` flag already needed — `State` is the only thing `app::run` can read config through), `crates/cox-tui/src/bin/kitty_probe.rs` and `crates/cox-tui/tests/shell.rs` (a `COX_PROBE_MOUSE` switch and the new PTY e2e — `cox-tui` has no binary of its own to spawn under a PTY, same reason T23.1/T23.6 needed the same two files), and `crates/cox-protocol/default.toml` + `docs/config.md` (generated) for the doc comment. No new dependency — `crossterm`'s mouse events need no extra Cargo feature. (3) The named Check ran only its wheel half; `update_mouse_click_unfolds_card` does not exist yet (see the follow-up above) and `pty_no_mouse_capture_when_disabled` also checks the `false` (no-capture) side the Done-when line asks for, beyond what the card's Check literally lists.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui update_mouse_wheel_scrolls_overlay
+        PASS [ 0.009s] (1/1) cox-tui state::tests::update_mouse_wheel_scrolls_overlay
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when_disabled
+        PASS [ 1.022s] (1/1) cox-tui::shell pty_no_mouse_capture_when_disabled
+$ mise exec -- cargo nextest run --workspace
+     Summary [ 8.476s] 845 tests run: 845 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+Follow-up (A30, then A32, 2026-09-25): the default was switched to `tui.mouse = false` and then back to `true`, both the creator's decisions; the Check's `true` branch sets the key explicitly and is unaffected.
+
+#### T21.1 JevProvider type-1 native
+
+Model: - · Status: done 2026-09-20 · Depends: T21.0 · Size: ~550
+Goal: the System One wire format behind the `Provider` trait: `build_body` (Request → `{state, model, questions}`), `parse_response` (one `{answers, usage}` body → JSON TextDelta + Stop + Usage), `http_error` (shared taxonomy), `JevProvider` client (bearer key, retry, cancel).
+Files: `crates/cox-provider/src/jev.rs`, `crates/cox-provider/src/lib.rs`, `crates/cox-protocol/src/types.rs` (`ProviderId::Jev`), `crates/cox-protocol/src/config.rs` (`JevProviderConfig` + `providers.typesafe`), `crates/cox-protocol/default.toml`, `crates/cox-provider/prices.toml` (`jev-latest` $0.042/0), `docs/config.md` (regenerated).
+Steps: 1. pure translator + parsers with 7 unit tests (choice/score/noul, empty-answers-is-Parse, unknown-kind-is-Parse, error taxonomy); 2. thin non-SSE client over `retry::stream_with_retry`; 3. config section + prices row + regenerated docs.
+Check: `mise exec -- cargo nextest run -p cox-provider jev` — 7 passed.
+Done when: the wire shape is proven without a key; no caller routes to it yet (that is T21.2).
+Out of scope: any `cox-core`/`cox` call site (judge layer is T21.3).
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-provider jev
+7 tests run: 7 passed, 0 skipped
+```
+
+#### T21.2 Route and build the typesafe provider
+
+Model: - · Status: done 2026-09-20 · Depends: T21.1 · Size: ~30
+Goal: `tiers.<t>.provider = "typesafe"` routes (`ProviderId::Jev`, section-model pin like `local`) and builds (`JevProvider::with_key` via the shared key-resolve helper); the ledger names the row `typesafe`.
+Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs` (`provider_name`), `crates/cox/src/session.rs` (`provider_for`).
+Steps: 1. router match arm + pin; 2. ledger name; 3. session builder via `http::resolve_key_env_or_keyring` (missing key is `Auth`, the fail-open path).
+Check: `mise exec -- cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+Done when: a tier can name `typesafe` end to end; nothing names it by default (all tiers keep their models).
+Out of scope: the judge layer that would actually call it (T21.3).
+
+Check output:
+```
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile
+```
+
+#### T21.0 Jev integration scope gate
+
+Model: - · Status: done 2026-09-20 · Depends: - · Size: ~100
+Goal: fix what Jev is, where it plugs into cox, and what kills the idea — on paper, before any provider code or dependency.
+Files: `docs/design/v0.2-jev.md`, `plan.md`, `roadmap.md`.
+Steps: 1. write the guest/host contract sketch (own System One JSON over `POST /v1/systemone`, Python/JS SDKs, no OpenAPI; keys via waitlist at `console.typesafe.ai`); 2. map the candidate call sites (router `pick`, permission classification, compaction/memory salience, skill suggestion) against Jev's three primitives (Choice / Score / Noul) and the cookbook patterns (intent routing, confidence-gated routing, hierarchical classification, skill suggestion, LLM guardrails); 3. name the falsifier that moves it up; 4. move the roadmap line into this card.
+Check: `test -f docs/design/v0.2-jev.md && grep -q Falsifier docs/design/v0.2-jev.md`.
+Done when: the doc exists (Problem / The field / cox / Falsifiers / Review), states the integration type from §1 (type-1 native wire vs type-2 compatible preset vs data-only like skills/hooks), and the roadmap line is struck through in the branch.
+Out of scope: any `cox-provider` code, any new dependency row in §1.1, any key handling (that is the implementation task).
+
+Check output:
+```
+$ test -f docs/design/v0.2-jev.md && grep -q Falsifier docs/design/v0.2-jev.md && echo ok
+ok
+```
+
+#### T19.8 Run CI on pull requests
+
+Model: - · Status: done 2026-09-19 · Depends: - · Size: small
+Goal: CI runs on `pull_request` to `main`, so release and scoping branches get the signal before merge.
+Files: `.github/workflows/ci.yml`.
+Steps: 1. add the `pull_request` trigger; 2. keep `workflow_dispatch`; 3. confirm CI green on the branch PR.
+Check: `grep -q 'pull_request' .github/workflows/ci.yml`.
+Done when: draft PRs show the CI signal that promotes them to ready.
+Out of scope: any release workflow change (that is T20.4).
+
+Check output:
+```
+$ grep -q 'pull_request' .github/workflows/ci.yml && echo ok
+ok
+```
+
+#### T20.1 release-plz proposes, never tags
+
+Model: - · Status: done 2026-09-19 · Depends: - · Size: small
+Goal: `release-plz.yml` runs only `release-pr`; tagging is `release.yml`'s job (publish first, tag last).
+Files: `.github/workflows/release-plz.yml`, `release-plz.toml`.
+Steps: 1. drop the `release` job, keep `release-pr` with the loud token check; 2. add the pending-release gate; 3. align header comments to the ketch model.
+Check: `grep -q 'command: release-pr' .github/workflows/release-plz.yml && ! grep -q 'command: release$' .github/workflows/release-plz.yml`.
+Done when: merging to `main` opens or refreshes the release PR and never creates a tag.
+Out of scope: building or publishing binaries (that is T20.2–T20.4).
+
+Check output:
+```
+$ grep -q 'command: release-pr' .github/workflows/release-plz.yml && ! grep -q 'command: release$' .github/workflows/release-plz.yml && echo ok
+ok
+```
+
+#### T20.2 scripts/package.sh builds the release tarball
+
+Model: - · Status: done 2026-09-19 · Depends: - · Size: ~75 LOC
+Goal: one script builds `cox-<target>.tar.xz` per target, used by CI and release alike.
+Files: `scripts/package.sh`.
+Steps: 1. `cargo build --profile dist --locked --target`; 2. stage binary + README, optional sign; 3. pack with sha256 print.
+Check: `bash -n scripts/package.sh`.
+Done when: the release `build` job packages through this script.
+Out of scope: the cask (that is T20.3).
+
+Check output:
+```
+$ bash -n scripts/package.sh && echo ok
+ok
+```
+
+#### T20.3 scripts/cask.sh generates the Homebrew cask
+
+Model: - · Status: done 2026-09-19 · Depends: T20.2 · Size: ~60 LOC
+Goal: `Casks/cox.rb` in `listepo/homebrew-tap` is generated, never hand-edited.
+Files: `scripts/cask.sh`.
+Steps: 1. take `<version> <sha256-aarch64> <sha256-intel>`; 2. validate shas; 3. print the cask.
+Check: `bash -n scripts/cask.sh && scripts/cask.sh 0.0.0 $(printf '%064d' 0) $(printf '%064d' 1) | grep -q 'cask "cox"'`.
+Done when: the release `tap` job writes the tap file from this script.
+Out of scope: the publish itself (that is T20.4).
+
+Check output:
+```
+$ bash -n scripts/cask.sh && scripts/cask.sh 0.0.0 $(printf '%064d' 0) $(printf '%064d' 1) | grep -q 'cask "cox"' && echo ok
+ok
+```
+
+#### T20.4 release.yml publishes first, tags last
+
+Model: - · Status: done 2026-09-19 · Depends: T20.1–T20.3 · Size: large
+Goal: merging to `main` with an untagged version runs verify → 4-target build → draft release → publish (creates `v<version>`) → tap cask.
+Files: `.github/workflows/release.yml`.
+Steps: 1. `version` gate; 2. `verify` (same gate as CI); 3. `build` matrix via `scripts/package.sh`; 4. `publish` draft-then-undraft; 5. `tap` cask after publish.
+Check: `ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"` prints `build, publish, tap, verify, version`.
+Done when: a tag exists iff a release completed; `install.sh` and `cox self update` find only complete releases.
+Out of scope: the ketch registry entry (that is T20.5).
+
+Check output:
+```
+$ ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"
+build, publish, tap, verify, version
+```
+
+#### T20.5 ketch.toml for cox, dist tail removed
+
+Model: - · Status: done 2026-09-20 · Depends: T20.4 · Size: small
+Goal: cox installs via ketch; no dead cargo-dist jobs remain in `release.yml`.
+Files: `ketch.toml`, `.github/workflows/release.yml`, `release-plz.toml`, `crates/cox/src/self_update.rs`.
+Steps: 1. cut the leftover dist block (252 lines); 2. add `ketch.toml`; 3. copy it to `cox/` in `listepo/ketch-registry`; 4. reword cargo-dist comments.
+Check: release jobs list plus `ketch registry validate` passes 5 packages.
+Done when: `ketch install cox` picks the platform tarball; registry validates.
+Out of scope: merging PR #26 (merge starts the first ketch-model release).
+
+Check output:
+```
+$ ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"
+build, publish, tap, verify, version
+$ ketch registry validate /Users/listepo/GitHub/listepo/packages/ketch-registry
+validated 5 packages
+$ KETCH_ROOT=/tmp/ketch-cox-test ketch install cox --verbose
+installed cox v0.1.0
+```
+
+#### T20.6 Pin CI toolchain back to 1.97.1
+
+Model: - · Status: done 2026-09-20 · Depends: - · Size: tiny
+Goal: CI green after Dependabot #16 bumped the pin to nonexistent `1.120.0` (same class as A22).
+Files: `.github/workflows/ci.yml`, `.github/workflows/release-plz.yml`.
+Steps: 1. revert four `1.120.0` pins to `1.97.1` (the `mise.toml` pin); 2. push; 3. confirm CI green on PR #26.
+Check: `! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolchain@1.97.1' .github/workflows/ci.yml`.
+Done when: the CI run on `release/ketch-model` is green.
+Out of scope: bumping the real toolchain (moves `mise.toml` + pins together per A22).
+
+Check output:
+```
+$ ! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolchain@1.97.1' .github/workflows/ci.yml && echo ok
+ok
+```
+
+#### T20.7 P20 cards and A24 in plan.md
+
+Model: - · Status: done 2026-09-20 · Depends: T20.1–T20.6 · Size: small
+Goal: the ketch-model release work is recorded as P20 cards (T19.8, T20.1–T20.6) with amendment A24, so `main` carries its own history.
+Files: `plan.md`.
+Steps: 1. add P20 section with per-task cards and Check outputs; 2. add A24; 3. verify every Check passes on the branch.
+Check: `grep -q '#### T20.6' plan.md && grep -q '^- A24' plan.md`.
+Done when: PR #26 merges with the plan describing what it did.
+Out of scope: runtime code (P20 is release plumbing + plan records).
+
+Check output:
+```
+$ grep -q '#### T20.6' plan.md && grep -q '^- A24' plan.md && echo ok
+ok
+```
+
+#### T20.8 Ulid::generate after Dependabot #18
+
+Model: - · Status: done 2026-09-20 · Depends: - · Size: tiny
+Goal: workspace compiles after Dependabot #18 bumped `ulid` 1.2.1 → 3.0.0, which renamed `Ulid::new()` to `Ulid::generate()`.
+Files: `crates/cox-protocol/src/ids.rs`.
+Steps: 1. call `Ulid::generate()` in the `ulid_id!` macro (wrapper keeps `new()`); 2. clippy + `cox-protocol` tests; 3. push.
+Check: `mise exec -- cargo clippy --workspace --all-targets -- -D warnings` exits 0.
+Done when: CI `verify`/`Test` pass on the release run.
+Out of scope: any id-type rename (callers keep `SessionId::new()`).
+
+Check output:
+```
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s)
+$ mise exec -- cargo nextest run -p cox-protocol
+49 tests run: 49 passed, 0 skipped
+```
+
+#### T19.1 WASM plugins scope gate
+Model: opus · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: the extism host contract is fixed on paper before any code.
+Files: `docs/design/v0.2-wasm.md`, `plan.md`, `roadmap.md`.
+Steps: 1. write the guest/host contract sketch; 2. name the falsifier that moves it up; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md`.
+Done when: the doc exists and the roadmap line is struck through in this branch.
+Out of scope: any `extism` dependency (that is the implementation task).
+
+Check output:
+```
+$ test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md && echo ok
+ok
+```
+
+#### T19.2 LSP diagnostics scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: fix where LSP diagnostics enter the loop (tool vs hook vs core) on paper.
+Files: `docs/design/v0.2-lsp.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the diagnostics source and its trust boundary; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md`.
+Done when: the doc exists and states the entry point.
+Out of scope: any LSP client code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md && echo ok
+ok
+```
+
+#### T19.3 Gemini provider scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: decide whether Gemini is a native wire protocol or a compatible preset (A9 type-1 vs type-2) on paper.
+Files: `docs/design/v0.2-gemini.md`, `plan.md`, `roadmap.md`.
+Steps: 1. compare Gemini API against Anthropic/OpenAI shapes; 2. pick type-1 vs type-2 with reason; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md`.
+Done when: the doc names the integration type and its falsifier.
+Out of scope: any provider code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md && echo ok
+ok
+```
+
+#### T19.4 Images scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
+Goal: fix how image inputs travel Submission → provider (and what v0.1 refuses) on paper.
+Files: `docs/design/v0.2-images.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the content-block shape per wire format; 2. name the refusal behaviour; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md`.
+Done when: the doc states the block shape and the v0.1 refusal.
+Out of scope: any multimodal code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md && echo ok
+ok
+```
+
+#### T19.5 Worktrees scope gate
+Model: haiku · Status: done 2026-09-19 · Depends: - · Size: ~40
+Goal: fix the worktree↔session mapping (one session per worktree?) on paper.
+Files: `docs/design/v0.2-worktrees.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch session→worktree mapping and git tooling reuse; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md`.
+Done when: the doc states the mapping.
+Out of scope: any worktree automation.
+
+Check output:
+```
+$ test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md && echo ok
+ok
+```
+
+#### T19.6 Repo map scope gate
+Model: haiku · Status: done 2026-09-19 · Depends: - · Size: ~40
+Goal: fix what a repo map contains and where it sits in context assembly on paper.
+Files: `docs/design/v0.2-repomap.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch map contents and budget; 2. place it relative to cache breakpoints; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md`.
+Done when: the doc states contents and placement.
+Out of scope: any map builder code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md && echo ok
+ok
+```
+
+#### T19.7 Architect/editor mode scope gate
+Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~40
+Goal: fix what architect/editor mode changes (tiers, tools, approvals) on paper.
+Files: `docs/design/v0.2-modes.md`, `plan.md`, `roadmap.md`.
+Steps: 1. sketch the two modes as router/tool presets; 2. name the falsifier; 3. move the roadmap line into the P19 card.
+Check: `test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md`.
+Done when: the doc states the mode table.
+Out of scope: any mode switching code.
+
+Check output:
+```
+$ test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md && echo ok
+ok
+```
+
+#### T24.3 `two-face` syntax set
+
+Model: haiku · Status: done 2026-09-25
+Goal: ~250 languages (TS/TSX, Kotlin, Swift, Zig, TOML, Dockerfile…) for +0.6 MiB; `read`, `mode=outline` output and diffs share the set.
+Files: `Cargo.toml`, `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/tests/cells.rs`, `crates/cox-tui/tests/snapshots/`, `toolchain.md`, `/Users/listepo/GitHub/listepo/rust.md`.
+
+What landed: Replaced `SyntaxSet::load_defaults_newlines()` with `two_face::syntax::extra_newlines()` in the `SYNTAXES` lazy lock, adding 250+ additional language definitions. Added `two-face 0.3` with `syntect-fancy` feature (no onig) to cox-tui dependencies. Created snapshot tests for `.tsx` and `Dockerfile` files to verify syntax highlighting works with the extended syntax set. Updated workspace `rust.md` and project `toolchain.md` with the new dependency.
+
+Binary size change: 48234496 bytes (46M) → 48577488 bytes (46.3M), +342992 bytes (+0.33 MiB), well within the < 1 MiB limit.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test cells tsx_read_is_highlighted
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s
+────────────
+ Nextest run ID with nextest profile: default
+    Starting 1 test across 1 binary (17 tests skipped)
+        PASS [ 0.040s] cox-tui::cells tsx_read_is_highlighted
+────────────
+     Summary [ 0.041s] 1 test run: 1 passed, 17 skipped
+
+$ mise exec -- cargo nextest run -p cox-tui
+    Summary [ 1.468s] 248 tests run: 248 passed, 0 skipped
+
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 02s
+(clean)
+
+$ mise exec -- cargo fmt --check
+(clean, after `cargo fmt`)
+```
+
+#### T27.2 Approvals labelled by source; agent cards
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
+Goal: an approval or question says which agent is asking; `/agents` shows one card per live agent instead of a line.
+Files: `crates/cox-protocol/src/types.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/picker.rs`.
+Steps: (1) `Event::ApprovalRequired` gains `source: Source { session: SessionId, agent: Option<String>, preset: Option<String> }` (subagent sessions forward their approvals to the parent surface already — attach the label there); the ACP and stream-json surfaces emit it as a field. (2) Modal header: `explore-2 asks: bash cargo test` in `theme.agent`; the main session shows no prefix. (3) `/agents` card: name, preset, model, tokens, cost, last tool, elapsed, state (from the T16.1 presence records plus the live task registry); `Enter` on a card opens its rollout read-only in the transcript overlay.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui approval_modal_shows_source_agent agents_cards_snapshot
+mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
+```
+Done when: the two snapshots exist and `docs/protocol.jsonschema` regenerates with the new field.
+Out of scope: talking to an agent mid-task (`@agent` messaging).
+Execution plan: finding — a subagent's approval is **not** forwarded today: `subagent::run_task` drops every child event but `Usage`/`ToolCallRequested`/`TurnDone`, so a `shell` child whose call escalates waits on its own `pending` until cancelled. (a) `cox-protocol`: `Source { session, agent, preset }`; `ApprovalRequired.source: Option<Source>` (`serde(default)`: rollout lines from before T27.2 read as `None`); schema regenerated. (b) `cox-core`: `turn::ask` fills the session's own `Source`; `AgentTool` names children `<preset>-<n>`; `run_task` relays a child `ApprovalRequired` to the parent labelled with that name, parks the call in the parent's `pending` without touching its state, and hands the parent's `Approve` back to the child; the child's `ApprovalDecided` is relayed too so the modal closes. Test `subagent_approval_carries_source` in `tests/subagent.rs` + a scenario. (c) `cox-tui` modal header `<agent> asks: …` in `theme.agent`, snapshot `approval_modal_shows_source_agent`; ACP title gets the same prefix; stream-json carries the field through serde. (d) Step 3 (`/agents` cards) after (a)–(c) land.
+Execution plan (step 3, Claude Code / claude-sonnet-5): the creator answered the open question (§6 A29) with the narrow card, no new `Event` variant; `Enter` → rollout split into T27.5. `state.tasks` gains the `Tier` (already on `TaskCreated`, previously dropped) and `state.tick` at creation, alongside the existing `(TaskId, label)`, so a running subagent/background task can show tier and elapsed the same way `Cell::Tool.started` already does for tool cells; `tasks::list`/`/tasks`/`status.rs` keep reading `state.tasks` unchanged by mapping the extra fields away. `agents_list` becomes `agents_cards`: one block per `Presence` (T16.1: session, status; preset/tier/cost/elapsed unknown, shown `-`) and one per live `state.tasks` entry (name = label, preset parsed from the label's `<preset-or-tool>: ` prefix, tier from the stored `Tier`, elapsed from `tick - started`, state `running`; cost stays `-` — a task only learns its cost at `TaskCompleted`, which already retires it from `state.tasks`).
+
+What landed (commits `6ea9e0c` then `T27.2: /agents cards`): `6ea9e0c` landed steps (1)-(2) — `cox_protocol::types::Source`, `ApprovalRequired.source: Option<Source>` (serde default), `AgentTool` naming children `<preset>-<n>`, `subagent::relay_approval` forwarding a child's `ApprovalRequired`/`ApprovalDecided` through the parent's `pending` map, the TUI modal's `<agent> asks:` header in `theme.agent`, and the matching ACP title prefix. This session's commit landed step (3): `state.tasks: Vec<(TaskId, String, Tier, u64)>` (tier + creation tick added to the existing id/label pair), `Event::TaskCreated`/`TaskCompleted` handlers updated to fill and drop them, `Action::Tasks` mapping the tuple back down for `tasks::list` (`tasks.rs` and `status.rs` untouched), and `agents_list` replaced by `agents_cards(&state.agents, &state.tasks, state.tick)` — one card per sibling session (T16.1 presence: name = session id, state = presence status, preset/tier/cost/elapsed shown `-`) and one per live subagent/background task (name = label, preset parsed from the label's own `<preset>: ` prefix, tier, elapsed in ticks, state `running`, cost `-` until `TaskCompleted` retires it). `crates/cox-tui/tests/agents.rs`: `agents_command_lists_the_fed_records_snapshot` renamed to `agents_cards_snapshot` and extended with a running task; `agents_command_says_so_when_alone` updated for the new empty-state text (`no live agents`). `Enter` → read-only rollout overlay is split into T27.5 (§6 A29): the creator chose the narrow card over a new `Event::AgentProgress`, so per-subagent model/tokens/last tool stay undone until that event exists, and the overlay needs `/agents` to become a navigable list before a card can be opened. No `cox-protocol` change in this session's commit; `docs/protocol.jsonschema` is unchanged (there was no new field to regenerate for).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui approval_modal_shows_source_agent agents_cards_snapshot
+Summary: 2 tests run: 2 passed, 245 skipped
+$ mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
+Summary: 1 test run: 1 passed, 175 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace
+Summary: 847 tests run: 847 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+
+#### T23.4 OSC 52 clipboard
+
+Model: sonnet · Status: done 2026-09-25 · Depends: T23.0 · Size: ~70 · Priority: P2 · Complexity: 1
+Goal: `y` on a cell in the transcript overlay and `Cmd::Copy` copy through the terminal (works over SSH/tmux) when `caps.osc52`.
+Files: `Cargo.toml`, `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) Enable crossterm's `osc52` feature (verified present in 0.29, ledger #30). (2) `app.rs`: `Cmd::Copy(text)` → `execute!(stdout, CopyToClipboard::to_clipboard_from(text))` when `caps.osc52`, else `Notice(Info, "clipboard: terminal does not support OSC 52")`. (3) `state.rs`: in the `Ctrl+O` overlay, `y` copies the selected cell's plain text (already produced by `cells::cell_lines`) and `Y` the whole transcript; status line flashes `copied` for one tick.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui overlay_y_emits_copy_of_cell
+mise exec -- cargo nextest run -p cox-tui --test shell pty_copy_writes_osc52
+```
+Done when: the PTY e2e sees `\x1b]52;c;` with the base64 of the cell text.
+Out of scope: paste (bracketed paste already exists), native clipboard crates.
+
+Deviations: coordinator decision on step (1): no crossterm `osc52` feature (a new dependency needing approval); the escape is hand-built in `term.rs` the same way OSC 8 (T23.3) and OSC 9;4 (T23.6) already are — `term::copy(text)` writes `ESC ] 52 ; c ; <base64> ESC \`. `base64` sits in `Cargo.lock` twice already (`0.22.1`/`0.23.1`) but only transitively (unrelated OAuth/HTTP crates via `cox-mcp`/`cox-provider`), so it gets a ~15-line local encoder in `term.rs`, tested against known vectors, rather than a new direct dependency. There is no "`Ctrl+O` overlay" to bind `y`/`Shift+Y` inside: `Ctrl+O`/"transcript" toggles `state.show_diffs` (full diffs in the scrolling transcript, not a modal); `Context::Overlay` belongs to the unrelated `Diff`/`Help` modals. `y`/`Shift+Y` are instead new `keymap::Action`s (`copy`/`copy.all`) in `Context::Idle`, gated on an empty composer the same way `?`/`help` already is, so typing "yes" still types "yes". "The selected cell" does not exist as a concept — there is no per-cell selection UI — so `y` copies `state.transcript.last()`: the cell still held in the live viewport (a finished cell already left for the terminal's own scrollback and cannot be reached back, the same limit T24.4's `Ctrl+E` names); `Shift+Y` joins every cell still held with a blank line. Both read the cell's own stored string (`Cell`'s `text`/`output` field) rather than `cells::cell_lines`'s wrapped, glyph-prefixed render, since a paste elsewhere wants the source text, not this terminal's width. The `caps.osc52` check lives in `state.rs` (which decides whether to emit `Cmd::Copy` or a `Notice` cell), not in `app.rs`, matching how `state.rs` already decides `Cmd::Progress` (T23.6) rather than gating in the runtime; `app.rs` just writes whatever bytes `state` handed it. No status-line "copied" flash: the existing `Notice` cell path covers the one case that needs feedback (unsupported terminal); a successful copy is silent, like every other keymap action. `src/bin/kitty_probe.rs` gained a `copy` scenario (`COX_PROBE_OSC52` switch) that keeps one streaming (`ItemStarted` with no `ItemDone`) cell in `state.transcript` so `y` finds it deterministically by message order, with no PTY-timing wait. `docs/config.md` and `docs/getting-started.md` are generated/drift-checked from `cox-protocol/src/config.rs` and `commands::KEYMAP`; both were updated in the same commit. Files beyond the card's three: `crates/cox-tui/src/keymap.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/bin/kitty_probe.rs`, `crates/cox-tui/tests/shell.rs`, `crates/cox-protocol/src/config.rs`, `docs/config.md`, `docs/getting-started.md`, two `insta` snapshots (`help_overlay_snapshot`, `screen_help_overlay`) picking up the two new footer/overlay hints. No `Cargo.toml`/`Cargo.lock` change: no new dependency.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui overlay_y_emits_copy_of_cell shift_y_emits_copy_of_the_whole_transcript
+2 tests run: 2 passed
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_copy_writes_osc52
+1 test run: 1 passed
+$ mise exec -- cargo nextest run -p cox-tui
+253 tests run: 253 passed, 0 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+850 tests run: 849 passed, 1 failed, 3 skipped
+(the 1 failure is cox-mcp client::tests::oauth_refresh_failure_is_a_warning, a pre-existing
+full-suite-load flake also seen at T25.8; 3/3 passing on its own and in -p cox-mcp reruns)
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 clean
 $ mise exec -- cargo fmt --check
 clean
+```
+
+#### T27.4 `/loop`
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T25.1 · Size: ~120 (landed ~250) · Priority: P3 · Complexity: 2
+Goal: `/loop <interval> <prompt>` repeats a turn on a timer with its own budget cap; `cox run --loop <interval>` for scripts.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) `State.loop: Option<Loop { prompt, interval, next_at, budget_usd, spent }>`; `Msg::Tick` enqueues the prompt (T25.1 queue) when due and the session is idle. (2) Status line shows `↻ 4m12s`; `/loop stop` or `Esc` on an empty composer stops it; `budget.session_usd` still applies on top. (3) `cox run --loop 5m -p "…" --max-iterations N` in `run.rs` (headless, exit 0 after N or budget).
+Done when: both tests pass and `docs/getting-started.md` documents the command.
+Out of scope: cloud schedules.
+Execution plan: budget — `/loop`'s own `budget_usd` defaults to the existing session cap the TUI already carries (`state.status.budget_cap_usd`, i.e. `budget.session_usd`), overridable with an optional trailing `--budget <usd>` token; no config schema change. (1) `commands.rs`: `Action::LoopStart { interval: Duration, prompt: String, budget_usd: Option<f64> }` and `Action::LoopStop`; `parse()` gains a `"loop"` arm (`/loop stop`, or `<interval> <prompt...> [--budget <usd>]` via a small `parse_interval` — `<n>s|m|h` or a bare `<n>` as seconds) plus a `COMMANDS` row; `/help`/the palette pick it up for free. (2) `state.rs`: `pub struct Loop { prompt, interval_ticks: u64, next_at: u64, budget_usd: f64, started_cost_usd: f64, iterations: u32 }` (ticks, not `Duration` — ties into `state.tick`, the existing 100 ms clock `cells.rs` already drives elapsed time from, so a test never sleeps); `State.active_loop: Option<Loop>` (`loop` is a Rust keyword, so the card's literal field name is not legal). `step()`'s `Msg::Tick` arm calls a new `loop_tick` after incrementing `state.tick`: stops the loop and notices if `status.cost_usd - started_cost_usd >= budget_usd`, else fires `Cmd::Submit(Submission::UserTurn)` directly (idle-only — same path a direct `Enter` uses, not the T25.1 queue, which only defers while busy) once `tick >= next_at`. `act()` gains `Action::LoopStart`/`Action::LoopStop` arms; `on_key`'s idle-empty-composer `Esc` branch stops an active loop before its existing Esc-Esc-opens-rewind role. (3) `docs/getting-started.md`: a short `## Loop` section.
+
+Split (plan.md §2 — Check cannot pass within ≤3 files): headless `cox run --loop` needs both `crates/cox/src/cli.rs` (new `RunArgs` flags) and `crates/cox/src/run.rs`, which together with the two TUI files above is 4 source files, over the task's cap. This task landed the TUI half only; the headless half moved to a new follow-up card **T27.6** (§6 A31).
+
+What landed (commit `T27.4: /loop`): `crates/cox-tui/src/commands.rs` — `Action::LoopStart { interval, prompt, budget_usd }` and `Action::LoopStop`; `parse()`'s `"loop"` arm dispatches `/loop stop` or hands off to `loop_start`, which splits the interval token (`parse_interval`: `<n>s|m|h`, or a bare `<n>` as seconds, `0` rejected) from the prompt words and pulls an optional trailing `--budget <usd>` out of them; a `loop` row joined `COMMANDS` so `/help` and the palette list it for free. `crates/cox-tui/src/state.rs` — `pub struct Loop` (ticks-based `interval_ticks`/`next_at`, `budget_usd`, `started_cost_usd`, `iterations`) and `State.active_loop: Option<Loop>`; `step()`'s `Msg::Tick` arm calls the new `loop_tick`, which stops the loop (with a notice) once `status.cost_usd - started_cost_usd >= budget_usd`, else fires a direct `Cmd::Submit(Submission::UserTurn)` — not the T25.1 queue, which only defers while busy — once `state.tick >= next_at`; `act()` gained the `LoopStart`/`LoopStop` arms (the latter also reachable via the new idle-empty-composer `Esc` branch in `on_key`, which now runs ahead of the existing Esc-Esc-opens-rewind check so a running loop is always one `Esc` away); `/clear` also clears `active_loop`, matching its existing queue-clear. `docs/getting-started.md` gained a `## Loop` section. Landed ~250 lines against the card's ~120 estimate — four tests (`loop_enqueues_when_due_and_idle` plus `loop_parses_interval_prompt_budget_and_stop`, `loop_stop_and_esc_both_end_a_running_loop`, `loop_stops_itself_when_its_own_budget_is_spent`) and their doc comments are most of the overshoot, the same shape prior overshoot notes in this file describe. Deviations: `State.active_loop` instead of the card's literal `State.loop` (`loop` is a Rust keyword); the card's status-line `↻ 4m12s` segment is not implemented — it needs `crates/cox-tui/src/status.rs` (a fourth file over the ≤3-file cap) plus a matching `docs/getting-started.md` status-line-segment-order update, neither of which any `Check` test requires, so it stayed out rather than forcing another split; a running loop is currently silent between `/loop`'s own start/stop notices. Adding it is a small, self-contained follow-up (not filed as a card, since it is cosmetic and no falsifier depends on it). Discovered while implementing: typing a slash command through real key events (as opposed to calling `commands::parse` directly) must open-then-`Esc`-close the `/` palette first — `clear_command_emits_cmd_clear`'s existing comment already named this; the new tests' `type_command` test helper follows the same pattern. `cargo insta accept` picked up the expected `screen_help_overlay` snapshot diff (the new `/loop` row) and `just screenshots` regenerated the one affected `docs/screenshots/help_overlay.svg`; no other screenshot changed.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui loop_enqueues_when_due_and_idle
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace --no-fail-fast
+Summary: 851 tests run: 851 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- doctor
+unaffected (T27.4 only changed the interactive TUI session path; no `run.rs`/`cli.rs` flags this task)
+```
+
+`cox run --loop <interval> -p "…" --max-iterations N` (the card's headless half, and its `run_loop_stops_after_max_iterations` Check) is not implemented in this commit — see T27.6.
+
+#### T27.6 `cox run --loop`
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T27.4 · Size: ~100 (landed ~185) · Priority: P3 · Complexity: 2
+Goal: `cox run --loop <interval> -p "…" --max-iterations N` repeats the headless prompt on a timer, the `cox run` counterpart to T27.4's TUI `/loop` (split out of it, §6 A31, because it needs a fourth file over that task's ≤3-file cap).
+Files: `crates/cox/src/cli.rs`, `crates/cox/src/run.rs`.
+Steps: (1) `RunArgs` gains `--loop <interval>` (same `s|m|h` grammar as `/loop`) and `--max-iterations <N>` (required with `--loop`; `run.rs` rejects one without the other before opening a session). (2) `run.rs`'s `run()`: with `--loop`, repeat the existing single-prompt `drive()` call every interval instead of once, folding each iteration's `Outcome` into a running total (cost, tokens, turns) the same shape `Outcome::summary()` already prints; stop and exit `EXIT_OK` after `--max-iterations` turns or `EXIT_BUDGET` once cumulative cost reaches `budget.session_usd` (reuse the core's existing budget stop, `StopReason::Budget`, rather than a second cap). (3) `Ctrl+C` during a wait between iterations exits cleanly with whatever iterations completed already printed.
+Done when: the test passes, `cox run --help` shows both flags, and `docs/getting-started.md`'s headless section mentions `--loop`.
+Out of scope: cloud schedules; a per-iteration budget distinct from `budget.session_usd` (T27.4's TUI `/loop` already covers a loop-scoped cap; this is scripts, where the session cap is the natural stop).
+
+What landed (commit `T27.6: cox run --loop`): `crates/cox/src/cli.rs` — `RunArgs` gained `r#loop: Option<String>` (`--loop <INTERVAL>`) and `max_iterations: Option<u32>` (`--max-iterations <N>`). `crates/cox/src/run.rs` — `run()` parses the pair up front (`--loop` and `--max-iterations` must both be present or both absent, checked before opening a session) via `cox_tui::commands::parse_interval` — T27.4's own grammar, reused rather than duplicated; `drive()` was restructured to take `&Session` plus an already-taken `mpsc::Receiver<Event>` instead of pulling both itself (a session's event receiver can only be taken once, so the old shape could not be called twice on the same session), with the `session.events()` take and the Ctrl+C-forwarding task moved up into `run()` so they happen exactly once regardless of `--loop`; a new `run_loop()` calls `drive()` repeatedly on that same session/receiver, folding each iteration's `Outcome` into a running total via a new `Outcome::merge` (sums the ledger fields, keeps the latest text/session/stop) — reusing the same session end to end is also what lets the core's own cumulative `budget.session_usd` tracking (already summed per session) double as the loop's spend cap: `run_loop` stops the moment an iteration's stop reason is `StopReason::Budget`, or after `max_iterations` turns, or if an iteration fails fatally; between iterations it races `tokio::time::sleep(interval)` against a second `tokio::signal::ctrl_c()` listener so `Ctrl+C` during the wait exits the loop cleanly (whatever already ran is what prints — no error, no special exit code). `crates/cox/src/config_load.rs` gained two `flag_key_map` rows (`("loop", "runtime.loop")`, `("max-iterations", "runtime.max_iterations")`) — invocation parameters like `deep`/`continue`, not persisted config — which the existing `config_every_flag_has_a_config_key` test requires for any new `run` flag. `crates/cox-tui/src/commands.rs` — `parse_interval` made `pub` so `crates/cox` (already a `cox-tui` dependent via `session.rs`) can reuse T27.4's interval grammar instead of a second parser. `docs/getting-started.md`'s `## Loop` section gained a paragraph on the headless counterpart. Deviation: this is 4 source files against the task's own ≤3-file convention (`cli.rs`, `run.rs`, plus the unavoidable `config_load.rs` for the flag-key test and the one-line `commands.rs` visibility change) — not split into a second card, because the alternative was literally duplicating the interval-parsing logic the task explicitly said to reuse instead. Landed ~185 lines against the card's ~100 estimate, mostly the two new `run.rs` tests and their doc comments. Discovered while implementing: setting `HOME` (not just `COX_HOME`) when manually exercising `mise exec -- cargo run` breaks `mise`'s own toolchain lookup and triggers a full reinstall of every tool in the global `mise.toml` — the existing `crates/cox/tests/run_cli.rs` harness never hits this because it runs the compiled binary directly, not through `mise exec`; worth remembering for anyone hand-testing this or a future task the same way.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace --no-fail-fast
+Summary: 858 tests run: 858 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- run --help
+shows --loop <INTERVAL> and --max-iterations <N>
+$ COX_HOME=<scratch> COX_PROVIDER=scripted COX_SCENARIO=<3-turn scenario> mise exec -- cargo run -p cox -- --cwd <scratch> run -p hi --loop 1s --max-iterations 2 --output-format json
+{"session":"...","result":"two","turns":2,"stop":{"type":"end_turn"},"denied":0,"exit_code":0}
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- --cwd <scratch> run -p hi --loop 1s
+Error: --loop and --max-iterations must be given together (exit 1)
+```
+
+#### T27.7 `/loop` status-line segment
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T27.4 · Size: ~40 (landed ~49) · Priority: P3 · Complexity: 1
+Goal: while a `/loop` is active, the status line shows `↻ <time to next run>` (e.g. `↻ 4m12s`), so a running loop is always visible (T27.4 step 2, split out, §6 A33).
+Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs` (only if a small accessor is needed).
+Steps: (1) `status.rs` adds the segment from `state.active_loop` (`next_at` − `state.tick`, 100 ms ticks), formatted like the existing elapsed times. It is dropped first when the line is narrow, like the other optional segments. (2) Nothing is shown when no loop is active.
+Done when: the test passes and the existing status snapshots are unchanged when no loop is active.
+Out of scope: pausing a loop.
+
+What landed (commit `T27.7: /loop status-line segment`): `crates/cox-tui/src/status.rs` — `segments()` computes `↻ {m}m{s}s` from `state.active_loop.next_at − state.tick` (ticks/10 → seconds) and pushes it as the right-most droppable segment, right before the always-kept head/mode segment, so `fit`'s right-to-left drop removes it first; nothing is pushed when `state.active_loop` is `None`. `crates/cox-tui/tests/status.rs` gained `status_shows_loop_countdown`, following the file's existing `turn`/`State::new` test style: asserts the segment is absent without a loop, reads `↻ 4m12s` for a `Loop { next_at: state.tick + 2_520, .. }`, and confirms it drops before `cache` at a width one byte short of the full line. `docs/getting-started.md`'s status-line section gained the `↻ 4m12s` bullet and the segment's place (first) in the documented narrow-terminal drop order. No `state.rs` change: `Loop.next_at` and `State.tick` were already public. Deviation: `cells.rs`'s existing elapsed-time formatting (a running tool call's `{secs}.{tenths}s`, no minutes) does not fit a countdown that can run for hours, so this is a new small formatter rather than a shared one — the two never actually duplicated logic, so nothing was extracted. `docs/getting-started.md` is a third touched file beyond the card's own `status.rs`/`state.rs` list, per T27.4's own note (§ T27.4 in this file) that the matching doc update was the other missing piece, not a new `state.rs` accessor.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui status_shows_loop_countdown
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace
+Summary: 859 tests run: 859 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ CARGO_INCREMENTAL=0 mise exec -- cargo fmt --check
+clean
+```
+
+#### T27.5 `/agents` rollout overlay
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T27.2 · Size: ~150 (landed ~205 across 4 files) · Priority: P2 · Complexity: 2
+Goal: `Enter` on an `/agents` card opens that agent's rollout read-only in the transcript overlay — the half of T27.2 step 3 the creator split out (§6 A29) because it needs `/agents` to stop being a static `Notice`.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`.
+Steps: (1) `/agents` becomes a navigable list (`Context::Overlay`, arrow keys move a cursor) instead of a `Notice`, one row per `agents_cards` (T27.2) entry. (2) `Enter` on a sibling-session row asks the binary — the only side that talks to `cox-store` — for that session's rollout via `Store::rollout_read`, the same read `crates/cox/src/resume.rs` already does for `--resume`, and feeds it back as a new `Msg`; a subagent-task row has no `SessionId` on the wire yet, so it stays disabled until a follow-up gives a subagent its own resumable id. (3) The overlay renders the fed events read-only (no composer, no approvals), reusing `cells`/`view` rendering; `Esc` closes it.
+Done when: the test passes and the overlay has a snapshot.
+Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
+
+What landed (commit `T27.5: /agents rollout overlay`): `crates/cox-tui/src/state.rs` gained `Modal::Agents { rows, ids, selected }` (one line per `agents_rows` entry — `agents_cards` renamed and reshaped from a two-line `String` to `(String, Option<SessionId>)` pairs, since a `Picker` row is one line and the plan wants `Context::Overlay`, not `Context::Modal`) and `Modal::Transcript { cells, scroll }`; `Action::Agents` now opens `Modal::Agents` instead of a `Notice` when any row exists. Arrow keys move `selected`; `Enter` on a sibling-session row (`ids[selected].is_some()`) emits `Cmd::Ask(Ask::Rollout(id))` — a task row's id is `None` (no `SessionId` on the wire yet, plan.md §3 P27) so `Enter` on it is a no-op. The reply lands as a new `Msg::Rollout(Vec<Event>)`, built by `state::replay_cells`: a scratch `State` fed the events through the ordinary `update`/`Msg::Event` path, the same technique `tests/cells.rs`'s fixture replay already uses, so the overlay renders through the identical cell-building code instead of a second renderer. `crates/cox-tui/src/view.rs` draws `Modal::Agents` as a cursor-marked row list (same marking convention as `Picker::lines`) and `Modal::Transcript` by flat-mapping its cells through the existing `cell_lines`, both over the transcript like `Diff`/`Help` (`Context::Overlay`, no band of their own). A 3-files-only split (landing the `cox-tui` half now, leaving the runtime wiring to a follow-up) was drafted but turned out not to save a file: `crates/cox/src/session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout`, whether that edit answers the ask for real or only stubs it — the real `Store::open(&home).and_then(|s| s.rollout_read(&id)).unwrap_or_default()` call (the same read `crates/cox/src/resume.rs` makes for `--resume`; a read error answers empty rather than killing the poll loop the rest of `/agents` still needs) costs the same one match arm as a stub, so the card lands whole across 4 files (`state.rs`, `view.rs`, `crates/cox-tui/tests/agents.rs`, `session.rs`) instead of the nominal 3 (§6 A34) — `crates/cox/src/resume.rs` itself is untouched, since it builds a turn-oriented `History` this overlay does not need. `tests/agents.rs`'s T27.2 snapshot test is renamed `agents_overlay_lists_one_row_per_card` (now reads `Modal::Agents`, not the old `Notice` cell) and gains `agents_overlay_opens_the_selected_rollout`, which drives the list, sends `Enter`, feeds a hand-built `Msg::Rollout` (session.rs answers the real `Ask::Rollout` at runtime; the test proves the replay path), and closes with `Esc`. Three snapshots landed (`agents_overlay_lists_one_row_per_card`, `agents_overlay_list`, `agents_overlay_rollout`); the old `agents__agents_cards_snapshot.snap` was deleted with the rename. Skipped: no `commands.rs`/`KEYMAP` hint entries for the overlay's arrow/Enter/Esc keys (the generic Overlay-context hint line covers it; adding named hints would have meant a fifth file).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_rollout
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace
+Summary: 860 tests run: 860 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ CARGO_INCREMENTAL=0 mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> mise exec -- cargo run --bin cox -- doctor
+clean report (db opens, sandbox ok, git ok; unrelated pre-existing warnings only — no API key, no TERM)
+```
+
+#### T22.9 Click-to-unfold a tool card
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T22.4 · Size: ~100 · Priority: P3 · Complexity: 2
+Goal: with `tui.mouse = true`, a left click on a folded tool card in the live viewport unfolds it, and a second click folds it again (split out of T22.4, §6 A33).
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `State` gains per-cell fold state keyed by transcript index, in place of the last-cell-only `expanded_last`. `Ctrl+O` and every existing fold path keep their behaviour. (2) `view.rs` records `cell_rows: Vec<(Range<u16>, usize)>` while drawing. (3) `on_mouse`: `Down(Left)` inside the viewport hit-tests `cell_rows` and toggles the matching tool cell's fold; a click anywhere else does nothing.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui update_mouse_click_unfolds_card
+```
+Done when: the test passes and the existing fold and `Ctrl+O` snapshots are unchanged.
+Out of scope: drag selection; clicks in modals and pickers.
+What landed (commit `T22.9: click-to-unfold a tool card`): `state.rs` replaces `expanded_last: bool` with `expanded: HashSet<usize>` (per transcript index) and adds `cell_rows: RefCell<Vec<(Range<u16>, usize)>>` — interior mutability, because `view`'s `&State` signature is shared by every render call site and test in the crate (dozens of them), and changing it would have blown the size limit many times over. `A::Expand` and a new `toggle_fold` helper flip a transcript index's set membership; `on_mouse` gains a `Down(Left)` branch that hit-tests `cell_rows` when no modal is open and toggles the matching cell. `view.rs`'s plain-transcript arm now builds `tool_spans` (each `Cell::Tool`'s line range) alongside `lines`, and a new `record_cell_rows` converts the spans still inside the scrolled/clipped viewport to absolute screen rows — the same coordinate space `MouseEvent::row` arrives in, since ratatui anchors an inline viewport's `Frame::area()` to the real cursor row rather than to zero (`ratatui-core` 0.1.2's `terminal/resize.rs` tests assert exactly this: `viewport_area` is `Rect::new(0, 4, ...)`-shaped, not `y = 0`). `cell_rows` is cleared on every draw so a click behind `Diff`/`Help`/`Agents`/`Transcript` never hits a stale card. The last tool cell still gets `Look.expand_last = Some(bool)` exactly as before — same `Ctrl+E` hint, same snapshots — and any other cell the user clicked gets `Some(true)` only, never `Some(false)`, so a cell nobody has touched still renders exactly as it always has.
+Deviations: (1) The card's Steps/Done-when say `Ctrl+O`; the key actually bound to `Action::Expand` (T24.4) is `Ctrl+E` (`keymap.rs`, `cells.rs`'s `ctrl_e_expands_last_card`, the screenshots' `Ctrl+E expand` hint) — a card-writing slip, most likely carried over from T22.4's own done.md deviation note. The implementation and its test follow the real key, `Ctrl+E`; nothing here changes `Ctrl+O` (`A::Transcript`, `state.show_diffs`).
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui update_mouse_click_unfolds_card
+        PASS [ 0.016s] (1/1) cox-tui state::tests::update_mouse_click_unfolds_card
+$ mise exec -- cargo nextest run --workspace
+     Summary [ 8.482s] 861 tests run: 861 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
 ```

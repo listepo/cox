@@ -6,7 +6,7 @@ expression: "shot(\"help_overlay\", &mut state)"
 Every key, grouped by context.
 [info] idle     Enter send · Shift+Tab mode cycle · @ file · / command · ? help · Shift+Enter
 newline · Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O
-transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
+transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit · y copy · Shift+Y copy all
        running  Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter
         send now · Ctrl+Enter send now · Ctrl+U unqueue
        modal    Enter choose · Esc close · Up previous · Down next
@@ -31,6 +31,8 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit
        /sessions                                                this project's recent sessions
        /expand <id>                                             show an archived tool output in full
        /agents                                                  live cox sessions in this workspace
+       /loop <interval> <prompt> [--budget usd] | /loop stop    repeat a prompt on a timer with its
+       own budget cap
        /skills                                                  list skills
        /hooks                                                   list hooks
        /mcp                                                     MCP servers and their tools

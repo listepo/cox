@@ -77,6 +77,7 @@ Programs the project uses and the direct packages from its manifests.
 | shlex | local | https://crates.io/crates/shlex | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |
 | syntect | local | https://crates.io/crates/syntect | Rust dependency |
+| two-face | local | https://crates.io/crates/two-face | T24.3: extended syntax definitions |
 | terminal-colorsaurus | local | https://crates.io/crates/terminal-colorsaurus | T22.6: OSC 11 background colour query for `tui.theme = "auto"` |
 | tempfile | local | https://crates.io/crates/tempfile | Rust dependency |
 | thiserror | local | https://crates.io/crates/thiserror | Error enums |

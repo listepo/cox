@@ -361,6 +361,38 @@ fn pty_pops_keyboard_flags_on_exit() {
     );
 }
 
+/// T22.4: `tui.mouse = false` (the default probe state) must leave the
+/// terminal's mouse reporting untouched; `true` enables it on start and
+/// disables it on exit, exactly once each.
+#[test]
+fn pty_no_mouse_capture_when_disabled() {
+    let count =
+        |raw: &[u8], needle: &[u8]| raw.windows(needle.len()).filter(|w| *w == needle).count();
+
+    let without = pty::run_probe(&[], 24, 80);
+    assert_eq!(
+        count(&without, b"\x1b[?1000h") + count(&without, b"\x1b[?1006h"),
+        0,
+        "mouse capture sent without tui.mouse: {:?}",
+        String::from_utf8_lossy(&without)
+    );
+
+    let with = pty::run_probe(&[("COX_PROBE_MOUSE", "1")], 24, 80);
+    let shown = String::from_utf8_lossy(&with);
+    assert_eq!(count(&with, b"\x1b[?1000h"), 1, "{shown:?}");
+    assert_eq!(count(&with, b"\x1b[?1006h"), 1, "{shown:?}");
+    assert_eq!(
+        count(&with, b"\x1b[?1000l"),
+        1,
+        "not disabled on exit: {shown:?}"
+    );
+    assert_eq!(
+        count(&with, b"\x1b[?1006l"),
+        1,
+        "not disabled on exit: {shown:?}"
+    );
+}
+
 /// Rows `app.rs` keeps for the live viewport (`VIEWPORT_ROWS`).
 const VIEWPORT_ROWS: usize = 15;
 
@@ -498,6 +530,22 @@ fn pty_progress_only_with_the_capability() {
         count(&without, b"\x1b]9;4"),
         0,
         "{:?}",
+        String::from_utf8_lossy(&without)
+    );
+}
+
+/// T23.4: `y` on the probe's one streaming cell writes OSC 52 with the
+/// cell's text, base64-encoded, only when the terminal draws it.
+#[test]
+fn pty_copy_writes_osc52() {
+    let scenario = ("COX_PROBE_SCENARIO", "copy");
+    let with = pty::run_probe(&[scenario, ("COX_PROBE_OSC52", "1")], 24, 80);
+    let shown = String::from_utf8_lossy(&with);
+    assert!(shown.contains("\x1b]52;c;Y2VsbCB0ZXh0\x1b\\"), "{shown:?}");
+    let without = pty::run_probe(&[scenario], 24, 80);
+    assert!(
+        !String::from_utf8_lossy(&without).contains("\x1b]52;c;"),
+        "wrote OSC 52 without the capability: {:?}",
         String::from_utf8_lossy(&without)
     );
 }

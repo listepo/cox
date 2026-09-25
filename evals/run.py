@@ -6,6 +6,14 @@ headless `cox run`, then `check`. Cost comes from the JSON output.
     just eval                      # real provider (needs a key in env)
     just eval --only create-file   # one task
     just eval --provider openai --model gpt-4o-mini
+    just eval --preset verify      # T30.3: verify-before-done + test hook
+
+`--preset verify` (T30.3) adds a harness system addendum telling the model
+to run the task's tests and show the output before reporting done, and
+wires `evals/hooks/verify.sh` as a `PostToolUse` hook on `edit`/
+`apply_patch`/`write` (hooks stay enabled instead of the default
+`--no-hooks`). The addendum goes into the per-task `COX_HOME/AGENTS.md`
+and the hook into `COX_HOME/config.toml` — both already fresh per task.
 
 Exit code is 0 only when every selected task passes.
 """
@@ -25,6 +33,14 @@ import yaml
 
 EVALS = Path(__file__).resolve().parent
 TASKS = EVALS / "tasks"
+HOOKS = EVALS / "hooks"
+
+# T30.3: harness system addendum for `--preset verify`, loaded through the
+# AGENTS.md/CLAUDE.md hierarchy (cox_ext::instructions candidates() puts
+# `<COX_HOME>/AGENTS.md` first, ahead of every project file).
+VERIFY_ADDENDUM = (
+    "Before reporting done, run the task's tests and show the output.\n"
+)
 
 
 def load_tasks(names):
@@ -99,11 +115,28 @@ def scenario_toml(turns):
     return "".join(out)
 
 
-def run_task(task, *, cox_bin, dry_run, provider, model):
+def write_verify_preset(home):
+    """T30.3: drop the addendum + hook config into a fresh COX_HOME."""
+    (home / "AGENTS.md").write_text(VERIFY_ADDENDUM)
+    verify_sh = HOOKS / "verify.sh"
+    config = (
+        "[[hooks.PostToolUse]]\n"
+        f'matcher = "{toml_escape("edit|apply_patch|write")}"\n'
+        f'command = "{toml_escape(str(verify_sh))}"\n'
+        # Above the script's own 120s cap, so the cap (not this timeout)
+        # is what fires on a hanging test command.
+        "timeout_s = 130\n"
+    )
+    (home / "config.toml").write_text(config)
+
+
+def run_task(task, *, cox_bin, dry_run, provider, model, preset=None):
     work = Path(tempfile.mkdtemp(prefix="cox-eval-"))
     home = Path(tempfile.mkdtemp(prefix="cox-eval-home-"))
     scenario_file = None
     env = dict(os.environ, COX_HOME=str(home), HOME=str(home))
+    if preset == "verify":
+        write_verify_preset(home)
     if dry_run:
         scenario_file = work / "scenario.toml"
         scenario_file.write_text(scenario_toml(task.get("dry_run", {}).get("turns")))
@@ -120,10 +153,14 @@ def run_task(task, *, cox_bin, dry_run, provider, model):
         cox_bin, "run", "-p", task["prompt"],
         "--output-format", "json", "--max-turns", "40",
         "--approve", "never", "--permission-mode", "auto",
-        # Hermetic evals: ambient hooks and MCP servers would add seconds
-        # of startup noise (and nondeterminism) to every task.
-        "--no-hooks", "--no-mcp",
+        # Hermetic evals: ambient MCP servers would add seconds of startup
+        # noise (and nondeterminism) to every task. Hooks stay off too,
+        # except under `--preset verify`, which wires its own PostToolUse
+        # hook through this task's fresh COX_HOME/config.toml.
+        "--no-mcp",
     ]
+    if preset != "verify":
+        cmd.append("--no-hooks")
     if provider:
         cmd += ["--provider", provider]
     if model:
@@ -167,17 +204,24 @@ def main(argv=None):
     parser.add_argument("--cox-bin", default=None)
     parser.add_argument("--provider", default=None)
     parser.add_argument("--model", default=None)
+    parser.add_argument(
+        "--preset", choices=["verify"], default=None,
+        help="verify: add the run-tests-before-done addendum and the "
+             "PostToolUse test-runner hook (T30.3)",
+    )
     args = parser.parse_args(argv)
     cox_bin = find_cox_bin(args.cox_bin)
     tasks = load_tasks(args.only)
     if not tasks:
         raise SystemExit("no tasks selected")
     print(f"cox: {cox_bin}  tasks: {len(tasks)}"
-          f"  mode: {'dry-run (scripted)' if args.dry_run else 'live'}")
+          f"  mode: {'dry-run (scripted)' if args.dry_run else 'live'}"
+          f"{f'  preset: {args.preset}' if args.preset else ''}")
     results = []
     for path, task in tasks:
         res = run_task(task, cox_bin=cox_bin, dry_run=args.dry_run,
-                       provider=args.provider, model=args.model)
+                       provider=args.provider, model=args.model,
+                       preset=args.preset)
         results.append(res)
         flag = "PASS" if res["pass"] else "FAIL"
         print(f'{res["name"]:20} {flag:4}  ${res["cost_usd"]:.4f}'
