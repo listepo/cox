@@ -26,6 +26,11 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # Its tags name Rust toolchains, not releases of the action: the workflows
+      # pin the toolchain on purpose (1.97.1), and Dependabot proposed a Rust
+      # 1.120.0 that does not exist (#38).
+      - dependency-name: dtolnay/rust-toolchain
     groups:
       actions-patch:
         update-types: ["patch"]
