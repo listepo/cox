@@ -4,19 +4,28 @@
 //! The price table carries `verified_on` dates; `cox doctor` may warn if a
 //! row is older than 90 days. Unknown models are costed as 0 with `estimated
 //! = true` and emit a `Notice(Warn)` once per session.
+//!
+//! [`Priced`] is where the table meets a live call: it wraps the session's
+//! provider so every caller (turns, compaction, memory, init, subagents)
+//! gets a costed `Usage` without each one looking prices up itself.
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use figment::Figment;
 use figment::providers::{Format, Toml};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::UsageRow;
-use cox_protocol::types::{Job, ModelId, ProviderId, Tier, Usage};
+use cox_protocol::traits::{Provider, UsageRow};
+use cox_protocol::types::{Caps, Job, ModelId, ProviderEvent, ProviderId, Request, Tier, Usage};
 
 const DEFAULT_PRICES: &str = include_str!("../prices.toml");
 
@@ -77,6 +86,11 @@ impl PriceTable {
         Self::from_str(&content)
     }
 
+    /// The table compiled into the binary.
+    pub fn embedded() -> Result<Self, PriceError> {
+        Self::from_str(DEFAULT_PRICES)
+    }
+
     fn from_str(content: &str) -> Result<Self, PriceError> {
         let table: PriceToml = Figment::from(Toml::string(content))
             .extract()
@@ -108,6 +122,19 @@ impl PriceTable {
         input_cost + output_cost + cache_write_cost + cache_read_cost
     }
 
+    /// Sets `usage.cost_usd` for `model`. An unpriced model is not an error:
+    /// it costs 0 and is flagged `estimated`, so it can never make a call
+    /// disappear from the ledger.
+    pub fn apply(&self, model: &ModelId, usage: &mut Usage) {
+        match self.price_for(model) {
+            Some(price) => usage.cost_usd = self.cost(usage, price),
+            None => {
+                usage.cost_usd = 0.0;
+                usage.estimated = true;
+            }
+        }
+    }
+
     /// Returns true the first time this model is seen, false on subsequent calls.
     /// Used to emit one `Notice(Warn)` per session for unknown models.
     pub fn warn_once(&self, model: &ModelId) -> bool {
@@ -121,10 +148,8 @@ impl PriceTable {
     }
 }
 
-/// Fills in the cost of a call and returns the row `Store::usage_insert`
-/// takes. `price_for` returning `None` is not an error: the row is still
-/// written, costed at 0 and flagged `estimated`, so an unpriced model can
-/// never make a call disappear from the ledger.
+/// Fills in the cost of a call ([`PriceTable::apply`]) and returns the row
+/// `Store::usage_insert` takes.
 #[allow(clippy::too_many_arguments)]
 pub fn ledger_row(
     session: SessionId,
@@ -138,13 +163,7 @@ pub fn ledger_row(
     prices: &PriceTable,
 ) -> UsageRow {
     let mut usage = usage;
-    match prices.price_for(&model) {
-        Some(price) => usage.cost_usd = prices.cost(&usage, price),
-        None => {
-            usage.cost_usd = 0.0;
-            usage.estimated = true;
-        }
-    }
+    prices.apply(&model, &mut usage);
     UsageRow {
         session_id: session,
         turn,
@@ -154,6 +173,62 @@ pub fn ledger_row(
         model,
         effort,
         usage,
+    }
+}
+
+/// A provider that costs every call it makes. Backends report tokens only;
+/// this prices both the `Usage` event callers fold into the ledger and the
+/// `Usage` the call returns, by `req.model`, so the two always agree.
+pub struct Priced {
+    inner: Arc<dyn Provider>,
+    prices: Arc<PriceTable>,
+}
+
+impl Priced {
+    /// Wraps `inner`; `prices` is shared by every call it makes.
+    pub fn new(inner: Arc<dyn Provider>, prices: Arc<PriceTable>) -> Self {
+        Self { inner, prices }
+    }
+}
+
+#[async_trait]
+impl Provider for Priced {
+    fn id(&self) -> ProviderId {
+        self.inner.id()
+    }
+
+    fn capabilities(&self) -> Caps {
+        self.inner.capabilities()
+    }
+
+    async fn stream(
+        &self,
+        req: Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
+        let model = req.model.clone();
+        let (tx, mut rx) = mpsc::channel(64);
+        let forward = async {
+            while let Some(mut event) = rx.recv().await {
+                if let ProviderEvent::Usage { usage } = &mut event {
+                    self.prices.apply(&model, usage);
+                }
+                // A closed sink means the caller stopped listening; dropping
+                // `rx` then lets the backend see its own send fail.
+                if sink.send(event).await.is_err() {
+                    break;
+                }
+            }
+        };
+        let (result, ()) = tokio::join!(self.inner.stream(req, tx, cancel), forward);
+        let mut usage = result?;
+        self.prices.apply(&model, &mut usage);
+        Ok(usage)
+    }
+
+    async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+        self.inner.count_tokens(req).await
     }
 }
 
@@ -308,5 +383,91 @@ mod tests {
         assert_eq!(row.usage.cost_usd, 0.0);
         assert!(row.usage.estimated);
         assert_eq!(row.usage.input_tokens, 1_000_000);
+    }
+
+    /// Reports fixed tokens and no cost, the way every real backend does.
+    struct TokensOnly;
+
+    #[async_trait]
+    impl Provider for TokensOnly {
+        fn id(&self) -> ProviderId {
+            ProviderId::Anthropic
+        }
+
+        fn capabilities(&self) -> Caps {
+            Caps {
+                cache: true,
+                thinking: false,
+                server_tools: false,
+                count_tokens: false,
+                max_context: 200_000,
+            }
+        }
+
+        async fn stream(
+            &self,
+            _req: Request,
+            sink: mpsc::Sender<ProviderEvent>,
+            _cancel: CancellationToken,
+        ) -> Result<Usage, ProviderError> {
+            let usage = sample_usage();
+            let _ = sink.send(ProviderEvent::Usage { usage }).await;
+            Ok(usage)
+        }
+
+        async fn count_tokens(&self, _req: &Request) -> Result<u32, ProviderError> {
+            Ok(0)
+        }
+    }
+
+    fn request(model: &str) -> Request {
+        Request {
+            tier: Tier::Code,
+            job: Job::Main,
+            model: ModelId(model.into()),
+            system: vec![],
+            tools: vec![],
+            messages: vec![],
+            effort: cox_protocol::types::Effort::High,
+            max_tokens: 1024,
+            thinking: cox_protocol::types::Thinking::Off,
+            cache_breakpoints: vec![],
+            stop_sequences: vec![],
+        }
+    }
+
+    /// Runs one call through `Priced`; returns the forwarded `Usage` event
+    /// and the call's own return value.
+    async fn priced_call(model: &str) -> (Usage, Usage) {
+        let table = PriceTable::embedded().expect("default prices parse");
+        let priced = Priced::new(Arc::new(TokensOnly), Arc::new(table));
+        let (tx, mut rx) = mpsc::channel(8);
+        let returned = priced
+            .stream(request(model), tx, CancellationToken::new())
+            .await
+            .expect("call succeeds");
+        let mut event = None;
+        while let Some(ev) = rx.recv().await {
+            if let ProviderEvent::Usage { usage } = ev {
+                event = Some(usage);
+            }
+        }
+        (event.expect("usage event forwarded"), returned)
+    }
+
+    #[tokio::test]
+    async fn priced_provider_costs_both_the_event_and_the_return() {
+        let (event, returned) = priced_call("claude-haiku-4-5").await;
+        // Haiku: 1M input @ $1/M + 100k output @ $5/M = $1.50.
+        assert!((event.cost_usd - 1.5).abs() < 0.0001, "{}", event.cost_usd);
+        assert_eq!(event, returned);
+        assert!(!returned.estimated);
+    }
+
+    #[tokio::test]
+    async fn priced_provider_flags_an_unknown_model_as_estimated() {
+        let (event, returned) = priced_call("no-such-model").await;
+        assert_eq!(event.cost_usd, 0.0);
+        assert!(event.estimated && returned.estimated);
     }
 }

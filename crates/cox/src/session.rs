@@ -14,6 +14,7 @@ use cox_protocol::types::{Event, ItemKind, Job, Level, Submission};
 use cox_provider::anthropic::{AnthropicProvider, CacheTtl};
 use cox_provider::openai::chat::OpenAiChatProvider;
 use cox_provider::openai::responses::OpenAiResponsesProvider;
+use cox_provider::usage::{PriceTable, Priced};
 use cox_store::Store;
 use cox_tools::ask_user::{Answers, AskUserTool, Question as AskUserQuestion};
 use cox_tools::bash::BashTool;
@@ -818,10 +819,18 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
 
 /// The `tiers.code` provider decides which real client to build; every tier
 /// of a session goes through the same provider object (routing picks models).
+/// Real clients are wrapped in `Priced` so every call reaches the ledger with
+/// its cost; test doubles are not, because their scenarios script the cost.
 pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
     if let Some(double) = cox_provider::from_env()? {
         return Ok(Arc::from(double));
     }
+    let prices = Arc::new(PriceTable::embedded()?);
+    Ok(Arc::new(Priced::new(backend_for(config)?, prices)))
+}
+
+/// The real client `tiers.code.provider` names, before pricing.
+fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
     match config.tiers.code.provider.as_str() {
         "anthropic" => {
             let a = &config.providers.anthropic;
