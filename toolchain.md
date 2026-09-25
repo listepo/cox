@@ -17,6 +17,10 @@ Programs the project uses and the direct packages from its manifests.
 | dunnage | ketch | `just test` ends with a lossless cleanup of `target/` | https://github.com/listepo/dunnage |
 | uv | global (curl installer / brew) | Runs the `evals/` package (`just eval`) and locks its Python deps | https://github.com/astral-sh/uv |
 | python | uv (`evals/.python-version`) | Eval harness and the Terminal-Bench agent, which must be a Python class | https://github.com/python/cpython |
+| zig | mise (`mise.toml`) | Linker for `cargo zigbuild`: the Linux cox the Terminal-Bench containers run (T30.9) | https://github.com/ziglang/zig |
+| cargo-zigbuild | mise (`mise.toml`, aqua) | Cross-builds that Linux cox from macOS without a Docker build step | https://github.com/rust-cross/cargo-zigbuild |
+| colima | global (mise) | Docker runtime for Terminal-Bench (the creator's choice) | https://github.com/abiosoft/colima |
+| docker-cli, docker-compose, docker-buildx | global (mise) | Harbor drives task containers through `docker compose` and `docker buildx build` | https://github.com/docker/cli , https://github.com/docker/compose , https://github.com/docker/buildx |
 
 ## ketch
 
@@ -33,6 +37,7 @@ Programs the project uses and the direct packages from its manifests.
 | arboard | local | https://crates.io/crates/arboard | Rust dependency |
 | assert_cmd | local | https://crates.io/crates/assert_cmd | Rust dependency |
 | assert_fs | local | https://crates.io/crates/assert_fs | Rust dependency |
+| async-openai | local (`response-types` only) | https://github.com/64bit/async-openai | cox-provider: OpenAI Responses request and stream event types (T30.11); transport stays ours |
 | async-trait | local | https://crates.io/crates/async-trait | Rust dependency |
 | bytes | local | https://crates.io/crates/bytes | T1.2: turns a reqwest byte stream into SSE frames (`sse.rs`) and drives the in-memory fixture parser (`parse_sse_str`) through the same code path. |
 | clap | local | https://crates.io/crates/clap | cox (CLI) |
@@ -71,6 +76,7 @@ Programs the project uses and the direct packages from its manifests.
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
 | schemars | local | https://crates.io/crates/schemars | Rust dependency |
+| schemars 0.8 | local (build-dependency) | https://crates.io/crates/schemars | cox-provider `build.rs`: typify 0.8's `TypeSpace` takes schemars 0.8 schema types |
 | seccompiler | local | https://crates.io/crates/seccompiler | Rust dependency |
 | serde | local | https://crates.io/crates/serde | cox-protocol |
 | serde_json | local | https://crates.io/crates/serde_json | preserve_order: agent-client-protocol-schema requires it, which unifies the feature into every workspace build anyway; pinning it here makes JSON key order (snapshots, rollout lines, ledger JSON) identical for per-crate and full-workspace runs instead of depending on the invocation. |
@@ -98,7 +104,7 @@ Programs the project uses and the direct packages from its manifests.
 | tree-sitter-rust | local | https://crates.io/crates/tree-sitter-rust | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | tui-textarea-2 | local | https://crates.io/crates/tui-textarea-2 | Rust dependency |
-| typify | local | https://github.com/oxidecomputer/typify | cox-provider: Anthropic stream wire types generated from `schema/anthropic-stream.json` (T30.10); proc-macro, build time only |
+| typify | local (build-dependency) | https://github.com/oxidecomputer/typify | cox-provider `build.rs`: Anthropic request and stream types generated from the vendored `schema/anthropic-openapi.json` (T30.10, T30.12) |
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
@@ -111,3 +117,4 @@ Programs the project uses and the direct packages from its manifests.
 | pyyaml | local | https://github.com/yaml/pyyaml | Reads `evals/tasks/*.yaml` |
 | tomli-w | local | https://github.com/hukkin/tomli-w | Writes scripted scenarios and the verify hook config |
 | pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the eval package |
+| harbor | local (extra `tbench`) | https://github.com/laude-institute/harbor | Terminal-Bench 2.0 harness; `cox_evals.tbench:CoxAgent` is a Harbor agent |
