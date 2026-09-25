@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.4 | in progress | P1 | 1 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,6 +660,18 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.4 Anthropic workspace header
+
+Model: claude-opus-5-5 · Status: in progress · Blocks: T30.3 · Size: ~40 · Priority: P1 · Complexity: 1
+Goal: a key that is not scoped to a workspace works. Such a key gets `400 bad_request` ("must include the anthropic-workspace-id header") on every call, which blocked T30.3's paid run at $0.
+Files: `crates/cox-provider/src/anthropic/mod.rs`, `website/content/docs/getting-started.md`.
+Plan: (1) `AnthropicProvider.workspace_id: Option<String>`, resolved in `new()` from `ANTHROPIC_WORKSPACE_ID` (blank = unset), the same env-first rule as the key; not secret, so no keyring entry; (2) `headers()` sends `anthropic-workspace-id` only when set; a non-ASCII value is `Auth`, like the key; (3) tests: header present when set, absent when unset; (4) one line in getting-started; (5) live check: `cox run -p "say hi" --provider anthropic` with the creator's key.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider anthropic
+```
+Done when: the live check answers instead of the 400.
+
 #### T30.3 Eval run with a verification step
 
 Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
@@ -736,6 +749,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A32 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `true` again, which reverses A30. Why: the creator's later decision. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `true`; the terminal's own selection needs Shift/Option while cox runs, and `tui.mouse = false` gives it back.
 - A33 §3 P22, P27, T22.9, T27.7 — the two parts of approved cards that did not fit their size limits become cards of their own: T22.9 (T22.4's click on a folded tool card unfolds it) and T27.7 (T27.4's `↻ <time>` status-line segment for an active `/loop`). Why: the creator asked for every remaining task that needs no creator input; both halves were already approved as part of T22.4 and T27.4. Effect: two rows in the top table and `todo.md`; no new dependency.
 - A34 §3 P27, T27.5 — T27.5's card listed `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`, but the actual touch is `state.rs` + `view.rs` + `crates/cox-tui/tests/agents.rs` (the T27.2 snapshot test reads `/agents`'s old `Notice` cell and has to change now that it opens a modal) + `crates/cox/src/session.rs` (not `resume.rs`, which builds a turn-oriented `History` this overlay does not need — the poll loop wants the raw `Vec<Event>` `Store::rollout_read` already returns). A 3-files-only split was drafted (§6's earlier text) to land the `cox-tui` half and leave `session.rs` to a follow-up, but `session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout` — a stub costs the same one match arm as the real `Store::rollout_read` call, so the split would not have saved a file. Why: discovered mid-implementation, not planned; plan.md §2's split guidance assumed avoiding the file cost was possible, and it was not. Effect: T27.5 lands whole, 4 files instead of the usual 3 (state.rs, view.rs, tests/agents.rs, session.rs); no follow-up card.
+- A35 §3 P30, T30.4, T30.3 — new card T30.4 (send `anthropic-workspace-id` from `ANTHROPIC_WORKSPACE_ID`) ahead of T30.3. Why: the creator's key is not scoped to a workspace, so every Anthropic call 400s; the creator chose teaching cox the header over issuing a workspace-scoped key. Effect: T30.3 step (3) runs after T30.4.
 
 ## 7. Risk register
 
