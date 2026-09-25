@@ -861,6 +861,14 @@ fn backend_for_with(
     config: &Config,
     resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
 ) -> anyhow::Result<Arc<dyn Provider>> {
+    // T30.25: `Caps.max_context` for the sections below comes from the
+    // model catalog rather than a per-family literal. `Catalog::load`
+    // always carries the embedded built-in rows even when `config` overlays
+    // none of its own (unlike reading `providers.*.models` directly, which
+    // is empty on a bare `Config::default()`); a bad/unparseable catalog
+    // falls back to the empty default, which is exactly "no row found" —
+    // every lookup below already has its own literal fallback for that.
+    let catalog = cox_models::Catalog::load(config, None).unwrap_or_default();
     match config.tiers.code.provider.as_str() {
         "anthropic" => {
             let a = &config.providers.anthropic;
@@ -870,11 +878,19 @@ fn backend_for_with(
             };
             let transport = a.transport();
             let api_key = resolve(&transport.api_key_env, "anthropic")?;
+            // 200k, same as before T30.25, when the catalog has no row for
+            // the tier's configured model (e.g. a custom id absent from
+            // both the built-in and configured `models` lists).
+            let max_context = catalog
+                .get(&config.tiers.code.model)
+                .and_then(|row| row.context_window)
+                .unwrap_or(200_000);
             Ok(Arc::new(AnthropicProvider::with_key(
                 &transport,
                 api_key,
                 ttl,
                 a.fallbacks,
+                max_context,
             )?))
         }
         // Jev is type-1 native (System One wire, T21.1): its own client,
@@ -885,22 +901,35 @@ fn backend_for_with(
             let t = &config.providers.typesafe;
             let transport = t.transport();
             let api_key = resolve(&transport.api_key_env, "typesafe")?;
+            // 128k, same as before T30.25, when the catalog has no row —
+            // expected, since Jev/TypeSafe models have no models.dev
+            // counterpart (`cox-vendor models` never touches this section).
+            let max_context = catalog
+                .get(&t.model)
+                .and_then(|row| row.context_window)
+                .unwrap_or(128_000);
             Ok(Arc::new(cox_provider::jev::JevProvider::with_key(
                 &transport,
                 api_key,
                 t.model.clone(),
+                max_context,
             )?))
         }
         "openai" => {
             let o = &config.providers.openai;
             // No `context_window` field on the native section (it relies
             // on `models`); 400k is the same fallback `openai_shaped` used
-            // before this lookup existed.
+            // before this lookup existed, now reached only when the
+            // catalog has no row for the tier's configured model either.
+            let max_context = catalog
+                .get(&config.tiers.code.model)
+                .and_then(|row| row.context_window)
+                .unwrap_or(400_000);
             openai_shaped(
                 "openai",
                 &o.transport(),
                 o.models.clone(),
-                400_000,
+                max_context,
                 &o.api,
                 resolve,
             )
@@ -1190,6 +1219,39 @@ mod tests {
         let p = provider_for_with(&local, fake_key)
             .expect("local goes through the same openai_shaped path as any compatible section");
         assert_eq!(p.id(), ProviderId::Local);
+    }
+
+    /// T30.25 check: a model configured with a 1M context window is
+    /// reported as such, not the pre-T30.25 200k literal — the catalog
+    /// (built from `config`, T30.24) is consulted for `tiers.code.model`.
+    #[test]
+    fn anthropic_capabilities_report_the_configured_models_context_window() {
+        fn fake_key(_: &str, _: &str) -> Result<String, cox_protocol::errors::ProviderError> {
+            Ok("sk-test".to_string())
+        }
+        let mut cfg = Config::default();
+        cfg.tiers.code.model = "claude-big-1m".into();
+        cfg.providers.anthropic.models = vec![cox_protocol::config::ProviderModel {
+            id: "claude-big-1m".into(),
+            context_window: 1_000_000,
+            efforts: vec![],
+        }];
+        let p = provider_for_with(&cfg, fake_key).expect("anthropic builds");
+        assert_eq!(p.capabilities().max_context, 1_000_000);
+    }
+
+    /// An unconfigured/unknown model still gets the pre-T30.25 200k floor —
+    /// the catalog lookup is additive, not a behaviour change when nothing
+    /// overrides the model.
+    #[test]
+    fn anthropic_capabilities_fall_back_to_200k_for_an_unknown_model() {
+        fn fake_key(_: &str, _: &str) -> Result<String, cox_protocol::errors::ProviderError> {
+            Ok("sk-test".to_string())
+        }
+        let mut cfg = Config::default();
+        cfg.tiers.code.model = "claude-totally-unlisted".into();
+        let p = provider_for_with(&cfg, fake_key).expect("anthropic builds");
+        assert_eq!(p.capabilities().max_context, 200_000);
     }
 
     fn scripted_session(home: &Path, work: &Path, scenario: &str) -> (Session, Arc<Store>) {

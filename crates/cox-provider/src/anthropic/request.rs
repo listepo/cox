@@ -33,22 +33,6 @@ use super::{CacheTtl, wire};
 /// a caller's mistake costs a cache miss, not the turn.
 pub const MAX_BREAKPOINTS: usize = 4;
 
-/// Model families that take `thinking: {"type": "adaptive"}`. Older models
-/// want `{"type": "enabled", "budget_tokens": N}`, which is a 400 on these —
-/// cox never sends `budget_tokens`, so an unlisted model simply gets no
-/// `thinking` field.
-const ADAPTIVE_THINKING_PREFIXES: &[&str] = &[
-    "claude-opus-5",
-    "claude-sonnet-5",
-    "claude-haiku-5",
-    "claude-fable-5",
-    "claude-mythos-5",
-    "claude-opus-4-6",
-    "claude-opus-4-7",
-    "claude-opus-4-8",
-    "claude-sonnet-4-6",
-];
-
 /// The key order of each object cox sends. The generated types serialize
 /// fields alphabetically (tag first); request bytes are part of the
 /// cache-stable prefix, so the order fixed before T30.12 is restored.
@@ -151,8 +135,9 @@ pub fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Result<Value, ProviderErr
         tool_choice: (!req.tools.is_empty()).then_some(wire::ToolChoice::Auto {
             disable_parallel_tool_use: None,
         }),
-        thinking: (req.thinking == Thinking::Adaptive && supports_adaptive_thinking(&req.model))
-            .then_some(wire::ThinkingConfigParam::Adaptive { display: None }),
+        thinking: (req.thinking == Thinking::Adaptive
+            && cox_models::supports_adaptive_thinking(&req.model.0))
+        .then_some(wire::ThinkingConfigParam::Adaptive { display: None }),
         stop_sequences: req.stop_sequences.clone(),
         cache_control: None,
         container: None,
@@ -397,12 +382,6 @@ fn effort(e: Effort) -> wire::EffortLevel {
         Effort::High => wire::EffortLevel::High,
         Effort::Xhigh => wire::EffortLevel::Xhigh,
     }
-}
-
-fn supports_adaptive_thinking(model: &ModelId) -> bool {
-    ADAPTIVE_THINKING_PREFIXES
-        .iter()
-        .any(|p| model.0.starts_with(p))
 }
 
 #[cfg(test)]

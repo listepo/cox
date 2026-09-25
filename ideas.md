@@ -7,3 +7,5 @@ Not approved yet. Move nothing from here into `plan.md` or `roadmap.md` without 
 - A theme editor in the TUI (Crush `Ctrl+E` style) on top of T24.2 theme files
 - OpenAI Chat tool calls never reach the core: `openai/chat.rs` emits `ToolUseStart` and input deltas but never `ToolUseEnd`, and `turn::consume_provider` commits a call only on `ToolUseEnd` (same bug T30.6 fixed for Anthropic). Chat interleaves parallel calls by index, so the fix is to emit each call's start/deltas/end in order once `finish_reason` arrives, plus a live fixture test. Found by reading while fixing T30.6; not yet reproduced live
 - Sign in with ChatGPT (Codex-style subscription login) for the OpenAI Responses backend — only once OpenAI publishes an OAuth client flow for third-party apps; today the only flow is Codex's own client id (R§4.3.1, ledger #37)
+
+- Fill `Capabilities.adaptive_thinking` per catalog row from models.dev `reasoning_options` via `scripts/vendor`, replacing the name rule `cox_models::supports_adaptive_thinking` (follow-up to T30.25).

@@ -787,6 +787,7 @@ dependencies = [
  "cox-core",
  "cox-ext",
  "cox-mcp",
+ "cox-models",
  "cox-protocol",
  "cox-provider",
  "cox-sanitize",

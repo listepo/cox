@@ -238,6 +238,16 @@ pub struct JevProvider {
     /// Backoff for transient failures before the first byte (same policy as
     /// every other network backend).
     pub retry: crate::retry::Policy,
+    /// `Caps.max_context` (T30.25): resolved once by the caller from the
+    /// model catalog (`cox_models::Catalog`, merged with `[providers.
+    /// typesafe].models`) for `model`, not looked up here — same
+    /// "resolve at construction" shape as `AnthropicProvider::max_context`.
+    /// `backend_for_with` in `crates/cox/src/session.rs` does the lookup
+    /// and falls back to 128 000 — today's literal — when the catalog has
+    /// no row for the configured model (expected: Jev/TypeSafe models have
+    /// no models.dev counterpart, so only an explicit `[providers.
+    /// typesafe].models` entry ever overrides this).
+    pub max_context: u32,
 }
 
 impl JevProvider {
@@ -249,6 +259,7 @@ impl JevProvider {
         transport: &Transport,
         api_key: String,
         model: impl Into<String>,
+        max_context: u32,
     ) -> Result<Self, ProviderError> {
         Ok(Self {
             base_url: transport.base_url.trim_end_matches('/').to_string(),
@@ -266,6 +277,7 @@ impl JevProvider {
                 max_retries: transport.max_retries,
                 ..Default::default()
             },
+            max_context,
         })
     }
 
@@ -275,9 +287,13 @@ impl JevProvider {
     /// [`ProviderError::Auth`] rather than panicking when neither has one —
     /// a missing key is the fail-open path, and it must read as auth, not
     /// as a transport failure.
-    pub fn new(transport: &Transport, model: impl Into<String>) -> Result<Self, ProviderError> {
+    pub fn new(
+        transport: &Transport,
+        model: impl Into<String>,
+        max_context: u32,
+    ) -> Result<Self, ProviderError> {
         let api_key = crate::http::resolve_key(&transport.api_key_env, "typesafe")?;
-        Self::with_key(transport, api_key, model)
+        Self::with_key(transport, api_key, model, max_context)
     }
 
     /// One HTTP attempt; `stream` wraps it in the retry policy. Jev answers
@@ -362,9 +378,11 @@ impl Provider for JevProvider {
             thinking: false,
             server_tools: false,
             count_tokens: false,
-            // Decisions carry state, not history: roomy enough for any
+            // Resolved by the caller from the catalog (T30.25); see
+            // `Self::max_context`'s doc. Decisions carry state, not
+            // history, so the 128 000 fallback is roomy enough for any
             // single-turn state the judge composes.
-            max_context: 128_000,
+            max_context: self.max_context,
         }
     }
 

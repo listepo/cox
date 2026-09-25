@@ -678,3 +678,27 @@ Check:
 - `cargo tree -p cox-sanitize` shows only unicode-width.
 - `crates/cox-tui/tests/sanitize.rs` passes unchanged through the old path.
 - The full suite after landing on main is in the commit message check below.
+
+#### T30.25 `Caps` and adaptive thinking from the catalog
+
+Depends: T30.24 · Size: ~120 · Files: `cox-provider/src/anthropic/mod.rs`, `anthropic/request.rs`, `jev.rs` (and the `400_000` in `session.rs` if it fits; otherwise the next card)
+Goal: delete the `Caps.max_context` literals (`200_000`, `128_000`, `400_000`) and `ADAPTIVE_THINKING_PREFIXES`. Context and "sends adaptive thinking" come from the catalog row (item 3).
+Check:
+- a test that a configured 1M-context Anthropic model reports 1M;
+- the request snapshots are unchanged for the built-in models.
+Status: done 2026-09-26
+
+What landed:
+- `AnthropicProvider` and `JevProvider` carry `max_context`, set by `backend_for_with` from `cox_models::Catalog::load(config, None)`. The three literals (`200_000`, `128_000`, the native-OpenAI `400_000` in `session.rs`) are gone from the capability paths and survive only as the documented fallback for a model with no catalog row, so built-in behaviour is unchanged.
+- `ADAPTIVE_THINKING_PREFIXES` left `anthropic/request.rs`. `cox_models::supports_adaptive_thinking(model_id)` is the one place that answers it; `build_body` calls it and stays a pure, snapshot-tested function.
+- `crates/cox` depends on `cox-models` directly (`session.rs` resolves the catalog).
+- Docs: "Implemented (T30.25)" under item 3 of `docs/design/providers.md`.
+
+Deviations:
+- Adaptive thinking is a name rule in `cox-models`, not a per-row `Capabilities.adaptive_thinking` value: the vendor script does not emit that field yet, and a row lookup would stop matching a dated model id with no row. Filling the field from models.dev's `reasoning_options` through `scripts/vendor` is a follow-up, recorded in `ideas.md`.
+- `max_context` is per provider section and uses the `code` tier's model for the Anthropic and native OpenAI arms, the section's own model for Jev — the `Caps` shape is per provider today.
+
+Check:
+- `session::tests` prove a configured 1M-context Anthropic model reports 1M and an unlisted model falls back to 200k.
+- `cargo insta test -p cox-provider`: 133 passed, no snapshots to review.
+- `cargo nextest run --workspace`: 927 passed, 3 skipped. clippy and fmt clean. `cox doctor` against a scratch `COX_HOME`: no keychain prompt.

@@ -72,6 +72,16 @@ pub struct AnthropicProvider {
     pub http: reqwest::Client,
     /// Backoff for transient failures before the first byte (T1.6).
     pub retry: crate::retry::Policy,
+    /// `Caps.max_context` (T30.25): resolved once by the caller from the
+    /// model catalog (`cox_models::Catalog`, merged with `[providers.
+    /// anthropic].models`) for `tiers.code.model`, not looked up here —
+    /// `capabilities()` carries no per-request model, so this is the same
+    /// "resolve at construction" shape `openai_shaped`'s `context_window`
+    /// parameter already used before this card. `backend_for_with` in
+    /// `crates/cox/src/session.rs` does the lookup and falls back to
+    /// 200 000 — today's literal — when the catalog has no row for the
+    /// configured model.
+    pub max_context: u32,
 }
 
 impl AnthropicProvider {
@@ -86,6 +96,7 @@ impl AnthropicProvider {
         api_key: String,
         ttl: CacheTtl,
         fallbacks: bool,
+        max_context: u32,
     ) -> Result<Self, ProviderError> {
         Ok(Self {
             base_url: transport.base_url.trim_end_matches('/').to_string(),
@@ -98,24 +109,27 @@ impl AnthropicProvider {
                 max_retries: transport.max_retries,
                 ..Default::default()
             },
+            max_context,
         })
     }
 
     /// Builds a provider from the section's `&Transport` (`providers.
     /// anthropic`, T30.23) plus its own section-specific knobs (cache TTL,
-    /// whether to send `fallbacks`). Resolves the credential from
-    /// `transport.api_key_env` (default `ANTHROPIC_API_KEY`) or the keyring
-    /// entry `cox/anthropic` (T30.21). Fails with [`ProviderError::Auth`]
-    /// rather than panicking when neither has one. `transport.timeout_s` is
-    /// the idle-read timeout between stream chunks, not a whole-call cap: a
-    /// long answer streams for minutes without ever being idle.
+    /// whether to send `fallbacks`, the catalog-resolved `max_context`,
+    /// T30.25). Resolves the credential from `transport.api_key_env`
+    /// (default `ANTHROPIC_API_KEY`) or the keyring entry `cox/anthropic`
+    /// (T30.21). Fails with [`ProviderError::Auth`] rather than panicking
+    /// when neither has one. `transport.timeout_s` is the idle-read timeout
+    /// between stream chunks, not a whole-call cap: a long answer streams
+    /// for minutes without ever being idle.
     pub fn new(
         transport: &cox_protocol::config::Transport,
         ttl: CacheTtl,
         fallbacks: bool,
+        max_context: u32,
     ) -> Result<Self, ProviderError> {
         let api_key = crate::http::resolve_key(&transport.api_key_env, "anthropic")?;
-        Self::with_key(transport, api_key, ttl, fallbacks)
+        Self::with_key(transport, api_key, ttl, fallbacks, max_context)
     }
 
     /// The headers every call carries. `anthropic-beta` is assembled from
@@ -193,9 +207,9 @@ impl Provider for AnthropicProvider {
             thinking: true,
             server_tools: true,
             count_tokens: true,
-            // The floor across the first-party lineup; per-model windows are
-            // a routing-table concern (plan.md §1.4), not a provider one.
-            max_context: 200_000,
+            // Resolved by the caller from the catalog (T30.25); see
+            // `Self::max_context`'s doc.
+            max_context: self.max_context,
         }
     }
 
@@ -313,6 +327,7 @@ mod tests {
                 max_retries: 4,
                 base: std::time::Duration::from_millis(1),
             },
+            max_context: 200_000,
         }
     }
 
@@ -409,10 +424,22 @@ mod tests {
             timeout_s: 30,
             max_retries: 1,
         };
-        let p = AnthropicProvider::new(&transport, CacheTtl::FiveMinutes, true)
+        let p = AnthropicProvider::new(&transport, CacheTtl::FiveMinutes, true, 200_000)
             .expect("builds with the renamed env var");
         assert_eq!(p.api_key, "sk-renamed");
         unsafe { std::env::remove_var("MY_RENAMED_ANTHROPIC_KEY") };
+    }
+
+    /// T30.25: `capabilities().max_context` is whatever the caller resolved
+    /// at construction, not a fixed literal — this is the provider-level
+    /// half of the "1M-context model reports 1M" claim; the catalog lookup
+    /// itself is proved in `crates/cox/src/session.rs`'s
+    /// `anthropic_capabilities_report_the_configured_models_context_window`.
+    #[test]
+    fn capabilities_max_context_is_whatever_was_resolved_at_construction() {
+        let mut p = provider(false);
+        p.max_context = 1_000_000;
+        assert_eq!(p.capabilities().max_context, 1_000_000);
     }
 
     #[test]

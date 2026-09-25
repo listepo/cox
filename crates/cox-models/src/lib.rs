@@ -16,5 +16,5 @@
 mod catalog;
 mod price;
 
-pub use catalog::{Capabilities, Catalog, CatalogError, ModelRow};
+pub use catalog::{Capabilities, Catalog, CatalogError, ModelRow, supports_adaptive_thinking};
 pub use price::{Price, PriceError, PriceTable};

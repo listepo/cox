@@ -64,6 +64,44 @@ impl ModelRow {
     }
 }
 
+/// Model-id prefixes that take Anthropic's `thinking: {"type": "adaptive"}`
+/// field. Older models want `{"type": "enabled", "budget_tokens": N}`,
+/// which is a 400 on these — cox never sends `budget_tokens`, so an
+/// unlisted model simply gets no `thinking` field.
+///
+/// Moved here from `cox-provider::anthropic::request::
+/// ADAPTIVE_THINKING_PREFIXES` (T30.25) so the rule lives with the rest of
+/// the model catalog. It stays a plain prefix rule rather than a
+/// `ModelRow`/`Capabilities` field: the vendor pipeline (`cox-vendor
+/// models`) does not emit an adaptive-thinking signal from models.dev today
+/// (`Capabilities::adaptive_thinking` is `None` on every row — see that
+/// field's doc), and a row-based lookup would silently stop matching a
+/// model id that names no catalog row at all (a preview or custom variant
+/// the prefix table has always matched by name). Wiring this from
+/// models.dev's `reasoning_options` shape (`budget_tokens` vs `effort`/
+/// `toggle`, already distinguished by `scripts/vendor/src/cox_vendor/
+/// models.py::cox_effort_for`) is the natural next step once that mapping
+/// is verified against live data; out of scope here (T30.25 is Rust-only).
+const ADAPTIVE_THINKING_PREFIXES: &[&str] = &[
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+];
+
+/// Whether `model_id` takes Anthropic's adaptive `thinking` field (T30.25;
+/// see [`ADAPTIVE_THINKING_PREFIXES`]).
+pub fn supports_adaptive_thinking(model_id: &str) -> bool {
+    ADAPTIVE_THINKING_PREFIXES
+        .iter()
+        .any(|p| model_id.starts_with(p))
+}
+
 /// Why a catalog could not be built.
 #[derive(Debug, Error)]
 pub enum CatalogError {
@@ -226,6 +264,16 @@ source_url = "https://example.test"
         let row = catalog.get("brand-new-model").expect("new row");
         assert_eq!(row.context_window, None);
         assert_eq!(row.price.as_ref().expect("priced").input, 7.0);
+    }
+
+    #[test]
+    fn supports_adaptive_thinking_matches_listed_prefixes_only() {
+        assert!(supports_adaptive_thinking("claude-sonnet-5"));
+        // Prefix match, not exact match: a dated/preview suffix still hits.
+        assert!(supports_adaptive_thinking("claude-sonnet-5-20260115"));
+        // Not listed: an older/unlisted family gets no `thinking` field.
+        assert!(!supports_adaptive_thinking("claude-haiku-4-5"));
+        assert!(!supports_adaptive_thinking("gpt-5.1"));
     }
 
     #[test]

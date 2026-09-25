@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
-| T30.25 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T30.26 | todo | P1 | 3 | 0% | |
 | T30.27 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T32.2 | todo | P2 | 3 | 0% | |
@@ -724,14 +723,6 @@ Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
 Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
-
-#### T30.25 `Caps` and adaptive thinking from the catalog
-
-Depends: T30.24 · Size: ~120 · Files: `cox-provider/src/anthropic/mod.rs`, `anthropic/request.rs`, `jev.rs` (and the `400_000` in `session.rs` if it fits; otherwise the next card)
-Goal: delete the `Caps.max_context` literals (`200_000`, `128_000`, `400_000`) and `ADAPTIVE_THINKING_PREFIXES`. Context and "sends adaptive thinking" come from the catalog row (item 3).
-Check:
-- a test that a configured 1M-context Anthropic model reports 1M;
-- the request snapshots are unchanged for the built-in models.
 
 #### T30.26 One effort map, with `Effort::Medium`
 
