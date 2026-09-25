@@ -1,0 +1,9 @@
+[package]
+name = "cox-sanitize"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+unicode-width = { workspace = true }

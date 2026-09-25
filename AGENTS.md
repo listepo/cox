@@ -29,6 +29,7 @@ COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against you
 | `crates/cox-models` | the model catalog: id → context window, max output, efforts, capabilities and price, merged from built-in rows, config and a user price file. Pure — depends only on `cox-protocol`, no I/O beyond parsing an embedded/caller-supplied string |
 | `crates/cox-provider` | `Provider` trait + Anthropic Messages, OpenAI Responses/Chat (also Ollama, vLLM, LM Studio, OpenRouter), `Replay`/`Scripted` providers for tests |
 | `crates/cox-tools` | built-in tools and the sandbox (Seatbelt, Landlock/bwrap): read, edit, write, bash, grep, glob, outline, web, todo, ask_user, agent |
+| `crates/cox-sanitize` | the terminal-text guard, `sanitize` — stripped out of `cox-tui` (T32.1) so the headless surface and anything else that only needs the guard do not pull in the whole TUI; `cox-tui` re-exports it at the old `text` path |
 | `crates/cox-mcp` | MCP client over `rmcp`; `.mcp.json` / config discovery; OAuth |
 | `crates/cox-store` | one SQLite file (`~/.cox/cox.db`): sessions, rollouts (JSONL), tool-output archive, memory, cost ledger |
 | `crates/cox-ext` | instruction files (`AGENTS.md`/`CLAUDE.md` hierarchy), skills (`SKILL.md`), slash commands, subagent definitions, hook config |
@@ -61,7 +62,7 @@ Everything the model, a tool, an MCP server, a hook, a skill file or a repositor
 - `cox_core::permission::Engine` — the single place a tool call is allowed, denied or escalated. A tool never checks its own permission.
 - `cox_tools::path::confine` — every path from the model passes through it; rejects escapes from the workspace roots.
 - `cox_tools::sandbox::Policy` — a shell command runs under the platform sandbox unless the user chose `danger-full-access` for that session.
-- `cox_tui::text::sanitize` — strips escape sequences and bidi overrides from anything the model or a tool prints. A tool result is the one place cox shows a whole file someone else wrote.
+- `cox_sanitize::sanitize` — strips escape sequences and bidi overrides from anything the model or a tool prints. A tool result is the one place cox shows a whole file someone else wrote. `cox-tui` re-exports it at the old `cox_tui::text::sanitize` path (T32.1), so either name reaches the same guard.
 
 Simplicity never removes one of these. If a change makes a guard unnecessary, delete it deliberately and say why in the commit.
 

@@ -789,6 +789,7 @@ dependencies = [
  "cox-mcp",
  "cox-protocol",
  "cox-provider",
+ "cox-sanitize",
  "cox-store",
  "cox-tools",
  "cox-tui",
@@ -948,6 +949,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-sanitize"
+version = "0.1.2"
+dependencies = [
+ "unicode-width",
+]
+
+[[package]]
 name = "cox-store"
 version = "0.1.2"
 dependencies = [
@@ -1003,6 +1011,7 @@ dependencies = [
  "async-trait",
  "cox-core",
  "cox-protocol",
+ "cox-sanitize",
  "crossterm",
  "insta",
  "nucleo",

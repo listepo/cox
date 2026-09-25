@@ -27,6 +27,9 @@ cox-store = { path = "../cox-store", version = "0.1.2" }
 cox-ext = { path = "../cox-ext", version = "0.1.2" }
 cox-tui = { path = "../cox-tui", version = "0.1.2" }
 cox-acp = { path = "../cox-acp", version = "0.1.2" }
+# T32.1: `plain.rs` calls `sanitize` directly instead of pulling in the
+# whole TUI crate for it.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 # T0.3: config loading (figment layers default/user/project/env/flag),
 # `cox config set` (toml_edit, preserves comments), anyhow at the cox-crate
 # boundary (AGENTS.md: "anyhow only in crates/cox"), serde_json to build

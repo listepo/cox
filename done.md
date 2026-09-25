@@ -655,3 +655,26 @@ $ mise exec -- cargo fmt --check
      clean
 ```
 `cox::no_real_keychain_in_tests` and `cox::mcp_serve` are both in that count and both pass; `mcp_serve`'s `cox --cwd <tmp> mcp` never resolves a provider key (its `run` path only loads config and builds the built-in tool list), so it cannot reach the real keychain, and a manual run with `ANTHROPIC_API_KEY=not-a-real-key COX_HOME=$(mktemp -d)` confirms the T31.3 `config show --sources` check with no keychain prompt.
+
+#### T32.1 `cox-sanitize`: the terminal-text guard in its own crate
+
+Depends: — · Moves: `cox-tui/src/text.rs`.
+Why: guard (b) and reuse (d). `crates/cox/src/plain.rs` imports the whole TUI for `sanitize`.
+Plan: `cox-tui` re-exports `text`; `plain.rs` imports `cox_sanitize`. The AGENTS.md trust list names `cox_sanitize::sanitize`.
+Check: `cargo tree -p cox-sanitize` has no workspace dependency.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox-tui/src/text.rs` was moved with `git mv` to `crates/cox-sanitize/src/lib.rs`, tests included, with no logic change. Its only dependency is unicode-width.
+- `cox-tui` re-exports it (`pub use cox_sanitize as text;`), so `cox_tui::text::sanitize` still resolves.
+- `crates/cox/src/plain.rs` imports `cox_sanitize` directly.
+- `deps.rs`: `cox-sanitize` has no workspace dependency; `cox-tui` and `cox-acp` may depend on it.
+- Docs: AGENTS.md layout row and trust list, the SECURITY.md guard list, and the plan.md §1.1 row and dependency sentence.
+
+Deviations:
+- Done in worktree `_worktrees/cox-t32.1`, in parallel with T30.24, then cherry-picked onto main. The `deps.rs` conflict with T30.24's `cox-models` rule was resolved by keeping both rules.
+
+Check:
+- `cargo tree -p cox-sanitize` shows only unicode-width.
+- `crates/cox-tui/tests/sanitize.rs` passes unchanged through the old path.
+- The full suite after landing on main is in the commit message check below.

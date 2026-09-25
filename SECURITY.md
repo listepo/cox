@@ -14,9 +14,10 @@ never removes one of them:
   sandbox (Seatbelt on macOS, bubblewrap else Landlock + seccomp on Linux)
   unless the user chose `danger-full-access` for that session. Windows has
   no sandbox: loud warning, `on-request` forced.
-- `cox_tui::text::sanitize` — strips escape sequences and bidi overrides
+- `cox_sanitize::sanitize` — strips escape sequences and bidi overrides
   from anything the model or a tool prints. A tool result is the one place
-  cox shows a whole file someone else wrote.
+  cox shows a whole file someone else wrote. `cox-tui` re-exports it at the
+  old `cox_tui::text::sanitize` path, so either name reaches the same guard.
 
 Broken hooks, skills, MCP servers and plugins are warned about and skipped,
 never fatal (fail open on extensions). `cargo deny` + `cargo audit` run on

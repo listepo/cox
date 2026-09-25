@@ -20,7 +20,11 @@ pub mod status;
 pub mod svg;
 pub mod tasks;
 pub mod term;
-pub mod text;
 pub mod theme;
 pub mod view;
 pub mod vim;
+
+/// T32.1: `text::sanitize` moved to its own crate (guard (b), reuse (d) —
+/// `docs/design/crates.md`); re-exported here at the old path so
+/// `cox_tui::text::sanitize` keeps working for existing callers.
+pub use cox_sanitize as text;

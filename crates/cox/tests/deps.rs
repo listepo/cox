@@ -120,6 +120,14 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-models"]
     );
 
+    // cox-sanitize (T32.1) is a pure trust guard, same as cox-protocol: no
+    // workspace-crate dependencies at all.
+    assert!(
+        deps["cox-sanitize"].is_empty(),
+        "cox-sanitize must not depend on any other workspace crate, found {:?}",
+        deps["cox-sanitize"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in).
     let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
@@ -131,13 +139,16 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-core"]
     );
 
-    // cox-tui and cox-acp may depend on cox-core and cox-protocol, nothing else.
-    let surface_allowed: HashSet<&str> = ["cox-core", "cox-protocol"].into_iter().collect();
+    // cox-tui and cox-acp may depend on cox-core, cox-protocol and
+    // cox-sanitize (T32.1's guard), nothing else.
+    let surface_allowed: HashSet<&str> = ["cox-core", "cox-protocol", "cox-sanitize"]
+        .into_iter()
+        .collect();
     for crate_name in ["cox-tui", "cox-acp"] {
         let d = &deps[crate_name];
         assert!(
             d.iter().all(|dep| surface_allowed.contains(dep.as_str())),
-            "{crate_name} may only depend on cox-core/cox-protocol among workspace crates, found {d:?}"
+            "{crate_name} may only depend on cox-core/cox-protocol/cox-sanitize among workspace crates, found {d:?}"
         );
     }
 

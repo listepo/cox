@@ -1,12 +1,18 @@
-//! `text::sanitize` (T5.6): the one place a string the model, a tool, an MCP
-//! server or a file wrote is made safe to print. Escape sequences (ESC/CSI/
-//! OSC/DCS and their C1 forms), C0 controls other than `\n`/`\t`, bidi
-//! overrides and isolates, and zero-width characters in suspicious runs are
-//! removed — or, with markers on (`-v`), replaced by a visible glyph — so
-//! nothing can move the cursor, set the title, write the clipboard or
-//! reorder what the user reads. Every cell renderer calls this at the
-//! boundary; a tool result is the one place cox shows a whole file someone
-//! else wrote.
+//! `sanitize` (T5.6, moved to its own crate by T32.1): the one place a
+//! string the model, a tool, an MCP server or a file wrote is made safe to
+//! print. Escape sequences (ESC/CSI/OSC/DCS and their C1 forms), C0 controls
+//! other than `\n`/`\t`, bidi overrides and isolates, and zero-width
+//! characters in suspicious runs are removed — or, with markers on (`-v`),
+//! replaced by a visible glyph — so nothing can move the cursor, set the
+//! title, write the clipboard or reorder what the user reads. Every cell
+//! renderer calls this at the boundary; a tool result is the one place cox
+//! shows a whole file someone else wrote.
+//!
+//! Separate from `cox-tui` (guard (b) and reuse (d), `docs/design/crates.md`)
+//! so the headless surface (`crates/cox/src/plain.rs`) and anything else
+//! that only needs the guard do not pull in the whole TUI. `cox-tui`
+//! re-exports this crate at its old `text` path, so `cox_tui::text::sanitize`
+//! keeps working for existing callers.
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
