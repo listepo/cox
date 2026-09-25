@@ -10,6 +10,9 @@
 
 pub mod request;
 pub mod stream;
+/// Generated wire types (T30.10) — internal to this module; `stream` is the
+/// only consumer.
+mod wire;
 
 use async_trait::async_trait;
 use cox_protocol::errors::ProviderError;

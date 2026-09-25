@@ -56,6 +56,10 @@ tiktoken-rs = "0.12"
 # in-memory fixture parser (`parse_sse_str`) through the same code path.
 bytes = "1"
 futures = "0.3"
+# T30.10: generates the Anthropic stream wire types from a curated JSON
+# Schema (oxidecomputer, used by progenitor) instead of a hand-written Value
+# walk. Build-time proc-macro only; no runtime footprint change.
+typify = "0.8"
 
 # cox-tools
 ignore = "0.4.33"
