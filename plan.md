@@ -6,7 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.9 | todo | P3 | 2 | 0% | |
+| T22.9 | in progress | P3 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T30.3 | todo | P2 | 2 | 50% | |
 
 ## Reference
@@ -643,10 +643,11 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 
 #### T22.9 Click-to-unfold a tool card
 
-Model: sonnet · Status: open · Depends: T22.4 · Size: ~100 · Priority: P3 · Complexity: 2
+Model: claude-sonnet-5 · Status: in progress · Depends: T22.4 · Size: ~100 · Priority: P3 · Complexity: 2
 Goal: with `tui.mouse = true`, a left click on a folded tool card in the live viewport unfolds it, and a second click folds it again (split out of T22.4, §6 A33).
 Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
 Steps: (1) `State` gains per-cell fold state keyed by transcript index, in place of the last-cell-only `expanded_last`. `Ctrl+O` and every existing fold path keep their behaviour. (2) `view.rs` records `cell_rows: Vec<(Range<u16>, usize)>` while drawing. (3) `on_mouse`: `Down(Left)` inside the viewport hit-tests `cell_rows` and toggles the matching tool cell's fold; a click anywhere else does nothing.
+Execution plan: `state.rs` — replace `expanded_last: bool` with `expanded: HashSet<usize>` (per-cell) and add `cell_rows: RefCell<Vec<(Range<u16>, usize)>>` (interior mutability, since `view`'s `&State` signature is shared by every render call site and test); `A::Expand` and a new `toggle_fold` helper flip a transcript index's membership; `on_mouse` gains a `Down(Left)` branch that hit-tests `cell_rows` when no modal is open. `view.rs` — the plain-transcript arm builds `tool_spans` (line ranges per `Cell::Tool`) alongside `lines`, converts the visible ones to absolute screen rows (ratatui anchors an inline viewport's `Frame::area()` to the real cursor row, the same space `MouseEvent::row` arrives in) via a new `record_cell_rows`, and clears `cell_rows` on every draw so a modal-covered click never hits a stale card. The last tool cell keeps `Look.expand_last = Some(bool)` exactly as today (preserves the `Ctrl+E` hint and existing snapshots); any other clicked cell gets `Some(true)` only, so an untouched cell's rendering never changes. Test: `update_mouse_click_unfolds_card` in `state.rs`, driving a real `view()` render to read back `cell_rows` and clicking through it twice.
 Check:
 ```bash
 mise exec -- cargo nextest run -p cox-tui update_mouse_click_unfolds_card
