@@ -7,7 +7,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T27.2 | todo | P1 | 2 | 60% | |
+| T27.2 | in progress | P1 | 2 | 60% | Claude Code / claude-sonnet-5 |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
@@ -672,7 +672,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T27.2 Approvals labelled by source; agent cards
 
-Model: - · Status: open · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
+Model: claude-sonnet-5 · Status: in progress · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
 Goal: an approval or question says which agent is asking; `/agents` shows one card per live agent instead of a line.
 Files: `crates/cox-protocol/src/types.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/picker.rs`.
 Steps: (1) `Event::ApprovalRequired` gains `source: Source { session: SessionId, agent: Option<String>, preset: Option<String> }` (subagent sessions forward their approvals to the parent surface already — attach the label there); the ACP and stream-json surfaces emit it as a field. (2) Modal header: `explore-2 asks: bash cargo test` in `theme.agent`; the main session shows no prefix. (3) `/agents` card: name, preset, model, tokens, cost, last tool, elapsed, state (from the T16.1 presence records plus the live task registry); `Enter` on a card opens its rollout read-only in the transcript overlay.
@@ -685,6 +685,7 @@ Done when: the two snapshots exist and `docs/protocol.jsonschema` regenerates wi
 Out of scope: talking to an agent mid-task (`@agent` messaging).
 Execution plan: finding — a subagent's approval is **not** forwarded today: `subagent::run_task` drops every child event but `Usage`/`ToolCallRequested`/`TurnDone`, so a `shell` child whose call escalates waits on its own `pending` until cancelled. (a) `cox-protocol`: `Source { session, agent, preset }`; `ApprovalRequired.source: Option<Source>` (`serde(default)`: rollout lines from before T27.2 read as `None`); schema regenerated. (b) `cox-core`: `turn::ask` fills the session's own `Source`; `AgentTool` names children `<preset>-<n>`; `run_task` relays a child `ApprovalRequired` to the parent labelled with that name, parks the call in the parent's `pending` without touching its state, and hands the parent's `Approve` back to the child; the child's `ApprovalDecided` is relayed too so the modal closes. Test `subagent_approval_carries_source` in `tests/subagent.rs` + a scenario. (c) `cox-tui` modal header `<agent> asks: …` in `theme.agent`, snapshot `approval_modal_shows_source_agent`; ACP title gets the same prefix; stream-json carries the field through serde. (d) Step 3 (`/agents` cards) after (a)–(c) land.
 Progress: (a)–(c) landed in `6ea9e0c` (`subagent_approval_carries_source`, `approval_modal_shows_source_agent` pass; schema regenerated). No subagent preset carries `ask_user`, so questions need no label yet. Open for the creator before step 3: the card's fields (model, tokens, last tool per subagent) are not on the parent's event stream — `run_task` only sees them on the child's — so step 3 needs either a new `Event::AgentProgress { task, model, tokens, cost_usd, last_tool }` relayed by `run_task` (§1.2 amendment) or a narrower card (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` + presence). `Enter` → read-only rollout needs a new transcript overlay fed by the binary from `cox-store`.
+Execution plan (step 3): creator confirmed the narrow card, no new `Event` variant, `Enter` → rollout split into a follow-up card. `state.tasks` gains the `Tier` (already on `TaskCreated`, previously dropped) and `state.tick` at creation, alongside the existing `(TaskId, label)`, so a running subagent/background task can show tier and elapsed the same way `Cell::Tool.started` already does for tool cells; `tasks::list`/`/tasks`/`status.rs` keep reading `state.tasks` by mapping the extra fields away, so `tasks.rs` and `status.rs` stay untouched. `agents_list` becomes `agents_cards`: one block per `Presence` (T16.1: session, status; preset/tier/cost/elapsed unknown, shown `-`) and one per live `state.tasks` entry (name = label, preset parsed from the label's `<preset-or-tool>: ` prefix, tier from the stored `Tier`, elapsed from `tick - started`, state `running`; cost stays `-` — a task only learns its cost at `TaskCompleted`, which already retires it from `state.tasks`). Files: `crates/cox-tui/src/state.rs` (prod); `crates/cox-tui/tests/agents.rs` (renames `agents_command_lists_the_fed_records_snapshot` to `agents_cards_snapshot`, extended with a running-task card; updates `agents_command_says_so_when_alone` for the new empty-state text). Verify: the card's Check, then the full gate.
 
 #### T27.4 `/loop`
 
