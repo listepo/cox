@@ -40,6 +40,10 @@ actions! {
     Background = "background",
     Unqueue = "unqueue",
     Quit = "quit",
+    // `y` (T23.4): the last transcript cell still held, as plain text.
+    Copy = "copy",
+    // `Shift+Y` (T23.4): the whole transcript still held.
+    CopyAll = "copy.all",
 }
 
 impl Action {

@@ -501,3 +501,19 @@ fn pty_progress_only_with_the_capability() {
         String::from_utf8_lossy(&without)
     );
 }
+
+/// T23.4: `y` on the probe's one streaming cell writes OSC 52 with the
+/// cell's text, base64-encoded, only when the terminal draws it.
+#[test]
+fn pty_copy_writes_osc52() {
+    let scenario = ("COX_PROBE_SCENARIO", "copy");
+    let with = pty::run_probe(&[scenario, ("COX_PROBE_OSC52", "1")], 24, 80);
+    let shown = String::from_utf8_lossy(&with);
+    assert!(shown.contains("\x1b]52;c;Y2VsbCB0ZXh0\x1b\\"), "{shown:?}");
+    let without = pty::run_probe(&[scenario], 24, 80);
+    assert!(
+        !String::from_utf8_lossy(&without).contains("\x1b]52;c;"),
+        "wrote OSC 52 without the capability: {:?}",
+        String::from_utf8_lossy(&without)
+    );
+}

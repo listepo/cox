@@ -139,6 +139,10 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Ctrl+G", "diff", Context::Idle),
     ("Ctrl+C", "quit", Context::Idle),
     ("Ctrl+D", "quit", Context::Idle),
+    // T23.4: plain letters, so only an empty composer claims them (same
+    // rule `?`/`help` follows) — typing "yes" still types "yes".
+    ("y", "copy", Context::Idle),
+    ("Shift+Y", "copy.all", Context::Idle),
     ("Esc", "interrupt", Context::Running),
     ("Ctrl+C", "interrupt", Context::Running),
     ("Ctrl+B", "background", Context::Running),

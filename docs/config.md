@@ -188,7 +188,7 @@ newline = ["enter", "shift+enter"]
 mode.cycle = "shift+tab"
 ```
 
-- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
 - Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
 - A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a terminal that reports it (kitty keyboard protocol, see `cox doctor`).
 - `~/.claude/keybindings.json` is read first, for the actions both tools have: `chat:submit` → `send`, `chat:newline` → `newline`, `chat:sendNow` → `send.now`, `chat:cancel` → `interrupt`, `chat:cycleMode` → `mode.cycle`, `app:toggleTranscript` → `transcript`, `task:background` → `background`, `app:exit` → `quit`. Its keys are added beside the defaults; this file still wins. Other Claude actions and chords are skipped.

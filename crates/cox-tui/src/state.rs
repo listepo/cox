@@ -907,7 +907,50 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
         A::Send => compose(state, enter(KeyModifiers::NONE)),
         A::Newline => compose(state, enter(KeyModifiers::SHIFT)),
         A::SendNow => compose(state, enter(KeyModifiers::ALT)),
+        // Nothing to copy falls through to the composer, same as
+        // `A::Background` with no pending call.
+        A::Copy => {
+            let text = cell_text(state.transcript.last()?).to_string();
+            copy_text(state, text)
+        }
+        A::CopyAll => {
+            if state.transcript.is_empty() {
+                return None;
+            }
+            let text: Vec<&str> = state.transcript.iter().map(cell_text).collect();
+            copy_text(state, text.join("\n\n"))
+        }
     })
+}
+
+/// The plain text `y`/`Y` send to the clipboard: the cell's own stored
+/// string, not `cells::cell_lines`' wrapped, glyph-prefixed render — a
+/// paste elsewhere wants the source text, not this terminal's width.
+fn cell_text(cell: &Cell) -> &str {
+    match cell {
+        Cell::User { text, .. }
+        | Cell::Assistant { text, .. }
+        | Cell::Thinking { text, .. }
+        | Cell::Notice { text, .. }
+        | Cell::Error { text, .. }
+        | Cell::Summary { text } => text,
+        Cell::Tool { output, .. } => output,
+    }
+}
+
+/// `Cmd::Copy` when the terminal draws OSC 52 (T23.0 `caps.osc52`); a
+/// terminal without it would just print the escape as visible text, so it
+/// gets a notice instead of bytes it cannot use.
+fn copy_text(state: &mut State, text: String) -> Vec<Cmd> {
+    if !state.caps.osc52 {
+        notice(
+            state,
+            Level::Info,
+            "clipboard: terminal does not support OSC 52".into(),
+        );
+        return Vec::new();
+    }
+    vec![Cmd::Copy(text)]
 }
 
 fn toggle(flag: &mut bool) -> Vec<Cmd> {
@@ -1890,5 +1933,64 @@ mod tests {
         let mut plain = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
         assert!(progress(&mut plain).is_empty());
         assert_eq!(crate::term::progress(Progress::Busy), "\x1b]9;4;3;0\x1b\\");
+    }
+
+    /// T23.4: `y` on an empty composer copies the last cell still held as
+    /// plain text, only when the terminal draws OSC 52; without the
+    /// capability it gets a notice instead of bytes it cannot use, and a
+    /// non-empty composer keeps typing "y" rather than copying.
+    #[test]
+    fn overlay_y_emits_copy_of_cell() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.caps.osc52 = true;
+        state.transcript.push(Cell::Notice {
+            level: Level::Info,
+            text: "cell text".into(),
+        });
+        let y = || Msg::Key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+        assert_eq!(update(&mut state, y()), vec![Cmd::Copy("cell text".into())]);
+
+        let mut unsupported = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        unsupported.transcript.push(Cell::Notice {
+            level: Level::Info,
+            text: "cell text".into(),
+        });
+        assert_eq!(update(&mut unsupported, y()), Vec::new());
+        assert!(matches!(
+            unsupported.transcript.last(),
+            Some(Cell::Notice { text, .. }) if text.contains("does not support OSC 52")
+        ));
+
+        let mut typing = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        typing.caps.osc52 = true;
+        typing.composer.insert("yak");
+        assert_eq!(update(&mut typing, y()), Vec::new());
+        assert_eq!(typing.composer.text(), "yaky");
+    }
+
+    /// T23.4: `Shift+Y` joins every cell still held; nothing held is a
+    /// no-op rather than a notice about an empty clipboard.
+    #[test]
+    fn shift_y_emits_copy_of_the_whole_transcript() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.caps.osc52 = true;
+        state.transcript.push(Cell::Notice {
+            level: Level::Info,
+            text: "one".into(),
+        });
+        state.transcript.push(Cell::Notice {
+            level: Level::Info,
+            text: "two".into(),
+        });
+        let shift_y = Msg::Key(KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::SHIFT));
+        assert_eq!(
+            update(&mut state, shift_y),
+            vec![Cmd::Copy("one\n\ntwo".into())]
+        );
+
+        let mut empty = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        empty.caps.osc52 = true;
+        let shift_y = Msg::Key(KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::SHIFT));
+        assert_eq!(update(&mut empty, shift_y), Vec::new());
     }
 }
