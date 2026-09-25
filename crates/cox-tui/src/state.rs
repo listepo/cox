@@ -473,7 +473,7 @@ impl State {
             notify: Notify::Auto,
             cwd: std::path::PathBuf::new(),
             focused: true,
-            mouse: false,
+            mouse: true,
             active_loop: None,
         }
     }

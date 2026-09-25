@@ -675,7 +675,7 @@ impl Default for TuiConfig {
             inline: true,
             show_thinking: "collapsed".to_string(),
             screen_reader: false,
-            mouse: false,
+            mouse: true,
             glyphs: "auto".to_string(),
             icons: HashMap::new(),
             color: "auto".to_string(),

@@ -8,6 +8,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T27.5 | todo | P2 | 2 | 0% | |
 | T27.6 | todo | P3 | 2 | 0% | |
+| T27.7 | todo | P3 | 1 | 0% | |
+| T22.9 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
 ## Reference
@@ -642,6 +644,19 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
 
+#### T22.9 Click-to-unfold a tool card
+
+Model: sonnet · Status: open · Depends: T22.4 · Size: ~100 · Priority: P3 · Complexity: 2
+Goal: with `tui.mouse = true`, a left click on a folded tool card in the live viewport unfolds it, and a second click folds it again (split out of T22.4, §6 A33).
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `State` gains per-cell fold state keyed by transcript index, in place of the last-cell-only `expanded_last`. `Ctrl+O` and every existing fold path keep their behaviour. (2) `view.rs` records `cell_rows: Vec<(Range<u16>, usize)>` while drawing. (3) `on_mouse`: `Down(Left)` inside the viewport hit-tests `cell_rows` and toggles the matching tool cell's fold; a click anywhere else does nothing.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui update_mouse_click_unfolds_card
+```
+Done when: the test passes and the existing fold and `Ctrl+O` snapshots are unchanged.
+Out of scope: drag selection; clicks in modals and pickers.
+
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
@@ -680,6 +695,19 @@ mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_roll
 ```
 Done when: the test passes and the overlay has a snapshot.
 Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
+
+#### T27.7 `/loop` status-line segment
+
+Model: sonnet · Status: open · Depends: T27.4 · Size: ~40 · Priority: P3 · Complexity: 1
+Goal: while a `/loop` is active, the status line shows `↻ <time to next run>` (e.g. `↻ 4m12s`), so a running loop is always visible (T27.4 step 2, split out, §6 A33).
+Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs` (only if a small accessor is needed).
+Steps: (1) `status.rs` adds the segment from `state.active_loop` (`next_at` − `state.tick`, 100 ms ticks), formatted like the existing elapsed times. It is dropped first when the line is narrow, like the other optional segments. (2) Nothing is shown when no loop is active.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui status_shows_loop_countdown
+```
+Done when: the test passes and the existing status snapshots are unchanged when no loop is active.
+Out of scope: pausing a loop.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
@@ -761,6 +789,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A29 §3 P27, T27.2, T27.5 — the creator's answer to T27.2's open question: the `/agents` card is the narrow one (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` and the T16.1 presence records), not a new `Event::AgentProgress`. Why: user request (today). Effect: T27.2 closes without a protocol change — per-subagent model, tokens and last tool stay undone until that event exists; `Enter` on a card opening its rollout read-only is split into the new T27.5, since it needs `/agents` to become a navigable list instead of a static `Notice`.
 - A30 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `false`. Why: the creator's decision after T22.4 made the key live. Mouse capture in the inline viewport takes the wheel from the terminal's own scrollback and plain text selection, and the key had been `true` only because nothing read it. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `false`; `tui.mouse = true` turns on the T22.4 wheel scrolling.
 - A31 §3 P27, T27.4, T27.6 — T27.4's card asked for `/loop` (TUI) and `cox run --loop` (headless) in one ≤3-file task (`crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`), but the headless half also needs `crates/cox/src/cli.rs` for its new `RunArgs` flags (`--loop`, `--max-iterations`) — a fourth source file, over the cap. Why: plan.md §2 ("if the Check cannot pass without exceeding the size limit, split the task"). Effect: T27.4 lands only the TUI `/loop` (`commands.rs` + `state.rs`, `docs/getting-started.md`); the headless counterpart is the new T27.6 (`cli.rs` + `run.rs`), depending on T27.4 for the shared interval grammar. No design change — same goal, same budget-cap idea (T27.6 reuses the core's existing `StopReason::Budget` rather than inventing a second cap), split only on file count.
+- A32 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `true` again, which reverses A30. Why: the creator's later decision. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `true`; the terminal's own selection needs Shift/Option while cox runs, and `tui.mouse = false` gives it back.
+- A33 §3 P22, P27, T22.9, T27.7 — the two parts of approved cards that did not fit their size limits become cards of their own: T22.9 (T22.4's click on a folded tool card unfolds it) and T27.7 (T27.4's `↻ <time>` status-line segment for an active `/loop`). Why: the creator asked for every remaining task that needs no creator input; both halves were already approved as part of T22.4 and T27.4. Effect: two rows in the top table and `todo.md`; no new dependency.
 
 ## 7. Risk register
 
