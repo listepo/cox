@@ -11,13 +11,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
-use syntect::parsing::SyntaxSet;
 use unicode_width::UnicodeWidthStr;
 
 use crate::cells::Look;
 use crate::glyph::Glyphs;
 
-static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static SYNTAXES: LazyLock<syntect::parsing::SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 static THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 /// `.tmTheme` files under `~/.cox/themes/` (T24.2 step 4), merged on top of
 /// the bundled set by `load_user_themes` once at startup; empty until then,
