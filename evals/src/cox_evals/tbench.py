@@ -9,7 +9,11 @@ is one self-contained binary, so installing is an upload plus `chmod`.
     uv run --project evals --extra tbench harbor run -d terminal-bench@2.0 \\
         -a cox_evals.tbench:CoxAgent -m anthropic/claude-sonnet-5 \\
         --force-build -i fix-git \\
-        --ak cox_bin=<linux cox> --ak budget_usd=0.2
+        --ak cox_bin=<linux cox> --ak budget_usd=0.2 -o ~/.cache/cox-evals/tb-jobs
+
+The jobs dir must be under $HOME with colima: the verifier writes its
+reward through a bind mount, and colima shares only $HOME with its VM, so a
+jobs dir in /tmp leaves every trial without a reward file.
 
 The provider key is read from the host env when `run` starts and passed only
 to that one command, never written into the container.
@@ -38,10 +42,12 @@ def command(instruction, model, *, budget_usd, max_turns):
     return (
         f"{REMOTE_BIN} run -p {shlex.quote(instruction)}"
         f" --output-format json --max-turns {int(max_turns)} --budget {float(budget_usd)}"
-        " --approve never --permission-mode auto --no-mcp --no-hooks"
-        # The task container is the isolation boundary; cox's own sandbox
-        # needs bwrap or Landlock, which TB images do not promise.
-        " --sandbox danger-full-access"
+        # The task container is the isolation boundary, so cox neither asks
+        # nor sandboxes inside it: with `--permission-mode auto --approve
+        # never` the first live run denied 24-26 calls per task and spent its
+        # budget retrying; cox's sandbox needs bwrap or Landlock, which TB
+        # images do not promise.
+        " --permission-mode bypass --sandbox danger-full-access --no-mcp --no-hooks"
         f" --provider {shlex.quote(provider)} --tier code={shlex.quote(name)}"
         # cox exits non-zero on a denied call or a spent budget, and Harbor
         # raises on any non-zero exit — the usage JSON would be lost with it.

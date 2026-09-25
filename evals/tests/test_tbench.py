@@ -49,7 +49,15 @@ def test_command_carries_model_caps_and_the_quoted_instruction():
     assert cmd.startswith(tbench.REMOTE_BIN + " run -p 'it'\"'\"'s done'")
     assert "--provider anthropic --tier code=claude-sonnet-5" in cmd
     assert "--budget 0.2" in cmd and "--max-turns 30" in cmd
-    assert "--output-format json" in cmd and "--approve never" in cmd
+    assert "--output-format json" in cmd
+
+
+def test_command_never_asks_inside_the_task_container():
+    # A denied call cannot be approved by anyone in a benchmark run; the
+    # container is the isolation boundary.
+    cmd = tbench.command("x", "anthropic/m", budget_usd=1, max_turns=1)
+    assert "--permission-mode bypass" in cmd and "--sandbox danger-full-access" in cmd
+    assert "--approve never" not in cmd
 
 
 def test_command_never_fails_so_harbor_keeps_the_usage():
