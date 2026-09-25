@@ -48,6 +48,8 @@ five rows for where you are (idle, a running turn, a modal, an overlay).
 | `Ctrl+G` | diff | idle |
 | `Ctrl+C` | quit | idle |
 | `Ctrl+D` | quit | idle |
+| `y` | copy | idle |
+| `Shift+Y` | copy.all | idle |
 | `Esc` | interrupt | running |
 | `Ctrl+C` | interrupt | running |
 | `Ctrl+B` | background | running |

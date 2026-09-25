@@ -190,8 +190,15 @@ pub async fn run(
                     Cmd::Clear => return Ok(TuiOutcome::Clear),
                     Cmd::Fork(turn) => return Ok(TuiOutcome::Fork { turn }),
                     Cmd::Handoff(objective) => return Ok(TuiOutcome::Handoff { objective }),
-                    // Clipboard lands with the transcript cells (T5.3).
-                    Cmd::Copy(_) => {}
+                    // T23.4: `state` only ever emits this when
+                    // `caps.osc52`, so no capability check is needed here —
+                    // `app.rs` just writes the bytes `state` decided on.
+                    Cmd::Copy(text) => {
+                        use std::io::Write;
+                        let mut out = io::stdout();
+                        out.write_all(crate::term::copy(&text).as_bytes())?;
+                        out.flush()?;
+                    }
                     // A request the runtime has not answered yet is still
                     // pending, so a repeat is dropped rather than awaited.
                     Cmd::Ask(what) => {

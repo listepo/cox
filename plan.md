@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T23.4 | todo | P2 | 1 | 0% | |
 | T27.5 | todo | P2 | 2 | 0% | |
 | T27.6 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
@@ -644,20 +643,6 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
-
-#### T23.4 OSC 52 clipboard
-
-Model: sonnet · Status: open · Depends: T23.0 · Size: ~70 · Priority: P2 · Complexity: 1
-Goal: `y` on a cell in the transcript overlay and `Cmd::Copy` copy through the terminal (works over SSH/tmux) when `caps.osc52`.
-Files: `Cargo.toml`, `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
-Steps: (1) Enable crossterm's `osc52` feature (verified present in 0.29, ledger #30). (2) `app.rs`: `Cmd::Copy(text)` → `execute!(stdout, CopyToClipboard::to_clipboard_from(text))` when `caps.osc52`, else `Notice(Info, "clipboard: terminal does not support OSC 52")`. (3) `state.rs`: in the `Ctrl+O` overlay, `y` copies the selected cell's plain text (already produced by `cells::cell_lines`) and `Y` the whole transcript; status line flashes `copied` for one tick.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui overlay_y_emits_copy_of_cell
-mise exec -- cargo nextest run -p cox-tui --test shell pty_copy_writes_osc52
-```
-Done when: the PTY e2e sees `\x1b]52;c;` with the base64 of the cell text.
-Out of scope: paste (bracketed paste already exists), native clipboard crates.
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
