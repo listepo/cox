@@ -14,6 +14,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.25 | todo | P1 | 3 | 0% | |
 | T30.26 | todo | P1 | 3 | 0% | |
 | T30.27 | todo | P2 | 2 | 0% | |
+| T30.28 | todo | P1 | 2 | 0% | |
 | T32.1 | todo | P2 | 2 | 0% | |
 | T32.2 | todo | P2 | 3 | 0% | |
 | T32.3 | todo | P2 | 3 | 0% | |
@@ -724,7 +725,7 @@ Plan:
 Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
-Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring.
+Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
 
 #### T30.23 Provider constructors take `&Transport`
 
@@ -733,6 +734,21 @@ Goal: `backend_for` becomes one lookup from `api` shape to constructor. Chat and
 Check:
 - a wiremock test that a Chat section with `max_retries = 0` makes exactly one attempt on a 529;
 - the existing provider tests pass.
+
+#### T30.28 Tests never touch the real keychain
+
+Depends: T30.23 (it edits `anthropic/mod.rs`) · Size: ~80 · Files: `cox-provider/src/anthropic/mod.rs`, `crates/cox/src/doctor.rs`, a new source-scan test in `crates/cox/tests/`
+Goal: the AGENTS.md rule (A49). No test reads the OS keychain, so a test run never prompts for the login password and never depends on the developer's stored keys. Today:
+- the Anthropic key tests call the real `resolve_key("ANTHROPIC_API_KEY", "anthropic")`, which reads the `cox/anthropic` item;
+- doctor's `check_api_keys` tests reach the real store through `resolve_key`;
+- doctor's MCP row calls `cox_mcp::auth::stored`, which opens a keyring entry, if a test config names an OAuth server.
+Plan:
+1. The Anthropic tests pass a fake lookup through `resolve_key_with`.
+2. Doctor gets `check_api_keys_with(config, lookup)`; `check_api_keys` passes the real resolver, the tests pass a fake. The same for the MCP row if a test reaches it.
+3. A source-scan test fails when a `#[cfg(test)]` module in any crate calls `resolve_key(`, `platform_keyring` or `keyring::Entry`.
+Check:
+- the scan test passes, and fails on a planted call;
+- `cargo nextest run --workspace` passes with no keychain prompt on macOS.
 
 #### T30.24 `cox-models`: one model catalog
 
@@ -977,6 +993,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A46 §3 P30, T30.15, T30.16 — approved by the creator: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect: U1–U7 are cards T30.21–T30.27; T30.15 depends on T30.21–T30.23, T30.16 on T30.24–T30.25, T32.13–T32.15 on T30.21–T30.26; T30.13 is unaffected.
 - A47 §0 D1, §3 P32 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from T30.24, A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; the phase is P32, not P31, because the unmerged branch `t31-beta-mvp` already uses P31/T31.1–T31.5; C1–C16 are cards T32.1–T32.16 in the new phase P32; the provider wires (T32.13–T32.15) move after T30.21–T30.26 (A46 U1–U6).
 - A48 §3 P30, AGENTS.md — new cards T30.19–T30.20 and a convention: a file no package manager fetches (a vendored API spec, a price or model table, any JSON/YAML data) is produced only by a saved, tested Python script that is re-run to update it; no hand download, no pasted rows. Why: the creator's rule. Effect: the Anthropic spec (T30.19) and the models.dev-derived `prices.toml` rows and `default.toml` model lists (T30.20) get their scripts; A46 U4's embedded catalog rows come from T30.20's script.
+- A49 §3 P30, AGENTS.md — new card T30.28 and a convention, by the creator: tests never read the real OS keychain; they inject the lookup. Why: test runs prompted for the macOS login password and read the developer's real key. Effect: T30.28 runs after T30.23; the T30.13 keychain prompt stays with T30.13.
 
 ## 7. Risk register
 

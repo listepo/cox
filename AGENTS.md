@@ -48,6 +48,7 @@ Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; se
 - Every file opens with a `//!` header saying what the module owns and why it is separate. Comments explain *why*, never *what*.
 - No `unwrap`, `expect`, `panic!`, `todo!` outside tests. Errors are `thiserror` enums per crate; `anyhow` only in `crates/cox`.
 - Tests live in `#[cfg(test)] mod tests` at the bottom of the file, named as the claim they prove (`compaction_keeps_last_two_turns_verbatim`). Transcript and TUI tests are `insta` snapshots. A bug fix adds the narrowest regression test that fails without it.
+- Tests never read or write the real OS keychain (macOS Keychain, Secret Service, Windows Credential Manager). A test injects the lookup (`cox_provider::http::resolve_key_with`, `cox_mcp::auth`'s memory store) or sets the env var; only the binary calls `resolve_key` or `keyring::Entry`. Why: a test run must not prompt for the login password or depend on the developer's stored keys (`plan.md` A49).
 - All terminal output goes through `cox-tui`; there is no `println!` outside it and `crates/cox`.
 - No new dependency without a one-line reason in the commit message and a row in `plan.md` §1.
 - No raw SQL (`plan.md` D9). Queries go through Diesel's typed DSL over `schema.rs` and the models in `cox-store/src/models.rs`. Raw SQL is allowed only in `migrations/*/up.sql`/`down.sql` and for FTS5 virtual tables via `diesel::sql_query`, which Diesel cannot model. Both stay in `cox-store`.
