@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.14 | in progress | P2 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T30.13 | todo | P2 | 3 | 0% | |
 
 ## Reference
@@ -659,9 +660,20 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.14 Eval matrix: agents × providers × models on Terminal-Bench
+
+Depends: T30.9 · Size: ~250
+Goal: one tested module in the `evals` package, not a one-off script, that runs any registered agent against any registered provider and model on a Terminal-Bench 2.0 task list through Harbor, and turns the job results into one per-task table. T30.13 is its first user; the repeat after the refactoring (roadmap) is the second.
+Plan:
+1. `evals/src/cox_evals/matrix.py`: registries in code (no config file to schema): `PROVIDERS` (LM Studio, Ollama, Anthropic, OpenAI; each with its host URL, the URL a task container uses, the API shapes it serves — OpenAI Chat, Anthropic Messages — its key env or a dummy key for local servers, and a preflight: server up, model listed); `AGENTS` (cox, Harbor's `claude-code`, `terminus-2`; each states the API shape it needs and builds its `harbor run` argv and env for a provider and model); `PRESETS` (T30.13's 12 tasks, three agents, `lmstudio` + `prism-ml/bonsai-27b`). `harbor_argv`, a sequential runner (`subprocess`, one job per agent × model), `summarize(job_dir)` over Harbor's `result.json` files, a table printer, `main` with `--preset/--agents/--provider/--model/--tasks/--dry-run/--jobs-dir`; console script `cox-bench`.
+2. `cox_evals.tbench.CoxAgent`: `provider`/`base_url`/`api` kwargs that write the provider section into the container's fresh `COX_HOME/config.toml`, and a dummy key for local servers. cox reaches LM Studio through its Anthropic Messages endpoint: cox's OpenAI Chat path still drops every tool call (ideas.md), so a chat-shape run would measure that bug, not the agent.
+3. `evals/tests/test_matrix.py`: argv and env per agent × provider, shape mismatch is an error before anything runs, container URL rewriting, preset contents, `summarize` over a fake job tree, `--dry-run` prints and runs nothing.
+Check: `just test-evals` green; `cox-bench --preset t30.13 --dry-run` prints three `harbor run` commands.
+Done when: the module and its tests land and the dry run matches the T30.13 card.
+
 #### T30.13 cox vs Claude Code vs Terminus 2 on the same local model
 
-Depends: T30.9 · Size: ~120
+Depends: T30.14 · Size: ~120
 Goal: a like-for-like Terminal-Bench 2.0 baseline, taken before the optimization and refactoring pass and repeated after it (roadmap): the same 12 tasks, the same local model, one attempt each, three agents — cox (`cox_evals.tbench:CoxAgent`), Harbor's built-in `claude-code` and `terminus-2`. The difference in pass rate, tokens and wall time is then the agent's, not the model's. The 3/3 in R§5.3 says nothing about this: those were 3 of the dataset's 4 `easy` tasks (55 are `medium`, 30 `hard`).
 Model: `prism-ml/bonsai-27b` (Qwen 3.5 architecture, 2-bit MLX, 8.5 GB), already in LM Studio, chosen by the creator. No API spend.
 Tasks (fixed; `random.Random(3013).sample` over the `difficulty` field of each `task.toml` at terminal-bench-2 `69671fb`): medium `build-cython-ext`, `build-pmars`, `compile-compcert`, `mteb-leaderboard`, `query-optimize`, `regex-log`, `sanitize-git-repo`, `tune-mjcf`; hard `dna-assembly`, `password-recovery`, `path-tracing-reverse`, `regex-chess`.
@@ -746,6 +758,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A39 §3 P30, T30.10 — the Anthropic stream wire types are generated with typify from a curated JSON Schema subset of Anthropic's OpenAPI spec; the SSE → `ProviderEvent` mapping stays hand-written. Why: the creator chose typify-generated types over a hand-written `Value` walk or a full generated SDK (none exists for Rust that handles SSE). Effect: one build-time proc-macro dependency; D3 unchanged.
 - A40 §0 D3, §3 P30, T30.11–T30.12 — D3 gains an order for where provider wire types come from: a maintained SDK's types, else typify over the vendor's vendored spec, else hand-written; transport, SSE mapping and the ledger stay ours; SDK code is a `wire` module inside the provider. Login stays API-key only: Anthropic forbids third-party Claude subscription login in writing, OpenAI documents nothing for ChatGPT login (R§4.3.1). Why: the creator asked providers to check for an SDK or a generatable spec before hand-writing, starting with the Claude Code and Codex replacements. Effect: `async-openai` (types only) and a vendored Anthropic spec enter the provider crate.
 - A41 §3 P30, T30.13 — new card: cox, Harbor's `claude-code` and `terminus-2` on the same 12 Terminal-Bench 2.0 tasks with the same local model (`bonsai-27b` in LM Studio), as a baseline before the optimization and refactoring pass, repeated after it (roadmap). Why: T30.9's 3/3 covered 3 of the 4 `easy` tasks and cannot be compared with anything; the creator chose same-model agents on a local model (no API spend), 12 tasks × 1 attempt.
+- A42 §3 P30, T30.14 — new card ahead of T30.13: the comparison runner becomes a tested `evals` module with registries of agents, providers and models (`cox-bench`). Why: the creator asked for a package/module supporting different providers, models and agents rather than a one-off script. Effect: T30.13 depends on T30.14 and runs through it.
 
 ## 7. Risk register
 
