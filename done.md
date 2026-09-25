@@ -579,3 +579,79 @@ clean
 ```
 
 Landed on main 2026-09-26; originally merged only into `sync-2026-09-25-local-main` via PR #37.
+
+#### T31.1 Request bodies build without expect
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: - · Size: ~20 · Priority: P1 · Complexity: 1
+Goal: the Anthropic, OpenAI Responses and OpenAI Chat request builders stop calling `expect` on the `json!` body (v0.1 DoD §4.6, §6 A50).
+Files: `crates/cox-provider/src/openai/chat.rs`.
+Steps: replace `body.as_object_mut().expect(..)` with `let Value::Object(obj) = &mut body else { return .. }`; the else arm returns the body unchanged and is unreachable for an object literal.
+Deviation: the branch also touched `anthropic/request.rs` and `openai/responses.rs`, but by the time this landed on `main`, T30.11–T30.12 had already rewritten both builders around typed `wire::CreateMessageParams`/`wire::CreateResponse` and made them return `Result` without ever using `body.as_object_mut().expect(..)`; those two hunks were dropped as obsolete (the remaining `.expect()` calls in those files are confined to `#[cfg(test)]` helpers), and only the `openai/chat.rs` fix landed.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-provider
+     all pass (part of the workspace run below)
+```
+Done when: no `expect` remains in the three builders and the provider snapshots are unchanged.
+Landed on main 2026-09-26 from branch t31-beta-mvp.
+
+#### T31.2 Jev client construction is fallible
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: - · Size: ~25 · Priority: P1 · Complexity: 1
+Goal: `JevProvider::with_key` returns `Result<Self, ProviderError>` instead of `expect`ing the reqwest builder (v0.1 DoD §4.6, §6 A50).
+Files: none — see deviation.
+Deviation: fully superseded before this landed. T30.23 (A46 U1) had already changed every provider constructor, `JevProvider::new`/`with_key` included, to take `&Transport` and return `Result<Self, ProviderError>` (the client now builds through `crate::http::client_with_timeout`, mapping a build failure to `ProviderError`), and `session::provider_for` already propagates that `Result` with `?`. Replaying the branch's `jev.rs`/`session.rs` diff onto current `main` produced an empty diff once conflicts were resolved in favor of `main`, so no code changed for this task.
+Check: n/a — nothing to run; `JevProvider::with_key`/`new`'s fallibility and `session::provider_for`'s propagation are already covered by T30.23's and T30.28's tests.
+Done when: `JevProvider::with_key`/`new` are fallible and `session::provider_for` propagates the error — already true on `main` via T30.23.
+Landed on main 2026-09-26 from branch t31-beta-mvp (no code changed; fully superseded by T30.23).
+
+#### T31.3 Config overrides and config show without expect
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: - · Size: ~40 · Priority: P1 · Complexity: 1
+Goal: the CLI override tree and `cox config show` stop calling `expect` (v0.1 DoD §4.6, §6 A50).
+Files: `crates/cox/src/config_load.rs`, `crates/cox/src/config_cmd.rs`, `crates/cox/src/main.rs`.
+Steps: `set_dotted` walks the dotted path through a recursive `set_path` that replaces any non-object with an empty object and matches the map with `let-else`; `config_cmd::show` returns `anyhow::Result<()>` and `main.rs` returns it.
+Check:
+```text
+$ COX_HOME=<scratch> ./target/debug/cox --model claude-haiku-4-5 --sandbox read-only config show --sources | grep '# flag'
+sandbox.mode = "read-only" # flag
+tiers.code.model = "claude-haiku-4-5" # flag
+```
+Done when: the flag overrides still land at their dotted keys and no `expect` remains in either file.
+Landed on main 2026-09-26 from branch t31-beta-mvp.
+
+#### T31.4 End-to-end test of cox mcp serving read, grep and glob
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: - · Size: ~140 · Priority: P1 · Complexity: 2
+Goal: prove v0.1 DoD §4.5 ("`cox mcp` serves `read`/`grep`/`glob`") against the built binary, not stand-in tools (§6 A50).
+Files: `crates/cox/tests/mcp_serve.rs` (new), `crates/cox/src/mcp_cmd.rs`.
+Steps: spawn `cox --cwd <tmp> mcp` with a scratch `COX_HOME`, speak newline-delimited JSON-RPC over stdio (`initialize`, `notifications/initialized`, `tools/list`, three `tools/call`) with a 20 s per-response timeout so a silent server fails instead of hanging.
+Deviation: the first run showed `tools/list` returned `glob`, `grep`, `read` while the default selection named `outline` too — no tool has that name (an outline is `read` with `mode = "outline"`), so `READ_ONLY` drops it and the unit test's counts follow (default 3, with `--allow-write` 6).
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox --test mcp_serve
+        PASS [   1.715s] (1/1) cox::mcp_serve cox_mcp_serves_read_grep_and_glob_from_the_built_binary
+```
+Done when: the test passes and `tools/list` matches the default selection exactly.
+Landed on main 2026-09-26 from branch t31-beta-mvp.
+
+#### T31.5 README quick start uses cox run -p; drop stale cli doc
+
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: - · Size: ~5 · Priority: P2 · Complexity: 1
+Goal: every command in the README runs as written, and the `Command` doc stops claiming subcommands print `not implemented` (§6 A50).
+Files: `README.md`, `crates/cox/src/cli.rs`.
+Steps: the 60-second start's `cox -p "..."` becomes `cox run -p "..."` (the top-level `Cli` has only a positional prompt; `-p` belongs to `run`); the doc comment says `main.rs` dispatches each subcommand.
+Deviation: checked against the licensing README section (badges, `## License`) added to `main` since this branch was cut — that section sits elsewhere in the file (top badges, bottom `## License`) and is untouched by this change.
+Done when: the README commands run as written and the `Command` doc comment matches the shipped binary.
+Landed on main 2026-09-26 from branch t31-beta-mvp.
+
+Check for T31.1–T31.5 together, as landed on `main` (branch t31-beta-mvp cherry-picked over T30.19–T30.28 and the crate-split table entries):
+```text
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     Summary [ 16.307s] 914 tests run: 914 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     Finished `dev` profile [unoptimized + debuginfo] target(s) in 47.79s
+$ mise exec -- cargo fmt --check
+     clean
+```
+`cox::no_real_keychain_in_tests` and `cox::mcp_serve` are both in that count and both pass; `mcp_serve`'s `cox --cwd <tmp> mcp` never resolves a provider key (its `run` path only loads config and builds the built-in tool list), so it cannot reach the real keychain, and a manual run with `ANTHROPIC_API_KEY=not-a-real-key COX_HOME=$(mktemp -d)` confirms the T31.3 `config show --sources` check with no keychain prompt.
