@@ -7,7 +7,6 @@
 - T30.25. `Caps` and adaptive thinking from the catalog
 - T30.26. One effort map, with `Effort::Medium`
 - T30.27. `cox doctor`: catalog and price sync row
-- T30.28. Tests never touch the real keychain
 - T32.1. `cox-sanitize`: the terminal-text guard in its own crate
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 - T32.3. `cox-sandbox`: `sandbox::Policy` and `path::confine`

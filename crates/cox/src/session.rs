@@ -823,11 +823,24 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
 /// Real clients are wrapped in `Priced` so every call reaches the ledger with
 /// its cost; test doubles are not, because their scenarios script the cost.
 pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
+    provider_for_with(config, cox_provider::http::resolve_key)
+}
+
+/// [`provider_for`]'s body with the credential lookup injected, so a test
+/// can build every provider kind without ever reaching the real keyring
+/// (A49, T30.28).
+fn provider_for_with(
+    config: &Config,
+    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
+) -> anyhow::Result<Arc<dyn Provider>> {
     if let Some(double) = cox_provider::from_env()? {
         return Ok(Arc::from(double));
     }
     let prices = Arc::new(PriceTable::embedded()?);
-    Ok(Arc::new(Priced::new(backend_for(config)?, prices)))
+    Ok(Arc::new(Priced::new(
+        backend_for_with(config, resolve)?,
+        prices,
+    )))
 }
 
 /// The real client `tiers.code.provider` names, before pricing: one lookup
@@ -837,7 +850,17 @@ pub(crate) fn provider_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>>
 /// has (cache TTL/fallbacks; a decision model); every `api = "chat"` or
 /// `"responses"` section — native `openai`/`local` and any Type-2 compatible
 /// section alike — goes through the one `openai_shaped` constructor.
-fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
+///
+/// Takes the credential lookup as `resolve` (A49, T30.28): every arm
+/// resolves its key through it — `AnthropicProvider::with_key`/
+/// `JevProvider::with_key` take the already-resolved key instead of
+/// resolving it themselves, and `openai_shaped` takes `resolve` straight
+/// through — so [`provider_for_with`]'s caller decides whether that is the
+/// real `cox_provider::http::resolve_key` or a test's fake lookup.
+fn backend_for_with(
+    config: &Config,
+    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
+) -> anyhow::Result<Arc<dyn Provider>> {
     match config.tiers.code.provider.as_str() {
         "anthropic" => {
             let a = &config.providers.anthropic;
@@ -845,21 +868,26 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
                 "1h" => CacheTtl::OneHour,
                 _ => CacheTtl::FiveMinutes,
             };
-            Ok(Arc::new(AnthropicProvider::new(
-                &a.transport(),
+            let transport = a.transport();
+            let api_key = resolve(&transport.api_key_env, "anthropic")?;
+            Ok(Arc::new(AnthropicProvider::with_key(
+                &transport,
+                api_key,
                 ttl,
                 a.fallbacks,
             )?))
         }
         // Jev is type-1 native (System One wire, T21.1): its own client,
-        // not an OpenAI shape. The constructor resolves the key itself
-        // (`api_key_env`, else keyring `cox/typesafe`) and fails `Auth`
-        // when neither has one — that is the fail-open path, read as auth,
-        // not transport.
+        // not an OpenAI shape. A missing key fails `Auth` rather than
+        // building keyless — that is the fail-open path, read as auth, not
+        // transport.
         "typesafe" => {
             let t = &config.providers.typesafe;
-            Ok(Arc::new(cox_provider::jev::JevProvider::new(
-                &t.transport(),
+            let transport = t.transport();
+            let api_key = resolve(&transport.api_key_env, "typesafe")?;
+            Ok(Arc::new(cox_provider::jev::JevProvider::with_key(
+                &transport,
+                api_key,
                 t.model.clone(),
             )?))
         }
@@ -868,7 +896,14 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
             // No `context_window` field on the native section (it relies
             // on `models`); 400k is the same fallback `openai_shaped` used
             // before this lookup existed.
-            openai_shaped("openai", &o.transport(), o.models.clone(), 400_000, &o.api)
+            openai_shaped(
+                "openai",
+                &o.transport(),
+                o.models.clone(),
+                400_000,
+                &o.api,
+                resolve,
+            )
         }
         "local" => {
             let l = &config.providers.local;
@@ -878,6 +913,7 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
                 l.models.clone(),
                 l.context_window,
                 &l.api,
+                resolve,
             )
         }
         // Type-2 providers: no code per vendor — the section's `api` picks
@@ -894,6 +930,7 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
                 c.models.clone(),
                 c.context_window,
                 &c.api,
+                resolve,
             )
         }
     }
@@ -902,19 +939,21 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
 /// Builds the OpenAI-shaped client the `api` string names for `owner`:
 /// `"responses"` speaks the Responses API, `"chat"` the Chat Completions
 /// subset every compatible vendor speaks. Anything else is a config error
-/// at startup, not a mid-turn 404. The key resolves once, here, the same
-/// way for every caller: `transport.api_key_env` first, else the keyring
-/// entry `cox/<owner>`; missing both builds keyless (no `Authorization`
-/// header) rather than failing at startup (T30.21) — most compatible
-/// sections, and every local/self-hosted gateway, need no key at all.
+/// at startup, not a mid-turn 404. The key resolves once, here, through
+/// `resolve` — `transport.api_key_env` first, else the keyring entry
+/// `cox/<owner>` for the real caller (`backend_for`); missing both builds
+/// keyless (no `Authorization` header) rather than failing at startup
+/// (T30.21) — most compatible sections, and every local/self-hosted
+/// gateway, need no key at all.
 fn openai_shaped(
     owner: &str,
     transport: &Transport,
     models: Vec<cox_protocol::config::ProviderModel>,
     context_window: u32,
     api: &str,
+    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
 ) -> anyhow::Result<Arc<dyn Provider>> {
-    let api_key = cox_provider::http::resolve_key(&transport.api_key_env, owner).ok();
+    let api_key = resolve(&transport.api_key_env, owner).ok();
     match api {
         "responses" => Ok(Arc::new(OpenAiResponsesProvider::new(
             transport,
@@ -1080,10 +1119,9 @@ mod tests {
             "deepseek".into(),
             CompatibleProviderConfig {
                 base_url: "https://api.deepseek.com".into(),
-                // Deliberately unset in the test environment (T30.21: the
-                // resolver then checks the keyring entry `cox/deepseek`,
-                // which is absent here too) — either way the client builds
-                // keyless without touching the network.
+                // Never resolved in a test (A49, T30.28): every caller below
+                // goes through `provider_for_with` with a fake resolver, so
+                // this name is never looked up anywhere, real or fake.
                 api_key_env: "COX_TEST_MISSING_KEY_DEEPSEEK".into(),
                 api: api.into(),
                 model: "deepseek-v4-pro".into(),
@@ -1095,16 +1133,23 @@ mod tests {
         cfg
     }
 
+    /// A49 (T30.28): every test below that needs a "no key" outcome uses
+    /// this instead of an unset env var — `resolve_key`'s keyring fallback
+    /// is the real platform store, and a test must never reach it.
+    fn no_key(_: &str, _: &str) -> Result<String, cox_protocol::errors::ProviderError> {
+        Err(cox_protocol::errors::ProviderError::Auth)
+    }
+
     #[test]
     fn provider_for_custom_builds_chat_client_without_a_key() {
-        let p = provider_for(&deepseek_config("chat")).expect("builds");
+        let p = provider_for_with(&deepseek_config("chat"), no_key).expect("builds");
         assert_eq!(p.id(), ProviderId::Local);
         assert_eq!(p.capabilities().max_context, 1_000_000);
     }
 
     #[test]
     fn provider_for_custom_responses_builds_responses_client() {
-        let p = provider_for(&deepseek_config("responses")).expect("builds");
+        let p = provider_for_with(&deepseek_config("responses"), no_key).expect("builds");
         assert_eq!(p.id(), ProviderId::OpenAi);
     }
 
@@ -1114,53 +1159,37 @@ mod tests {
         bad.tiers.code.provider = "weird".into();
         assert!(provider_for(&bad).is_err(), "unknown name bails");
         assert!(
-            provider_for(&deepseek_config("smoke-signals")).is_err(),
+            provider_for_with(&deepseek_config("smoke-signals"), no_key).is_err(),
             "unknown api bails at startup, not mid-turn"
         );
     }
 
     /// T30.23: `backend_for`'s one lookup still builds the right provider
     /// kind for every section, native and compatible alike (the deepseek
-    /// cases above cover the "custom section" leg of the same claim).
+    /// cases above cover the "custom section" leg of the same claim). A49
+    /// (T30.28): a fake resolver, not an env var, keeps every branch off
+    /// the real keyring.
     #[test]
     fn backend_for_builds_the_right_provider_kind_per_section() {
-        // A49: no test may fall through to the real OS keychain. Every
-        // section below names its own env var and sets it before the call,
-        // so `resolve_key`'s env-var branch always wins and its keyring
-        // fallback (`platform_keyring`) is never reached — unlike
-        // `deepseek_config`'s deliberately-missing-key case above (a
-        // pre-existing pattern out of scope here; T30.28).
-        // Safety: cargo nextest runs each #[test] as its own process, so
-        // these env vars cannot race another test's read of them.
-        unsafe {
-            std::env::set_var("COX_TEST_BACKEND_FOR_ANTHROPIC_KEY", "sk-ant-test");
-            std::env::set_var("COX_TEST_BACKEND_FOR_OPENAI_KEY", "sk-openai-test");
-            std::env::set_var("COX_TEST_BACKEND_FOR_LOCAL_KEY", "sk-local-test");
+        fn fake_key(_: &str, _: &str) -> Result<String, cox_protocol::errors::ProviderError> {
+            Ok("sk-test".to_string())
         }
 
-        let mut anthropic = Config::default();
-        anthropic.providers.anthropic.api_key_env = "COX_TEST_BACKEND_FOR_ANTHROPIC_KEY".into();
-        let p = provider_for(&anthropic).expect("anthropic builds with a resolved key");
+        let anthropic = Config::default();
+        let p =
+            provider_for_with(&anthropic, fake_key).expect("anthropic builds with a resolved key");
         assert_eq!(p.id(), ProviderId::Anthropic);
 
         let mut openai = Config::default();
         openai.tiers.code.provider = "openai".into();
-        openai.providers.openai.api_key_env = "COX_TEST_BACKEND_FOR_OPENAI_KEY".into();
-        let p = provider_for(&openai).expect("openai builds through openai_shaped");
+        let p = provider_for_with(&openai, fake_key).expect("openai builds through openai_shaped");
         assert_eq!(p.id(), ProviderId::OpenAi);
 
         let mut local = Config::default();
         local.tiers.code.provider = "local".into();
-        local.providers.local.api_key_env = "COX_TEST_BACKEND_FOR_LOCAL_KEY".into();
-        let p = provider_for(&local)
+        let p = provider_for_with(&local, fake_key)
             .expect("local goes through the same openai_shaped path as any compatible section");
         assert_eq!(p.id(), ProviderId::Local);
-
-        unsafe {
-            std::env::remove_var("COX_TEST_BACKEND_FOR_ANTHROPIC_KEY");
-            std::env::remove_var("COX_TEST_BACKEND_FOR_OPENAI_KEY");
-            std::env::remove_var("COX_TEST_BACKEND_FOR_LOCAL_KEY");
-        }
     }
 
     fn scripted_session(home: &Path, work: &Path, scenario: &str) -> (Session, Arc<Store>) {

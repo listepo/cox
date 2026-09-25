@@ -75,6 +75,32 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
+    /// Builds a provider from `&Transport` (`providers.anthropic`, T30.23)
+    /// with an already-resolved credential. Prefer [`Self::new`] at session
+    /// startup; this stays for tests and any caller that already has a key
+    /// (mirrors `JevProvider::with_key`) — `backend_for_with` in
+    /// `crates/cox/src/session.rs` builds through this so a test can inject
+    /// the lookup instead of ever reaching the real keyring (A49, T30.28).
+    pub fn with_key(
+        transport: &cox_protocol::config::Transport,
+        api_key: String,
+        ttl: CacheTtl,
+        fallbacks: bool,
+    ) -> Result<Self, ProviderError> {
+        Ok(Self {
+            base_url: transport.base_url.trim_end_matches('/').to_string(),
+            api_key,
+            workspace_id: resolve_workspace_id(),
+            ttl,
+            fallbacks,
+            http: crate::http::client_with_timeout(transport.timeout_s)?,
+            retry: crate::retry::Policy {
+                max_retries: transport.max_retries,
+                ..Default::default()
+            },
+        })
+    }
+
     /// Builds a provider from the section's `&Transport` (`providers.
     /// anthropic`, T30.23) plus its own section-specific knobs (cache TTL,
     /// whether to send `fallbacks`). Resolves the credential from
@@ -88,18 +114,8 @@ impl AnthropicProvider {
         ttl: CacheTtl,
         fallbacks: bool,
     ) -> Result<Self, ProviderError> {
-        Ok(Self {
-            base_url: transport.base_url.trim_end_matches('/').to_string(),
-            api_key: crate::http::resolve_key(&transport.api_key_env, "anthropic")?,
-            workspace_id: resolve_workspace_id(),
-            ttl,
-            fallbacks,
-            http: crate::http::client_with_timeout(transport.timeout_s)?,
-            retry: crate::retry::Policy {
-                max_retries: transport.max_retries,
-                ..Default::default()
-            },
-        })
+        let api_key = crate::http::resolve_key(&transport.api_key_env, "anthropic")?;
+        Self::with_key(transport, api_key, ttl, fallbacks)
     }
 
     /// The headers every call carries. `anthropic-beta` is assembled from
@@ -357,21 +373,26 @@ mod tests {
 
     #[test]
     fn missing_credential_is_auth_error_not_a_panic() {
+        // A49 (T30.28): inject the lookup rather than calling `resolve_key`,
+        // whose fallback is the real platform keyring.
         // Safety: single-threaded test process section; no other thread reads
         // the environment while this runs.
-        unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
-        // Either the keyring holds a real entry (developer machine) or it
-        // does not; both outcomes are a `Result`, never a panic.
-        let _ = crate::http::resolve_key("ANTHROPIC_API_KEY", "anthropic");
+        unsafe { std::env::remove_var("COX_TEST_ANTHROPIC_MISSING") };
+        assert!(matches!(
+            crate::http::resolve_key_with("COX_TEST_ANTHROPIC_MISSING", "anthropic", |_| None),
+            Err(ProviderError::Auth)
+        ));
 
-        unsafe { std::env::set_var("ANTHROPIC_API_KEY", "sk-from-env") };
+        unsafe { std::env::set_var("COX_TEST_ANTHROPIC_MISSING", "sk-from-env") };
         assert_eq!(
-            crate::http::resolve_key("ANTHROPIC_API_KEY", "anthropic")
-                .ok()
-                .as_deref(),
+            crate::http::resolve_key_with("COX_TEST_ANTHROPIC_MISSING", "anthropic", |_| {
+                panic!("the keyring must not be consulted when the env var is set")
+            })
+            .ok()
+            .as_deref(),
             Some("sk-from-env")
         );
-        unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+        unsafe { std::env::remove_var("COX_TEST_ANTHROPIC_MISSING") };
     }
 
     /// T30.21: `AnthropicProvider::new` reads whatever env var

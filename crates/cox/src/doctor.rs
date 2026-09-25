@@ -222,10 +222,13 @@ fn key_requirement(config: &cox_protocol::Config) -> KeyRequirement<'_> {
     }
 }
 
-/// Resolves the key exactly as the provider will (`cox_provider::http::resolve_key`:
-/// the section's env var, then keyring `cox/<section>`), so doctor and the
-/// session never disagree about whether a key exists.
-fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
+/// [`check_api_keys`]'s body with the credential lookup injected, so a test
+/// can exercise every branch (unknown provider, keyless, found, missing)
+/// without ever touching the real keyring (A49, T30.28).
+fn check_api_keys_with(
+    config: &cox_protocol::Config,
+    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
+) -> CheckResult {
     let (section, env_var, required) = match key_requirement(config) {
         KeyRequirement::Key(section, env_var, required) => (section, env_var, required),
         KeyRequirement::None => {
@@ -244,7 +247,7 @@ fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
             );
         }
     };
-    if cox_provider::http::resolve_key(env_var, section).is_ok() {
+    if resolve(env_var, section).is_ok() {
         return CheckResult::ok("API keys", format!("{section} key found"));
     }
     let detail = format!("{env_var} is not set and keyring entry 'cox/{section}' not found");
@@ -260,6 +263,13 @@ fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
             fix,
         )
     }
+}
+
+/// Resolves the key exactly as the provider will (`cox_provider::http::resolve_key`:
+/// the section's env var, then keyring `cox/<section>`), so doctor and the
+/// session never disagree about whether a key exists.
+fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
+    check_api_keys_with(config, cox_provider::http::resolve_key)
 }
 
 fn check_sandbox() -> CheckResult {
@@ -648,10 +658,13 @@ mod tests {
     fn doctor_fails_when_the_code_tier_names_an_unknown_provider() {
         // The session refuses this config ("unknown provider"); doctor must
         // not report it as a provider that needs no key. Returns before any
-        // keyring lookup.
+        // keyring lookup — enforced here by a lookup that panics if called
+        // (A49, T30.28).
         let mut config = cox_protocol::Config::default();
         config.tiers.code.provider = "nosuch".into();
-        let result = check_api_keys(&config);
+        let result = check_api_keys_with(&config, |_, _| {
+            panic!("an unknown provider must fail before any key is resolved")
+        });
         assert_eq!(result.status, "fail", "{}", result.detail);
         assert!(
             result.detail.contains("[providers.nosuch]"),
@@ -662,7 +675,9 @@ mod tests {
 
     #[test]
     fn doctor_warns_not_fails_when_a_keyless_section_has_no_key() {
-        // A section name no keyring holds and an env var nobody sets.
+        // A section name no keyring holds and an env var nobody sets —
+        // simulated with an injected lookup rather than the real keyring
+        // (A49, T30.28).
         let section = "cox-doctor-test-keyless";
         let mut config = cox_protocol::Config::default();
         config.tiers.code.provider = section.into();
@@ -673,7 +688,9 @@ mod tests {
                 ..Default::default()
             },
         );
-        let result = check_api_keys(&config);
+        let result = check_api_keys_with(&config, |_, _| {
+            Err(cox_protocol::errors::ProviderError::Auth)
+        });
         assert_eq!(result.status, "warn", "{}", result.detail);
         // The keyring hint names service `cox`, account `<section>` — the
         // order `keyring::Entry::new("cox", section)` reads.

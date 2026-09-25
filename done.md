@@ -414,3 +414,43 @@ Deviations:
 Check:
 - `chat_529_with_zero_max_retries_makes_one_attempt`, `chat_529_with_two_max_retries_makes_three_attempts`, `responses_529_with_zero_max_retries_makes_one_attempt`, `backend_for_builds_the_right_provider_kind_per_section` pass.
 - `cargo nextest run --workspace`: 909 passed, 3 skipped; clippy and fmt clean.
+
+#### T30.28 Tests never touch the real keychain
+
+Depends: T30.23 (it edits `anthropic/mod.rs`) · Size: ~80 · Files: `cox-provider/src/anthropic/mod.rs`, `crates/cox/src/doctor.rs`, a new source-scan test in `crates/cox/tests/`
+Goal: the AGENTS.md rule (A49). No test reads the OS keychain, so a test run never prompts for the login password and never depends on the developer's stored keys. Today:
+- the Anthropic key tests call the real `resolve_key("ANTHROPIC_API_KEY", "anthropic")`, which reads the `cox/anthropic` item;
+- doctor's `check_api_keys` tests reach the real store through `resolve_key`;
+- doctor's MCP row calls `cox_mcp::auth::stored`, which opens a keyring entry, if a test config names an OAuth server.
+Plan:
+1. The Anthropic tests pass a fake lookup through `resolve_key_with`.
+2. Doctor gets `check_api_keys_with(config, lookup)`; `check_api_keys` passes the real resolver, the tests pass a fake. The same for the MCP row if a test reaches it.
+3. A source-scan test fails when a `#[cfg(test)]` module in any crate calls `resolve_key(`, `platform_keyring` or `keyring::Entry`.
+Check:
+- the scan test passes, and fails on a planted call;
+- `cargo nextest run --workspace` passes with no keychain prompt on macOS.
+Status: done 2026-09-26
+
+What landed:
+- Seams for injecting the key lookup:
+  - `AnthropicProvider::with_key`, alongside the existing `JevProvider::with_key`;
+  - `provider_for_with` and `backend_for_with` in `crates/cox/src/session.rs`, with `openai_shaped` taking the resolver;
+  - `doctor::check_api_keys_with`;
+  - `http::resolve_key_with` is now `pub(crate)`.
+
+  The production paths pass `cox_provider::http::resolve_key`, so the binary behaves the same.
+- The Anthropic, doctor and session tests use fake resolvers. The env-var juggling in `backend_for_builds_the_right_provider_kind_per_section` is gone.
+- `crates/cox/tests/no_real_keychain_in_tests.rs` scans every `#[cfg(test)]` module and every file under a `tests/` directory. It blanks comments and strings first, then fails on `resolve_key(`, `platform_keyring` or `keyring::Entry`. Three unit tests cover the scanner itself.
+- `docs/design/providers.md` item 2 documents the seams.
+- Paths checked and found clean:
+  - the e2e tests run the binary with `COX_PROVIDER=scripted`, which returns before any key lookup;
+  - the cox-mcp auth tests use the in-memory store;
+  - cox-acp and cox-tui build no provider.
+
+Deviations:
+- 6 files, about 150 edited lines plus the 252-line scan test. That is above the 3-file limit, because the session.rs path, which the card missed, was folded in.
+- The scanner only sees direct calls. An indirect path through production code is caught by review and the seams, not by the scan.
+
+Check:
+- A call planted in the anthropic and session test modules made `no_test_reads_the_real_keychain` fail; the plant was then reverted.
+- `cargo nextest run --workspace`: 913 passed, 3 skipped; clippy and fmt clean.

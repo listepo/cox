@@ -13,7 +13,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.25 | todo | P1 | 3 | 0% | |
 | T30.26 | todo | P1 | 3 | 0% | |
 | T30.27 | todo | P2 | 2 | 0% | |
-| T30.28 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T32.1 | todo | P2 | 2 | 0% | |
 | T32.2 | todo | P2 | 3 | 0% | |
 | T32.3 | todo | P2 | 3 | 0% | |
@@ -725,21 +724,6 @@ Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
 Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
-
-#### T30.28 Tests never touch the real keychain
-
-Depends: T30.23 (it edits `anthropic/mod.rs`) · Size: ~80 · Files: `cox-provider/src/anthropic/mod.rs`, `crates/cox/src/doctor.rs`, a new source-scan test in `crates/cox/tests/`
-Goal: the AGENTS.md rule (A49). No test reads the OS keychain, so a test run never prompts for the login password and never depends on the developer's stored keys. Today:
-- the Anthropic key tests call the real `resolve_key("ANTHROPIC_API_KEY", "anthropic")`, which reads the `cox/anthropic` item;
-- doctor's `check_api_keys` tests reach the real store through `resolve_key`;
-- doctor's MCP row calls `cox_mcp::auth::stored`, which opens a keyring entry, if a test config names an OAuth server.
-Plan:
-1. The Anthropic tests pass a fake lookup through `resolve_key_with`.
-2. Doctor gets `check_api_keys_with(config, lookup)`; `check_api_keys` passes the real resolver, the tests pass a fake. The same for the MCP row if a test reaches it.
-3. A source-scan test fails when a `#[cfg(test)]` module in any crate calls `resolve_key(`, `platform_keyring` or `keyring::Entry`.
-Check:
-- the scan test passes, and fails on a planted call;
-- `cargo nextest run --workspace` passes with no keychain prompt on macOS.
 
 #### T30.24 `cox-models`: one model catalog
 
