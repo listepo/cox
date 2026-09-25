@@ -6,7 +6,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T27.5 | todo | P2 | 2 | 0% | |
+| T27.5 | in progress | P2 | 2 | 0% | Claude Code / claude-sonnet-5 |
+| T27.8 | todo | P2 | 2 | 0% | |
 | T22.9 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
@@ -670,7 +671,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T27.5 `/agents` rollout overlay
 
-Model: - · Status: open · Depends: T27.2 · Size: ~150 · Priority: P2 · Complexity: 2
+Model: claude-sonnet-5 · Status: in progress · Depends: T27.2 · Size: ~150 · Priority: P2 · Complexity: 2
 Goal: `Enter` on an `/agents` card opens that agent's rollout read-only in the transcript overlay — the half of T27.2 step 3 the creator split out (§6 A29) because it needs `/agents` to stop being a static `Notice`.
 Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`.
 Steps: (1) `/agents` becomes a navigable list (`Context::Overlay`, arrow keys move a cursor) instead of a `Notice`, one row per `agents_cards` (T27.2) entry. (2) `Enter` on a sibling-session row asks the binary — the only side that talks to `cox-store` — for that session's rollout via `Store::rollout_read`, the same read `crates/cox/src/resume.rs` already does for `--resume`, and feeds it back as a new `Msg`; a subagent-task row has no `SessionId` on the wire yet, so it stays disabled until a follow-up gives a subagent its own resumable id. (3) The overlay renders the fed events read-only (no composer, no approvals), reusing `cells`/`view` rendering; `Esc` closes it.
@@ -680,6 +681,21 @@ mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_roll
 ```
 Done when: the test passes and the overlay has a snapshot.
 Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
+
+Execution plan: `agents_cards`' two-line-per-card `String` cannot back a navigable list (a `Picker` row is one line, and the plan wants `Context::Overlay`, not `Context::Modal` — a fresh `Modal` kind, not `picker::Kind`). Changing `Action::Agents` to open a modal, plus fixing the T27.2 snapshot test that currently reads the old `Notice` cell, plus the `Msg::Rollout`/`Ask::Rollout` plumbing and its own test, all land in `crates/cox-tui/src/state.rs` + `crates/cox-tui/src/view.rs` + `crates/cox-tui/tests/agents.rs` — already 3 files before the binary side is touched, and the harness's own file cap counts tests. So this session lands the first half only, exactly as the task brief's own example suggests: `Modal::Agents { rows, ids, selected }` (arrow keys, `Enter` on a sibling row emits `Cmd::Ask(Ask::Rollout(id))`) and `Modal::Transcript { cells, scroll }` (fed by a new `Msg::Rollout(Vec<Event>)`, built by replaying the events through the existing `update`/`Msg::Event` path into a scratch `State` — the same technique `tests/cells.rs`'s fixture replay already uses, so no second cell renderer exists) — both fully driven and snapshotted from `cox-tui` alone, feeding `Msg::Rollout` by hand in the test rather than through a live store. The binary side (`crates/cox/src/session.rs`'s poll loop answering `Ask::Rollout` via `Store::rollout_read`, mirroring `crates/cox/src/resume.rs`) becomes a follow-up task. Verify: the Check test plus `cargo nextest run --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, all under `CARGO_INCREMENTAL=0 mise exec --`.
+
+#### T27.8 `/agents` rollout overlay: wire the binary side
+
+Model: - · Status: open · Depends: T27.5 · Size: ~60 · Priority: P2 · Complexity: 2
+Goal: the follow-up T27.5 (§6 A34) split out — `cox-tui` already has `Ask::Rollout(SessionId)`, `Msg::Rollout(Vec<Event>)` and the `Modal::Agents`/`Modal::Transcript` overlay wired and tested against a hand-fed `Msg::Rollout`; nothing answers `Ask::Rollout` for real yet.
+Files: `crates/cox/src/session.rs`.
+Steps: (1) In the poll task's `ask_rx.recv()` arm (next to `Some(Ask::GitDiff) => …`), add `Some(Ask::Rollout(id)) => …` that opens the store (already in scope as `home`) and reads `Store::rollout_read(&id)` — the same call `crates/cox/src/resume.rs` makes for `--resume` — then `feed.send(Msg::Rollout(events))`; a read error sends an empty `Vec` rather than killing the poll loop (T27.5's overlay already renders an empty transcript harmlessly). (2) Run the real binary once against a `COX_HOME` scratch tree with two sibling sessions to confirm `Enter` on a card opens its rollout.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox
+```
+Done when: `/agents` → `Enter` on a sibling-session card shows that session's real rollout in the overlay against a scratch `COX_HOME`.
+Out of scope: a subagent's own rollout id (still no `SessionId` on the wire for a task row).
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
@@ -763,6 +779,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A31 §3 P27, T27.4, T27.6 — T27.4's card asked for `/loop` (TUI) and `cox run --loop` (headless) in one ≤3-file task (`crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`), but the headless half also needs `crates/cox/src/cli.rs` for its new `RunArgs` flags (`--loop`, `--max-iterations`) — a fourth source file, over the cap. Why: plan.md §2 ("if the Check cannot pass without exceeding the size limit, split the task"). Effect: T27.4 lands only the TUI `/loop` (`commands.rs` + `state.rs`, `docs/getting-started.md`); the headless counterpart is the new T27.6 (`cli.rs` + `run.rs`), depending on T27.4 for the shared interval grammar. No design change — same goal, same budget-cap idea (T27.6 reuses the core's existing `StopReason::Budget` rather than inventing a second cap), split only on file count.
 - A32 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `true` again, which reverses A30. Why: the creator's later decision. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `true`; the terminal's own selection needs Shift/Option while cox runs, and `tui.mouse = false` gives it back.
 - A33 §3 P22, P27, T22.9, T27.7 — the two parts of approved cards that did not fit their size limits become cards of their own: T22.9 (T22.4's click on a folded tool card unfolds it) and T27.7 (T27.4's `↻ <time>` status-line segment for an active `/loop`). Why: the creator asked for every remaining task that needs no creator input; both halves were already approved as part of T22.4 and T27.4. Effect: two rows in the top table and `todo.md`; no new dependency.
+- A34 §3 P27, T27.5, T27.8 — T27.5's card listed `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`, but the T27.2 snapshot test that reads `/agents`'s old `Notice` cell also has to change (it now opens a modal), and the harness's file cap counts tests — `state.rs` + `view.rs` + `tests/agents.rs` already fills the cap before the binary side (`crates/cox/src/session.rs`, not `resume.rs`, which reads no truncation and needs no `History`) is touched. Why: plan.md §2 ("if the Check cannot pass without exceeding the size limit, split the task"), the same reasoning A31 already used for T27.4/T27.6. Effect: T27.5 lands `Ask::Rollout`/`Msg::Rollout`/`Modal::Agents`/`Modal::Transcript` entirely inside `cox-tui`, driven and snapshotted by feeding `Msg::Rollout` in a test by hand; T27.8 wires `crates/cox/src/session.rs`'s poll loop to answer `Ask::Rollout` with a real `Store::rollout_read`. No design change — same goal, same technique (replaying events through the existing `update` path into a scratch `State`, reusing `cells`/`view` rather than a second renderer), split only on file count.
 
 ## 7. Risk register
 
