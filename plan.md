@@ -7,10 +7,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T24.3 | todo | P1 | 1 | 0% | |
 | T27.2 | todo | P1 | 2 | 60% | |
 | T27.4 | todo | P3 | 2 | 0% | |
-| T30.3 | todo | P2 | 2 | 0% | |
+| T30.3 | todo | P2 | 2 | 50% | |
 
 ## Reference
 
@@ -71,7 +70,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
-| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
+| `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), two-face 0.3 (`syntect-fancy`; ~250 syntaxes, +0.33 MiB — T24.3), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
@@ -642,310 +641,6 @@ Rationale in §6 A24. Branch `release/ketch-model`, one commit per task, PR #26 
 Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding agent: state + typed questions in, choice/score/boolean with probabilities and confidence out. It fits cox at the exact points where cox already reduces a turn to a narrow judgment — router tier pick, permission risk, compaction triggers, memory salience, skill/command matching. No new dependency lands until the design doc fixes the boundary: Jev answers never bypass the permission engine, never touch the filesystem, and lose to the local default whenever the key, the network or the confidence is missing (fail open on extensions, same as hooks/skills/MCP).
 Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape. T21.1–T21.2 (below) are the implementation the gate allowed: provider wiring only, no call sites yet.
 
-#### T21.1 JevProvider type-1 native
-
-Model: - · Status: done 2026-09-20 · Depends: T21.0 · Size: ~550
-Goal: the System One wire format behind the `Provider` trait: `build_body` (Request → `{state, model, questions}`), `parse_response` (one `{answers, usage}` body → JSON TextDelta + Stop + Usage), `http_error` (shared taxonomy), `JevProvider` client (bearer key, retry, cancel).
-Files: `crates/cox-provider/src/jev.rs`, `crates/cox-provider/src/lib.rs`, `crates/cox-protocol/src/types.rs` (`ProviderId::Jev`), `crates/cox-protocol/src/config.rs` (`JevProviderConfig` + `providers.typesafe`), `crates/cox-protocol/default.toml`, `crates/cox-provider/prices.toml` (`jev-latest` $0.042/0), `docs/config.md` (regenerated).
-Steps: 1. pure translator + parsers with 7 unit tests (choice/score/noul, empty-answers-is-Parse, unknown-kind-is-Parse, error taxonomy); 2. thin non-SSE client over `retry::stream_with_retry`; 3. config section + prices row + regenerated docs.
-Check: `mise exec -- cargo nextest run -p cox-provider jev` — 7 passed.
-Done when: the wire shape is proven without a key; no caller routes to it yet (that is T21.2).
-Out of scope: any `cox-core`/`cox` call site (judge layer is T21.3).
-
-Check output:
-```
-$ mise exec -- cargo nextest run -p cox-provider jev
-7 tests run: 7 passed, 0 skipped
-```
-
-#### T21.2 Route and build the typesafe provider
-
-Model: - · Status: done 2026-09-20 · Depends: T21.1 · Size: ~30
-Goal: `tiers.<t>.provider = "typesafe"` routes (`ProviderId::Jev`, section-model pin like `local`) and builds (`JevProvider::with_key` via the shared key-resolve helper); the ledger names the row `typesafe`.
-Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs` (`provider_name`), `crates/cox/src/session.rs` (`provider_for`).
-Steps: 1. router match arm + pin; 2. ledger name; 3. session builder via `http::resolve_key_env_or_keyring` (missing key is `Auth`, the fail-open path).
-Check: `mise exec -- cargo clippy --workspace --all-targets -- -D warnings` exits 0.
-Done when: a tier can name `typesafe` end to end; nothing names it by default (all tiers keep their models).
-Out of scope: the judge layer that would actually call it (T21.3).
-
-Check output:
-```
-$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-Finished `dev` profile
-```
-
-#### T21.0 Jev integration scope gate
-
-Model: - · Status: done 2026-09-20 · Depends: - · Size: ~100
-Goal: fix what Jev is, where it plugs into cox, and what kills the idea — on paper, before any provider code or dependency.
-Files: `docs/design/v0.2-jev.md`, `plan.md`, `roadmap.md`.
-Steps: 1. write the guest/host contract sketch (own System One JSON over `POST /v1/systemone`, Python/JS SDKs, no OpenAPI; keys via waitlist at `console.typesafe.ai`); 2. map the candidate call sites (router `pick`, permission classification, compaction/memory salience, skill suggestion) against Jev's three primitives (Choice / Score / Noul) and the cookbook patterns (intent routing, confidence-gated routing, hierarchical classification, skill suggestion, LLM guardrails); 3. name the falsifier that moves it up; 4. move the roadmap line into this card.
-Check: `test -f docs/design/v0.2-jev.md && grep -q Falsifier docs/design/v0.2-jev.md`.
-Done when: the doc exists (Problem / The field / cox / Falsifiers / Review), states the integration type from §1 (type-1 native wire vs type-2 compatible preset vs data-only like skills/hooks), and the roadmap line is struck through in the branch.
-Out of scope: any `cox-provider` code, any new dependency row in §1.1, any key handling (that is the implementation task).
-
-Check output:
-```
-$ test -f docs/design/v0.2-jev.md && grep -q Falsifier docs/design/v0.2-jev.md && echo ok
-ok
-```
-
-#### T19.8 Run CI on pull requests
-
-Model: - · Status: done 2026-09-19 · Depends: - · Size: small
-Goal: CI runs on `pull_request` to `main`, so release and scoping branches get the signal before merge.
-Files: `.github/workflows/ci.yml`.
-Steps: 1. add the `pull_request` trigger; 2. keep `workflow_dispatch`; 3. confirm CI green on the branch PR.
-Check: `grep -q 'pull_request' .github/workflows/ci.yml`.
-Done when: draft PRs show the CI signal that promotes them to ready.
-Out of scope: any release workflow change (that is T20.4).
-
-Check output:
-```
-$ grep -q 'pull_request' .github/workflows/ci.yml && echo ok
-ok
-```
-
-#### T20.1 release-plz proposes, never tags
-
-Model: - · Status: done 2026-09-19 · Depends: - · Size: small
-Goal: `release-plz.yml` runs only `release-pr`; tagging is `release.yml`'s job (publish first, tag last).
-Files: `.github/workflows/release-plz.yml`, `release-plz.toml`.
-Steps: 1. drop the `release` job, keep `release-pr` with the loud token check; 2. add the pending-release gate; 3. align header comments to the ketch model.
-Check: `grep -q 'command: release-pr' .github/workflows/release-plz.yml && ! grep -q 'command: release$' .github/workflows/release-plz.yml`.
-Done when: merging to `main` opens or refreshes the release PR and never creates a tag.
-Out of scope: building or publishing binaries (that is T20.2–T20.4).
-
-Check output:
-```
-$ grep -q 'command: release-pr' .github/workflows/release-plz.yml && ! grep -q 'command: release$' .github/workflows/release-plz.yml && echo ok
-ok
-```
-
-#### T20.2 scripts/package.sh builds the release tarball
-
-Model: - · Status: done 2026-09-19 · Depends: - · Size: ~75 LOC
-Goal: one script builds `cox-<target>.tar.xz` per target, used by CI and release alike.
-Files: `scripts/package.sh`.
-Steps: 1. `cargo build --profile dist --locked --target`; 2. stage binary + README, optional sign; 3. pack with sha256 print.
-Check: `bash -n scripts/package.sh`.
-Done when: the release `build` job packages through this script.
-Out of scope: the cask (that is T20.3).
-
-Check output:
-```
-$ bash -n scripts/package.sh && echo ok
-ok
-```
-
-#### T20.3 scripts/cask.sh generates the Homebrew cask
-
-Model: - · Status: done 2026-09-19 · Depends: T20.2 · Size: ~60 LOC
-Goal: `Casks/cox.rb` in `listepo/homebrew-tap` is generated, never hand-edited.
-Files: `scripts/cask.sh`.
-Steps: 1. take `<version> <sha256-aarch64> <sha256-intel>`; 2. validate shas; 3. print the cask.
-Check: `bash -n scripts/cask.sh && scripts/cask.sh 0.0.0 $(printf '%064d' 0) $(printf '%064d' 1) | grep -q 'cask "cox"'`.
-Done when: the release `tap` job writes the tap file from this script.
-Out of scope: the publish itself (that is T20.4).
-
-Check output:
-```
-$ bash -n scripts/cask.sh && scripts/cask.sh 0.0.0 $(printf '%064d' 0) $(printf '%064d' 1) | grep -q 'cask "cox"' && echo ok
-ok
-```
-
-#### T20.4 release.yml publishes first, tags last
-
-Model: - · Status: done 2026-09-19 · Depends: T20.1–T20.3 · Size: large
-Goal: merging to `main` with an untagged version runs verify → 4-target build → draft release → publish (creates `v<version>`) → tap cask.
-Files: `.github/workflows/release.yml`.
-Steps: 1. `version` gate; 2. `verify` (same gate as CI); 3. `build` matrix via `scripts/package.sh`; 4. `publish` draft-then-undraft; 5. `tap` cask after publish.
-Check: `ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"` prints `build, publish, tap, verify, version`.
-Done when: a tag exists iff a release completed; `install.sh` and `cox self update` find only complete releases.
-Out of scope: the ketch registry entry (that is T20.5).
-
-Check output:
-```
-$ ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"
-build, publish, tap, verify, version
-```
-
-#### T20.5 ketch.toml for cox, dist tail removed
-
-Model: - · Status: done 2026-09-20 · Depends: T20.4 · Size: small
-Goal: cox installs via ketch; no dead cargo-dist jobs remain in `release.yml`.
-Files: `ketch.toml`, `.github/workflows/release.yml`, `release-plz.toml`, `crates/cox/src/self_update.rs`.
-Steps: 1. cut the leftover dist block (252 lines); 2. add `ketch.toml`; 3. copy it to `cox/` in `listepo/ketch-registry`; 4. reword cargo-dist comments.
-Check: release jobs list plus `ketch registry validate` passes 5 packages.
-Done when: `ketch install cox` picks the platform tarball; registry validates.
-Out of scope: merging PR #26 (merge starts the first ketch-model release).
-
-Check output:
-```
-$ ruby -ryaml -e "puts YAML.load_file('.github/workflows/release.yml')['jobs'].keys.sort.join(', ')"
-build, publish, tap, verify, version
-$ ketch registry validate /Users/listepo/GitHub/listepo/packages/ketch-registry
-validated 5 packages
-$ KETCH_ROOT=/tmp/ketch-cox-test ketch install cox --verbose
-installed cox v0.1.0
-```
-
-#### T20.6 Pin CI toolchain back to 1.97.1
-
-Model: - · Status: done 2026-09-20 · Depends: - · Size: tiny
-Goal: CI green after Dependabot #16 bumped the pin to nonexistent `1.120.0` (same class as A22).
-Files: `.github/workflows/ci.yml`, `.github/workflows/release-plz.yml`.
-Steps: 1. revert four `1.120.0` pins to `1.97.1` (the `mise.toml` pin); 2. push; 3. confirm CI green on PR #26.
-Check: `! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolchain@1.97.1' .github/workflows/ci.yml`.
-Done when: the CI run on `release/ketch-model` is green.
-Out of scope: bumping the real toolchain (moves `mise.toml` + pins together per A22).
-
-Check output:
-```
-$ ! grep -rn 'rust-toolchain@1.120.0' .github/workflows/ && grep -q 'rust-toolchain@1.97.1' .github/workflows/ci.yml && echo ok
-ok
-```
-
-#### T20.7 P20 cards and A24 in plan.md
-
-Model: - · Status: done 2026-09-20 · Depends: T20.1–T20.6 · Size: small
-Goal: the ketch-model release work is recorded as P20 cards (T19.8, T20.1–T20.6) with amendment A24, so `main` carries its own history.
-Files: `plan.md`.
-Steps: 1. add P20 section with per-task cards and Check outputs; 2. add A24; 3. verify every Check passes on the branch.
-Check: `grep -q '#### T20.6' plan.md && grep -q '^- A24' plan.md`.
-Done when: PR #26 merges with the plan describing what it did.
-Out of scope: runtime code (P20 is release plumbing + plan records).
-
-Check output:
-```
-$ grep -q '#### T20.6' plan.md && grep -q '^- A24' plan.md && echo ok
-ok
-```
-
-#### T20.8 Ulid::generate after Dependabot #18
-
-Model: - · Status: done 2026-09-20 · Depends: - · Size: tiny
-Goal: workspace compiles after Dependabot #18 bumped `ulid` 1.2.1 → 3.0.0, which renamed `Ulid::new()` to `Ulid::generate()`.
-Files: `crates/cox-protocol/src/ids.rs`.
-Steps: 1. call `Ulid::generate()` in the `ulid_id!` macro (wrapper keeps `new()`); 2. clippy + `cox-protocol` tests; 3. push.
-Check: `mise exec -- cargo clippy --workspace --all-targets -- -D warnings` exits 0.
-Done when: CI `verify`/`Test` pass on the release run.
-Out of scope: any id-type rename (callers keep `SessionId::new()`).
-
-Check output:
-```
-$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-Finished `dev` profile [unoptimized + debuginfo] target(s)
-$ mise exec -- cargo nextest run -p cox-protocol
-49 tests run: 49 passed, 0 skipped
-```
-
-#### T19.1 WASM plugins scope gate
-Model: opus · Status: done 2026-09-19 · Depends: - · Size: ~60
-Goal: the extism host contract is fixed on paper before any code.
-Files: `docs/design/v0.2-wasm.md`, `plan.md`, `roadmap.md`.
-Steps: 1. write the guest/host contract sketch; 2. name the falsifier that moves it up; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md`.
-Done when: the doc exists and the roadmap line is struck through in this branch.
-Out of scope: any `extism` dependency (that is the implementation task).
-
-Check output:
-```
-$ test -f docs/design/v0.2-wasm.md && grep -q Falsifier docs/design/v0.2-wasm.md && echo ok
-ok
-```
-
-#### T19.2 LSP diagnostics scope gate
-Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
-Goal: fix where LSP diagnostics enter the loop (tool vs hook vs core) on paper.
-Files: `docs/design/v0.2-lsp.md`, `plan.md`, `roadmap.md`.
-Steps: 1. sketch the diagnostics source and its trust boundary; 2. name the falsifier; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md`.
-Done when: the doc exists and states the entry point.
-Out of scope: any LSP client code.
-
-Check output:
-```
-$ test -f docs/design/v0.2-lsp.md && grep -q Falsifier docs/design/v0.2-lsp.md && echo ok
-ok
-```
-
-#### T19.3 Gemini provider scope gate
-Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
-Goal: decide whether Gemini is a native wire protocol or a compatible preset (A9 type-1 vs type-2) on paper.
-Files: `docs/design/v0.2-gemini.md`, `plan.md`, `roadmap.md`.
-Steps: 1. compare Gemini API against Anthropic/OpenAI shapes; 2. pick type-1 vs type-2 with reason; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md`.
-Done when: the doc names the integration type and its falsifier.
-Out of scope: any provider code.
-
-Check output:
-```
-$ test -f docs/design/v0.2-gemini.md && grep -q Falsifier docs/design/v0.2-gemini.md && echo ok
-ok
-```
-
-#### T19.4 Images scope gate
-Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~60
-Goal: fix how image inputs travel Submission → provider (and what v0.1 refuses) on paper.
-Files: `docs/design/v0.2-images.md`, `plan.md`, `roadmap.md`.
-Steps: 1. sketch the content-block shape per wire format; 2. name the refusal behaviour; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md`.
-Done when: the doc states the block shape and the v0.1 refusal.
-Out of scope: any multimodal code.
-
-Check output:
-```
-$ test -f docs/design/v0.2-images.md && grep -q Falsifier docs/design/v0.2-images.md && echo ok
-ok
-```
-
-#### T19.5 Worktrees scope gate
-Model: haiku · Status: done 2026-09-19 · Depends: - · Size: ~40
-Goal: fix the worktree↔session mapping (one session per worktree?) on paper.
-Files: `docs/design/v0.2-worktrees.md`, `plan.md`, `roadmap.md`.
-Steps: 1. sketch session→worktree mapping and git tooling reuse; 2. name the falsifier; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md`.
-Done when: the doc states the mapping.
-Out of scope: any worktree automation.
-
-Check output:
-```
-$ test -f docs/design/v0.2-worktrees.md && grep -q Falsifier docs/design/v0.2-worktrees.md && echo ok
-ok
-```
-
-#### T19.6 Repo map scope gate
-Model: haiku · Status: done 2026-09-19 · Depends: - · Size: ~40
-Goal: fix what a repo map contains and where it sits in context assembly on paper.
-Files: `docs/design/v0.2-repomap.md`, `plan.md`, `roadmap.md`.
-Steps: 1. sketch map contents and budget; 2. place it relative to cache breakpoints; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md`.
-Done when: the doc states contents and placement.
-Out of scope: any map builder code.
-
-Check output:
-```
-$ test -f docs/design/v0.2-repomap.md && grep -q Falsifier docs/design/v0.2-repomap.md && echo ok
-ok
-```
-
-#### T19.7 Architect/editor mode scope gate
-Model: sonnet · Status: done 2026-09-19 · Depends: - · Size: ~40
-Goal: fix what architect/editor mode changes (tiers, tools, approvals) on paper.
-Files: `docs/design/v0.2-modes.md`, `plan.md`, `roadmap.md`.
-Steps: 1. sketch the two modes as router/tool presets; 2. name the falsifier; 3. move the roadmap line into the P19 card.
-Check: `test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md`.
-Done when: the doc states the mode table.
-Out of scope: any mode switching code.
-
-Check output:
-```
-$ test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md && echo ok
-ok
-```
-
-
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
@@ -966,17 +661,6 @@ Out of scope: paste (bracketed paste already exists), native clipboard crates.
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
-#### T24.3 `two-face` syntax set
-
-Model: haiku · Status: open · Depends: — · Size: ~40 · New dependency: `two-face` (needs the creator's approval and a §1.1 row) · Priority: P1 · Complexity: 1
-Goal: ~250 languages (TS/TSX, Kotlin, Swift, Zig, TOML, Dockerfile…) for +0.6 MiB; `read`, `mode=outline` output and diffs share the set.
-Files: `Cargo.toml`, `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/tests/cells.rs`.
-Steps: (1) Replace `SyntaxSet::load_defaults_newlines()` with `two_face::syntax::extra_newlines()` behind the existing `syntax_set()` accessor. (2) Keep `syntect` default-features off (fancy-regex, no onig). (3) Snapshot a `.tsx` and a `Dockerfile` read.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test cells tsx_read_is_highlighted
-mise exec -- cargo build --release -p cox && ls -l target/release/cox
-```
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
 
@@ -1034,6 +718,7 @@ python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verif
 ```
 Done when: §5.3 has the table with both configurations and the run's cost from `cox stats`.
 Out of scope: leaderboard submission.
+Progress: steps (1)–(2) landed in `defba68` (`--preset verify` in `evals/run.py`, `evals/hooks/verify.sh`), verified offline only. Step (3), the paid run and the `research.md` §5.3 table, waits for the creator: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verify`.
 
 ## 4. Definition of done for v0.1
 
