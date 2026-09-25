@@ -4188,3 +4188,26 @@ $ COX_HOME=<scratch> mise exec -- cargo run -p cox -- --cwd <scratch> run -p hi 
 Error: --loop and --max-iterations must be given together (exit 1)
 ```
 
+#### T27.7 `/loop` status-line segment
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T27.4 · Size: ~40 (landed ~49) · Priority: P3 · Complexity: 1
+Goal: while a `/loop` is active, the status line shows `↻ <time to next run>` (e.g. `↻ 4m12s`), so a running loop is always visible (T27.4 step 2, split out, §6 A33).
+Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs` (only if a small accessor is needed).
+Steps: (1) `status.rs` adds the segment from `state.active_loop` (`next_at` − `state.tick`, 100 ms ticks), formatted like the existing elapsed times. It is dropped first when the line is narrow, like the other optional segments. (2) Nothing is shown when no loop is active.
+Done when: the test passes and the existing status snapshots are unchanged when no loop is active.
+Out of scope: pausing a loop.
+
+What landed (commit `T27.7: /loop status-line segment`): `crates/cox-tui/src/status.rs` — `segments()` computes `↻ {m}m{s}s` from `state.active_loop.next_at − state.tick` (ticks/10 → seconds) and pushes it as the right-most droppable segment, right before the always-kept head/mode segment, so `fit`'s right-to-left drop removes it first; nothing is pushed when `state.active_loop` is `None`. `crates/cox-tui/tests/status.rs` gained `status_shows_loop_countdown`, following the file's existing `turn`/`State::new` test style: asserts the segment is absent without a loop, reads `↻ 4m12s` for a `Loop { next_at: state.tick + 2_520, .. }`, and confirms it drops before `cache` at a width one byte short of the full line. `docs/getting-started.md`'s status-line section gained the `↻ 4m12s` bullet and the segment's place (first) in the documented narrow-terminal drop order. No `state.rs` change: `Loop.next_at` and `State.tick` were already public. Deviation: `cells.rs`'s existing elapsed-time formatting (a running tool call's `{secs}.{tenths}s`, no minutes) does not fit a countdown that can run for hours, so this is a new small formatter rather than a shared one — the two never actually duplicated logic, so nothing was extracted. `docs/getting-started.md` is a third touched file beyond the card's own `status.rs`/`state.rs` list, per T27.4's own note (§ T27.4 in this file) that the matching doc update was the other missing piece, not a new `state.rs` accessor.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui status_shows_loop_countdown
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace
+Summary: 859 tests run: 859 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ CARGO_INCREMENTAL=0 mise exec -- cargo fmt --check
+clean
+```
+

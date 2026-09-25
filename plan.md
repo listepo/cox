@@ -7,7 +7,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T27.5 | todo | P2 | 2 | 0% | |
-| T27.7 | in progress | P3 | 1 | 0% | Claude Code / claude-sonnet-5 |
 | T22.9 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
@@ -681,20 +680,6 @@ mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_roll
 ```
 Done when: the test passes and the overlay has a snapshot.
 Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
-
-#### T27.7 `/loop` status-line segment
-
-Model: claude-sonnet-5 · Status: in progress · Depends: T27.4 · Size: ~40 · Priority: P3 · Complexity: 1
-Goal: while a `/loop` is active, the status line shows `↻ <time to next run>` (e.g. `↻ 4m12s`), so a running loop is always visible (T27.4 step 2, split out, §6 A33).
-Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs` (only if a small accessor is needed).
-Steps: (1) `status.rs` adds the segment from `state.active_loop` (`next_at` − `state.tick`, 100 ms ticks), formatted like the existing elapsed times. It is dropped first when the line is narrow, like the other optional segments. (2) Nothing is shown when no loop is active.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui status_shows_loop_countdown
-```
-Done when: the test passes and the existing status snapshots are unchanged when no loop is active.
-Out of scope: pausing a loop.
-Execution plan: `status.rs`'s `segments()` computes `↻ {m}m{s}s` from `state.active_loop.next_at − state.tick` (ticks/10 → seconds); cells.rs's own elapsed-time helper is inline and formats `{secs}.{tenths}s` (no minutes) so it does not fit an `m`+`s` countdown — a new small formatter, not a shared one, since the two would not actually duplicate logic. Pushed as the right-most droppable segment (after `cache`, before the always-kept head/mode segment) so `fit`'s right-to-left drop removes it first, matching "dropped first". No `state.rs` change needed — `Loop.next_at`/`State.tick` are already public. Test `status_shows_loop_countdown` added to the existing `crates/cox-tui/tests/status.rs` integration file (matches its sibling tests' style); `docs/getting-started.md`'s status-line section gets the segment documented, per T27.4's own note that this was the missing piece. Files touched: `status.rs`, `tests/status.rs`, `docs/getting-started.md` — 3, within cap.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
