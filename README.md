@@ -1,5 +1,7 @@
 # cox
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=listepo_cox&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=listepo_cox) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=listepo_cox&metric=coverage)](https://sonarcloud.io/component_measures?id=listepo_cox&metric=coverage) [![Tests](https://img.shields.io/sonar/tests/listepo_cox?server=https%3A%2F%2Fsonarcloud.io&compact_message)](https://sonarcloud.io/component_measures?id=listepo_cox&metric=tests)
+
 > A modular terminal coding agent in Rust.
 
 **cox** is named for the coxswain: it steers the work while models, tools, and extensions row. It is being built as one reliable, testable agent core with several ways to use it: an interactive terminal UI, headless automation, editor integration through ACP, and MCP tools for other agents.
