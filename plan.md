@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.8 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T30.9 | todo | P1 | 3 | 0% | |
 | T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
 
@@ -660,18 +659,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.8 Tests for the eval package
-
-Model: claude-opus-5-5 · Status: in progress · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 2
-Goal: `cox_evals` has pytest tests that fail if the harness breaks, run by `just test-evals` with no network and no key.
-Files: `evals/tests/test_harness.py`, `evals/tests/test_tbench.py`, `justfile`.
-Plan: a fake `cox` (a script printing a canned `cox run` JSON payload) drives `run_task`/`main` with no binary and no key; tests: task loading and `--only` matching; the scripted scenario TOML round-trips through `tomllib` into the shape `Scripted` reads; the verify preset writes `AGENTS.md` and a `PostToolUse` hook config; result/token accounting from a `cox run` JSON payload (tokens, cost, exit code 2 → fail); an end-to-end dry run of one task against the built `cox` binary (skipped when none is built); the tbench adapter's self-test as a test.
-Check:
-```bash
-just test-evals
-```
-Done when: the suite is green and each listed behaviour has a test that fails when it breaks.
 
 #### T30.9 Terminal-Bench run through Harbor
 

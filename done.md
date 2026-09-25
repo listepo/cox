@@ -1,24 +1,20 @@
 
 
-#### T30.7 Evals as a Python package
+#### T30.8 Tests for the eval package
 
-Model: claude-opus-5-5 · Status: done 2026-09-25 · Blocks: T30.8, T30.9 · Size: ~150 · Priority: P1 · Complexity: 2
-Goal: the eval scripts are one uv-managed package instead of loose files with no manifest: `evals/pyproject.toml` (`cox-evals`, `uv_build`), `evals/src/cox_evals/{harness,tbench}.py`, locked in `evals/uv.lock`, run as `uv run --project evals cox-evals …`. Python stays because a Harbor/Terminal-Bench agent has to be a Python class (T30.9).
-Files: `evals/pyproject.toml`, `evals/uv.lock`, `evals/.python-version`, `evals/src/cox_evals/__init__.py`, `harness.py` (was `evals/run.py`), `tbench.py` (was `evals/tbench/adapter.py`), `justfile`, `toolchain.md`, `rust.md` untouched. A package move cannot fit three files; the diff is mostly renames.
-Plan: (1) `git mv` both scripts into `src/cox_evals/` so history follows; (2) the hand-rolled TOML writer (`toml_escape`/`toml_value`/string-built `scenario_toml` and hook config) becomes `tomli-w`, which serialises the same tables; (3) task and hook paths resolve from the package's project root (`EVALS`), unchanged on disk; (4) `just eval` → `uv run --project evals cox-evals {{args}}`; (5) `toolchain.md`: uv, Python, and a `uv` package table (pyyaml, tomli-w, pytest); (6) active docs that name `evals/run.py` (plan T30.3 Check, `research.md` §5.3 reproduce line) point at the new command; `done.md` keeps its history.
+Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 2
+Goal: `cox_evals` has pytest tests that fail if the harness breaks, run by `just test-evals` with no network and no key.
+Files: `evals/tests/test_harness.py`, `evals/tests/test_tbench.py`, `justfile`.
+Plan: a fake `cox` (a script printing a canned `cox run` JSON payload) drives `run_task`/`main` with no binary and no key; tests: task loading and `--only` matching; the scripted scenario TOML round-trips through `tomllib` into the shape `Scripted` reads; the verify preset writes `AGENTS.md` and a `PostToolUse` hook config; result/token accounting from a `cox run` JSON payload (tokens, cost, exit code 2 → fail); an end-to-end dry run of one task against the built `cox` binary (skipped when none is built); the tbench adapter's self-test as a test.
 Check:
 ```bash
-COX_PROVIDER=scripted uv run --project evals cox-evals --dry-run
+just test-evals
 ```
-Done when: the dry run is 10/10 like before the move and `just eval --dry-run` works.
-What landed (`1d8283a`): `evals/pyproject.toml` (`cox-evals` 0.1.0, `uv_build`, script `cox-evals = cox_evals.harness:main`), `evals/.python-version` (3.14), `evals/uv.lock`; `evals/run.py` → `evals/src/cox_evals/harness.py` and `evals/tbench/adapter.py` → `evals/src/cox_evals/tbench.py` via `git mv`; `EVALS` now resolves to the uv project root. `tomli-w` replaced `toml_escape`/`toml_value` and the string-built scenario and hook TOML: parsed with `tomllib`, the output for all 10 tasks and the hook config is identical to the old writer's. `just eval` runs `uv run --project evals cox-evals`. `toolchain.md` gained uv, python and a `uv (evals/)` package table. Active references (T30.3 Check, `research.md` §5.3 reproduce line, `hooks/verify.sh` header) point at the new command.
-Deviations: more than three files, as the card said (a package move is mostly renames). Found and fixed on the way: `python -m cox_evals.tbench --self-test` failed on any machine without `OPENAI_API_KEY` exported, before the move too (`perform_task` refuses to start without the provider's key even though the scripted provider never reads it); the self-test now sets a placeholder. `research.md` §5.3's T12.1 paragraph still names the old paths; it records that run and stays as written.
+Done when: the suite is green and each listed behaviour has a test that fails when it breaks.
+What landed (`1ae2f87`): `evals/tests/conftest.py` (a fake `cox` shell script that prints a canned `cox run` payload, exits with a chosen code and records its argv; a `real_cox` fixture that skips when no binary is built), `test_harness.py` (17 tests: task loading and `--only`, scenario TOML round-trip incl. quotes/newlines, every task's dry-run TOML parses, verify preset files, pass/exit-2/failed-check/failed-setup/unparseable rows, hermetic flags, `--preset verify` re-enabling hooks, `main` totals and exit code, `token_line`, `find_cox_bin` precedence, a real-binary dry run), `test_tbench.py` (7 tests: pane JSON parsing, missing binary, missing key, command quoting and token mapping, non-zero payload exit, no JSON, the self-test without any key). `just test-evals` runs them.
+Deviations: `conftest.py` is a fourth file, for the fixtures both test modules share. Mutation check: dropping token parsing fails 3 tests, always passing `--no-hooks` fails 1, dropping the final scripted turn fails 2.
 Check:
 ```text
-$ COX_PROVIDER=scripted uv run --project evals cox-evals --dry-run
-10/10 passed  total cost $0.0000  tokens in/out/cache-read/cache-write 70362/120/0/0
-$ just eval --dry-run --only create-file
-1/1 passed  total cost $0.0000  tokens in/out/cache-read/cache-write 7401/13/0/0
-$ env -u OPENAI_API_KEY uv run --project evals python -m cox_evals.tbench --self-test --cox-bin target/debug/cox
-self-test ok (shim base)
+$ just test-evals
+24 passed in 1.35s
 ```
