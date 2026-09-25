@@ -404,6 +404,7 @@ fn build_figment(
             Serialized::defaults(claude.clone()),
         ));
     }
+    let key_tree = default_key_tree();
     fig = fig.merge(named(
         "env",
         // `COX_PROVIDER` / `COX_SCENARIO` / `COX_CASSETTES` select a test-double
@@ -413,7 +414,7 @@ fn build_figment(
         // not leak into the config tree as `expect.sandbox` either.
         // `COX_PLAIN` and `COX_AX_STARTUP_QUIET_MS` are read by the plain
         // surface (T29.1) itself. The ignore list matches pre-split keys
-        // (`EXPECT_SANDBOX`, not dotted).
+        // (`EXPECT_SANDBOX`, not dotted): it runs before the `map` below.
         Env::prefixed("COX_")
             .ignore(&[
                 "home",
@@ -424,12 +425,50 @@ fn build_figment(
                 "plain",
                 "ax_startup_quiet_ms",
             ])
-            .split("_"),
+            .map(move |name| env_key(&key_tree, name.as_str()).into()),
     ));
     if let Ok(home) = env::var("COX_HOME") {
         fig = fig.merge(named("env", Serialized::default("core.home", home)));
     }
     fig.merge(named("flag", Serialized::defaults(flags)))
+}
+
+/// The table/key tree of the embedded defaults, which [`env_key`] resolves
+/// `COX_*` names against. Empty only if `default.toml` failed to parse, which
+/// its own tests rule out; `env_key` then degrades to plain `_` splitting.
+fn default_key_tree() -> Dict {
+    Figment::from(Toml::string(DEFAULT_CONFIG_TOML))
+        .extract()
+        .unwrap_or_default()
+}
+
+/// Maps a `COX_`-stripped env name to a dotted key. Splitting on every `_`
+/// would turn `TUI_SHOW_THINKING` into `tui.show.thinking`, so each level
+/// takes the longest known name that is the whole rest or a prefix of it
+/// followed by `_`. Whatever no known name covers (a user-defined tier, a
+/// typo) is split on `_` as before, so it still lands where it did.
+fn env_key(tree: &Dict, name: &str) -> String {
+    let name = name.to_ascii_lowercase();
+    let mut rest = name.as_str();
+    let mut table = Some(tree);
+    let mut parts: Vec<&str> = Vec::new();
+    while let Some(dict) = table {
+        let hit = dict
+            .iter()
+            .filter(|(key, _)| {
+                rest.strip_prefix(key.as_str())
+                    .is_some_and(|tail| tail.is_empty() || tail.starts_with('_'))
+            })
+            .max_by_key(|(key, _)| key.len());
+        let Some((key, value)) = hit else { break };
+        parts.push(key);
+        rest = rest[key.len()..].strip_prefix('_').unwrap_or("");
+        table = value.as_dict();
+    }
+    if !rest.is_empty() {
+        parts.extend(rest.split('_'));
+    }
+    parts.join(".")
 }
 
 fn to_core_error(err: figment::Error) -> CoreError {
@@ -669,6 +708,35 @@ mod tests {
                 assert_eq!(loaded.config, expected);
             },
         );
+    }
+
+    #[test]
+    fn config_env_overrides_keys_with_underscores() {
+        let home = tempdir().expect("tempdir");
+        let cwd = tempdir().expect("tempdir");
+        temp_env(
+            &[
+                ("COX_HOME", Some(home.path().to_str().unwrap())),
+                ("HOME", Some(home.path().to_str().unwrap())),
+                ("COX_TUI_SHOW_THINKING", Some("full")),
+                ("COX_TIERS_CODE_MAX_TOKENS", Some("1234")),
+            ],
+            || {
+                let loaded = load(cwd.path(), &parse(&[])).expect("load succeeds");
+                assert_eq!(loaded.config.tui.show_thinking, "full");
+                assert_eq!(loaded.config.tiers.code.max_tokens, 1234);
+                assert_eq!(loaded.source_of("tui.show_thinking"), "env");
+            },
+        );
+    }
+
+    #[test]
+    fn env_key_resolves_known_keys_and_splits_the_rest() {
+        let tree = default_key_tree();
+        assert_eq!(env_key(&tree, "HOOKS_TIMEOUT_S"), "hooks.timeout_s");
+        assert_eq!(env_key(&tree, "TIERS_CODE_MODEL"), "tiers.code.model");
+        assert_eq!(env_key(&tree, "TUI_ICONS_TOOL_ICON"), "tui.icons.tool.icon");
+        assert_eq!(env_key(&tree, "TIERS_FAST_MODEL"), "tiers.fast.model");
     }
 
     #[test]

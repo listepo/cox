@@ -595,8 +595,12 @@ mod tests {
             secrets,
             prompt: None,
         };
+        // No prompt means no login allowance: the handshake timeout is the
+        // whole budget, and a loaded machine stalled past 5 s turned this
+        // into a "no handshake" notice (T22.8). The timeout is not the claim.
+        let budget = Duration::from_secs(60);
         let (clients, tools, notices) =
-            connect_all(&servers(&server.uri()), Duration::from_secs(5), true, &auth).await;
+            connect_all(&servers(&server.uri()), budget, true, &auth).await;
         assert!(clients.is_empty() && tools.is_empty());
         assert_eq!(
             notices,

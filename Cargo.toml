@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# T23.8: bare `cargo run`/`cargo build` resolve against these. The manifest is
+# virtual (no `default-run`), and cox-tui's test-only `kitty_probe` bin would
+# otherwise make `cargo run -- doctor` ambiguous. Test and lint commands pass
+# `--workspace`, so they still build every member.
+default-members = ["crates/cox"]
 
 [workspace.package]
 version = "0.1.2"
