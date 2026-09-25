@@ -36,6 +36,16 @@
 //! from Anthropic's request builder, which stays infallible.
 //! ponytail: reasoning-item replay unimplemented; add an `OpenAi`-specific
 //! `Content` field (or a lookaside) when a task needs it end to end.
+//!
+//! **Wire types (T30.11 / A40 step 1).** Requests are built through
+//! `wire::CreateResponse` and friends (`async-openai`'s typed Responses-API
+//! structs) rather than a hand-written `json!` body, and known stream events
+//! deserialize into the matching `wire::Response*Event` struct rather than a
+//! `Value` field walk. `reorder_body` exists only because the typed structs'
+//! derived field order doesn't match the wire order this file's snapshots
+//! pin byte-for-byte — see its own doc comment. See `wire.rs`'s header for
+//! why the crate's own top-level `ResponseStreamEvent` enum and the full
+//! `Response` object are deliberately not used.
 
 use async_trait::async_trait;
 use cox_protocol::config::ProviderModel;
@@ -46,74 +56,167 @@ use cox_protocol::types::{
     Caps, Content, Effort, Message, ProviderEvent, ProviderId, Request, Role, StopReason, Usage,
 };
 use futures::StreamExt;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-/// Translates a `Request` into the JSON body for `POST /v1/responses`.
-/// Errors only when history carries a signed thinking block (see module
-/// header) — every other `Request` shape translates unconditionally.
+use super::wire;
+
+/// Translates a `Request` into the JSON body for `POST /v1/responses`,
+/// built through `wire::CreateResponse` (see module header). Errors when
+/// history carries a signed thinking block (see module header), or in the
+/// unreachable-in-practice case that serializing the typed request fails —
+/// every field this function sets is a plain owned `String`/number/enum/
+/// `serde_json::Value`, none of which `serde_json::to_value` can reject.
 pub fn build_body(req: &Request) -> Result<Value, ProviderError> {
-    let mut input = Vec::new();
+    let mut items = Vec::new();
     for m in &req.messages {
-        input.extend(message_items(m)?);
+        items.extend(message_items(m)?);
     }
 
-    let mut body = json!({
-        "model": req.model.0,
-        "input": input,
-        "stream": true,
-        "store": false,
-        "max_output_tokens": req.max_tokens,
-        "reasoning": {"effort": effort(req.effort)},
-    });
-    let obj = body.as_object_mut().expect("json! built an object");
-
-    if !req.system.is_empty() {
-        let instructions: Vec<&str> = req.system.iter().map(|b| b.text.as_str()).collect();
-        obj.insert("instructions".into(), json!(instructions.join("\n\n")));
-    }
-    if !req.tools.is_empty() {
-        let tools: Vec<Value> = req
-            .tools
-            .iter()
-            .map(|t| {
-                json!({
-                    "type": "function",
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.input_schema,
-                })
+    let tools: Vec<wire::Tool> = req
+        .tools
+        .iter()
+        .map(|t| {
+            wire::Tool::Function(wire::FunctionTool {
+                name: t.name.clone(),
+                description: Some(t.description.clone()),
+                parameters: Some(t.input_schema.clone()),
+                ..Default::default()
             })
-            .collect();
-        obj.insert("tools".into(), Value::Array(tools));
-    }
-    Ok(body)
+        })
+        .collect();
+
+    let create = wire::CreateResponse {
+        model: Some(req.model.0.clone()),
+        input: wire::InputParam::Items(items),
+        stream: Some(true),
+        store: Some(false),
+        max_output_tokens: Some(req.max_tokens),
+        reasoning: Some(wire::Reasoning {
+            effort: Some(effort(req.effort)),
+            ..Default::default()
+        }),
+        instructions: (!req.system.is_empty()).then(|| {
+            req.system
+                .iter()
+                .map(|b| b.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        }),
+        tools: (!tools.is_empty()).then_some(tools),
+        ..Default::default()
+    };
+
+    let body = serde_json::to_value(&create).map_err(|e| ProviderError::BadRequest {
+        message: format!("serializing OpenAI Responses request: {e}"),
+    })?;
+    Ok(reorder_body(body))
 }
 
-fn role_str(r: Role) -> &'static str {
+/// `CreateResponse`'s derived field order (roughly alphabetical by field
+/// name) doesn't match the wire order this file's snapshots pin — the order
+/// the hand-written `json!` builder this task replaced produced. JSON object
+/// key order carries no meaning to the API, but the snapshots are
+/// byte-for-byte pins (T30.11), so this reassembles the top-level object
+/// into that exact key order after building the body through the typed
+/// request; the two nested item/tool shapes whose typed order also disagrees
+/// (`function_call`, the `function` tool) get the same treatment first.
+const BODY_KEY_ORDER: [&str; 8] = [
+    "model",
+    "input",
+    "stream",
+    "store",
+    "max_output_tokens",
+    "reasoning",
+    "instructions",
+    "tools",
+];
+
+fn reorder_body(mut body: Value) -> Value {
+    if let Some(items) = body.get_mut("input").and_then(Value::as_array_mut) {
+        for item in items.iter_mut() {
+            reorder_in_place(
+                item,
+                "function_call",
+                &["type", "call_id", "name", "arguments"],
+            );
+        }
+    }
+    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
+        for tool in tools.iter_mut() {
+            reorder_in_place(
+                tool,
+                "function",
+                &["type", "name", "description", "parameters"],
+            );
+        }
+    }
+    canonical_order(body, &BODY_KEY_ORDER)
+}
+
+/// Reassembles `value`'s keys into `order` when its `"type"` is `only_type`
+/// — the one item/tool shape (of the ones this file emits) whose typed
+/// field order disagrees with the pinned wire order. Every other shape
+/// (`message`, `function_call_output`) already serializes in the order the
+/// snapshots pin, so this leaves them untouched.
+fn reorder_in_place(value: &mut Value, only_type: &str, order: &[&str]) {
+    if value.get("type").and_then(Value::as_str) != Some(only_type) {
+        return;
+    }
+    let owned = std::mem::take(value);
+    *value = canonical_order(owned, order);
+}
+
+/// Rebuilds a JSON object's keys in `order`. Drops nothing: a key `order`
+/// doesn't name is appended after (in its original relative order), so a
+/// field this function's caller forgot to list is still visible rather than
+/// silently lost.
+fn canonical_order(value: Value, order: &[&str]) -> Value {
+    let Value::Object(mut obj) = value else {
+        return value;
+    };
+    let mut ordered = serde_json::Map::with_capacity(obj.len());
+    for key in order {
+        if let Some(v) = obj.remove(*key) {
+            ordered.insert((*key).to_string(), v);
+        }
+    }
+    ordered.extend(obj);
+    Value::Object(ordered)
+}
+
+fn role(r: Role) -> wire::WireRole {
     match r {
-        Role::User => "user",
-        Role::Assistant => "assistant",
+        Role::User => wire::WireRole::User,
+        Role::Assistant => wire::WireRole::Assistant,
     }
 }
 
 /// One message's content blocks as flat `input` items (see module header).
-fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
+fn message_items(m: &Message) -> Result<Vec<wire::InputItem>, ProviderError> {
     let mut items = Vec::new();
     for c in &m.content {
         match c {
-            Content::Text { text } => items.push(json!({
-                "type": "message",
-                "role": role_str(m.role),
-                "content": text,
-            })),
-            Content::ToolUse { id, name, input } => items.push(json!({
-                "type": "function_call",
-                "call_id": id.to_string(),
-                "name": name,
-                "arguments": input.to_string(),
-            })),
+            Content::Text { text } => {
+                items.push(wire::InputItem::EasyMessage(wire::EasyInputMessage {
+                    role: role(m.role),
+                    content: wire::EasyInputContent::Text(text.clone()),
+                    ..Default::default()
+                }))
+            }
+            Content::ToolUse { id, name, input } => items.push(wire::InputItem::Item(
+                wire::Item::FunctionCall(wire::FunctionToolCall {
+                    arguments: input.to_string(),
+                    call_id: id.to_string(),
+                    namespace: None,
+                    name: name.clone(),
+                    id: None,
+                    status: None,
+                    caller: None,
+                    r#async: None,
+                }),
+            )),
             Content::ToolResult {
                 call_id,
                 content,
@@ -127,29 +230,47 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 } else {
                     content.clone()
                 };
-                items.push(json!({
-                    "type": "function_call_output",
-                    "call_id": call_id.to_string(),
-                    "output": output,
-                }));
+                items.push(wire::InputItem::Item(wire::Item::FunctionCallOutput(
+                    wire::FunctionCallOutputItemParam {
+                        call_id: Some(call_id.to_string()),
+                        output: wire::FunctionCallOutput::Text(output),
+                        id: None,
+                        status: None,
+                        name: None,
+                        namespace: None,
+                        caller: None,
+                    },
+                )));
             }
             Content::Image {
                 media_type,
                 data_b64,
-            } => items.push(json!({
-                "type": "message",
-                "role": role_str(m.role),
-                "content": [{
-                    "type": "input_image",
-                    "image_url": format!("data:{media_type};base64,{data_b64}"),
-                }],
+            } => items.push(wire::InputItem::EasyMessage(wire::EasyInputMessage {
+                role: role(m.role),
+                // `InputImageContent::detail` has no `skip_serializing_if`
+                // (only `#[serde(default)]`), so this also emits an explicit
+                // `"detail":"auto"` the hand-written version never sent —
+                // harmless (it's the documented API default) and unwatched:
+                // no fixture/snapshot exercises an image message today.
+                content: wire::EasyInputContent::ContentList(vec![wire::InputContent::InputImage(
+                    wire::InputImageContent {
+                        image_url: Some(format!("data:{media_type};base64,{data_b64}")),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
             })),
             // Microcompaction: same treatment as `anthropic::request`.
-            Content::Pointer { archive, summary } => items.push(json!({
-                "type": "message",
-                "role": role_str(m.role),
-                "content": format!("[archived: {summary}; expand {}]", archive.id),
-            })),
+            Content::Pointer { archive, summary } => {
+                items.push(wire::InputItem::EasyMessage(wire::EasyInputMessage {
+                    role: role(m.role),
+                    content: wire::EasyInputContent::Text(format!(
+                        "[archived: {summary}; expand {}]",
+                        archive.id
+                    )),
+                    ..Default::default()
+                }))
+            }
             Content::Thinking { signature, .. } => {
                 if signature.is_some() {
                     return Err(ProviderError::Unsupported {
@@ -163,8 +284,12 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
     Ok(items)
 }
 
-fn effort(e: Effort) -> &'static str {
-    e.name()
+fn effort(e: Effort) -> wire::ReasoningEffort {
+    match e {
+        Effort::Low => wire::ReasoningEffort::Low,
+        Effort::High => wire::ReasoningEffort::High,
+        Effort::Xhigh => wire::ReasoningEffort::Xhigh,
+    }
 }
 
 /// The state carried across one `POST /v1/responses` SSE body: just the
@@ -227,16 +352,22 @@ impl OpenAiResponsesStream {
             })
             .unwrap_or_default();
         match kind.as_str() {
-            "response.output_text.delta" => Ok(vec![ProviderEvent::TextDelta {
-                text: str_field(&value, "delta"),
-            }]),
+            "response.output_text.delta" => {
+                let event: wire::ResponseTextDeltaEvent = self.typed(&value)?;
+                Ok(vec![ProviderEvent::TextDelta { text: event.delta }])
+            }
             "response.output_item.added" => self.on_output_item_added(&value),
             "response.function_call_arguments.delta" => {
-                Ok(vec![ProviderEvent::ToolUseInputDelta {
-                    text: str_field(&value, "delta"),
-                }])
+                let event: wire::ResponseFunctionCallArgumentsDeltaEvent = self.typed(&value)?;
+                Ok(vec![ProviderEvent::ToolUseInputDelta { text: event.delta }])
             }
-            "response.function_call_arguments.done" => Ok(vec![ProviderEvent::ToolUseEnd]),
+            "response.function_call_arguments.done" => {
+                // Nothing here carries data `ToolUseEnd` needs; deserializing
+                // anyway validates the frame's shape like every other known
+                // event, instead of trusting the SSE `event:` name alone.
+                let _event: wire::ResponseFunctionCallArgumentsDoneEvent = self.typed(&value)?;
+                Ok(vec![ProviderEvent::ToolUseEnd])
+            }
             "response.completed" => self.on_completed(&value),
             "error" => self.on_error(&value).map(|e| vec![e]),
             // response.created/in_progress, content_part.*, output_text.done,
@@ -246,27 +377,48 @@ impl OpenAiResponsesStream {
         }
     }
 
+    /// Deserializes `value` into a known event's typed payload; a shape
+    /// mismatch (missing/wrong-typed field) is a `Parse` error, same
+    /// precedent as the `item`/`response` container checks below — only an
+    /// *unrecognised* `type` is ever silently ignored (`feed`'s `_` arm).
+    fn typed<T: serde::de::DeserializeOwned>(&self, value: &Value) -> Result<T, ProviderError> {
+        serde_json::from_value(value.clone()).map_err(|_| ProviderError::Parse {
+            line: self.frame_no,
+        })
+    }
+
     fn on_output_item_added(&mut self, v: &Value) -> Result<Vec<ProviderEvent>, ProviderError> {
         let item = v.get("item").ok_or(ProviderError::Parse {
             line: self.frame_no,
         })?;
-        if item.get("type").and_then(Value::as_str) != Some("function_call") {
-            // A `message` output item: its text arrives via
-            // `response.output_text.delta`, nothing to emit here.
-            return Ok(vec![]);
+        // A `message` item, any other known item type, or one
+        // `wire::OutputItem` has no variant for (an `Err` here): none of
+        // them start a tool call. Text arrives via `response.output_text.
+        // delta`, so there is nothing to emit — same "ignore, don't fail
+        // the call" fallback the hand-written `Value` check gave every
+        // non-`function_call` item.
+        match serde_json::from_value::<wire::OutputItem>(item.clone()) {
+            Ok(wire::OutputItem::FunctionCall(call)) => Ok(vec![ProviderEvent::ToolUseStart {
+                id: CallId::new(),
+                name: call.name,
+            }]),
+            _ => Ok(vec![]),
         }
-        Ok(vec![ProviderEvent::ToolUseStart {
-            id: CallId::new(),
-            name: str_field(item, "name"),
-        }])
     }
 
     fn on_completed(&mut self, v: &Value) -> Result<Vec<ProviderEvent>, ProviderError> {
         let response = v.get("response").ok_or(ProviderError::Parse {
             line: self.frame_no,
         })?;
-        if let Some(usage) = response.get("usage") {
-            self.apply_usage(usage);
+        // Only `response.usage` is typed, not the whole `response` object
+        // (see `wire.rs`'s header on why not); a shape that doesn't match
+        // `wire::ResponseUsage` means "no usable usage in this frame", same
+        // as the old `if let Some(usage) = response.get("usage")` skip.
+        if let Some(usage) = response
+            .get("usage")
+            .and_then(|u| serde_json::from_value::<wire::ResponseUsage>(u.clone()).ok())
+        {
+            self.apply_usage(&usage);
         }
         Ok(vec![
             // §1.2 StopReason: a provider only ever emits EndTurn/Refusal/
@@ -280,44 +432,33 @@ impl OpenAiResponsesStream {
     }
 
     fn on_error(&mut self, v: &Value) -> Result<ProviderEvent, ProviderError> {
-        let code = v.get("code").and_then(Value::as_str).unwrap_or_default();
-        let message = str_field(v, "message");
+        let event: wire::WireErrorEvent = self.typed(v)?;
+        let code = event.code.unwrap_or_default();
         let mapped = if code.contains("rate_limit") {
             ProviderError::RateLimited { retry_after: None }
         } else if code.contains("auth") || code.contains("api_key") {
             ProviderError::Auth
         } else {
-            ProviderError::BadRequest { message }
+            ProviderError::BadRequest {
+                message: event.message,
+            }
         };
         Ok(ProviderEvent::Error { error: mapped })
     }
 
-    /// Only overwrites what `response.usage` actually carries, same
-    /// precedent as `anthropic::stream::apply_usage`. `cache_write_tokens`
-    /// stays 0: unlike Anthropic, OpenAI does not bill a separate cache-write
-    /// cost, and the task only asks for `input_tokens_details.cached_tokens`.
-    fn apply_usage(&mut self, usage: &Value) {
-        if let Some(n) = usage.get("input_tokens").and_then(Value::as_u64) {
-            self.usage.input_tokens = n as u32;
-        }
-        if let Some(n) = usage.get("output_tokens").and_then(Value::as_u64) {
-            self.usage.output_tokens = n as u32;
-        }
-        if let Some(n) = usage
-            .get("input_tokens_details")
-            .and_then(|d| d.get("cached_tokens"))
-            .and_then(Value::as_u64)
-        {
-            self.usage.cache_read_tokens = n as u32;
-        }
+    /// `wire::ResponseUsage`'s fields are all required, so `on_completed`
+    /// only calls this once the whole shape has already deserialized —
+    /// unlike the hand-written version, a partially-shaped usage object
+    /// (missing e.g. `output_tokens`) skips the update entirely rather than
+    /// applying the fields that were present; real Responses usage objects
+    /// always carry all of them together. `cache_write_tokens` stays 0:
+    /// unlike Anthropic, OpenAI does not bill a separate cache-write cost,
+    /// and `wire::ResponseUsage` carries no such field.
+    fn apply_usage(&mut self, usage: &wire::ResponseUsage) {
+        self.usage.input_tokens = usage.input_tokens;
+        self.usage.output_tokens = usage.output_tokens;
+        self.usage.cache_read_tokens = usage.input_tokens_details.cached_tokens;
     }
-}
-
-fn str_field(v: &Value, key: &str) -> String {
-    v.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
 }
 
 /// A configured Responses-API client (`POST /v1/responses`): what OpenAI's
@@ -514,6 +655,7 @@ mod tests {
     use cox_protocol::types::{
         ArchiveRef, Concurrency, Job, ModelId, Risk, SystemBlock, Thinking, Tier, ToolSpec,
     };
+    use serde_json::json;
 
     use super::*;
     use crate::sse::parse_sse_str;
@@ -588,6 +730,23 @@ mod tests {
             .feed(Some("response.some_future_event"), "{}")
             .expect("ignored");
         assert!(events.is_empty());
+    }
+
+    /// `wire::ResponseTextDeltaEvent` (and every other typed event struct
+    /// `feed` deserializes into) has no `#[serde(deny_unknown_fields)]`, so
+    /// a field OpenAI adds tomorrow doesn't break a known event today.
+    #[test]
+    fn responses_stream_unknown_field_on_known_event_is_ignored() {
+        let mut stream = OpenAiResponsesStream::new();
+        let events = stream
+            .feed(
+                Some("response.output_text.delta"),
+                r#"{"type":"response.output_text.delta","sequence_number":0,
+                    "item_id":"msg_001","output_index":0,"content_index":0,
+                    "delta":"hi","future_field":{"nested":true}}"#,
+            )
+            .expect("unknown fields on a known event are ignored, not fatal");
+        assert_eq!(events, vec![ProviderEvent::TextDelta { text: "hi".into() }]);
     }
 
     fn call(n: u8) -> CallId {

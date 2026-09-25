@@ -10,3 +10,4 @@
 
 pub mod chat;
 pub mod responses;
+mod wire;

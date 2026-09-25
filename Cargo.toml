@@ -60,6 +60,11 @@ futures = "0.3"
 # Schema (oxidecomputer, used by progenitor) instead of a hand-written Value
 # walk. Build-time proc-macro only; no runtime footprint change.
 typify = "0.8"
+# T30.11 (A40 step 1): the OpenAI Responses request/stream-event *types*
+# only (`response-types` feature, default-features off) — no HTTP client,
+# no second reqwest/tokio/futures in the graph. Transport, SSE framing and
+# retries stay cox's own.
+async-openai = { version = "0.42", default-features = false, features = ["response-types"] }
 
 # cox-tools
 ignore = "0.4.33"

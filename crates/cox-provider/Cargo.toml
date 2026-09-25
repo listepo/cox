@@ -25,6 +25,10 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 figment = { workspace = true }
 sha2 = { workspace = true }
+# T30.11: OpenAI Responses request/stream-event types (response-types
+# feature only — no HTTP client pulled in by this dependency).
+async-openai = { workspace = true }
+
 [build-dependencies]
 # T30.12: build.rs generates the Anthropic wire types from the vendored
 # OpenAPI spec. schemars 0.8 is the schema model typify 0.8's `TypeSpace`
