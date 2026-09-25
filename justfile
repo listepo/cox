@@ -22,6 +22,10 @@ snap:
 eval *args:
     uv run --project evals cox-evals {{args}}
 
+# Tests for the eval package; no network, no key (the e2e ones need `cargo build -p cox`).
+test-evals:
+    uv run --project evals pytest evals/tests -q
+
 bench:
     mise exec -- cargo run -q -p cox --example bench
 
