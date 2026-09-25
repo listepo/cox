@@ -365,7 +365,9 @@ impl Default for AnthropicProviderConfig {
 pub struct OpenAiProviderConfig {
     /// API base URL.
     pub base_url: String,
-    /// Env var holding the API key.
+    /// Env var holding the API key; falls back to keyring entry
+    /// `cox/openai`. Neither present builds a keyless client (no
+    /// `Authorization` header), not a startup error (T30.21).
     pub api_key_env: String,
     /// Which OpenAI API shape to use: `"responses"` or `"chat"`.
     pub api: String,
@@ -454,7 +456,10 @@ pub struct CompatibleProviderConfig {
     /// API base URL (the client appends `/chat/completions` or `/responses`
     /// per `api`, so this is the models.dev `api` root verbatim).
     pub base_url: String,
-    /// Env var holding the API key; no key means no `Authorization` header.
+    /// Env var holding the API key; falls back to keyring entry
+    /// `cox/<name>` (the section's own name). Neither present means no
+    /// `Authorization` header (T30.21) — many compatible/self-hosted
+    /// gateways need none.
     pub api_key_env: String,
     /// Which shape to speak: `"chat"` (default) or `"responses"`.
     pub api: String,

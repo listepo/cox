@@ -11,22 +11,49 @@
 use cox_protocol::errors::ProviderError;
 use reqwest::header::HeaderValue;
 
-/// `env_var` first, else the platform keyring entry `service/account` (the
-/// native store per platform, not a mock). A missing or unreadable
-/// credential is [`ProviderError::Auth`]; called on every provider
+/// `env_var` first, else the platform keyring entry `cox/<section>` (the
+/// native store per platform, not a mock). Every provider section resolves
+/// its key this way — `docs/design/providers.md` § Target shape, item 2
+/// (T30.21): `[providers.anthropic]`, `[providers.openai]`, `[providers.
+/// typesafe]` and every `[providers.<name>]` compatible section all read
+/// their own `api_key_env` first, then `cox/<section>`.
+///
+/// A missing or unreadable credential is [`ProviderError::Auth`]; callers
+/// decide what that means for their section. Anthropic and Jev always need
+/// a key, so they propagate the error with `?`. OpenAI-shaped sections
+/// (`openai`, `local`, and any compatible section) build with an
+/// `Option<String>` key and call `.ok()`: a local server or a self-hosted
+/// gateway commonly needs none, so a missing key there is "no
+/// `Authorization` header", not a failure. Called on every provider
 /// construction, including in `cox doctor`, so it never panics.
-pub fn resolve_key_env_or_keyring(
+pub fn resolve_key(env_var: &str, section: &str) -> Result<String, ProviderError> {
+    resolve_key_with(env_var, section, platform_keyring)
+}
+
+/// [`resolve_key`]'s body, taking the keyring lookup as a parameter so
+/// tests can exercise the env-then-keyring precedence without touching the
+/// real platform store: `keyring::Entry`'s v1-compatibility shim binds to
+/// the real Keychain/Credential-Manager/Secret-Service the first time
+/// *anything* touches it, once per process and irreversibly (it is a
+/// `LazyLock` that always wins over a prior `set_default_store`), so no
+/// mock swapped in afterwards would ever be consulted.
+fn resolve_key_with(
     env_var: &str,
-    service: &str,
-    account: &str,
+    section: &str,
+    keyring_lookup: impl FnOnce(&str) -> Option<String>,
 ) -> Result<String, ProviderError> {
     match std::env::var(env_var) {
         Ok(k) if !k.trim().is_empty() => return Ok(k),
         _ => {}
     }
-    keyring::Entry::new(service, account)
+    keyring_lookup(section).ok_or(ProviderError::Auth)
+}
+
+/// The real platform keyring entry `cox/<section>`.
+fn platform_keyring(section: &str) -> Option<String> {
+    keyring::Entry::new("cox", section)
         .and_then(|e| e.get_password())
-        .map_err(|_| ProviderError::Auth)
+        .ok()
 }
 
 /// `Authorization: Bearer <key>`, marked sensitive. A key with non-ASCII
@@ -155,5 +182,43 @@ mod tests {
         // A control byte can never be a credential: auth problem, not transport.
         assert!(matches!(bearer("a\nb"), Err(ProviderError::Auth)));
         assert!(matches!(api_key("a\nb"), Err(ProviderError::Auth)));
+    }
+
+    #[test]
+    fn resolve_key_prefers_the_env_var_over_the_keyring() {
+        // Safety: cargo nextest runs each #[test] as its own process, so
+        // mutating this env var here cannot race another test's read of it.
+        unsafe { std::env::set_var("COX_TEST_RESOLVE_KEY_ENV_WINS", "sk-env") };
+        let got = resolve_key_with("COX_TEST_RESOLVE_KEY_ENV_WINS", "test-section", |_| {
+            panic!("the keyring must not be consulted when the env var is set")
+        });
+        assert_eq!(got.ok().as_deref(), Some("sk-env"));
+        unsafe { std::env::remove_var("COX_TEST_RESOLVE_KEY_ENV_WINS") };
+    }
+
+    /// A compatible section (`[providers.<name>]`) with no env var set
+    /// falls back to the keyring entry `cox/<name>` — the same rule every
+    /// other section follows through this one resolver.
+    #[test]
+    fn resolve_key_falls_back_to_the_keyring_when_the_env_var_is_unset() {
+        // Safety: see above.
+        unsafe { std::env::remove_var("COX_TEST_RESOLVE_KEY_ENV_MISSING") };
+        let got = resolve_key_with(
+            "COX_TEST_RESOLVE_KEY_ENV_MISSING",
+            "test-section",
+            |section| {
+                assert_eq!(section, "test-section");
+                Some("sk-from-keyring".to_string())
+            },
+        );
+        assert_eq!(got.ok().as_deref(), Some("sk-from-keyring"));
+    }
+
+    #[test]
+    fn resolve_key_is_auth_error_when_neither_env_nor_keyring_has_one() {
+        // Safety: see above.
+        unsafe { std::env::remove_var("COX_TEST_RESOLVE_KEY_ENV_ABSENT") };
+        let got = resolve_key_with("COX_TEST_RESOLVE_KEY_ENV_ABSENT", "test-section", |_| None);
+        assert!(matches!(got, Err(ProviderError::Auth)));
     }
 }

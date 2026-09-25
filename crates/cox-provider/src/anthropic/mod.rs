@@ -60,7 +60,7 @@ impl CacheTtl {
 pub struct AnthropicProvider {
     /// `providers.anthropic.base_url`, without a trailing slash.
     pub base_url: String,
-    /// The resolved credential (see [`resolve_api_key`]).
+    /// The resolved credential (see [`crate::http::resolve_key`]).
     pub api_key: String,
     /// Sent as `anthropic-workspace-id` (see [`resolve_workspace_id`]).
     pub workspace_id: Option<String>,
@@ -78,17 +78,20 @@ pub struct AnthropicProvider {
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl AnthropicProvider {
-    /// Builds a provider, resolving the credential from the environment or
-    /// the keyring. Fails with [`ProviderError::Auth`] rather than panicking
-    /// when neither has one. `timeout_s` is the idle-read timeout between
-    /// stream chunks (`providers.anthropic.timeout_s`), not a whole-call cap:
-    /// a long answer streams for minutes without ever being idle.
+    /// Builds a provider, resolving the credential from `api_key_env`
+    /// (`providers.anthropic.api_key_env`, default `ANTHROPIC_API_KEY`) or
+    /// the keyring entry `cox/anthropic` (T30.21). Fails with
+    /// [`ProviderError::Auth`] rather than panicking when neither has one.
+    /// `timeout_s` is the idle-read timeout between stream chunks
+    /// (`providers.anthropic.timeout_s`), not a whole-call cap: a long
+    /// answer streams for minutes without ever being idle.
     pub fn new(
         base_url: impl Into<String>,
         ttl: CacheTtl,
         fallbacks: bool,
         timeout_s: u64,
         max_retries: u32,
+        api_key_env: &str,
     ) -> Result<Self, ProviderError> {
         let http = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
@@ -97,7 +100,7 @@ impl AnthropicProvider {
             .map_err(|_| ProviderError::Network)?;
         Ok(Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
-            api_key: resolve_api_key()?,
+            api_key: crate::http::resolve_key(api_key_env, "anthropic")?,
             workspace_id: resolve_workspace_id(),
             ttl,
             fallbacks,
@@ -160,15 +163,6 @@ impl AnthropicProvider {
             thinking_model,
         }
     }
-}
-
-/// `ANTHROPIC_API_KEY` first, else the keyring entry `cox/anthropic`.
-///
-/// A missing or unreadable credential is [`ProviderError::Auth`]; this is
-/// called on every provider construction, including in `cox doctor`, so it
-/// must never panic.
-pub fn resolve_api_key() -> Result<String, ProviderError> {
-    crate::http::resolve_key_env_or_keyring("ANTHROPIC_API_KEY", "cox", "anthropic")
 }
 
 /// `ANTHROPIC_WORKSPACE_ID`, blank meaning unset. A key that is not scoped
@@ -378,11 +372,37 @@ mod tests {
         unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
         // Either the keyring holds a real entry (developer machine) or it
         // does not; both outcomes are a `Result`, never a panic.
-        let _ = resolve_api_key();
+        let _ = crate::http::resolve_key("ANTHROPIC_API_KEY", "anthropic");
 
         unsafe { std::env::set_var("ANTHROPIC_API_KEY", "sk-from-env") };
-        assert_eq!(resolve_api_key().ok().as_deref(), Some("sk-from-env"));
+        assert_eq!(
+            crate::http::resolve_key("ANTHROPIC_API_KEY", "anthropic")
+                .ok()
+                .as_deref(),
+            Some("sk-from-env")
+        );
         unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+    }
+
+    /// T30.21: `AnthropicProvider::new` reads whatever env var
+    /// `providers.anthropic.api_key_env` names, not a hardcoded
+    /// `ANTHROPIC_API_KEY` — a renamed section still resolves its key.
+    #[test]
+    fn provider_new_honours_a_renamed_api_key_env() {
+        // Safety: see `missing_credential_is_auth_error_not_a_panic`.
+        unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+        unsafe { std::env::set_var("MY_RENAMED_ANTHROPIC_KEY", "sk-renamed") };
+        let p = AnthropicProvider::new(
+            "https://api.anthropic.com",
+            CacheTtl::FiveMinutes,
+            true,
+            30,
+            1,
+            "MY_RENAMED_ANTHROPIC_KEY",
+        )
+        .expect("builds with the renamed env var");
+        assert_eq!(p.api_key, "sk-renamed");
+        unsafe { std::env::remove_var("MY_RENAMED_ANTHROPIC_KEY") };
     }
 
     #[test]

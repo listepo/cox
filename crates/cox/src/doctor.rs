@@ -87,7 +87,7 @@ pub fn run(
     results.push(check_db(&home));
 
     // API keys.
-    results.push(check_api_keys());
+    results.push(check_api_keys(config));
 
     // Sandbox backend.
     results.push(check_sandbox());
@@ -193,21 +193,50 @@ fn check_db(home: &std::path::Path) -> CheckResult {
     }
 }
 
-fn check_api_keys() -> CheckResult {
-    // Check for Anthropic API key.
-    let anthropic_ok = env::var("ANTHROPIC_API_KEY").is_ok()
-        || keyring::Entry::new("cox", "anthropic")
-            .and_then(|e| e.get_password())
-            .is_ok();
+/// The key the `code` tier's provider needs: its section name, the env var
+/// that section names in `api_key_env`, and whether a missing key is fatal.
+/// `None` for a section that never sends a key (`local`). Anthropic and Jev
+/// fail without a key; OpenAI-shaped sections run keyless against a local
+/// server, so a missing key there is only a warning (T30.21).
+fn key_requirement(config: &cox_protocol::Config) -> Option<(&str, &str, bool)> {
+    let section = config.tiers.code.provider.as_str();
+    let p = &config.providers;
+    match section {
+        "anthropic" => Some((section, p.anthropic.api_key_env.as_str(), true)),
+        "typesafe" => Some((section, p.typesafe.api_key_env.as_str(), true)),
+        "openai" => Some((section, p.openai.api_key_env.as_str(), false)),
+        "local" => None,
+        _ => p
+            .custom
+            .get(section)
+            .map(|c| (section, c.api_key_env.as_str(), false)),
+    }
+}
 
-    // If Anthropic is not configured, fail. Other providers are optional.
-    if anthropic_ok {
-        CheckResult::ok("API keys", "Anthropic API key found".to_string())
-    } else {
-        CheckResult::fail(
+/// Resolves the key exactly as the provider will (`cox_provider::http::resolve_key`:
+/// the section's env var, then keyring `cox/<section>`), so doctor and the
+/// session never disagree about whether a key exists.
+fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
+    let Some((section, env_var, required)) = key_requirement(config) else {
+        return CheckResult::ok(
             "API keys",
-            "ANTHROPIC_API_KEY env var not set and keyring entry 'cox/anthropic' not found".to_string(),
-            "set ANTHROPIC_API_KEY or use `security add-generic-password -a cox -s anthropic -w <key>` (macOS) or similar for your platform".to_string(),
+            "the code tier's provider needs no key".to_string(),
+        );
+    };
+    if cox_provider::http::resolve_key(env_var, section).is_ok() {
+        return CheckResult::ok("API keys", format!("{section} key found"));
+    }
+    let detail = format!("{env_var} is not set and keyring entry 'cox/{section}' not found");
+    let fix = format!(
+        "set {env_var} or run `security add-generic-password -s cox -a {section} -w` (macOS) or your platform's keyring equivalent"
+    );
+    if required {
+        CheckResult::fail("API keys", detail, fix)
+    } else {
+        CheckResult::warn(
+            "API keys",
+            format!("{detail}; requests go out without a key"),
+            fix,
         )
     }
 }
@@ -566,6 +595,55 @@ mod tests {
         assert_eq!(warn.status, "warn");
         assert!(warn.detail.contains("send"), "{}", warn.detail);
         assert!(warn.detail.contains("transcript"), "{}", warn.detail);
+    }
+
+    #[test]
+    fn doctor_checks_the_key_the_code_tier_provider_names() {
+        let mut config = cox_protocol::Config::default();
+        config.tiers.code.provider = "anthropic".into();
+        config.providers.anthropic.api_key_env = "MY_ANTHROPIC_KEY".into();
+        assert_eq!(
+            key_requirement(&config),
+            Some(("anthropic", "MY_ANTHROPIC_KEY", true))
+        );
+        config.tiers.code.provider = "local".into();
+        assert_eq!(key_requirement(&config), None);
+        config.tiers.code.provider = "deepseek".into();
+        config.providers.custom.insert(
+            "deepseek".into(),
+            cox_protocol::config::CompatibleProviderConfig {
+                api_key_env: "DEEPSEEK_API_KEY".into(),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            key_requirement(&config),
+            Some(("deepseek", "DEEPSEEK_API_KEY", false))
+        );
+    }
+
+    #[test]
+    fn doctor_warns_not_fails_when_a_keyless_section_has_no_key() {
+        // A section name no keyring holds and an env var nobody sets.
+        let section = "cox-doctor-test-keyless";
+        let mut config = cox_protocol::Config::default();
+        config.tiers.code.provider = section.into();
+        config.providers.custom.insert(
+            section.into(),
+            cox_protocol::config::CompatibleProviderConfig {
+                api_key_env: "COX_DOCTOR_TEST_UNSET_KEY".into(),
+                ..Default::default()
+            },
+        );
+        let result = check_api_keys(&config);
+        assert_eq!(result.status, "warn", "{}", result.detail);
+        // The keyring hint names service `cox`, account `<section>` — the
+        // order `keyring::Entry::new("cox", section)` reads.
+        assert!(
+            result.fix.contains(&format!("-s cox -a {section}")),
+            "{:?}",
+            result.fix
+        );
     }
 
     #[test]

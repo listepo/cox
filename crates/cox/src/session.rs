@@ -844,6 +844,7 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
                 a.fallbacks,
                 u64::from(a.timeout_s),
                 a.max_retries,
+                &a.api_key_env,
             )?;
             Ok(Arc::new(provider))
         }
@@ -852,7 +853,10 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
             Ok(openai_shaped(
                 "openai",
                 &o.base_url,
-                std::env::var(&o.api_key_env).ok(),
+                // `api_key_env` first, else keyring `cox/openai`; missing
+                // both builds keyless (no `Authorization` header) rather
+                // than failing at startup (T30.21).
+                cox_provider::http::resolve_key(&o.api_key_env, "openai").ok(),
                 o.models.clone(),
                 400_000,
                 &o.api,
@@ -871,9 +875,8 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
             // Same resolve rule as every other section: `api_key_env` first,
             // else the keyring entry — via the shared `http` helper so a
             // missing key reads as `Auth` (the fail-open path), not I/O.
-            let key =
-                cox_provider::http::resolve_key_env_or_keyring(&t.api_key_env, "cox", "typesafe")
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let key = cox_provider::http::resolve_key(&t.api_key_env, "typesafe")
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
             Ok(Arc::new(cox_provider::jev::JevProvider::with_key(
                 t.base_url.clone(),
                 key,
@@ -893,7 +896,10 @@ fn backend_for(config: &Config) -> anyhow::Result<Arc<dyn Provider>> {
             Ok(openai_shaped(
                 other,
                 &c.base_url,
-                std::env::var(&c.api_key_env).ok(),
+                // Same rule: `api_key_env` first, else keyring `cox/<name>`;
+                // missing both builds keyless — most compatible sections
+                // (and every local/self-hosted gateway) need no key at all.
+                cox_provider::http::resolve_key(&c.api_key_env, other).ok(),
                 c.models.clone(),
                 c.context_window,
                 &c.api,
@@ -1079,8 +1085,10 @@ mod tests {
             "deepseek".into(),
             CompatibleProviderConfig {
                 base_url: "https://api.deepseek.com".into(),
-                // Deliberately unset in the test environment: the client
-                // builds keyless without touching the network.
+                // Deliberately unset in the test environment (T30.21: the
+                // resolver then checks the keyring entry `cox/deepseek`,
+                // which is absent here too) — either way the client builds
+                // keyless without touching the network.
                 api_key_env: "COX_TEST_MISSING_KEY_DEEPSEEK".into(),
                 api: api.into(),
                 model: "deepseek-v4-pro".into(),

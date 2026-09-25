@@ -283,8 +283,7 @@ impl JevProvider {
         timeout_s: u64,
         max_retries: u32,
     ) -> Result<Self, ProviderError> {
-        let api_key =
-            crate::http::resolve_key_env_or_keyring("TYPESAFE_API_KEY", "cox", "typesafe")?;
+        let api_key = crate::http::resolve_key("TYPESAFE_API_KEY", "typesafe")?;
         Ok(Self::with_key(
             base_url,
             api_key,

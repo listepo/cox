@@ -55,7 +55,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[providers.openai]`
 
 - `base_url` = `"https://api.openai.com/v1"`
-- `api_key_env` = `"OPENAI_API_KEY"`
+- `api_key_env` = `"OPENAI_API_KEY"` — else keyring entry "cox/openai"
 - `api` = `"responses"` — "responses" | "chat"
 - `models` = `[{id="gpt-5.1", context_window=400000, efforts=["low", "high"]}, {id="gpt-5.5", context_window=1050000, efforts=["low", "high", "xhigh"]}, {id="gpt-5.6-sol", context_window=1050000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.local]`
@@ -76,7 +76,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[providers.deepseek]`
 
 - `base_url` = `"https://api.deepseek.com"` — client appends /chat/completions
-- `api_key_env` = `"DEEPSEEK_API_KEY"`
+- `api_key_env` = `"DEEPSEEK_API_KEY"` — else keyring entry "cox/deepseek"
 - `api` = `"chat"`
 - `model` = `"deepseek-v4-pro"`
 - `context_window` = `1000000`
@@ -84,7 +84,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[providers.openrouter]`
 
 - `base_url` = `"https://openrouter.ai/api/v1"`
-- `api_key_env` = `"OPENROUTER_API_KEY"`
+- `api_key_env` = `"OPENROUTER_API_KEY"` — else keyring entry "cox/openrouter"
 - `api` = `"chat"`
 - `model` = `"anthropic/claude-sonnet-5"`
 - `context_window` = `1000000`
@@ -92,7 +92,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[providers.moonshot]`
 
 - `base_url` = `"https://api.moonshot.ai/v1"`
-- `api_key_env` = `"MOONSHOT_API_KEY"`
+- `api_key_env` = `"MOONSHOT_API_KEY"` — else keyring entry "cox/moonshot"
 - `api` = `"chat"`
 - `model` = `"kimi-k2.6"`
 - `context_window` = `262144`
@@ -100,7 +100,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[providers.z-ai]`
 
 - `base_url` = `"https://api.z.ai/api/paas/v4"`
-- `api_key_env` = `"ZHIPU_API_KEY"`
+- `api_key_env` = `"ZHIPU_API_KEY"` — else keyring entry "cox/z-ai"
 - `api` = `"chat"`
 - `model` = `"glm-5.2"`
 - `context_window` = `1000000`

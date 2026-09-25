@@ -83,6 +83,8 @@ Routing (`Router::pick`) and costing (`Priced`) are already single and stay that
 
 1. **One transport descriptor per section.** Every `[providers.*]` table, native or compatible, flattens the same `Transport { base_url, api_key_env, timeout_s, max_retries }`. Section-specific knobs stay beside it, for example Anthropic's `cache_ttl` and the `api` shape. Every constructor takes a `&Transport`. `backend_for` becomes one lookup from the `api` shape to a constructor, not one arm per family.
 2. **One key resolver.** `http::resolve_key(section)` reads the section's `api_key_env`, then the keyring `cox/<section>`, for every section. A local server needs no key: a missing key there is "no auth header", not an error. That is what LM Studio needs (T30.15).
+
+   Implemented (T30.21): `http::resolve_key(api_key_env, section)` in `cox-provider/src/http.rs` is the one resolver every section goes through. Anthropic and Jev, which always need a key, propagate its `Err` as `ProviderError::Auth`; `openai`, `local` and every compatible section build with an `Option<String>` key and call `.ok()`, so a missing key there is "no `Authorization` header", not a startup failure.
 3. **One model catalog** in a new pure crate `cox-models` (see `crates.md`).
    - Each row: `id → context_window, max_output, efforts, capabilities (tools, adaptive_thinking, reasoning_effort_param), price`.
    - Built-in rows are embedded, the way `prices.toml` is today, and written only by T30.20's script from models.dev (A48). `[providers.<name>].models` entries and a user `prices.toml` override them by id.

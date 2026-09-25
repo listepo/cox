@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P2 | 3 | 0% | |
 | T30.20 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T30.21 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T30.22 | todo | P1 | 3 | 0% | |
 | T30.23 | todo | P1 | 3 | 0% | |
 | T30.24 | todo | P1 | 4 | 0% | |
@@ -746,21 +745,6 @@ Plan:
 
 Check: the package's tests pass. `cox-vendor models --check` against the fixture shows no diff. `usage_prices_toml_parses_and_has_all_tier_models` and the config-schema drift test pass.
 Out of scope: A46's catalog crate (U4), which reads what this script writes.
-
-#### T30.21 One key resolver for every provider section
-
-Depends: — · Size: ~80 · Files: `cox-provider/src/http.rs`, `anthropic/mod.rs`, `crates/cox/src/session.rs`
-Goal: every section resolves its key the same way (R§4.3.3, `docs/design/providers.md` § Target shape, item 2).
-Plan:
-1. `http::resolve_key(api_key_env, section)` reads the env var the section names, then the keyring entry `cox/<section>`.
-2. A section marked local (no key required) gets `None` instead of an error.
-3. The Anthropic provider uses its section's `api_key_env`, replacing the hardcoded `ANTHROPIC_API_KEY`.
-4. OpenAI and compatible sections gain the keyring fallback.
-Check:
-- a test that a renamed `providers.anthropic.api_key_env` is honoured;
-- a test that a compatible section falls back to the keyring (mock store);
-- a test that a local section without a key yields no auth header;
-- the existing key tests pass.
 
 #### T30.22 One `Transport` descriptor in every provider section
 
