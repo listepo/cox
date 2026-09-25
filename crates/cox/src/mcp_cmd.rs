@@ -17,7 +17,8 @@ use cox_store::Store;
 use crate::cli::{Cli, McpAction, McpArgs};
 use crate::{config_load, session};
 
-const READ_ONLY: &[&str] = &["read", "grep", "glob", "outline"];
+// No `outline` here: an outline is `read` with `mode = "outline"`, not a tool.
+const READ_ONLY: &[&str] = &["read", "grep", "glob"];
 const WRITE: &[&str] = &["edit", "write", "apply_patch"];
 
 /// `policy = never`: an ask becomes a deny, since no one is there to answer.
@@ -141,16 +142,13 @@ mod tests {
 
     #[test]
     fn default_selection_is_read_only_and_write_is_opt_in() {
-        assert_eq!(
-            selected(&McpArgs::default()),
-            ["read", "grep", "glob", "outline"]
-        );
+        assert_eq!(selected(&McpArgs::default()), ["read", "grep", "glob"]);
         let with_write = selected(&McpArgs {
             action: None,
             allow_write: true,
             tools: None,
         });
-        assert_eq!(with_write.len(), 7);
+        assert_eq!(with_write.len(), 6);
         assert!(with_write.contains(&"apply_patch".to_string()));
         assert!(!with_write.contains(&"bash".to_string()));
         let explicit = selected(&McpArgs {
