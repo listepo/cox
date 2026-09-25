@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.6 | in progress | P0 | 1 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,6 +660,18 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.6 Anthropic tool calls reach the core
+
+Model: claude-opus-5-5 · Status: in progress · Blocks: T30.3 · Size: ~40 · Priority: P0 · Complexity: 1
+Goal: a `tool_use` block from the Anthropic stream becomes a tool call. `AnthropicStream` emits `ToolUseStart` and the input deltas but nothing on `content_block_stop`, and `turn::consume_provider` commits a call only on `ToolUseEnd`, so every Anthropic tool call is dropped and the turn ends with empty text (`end_turn`). The fixture snapshots were recorded with the bug and never show `ToolUseEnd`. Found by T30.3's first live task (`create-file`: 72 output tokens, no file).
+Files: `crates/cox-provider/src/anthropic/stream.rs`, `fixtures/anthropic/live_tool_use.sse` (new, a real `claude-sonnet-5` stream), the two tool-call snapshots.
+Plan: (1) `content_block_stop` of a `ToolUse` block emits `ToolUseEnd`; text/thinking blocks still emit nothing; (2) test `anthropic_stream_tool_block_stop_ends_the_call` on the live fixture: the event after the last input delta is `ToolUseEnd`, and the joined input parses to `{"path":"hello.txt","content":"hi"}`; (3) accept the updated `one_tool_call`/`parallel_tool_calls` snapshots; (4) live: the `create-file` eval task passes.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider anthropic::stream
+```
+Done when: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --only create-file` passes.
+
 #### T30.3 Eval run with a verification step
 
 Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
@@ -738,6 +751,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A34 §3 P27, T27.5 — T27.5's card listed `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`, but the actual touch is `state.rs` + `view.rs` + `crates/cox-tui/tests/agents.rs` (the T27.2 snapshot test reads `/agents`'s old `Notice` cell and has to change now that it opens a modal) + `crates/cox/src/session.rs` (not `resume.rs`, which builds a turn-oriented `History` this overlay does not need — the poll loop wants the raw `Vec<Event>` `Store::rollout_read` already returns). A 3-files-only split was drafted (§6's earlier text) to land the `cox-tui` half and leave `session.rs` to a follow-up, but `session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout` — a stub costs the same one match arm as the real `Store::rollout_read` call, so the split would not have saved a file. Why: discovered mid-implementation, not planned; plan.md §2's split guidance assumed avoiding the file cost was possible, and it was not. Effect: T27.5 lands whole, 4 files instead of the usual 3 (state.rs, view.rs, tests/agents.rs, session.rs); no follow-up card.
 - A35 §3 P30, T30.4, T30.3 — new card T30.4 (send `anthropic-workspace-id` from `ANTHROPIC_WORKSPACE_ID`) ahead of T30.3. Why: the creator's key is not scoped to a workspace, so every Anthropic call 400s; the creator chose teaching cox the header over issuing a workspace-scoped key. Effect: T30.3 step (3) runs after T30.4.
 - A36 §3 P30, T30.5, T30.3 — new card T30.5 (price every provider call through a `Priced` decorator) ahead of T30.3. Why: T1.7's `ledger_row` was never wired into a production path, so every ledger row costs $0 and budgets never fire; found during T30.4's live check; the creator chose fixing it before the paid eval run. Effect: T30.3 step (3) runs after T30.5; costs recorded before this fix are $0 and stay so (history is append-only).
+- A37 §3 P30, T30.6, T30.3 — new card T30.6 (the Anthropic stream emits `ToolUseEnd` on a tool block's `content_block_stop`) ahead of T30.3. Why: without it every Anthropic tool call is dropped; found by T30.3's first live task; the creator chose fixing it first. Effect: T30.3 step (3) runs after T30.6. `openai/chat.rs` never emits `ToolUseEnd` either; that is a separate, larger fix (interleaved calls by index) proposed to the creator, not part of T30.6.
 
 ## 7. Risk register
 
