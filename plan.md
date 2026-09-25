@@ -7,8 +7,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T27.4 | todo | P3 | 2 | 0% | |
+| T27.4 | in progress | P3 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T27.5 | todo | P2 | 2 | 0% | |
+| T27.6 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
 ## Reference
@@ -672,7 +673,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T27.4 `/loop`
 
-Model: sonnet · Status: open · Depends: T25.1 · Size: ~120 · Priority: P3 · Complexity: 2
+Model: claude-sonnet-5 · Status: in progress · Depends: T25.1 · Size: ~120 · Priority: P3 · Complexity: 2
 Goal: `/loop <interval> <prompt>` repeats a turn on a timer with its own budget cap; `cox run --loop <interval>` for scripts.
 Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`.
 Steps: (1) `State.loop: Option<Loop { prompt, interval, next_at, budget_usd, spent }>`; `Msg::Tick` enqueues the prompt (T25.1 queue) when due and the session is idle. (2) Status line shows `↻ 4m12s`; `/loop stop` or `Esc` on an empty composer stops it; `budget.session_usd` still applies on top. (3) `cox run --loop 5m -p "…" --max-iterations N` in `run.rs` (headless, exit 0 after N or budget).
@@ -683,6 +684,23 @@ mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
 ```
 Done when: both tests pass and `docs/getting-started.md` documents the command.
 Out of scope: cloud schedules.
+
+Execution plan: budget — `/loop`'s own `budget_usd` defaults to the existing session cap the TUI already carries (`state.status.budget_cap_usd`, i.e. `budget.session_usd`), overridable with an optional trailing `--budget <usd>` token; no config schema change. (1) `commands.rs`: `Action::LoopStart { interval: Duration, prompt: String, budget_usd: Option<f64> }` and `Action::LoopStop`; `parse()` gains a `"loop"` arm (`/loop stop`, or `<interval> <prompt...> [--budget <usd>]` via a small `parse_interval` — `<n>s|m|h` or a bare `<n>` as seconds) plus a `COMMANDS` row; `/help`/the palette pick it up for free. (2) `state.rs`: `pub struct Loop { prompt, interval_ticks: u64, next_at: u64, budget_usd: f64, started_cost_usd: f64, iterations: u32 }` (ticks, not `Duration` — ties into `state.tick`, the existing 100 ms clock `cells.rs` already drives elapsed time from, so a test never sleeps); `State.active_loop: Option<Loop>` (`loop` is a Rust keyword, so the card's literal field name is not legal — this is the one deviation from the card's spelling). `step()`'s `Msg::Tick` arm calls a new `loop_tick` after incrementing `state.tick`: stops the loop and notices if `status.cost_usd - started_cost_usd >= budget_usd`, else fires `Cmd::Submit(Submission::UserTurn)` directly (idle-only — same path a direct `Enter` uses, not the T25.1 queue, which only defers while busy) once `tick >= next_at`. `act()` gains `Action::LoopStart`/`Action::LoopStop` arms; `on_key`'s idle-empty-composer `Esc` branch stops an active loop before its existing Esc-Esc-opens-rewind role. Tests: `loop_enqueues_when_due_and_idle` (mandated), plus `loop_stop_action_clears_it`, `esc_on_empty_composer_stops_a_running_loop_first`, `loop_stops_itself_when_its_own_budget_is_spent`. (3) `docs/getting-started.md`: a short `## Loop` section. Verify with the Check above plus the full gate (`nextest run --workspace`, `clippy -D warnings`, `fmt --check`) under `CARGO_INCREMENTAL=0`.
+
+Split (plan.md §2 — Check cannot pass within ≤3 files): headless `cox run --loop` needs both `crates/cox/src/cli.rs` (new `RunArgs` flags: `--loop <interval>`, `--max-iterations <N>`) and `crates/cox/src/run.rs`, which together with the two TUI files above is 4 source files, over the task's cap. This task lands the TUI half only (`commands.rs` + `state.rs`, 2 files, comfortably inside the budget); the headless half moves to a new follow-up card **T27.6** (§6 amendment).
+
+#### T27.6 `cox run --loop`
+
+Model: - · Status: open · Depends: T27.4 · Size: ~100 · Priority: P3 · Complexity: 2
+Goal: `cox run --loop <interval> -p "…" --max-iterations N` repeats the headless prompt on a timer, the `cox run` counterpart to T27.4's TUI `/loop` (split out of it, §6 A31, because it needs a fourth file over that task's ≤3-file cap).
+Files: `crates/cox/src/cli.rs`, `crates/cox/src/run.rs`.
+Steps: (1) `RunArgs` gains `--loop <interval>` (same `s|m|h` grammar as `/loop`) and `--max-iterations <N>` (required with `--loop`; `run.rs` rejects one without the other before opening a session). (2) `run.rs`'s `run()`: with `--loop`, repeat the existing single-prompt `drive()` call every interval instead of once, folding each iteration's `Outcome` into a running total (cost, tokens, turns) the same shape `Outcome::summary()` already prints; stop and exit `EXIT_OK` after `--max-iterations` turns or `EXIT_BUDGET` once cumulative cost reaches `budget.session_usd` (reuse the core's existing budget stop, `StopReason::Budget`, rather than a second cap). (3) `Ctrl+C` during a wait between iterations exits cleanly with whatever iterations completed already printed.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
+```
+Done when: the test passes, `cox run --help` shows both flags, and `docs/getting-started.md`'s headless section mentions `--loop`.
+Out of scope: cloud schedules; a per-iteration budget distinct from `budget.session_usd` (T27.4's TUI `/loop` already covers a loop-scoped cap; this is scripts, where the session cap is the natural stop).
 
 #### T27.5 `/agents` rollout overlay
 
@@ -776,6 +794,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A28 §3 P22, T22.8 — `cox-mcp` `oauth_refresh_failure_is_a_warning` failed twice in loaded `cargo nextest run --workspace` runs (~5.5 s). Its assertion is about how an error is classified, but the whole connect ran under the bare 5 s handshake budget. Why: user request to find the real cause and make the test deterministic without weakening it. Effect: a test-only change. The test gets a connect budget a stall cannot reach; `connect_all`, the production budget and the sibling OAuth test are unchanged.
 - A29 §3 P27, T27.2, T27.5 — the creator's answer to T27.2's open question: the `/agents` card is the narrow one (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` and the T16.1 presence records), not a new `Event::AgentProgress`. Why: user request (today). Effect: T27.2 closes without a protocol change — per-subagent model, tokens and last tool stay undone until that event exists; `Enter` on a card opening its rollout read-only is split into the new T27.5, since it needs `/agents` to become a navigable list instead of a static `Notice`.
 - A30 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `false`. Why: the creator's decision after T22.4 made the key live. Mouse capture in the inline viewport takes the wheel from the terminal's own scrollback and plain text selection, and the key had been `true` only because nothing read it. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `false`; `tui.mouse = true` turns on the T22.4 wheel scrolling.
+- A31 §3 P27, T27.4, T27.6 — T27.4's card asked for `/loop` (TUI) and `cox run --loop` (headless) in one ≤3-file task (`crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`), but the headless half also needs `crates/cox/src/cli.rs` for its new `RunArgs` flags (`--loop`, `--max-iterations`) — a fourth source file, over the cap. Why: plan.md §2 ("if the Check cannot pass without exceeding the size limit, split the task"). Effect: T27.4 lands only the TUI `/loop` (`commands.rs` + `state.rs`, `docs/getting-started.md`); the headless counterpart is the new T27.6 (`cli.rs` + `run.rs`), depending on T27.4 for the shared interval grammar. No design change — same goal, same budget-cap idea (T27.6 reuses the core's existing `StopReason::Budget` rather than inventing a second cap), split only on file count.
 
 ## 7. Risk register
 
