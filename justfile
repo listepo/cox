@@ -24,7 +24,7 @@ eval *args:
 
 # Tests for the eval package; no network, no key (the e2e ones need `cargo build -p cox`).
 test-evals:
-    uv run --project evals pytest evals/tests -q
+    uv run --project evals --extra tbench pytest evals/tests -q
 
 bench:
     mise exec -- cargo run -q -p cox --example bench

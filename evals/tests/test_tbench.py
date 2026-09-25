@@ -1,69 +1,120 @@
-"""`cox_evals.tbench`: how `CoxAgent` launches cox in a session and reads
-the outcome back from the pane."""
+"""`cox_evals.tbench`: the command `CoxAgent` runs in a Terminal-Bench
+container, how it installs the binary, and how the `cox run` payload
+becomes Harbor's `AgentContext`."""
 
+import asyncio
 import json
 
-from cox_evals import tbench
+import pytest
+
+pytest.importorskip("harbor")
+
+from harbor.environments.base import ExecResult  # noqa: E402
+from harbor.models.agent.context import AgentContext  # noqa: E402
+
+from cox_evals import tbench  # noqa: E402
+
+PAYLOAD = {
+    "usage": {"input_tokens": 10, "output_tokens": 80,
+              "cache_read_tokens": 1000, "cache_write_tokens": 200},
+    "cost_usd": 0.0123, "turns": 3, "exit_code": 0,
+}
 
 
-class Pane:
-    """A session that runs nothing and shows a fixed pane."""
+class FakeEnv:
+    """A task container that runs nothing: records every exec and upload."""
 
-    def __init__(self, text):
-        self.text = text
-        self.sent = []
+    default_user = None
 
-    def send_keys(self, keys, block=True, max_timeout_sec=None):
-        self.sent.append(keys[0])
+    def __init__(self, stdout=""):
+        self.stdout = stdout
+        self.execs = []
+        self.uploads = []
 
-    def capture_pane(self):
-        return self.text
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        self.execs.append({"command": command, "env": env or {}, "user": user})
+        out = self.stdout if tbench.REMOTE_BIN + " run" in command else ""
+        return ExecResult(stdout=out, stderr="", return_code=0)
 
-
-def agent(cox_bin):
-    return tbench.CoxAgent(model_name="anthropic/claude-sonnet-5", cox_bin=cox_bin)
-
-
-def test_last_json_line_skips_shell_noise_after_it():
-    pane = 'prompt$ cox run\n{"a": 1}\n{"exit_code": 0}\nnot json {\nprompt$ '
-    assert tbench._last_json_line(pane) == {"exit_code": 0}
-    assert tbench._last_json_line("no json here") is None
+    async def upload_file(self, source_path, target_path):
+        self.uploads.append((str(source_path), target_path))
 
 
-def test_missing_binary_is_an_installation_failure():
-    result = agent("/nonexistent/cox").perform_task("x", Pane(""))
-    assert result.failure_mode == tbench.FailureMode.AGENT_INSTALLATION_FAILED
+def agent(tmp_path, **kwargs):
+    return tbench.CoxAgent(logs_dir=tmp_path, model_name="anthropic/claude-sonnet-5", **kwargs)
 
 
-def test_missing_provider_key_is_an_agent_error(fake_cox, monkeypatch):
+def test_command_carries_model_caps_and_the_quoted_instruction():
+    cmd = tbench.command("it's done", "anthropic/claude-sonnet-5", budget_usd=0.2, max_turns=30)
+    assert cmd.startswith(tbench.REMOTE_BIN + " run -p 'it'\"'\"'s done'")
+    assert "--provider anthropic --tier code=claude-sonnet-5" in cmd
+    assert "--budget 0.2" in cmd and "--max-turns 30" in cmd
+    assert "--output-format json" in cmd and "--approve never" in cmd
+
+
+def test_command_never_fails_so_harbor_keeps_the_usage():
+    # Harbor raises on a non-zero exit; a denied call or a spent budget must
+    # still leave the payload readable.
+    assert tbench.command("x", "anthropic/m", budget_usd=1, max_turns=1).endswith("|| true")
+
+
+def test_last_json_line_skips_noise_after_the_payload():
+    assert tbench.last_json_line('log\n{"a": 1}\n{"b": 2}\nnot json {\n') == {"b": 2}
+    assert tbench.last_json_line("") is None
+    assert tbench.last_json_line(None) is None
+
+
+def test_fill_context_counts_every_prompt_token_and_the_cost():
+    context = AgentContext()
+    tbench.fill_context(context, PAYLOAD)
+    assert context.n_input_tokens == 1210
+    assert context.n_cache_tokens == 1000
+    assert context.n_output_tokens == 80
+    assert context.cost_usd == 0.0123
+    assert context.metadata["cox_exit_code"] == 0
+
+
+def test_install_uploads_the_binary_and_makes_it_executable(tmp_path):
+    binary = tmp_path / "cox"
+    binary.write_bytes(b"\x7fELF")
+    env = FakeEnv()
+    asyncio.run(agent(tmp_path, cox_bin=str(binary)).install(env))
+    assert env.uploads == [(str(binary), tbench.REMOTE_BIN)]
+    assert env.execs[-1]["command"].endswith(f"chmod 755 {tbench.REMOTE_BIN}")
+    assert env.execs[-1]["user"] == "root"
+
+
+def test_install_without_a_binary_fails_before_touching_the_container(tmp_path, monkeypatch):
+    monkeypatch.delenv("COX_LINUX_BIN", raising=False)
+    env = FakeEnv()
+    with pytest.raises(RuntimeError, match="no Linux cox binary"):
+        asyncio.run(agent(tmp_path).install(env))
+    assert env.uploads == [] and env.execs == []
+
+
+def test_run_passes_the_key_only_to_the_cox_command_and_fills_the_context(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    env = FakeEnv(stdout=json.dumps(PAYLOAD))
+    context = AgentContext()
+    asyncio.run(agent(tmp_path).run("fix it", env, context))
+    cox_calls = [e for e in env.execs if tbench.REMOTE_BIN + " run" in e["command"]]
+    assert len(cox_calls) == 1
+    assert cox_calls[0]["env"]["ANTHROPIC_API_KEY"] == "sk-test"
+    others = [e for e in env.execs if e not in cox_calls]
+    assert all("ANTHROPIC_API_KEY" not in e["env"] for e in others)
+    assert context.cost_usd == 0.0123
+    assert (tmp_path / "cox-stdout.txt").read_text() == json.dumps(PAYLOAD)
+
+
+def test_run_without_the_provider_key_fails_before_running_cox(tmp_path, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    result = agent(fake_cox.path).perform_task("x", Pane('{"exit_code": 0}'))
-    assert result.failure_mode == tbench.FailureMode.UNKNOWN_AGENT_ERROR
+    env = FakeEnv()
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        asyncio.run(agent(tmp_path).run("x", env, AgentContext()))
+    assert env.execs == []
 
 
-def test_command_carries_provider_model_and_the_quoted_instruction(fake_cox, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "unused")
-    pane = Pane(json.dumps({"exit_code": 0, "usage": {"input_tokens": 7, "output_tokens": 3}}))
-    result = agent(fake_cox.path).perform_task("it's done", pane)
-    (cmd,) = pane.sent
-    assert "--provider anthropic" in cmd and "--tier code=claude-sonnet-5" in cmd
-    assert "'it'\"'\"'s done'" in cmd
-    assert result.failure_mode == tbench.FailureMode.NONE
-    assert (result.total_input_tokens, result.total_output_tokens) == (7, 3)
-
-
-def test_nonzero_exit_code_in_the_payload_is_an_agent_error(fake_cox, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "unused")
-    result = agent(fake_cox.path).perform_task("x", Pane('{"exit_code": 2}'))
-    assert result.failure_mode == tbench.FailureMode.UNKNOWN_AGENT_ERROR
-
-
-def test_no_json_in_the_pane_is_a_parse_error(fake_cox, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "unused")
-    result = agent(fake_cox.path).perform_task("x", Pane("cox: command crashed"))
-    assert result.failure_mode == tbench.FailureMode.PARSE_ERROR
-
-
-def test_self_test_passes_without_any_key(real_cox, monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    tbench.self_test(real_cox)
+def test_run_without_a_payload_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    with pytest.raises(RuntimeError, match="no JSON payload"):
+        asyncio.run(agent(tmp_path).run("x", FakeEnv(stdout="panic"), AgentContext()))

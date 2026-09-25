@@ -1,108 +1,57 @@
-"""Terminal-Bench adapter (T12.1): `CoxAgent` drives headless `cox run`
-inside the harness container and returns the trajectory.
+"""Terminal-Bench 2.0 agent for Harbor (T30.9): uploads a Linux `cox` build
+into the task container and runs one headless `cox run` there.
 
-Follows the harness `BaseAgent` contract (`name()` / `perform_task`) from
-the `terminal-bench` package when importable (verified against
-terminal-bench 0.2.18's `base_agent.py`); otherwise local shims with the
-same shape so this file self-tests without the harness installed:
+TB 2.0 runs through Harbor (`harbor run -d terminal-bench@2.0`); an agent is
+a `BaseInstalledAgent` whose `install` puts the binary in the container and
+whose `run` executes it and fills `AgentContext` with tokens and cost. cox
+is one self-contained binary, so installing is an upload plus `chmod`.
 
-    uv run --project evals python -m cox_evals.tbench --self-test   # scripted dry run, offline
+    uv run --project evals --extra tbench harbor run -d terminal-bench@2.0 \\
+        -a cox_evals.tbench:CoxAgent -m anthropic/claude-sonnet-5 \\
+        --force-build -i fix-git \\
+        --ak cox_bin=<linux cox> --ak budget_usd=0.2
+
+The provider key is read from the host env when `run` starts and passed only
+to that one command, never written into the container.
 """
 
-import argparse
 import json
 import os
 import shlex
-import shutil
-import subprocess
-import sys
-import tempfile
-import time
 from pathlib import Path
 
-try:  # pragma: no cover - real harness path
-    from terminal_bench.agents.base_agent import AgentResult, BaseAgent
-    from terminal_bench.agents.failure_mode import FailureMode
-    HAVE_TB = True
-except ImportError:  # pragma: no cover - self-test path
-    HAVE_TB = False
+from harbor.agents.installed.base import BaseInstalledAgent
+from harbor.environments.base import BaseEnvironment
+from harbor.models.agent.context import AgentContext
 
-    class FailureMode:  # minimal mirror of the harness enum
-        NONE = "none"
-        AGENT_TIMEOUT = "agent_timeout"
-        PARSE_ERROR = "parse_error"
-        UNKNOWN_AGENT_ERROR = "unknown_agent_error"
-        AGENT_INSTALLATION_FAILED = "agent_installation_failed"
-
-    class AgentResult:
-        def __init__(self, total_input_tokens=0, total_output_tokens=0,
-                     failure_mode=FailureMode.NONE, timestamped_markers=None):
-            self.total_input_tokens = total_input_tokens
-            self.total_output_tokens = total_output_tokens
-            self.failure_mode = failure_mode
-            self.timestamped_markers = timestamped_markers or []
-
-    class BaseAgent:
-        def __init__(self, **kwargs):
-            self._version = kwargs.get("version", None)
+# `/installed-agent` is the directory Harbor's own `setup` creates for
+# installed agents, so the binary lands where Harbor expects agent files.
+REMOTE_BIN = "/installed-agent/cox"
+# A fresh COX_HOME per container: no host config, no ledger from other runs.
+REMOTE_HOME = "/tmp/cox-home"
+KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 
 
-class CoxAgent(BaseAgent):
-    """Runs `cox run -p <instruction> --output-format json` and returns the
-    trajectory. `model_name` is `provider/model` (like the opencode agent);
-    the provider part selects which `*_API_KEY` must be in env."""
-
-    @staticmethod
-    def name() -> str:
-        return "cox"
-
-    def __init__(self, model_name: str = "openai/gpt-4o-mini",
-                 cox_bin: str = "cox", max_turns: int = 40, **kwargs):
-        super().__init__(**kwargs)
-        self._provider, _, self._model = model_name.partition("/")
-        self._cox_bin = cox_bin
-        self._max_turns = max_turns
-
-    @property
-    def _env_keys(self):
-        return {"openai": ["OPENAI_API_KEY"], "anthropic": ["ANTHROPIC_API_KEY"]}.get(
-            self._provider, [])
-
-    def perform_task(self, instruction, session, logging_dir=None):
-        del logging_dir
-        cox = shutil.which(self._cox_bin) or self._cox_bin
-        if not (Path(cox).exists() if "/" in cox else shutil.which(cox)):
-            return AgentResult(failure_mode=FailureMode.AGENT_INSTALLATION_FAILED)
-        missing = [k for k in self._env_keys if k not in os.environ]
-        cmd = (
-            f"{shlex.quote(cox)} run -p {shlex.quote(instruction)}"
-            f" --output-format json --max-turns {self._max_turns}"
-            f" --approve never --permission-mode auto"
-            f" --provider {shlex.quote(self._provider)}"
-            f" --tier code={shlex.quote(self._model)}"
-        )
-        started = time.time()
-        session.send_keys([cmd, "Enter"], block=True, max_timeout_sec=float("inf"))
-        elapsed = time.time() - started
-        if missing:
-            return AgentResult(failure_mode=FailureMode.UNKNOWN_AGENT_ERROR)
-        pane = session.capture_pane()
-        payload = _last_json_line(pane)
-        if payload is None:
-            return AgentResult(failure_mode=FailureMode.PARSE_ERROR)
-        usage = payload.get("usage", {})
-        failure = (FailureMode.NONE if payload.get("exit_code", 1) == 0
-                   else FailureMode.UNKNOWN_AGENT_ERROR)
-        return AgentResult(
-            total_input_tokens=int(usage.get("input_tokens", 0)),
-            total_output_tokens=int(usage.get("output_tokens", 0)),
-            failure_mode=failure,
-            timestamped_markers=[(elapsed, "cox run finished")],
-        )
+def command(instruction, model, *, budget_usd, max_turns):
+    """The one shell command `run` executes in the task container."""
+    provider, _, name = model.partition("/")
+    return (
+        f"{REMOTE_BIN} run -p {shlex.quote(instruction)}"
+        f" --output-format json --max-turns {int(max_turns)} --budget {float(budget_usd)}"
+        " --approve never --permission-mode auto --no-mcp --no-hooks"
+        # The task container is the isolation boundary; cox's own sandbox
+        # needs bwrap or Landlock, which TB images do not promise.
+        " --sandbox danger-full-access"
+        f" --provider {shlex.quote(provider)} --tier code={shlex.quote(name)}"
+        # cox exits non-zero on a denied call or a spent budget, and Harbor
+        # raises on any non-zero exit — the usage JSON would be lost with it.
+        " || true"
+    )
 
 
-def _last_json_line(pane):
-    for line in reversed(pane.splitlines()):
+def last_json_line(text):
+    """The `cox run` payload: the last line of stdout that parses as an object."""
+    for line in reversed((text or "").splitlines()):
         line = line.strip()
         if line.startswith("{") and line.endswith("}"):
             try:
@@ -112,50 +61,73 @@ def _last_json_line(pane):
     return None
 
 
-def self_test(cox_bin):
-    """One in-repo task through a local session shim (no harness, no key)."""
+def fill_context(context, payload):
+    """Copy tokens and cost from the payload into Harbor's `AgentContext`.
 
-    class LocalSession:
-        def __init__(self, work):
-            self.work = work
-            self.pane = ""
+    `n_input_tokens` is every prompt token (fresh + cache read + cache
+    write), matching how Harbor's own agents sum prompt tokens;
+    `n_cache_tokens` is the cache-read share of it.
+    """
+    usage = payload.get("usage") or {}
+    fresh = int(usage.get("input_tokens", 0))
+    read = int(usage.get("cache_read_tokens", 0))
+    write = int(usage.get("cache_write_tokens", 0))
+    context.n_input_tokens = fresh + read + write
+    context.n_cache_tokens = read
+    context.n_output_tokens = int(usage.get("output_tokens", 0))
+    context.cost_usd = float(payload.get("cost_usd", 0.0))
+    context.metadata = {
+        **(context.metadata or {}),
+        "cox_exit_code": payload.get("exit_code"),
+        "cox_turns": payload.get("turns"),
+        "cox_usage": usage,
+    }
 
-        def send_keys(self, keys, block=True, max_timeout_sec=None):
-            del block, max_timeout_sec
-            proc = subprocess.run(
-                ["sh", "-c", keys[0]], cwd=self.work,
-                capture_output=True, text=True, timeout=120,
-                env=_scripted_env(),
+
+class CoxAgent(BaseInstalledAgent):
+    """`cox run` inside the task container; one call per trial."""
+
+    @staticmethod
+    def name() -> str:
+        return "cox"
+
+    def __init__(self, *args, cox_bin=None, budget_usd=0.2, max_turns=40, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._cox_bin = cox_bin or os.environ.get("COX_LINUX_BIN")
+        self._budget_usd = float(budget_usd)
+        self._max_turns = int(max_turns)
+
+    def get_version_command(self) -> str | None:
+        return f"{REMOTE_BIN} --version"
+
+    async def install(self, environment: BaseEnvironment) -> None:
+        if not self._cox_bin or not Path(self._cox_bin).is_file():
+            raise RuntimeError(
+                "no Linux cox binary: pass --ak cox_bin=<path> or set COX_LINUX_BIN"
             )
-            self.pane = proc.stdout
+        await environment.upload_file(self._cox_bin, REMOTE_BIN)
+        await self.exec_as_root(environment, command=f"chmod 755 {REMOTE_BIN}")
 
-        def capture_pane(self):
-            return self.pane
-
-    def _scripted_env():
-        home = tempfile.mkdtemp()
-        scenario = Path(home) / "scenario.toml"
-        scenario.write_text('[[turn]]\ntext = "done"\n')
-        return dict(os.environ, COX_HOME=home, COX_PROVIDER="scripted",
-                    COX_SCENARIO=str(scenario))
-
-    work = tempfile.mkdtemp()
-    # The scripted provider never reads it, but `perform_task` refuses to
-    # start without the provider's key, so the self-test failed on any
-    # machine without `OPENAI_API_KEY` exported.
-    os.environ.setdefault("OPENAI_API_KEY", "unused-by-scripted")
-    agent = CoxAgent(model_name="openai/gpt-4o-mini", cox_bin=cox_bin, max_turns=5)
-    result = agent.perform_task("Reply with exactly: done", LocalSession(work))
-    assert result.failure_mode == FailureMode.NONE, result
-    print(f"self-test ok ({'harness' if HAVE_TB else 'shim'} base)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--cox-bin", default="cox")
-    args = parser.parse_args()
-    if args.self_test:
-        self_test(args.cox_bin)
-    else:
-        parser.print_help()
+    async def run(self, instruction: str, environment: BaseEnvironment,
+                  context: AgentContext) -> None:
+        model = self.model_name or "anthropic/claude-sonnet-5"
+        key_name = KEY_ENV.get(model.partition("/")[0])
+        env = {"COX_HOME": REMOTE_HOME}
+        if key_name:
+            key = os.environ.get(key_name)
+            if not key:
+                raise RuntimeError(f"{key_name} is not set on the host")
+            env[key_name] = key
+        await self.exec_as_agent(environment, command=f"mkdir -p {REMOTE_HOME}")
+        result = await self.exec_as_agent(
+            environment,
+            command=command(self.render_instruction(instruction), model,
+                            budget_usd=self._budget_usd, max_turns=self._max_turns),
+            env=env,
+        )
+        (self.logs_dir / "cox-stdout.txt").write_text(result.stdout or "")
+        (self.logs_dir / "cox-stderr.txt").write_text(result.stderr or "")
+        payload = last_json_line(result.stdout)
+        if payload is None:
+            raise RuntimeError("cox printed no JSON payload; see cox-stderr.txt")
+        fill_context(context, payload)
