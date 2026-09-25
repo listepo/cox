@@ -17,6 +17,9 @@ expression: events
     "text": "{\"path\":\"a.rs\"}"
   },
   {
+    "type": "tool_use_end"
+  },
+  {
     "type": "tool_use_start",
     "id": "00000000000000000000000001",
     "name": "read"
@@ -24,6 +27,9 @@ expression: events
   {
     "type": "tool_use_input_delta",
     "text": "{\"path\":\"b.rs\"}"
+  },
+  {
+    "type": "tool_use_end"
   },
   {
     "type": "stop",

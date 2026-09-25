@@ -21,6 +21,9 @@ expression: "run_fixture(\"one_tool_call\")"
     "text": "\"a.rs\"}"
   },
   {
+    "type": "tool_use_end"
+  },
+  {
     "type": "stop",
     "stop": {
       "type": "end_turn"

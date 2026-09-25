@@ -113,7 +113,8 @@ impl AnthropicStream {
 
     /// Feeds one SSE frame (`event:`, `data:` pair) and returns the
     /// `ProviderEvent`s it produces — zero for framing/heartbeat frames
-    /// (`ping`, `content_block_stop`, `message_stop`), one otherwise.
+    /// (`ping`, `message_stop`, a text or thinking `content_block_stop`),
+    /// one otherwise.
     pub fn feed(
         &mut self,
         event: Option<&str>,
@@ -139,10 +140,12 @@ impl AnthropicStream {
             "message_start" => self.on_message_start(&value),
             "content_block_start" => self.on_block_start(&value),
             "content_block_delta" => self.on_block_delta(&value),
-            "content_block_stop" => {
-                self.current_block = None;
-                Ok(vec![])
-            }
+            // `cox-core` commits a tool call only on `ToolUseEnd`; without
+            // it the accumulated input is dropped with the turn.
+            "content_block_stop" => match self.current_block.take() {
+                Some(BlockKind::ToolUse) => Ok(vec![ProviderEvent::ToolUseEnd]),
+                _ => Ok(vec![]),
+            },
             "message_delta" => self.on_message_delta(&value),
             "error" => self.on_error(&value).map(|e| vec![e]),
             // "ping", "message_stop", and anything unrecognised (forward
@@ -404,6 +407,33 @@ mod tests {
             .count();
         assert_eq!(starts, 2, "expected two parallel tool_use blocks");
         insta::assert_json_snapshot!("anthropic_stream_parallel_tool_calls", events);
+    }
+
+    #[test]
+    fn anthropic_stream_tool_block_stop_ends_the_call() {
+        // A real `claude-sonnet-5` stream (2026-09-25) for "Create hello.txt
+        // containing exactly: hi" with one `write` tool.
+        let events = run_fixture("live_tool_use");
+        let last_delta = events
+            .iter()
+            .rposition(|e| matches!(e, ProviderEvent::ToolUseInputDelta { .. }))
+            .expect("tool input deltas");
+        assert!(matches!(
+            events.get(last_delta + 1),
+            Some(ProviderEvent::ToolUseEnd)
+        ));
+        let input: String = events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderEvent::ToolUseInputDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let input: serde_json::Value = serde_json::from_str(&input).expect("input is JSON");
+        assert_eq!(
+            input,
+            serde_json::json!({"path": "hello.txt", "content": "hi"})
+        );
     }
 
     #[test]
