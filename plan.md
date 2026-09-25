@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.13 | todo | P2 | 3 | 0% | |
 
 ## Reference
 
@@ -658,6 +659,22 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.13 cox vs Claude Code vs Terminus 2 on the same model
+
+Depends: T30.9 · Size: ~80
+Goal: a like-for-like Terminal-Bench 2.0 comparison: the same 12 tasks, the same model (`anthropic/claude-sonnet-5`), one attempt each, three agents — cox (`cox_evals.tbench:CoxAgent`), Harbor's built-in `claude-code` and `terminus-2`. The difference in pass rate, tokens and cost is then the agent's, not the model's. The 3/3 in R§5.3 says nothing about this: those were 3 of the dataset's 4 `easy` tasks (55 are `medium`, 30 `hard`).
+Tasks (fixed; `random.Random(3013).sample` over the `difficulty` field of each `task.toml` at terminal-bench-2 `69671fb`): medium `build-cython-ext`, `build-pmars`, `compile-compcert`, `mteb-leaderboard`, `query-optimize`, `regex-log`, `sanitize-git-repo`, `tune-mjcf`; hard `dna-assembly`, `password-recovery`, `path-tracing-reverse`, `regex-chess`.
+Budget: $8 total, set by the creator. cox gets `--ak budget_usd=1` per task so its own cap does not cost it tasks the others (bounded only by the task timeout) would finish. Stop and ask when the running total passes $8.
+Plan:
+1. Credentials: the creator's key is org-level and needs `anthropic-workspace-id` (T30.4). Find from primary sources how each built-in agent sends an extra header (Claude Code: `ANTHROPIC_CUSTOM_HEADERS`; Terminus 2: LiteLLM `extra_headers` or an env the agent reads) and verify each with one cheap call before the run. If an agent cannot send it, stop and ask.
+2. Disk: check free host disk (≥ 15 GB before building 12 images) and each task's image size; `docker image prune` between agents if needed; colima with a capped disk as in T30.9.
+3. Rebuild the Linux cox from current `main` (zigbuild, as in T30.9) and record the commit.
+4. Run the three agents one after another, same `-i` list, `-n 2`, `--force-build`, jobs dir under `~/.cache/cox-evals/tb-jobs`; after each agent sum the cost (cox: its ledger payload; others: Harbor's `AgentContext.cost_usd`, or tokens × the published price when an agent reports none) against the $8 budget.
+5. Record in R§5.3 a per-task table (pass, tokens, cost for each agent), the totals, the cox commit, Harbor version, dataset commit and the reproduce commands, with sources; stop colima.
+Check: R§5.3 has the table; `just test-evals` green.
+Done when: the three agents' results on the 12 tasks are in R§5.3, with spend inside $8.
+Out of scope: leaderboard submission (5 attempts × 89 tasks); other models.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -727,6 +744,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A38 §3 P30, T30.7–T30.9 — the eval scripts become a uv-managed Python package with tests (T30.7, T30.8), and the Terminal-Bench part of T30.3 becomes T30.9 (Harbor agent, colima, $1 budget). Why: the creator asked for the scripts to be a proper package with tests before TB; the old adapter could not run for real. Effect: T30.3 closes after T30.9; `just eval` runs through uv.
 - A39 §3 P30, T30.10 — the Anthropic stream wire types are generated with typify from a curated JSON Schema subset of Anthropic's OpenAPI spec; the SSE → `ProviderEvent` mapping stays hand-written. Why: the creator chose typify-generated types over a hand-written `Value` walk or a full generated SDK (none exists for Rust that handles SSE). Effect: one build-time proc-macro dependency; D3 unchanged.
 - A40 §0 D3, §3 P30, T30.11–T30.12 — D3 gains an order for where provider wire types come from: a maintained SDK's types, else typify over the vendor's vendored spec, else hand-written; transport, SSE mapping and the ledger stay ours; SDK code is a `wire` module inside the provider. Login stays API-key only: Anthropic forbids third-party Claude subscription login in writing, OpenAI documents nothing for ChatGPT login (R§4.3.1). Why: the creator asked providers to check for an SDK or a generatable spec before hand-writing, starting with the Claude Code and Codex replacements. Effect: `async-openai` (types only) and a vendored Anthropic spec enter the provider crate.
+- A41 §3 P30, T30.13 — new card: cox, Harbor's `claude-code` and `terminus-2` on the same 12 Terminal-Bench 2.0 tasks with the same model. Why: T30.9's 3/3 covered 3 of the 4 `easy` tasks and cannot be compared with anything; the creator chose same-model agents over a leaderboard-scale run, 12 tasks × 1 attempt, $8.
 
 ## 7. Risk register
 
