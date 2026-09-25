@@ -10,7 +10,7 @@ use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::banner::Banner;
 use crate::cells::Look;
@@ -126,6 +126,10 @@ pub enum Modal {
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
 /// 15 rows, so a page is a little less).
 const DIFF_PAGE: usize = 10;
+
+/// Lines (or picker rows) one wheel tick moves (T22.4) — smaller than
+/// `DIFF_PAGE` because a tick is a nudge, not a page.
+const WHEEL_LINES: usize = 3;
 
 /// What the status line shows of the working tree; a mirror of
 /// `cox_tools::git::Status` so this crate keeps no `cox-tools` dependency
@@ -260,6 +264,11 @@ pub struct State {
     /// The session's directory; `link::apply` links file paths under it
     /// (T23.3). Empty until the binary sets it, and then nothing is a file link.
     pub cwd: std::path::PathBuf,
+    /// `tui.mouse` (T22.4); the binary sets it from config. `app.rs` reads
+    /// this once at startup to decide whether to ask the terminal for mouse
+    /// reports at all — off leaves the terminal's own text selection
+    /// exactly as if cox never touched the mouse.
+    pub mouse: bool,
 }
 
 /// `tui.notify` (T23.5): when a finished turn, an approval or a question
@@ -323,6 +332,9 @@ pub enum Msg {
     },
     /// The terminal gained (`true`) or lost focus (T23.5).
     Focus(bool),
+    /// A wheel tick or click (T22.4); `app.rs` only forwards these once
+    /// `tui.mouse` actually enabled capture, so `update` need not re-check it.
+    Mouse(MouseEvent),
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -436,6 +448,7 @@ impl State {
             notify: Notify::Auto,
             cwd: std::path::PathBuf::new(),
             focused: true,
+            mouse: true,
         }
     }
 
@@ -625,7 +638,46 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.focused = focused;
             Vec::new()
         }
+        Msg::Mouse(ev) => on_mouse(state, ev),
     }
+}
+
+/// A wheel tick (T22.4). Reuses whichever scroll path the same context's
+/// keyboard already has — `Picker`'s own `Up`/`Down`, the `Diff` modal's
+/// `scroll` field like `PageUp`/`PageDown` — and moves it `WHEEL_LINES` at a
+/// time; the plain transcript has no keyboard path yet (`state.scroll` was
+/// dead until this task), so wheel is its first mover. Anything but a wheel
+/// tick (a click, a drag) is left for the click-to-unfold follow-up.
+fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
+    let up = match ev.kind {
+        MouseEventKind::ScrollUp => true,
+        MouseEventKind::ScrollDown => false,
+        _ => return Vec::new(),
+    };
+    match &mut state.modal {
+        Some(Modal::Picker(picker)) => {
+            let code = if up { KeyCode::Up } else { KeyCode::Down };
+            for _ in 0..WHEEL_LINES {
+                picker.key(KeyEvent::new(code, KeyModifiers::NONE));
+            }
+        }
+        Some(Modal::Diff { scroll, text }) => {
+            *scroll = if up {
+                scroll.saturating_sub(WHEEL_LINES)
+            } else {
+                (*scroll + WHEEL_LINES).min(text.lines().count().saturating_sub(1))
+            };
+        }
+        Some(Modal::Approval(_) | Modal::Question(_) | Modal::Help) => {}
+        None => {
+            state.scroll = if up {
+                state.scroll.saturating_add(WHEEL_LINES)
+            } else {
+                state.scroll.saturating_sub(WHEEL_LINES)
+            };
+        }
+    }
+    Vec::new()
 }
 
 /// `Cmd::Notify` for `body` when `tui.notify` says to ring now (T23.5).
@@ -1890,5 +1942,67 @@ mod tests {
         let mut plain = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
         assert!(progress(&mut plain).is_empty());
         assert_eq!(crate::term::progress(Progress::Busy), "\x1b]9;4;3;0\x1b\\");
+    }
+
+    /// T22.4: a wheel tick reuses whichever context is open's own scroll —
+    /// the plain transcript's `state.scroll`, the diff view's `scroll`
+    /// field, or a picker's `selected` row — moving `WHEEL_LINES` at a time.
+    #[test]
+    fn update_mouse_wheel_scrolls_overlay() {
+        fn wheel(up: bool) -> Msg {
+            Msg::Mouse(MouseEvent {
+                kind: if up {
+                    MouseEventKind::ScrollUp
+                } else {
+                    MouseEventKind::ScrollDown
+                },
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            })
+        }
+
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        update(&mut state, wheel(true));
+        assert_eq!(state.scroll, WHEEL_LINES);
+        update(&mut state, wheel(false));
+        assert_eq!(state.scroll, 0);
+        // Never underflows past the bottom.
+        update(&mut state, wheel(false));
+        assert_eq!(state.scroll, 0);
+
+        state.modal = Some(Modal::Diff {
+            text: (0..20)
+                .map(|n| format!("line {n}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            scroll: 5,
+        });
+        update(&mut state, wheel(true));
+        assert_eq!(
+            state.modal,
+            Some(Modal::Diff {
+                text: (0..20)
+                    .map(|n| format!("line {n}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                scroll: 5 - WHEEL_LINES,
+            })
+        );
+
+        state.modal = Some(Modal::Picker(Picker::open(
+            Kind::Files,
+            vec!["a".into(), "b".into(), "c".into(), "d".into()],
+        )));
+        update(&mut state, wheel(false));
+        let Some(Modal::Picker(picker)) = &state.modal else {
+            panic!("picker closed");
+        };
+        assert_eq!(picker.selected, WHEEL_LINES.min(3));
+        update(&mut state, wheel(true));
+        let Some(Modal::Picker(picker)) = &state.modal else {
+            panic!("picker closed");
+        };
+        assert_eq!(picker.selected, 0);
     }
 }

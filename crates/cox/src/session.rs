@@ -658,6 +658,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.diff_mode = cox_tui::diff::Mode::parse(&config.tui.diff);
         state.still = config.tui.motion == "reduced";
         state.notify = cox_tui::state::Notify::parse(&config.tui.notify);
+        // T22.4: the only switch for mouse capture is this config key.
+        state.mouse = config.tui.mouse;
         state.marks = cli.verbose > 0;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
