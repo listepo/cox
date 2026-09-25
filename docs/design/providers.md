@@ -104,7 +104,7 @@ Routing (`Router::pick`) and costing (`Priced`) are already single and stay that
 - Custom providers keep `ProviderId::Local`, so storage needs no migration.
 - `cache_write_tokens = 0` on Chat and Responses is correct, because those APIs bill no cache writes.
 
-**Migration order** (each step green; proposed cards are in `plan.md` §6 A46):
+**Migration order** (each step green; cards T30.21–T30.27 in `plan.md`, U*n* = T30.*(20+n)*):
 
 | Card | Change | Files |
 |---|---|---|
@@ -116,4 +116,4 @@ Routing (`Router::pick`) and costing (`Priced`) are already single and stay that
 | U6 | `effort_for` in one place; `Effort::Medium` | `cox-models`, `request.rs`, `responses.rs` |
 | U7 | `cox doctor` catalog/price sync row | `doctor.rs` |
 
-T30.15 (LM Studio chat) waits for U1–U3, so it lands as one more `Transport` section and not a sixth divergent one. T30.16 (loaded context) waits for U4–U5, so the server's context feeds the catalog. T30.13 depends on none of this.
+T30.15 (LM Studio chat) waits for U1–U3 (T30.21–T30.23), so it lands as one more `Transport` section and not a sixth divergent one. T30.16 (loaded context) waits for U4–U5 (T30.24–T30.25), so the server's context feeds the catalog. T30.13 depends on none of this.

@@ -5,6 +5,13 @@
 - T30.13. cox vs Claude Code vs Terminus 2 on the same local model
 - T30.19. Vendored data through saved scripts: the Anthropic spec
 - T30.20. Vendored data through saved scripts: prices and model lists from models.dev
+- T30.21. One key resolver for every provider section
+- T30.22. One `Transport` descriptor in every provider section
+- T30.23. Provider constructors take `&Transport`
+- T30.24. `cox-models`: one model catalog
+- T30.25. `Caps` and adaptive thinking from the catalog
+- T30.26. One effort map, with `Effort::Medium`
+- T30.27. `cox doctor`: catalog and price sync row
 - T31.1. `cox-sanitize`: the terminal-text guard in its own crate
 - T31.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 - T31.3. `cox-sandbox`: `sandbox::Policy` and `path::confine`

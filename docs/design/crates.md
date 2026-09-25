@@ -23,7 +23,7 @@ A module stays where it is when it is in a cycle, when it is small with no heavy
 
 ## Target graph
 
-Seventeen new crates (`cox-models` comes from T30.17 U4), twenty-seven in total. The arrows are the new `deps.rs` rules.
+Seventeen new crates (`cox-models` comes from T30.24 (U4)), twenty-seven in total. The arrows are the new `deps.rs` rules.
 
 | Crate | From | Why | Depends on |
 |---|---|---|---|
@@ -35,7 +35,7 @@ Seventeen new crates (`cox-models` comes from T30.17 U4), twenty-seven in total.
 | `cox-patch` | `cox-tools/v4a` (~990) | (c) | protocol |
 | `cox-web` | `cox-tools/web_fetch.rs` | (a) reqwest leaves `cox-tools` | protocol |
 | `cox-permission` | `cox-core/permission` (448) | (b) `Engine`; pure | protocol |
-| `cox-models` | T30.17 U4 + `usage.rs` price table | (d) the catalog for core, provider and doctor; pure | protocol |
+| `cox-models` | T30.24 (U4) + `usage.rs` price table | (d) the catalog for core, provider and doctor; pure | protocol |
 | `cox-tokens` | `cox-provider/tokens.rs` | (a) tiktoken BPE data | protocol |
 | `cox-provider-http` | `http.rs`, `retry.rs`, `sse.rs` (~500) | (d) shared by every wire | protocol |
 | `cox-provider-anthropic` | `anthropic/*` (~2.1k) | (a)(c) typify build step | protocol, models, provider-http |
@@ -78,7 +78,7 @@ Order:
 2. C3 `cox-sandbox`, C4 `cox-syntax`, C5 `cox-search`, C6 `cox-patch`, C7 `cox-web`.
 3. C8 `cox-permission`, C9 `cox-telemetry`, C10 `cox-tokens`.
 4. C11 `cox-provider-testkit`, C12 `cox-provider-http`.
-5. The provider wires after T30.17 U1–U6, so they move once, already unified: C13 anthropic, C14 openai, C15 jev.
+5. The provider wires after T30.21–T30.26 (U1–U6), so they move once, already unified: C13 anthropic, C14 openai, C15 jev.
 6. C16 `cox-config` last. Its `anyhow` becomes a `thiserror` enum, because AGENTS.md keeps `anyhow` in `crates/cox` only.
 
 ## Falsifier

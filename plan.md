@@ -11,6 +11,13 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.13 | todo | P2 | 3 | 0% | |
 | T30.19 | todo | P1 | 2 | 0% | |
 | T30.20 | todo | P1 | 3 | 0% | |
+| T30.21 | todo | P1 | 2 | 0% | |
+| T30.22 | todo | P1 | 3 | 0% | |
+| T30.23 | todo | P1 | 3 | 0% | |
+| T30.24 | todo | P1 | 4 | 0% | |
+| T30.25 | todo | P1 | 3 | 0% | |
+| T30.26 | todo | P1 | 3 | 0% | |
+| T30.27 | todo | P2 | 2 | 0% | |
 | T31.1 | todo | P2 | 2 | 0% | |
 | T31.2 | todo | P2 | 3 | 0% | |
 | T31.3 | todo | P2 | 3 | 0% | |
@@ -681,7 +688,7 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T30.15 LM Studio provider: the chat loop over `/v1/messages`
 
-Depends: — · Size: ~150
+Depends: T30.21–T30.23 (the section is one more `Transport` table; A46) · Size: ~150
 Goal: `--provider lmstudio` works with no hand-written config: cox talks to LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider, with LM Studio's optional auth. Evidence in R§4.3.2: the native `/api/v1/chat` takes no custom tool schemas, and cox's OpenAI Chat path drops tool calls, so Messages is the one working chat transport; T30.14 already ran a one-tool task over it at $0.
 Plan:
 1. `cox-protocol` config: a built-in `[providers.lmstudio]` (`base_url` default `http://localhost:1234`, `api_key_env` default `LM_API_TOKEN`, `model`, `context_window` where `0` means "ask the server" (T30.16), `timeout_s`, `max_retries`); regenerate the committed schema so the drift test passes.
@@ -694,7 +701,7 @@ Out of scope: the native API (T30.16); fixing `openai/chat.rs` (ideas.md).
 
 #### T30.16 LM Studio native API: loaded context, capabilities, load on demand
 
-Depends: T30.15 · Size: ~180
+Depends: T30.15, T30.24–T30.25 (the loaded context is a catalog override; A46) · Size: ~180
 Goal: cox asks LM Studio what it is actually running instead of trusting config: the loaded context length (what compaction must fit — R§4.3.2 found `lms load --context-length 65536` left 251 648 loaded), whether the model was trained for tool use, and whether it is loaded at all; and loads it with the configured context length when it is not.
 Plan:
 1. `cox-provider/src/lmstudio.rs`: hand-written serde types (D3/A40 step 3: no Rust SDK, no published spec) for the subset of `GET /api/v1/models` cox reads (`key`, `max_context_length`, `loaded_instances[].config.context_length`, `capabilities.trained_for_tool_use`, `capabilities.reasoning.allowed_options`) and for `POST /api/v1/models/load` (`model`, `context_length`) with its response; unknown fields ignored. A fixture captured from the live server.
@@ -758,6 +765,85 @@ Plan:
 
 Check: the package's tests pass. `cox-vendor models --check` against the fixture shows no diff. `usage_prices_toml_parses_and_has_all_tier_models` and the config-schema drift test pass.
 Out of scope: A46's catalog crate (U4), which reads what this script writes.
+
+#### T30.21 One key resolver for every provider section
+
+Depends: — · Size: ~80 · Files: `cox-provider/src/http.rs`, `anthropic/mod.rs`, `crates/cox/src/session.rs`
+Goal: every section resolves its key the same way (R§4.3.3, `docs/design/providers.md` § Target shape, item 2).
+Plan:
+1. `http::resolve_key(api_key_env, section)` reads the env var the section names, then the keyring entry `cox/<section>`.
+2. A section marked local (no key required) gets `None` instead of an error.
+3. The Anthropic provider uses its section's `api_key_env`, replacing the hardcoded `ANTHROPIC_API_KEY`.
+4. OpenAI and compatible sections gain the keyring fallback.
+Check:
+- a test that a renamed `providers.anthropic.api_key_env` is honoured;
+- a test that a compatible section falls back to the keyring (mock store);
+- a test that a local section without a key yields no auth header;
+- the existing key tests pass.
+
+#### T30.22 One `Transport` descriptor in every provider section
+
+Depends: T30.21 · Size: ~120 · Files: `cox-protocol/src/config.rs`, the committed config schema, `crates/cox/src/config_load.rs`
+Goal: every `[providers.*]` table, native or compatible, has the same `base_url`, `api_key_env`, `timeout_s` and `max_retries`, through one flattened `Transport` struct (item 1).
+Plan:
+1. Add `Transport` with defaults equal to today's values.
+2. `#[serde(flatten)]` it into the Anthropic, OpenAI, Local, Jev and compatible sections, and drop their duplicate fields.
+3. Regenerate the schema.
+Check:
+- the config-schema drift test passes;
+- `default.toml` and a config written before this change load to the same values (a round-trip test).
+
+#### T30.23 Provider constructors take `&Transport`
+
+Depends: T30.22 · Size: ~150 · Files: `crates/cox/src/session.rs`, `cox-provider/src/openai/chat.rs`, `openai/responses.rs`
+Goal: `backend_for` becomes one lookup from `api` shape to constructor. Chat and Responses read `timeout_s` and `max_retries` from the section instead of `Policy::default()`, and the Local provider stops taking the whole config struct (item 1).
+Check:
+- a wiremock test that a Chat section with `max_retries = 0` makes exactly one attempt on a 529;
+- the existing provider tests pass.
+
+#### T30.24 `cox-models`: one model catalog
+
+Depends: T30.20, T30.23 · Size: ~200 · Files: new crate `crates/cox-models`, `cox-provider/src/usage.rs`, `crates/cox/tests/deps.rs`
+Goal: one pure catalog: model id → context window, max output, efforts, capabilities (tools, adaptive thinking, reasoning-effort parameter) and price (item 3).
+Plan:
+1. Built-in rows are embedded from the files T30.20's script writes.
+2. `[providers.<name>].models` and a user `prices.toml` override them by id.
+3. `PriceTable` moves into the catalog; `Priced` looks prices up through it.
+4. `deps.rs`: `cox-models` depends only on `cox-protocol`, and `cox-core` may depend on it.
+Check:
+- tests for the override order, built-in < config < user file;
+- `usage_prices_toml_parses_and_has_all_tier_models` passes against the catalog.
+
+#### T30.25 `Caps` and adaptive thinking from the catalog
+
+Depends: T30.24 · Size: ~120 · Files: `cox-provider/src/anthropic/mod.rs`, `anthropic/request.rs`, `jev.rs` (and the `400_000` in `session.rs` if it fits; otherwise the next card)
+Goal: delete the `Caps.max_context` literals (`200_000`, `128_000`, `400_000`) and `ADAPTIVE_THINKING_PREFIXES`. Context and "sends adaptive thinking" come from the catalog row (item 3).
+Check:
+- a test that a configured 1M-context Anthropic model reports 1M;
+- the request snapshots are unchanged for the built-in models.
+
+#### T30.26 One effort map, with `Effort::Medium`
+
+Depends: T30.24 · Size: ~180 · Files: `cox-models`, `anthropic/request.rs`, `openai/responses.rs` (Chat's field is added in the same card if it fits, else a follow-up)
+Goal: `effort_for(api, Effort, &caps)` in `cox-models` is the one mapping (item 4).
+- Anthropic: `output_config.effort` plus adaptive thinking.
+- Responses: `reasoning.effort`.
+- Chat: `reasoning_effort`, only when the row declares it. Whether the OpenAI Chat API and LM Studio accept it is checked against their API references and recorded in R§4.3.3.
+- Jev: explicitly `None`.
+
+`Effort` gains `Medium`, and models.dev's `medium` maps to it.
+Check:
+- a table test over api × effort × caps;
+- `clamp_effort` tests pass with `Medium`;
+- request snapshots are unchanged except where `Medium` is new.
+
+#### T30.27 `cox doctor`: catalog and price sync row
+
+Depends: T30.24 · Size: ~60 · Files: `crates/cox/src/doctor.rs`
+Goal: a model reachable from `[tiers.*]` or `[providers.*].models` with no catalog price is a doctor warning that names the model and points at `cox-vendor models` (item 5).
+Check:
+- a doctor test with a config naming an unpriced model;
+- `COX_HOME=/tmp/cox-scratch cox doctor` shows the row as green on the defaults.
 
 ### P31 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
 
@@ -855,21 +941,21 @@ Check: the retry and SSE tests pass unchanged.
 
 #### T31.13 `cox-provider-anthropic`
 
-Depends: T31.12, and A46 U1–U6 if the creator approves A46, so the wire moves once, already unified.
+Depends: T31.12, T30.21–T30.26 (A46), so the wire moves once, already unified.
 Moves: `cox-provider/src/anthropic/*`, `schema/`, `build.rs` (~2.1k).
 Why: dependencies (a) (the typify build step) and size (c).
 Check: the request snapshots are unchanged; the typify build runs only for this crate.
 
 #### T31.14 `cox-provider-openai`
 
-Depends: T31.12, and A46 U1–U6 as in T31.13.
+Depends: T31.12, T30.21–T30.26 as in T31.13.
 Moves: `cox-provider/src/openai/*` (~2.2k).
 Why: dependencies (a) (async-openai) and size (c).
 Check: `async-openai` appears only in this crate's `Cargo.toml`.
 
 #### T31.15 `cox-provider-jev`
 
-Depends: T31.12, and A46 U1–U6 as in T31.13.
+Depends: T31.12, T30.21–T30.26 as in T31.13.
 Moves: `cox-provider/src/jev.rs`.
 Why: size (c).
 Check: the Jev tests pass unchanged.
@@ -955,8 +1041,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A43 §3 P30, T30.15–T30.16 — new cards: a built-in `lmstudio` provider whose chat loop runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider (T30.15), and LM Studio's native `/api/v1/models` and `models/load` for the loaded context length, capabilities and load on demand (T30.16), with hand-written types (D3/A40 step 3). Why: the creator asked for LM Studio's own API as a local provider; R§4.3.2 shows the native chat endpoint takes no custom tool schemas, so the native API serves model state and the chat stays on Messages.
 - A44 §3 P30, T30.17 — new card: one model of providers, models, prices and effort; design first (D15), code only through cards the creator approves. Why: the creator's rule that provider, model, price and effort handling be as unified as possible, and the LM Studio provider (T30.15) should land in that shape.
 - A45 §0 D1, §3 P30, T30.18 — new card: design a finer crate split (D1's ten crates are a floor, not a target). Why: the creator's rule that the project be split into crates as far as possible. Effect: D1 changes only through the amendment T30.18 proposes.
-- A46 §3 P30, T30.15, T30.16 — **proposed, awaiting the creator**: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect on approval: U1–U7 enter `roadmap.md` then §3; T30.15 depends on U1–U3 and T30.16 on U4–U5; T30.13 is unaffected.
-- A47 §0 D1, §3 P31 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; C1–C16 are cards T31.1–T31.16 in the new phase P31; the provider wires (T31.13–T31.15) move after A46 U1–U6 if the creator approves A46.
+- A46 §3 P30, T30.15, T30.16 — approved by the creator: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect: U1–U7 are cards T30.21–T30.27; T30.15 depends on T30.21–T30.23, T30.16 on T30.24–T30.25, T31.13–T31.15 on T30.21–T30.26; T30.13 is unaffected.
+- A47 §0 D1, §3 P31 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from T30.24, A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; C1–C16 are cards T31.1–T31.16 in the new phase P31; the provider wires (T31.13–T31.15) move after T30.21–T30.26 (A46 U1–U6).
 - A48 §3 P30, AGENTS.md — new cards T30.19–T30.20 and a convention: a file no package manager fetches (a vendored API spec, a price or model table, any JSON/YAML data) is produced only by a saved, tested Python script that is re-run to update it; no hand download, no pasted rows. Why: the creator's rule. Effect: the Anthropic spec (T30.19) and the models.dev-derived `prices.toml` rows and `default.toml` model lists (T30.20) get their scripts; A46 U4's embedded catalog rows come from T30.20's script.
 
 ## 7. Risk register
