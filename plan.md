@@ -8,6 +8,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T30.9 | todo | P1 | 3 | 0% | |
 | T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
+| T30.10 | in progress | P2 | 3 | 0% | Claude Code / claude-sonnet-5 |
 
 ## Reference
 
@@ -667,6 +668,24 @@ Goal: one real Terminal-Bench 2.x subset run with cox, inside a $1 budget the cr
 Plan: to be written when claimed: a Harbor installed-agent in `cox_evals.tbench` that copies a Linux `cox` build into the container and passes the key; per-task budget cap so the whole subset stays under $1; check free disk first (11 GB free at the time of writing; TB images are 0.5–2 GB each).
 Done when: `research.md` §5.3 has the TB subset's pass rate, tokens and ledger cost; T30.3 then closes.
 
+#### T30.10 Generated Anthropic wire types (typify)
+
+Model: claude-sonnet-5 · Status: in progress · Depends: - · Size: ~200 (+ schema data) · Priority: P2 · Complexity: 3
+Goal: the Anthropic stream frames are deserialized into Rust types generated from a JSON Schema instead of `serde_json::Value` `.get()` chains, so a field rename or a new required field is a compile-time or schema diff, not a silent `None`. Only the types are generated; the SSE → `ProviderEvent` state machine stays hand-written (D3: own thin provider layer, no SDK). Why not a whole SDK: no Rust generator handles Anthropic's spec end to end (SSE streaming, discriminated unions, beta headers); typify (oxidecomputer, used by progenitor) is the one maintained JSON Schema → serde types generator.
+Plan:
+1. `crates/cox-provider/schema/anthropic-stream.json` (new): a curated JSON Schema subset — the stream events (`message_start`, `content_block_start`/`delta`/`stop`, `message_delta`, `message_stop`, `ping`, `error`), content blocks (`text`, `thinking`, `redacted_thinking`, `tool_use`), deltas (`text_delta`, `input_json_delta`, `thinking_delta`, `signature_delta`) and `usage`. Field names and shapes copied from Anthropic's published OpenAPI spec (source URL in a `$comment`); only the fields cox reads are required, everything else optional, so an additive API change never breaks parsing.
+2. `crates/cox-provider/src/anthropic/wire.rs` (new): `typify::import_types!` over that file, nothing hand-written but the `//!` header.
+3. `stream.rs`: keep the dispatch on the frame's `type` string (unknown events still ignored); each known event body deserializes into its generated type; unknown block/delta types are still ignored exactly as today. Error mapping to `ProviderError::Parse { line }` unchanged.
+4. Deps: `typify` in `[workspace.dependencies]` and `cox-provider`; rows in plan §1.1, `toolchain.md` and the workspace `rust.md`.
+Files: `Cargo.toml`, `crates/cox-provider/Cargo.toml`, the schema, `wire.rs`, `stream.rs`, `anthropic/mod.rs` (one `mod` line). Deviation: 6 files, because the macro needs a manifest entry and a data file; the logic change is only in `stream.rs`.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-provider
+```
+Plus the three workspace commands. Every Anthropic fixture (including `live_tool_use.sse`) replays with unchanged snapshots; a new test proves a frame with an extra unknown field and an unknown block type still parses.
+Done when: `stream.rs` has no `Value::get` chains for the known events, all snapshots are byte-identical, and the dependency is recorded.
+Out of scope: request types (the request builder stays as is), OpenAI providers, fetching the spec at build time.
+
 #### T30.3 Eval run with a verification step
 
 Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
@@ -748,6 +767,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A36 §3 P30, T30.5, T30.3 — new card T30.5 (price every provider call through a `Priced` decorator) ahead of T30.3. Why: T1.7's `ledger_row` was never wired into a production path, so every ledger row costs $0 and budgets never fire; found during T30.4's live check; the creator chose fixing it before the paid eval run. Effect: T30.3 step (3) runs after T30.5; costs recorded before this fix are $0 and stay so (history is append-only).
 - A37 §3 P30, T30.6, T30.3 — new card T30.6 (the Anthropic stream emits `ToolUseEnd` on a tool block's `content_block_stop`) ahead of T30.3. Why: without it every Anthropic tool call is dropped; found by T30.3's first live task; the creator chose fixing it first. Effect: T30.3 step (3) runs after T30.6. `openai/chat.rs` never emits `ToolUseEnd` either; that is a separate, larger fix (interleaved calls by index) proposed to the creator, not part of T30.6.
 - A38 §3 P30, T30.7–T30.9 — the eval scripts become a uv-managed Python package with tests (T30.7, T30.8), and the Terminal-Bench part of T30.3 becomes T30.9 (Harbor agent, colima, $1 budget). Why: the creator asked for the scripts to be a proper package with tests before TB; the old adapter could not run for real. Effect: T30.3 closes after T30.9; `just eval` runs through uv.
+- A39 §3 P30, T30.10 — the Anthropic stream wire types are generated with typify from a curated JSON Schema subset of Anthropic's OpenAPI spec; the SSE → `ProviderEvent` mapping stays hand-written. Why: the creator chose typify-generated types over a hand-written `Value` walk or a full generated SDK (none exists for Rust that handles SSE). Effect: one build-time proc-macro dependency; D3 unchanged.
 
 ## 7. Risk register
 
