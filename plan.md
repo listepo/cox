@@ -7,7 +7,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T22.4 | todo | P1 | 2 | 0% | |
-| T23.4 | todo | P2 | 1 | 0% | |
+| T23.4 | in progress | P2 | 1 | 0% | Claude Code / sonnet |
 | T27.2 | todo | P1 | 2 | 60% | |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
@@ -662,7 +662,8 @@ Out of scope: drag selection inside the TUI (the terminal's own selection covers
 
 #### T23.4 OSC 52 clipboard
 
-Model: sonnet · Status: open · Depends: T23.0 · Size: ~70 · Priority: P2 · Complexity: 1
+Model: sonnet · Status: in progress · Depends: T23.0 · Size: ~70 · Priority: P2 · Complexity: 1
+Execution plan: coordinator decision: no crossterm `osc52` feature (new dependency); emit the escape by hand like OSC 8/9;4 (`term.rs`), gated on `caps.osc52`. `base64` is only transitive (two versions, no direct user) — a tiny local encoder in `term.rs`, tested against known vectors, rather than a new direct dependency. (1) `term.rs`: `copy(text) -> String` writes `ESC ] 52 ; c ; <base64> ESC \`. (2) `keymap.rs`/`commands.rs`: `y`/`Shift+Y` (`copy`/`copy.all`), Context::Idle only (plain letters, empty-composer gate like `?`/help). (3) `state.rs`: `run()` reads the last cell (or the whole transcript) still held in `state.transcript` as plain text (the cell's own string field, not `cells::cell_lines`'s wrapped render) and emits `Cmd::Copy` only when `caps.osc52`, else a Notice cell. (4) `app.rs`: `Cmd::Copy` unconditionally writes the bytes `term::copy` builds (the capability check already happened in `state`). (5) `src/bin/kitty_probe.rs` + `tests/shell.rs`: a `copy` scenario keeps one streaming (not-`done`) cell in `state.transcript` so `y` finds it deterministically, no PTY-timing wait.
 Goal: `y` on a cell in the transcript overlay and `Cmd::Copy` copy through the terminal (works over SSH/tmux) when `caps.osc52`.
 Files: `Cargo.toml`, `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
 Steps: (1) Enable crossterm's `osc52` feature (verified present in 0.29, ledger #30). (2) `app.rs`: `Cmd::Copy(text)` → `execute!(stdout, CopyToClipboard::to_clipboard_from(text))` when `caps.osc52`, else `Notice(Info, "clipboard: terminal does not support OSC 52")`. (3) `state.rs`: in the `Ctrl+O` overlay, `y` copies the selected cell's plain text (already produced by `cells::cell_lines`) and `Y` the whole transcript; status line flashes `copied` for one tick.
