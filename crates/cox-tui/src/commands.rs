@@ -4,6 +4,8 @@
 //! they cannot disagree. Separate from `state` so a test checks a line of
 //! text against an `Action` without a terminal.
 
+use std::time::Duration;
+
 use cox_protocol::types::{Effort, ModelId, PermissionMode, SlashCommand, Submission, Tier};
 
 use crate::keymap::Keymap;
@@ -58,6 +60,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "show an archived tool output in full",
     ),
     ("agents", "/agents", "live cox sessions in this workspace"),
+    (
+        "loop",
+        "/loop <interval> <prompt> [--budget usd] | /loop stop",
+        "repeat a prompt on a timer with its own budget cap",
+    ),
     ("skills", "/skills", "list skills"),
     ("hooks", "/hooks", "list hooks"),
     ("mcp", "/mcp", "MCP servers and their tools"),
@@ -197,6 +204,16 @@ pub enum Action {
     Theme(Option<String>),
     /// Something to tell the user without leaving the TUI.
     Notice(String),
+    /// `/loop <interval> <prompt> [--budget <usd>]` (T27.4): repeat `prompt`
+    /// on `interval` while idle, until `/loop stop`, `Esc` on an empty
+    /// composer, or `budget_usd` (`None`: the session cap) is spent.
+    LoopStart {
+        interval: Duration,
+        prompt: String,
+        budget_usd: Option<f64>,
+    },
+    /// `/loop stop` (T27.4).
+    LoopStop,
     /// `!cmd` / `!!cmd` (T25.3): run `cmd` through the `bash` tool; `share`
     /// lets the output into history.
     Shell {
@@ -267,6 +284,12 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         "todo" => Action::Todo,
         "tasks" => Action::Tasks,
         "agents" => Action::Agents,
+        "loop" => match args.first().map(String::as_str) {
+            Some("stop") => Action::LoopStop,
+            _ => loop_start(&args).unwrap_or_else(|| {
+                Action::Notice("/loop <interval> <prompt> [--budget usd] | /loop stop".into())
+            }),
+        },
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
         "rewind" => Action::Rewind,
@@ -314,6 +337,42 @@ pub fn help(keymap: &Keymap) -> String {
         .iter()
         .map(|(_, usage, what)| format!("{usage:width$}  {what}"));
     keys.chain(commands).collect::<Vec<_>>().join("\n")
+}
+
+/// `/loop <interval> <prompt...> [--budget <usd>]`: `--budget` may sit
+/// anywhere after the interval; `None` when the interval or the prompt is
+/// missing or malformed, which `parse` turns into the usage notice.
+fn loop_start(args: &[String]) -> Option<Action> {
+    let (interval_s, rest) = args.split_first()?;
+    let interval = parse_interval(interval_s)?;
+    let mut words = rest.to_vec();
+    let budget_at = words.iter().position(|a| a == "--budget").and_then(|i| {
+        let value = words.get(i + 1)?.parse::<f64>().ok()?;
+        Some((i, value))
+    });
+    let budget_usd = budget_at.map(|(i, value)| {
+        words.drain(i..=i + 1);
+        value
+    });
+    (!words.is_empty()).then(|| Action::LoopStart {
+        interval,
+        prompt: words.join(" "),
+        budget_usd,
+    })
+}
+
+/// `<n>s` / `<n>m` / `<n>h`, or a bare `<n>` as seconds; `0` is rejected so
+/// a due tick cannot fire on every `Msg::Tick`.
+fn parse_interval(s: &str) -> Option<Duration> {
+    let (digits, mult) = match s.strip_suffix('h') {
+        Some(n) => (n, 3600),
+        None => match s.strip_suffix('m') {
+            Some(n) => (n, 60),
+            None => (s.strip_suffix('s').unwrap_or(s), 1),
+        },
+    };
+    let secs: u64 = digits.parse().ok()?;
+    (secs > 0).then(|| Duration::from_secs(secs * mult))
 }
 
 fn tier_named(s: &str) -> Option<Tier> {
@@ -406,6 +465,32 @@ mod tests {
             doc.contains(&format!("{table}\n")),
             "docs/getting-started.md's keymap table differs from KEYMAP; expected:\n{table}"
         );
+    }
+
+    /// T27.4: `/loop` takes an interval, a prompt and an optional trailing
+    /// `--budget`; `/loop stop` and a malformed call parse separately.
+    #[test]
+    fn loop_parses_interval_prompt_budget_and_stop() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(
+            p("/loop 5m fix the flaky test"),
+            Some(Action::LoopStart {
+                interval: Duration::from_secs(300),
+                prompt: "fix the flaky test".into(),
+                budget_usd: None,
+            })
+        );
+        assert_eq!(
+            p("/loop 30s ping --budget 2.5"),
+            Some(Action::LoopStart {
+                interval: Duration::from_secs(30),
+                prompt: "ping".into(),
+                budget_usd: Some(2.5),
+            })
+        );
+        assert_eq!(p("/loop stop"), Some(Action::LoopStop));
+        assert!(matches!(p("/loop 5m"), Some(Action::Notice(_))));
+        assert!(matches!(p("/loop soon go"), Some(Action::Notice(_))));
     }
 
     /// T25.7: `/autocompact` names the project config layer, the same data

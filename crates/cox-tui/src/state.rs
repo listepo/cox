@@ -272,6 +272,28 @@ pub struct State {
     /// reports at all — off leaves the terminal's own text selection
     /// exactly as if cox never touched the mouse.
     pub mouse: bool,
+    /// `/loop` (T27.4), if one is running. Named `active_loop` rather than
+    /// the card's literal `loop` — a reserved word.
+    pub active_loop: Option<Loop>,
+}
+
+/// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
+/// `State::tick` units (100 ms each — the same clock `cells.rs` already
+/// drives elapsed time and spinners from) rather than the wall clock, so a
+/// replayed `Msg::Tick` stream behaves identically in a test and for real.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loop {
+    pub prompt: String,
+    pub interval_ticks: u64,
+    pub next_at: u64,
+    /// This loop's own spend cap (`/loop`'s `--budget`, default: the
+    /// session cap `status.budget_cap_usd`); `budget.session_usd` still
+    /// applies underneath, enforced by the core as always.
+    pub budget_usd: f64,
+    /// `status.cost_usd` when the loop started, so its own cap tracks only
+    /// what the loop itself has spent, not the whole session.
+    pub started_cost_usd: f64,
+    pub iterations: u32,
 }
 
 /// `tui.notify` (T23.5): when a finished turn, an approval or a question
@@ -452,6 +474,7 @@ impl State {
             cwd: std::path::PathBuf::new(),
             focused: true,
             mouse: false,
+            active_loop: None,
         }
     }
 
@@ -611,7 +634,7 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
         Msg::Event(ev) => on_event(state, ev),
         Msg::Tick => {
             state.tick += 1;
-            Vec::new()
+            loop_tick(state)
         }
         Msg::Resize(..) => Vec::new(),
         Msg::Agents(agents) => {
@@ -885,9 +908,18 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         None => {
+            let esc_idle_empty =
+                key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty();
+            // `/loop`'s stop key (T27.4): the same idle-empty `Esc`, ahead of
+            // Esc-Esc's rewind-timeline role below, so a running loop is
+            // always one `Esc` away.
+            if esc_idle_empty && state.active_loop.take().is_some() {
+                notice(state, Level::Info, "loop stopped".into());
+                return Vec::new();
+            }
             // `Esc Esc` on an idle empty composer opens the rewind timeline
             // (T26.2); a lone Esc still reaches the composer for vim.
-            if key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty() {
+            if esc_idle_empty {
                 let armed = state.esc_armed.take();
                 if armed.is_some_and(|t| state.tick.saturating_sub(t) <= ESC_ESC_TICKS) {
                     return open_rewind(state);
@@ -1178,6 +1210,9 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
                 && command.name == "clear"
             {
                 state.queue.clear();
+                // T27.4: a fresh session should not keep firing an old
+                // loop's prompt into it.
+                state.active_loop = None;
                 return vec![Cmd::Clear];
             }
             return vec![Cmd::Submit(sub)];
@@ -1297,6 +1332,34 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
                 state.theme_rows.clone(),
             )));
         }
+        // T27.4: `interval` is whole seconds (`parse_interval`), so
+        // `* 10` (100 ms ticks) never loses precision; a bare `--budget`
+        // defaults to the session cap the status line already shows.
+        Action::LoopStart {
+            interval,
+            prompt,
+            budget_usd,
+        } => {
+            let interval_ticks = (interval.as_secs() * 10).max(1);
+            let budget_usd = budget_usd.unwrap_or(state.status.budget_cap_usd);
+            state.active_loop = Some(Loop {
+                prompt,
+                interval_ticks,
+                next_at: state.tick + interval_ticks,
+                budget_usd,
+                started_cost_usd: state.status.cost_usd,
+                iterations: 0,
+            });
+            let text = format!(
+                "loop started: every {}s, budget ${budget_usd:.2}",
+                interval.as_secs()
+            );
+            notice(state, Level::Info, text);
+        }
+        Action::LoopStop => match state.active_loop.take() {
+            Some(_) => notice(state, Level::Info, "loop stopped".into()),
+            None => notice(state, Level::Warn, "no loop running".into()),
+        },
     }
     Vec::new()
 }
@@ -1505,6 +1568,36 @@ fn turn_done_cmds(state: &mut State, stop: StopReason) -> Vec<Cmd> {
     }
 }
 
+/// `Msg::Tick` (T27.4): `/loop`'s timer. A due loop fires through the same
+/// path an idle `Enter` uses — a direct `Submit`, not the T25.1 queue,
+/// which only defers while busy — so a turn still running just waits for a
+/// later tick instead of piling up. The loop's own budget is checked first,
+/// so a due-but-over-budget tick stops it instead of firing once more.
+fn loop_tick(state: &mut State) -> Vec<Cmd> {
+    let Some(lp) = state.active_loop.as_ref() else {
+        return Vec::new();
+    };
+    if state.status.cost_usd - lp.started_cost_usd >= lp.budget_usd {
+        state.active_loop = None;
+        notice(state, Level::Warn, "loop stopped: budget reached".into());
+        return Vec::new();
+    }
+    if state.status.busy || state.tick < lp.next_at {
+        return Vec::new();
+    }
+    let prompt = lp.prompt.clone();
+    let interval_ticks = lp.interval_ticks;
+    if let Some(lp) = state.active_loop.as_mut() {
+        lp.next_at = state.tick + interval_ticks;
+        lp.iterations += 1;
+    }
+    vec![Cmd::Submit(Submission::UserTurn {
+        text: prompt,
+        attachments: Vec::new(),
+        confirm_think: false,
+    })]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1521,6 +1614,20 @@ mod tests {
             update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
         }
         update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+    }
+
+    /// Types a slash command and submits it. `/` at column 0 opens the
+    /// palette (`Edit::OpenCommands`) but already left the `/` itself in the
+    /// composer, so — as `clear_command_emits_cmd_clear` established — `Esc`
+    /// closes the palette without losing it, then the rest types normally.
+    fn type_command(state: &mut State, line: &str) -> Vec<Cmd> {
+        let rest = line.strip_prefix('/').unwrap_or(line);
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        for c in rest.chars() {
+            update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)))
     }
 
     #[test]
@@ -1753,6 +1860,59 @@ mod tests {
         assert!(cmds.is_empty());
         assert_eq!(state.composer.text(), "second");
         assert_eq!(state.queue, VecDeque::from(["first".to_string()]));
+    }
+
+    /// T27.4: `/loop`'s timer fires a direct `Submit` (not the T25.1 queue)
+    /// once the session is idle and the tick it scheduled arrives; earlier
+    /// ticks are silent.
+    #[test]
+    fn loop_enqueues_when_due_and_idle() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        // The shortest interval `parse_interval` accepts, 1s = 10 ticks.
+        type_command(&mut state, "/loop 1s go");
+        assert!(state.active_loop.is_some());
+        for _ in 0..9 {
+            assert!(update(&mut state, Msg::Tick).is_empty());
+        }
+        assert_eq!(
+            update(&mut state, Msg::Tick),
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "go".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+    }
+
+    /// T27.4: `/loop stop` and an idle empty-composer `Esc` both end a
+    /// running loop; `Esc` takes it before Esc-Esc's rewind-timeline role.
+    #[test]
+    fn loop_stop_and_esc_both_end_a_running_loop() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        type_command(&mut state, "/loop 1h go");
+        assert!(state.active_loop.is_some());
+        type_command(&mut state, "/loop stop");
+        assert!(state.active_loop.is_none());
+
+        type_command(&mut state, "/loop 1h go");
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert!(state.active_loop.is_none());
+        assert!(
+            state.esc_armed.is_none(),
+            "the stop consumed the Esc, not the Esc-Esc rewind timer"
+        );
+    }
+
+    /// T27.4: once the loop's own spend equals its budget, the next tick
+    /// stops it instead of firing another turn.
+    #[test]
+    fn loop_stops_itself_when_its_own_budget_is_spent() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        type_command(&mut state, "/loop 1s go --budget 1.00");
+        state.status.cost_usd = 1.00;
+        assert_eq!(update(&mut state, Msg::Tick), Vec::new());
+        assert!(state.active_loop.is_none());
     }
 
     /// T22.2: a markdown file command joins the `/` palette after the

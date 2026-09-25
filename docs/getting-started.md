@@ -86,6 +86,14 @@ status line shows `-- NORMAL --`, `-- INSERT --`, `-- VISUAL --` or
 
 Not supported: `.` repeat, macros and registers.
 
+## Loop
+
+`/loop <interval> <prompt> [--budget <usd>]` repeats `prompt` on `interval`
+(`30s`, `5m`, `1h`, or a bare number of seconds) whenever the session is
+idle, until `/loop stop` or `Esc` on an empty composer ends it. `--budget`
+is this loop's own spend cap; leave it out and it defaults to the session
+cap (`budget.session_usd`), which still applies underneath either way.
+
 ## What to read next
 
 | Doc | Contents |
