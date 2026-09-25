@@ -209,13 +209,13 @@ What landed:
   - what is not split and why;
   - the migration order;
   - the falsifier.
-- The creator approved it ("create the tasks for crates.md"). D1 is reworded (A47), and cards T31.1–T31.16 are in the new phase P31.
+- The creator approved it ("create the tasks for crates.md"). D1 is reworded (A47), and cards T32.1–T32.16 are in the new phase P32.
 
 Deviations:
-- The build-time gain is not measured yet: T31.2 records `cargo build --timings` before and after.
-- `cox-models` is A46 U4, not a P31 card.
+- The build-time gain is not measured yet: T32.2 records `cargo build --timings` before and after.
+- `cox-models` is A46 U4, not a P32 card.
 
 Check:
 ```text
-every current crate is split by a P31 card or kept with a reason in crates.md "Not split": cox-core loop, cox-store, cox-ext, cox-mcp, cox-acp, cox-tui TEA core, cox commands
+every current crate is split by a P32 card or kept with a reason in crates.md "Not split": cox-core loop, cox-store, cox-ext, cox-mcp, cox-acp, cox-tui TEA core, cox commands
 ```

@@ -18,22 +18,22 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.25 | todo | P1 | 3 | 0% | |
 | T30.26 | todo | P1 | 3 | 0% | |
 | T30.27 | todo | P2 | 2 | 0% | |
-| T31.1 | todo | P2 | 2 | 0% | |
-| T31.2 | todo | P2 | 3 | 0% | |
-| T31.3 | todo | P2 | 3 | 0% | |
-| T31.4 | todo | P2 | 3 | 0% | |
-| T31.5 | todo | P2 | 2 | 0% | |
-| T31.6 | todo | P2 | 2 | 0% | |
-| T31.7 | todo | P2 | 2 | 0% | |
-| T31.8 | todo | P2 | 2 | 0% | |
-| T31.9 | todo | P2 | 3 | 0% | |
-| T31.10 | todo | P2 | 2 | 0% | |
-| T31.11 | todo | P2 | 2 | 0% | |
-| T31.12 | todo | P2 | 2 | 0% | |
-| T31.13 | todo | P2 | 3 | 0% | |
-| T31.14 | todo | P2 | 3 | 0% | |
-| T31.15 | todo | P2 | 2 | 0% | |
-| T31.16 | todo | P2 | 3 | 0% | |
+| T32.1 | todo | P2 | 2 | 0% | |
+| T32.2 | todo | P2 | 3 | 0% | |
+| T32.3 | todo | P2 | 3 | 0% | |
+| T32.4 | todo | P2 | 3 | 0% | |
+| T32.5 | todo | P2 | 2 | 0% | |
+| T32.6 | todo | P2 | 2 | 0% | |
+| T32.7 | todo | P2 | 2 | 0% | |
+| T32.8 | todo | P2 | 2 | 0% | |
+| T32.9 | todo | P2 | 3 | 0% | |
+| T32.10 | todo | P2 | 2 | 0% | |
+| T32.11 | todo | P2 | 2 | 0% | |
+| T32.12 | todo | P2 | 2 | 0% | |
+| T32.13 | todo | P2 | 3 | 0% | |
+| T32.14 | todo | P2 | 3 | 0% | |
+| T32.15 | todo | P2 | 2 | 0% | |
+| T32.16 | todo | P2 | 3 | 0% | |
 
 ## Reference
 
@@ -845,7 +845,7 @@ Check:
 - a doctor test with a config naming an unpriced model;
 - `COX_HOME=/tmp/cox-scratch cox doctor` shows the row as green on the defaults.
 
-### P31 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
+### P32 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
 
 Every card in this phase:
 
@@ -857,16 +857,16 @@ Every card in this phase:
 No logic changes. At most three crates are touched. Moved lines do not count toward the 200-LOC limit; edited lines do.
 Common check: the three commands in AGENTS.md are green, `deps.rs` has the crate's rule, and the card's own line holds.
 
-#### T31.1 `cox-sanitize`: the terminal-text guard in its own crate
+#### T32.1 `cox-sanitize`: the terminal-text guard in its own crate
 
 Depends: — · Moves: `cox-tui/src/text.rs`.
 Why: guard (b) and reuse (d). `crates/cox/src/plain.rs` imports the whole TUI for `sanitize`.
 Plan: `cox-tui` re-exports `text`; `plain.rs` imports `cox_sanitize`. The AGENTS.md trust list names `cox_sanitize::sanitize`.
 Check: `cargo tree -p cox-sanitize` has no workspace dependency.
 
-#### T31.2 `cox-render`: themes, colour, markdown, diff, SVG and glyphs
+#### T32.2 `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 
-Depends: T31.1 · Moves: `theme.rs`, `color.rs`, `svg.rs`, `markdown.rs`, `diff.rs`, `glyph.rs` from `cox-tui` (~2.6k).
+Depends: T32.1 · Moves: `theme.rs`, `color.rs`, `svg.rs`, `markdown.rs`, `diff.rs`, `glyph.rs` from `cox-tui` (~2.6k).
 Why: dependencies (a), namely syntect, two-face, pulldown-cmark and terminal-colorsaurus.
 Plan:
 1. Before the move, record `cargo build --timings` for two builds: a clean `cox-tui`, and an incremental build after touching `state.rs`.
@@ -876,91 +876,91 @@ Plan:
 
 Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
 
-#### T31.3 `cox-sandbox`: `sandbox::Policy` and `path::confine`
+#### T32.3 `cox-sandbox`: `sandbox::Policy` and `path::confine`
 
 Depends: — · Moves: `cox-tools/src/sandbox/*`, `cox-tools/src/path.rs` (~920).
 Why: dependencies (a) and guard (b).
 Plan: `cox-tools` re-exports `sandbox` and `path`. The AGENTS.md trust list names the new crate.
 Check: landlock and seccompiler appear only in `cox-sandbox/Cargo.toml`.
 
-#### T31.4 `cox-syntax`: tree-sitter and its grammars
+#### T32.4 `cox-syntax`: tree-sitter and its grammars
 
 Depends: — · Moves: `cox-tools/src/outline.rs` and the parser setup from `bash/classify.rs` (one `parse_bash` fn).
 Why: dependencies (a), namely tree-sitter and five grammar crates, each a C build.
 Check: no `tree_sitter*` dependency is left in `cox-tools/Cargo.toml`; the classifier and outline tests are unchanged.
 
-#### T31.5 `cox-search`: grep and glob
+#### T32.5 `cox-search`: grep and glob
 
-Depends: T31.3 · Moves: `cox-tools/src/grep.rs`, `glob.rs` (~870).
+Depends: T32.3 · Moves: `cox-tools/src/grep.rs`, `glob.rs` (~870).
 Why: dependencies (a), namely ignore, grep-searcher, grep-regex and nucleo.
 Check: those four crates appear only in `cox-search/Cargo.toml`. If another tool still uses one of them, the card says so and leaves that dependency shared.
 
-#### T31.6 `cox-patch`: the V4A patch engine
+#### T32.6 `cox-patch`: the V4A patch engine
 
 Depends: — · Moves: `cox-tools/src/v4a/*` (~990).
 Why: size (c), a self-contained leaf.
 Check: the `v4a` tests pass unchanged in the new crate.
 
-#### T31.7 `cox-web`: `web_fetch`
+#### T32.7 `cox-web`: `web_fetch`
 
 Depends: — · Moves: `cox-tools/src/web_fetch.rs`.
 Why: dependencies (a), so reqwest leaves `cox-tools`.
 Check: there is no `reqwest` in `cox-tools/Cargo.toml`.
 
-#### T31.8 `cox-permission`: the permission engine
+#### T32.8 `cox-permission`: the permission engine
 
 Depends: — · Moves: `cox-core/src/permission/*` (448).
 Why: guard (b), and it is pure.
 Plan: `cox-core` re-exports `permission`. In `deps.rs`, `cox-core` may depend on `cox-protocol` and `cox-permission`. The AGENTS.md trust list names the new crate.
 Check: `cox-permission` depends only on `cox-protocol`.
 
-#### T31.9 `cox-telemetry`: tracing setup and the OpenTelemetry stack
+#### T32.9 `cox-telemetry`: tracing setup and the OpenTelemetry stack
 
 Depends: — · Moves: `crates/cox/src/telemetry.rs`.
 Why: dependencies (a), five opentelemetry crates.
 Plan: the `otel` feature moves with it; `cox`'s `otel` forwards to it. Errors become a `thiserror` enum, because `anyhow` stays in `crates/cox` only.
 Check: builds with `--no-default-features` and with defaults are both green.
 
-#### T31.10 `cox-tokens`: token counting
+#### T32.10 `cox-tokens`: token counting
 
 Depends: — · Moves: `cox-provider/src/tokens.rs`.
 Why: dependencies (a), namely tiktoken-rs and its BPE data.
 Check: `tiktoken-rs` appears only in `cox-tokens/Cargo.toml`; the `fixtures/count_tokens` tests pass.
 
-#### T31.11 `cox-provider-testkit`: scripted and replay providers
+#### T32.11 `cox-provider-testkit`: scripted and replay providers
 
 Depends: — · Moves: `cox-provider/src/scripted.rs`, `replay.rs` (~750).
 Why: reuse (d). Every crate's tests use them without needing the real wires.
 Check: each crate takes the testkit as a dev-dependency, or as a normal dependency where a production path uses it today (the card lists which).
 
-#### T31.12 `cox-provider-http`: HTTP, retry, SSE and key resolution
+#### T32.12 `cox-provider-http`: HTTP, retry, SSE and key resolution
 
 Depends: — · Moves: `cox-provider/src/http.rs`, `retry.rs`, `sse.rs` (~500).
 Why: reuse (d), shared by every wire.
 Check: the retry and SSE tests pass unchanged.
 
-#### T31.13 `cox-provider-anthropic`
+#### T32.13 `cox-provider-anthropic`
 
-Depends: T31.12, T30.21–T30.26 (A46), so the wire moves once, already unified.
+Depends: T32.12, T30.21–T30.26 (A46), so the wire moves once, already unified.
 Moves: `cox-provider/src/anthropic/*`, `schema/`, `build.rs` (~2.1k).
 Why: dependencies (a) (the typify build step) and size (c).
 Check: the request snapshots are unchanged; the typify build runs only for this crate.
 
-#### T31.14 `cox-provider-openai`
+#### T32.14 `cox-provider-openai`
 
-Depends: T31.12, T30.21–T30.26 as in T31.13.
+Depends: T32.12, T30.21–T30.26 as in T32.13.
 Moves: `cox-provider/src/openai/*` (~2.2k).
 Why: dependencies (a) (async-openai) and size (c).
 Check: `async-openai` appears only in this crate's `Cargo.toml`.
 
-#### T31.15 `cox-provider-jev`
+#### T32.15 `cox-provider-jev`
 
-Depends: T31.12, T30.21–T30.26 as in T31.13.
+Depends: T32.12, T30.21–T30.26 as in T32.13.
 Moves: `cox-provider/src/jev.rs`.
 Why: size (c).
 Check: the Jev tests pass unchanged.
 
-#### T31.16 `cox-config`: the one config owner
+#### T32.16 `cox-config`: the one config owner
 
 Depends: — · Moves: `crates/cox/src/config_load.rs`, `config_cmd.rs` (~990).
 Why: size (c) and reuse (d). This one crate owns loading, validation, editing and the schema drift test.
@@ -1041,8 +1041,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A43 §3 P30, T30.15–T30.16 — new cards: a built-in `lmstudio` provider whose chat loop runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider (T30.15), and LM Studio's native `/api/v1/models` and `models/load` for the loaded context length, capabilities and load on demand (T30.16), with hand-written types (D3/A40 step 3). Why: the creator asked for LM Studio's own API as a local provider; R§4.3.2 shows the native chat endpoint takes no custom tool schemas, so the native API serves model state and the chat stays on Messages.
 - A44 §3 P30, T30.17 — new card: one model of providers, models, prices and effort; design first (D15), code only through cards the creator approves. Why: the creator's rule that provider, model, price and effort handling be as unified as possible, and the LM Studio provider (T30.15) should land in that shape.
 - A45 §0 D1, §3 P30, T30.18 — new card: design a finer crate split (D1's ten crates are a floor, not a target). Why: the creator's rule that the project be split into crates as far as possible. Effect: D1 changes only through the amendment T30.18 proposes.
-- A46 §3 P30, T30.15, T30.16 — approved by the creator: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect: U1–U7 are cards T30.21–T30.27; T30.15 depends on T30.21–T30.23, T30.16 on T30.24–T30.25, T31.13–T31.15 on T30.21–T30.26; T30.13 is unaffected.
-- A47 §0 D1, §3 P31 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from T30.24, A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; C1–C16 are cards T31.1–T31.16 in the new phase P31; the provider wires (T31.13–T31.15) move after T30.21–T30.26 (A46 U1–U6).
+- A46 §3 P30, T30.15, T30.16 — approved by the creator: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect: U1–U7 are cards T30.21–T30.27; T30.15 depends on T30.21–T30.23, T30.16 on T30.24–T30.25, T32.13–T32.15 on T30.21–T30.26; T30.13 is unaffected.
+- A47 §0 D1, §3 P32 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from T30.24, A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; the phase is P32, not P31, because the unmerged branch `t31-beta-mvp` already uses P31/T31.1–T31.5; C1–C16 are cards T32.1–T32.16 in the new phase P32; the provider wires (T32.13–T32.15) move after T30.21–T30.26 (A46 U1–U6).
 - A48 §3 P30, AGENTS.md — new cards T30.19–T30.20 and a convention: a file no package manager fetches (a vendored API spec, a price or model table, any JSON/YAML data) is produced only by a saved, tested Python script that is re-run to update it; no hand download, no pasted rows. Why: the creator's rule. Effect: the Anthropic spec (T30.19) and the models.dev-derived `prices.toml` rows and `default.toml` model lists (T30.20) get their scripts; A46 U4's embedded catalog rows come from T30.20's script.
 
 ## 7. Risk register

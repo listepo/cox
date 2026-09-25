@@ -61,7 +61,7 @@ After the split:
 - `cox-tui` TEA core (`state`, `app`, `view`, `keymap`, `vim`, `composer`): changes together.
 - `cox`: `doctor`, `stats`, `sessions` and `run` are commands over every crate.
 
-## Migration (each card green on its own; cards T31.1–T31.16 in `plan.md` P31, C*n* = T31.*n*)
+## Migration (each card green on its own; cards T32.1–T32.16 in `plan.md` P32, C*n* = T32.*n*)
 
 Each card does four things:
 
