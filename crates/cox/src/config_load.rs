@@ -416,7 +416,8 @@ fn build_figment(
         // backend a sandbox test asserts (CI sets it globally), so it must
         // not leak into the config tree as `expect.sandbox` either.
         // `COX_PLAIN` and `COX_AX_STARTUP_QUIET_MS` are read by the plain
-        // surface (T29.1) itself. The ignore list matches pre-split keys
+        // surface (T29.1) itself. `COX_KEYRING` switches the OS keyring
+        // off (A49). The ignore list matches pre-split keys
         // (`EXPECT_SANDBOX`, not dotted).
         Env::prefixed("COX_")
             .ignore(&[
@@ -427,6 +428,7 @@ fn build_figment(
                 "expect_sandbox",
                 "plain",
                 "ax_startup_quiet_ms",
+                "keyring",
             ])
             .split("_"),
     ));
@@ -657,6 +659,7 @@ mod tests {
                 ("COX_SCENARIO", Some("/tmp/scenario.toml")),
                 ("COX_PLAIN", Some("1")),
                 ("COX_AX_STARTUP_QUIET_MS", Some("300")),
+                ("COX_KEYRING", Some("off")),
             ],
             || {
                 let cli = parse(&[]);

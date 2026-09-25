@@ -71,8 +71,14 @@ pub(crate) fn resolve_key_with(
     keyring_lookup(section).ok_or(ProviderError::Auth)
 }
 
-/// The real platform keyring entry `cox/<section>`.
+/// The real platform keyring entry `cox/<section>`, or nothing when
+/// `COX_KEYRING=off` (A49): cargo sets that for every test and dev run so a
+/// rebuilt binary never raises a keychain prompt.
 fn platform_keyring(section: &str) -> Option<String> {
+    let switch = std::env::var(cox_protocol::config::KEYRING_ENV).ok();
+    if !cox_protocol::config::keyring_enabled(switch.as_deref()) {
+        return None;
+    }
     keyring::Entry::new("cox", section)
         .and_then(|e| e.get_password())
         .ok()
@@ -204,6 +210,15 @@ mod tests {
         // A control byte can never be a credential: auth problem, not transport.
         assert!(matches!(bearer("a\nb"), Err(ProviderError::Auth)));
         assert!(matches!(api_key("a\nb"), Err(ProviderError::Auth)));
+    }
+
+    /// A49: `.cargo/config.toml` switches the keyring off for every test
+    /// process, so even a lookup that slips past the injected seams finds
+    /// nothing instead of raising a keychain prompt.
+    #[test]
+    fn tests_run_with_the_keyring_switched_off() {
+        let switch = std::env::var(cox_protocol::config::KEYRING_ENV).ok();
+        assert!(!cox_protocol::config::keyring_enabled(switch.as_deref()));
     }
 
     #[test]

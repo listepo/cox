@@ -70,6 +70,23 @@ pub const CHILD_ENV_ALLOWLIST: &[&str] = &[
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "USER", "SHELL",
 ];
 
+/// The env var that turns every OS-keyring read and write off (A49): the
+/// provider key lookup and the MCP OAuth store. The repo's
+/// `.cargo/config.toml` sets it to `off` for everything cargo runs, so a
+/// test or a `cargo run` smoke check never shows a keychain prompt; an
+/// installed `cox` never sees it unless the user sets it.
+pub const KEYRING_ENV: &str = "COX_KEYRING";
+
+/// Whether the keyring may be used, given [`KEYRING_ENV`]'s value: only
+/// `off`, `0` or `false` (any case, trimmed) disable it, so an unset or
+/// misspelt value keeps the documented env-then-keyring behaviour.
+pub fn keyring_enabled(value: Option<&str>) -> bool {
+    !matches!(
+        value.map(|v| v.trim().to_ascii_lowercase()).as_deref(),
+        Some("off" | "0" | "false")
+    )
+}
+
 /// `[core]` (plan.md §1.6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -1177,6 +1194,16 @@ mod tests {
                 max_retries: 4,
             }
         );
+    }
+
+    #[test]
+    fn keyring_is_off_only_for_an_explicit_off_value() {
+        for off in ["off", "OFF", " 0 ", "false", "False"] {
+            assert!(!keyring_enabled(Some(off)), "{off:?} disables it");
+        }
+        for on in [None, Some(""), Some("on"), Some("1"), Some("of")] {
+            assert!(keyring_enabled(on), "{on:?} keeps it");
+        }
     }
 
     #[test]

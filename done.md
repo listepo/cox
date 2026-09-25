@@ -488,3 +488,24 @@ Check:
 - `usage_prices_toml_parses_and_has_all_tier_models` passes in `cox-models`.
 - `cargo nextest run --workspace`: 920 passed, 3 skipped; clippy and fmt clean.
 - `COX_HOME=<tmp> cargo run --bin cox -- doctor` shows `prices: ✓ oldest verified_on 2026-09-02`, as before.
+
+#### T30.29 A keyring switch: no keychain prompt from any cargo run
+
+Why: after T30.28 no test reached the keyring, but smoke runs of the rebuilt binary (`cargo run -- doctor`) still did. Every rebuild has a new code signature, so macOS asked for the login password again. The creator asked for every keyring place to use fakes (A51).
+
+Status: done 2026-09-26
+
+What landed:
+- `cox_protocol::config::KEYRING_ENV` (`COX_KEYRING`) and a pure `keyring_enabled(value)` that is false only for `off`, `0` or `false`.
+- `cox_provider::http::platform_keyring` returns nothing when the switch is off.
+- `cox_mcp::auth` reads find nothing and writes fail with "keyring disabled by COX_KEYRING".
+- The config env layer ignores `COX_KEYRING`.
+- `.cargo/config.toml` `[env]` sets `COX_KEYRING = "off"` for `cargo run`, `cargo test` and `cargo nextest`. A value already set in the shell wins. Release builds and installed binaries are unaffected, because the switch is read at run time.
+- Docs: the AGENTS.md rule and doctor command, and `docs/design/providers.md` item 2 "Implemented (T30.29)".
+
+Check:
+- `keyring_is_off_only_for_an_explicit_off_value` and `tests_run_with_the_keyring_switched_off` pass. The second proves that nextest applies the cargo `[env]`.
+- `config_ignores_test_only_cox_env_vars` passes with `COX_KEYRING=off`.
+- `no_test_reads_the_real_keychain` passes.
+- `env -u ANTHROPIC_API_KEY COX_HOME=<tmp> cargo run --bin cox -- doctor` finishes with no keychain prompt and reports the key as missing.
+- `cargo nextest run --workspace`: 920 passed, 3 skipped; clippy and fmt clean.
