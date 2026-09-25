@@ -111,6 +111,8 @@ Routing (`Router::pick`) and costing (`Priced`) are already single and stay that
    `clamp_effort` keeps enforcing the model's supported levels, now from the catalog. `Effort` gains `Medium` so models.dev's four levels map without loss.
 5. **One sync check.** `cox doctor` reports a routable model with no catalog price, instead of relying only on the unit test.
 
+   Implemented (T30.27): `Config::configured_model_ids` (`crates/cox-protocol/src/config.rs`) is the one enumeration of "every model reachable without touching a price file" — each `[tiers.*].model`, `providers.local.model`/`providers.typesafe.model`, every native and compatible section's `models` list, and every `[providers.<custom>]` section's own default `model` — extracted from `cox_models::price`'s `usage_prices_cover_every_configured_model` test so `cox doctor`'s new `catalog prices` row (`crates/cox/src/doctor.rs`) and that test can never disagree about what "configured" means. The row builds a `cox_models::Catalog::load(config, None)` and warns, naming every unpriced id and pointing at `uv run --project scripts/vendor cox-vendor models`, when one has no `ModelRow.price`; on `default.toml` the row is `ok`, since `usage_prices_cover_every_configured_model` already guarantees every built-in id is priced.
+
 **Kept, with reasons.**
 
 - `ModelId` stays a plain string: gateway ids pass through verbatim, and nothing needs to parse `vendor/model`.

@@ -269,7 +269,8 @@ An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` 
 | Other agents | `cox mcp [--allow-write] [--tools a,b]` | serves built-in tools, not the loop (see `docs/compat.md`) |
 
 Useful companions: `cox sessions --grep <q>` (find a rollout),
-`cox doctor` (keys, sandbox, stale price rows), `cox config show
+`cox doctor` (keys, sandbox, stale price rows, a configured model with no
+catalog price), `cox config show
 --sources` (which file each key came from), `cox ext list` (which
 instruction files, skills, commands, agents, hooks, MCP servers are in
 effect).

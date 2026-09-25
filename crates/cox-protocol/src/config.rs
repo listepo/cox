@@ -63,6 +63,48 @@ pub struct Config {
     pub record: RecordConfig,
 }
 
+impl Config {
+    /// Every model id reachable without touching a price file: each
+    /// `[tiers.*].model`, the single-model sections' own default
+    /// (`providers.local.model`, `providers.typesafe.model`), and every
+    /// `[providers.*].models` list entry — native and compatible, including
+    /// each `[providers.<custom>]` section's own default `model`. Sorted
+    /// and deduplicated.
+    ///
+    /// The one enumeration of "every configured model", shared by
+    /// `cox_models::price`'s `usage_prices_cover_every_configured_model`
+    /// test and `cox doctor`'s catalog/price sync row (T30.27,
+    /// `docs/design/providers.md` § Target shape item 5), so the two
+    /// checks can never disagree about what "configured" means.
+    pub fn configured_model_ids(&self) -> Vec<String> {
+        let mut ids = vec![
+            self.tiers.cheap.model.clone(),
+            self.tiers.code.model.clone(),
+            self.tiers.think.model.clone(),
+            self.providers.local.model.clone(),
+            self.providers.typesafe.model.clone(),
+        ];
+        for section in [
+            &self.providers.anthropic.models,
+            &self.providers.openai.models,
+            &self.providers.local.models,
+            &self.providers.typesafe.models,
+        ] {
+            ids.extend(section.iter().map(|m| m.id.clone()));
+        }
+        for custom in self.providers.custom.values() {
+            ids.push(custom.model.clone());
+            ids.extend(custom.models.iter().map(|m| m.id.clone()));
+        }
+        // An unset default `model` (a compatible section that only ever
+        // routes through its `models` list) is not a model id to check.
+        ids.retain(|id| !id.is_empty());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+}
+
 /// What a child process cox spawns (`bash`, hooks, stdio MCP servers)
 /// inherits from cox's environment; everything else — API keys above all —
 /// stays behind (D14).

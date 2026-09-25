@@ -20,6 +20,7 @@ otel = [
 clap = { workspace = true }
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 cox-core = { path = "../cox-core", version = "0.1.2" }
+cox-models = { path = "../cox-models", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 cox-tools = { path = "../cox-tools", version = "0.1.2" }
 cox-mcp = { path = "../cox-mcp", version = "0.1.2" }

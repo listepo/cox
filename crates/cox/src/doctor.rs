@@ -1,7 +1,8 @@
 //! `cox doctor`: diagnostics to understand why cox will or will not work on
 //! this machine. Checks: toolchain version, `COX_HOME` writable, db opens,
 //! API keys per configured provider, sandbox backend, `git` on PATH, terminal
-//! capabilities (TERM, true colour, size), prices table age, `.claude/settings.json`,
+//! capabilities (TERM, true colour, size), prices table age, whether every
+//! configured model has a catalog price (T30.27), `.claude/settings.json`,
 //! and one OAuth row per HTTP MCP server (T22.5).
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
 
@@ -101,6 +102,10 @@ pub fn run(
 
     // Prices table age.
     results.push(check_prices());
+
+    // Every model reachable from [tiers.*] or [providers.*].models has a
+    // catalog price (T30.27).
+    results.push(check_catalog_prices(config));
 
     // .claude/settings.json found.
     results.push(check_claude_settings());
@@ -513,6 +518,57 @@ fn check_prices() -> CheckResult {
     prices_status(table.prices(), today_ymd())
 }
 
+const CATALOG_PRICES_FIX: &str = "run `uv run --project scripts/vendor cox-vendor models` to add a price row for these models (plan.md A48)";
+
+/// [`check_catalog_prices`]'s body with the catalog already built, so a
+/// test can hand it a small `ids` list instead of a whole `Config`
+/// (`docs/design/providers.md` § Target shape item 5, T30.27).
+fn catalog_prices_status(catalog: &cox_models::Catalog, ids: &[String]) -> CheckResult {
+    let mut unpriced: Vec<&str> = ids
+        .iter()
+        .filter(|id| {
+            catalog
+                .get(id.as_str())
+                .is_none_or(|row| row.price.is_none())
+        })
+        .map(String::as_str)
+        .collect();
+    unpriced.sort();
+    unpriced.dedup();
+    if unpriced.is_empty() {
+        return CheckResult::ok(
+            "catalog prices",
+            format!("{} configured models priced", ids.len()),
+        );
+    }
+    CheckResult::warn(
+        "catalog prices",
+        format!("no catalog price for: {}", unpriced.join(", ")),
+        CATALOG_PRICES_FIX.to_string(),
+    )
+}
+
+/// A model reachable from `[tiers.*]` or `[providers.*].models` — every
+/// section, native and compatible — with no catalog price: the sync check
+/// between a user's own config and `prices.toml`
+/// (`docs/design/providers.md` § Target shape item 5, T30.27).
+/// `Config::configured_model_ids` (cox-protocol) is the same model
+/// enumeration `cox_models::price`'s `usage_prices_cover_every_configured_model`
+/// test uses for `default.toml`, so the two checks can never disagree; this
+/// row also covers a user's own `[providers.*]` config, which that test
+/// never sees.
+fn check_catalog_prices(config: &cox_protocol::Config) -> CheckResult {
+    let ids = config.configured_model_ids();
+    match cox_models::Catalog::load(config, None) {
+        Ok(catalog) => catalog_prices_status(&catalog, &ids),
+        Err(e) => CheckResult::fail(
+            "catalog prices",
+            format!("could not build model catalog: {e}"),
+            "check [providers.*] for a malformed models entry".to_string(),
+        ),
+    }
+}
+
 /// T25.5: the same map the TUI would build; a warning for every entry it
 /// skipped and every key two user bindings both claim in one context.
 fn check_keybindings(cox_home: &std::path::Path, claude_home: &std::path::Path) -> CheckResult {
@@ -779,5 +835,53 @@ mod tests {
         assert!(result.detail.contains("2020-01-01"));
         assert!(result.detail.contains("days old"));
         assert_eq!(result.fix, PRICES_FIX);
+    }
+
+    #[test]
+    fn catalog_prices_check_is_ok_on_the_default_config() {
+        let config = cox_protocol::Config::default();
+        let result = check_catalog_prices(&config);
+        assert_eq!(result.status, "ok", "{}", result.detail);
+    }
+
+    #[test]
+    fn catalog_prices_check_warns_and_names_an_unpriced_model() {
+        // A model reachable from `[providers.*].models` with no row in
+        // `prices.toml` (built-in or user) is a warning, not a failure —
+        // an unpriced model still runs, just costed 0 and `estimated`
+        // (`cox_models::PriceTable::apply`).
+        let mut config = cox_protocol::Config::default();
+        config
+            .providers
+            .anthropic
+            .models
+            .push(cox_protocol::config::ProviderModel {
+                id: "claude-doctor-test-unpriced".into(),
+                context_window: 100_000,
+                efforts: vec![],
+            });
+        let result = check_catalog_prices(&config);
+        assert_eq!(result.status, "warn", "{}", result.detail);
+        assert!(
+            result.detail.contains("claude-doctor-test-unpriced"),
+            "{}",
+            result.detail
+        );
+        assert_eq!(result.fix, CATALOG_PRICES_FIX);
+    }
+
+    #[test]
+    fn catalog_prices_check_names_every_unpriced_model_reachable_from_tiers() {
+        // `[tiers.*].model` is the other reachability path the goal names,
+        // alongside `[providers.*].models`.
+        let mut config = cox_protocol::Config::default();
+        config.tiers.cheap.model = "claude-doctor-test-tier-unpriced".into();
+        let result = check_catalog_prices(&config);
+        assert_eq!(result.status, "warn", "{}", result.detail);
+        assert!(
+            result.detail.contains("claude-doctor-test-tier-unpriced"),
+            "{}",
+            result.detail
+        );
     }
 }
