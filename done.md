@@ -4098,3 +4098,33 @@ clean
 $ mise exec -- cargo fmt --check
 clean
 ```
+
+#### T27.4 `/loop`
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T25.1 · Size: ~120 (landed ~250) · Priority: P3 · Complexity: 2
+Goal: `/loop <interval> <prompt>` repeats a turn on a timer with its own budget cap; `cox run --loop <interval>` for scripts.
+Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) `State.loop: Option<Loop { prompt, interval, next_at, budget_usd, spent }>`; `Msg::Tick` enqueues the prompt (T25.1 queue) when due and the session is idle. (2) Status line shows `↻ 4m12s`; `/loop stop` or `Esc` on an empty composer stops it; `budget.session_usd` still applies on top. (3) `cox run --loop 5m -p "…" --max-iterations N` in `run.rs` (headless, exit 0 after N or budget).
+Done when: both tests pass and `docs/getting-started.md` documents the command.
+Out of scope: cloud schedules.
+Execution plan: budget — `/loop`'s own `budget_usd` defaults to the existing session cap the TUI already carries (`state.status.budget_cap_usd`, i.e. `budget.session_usd`), overridable with an optional trailing `--budget <usd>` token; no config schema change. (1) `commands.rs`: `Action::LoopStart { interval: Duration, prompt: String, budget_usd: Option<f64> }` and `Action::LoopStop`; `parse()` gains a `"loop"` arm (`/loop stop`, or `<interval> <prompt...> [--budget <usd>]` via a small `parse_interval` — `<n>s|m|h` or a bare `<n>` as seconds) plus a `COMMANDS` row; `/help`/the palette pick it up for free. (2) `state.rs`: `pub struct Loop { prompt, interval_ticks: u64, next_at: u64, budget_usd: f64, started_cost_usd: f64, iterations: u32 }` (ticks, not `Duration` — ties into `state.tick`, the existing 100 ms clock `cells.rs` already drives elapsed time from, so a test never sleeps); `State.active_loop: Option<Loop>` (`loop` is a Rust keyword, so the card's literal field name is not legal). `step()`'s `Msg::Tick` arm calls a new `loop_tick` after incrementing `state.tick`: stops the loop and notices if `status.cost_usd - started_cost_usd >= budget_usd`, else fires `Cmd::Submit(Submission::UserTurn)` directly (idle-only — same path a direct `Enter` uses, not the T25.1 queue, which only defers while busy) once `tick >= next_at`. `act()` gains `Action::LoopStart`/`Action::LoopStop` arms; `on_key`'s idle-empty-composer `Esc` branch stops an active loop before its existing Esc-Esc-opens-rewind role. (3) `docs/getting-started.md`: a short `## Loop` section.
+
+Split (plan.md §2 — Check cannot pass within ≤3 files): headless `cox run --loop` needs both `crates/cox/src/cli.rs` (new `RunArgs` flags) and `crates/cox/src/run.rs`, which together with the two TUI files above is 4 source files, over the task's cap. This task landed the TUI half only; the headless half moved to a new follow-up card **T27.6** (§6 A31).
+
+What landed (commit `T27.4: /loop`): `crates/cox-tui/src/commands.rs` — `Action::LoopStart { interval, prompt, budget_usd }` and `Action::LoopStop`; `parse()`'s `"loop"` arm dispatches `/loop stop` or hands off to `loop_start`, which splits the interval token (`parse_interval`: `<n>s|m|h`, or a bare `<n>` as seconds, `0` rejected) from the prompt words and pulls an optional trailing `--budget <usd>` out of them; a `loop` row joined `COMMANDS` so `/help` and the palette list it for free. `crates/cox-tui/src/state.rs` — `pub struct Loop` (ticks-based `interval_ticks`/`next_at`, `budget_usd`, `started_cost_usd`, `iterations`) and `State.active_loop: Option<Loop>`; `step()`'s `Msg::Tick` arm calls the new `loop_tick`, which stops the loop (with a notice) once `status.cost_usd - started_cost_usd >= budget_usd`, else fires a direct `Cmd::Submit(Submission::UserTurn)` — not the T25.1 queue, which only defers while busy — once `state.tick >= next_at`; `act()` gained the `LoopStart`/`LoopStop` arms (the latter also reachable via the new idle-empty-composer `Esc` branch in `on_key`, which now runs ahead of the existing Esc-Esc-opens-rewind check so a running loop is always one `Esc` away); `/clear` also clears `active_loop`, matching its existing queue-clear. `docs/getting-started.md` gained a `## Loop` section. Landed ~250 lines against the card's ~120 estimate — four tests (`loop_enqueues_when_due_and_idle` plus `loop_parses_interval_prompt_budget_and_stop`, `loop_stop_and_esc_both_end_a_running_loop`, `loop_stops_itself_when_its_own_budget_is_spent`) and their doc comments are most of the overshoot, the same shape prior overshoot notes in this file describe. Deviations: `State.active_loop` instead of the card's literal `State.loop` (`loop` is a Rust keyword); the card's status-line `↻ 4m12s` segment is not implemented — it needs `crates/cox-tui/src/status.rs` (a fourth file over the ≤3-file cap) plus a matching `docs/getting-started.md` status-line-segment-order update, neither of which any `Check` test requires, so it stayed out rather than forcing another split; a running loop is currently silent between `/loop`'s own start/stop notices. Adding it is a small, self-contained follow-up (not filed as a card, since it is cosmetic and no falsifier depends on it). Discovered while implementing: typing a slash command through real key events (as opposed to calling `commands::parse` directly) must open-then-`Esc`-close the `/` palette first — `clear_command_emits_cmd_clear`'s existing comment already named this; the new tests' `type_command` test helper follows the same pattern. `cargo insta accept` picked up the expected `screen_help_overlay` snapshot diff (the new `/loop` row) and `just screenshots` regenerated the one affected `docs/screenshots/help_overlay.svg`; no other screenshot changed.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui loop_enqueues_when_due_and_idle
+Summary: 1 test run: 1 passed
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace --no-fail-fast
+Summary: 851 tests run: 851 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+$ COX_HOME=<scratch> mise exec -- cargo run -p cox -- doctor
+unaffected (T27.4 only changed the interactive TUI session path; no `run.rs`/`cli.rs` flags this task)
+```
+
+`cox run --loop <interval> -p "…" --max-iterations N` (the card's headless half, and its `run_loop_stops_after_max_iterations` Check) is not implemented in this commit — see T27.6.

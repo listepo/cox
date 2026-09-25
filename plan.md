@@ -7,7 +7,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T27.4 | in progress | P3 | 2 | 0% | Claude Code / claude-sonnet-5 |
 | T27.5 | todo | P2 | 2 | 0% | |
 | T27.6 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
@@ -670,24 +669,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
 
 ### P27 — Agents you can see (goal: no "raw scaffolding noise")
-
-#### T27.4 `/loop`
-
-Model: claude-sonnet-5 · Status: in progress · Depends: T25.1 · Size: ~120 · Priority: P3 · Complexity: 2
-Goal: `/loop <interval> <prompt>` repeats a turn on a timer with its own budget cap; `cox run --loop <interval>` for scripts.
-Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`.
-Steps: (1) `State.loop: Option<Loop { prompt, interval, next_at, budget_usd, spent }>`; `Msg::Tick` enqueues the prompt (T25.1 queue) when due and the session is idle. (2) Status line shows `↻ 4m12s`; `/loop stop` or `Esc` on an empty composer stops it; `budget.session_usd` still applies on top. (3) `cox run --loop 5m -p "…" --max-iterations N` in `run.rs` (headless, exit 0 after N or budget).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui loop_enqueues_when_due_and_idle
-mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
-```
-Done when: both tests pass and `docs/getting-started.md` documents the command.
-Out of scope: cloud schedules.
-
-Execution plan: budget — `/loop`'s own `budget_usd` defaults to the existing session cap the TUI already carries (`state.status.budget_cap_usd`, i.e. `budget.session_usd`), overridable with an optional trailing `--budget <usd>` token; no config schema change. (1) `commands.rs`: `Action::LoopStart { interval: Duration, prompt: String, budget_usd: Option<f64> }` and `Action::LoopStop`; `parse()` gains a `"loop"` arm (`/loop stop`, or `<interval> <prompt...> [--budget <usd>]` via a small `parse_interval` — `<n>s|m|h` or a bare `<n>` as seconds) plus a `COMMANDS` row; `/help`/the palette pick it up for free. (2) `state.rs`: `pub struct Loop { prompt, interval_ticks: u64, next_at: u64, budget_usd: f64, started_cost_usd: f64, iterations: u32 }` (ticks, not `Duration` — ties into `state.tick`, the existing 100 ms clock `cells.rs` already drives elapsed time from, so a test never sleeps); `State.active_loop: Option<Loop>` (`loop` is a Rust keyword, so the card's literal field name is not legal — this is the one deviation from the card's spelling). `step()`'s `Msg::Tick` arm calls a new `loop_tick` after incrementing `state.tick`: stops the loop and notices if `status.cost_usd - started_cost_usd >= budget_usd`, else fires `Cmd::Submit(Submission::UserTurn)` directly (idle-only — same path a direct `Enter` uses, not the T25.1 queue, which only defers while busy) once `tick >= next_at`. `act()` gains `Action::LoopStart`/`Action::LoopStop` arms; `on_key`'s idle-empty-composer `Esc` branch stops an active loop before its existing Esc-Esc-opens-rewind role. Tests: `loop_enqueues_when_due_and_idle` (mandated), plus `loop_stop_action_clears_it`, `esc_on_empty_composer_stops_a_running_loop_first`, `loop_stops_itself_when_its_own_budget_is_spent`. (3) `docs/getting-started.md`: a short `## Loop` section. Verify with the Check above plus the full gate (`nextest run --workspace`, `clippy -D warnings`, `fmt --check`) under `CARGO_INCREMENTAL=0`.
-
-Split (plan.md §2 — Check cannot pass within ≤3 files): headless `cox run --loop` needs both `crates/cox/src/cli.rs` (new `RunArgs` flags: `--loop <interval>`, `--max-iterations <N>`) and `crates/cox/src/run.rs`, which together with the two TUI files above is 4 source files, over the task's cap. This task lands the TUI half only (`commands.rs` + `state.rs`, 2 files, comfortably inside the budget); the headless half moves to a new follow-up card **T27.6** (§6 amendment).
 
 #### T27.6 `cox run --loop`
 
