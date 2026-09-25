@@ -54,8 +54,8 @@ fn fmt_plain_value(v: &JsonValue) -> String {
 }
 
 /// `cox config show [--sources]`.
-pub fn show(loaded: &LoadedConfig, with_sources: bool) {
-    let json = serde_json::to_value(&loaded.config).expect("Config always serializes");
+pub fn show(loaded: &LoadedConfig, with_sources: bool) -> anyhow::Result<()> {
+    let json = serde_json::to_value(&loaded.config)?;
     let mut leaves = Vec::new();
     json_leaves(&json, "", &mut leaves);
     leaves.sort_by(|a, b| a.0.cmp(&b.0));
@@ -67,6 +67,7 @@ pub fn show(loaded: &LoadedConfig, with_sources: bool) {
             println!("{key} = {rendered}");
         }
     }
+    Ok(())
 }
 
 /// `cox config get <key>`. `None` if the key doesn't exist in the schema.

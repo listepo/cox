@@ -132,8 +132,7 @@ fn run_config(cwd: &std::path::Path, cli: &Cli, action: &ConfigAction) -> anyhow
     match action {
         ConfigAction::Show { sources } => {
             let loaded = config_load::load(cwd, cli)?;
-            config_cmd::show(&loaded, *sources);
-            Ok(())
+            config_cmd::show(&loaded, *sources)
         }
         ConfigAction::Get { key } => {
             let loaded = config_load::load(cwd, cli)?;

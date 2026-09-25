@@ -151,24 +151,30 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
 
 /// Sets `root[dotted.path] = value`, creating intermediate objects as needed.
 fn set_dotted(root: &mut JsonValue, dotted: &str, value: JsonValue) {
-    let mut cur = root;
     let parts: Vec<&str> = dotted.split('.').collect();
-    for part in &parts[..parts.len() - 1] {
-        if !cur.is_object() {
-            *cur = JsonValue::Object(Default::default());
+    set_path(root, &parts, value);
+}
+
+/// Walks `parts`, replacing any non-object on the way with an empty object.
+fn set_path(node: &mut JsonValue, parts: &[&str], value: JsonValue) {
+    if !node.is_object() {
+        *node = JsonValue::Object(Default::default());
+    }
+    let JsonValue::Object(map) = node else {
+        return;
+    };
+    match parts {
+        [] => {}
+        [leaf] => {
+            map.insert((*leaf).to_string(), value);
         }
-        cur = cur
-            .as_object_mut()
-            .expect("just ensured object")
-            .entry(part.to_string())
-            .or_insert_with(|| JsonValue::Object(Default::default()));
+        [head, rest @ ..] => {
+            let child = map
+                .entry((*head).to_string())
+                .or_insert_with(|| JsonValue::Object(Default::default()));
+            set_path(child, rest, value);
+        }
     }
-    if !cur.is_object() {
-        *cur = JsonValue::Object(Default::default());
-    }
-    cur.as_object_mut()
-        .expect("just ensured object")
-        .insert(parts[parts.len() - 1].to_string(), value);
 }
 
 /// Builds the sparse CLI-flag override tree (only fields the user actually
