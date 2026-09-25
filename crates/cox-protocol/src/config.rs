@@ -1002,7 +1002,7 @@ mod tests {
         let pro = cfg.providers.models_for("deepseek")[1].clone();
         assert_eq!(pro.id, "deepseek-v4-pro");
         assert_eq!(pro.context_window, 1_000_000);
-        assert_eq!(pro.efforts, vec![Effort::High, Effort::Xhigh]);
+        assert_eq!(pro.efforts, vec![Effort::Low, Effort::High, Effort::Xhigh]);
     }
 
     #[test]

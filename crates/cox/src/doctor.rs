@@ -347,7 +347,8 @@ fn check_terminal(tui_theme: &str, tui_caps: &HashMap<String, bool>) -> CheckRes
 }
 
 const PRICES_STALE_DAYS: u32 = 90;
-const PRICES_FIX: &str = "update crates/cox-provider/prices.toml from the official page";
+const PRICES_FIX: &str =
+    "regenerate crates/cox-provider/prices.toml with `just vendor models` (plan.md A48)";
 
 /// `mcp auth <name>`: `ok (expires in 3h)`, `ok (no expiry)`, `expired` or
 /// `none`. `none` is fine — the server may not ask for a login at all.

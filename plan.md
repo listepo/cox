@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P2 | 3 | 0% | |
-| T30.20 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T30.22 | todo | P1 | 3 | 0% | |
 | T30.23 | todo | P1 | 3 | 0% | |
 | T30.24 | todo | P1 | 4 | 0% | |
@@ -726,25 +725,6 @@ Plan:
 Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
-
-#### T30.20 Vendored data through saved scripts: prices and model lists from models.dev
-
-Depends: T30.19 · Size: ~200 Python + tests
-Goal: the rows in `crates/cox-provider/prices.toml` and the `[providers.*].models` lists in `crates/cox-protocol/default.toml` were copied by hand from models.dev (see the `prices.toml` header). They come from a script instead, so updating them is one command.
-Plan:
-1. `cox-vendor models` reads models.dev's public API. Check the endpoint URL and shape against models.dev's own docs and record them in R§4.3.3.
-2. The command regenerates the price rows for the providers and model ids cox lists. It then rewrites the `models` arrays (id, context window, efforts mapped as in `docs/design/providers.md`) in `default.toml` with a comment-preserving TOML editor, leaving every other byte as it is.
-3. The header of `prices.toml` records the source URL and the date.
-4. `--check` prints the diff without writing.
-5. `cox doctor`'s `PRICES_FIX` hint points at the command.
-6. Tests run over a recorded models.dev subset fixture:
-   - rows generated;
-   - comments in `default.toml` kept;
-   - an unknown id reported, not dropped;
-   - idempotent.
-
-Check: the package's tests pass. `cox-vendor models --check` against the fixture shows no diff. `usage_prices_toml_parses_and_has_all_tier_models` and the config-schema drift test pass.
-Out of scope: A46's catalog crate (U4), which reads what this script writes.
 
 #### T30.22 One `Transport` descriptor in every provider section
 

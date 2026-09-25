@@ -212,6 +212,8 @@ The source for every row is the repository itself, at the commit named in the he
 | Usage | `types.rs` `Usage`; `anthropic/stream.rs:255,316`; `chat.rs:406`; `responses.rs:454` | There is one struct. | Only Anthropic fills `cache_write_tokens`. The Chat and Responses APIs do not bill cache writes, so 0 is correct there. |
 | Model id and routing | `types.rs:979` `ModelId(String)`; `cli.rs:28-36`; `config_load.rs:113-117,186-196`; `router.rs:88-157` | `Router::pick` resolves tier → provider → model → effort in one place. | `--provider`/`--model` retarget only the `code` tier. Nothing parses a `vendor/model` id, although `ProviderModel.id` documents the form for gateways. |
 
+**models.dev registry (T30.20, checked 2026-09-25).** `GET https://models.dev/api.json` returns JSON with no key and no pagination: 223 providers. The default urllib User-Agent gets HTTP 403, so the script sends its own. Shape: `{provider_id: {models: {model_id: {limit: {context, output}, cost: {input, output, cache_read, cache_write} (USD/MTok, absent = 0), reasoning_options: [{type: "effort", values: [...]} | {type: "toggle"} | …]}}}}`. Two cox section names differ from models.dev ids: `moonshot` → `moonshotai` and `z-ai` → `zai`. `cox-vendor models` (`scripts/vendor/src/cox_vendor/models.py`) regenerates `prices.toml` rows and `default.toml` `models` arrays from it.
+
 Conclusions for the design (`docs/design/providers.md` § Target shape):
 
 1. Two pieces are already unified and stay as they are: the router's resolution and the `Priced` cost path.

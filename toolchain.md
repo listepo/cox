@@ -125,3 +125,4 @@ Programs the project uses and the direct packages from its manifests.
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
 | pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the vendor package |
+| tomlkit | local | https://github.com/sdispater/tomlkit | Comment-preserving TOML edits for `cox-vendor models` (T30.20) |

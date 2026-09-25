@@ -10,9 +10,22 @@ produced by a saved, tested Python script here and re-run to update it.
 ```bash
 uv run --project scripts/vendor cox-vendor anthropic-spec           # fetch, validate, write
 uv run --project scripts/vendor cox-vendor anthropic-spec --check   # report a diff, write nothing, exit 1 if stale
+
+uv run --project scripts/vendor cox-vendor models           # regenerate prices.toml + default.toml from models.dev
+uv run --project scripts/vendor cox-vendor models --check   # report a diff, write nothing, exit 1 if stale
 ```
 
-Or through the task runner: `just vendor anthropic-spec`, `just vendor anthropic-spec --check`.
+`models` (T30.20) regenerates the `[[model]]` rows of
+`crates/cox-provider/prices.toml` and the `[providers.*].models` arrays of
+`crates/cox-protocol/default.toml` from `https://models.dev/api.json`. It
+only ever updates ids the two files already list — an id models.dev
+doesn't have, or whose provider section has no models.dev counterpart
+(`local`, `typesafe`), is reported on stdout and left unchanged, never
+dropped. Anthropic's four native rows are cross-checked against models.dev
+but never overwritten from it (the vendor pricing page outranks a mirror);
+a difference is reported for a human to re-verify by hand.
+
+Or through the task runner: `just vendor anthropic-spec`, `just vendor anthropic-spec --check`, `just vendor models --check`.
 
 ## Adding a vendored file
 

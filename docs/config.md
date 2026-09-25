@@ -51,7 +51,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `fallbacks` = `true` — fallbacks: "default" + beta header
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="claude-haiku-4-5", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", context_window=1000000, efforts=["low", "high"]}, {id="claude-opus-5", context_window=1000000, efforts=["high", "xhigh"]}, {id="claude-fable-5-1", context_window=1000000, efforts=["high"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="claude-haiku-4-5", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-fable-5-1", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openai]`
 
 - `base_url` = `"https://api.openai.com/v1"`
@@ -80,7 +80,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"deepseek-v4-pro"`
 - `context_window` = `1000000`
-- `models` = `[{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openrouter]`
 
 - `base_url` = `"https://openrouter.ai/api/v1"`
@@ -88,7 +88,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"anthropic/claude-sonnet-5"`
 - `context_window` = `1000000`
-- `models` = `[{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["low", "high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — curated coding subset; the full 359-model list lives in models.dev
+- `models` = `[{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high"]}]` — curated coding subset; the full 359-model list lives in models.dev
 ## `[providers.moonshot]`
 
 - `base_url` = `"https://api.moonshot.ai/v1"`
@@ -104,7 +104,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"chat"`
 - `model` = `"glm-5.2"`
 - `context_window` = `1000000`
-- `models` = `[{id="glm-5.2", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+- `models` = `[{id="glm-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
