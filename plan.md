@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.5 | in progress | P0 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,18 +658,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.5 Price every provider call
-
-Model: claude-opus-5-5 · Status: in progress · Blocks: T30.3 · Size: ~90 · Priority: P0 · Complexity: 2
-Goal: every `usage` row carries the cost from `prices.toml`. Today no production path calls `usage::ledger_row` (only its tests do), so every row is written with `cost_usd = 0`: `cox stats` reads $0, budget caps never fire, and T30.3 has no cost to record. Found by the T30.4 live check (8 317 cache-write tokens, `cost_usd: 0.0`).
-Files: `crates/cox-provider/src/usage.rs`, `crates/cox/src/session.rs`.
-Plan: (1) `PriceTable::apply(&model, &mut Usage)` — the priced/unknown rule `ledger_row` already has, extracted so both share it; (2) `usage::Priced`, a `Provider` decorator: forwards every `ProviderEvent`, pricing the `Usage` event and the returned `Usage` by `req.model`, so the five core call sites (turn, compaction, memory, init, subagent) get cost without touching them; (3) `session::provider_for` wraps every real provider in `Priced` with `PriceTable::load(<COX_HOME>/prices.toml)` (embedded table when absent); test doubles stay unwrapped, their scenarios script their own cost; (4) regression test: a scripted inner provider through `Priced` yields a non-zero cost on both the event and the return value, and an unknown model is `estimated`; (5) live: `cox run -p "say hi"` shows a non-zero `cost_usd` and `cox stats` agrees.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-provider usage
-```
-Done when: the live run's `cost_usd` is non-zero and matches `cox stats`.
 
 #### T30.3 Eval run with a verification step
 
