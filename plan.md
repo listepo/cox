@@ -8,7 +8,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T22.4 | todo | P1 | 2 | 0% | |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T24.3 | in progress | P1 | 1 | 20% | Claude Code / haiku |
 | T27.2 | todo | P1 | 2 | 60% | |
 | T27.4 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 0% | |
@@ -677,24 +676,6 @@ Out of scope: paste (bracketed paste already exists), native clipboard crates.
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
 
-#### T24.3 `two-face` syntax set
-
-Model: haiku · Status: in progress · Depends: — · Size: ~40 · New dependency: `two-face` (creator approved; latest version; syntect default-features off + fancy-regex, no onig) · Priority: P1 · Complexity: 1
-Goal: ~250 languages (TS/TSX, Kotlin, Swift, Zig, TOML, Dockerfile…) for +0.6 MiB; `read`, `mode=outline` output and diffs share the set.
-Files: `Cargo.toml`, `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/tests/cells.rs`.
-Steps: (1) Replace `SyntaxSet::load_defaults_newlines()` with `two_face::syntax::extra_newlines()` behind the existing `syntax_set()` accessor. (2) Keep `syntect` default-features off (fancy-regex, no onig). (3) Snapshot a `.tsx` and a `Dockerfile` read.
-
-**Execution plan:**
-1. Add `two-face` to cox-tui dependencies with syntect + fancy-regex (no onig)
-2. Update markdown.rs to use `two_face::syntax::extra_newlines()`
-3. Create test snapshots for tsx and Dockerfile
-4. Rebuild and measure binary size change
-5. Run full test suite and checks
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui --test cells tsx_read_is_highlighted
-mise exec -- cargo build --release -p cox && ls -l target/release/cox
-```
 Done when: the two snapshots show highlighting and the release binary grows by less than 1 MiB (number in the commit message).
 Out of scope: language auto-detection beyond file extension and first-line shebang.
 

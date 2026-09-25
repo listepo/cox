@@ -3975,3 +3975,35 @@ Check output:
 $ test -f docs/design/v0.2-modes.md && grep -q Falsifier docs/design/v0.2-modes.md && echo ok
 ok
 ```
+
+#### T24.3 `two-face` syntax set
+
+Model: haiku · Status: done 2026-09-25
+Goal: ~250 languages (TS/TSX, Kotlin, Swift, Zig, TOML, Dockerfile…) for +0.6 MiB; `read`, `mode=outline` output and diffs share the set.
+Files: `Cargo.toml`, `crates/cox-tui/src/markdown.rs`, `crates/cox-tui/tests/cells.rs`, `crates/cox-tui/tests/snapshots/`, `toolchain.md`, `/Users/listepo/GitHub/listepo/rust.md`.
+
+What landed: Replaced `SyntaxSet::load_defaults_newlines()` with `two_face::syntax::extra_newlines()` in the `SYNTAXES` lazy lock, adding 250+ additional language definitions. Added `two-face 0.3` with `syntect-fancy` feature (no onig) to cox-tui dependencies. Created snapshot tests for `.tsx` and `Dockerfile` files to verify syntax highlighting works with the extended syntax set. Updated workspace `rust.md` and project `toolchain.md` with the new dependency.
+
+Binary size change: 48234496 bytes (46M) → 48577488 bytes (46.3M), +342992 bytes (+0.33 MiB), well within the < 1 MiB limit.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui --test cells tsx_read_is_highlighted
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.78s
+────────────
+ Nextest run ID with nextest profile: default
+    Starting 1 test across 1 binary (17 tests skipped)
+        PASS [ 0.040s] cox-tui::cells tsx_read_is_highlighted
+────────────
+     Summary [ 0.041s] 1 test run: 1 passed, 17 skipped
+
+$ mise exec -- cargo nextest run -p cox-tui
+    Summary [ 1.468s] 248 tests run: 248 passed, 0 skipped
+
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 02s
+(clean)
+
+$ mise exec -- cargo fmt --check
+(clean, after `cargo fmt`)
+```
