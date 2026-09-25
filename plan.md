@@ -6,6 +6,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.15 | todo | P2 | 3 | 0% | |
+| T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P2 | 3 | 0% | |
 
 ## Reference
@@ -659,6 +661,32 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.15 LM Studio provider: the chat loop over `/v1/messages`
+
+Depends: — · Size: ~150
+Goal: `--provider lmstudio` works with no hand-written config: cox talks to LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider, with LM Studio's optional auth. Evidence in R§4.3.2: the native `/api/v1/chat` takes no custom tool schemas, and cox's OpenAI Chat path drops tool calls, so Messages is the one working chat transport; T30.14 already ran a one-tool task over it at $0.
+Plan:
+1. `cox-protocol` config: a built-in `[providers.lmstudio]` (`base_url` default `http://localhost:1234`, `api_key_env` default `LM_API_TOKEN`, `model`, `context_window` where `0` means "ask the server" (T30.16), `timeout_s`, `max_retries`); regenerate the committed schema so the drift test passes.
+2. `cox-provider/src/anthropic/mod.rs`: a constructor taking an optional key — no key sends no auth header (LM Studio without "Require Authentication"); a key goes out as `x-api-key`, which LM Studio accepts on this path. Reuse the request, stream and retry code as is; no new wire types.
+3. `crates/cox/src/session.rs`: `"lmstudio"` in `backend_for`, reading the key from `api_key_env` when set, never from the Anthropic keyring.
+4. Tests: wiremock — no key means no `x-api-key`; `LM_API_TOKEN` set means it is sent; a tool-call stream captured from the live server (fixture in `cox-provider/tests/fixtures/`) parses into `ToolUseStart` … `ToolUseEnd`.
+Check: `COX_HOME=<scratch> cox run -p "<one-tool task>" --provider lmstudio --tier code=prism-ml/bonsai-27b` finishes with `exit_code` 0 and a `usage` ledger row at $0; the three standard commands clean.
+Done when: `--provider lmstudio` runs a tool loop against a live LM Studio with only `tiers.code.model` set.
+Out of scope: the native API (T30.16); fixing `openai/chat.rs` (ideas.md).
+
+#### T30.16 LM Studio native API: loaded context, capabilities, load on demand
+
+Depends: T30.15 · Size: ~180
+Goal: cox asks LM Studio what it is actually running instead of trusting config: the loaded context length (what compaction must fit — R§4.3.2 found `lms load --context-length 65536` left 251 648 loaded), whether the model was trained for tool use, and whether it is loaded at all; and loads it with the configured context length when it is not.
+Plan:
+1. `cox-provider/src/lmstudio.rs`: hand-written serde types (D3/A40 step 3: no Rust SDK, no published spec) for the subset of `GET /api/v1/models` cox reads (`key`, `max_context_length`, `loaded_instances[].config.context_length`, `capabilities.trained_for_tool_use`, `capabilities.reasoning.allowed_options`) and for `POST /api/v1/models/load` (`model`, `context_length`) with its response; unknown fields ignored. A fixture captured from the live server.
+2. Session open for `lmstudio` (in `crates/cox`, not the core): read the model list; the loaded instance's context length becomes the context window unless `context_window` is set; not loaded and `load = true` in config → `models/load` with `context_length`; a model without `trained_for_tool_use` gets one `Notice(Warn)`; an unreachable server fails as a transport error, not a panic.
+3. `cox doctor`: an LM Studio row — reachable, model loaded, loaded vs max context, tool-use capability.
+4. Tests: wiremock contract tests over the fixture (loaded, not loaded, load call body, server down); a doctor snapshot.
+Check: against the live server, `cox doctor` shows the loaded context 251 648 for `prism-ml/bonsai-27b`, and a session's compaction threshold follows it; the three standard commands clean.
+Done when: a `--provider lmstudio` session uses the server-reported context window and `cox doctor` reports the model's state.
+Out of scope: `/api/v1/chat` as a chat transport (no custom tools); per-response `stats` (tokens/s, time to first token) in the ledger — `/v1/messages` does not return them; MCP `integrations`.
+
 #### T30.13 cox vs Claude Code vs Terminus 2 on the same local model
 
 Depends: T30.14 (done) · Size: ~120
@@ -666,7 +694,7 @@ Goal: a like-for-like Terminal-Bench 2.0 baseline, taken before the optimization
 Model: `prism-ml/bonsai-27b` (Qwen 3.5 architecture, 2-bit MLX, 8.5 GB), already in LM Studio, chosen by the creator. No API spend.
 Tasks (fixed; `random.Random(3013).sample` over the `difficulty` field of each `task.toml` at terminal-bench-2 `69671fb`): medium `build-cython-ext`, `build-pmars`, `compile-compcert`, `mteb-leaderboard`, `query-optimize`, `regex-log`, `sanitize-git-repo`, `tune-mjcf`; hard `dna-assembly`, `password-recovery`, `path-tracing-reverse`, `regex-chess`.
 Plan:
-1. Serve the model: LM Studio's server on the host with the context raised well above its default (agents' prompts do not fit 4k); record the context length and the LM Studio version. One cheap call per API shape: OpenAI Chat `/v1/chat/completions` (cox, Terminus 2 via LiteLLM) and Anthropic Messages `/v1/messages` (Claude Code via `ANTHROPIC_BASE_URL`). If LM Studio has no Messages endpoint, check its docs for one first, then stop and ask before adding a proxy.
+1. Serve the model: LM Studio's server on the host with the context raised well above its default (agents' prompts do not fit 4k); read the loaded context back from `GET /api/v1/models` (`lms load --context-length` was not honoured in T30.14's check, R§4.3.2) and record it with the LM Studio version. One cheap call per API shape: OpenAI Chat `/v1/chat/completions` (cox, Terminus 2 via LiteLLM) and Anthropic Messages `/v1/messages` (Claude Code via `ANTHROPIC_BASE_URL`). If LM Studio has no Messages endpoint, check its docs for one first, then stop and ask before adding a proxy.
 2. Reach it from the containers: cox and Claude Code run inside the task container, so they need the host address colima exposes to its VM (`host.lima.internal`); Terminus 2 runs on the host and uses `localhost`. Verify with `curl` from a throwaway container.
 3. Teach `CoxAgent` the local provider: a `base_url` kwarg that writes `[providers.local]` into the container's fresh `COX_HOME/config.toml` and runs `--provider local`, no key required for it; tests in `evals/tests/test_tbench.py`.
 4. Disk: at least 15 GB free before building 12 images; `docker image prune` between agents if needed; colima with a capped disk as in T30.9. Rebuild the Linux cox from current `main` and record the commit.
@@ -747,6 +775,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A40 §0 D3, §3 P30, T30.11–T30.12 — D3 gains an order for where provider wire types come from: a maintained SDK's types, else typify over the vendor's vendored spec, else hand-written; transport, SSE mapping and the ledger stay ours; SDK code is a `wire` module inside the provider. Login stays API-key only: Anthropic forbids third-party Claude subscription login in writing, OpenAI documents nothing for ChatGPT login (R§4.3.1). Why: the creator asked providers to check for an SDK or a generatable spec before hand-writing, starting with the Claude Code and Codex replacements. Effect: `async-openai` (types only) and a vendored Anthropic spec enter the provider crate.
 - A41 §3 P30, T30.13 — new card: cox, Harbor's `claude-code` and `terminus-2` on the same 12 Terminal-Bench 2.0 tasks with the same local model (`bonsai-27b` in LM Studio), as a baseline before the optimization and refactoring pass, repeated after it (roadmap). Why: T30.9's 3/3 covered 3 of the 4 `easy` tasks and cannot be compared with anything; the creator chose same-model agents on a local model (no API spend), 12 tasks × 1 attempt.
 - A42 §3 P30, T30.14 — new card ahead of T30.13: the comparison runner becomes a tested `evals` module with registries of agents, providers and models (`cox-bench`). Why: the creator asked for a package/module supporting different providers, models and agents rather than a one-off script. Effect: T30.13 depends on T30.14 and runs through it.
+- A43 §3 P30, T30.15–T30.16 — new cards: a built-in `lmstudio` provider whose chat loop runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider (T30.15), and LM Studio's native `/api/v1/models` and `models/load` for the loaded context length, capabilities and load on demand (T30.16), with hand-written types (D3/A40 step 3). Why: the creator asked for LM Studio's own API as a local provider; R§4.3.2 shows the native chat endpoint takes no custom tool schemas, so the native API serves model state and the chat stays on Messages.
 
 ## 7. Risk register
 

@@ -163,6 +163,39 @@ Question: before hand-writing a provider, is there (1) a maintained Rust SDK, el
 
 Reading: no vendor ships Rust. For OpenAI a maintained typed crate exists (`async-openai`); for Anthropic only the spec exists, and only as an unlinked snapshot, so generation is from a vendored copy (T30.10 does this for the stream types). Subscription login: Anthropic forbids it in writing; OpenAI is silent.
 
+### 4.3.2 LM Studio's native API as a cox provider (checked 2026-09-25)
+
+LM Studio serves three API families on one port (default 1234). Facts are
+from LM Studio's docs and from the running server (LM Studio CLI commit
+`07b7252`, MLX runtime `mlx-llm-mac-arm64-apple-metal-advsimd` 1.11.0,
+model `prism-ml/bonsai-27b`).
+
+| Fact | Source |
+|---|---|
+| Native REST API v1 at `/api/v1/*` is an "official release" in LM Studio 0.4.0; the legacy `/api/v0/*` stays | https://lmstudio.ai/docs/developer/api-changelog |
+| Anthropic-compatible `POST /v1/messages` arrived in 0.4.1; OpenAI-compatible `/v1/chat/completions` tool calling since 0.3.6 | https://lmstudio.ai/docs/developer/api-changelog |
+| v1 endpoints: `GET /api/v1/models`, `POST /api/v1/models/load` (`context_length`, `eval_batch_size`, `flash_attention`, `num_experts`, `offload_kv_cache_to_gpu`), `POST /api/v1/models/unload`, `POST /api/v1/models/download`, `POST /api/v1/chat` | https://lmstudio.ai/docs/developer/rest, https://lmstudio.ai/docs/developer/rest/load |
+| `GET /api/v1/models` returns per model `max_context_length`, `loaded_instances[].config.context_length`, `capabilities.trained_for_tool_use`, `capabilities.reasoning.allowed_options`, `capabilities.vision`, quantization and format | live `curl localhost:1234/api/v1/models` |
+| `POST /api/v1/chat` rejects a `tools` array (`"Unrecognized key(s) in object: 'tools'"`); its only tool mechanism is MCP servers passed as `integrations` | live call; https://lmstudio.ai/docs/developer/core/mcp |
+| v1 chat streams named SSE events (`chat.start`, `prompt_processing.*`, `reasoning.start/delta/end`, message deltas, `chat.end` with the full result) and reports `stats` (`input_tokens`, `total_output_tokens`, `reasoning_output_tokens`, `tokens_per_second`, `time_to_first_token_seconds`); `previous_response_id` chains stateful chats | live streaming call; https://lmstudio.ai/docs/developer/rest |
+| One auth scheme for all three families when "Require Authentication" is on: `Authorization: Bearer <token>` (Anthropic path also `x-api-key`) | https://lmstudio.ai/docs/developer/core/authentication |
+| No Rust SDK: crates.io has no `lmstudio`, `lm-studio`, `lmstudio-rs`, `lmstudio_rs` (`lms` is an unrelated rsync tool). Official SDKs are TypeScript and Python only | https://crates.io/api/v1/crates/lmstudio (404), https://github.com/lmstudio-ai/lmstudio-js, https://github.com/lmstudio-ai/lmstudio-python |
+| No published OpenAPI or JSON Schema for the native API found; lmstudio-js keeps TS/zod types in `packages/lms-shared-types/src` | https://github.com/lmstudio-ai/lmstudio-js (tree checked; deeper listing **unverified**) |
+| The SDKs talk to LM Studio over a WebSocket RPC protocol | **unverified** (secondary summaries only; no LM Studio protocol doc) |
+| cox's Anthropic Messages path works against LM Studio as is: one-tool task finished, `cost_usd` 0 | live run, T30.14 |
+| `lms load prism-ml/bonsai-27b --context-length 65536 -y` left the model loaded with `context_length` 251648 and `parallel` 4 (`lms ps`, `/api/v1/models`): the loaded context must be read back, not assumed | live, 2026-09-25 |
+
+What follows for cox. Wire types fall to step 3 of D3/A40 (no Rust SDK, no
+spec), and the native surface cox needs is small: `models` and
+`models/load`. The chat loop cannot move to `/api/v1/chat`, because it takes
+no custom tool schemas, so it stays on `/v1/messages` through the existing
+Anthropic provider. OpenAI Chat is not an option either while `chat.rs` drops
+tool calls (ideas.md). The native API earns its place for what the
+compatibility endpoints lack: the loaded context length (the context window
+cox needs for compaction, today a hand-set `context_window`), tool-use and
+reasoning capabilities, load state, and loading a model with an explicit
+context length before a session starts.
+
 ### 4.4 Routing evidence (D5)
 Copilot's auto model selection is praised because it is explicit, priced (10 % discount) and switchable; Claude Code's Haiku delegation is complained about because it is silent. aider's `--weak-model` (commits, summaries) and OpenCode's small model for titles are the same pattern. Jobs that tolerate a small model, by consensus of the surveyed tools: titles, summaries, commit messages, compaction, search/explore, tool-result summarisation, classification. Effect-size numbers from the survey ("4.2× savings", "Codex 3–4× fewer tokens than Claude Code") are unsourced and dropped. [med]
 
