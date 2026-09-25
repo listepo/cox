@@ -239,13 +239,14 @@ for other agents are out of scope here — their footprint threads move weekly:
 2. Golden `Event` JSONL for loop scenarios (`insta`); the rollout file and the fixture are the same format. [design]
 3. ratatui `TestBackend` + `insta` per widget and per frame; `portable-pty` + `vt100` for the real binary (Codex practice). [high]
 4. Tools in `tempfile` trees; `proptest` on `str_replace` and V4A (`parse(print(p)) == p`, edit-then-reverse identity); fuzz targets for SSE/V4A/frontmatter parsers. [design]
-5. Evals separate from tests: Terminal-Bench adapter + 10 in-repo tasks, run on demand with the real provider, cost recorded in the ledger. §5.3 holds the first recorded run (pending T12.1).
+5. Evals separate from tests: Terminal-Bench 2.0 agent (Harbor) + 10 in-repo tasks, run on demand with the real provider, cost recorded in the ledger. §5.3 holds the recorded runs.
 
 ### 5.3 First eval run (T12.1, 2026-09-04)
 
-Harness `evals/run.py` (`just eval`), 10 tasks in `evals/tasks/`, TB
-adapter in `evals/tbench/adapter.py` (verified against terminal-bench
-0.2.18's `BaseAgent` contract: `name()` / `perform_task`; self-test green).
+Harness `evals/run.py` (`just eval`), 10 tasks in `evals/tasks/`. (The
+terminal-bench 0.2.x adapter written here was replaced in T30.9 by a
+Harbor agent, `evals/src/cox_evals/tbench.py`; see the Terminal-Bench
+subsection below.)
 
 Dry-run (`COX_PROVIDER=scripted just eval --dry-run`): **10/10 passed**,
 $0.0000, no network, no key.
@@ -305,7 +306,60 @@ ANTHROPIC_API_KEY="$(security find-generic-password -s cox -a anthropic -w)" \
   uv run --project evals cox-evals --provider anthropic --model claude-sonnet-5 [--preset verify]
 ```
 
-Terminal-Bench 2.x: not run yet.
+#### Terminal-Bench 2.0 subset (T30.9, 2026-09-25)
+
+Terminal-Bench 2.0 runs through Harbor, not the old `tb` CLI
+(https://github.com/laude-institute/harbor, PyPI `harbor` 0.23.0,
+https://pypi.org/project/harbor/0.23.0/, checked 2026-09-25). The agent is
+`cox_evals.tbench:CoxAgent`, a `BaseInstalledAgent`: `install` uploads a
+Linux cox build to `/installed-agent/cox`, `run` executes one
+`cox run --output-format json` in the task container and copies the payload's
+tokens and cost into Harbor's `AgentContext`. Tasks come from
+https://github.com/laude-institute/terminal-bench-2 at commit
+`69671fbaac6d67a7ef0dfec016cc38a64ef7a77c` (recorded by Harbor in each
+trial's `config.json`).
+
+Setup: cox from `b027a47`, cross-built with `cargo zigbuild --release
+--target aarch64-unknown-linux-gnu.2.31` (cargo-zigbuild 0.23.4, zig
+0.16.0); Docker in colima 0.10.3 (vz, arm64). `claude-sonnet-5`,
+`--budget 0.25`, `--max-turns 40`, `--permission-mode bypass --sandbox
+danger-full-access` (the container is the isolation boundary), two trials
+at a time, three tasks picked for spread: git surgery, a COBOL-to-Python
+port, a Coq proof.
+
+| Task | Reward | Turns | Input | Output | Cache read | Cache write | Cost |
+|---|---|---|---|---|---|---|---|
+| `fix-git` | 1.0 | 9 | 17 | 2 691 | 102 496 | 7 533 | $0.0663 |
+| `cobol-modernization` | 1.0 | 22 | 43 | 13 242 | 379 814 | 16 349 | $0.2493 |
+| `prove-plus-comm` | 1.0 | 4 | 7 | 1 013 | 34 356 | 997 | $0.0195 |
+| **total** | **3/3** | 35 | 67 | 16 946 | 516 666 | 24 879 | **$0.3351** |
+
+Cost is cox's own ledger figure from the `cox run` payload; wall time
+2 min 56 s. Three tasks out of 89 is a smoke test of the agent and the
+pipeline, not a leaderboard score. `cobol-modernization` finished at
+$0.249 of a $0.25 cap, so a larger subset needs a higher per-task budget.
+
+A first attempt the same day spent about $0.51 on `cobol-modernization`
+and `prove-plus-comm` (both stopped by the budget) plus an unrecorded
+share of `fix-git` (at most $0.25, interrupted), and scored nothing, for
+two reasons fixed in `db85e5f`: `--permission-mode auto --approve never`
+denied 24-26 calls per task, which the model spent its budget retrying;
+and the jobs dir sat in `/tmp`, which colima does not share with its VM
+(only `$HOME`), so the verifier's reward file never reached the host.
+
+Reproduce (Docker reachable, Linux cox built):
+
+```bash
+ANTHROPIC_API_KEY="$(security find-generic-password -s cox -a anthropic -w)" \
+  uv run --project evals --extra tbench harbor run -d terminal-bench@2.0 \
+  -a cox_evals.tbench:CoxAgent -m anthropic/claude-sonnet-5 --force-build -n 2 \
+  -i fix-git -i cobol-modernization -i prove-plus-comm \
+  --ak cox_bin=<linux cox> --ak budget_usd=0.25 -o ~/.cache/cox-evals/tb-jobs
+```
+
+The verify preset (T30.3) was not run on Terminal-Bench: the harness
+system addendum and hook are wired for the in-repo harness only, and all
+three tasks already passed without it.
 
 ## 6. Fact-check ledger
 | # | Claim (report) | Verdict | Correction / source |
