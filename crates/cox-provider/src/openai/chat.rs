@@ -62,7 +62,11 @@ pub fn build_body(req: &Request) -> Result<Value, ProviderError> {
         "stream_options": {"include_usage": true},
         "max_tokens": req.max_tokens,
     });
-    let obj = body.as_object_mut().expect("json! built an object");
+    // `json!` with an object literal is always an object; the else arm is
+    // unreachable and exists only so a request path never panics.
+    let Value::Object(obj) = &mut body else {
+        return Ok(body);
+    };
 
     if !req.tools.is_empty() {
         let tools: Vec<Value> = req
