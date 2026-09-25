@@ -4007,3 +4007,37 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 $ mise exec -- cargo fmt --check
 (clean, after `cargo fmt`)
 ```
+
+#### T23.4 OSC 52 clipboard
+
+Model: sonnet · Status: done 2026-09-25 · Depends: T23.0 · Size: ~70 · Priority: P2 · Complexity: 1
+Goal: `y` on a cell in the transcript overlay and `Cmd::Copy` copy through the terminal (works over SSH/tmux) when `caps.osc52`.
+Files: `Cargo.toml`, `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`.
+Steps: (1) Enable crossterm's `osc52` feature (verified present in 0.29, ledger #30). (2) `app.rs`: `Cmd::Copy(text)` → `execute!(stdout, CopyToClipboard::to_clipboard_from(text))` when `caps.osc52`, else `Notice(Info, "clipboard: terminal does not support OSC 52")`. (3) `state.rs`: in the `Ctrl+O` overlay, `y` copies the selected cell's plain text (already produced by `cells::cell_lines`) and `Y` the whole transcript; status line flashes `copied` for one tick.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui overlay_y_emits_copy_of_cell
+mise exec -- cargo nextest run -p cox-tui --test shell pty_copy_writes_osc52
+```
+Done when: the PTY e2e sees `\x1b]52;c;` with the base64 of the cell text.
+Out of scope: paste (bracketed paste already exists), native clipboard crates.
+
+Deviations: coordinator decision on step (1): no crossterm `osc52` feature (a new dependency needing approval); the escape is hand-built in `term.rs` the same way OSC 8 (T23.3) and OSC 9;4 (T23.6) already are — `term::copy(text)` writes `ESC ] 52 ; c ; <base64> ESC \`. `base64` sits in `Cargo.lock` twice already (`0.22.1`/`0.23.1`) but only transitively (unrelated OAuth/HTTP crates via `cox-mcp`/`cox-provider`), so it gets a ~15-line local encoder in `term.rs`, tested against known vectors, rather than a new direct dependency. There is no "`Ctrl+O` overlay" to bind `y`/`Shift+Y` inside: `Ctrl+O`/"transcript" toggles `state.show_diffs` (full diffs in the scrolling transcript, not a modal); `Context::Overlay` belongs to the unrelated `Diff`/`Help` modals. `y`/`Shift+Y` are instead new `keymap::Action`s (`copy`/`copy.all`) in `Context::Idle`, gated on an empty composer the same way `?`/`help` already is, so typing "yes" still types "yes". "The selected cell" does not exist as a concept — there is no per-cell selection UI — so `y` copies `state.transcript.last()`: the cell still held in the live viewport (a finished cell already left for the terminal's own scrollback and cannot be reached back, the same limit T24.4's `Ctrl+E` names); `Shift+Y` joins every cell still held with a blank line. Both read the cell's own stored string (`Cell`'s `text`/`output` field) rather than `cells::cell_lines`'s wrapped, glyph-prefixed render, since a paste elsewhere wants the source text, not this terminal's width. The `caps.osc52` check lives in `state.rs` (which decides whether to emit `Cmd::Copy` or a `Notice` cell), not in `app.rs`, matching how `state.rs` already decides `Cmd::Progress` (T23.6) rather than gating in the runtime; `app.rs` just writes whatever bytes `state` handed it. No status-line "copied" flash: the existing `Notice` cell path covers the one case that needs feedback (unsupported terminal); a successful copy is silent, like every other keymap action. `src/bin/kitty_probe.rs` gained a `copy` scenario (`COX_PROBE_OSC52` switch) that keeps one streaming (`ItemStarted` with no `ItemDone`) cell in `state.transcript` so `y` finds it deterministically by message order, with no PTY-timing wait. `docs/config.md` and `docs/getting-started.md` are generated/drift-checked from `cox-protocol/src/config.rs` and `commands::KEYMAP`; both were updated in the same commit. Files beyond the card's three: `crates/cox-tui/src/keymap.rs`, `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/bin/kitty_probe.rs`, `crates/cox-tui/tests/shell.rs`, `crates/cox-protocol/src/config.rs`, `docs/config.md`, `docs/getting-started.md`, two `insta` snapshots (`help_overlay_snapshot`, `screen_help_overlay`) picking up the two new footer/overlay hints. No `Cargo.toml`/`Cargo.lock` change: no new dependency.
+
+Check output:
+```
+$ mise exec -- cargo nextest run -p cox-tui overlay_y_emits_copy_of_cell shift_y_emits_copy_of_the_whole_transcript
+2 tests run: 2 passed
+$ mise exec -- cargo nextest run -p cox-tui --test shell pty_copy_writes_osc52
+1 test run: 1 passed
+$ mise exec -- cargo nextest run -p cox-tui
+253 tests run: 253 passed, 0 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+850 tests run: 849 passed, 1 failed, 3 skipped
+(the 1 failure is cox-mcp client::tests::oauth_refresh_failure_is_a_warning, a pre-existing
+full-suite-load flake also seen at T25.8; 3/3 passing on its own and in -p cox-mcp reruns)
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
