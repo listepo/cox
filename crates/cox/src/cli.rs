@@ -169,6 +169,13 @@ pub struct RunArgs {
     /// Route this run through the `think` tier (implies confirmation).
     #[arg(long)]
     pub deep: bool,
+    /// Repeat the prompt on a timer; requires `--max-iterations` (T27.6,
+    /// same `<n>s|m|h` grammar as the TUI's `/loop`, T27.4).
+    #[arg(long = "loop", value_name = "INTERVAL")]
+    pub r#loop: Option<String>,
+    /// Stop `--loop` after this many turns; required together with `--loop`.
+    #[arg(long = "max-iterations", value_name = "N")]
+    pub max_iterations: Option<u32>,
 }
 
 /// `cox stats` (plan.md §1.12/T1.7). Print usage and cost statistics.

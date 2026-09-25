@@ -96,6 +96,12 @@ idle, until `/loop stop` or `Esc` on an empty composer ends it. `--budget`
 is this loop's own spend cap; leave it out and it defaults to the session
 cap (`budget.session_usd`), which still applies underneath either way.
 
+The headless counterpart is `cox run --loop <interval> -p "…"
+--max-iterations N`: same interval grammar, no `--budget` of its own —
+it stops after `N` turns or once the session hits `budget.session_usd`,
+whichever comes first. `Ctrl+C` between iterations exits cleanly with
+whatever already ran.
+
 ## What to read next
 
 | Doc | Contents |

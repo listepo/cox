@@ -366,8 +366,10 @@ fn loop_start(args: &[String]) -> Option<Action> {
 }
 
 /// `<n>s` / `<n>m` / `<n>h`, or a bare `<n>` as seconds; `0` is rejected so
-/// a due tick cannot fire on every `Msg::Tick`.
-fn parse_interval(s: &str) -> Option<Duration> {
+/// a due tick cannot fire on every `Msg::Tick`. `pub`: `cox run --loop`
+/// (T27.6, headless counterpart of `/loop`) reuses this grammar rather
+/// than parsing intervals a second way.
+pub fn parse_interval(s: &str) -> Option<Duration> {
     let (digits, mult) = match s.strip_suffix('h') {
         Some(n) => (n, 3600),
         None => match s.strip_suffix('m') {
