@@ -15,13 +15,20 @@ published for the Anthropic SDKs. `build.rs` generates the Anthropic wire types
 The file is JSON despite the `.yml` in the URL. The URL is a snapshot, not a
 maintained pointer: `anthropic-sdk-python` stopped linking a spec URL in
 `.stats.yml` on 2026-09-03 (commit `f9b0cf28`). A newer snapshot URL, when one
-is published, goes in the command below and in the table above.
+is published, goes in `SNAPSHOT_URL` in
+`scripts/vendor/src/cox_vendor/anthropic_spec.py`.
 
-Re-vendor from the crate directory, then update the date and sha256 above:
+This file is a vendored, non-package-manager artifact (`plan.md` A48): no
+hand `curl`, only the saved script re-vendors it. It downloads the
+snapshot, checks it parses as JSON with an `openapi` key, writes the file,
+and rewrites the "Downloaded"/"sha256" rows above:
 
 ```bash
-curl -fsSL -o schema/anthropic-openapi.json "https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-465bff21a179090915396565d1ae8f705cf8596e2ec920eb121072f25b8a7d68.yml" && shasum -a 256 schema/anthropic-openapi.json
+uv run --project scripts/vendor cox-vendor anthropic-spec
 ```
+
+`--check` (used in CI) fetches and reports whether the vendored file is
+stale without writing anything, exiting 1 on a diff.
 
 A changed spec regenerates the types on the next build. A field cox sets that
 the spec renamed or made required is a compile error in `request.rs`; the

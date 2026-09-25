@@ -15,8 +15,8 @@ Programs the project uses and the direct packages from its manifests.
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
 | dunnage | ketch | `just test` ends with a lossless cleanup of `target/` | https://github.com/listepo/dunnage |
-| uv | global (curl installer / brew) | Runs the `evals/` package (`just eval`) and locks its Python deps | https://github.com/astral-sh/uv |
-| python | uv (`evals/.python-version`) | Eval harness and the Terminal-Bench agent, which must be a Python class | https://github.com/python/cpython |
+| uv | global (curl installer / brew) | Runs the `evals/` and `scripts/vendor/` packages (`just eval`, `just vendor`) and locks their Python deps | https://github.com/astral-sh/uv |
+| python | uv (`evals/.python-version`, `scripts/vendor/.python-version`) | Eval harness, the Terminal-Bench agent (must be a Python class), and `cox-vendor` (T30.19: vendored files no package manager fetches) | https://github.com/python/cpython |
 | zig | mise (`mise.toml`) | Linker for `cargo zigbuild`: the Linux cox the Terminal-Bench containers run (T30.9) | https://github.com/ziglang/zig |
 | cargo-zigbuild | mise (`mise.toml`, aqua) | Cross-builds that Linux cox from macOS without a Docker build step | https://github.com/rust-cross/cargo-zigbuild |
 | colima | global (mise) | Docker runtime for Terminal-Bench (the creator's choice) | https://github.com/abiosoft/colima |
@@ -119,3 +119,9 @@ Programs the project uses and the direct packages from its manifests.
 | tomli-w | local | https://github.com/hukkin/tomli-w | Writes scripted scenarios and the verify hook config |
 | pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the eval package |
 | harbor | local (extra `tbench`) | https://github.com/laude-institute/harbor | Terminal-Bench 2.0 harness; `cox_evals.tbench:CoxAgent` is a Harbor agent |
+
+## uv (`scripts/vendor/`)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the vendor package |

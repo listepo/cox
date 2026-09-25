@@ -219,3 +219,43 @@ Check:
 ```text
 every current crate is split by a P32 card or kept with a reason in crates.md "Not split": cox-core loop, cox-store, cox-ext, cox-mcp, cox-acp, cox-tui TEA core, cox commands
 ```
+
+#### T30.19 Vendored data through saved scripts: the Anthropic spec
+
+Depends: — · Size: ~150 Python + tests
+Goal: the creator's rule (A48). A file no package manager fetches is produced only by a saved, tested Python script that is re-run to update it. The first such file is `crates/cox-provider/schema/anthropic-openapi.json`, which today is re-vendored with a hand `curl` from its README.
+Plan:
+1. A uv-managed package `scripts/vendor` (`cox_vendor`, console script `cox-vendor`, Python pinned like `evals`) with a registry of vendored files. It is the one entry point for any later data file.
+2. `cox-vendor anthropic-spec`:
+   - downloads the snapshot URL and checks that the result parses as JSON with an `openapi` key;
+   - writes the file;
+   - rewrites the README's "Downloaded" and "sha256" rows.
+
+   The README's `curl` line becomes this command.
+3. Tests with no network: a stubbed download, one idempotence check (the same bytes give no diff), and one rejection of a non-JSON body.
+4. `just vendor` recipe; `toolchain.md` rows for the package and anything it pulls.
+
+Check: the package's tests pass. Running `cox-vendor anthropic-spec` leaves `git status` clean (same snapshot). `cargo nextest` is green.
+Out of scope: changing the snapshot URL.
+What landed:
+- `scripts/vendor/`: a uv package (`cox-vendor`, Python 3.14 as in `evals`) that uses only the stdlib.
+  - `registry.py` maps command names to vendored files. T30.20 adds `models` there.
+  - `anthropic_spec.py` downloads `SNAPSHOT_URL` and rejects non-JSON or a body without `openapi`. It writes the spec and the README's "Downloaded"/"sha256" rows only when the bytes change.
+  - `--check` writes nothing and exits 1 on a diff.
+- `just vendor` and `just vendor-test` recipes.
+- Docs:
+  - `scripts/vendor/README.md` covers what the package is, how to add a file and the commands.
+  - `crates/cox-provider/schema/README.md` now gives the command instead of the hand `curl`.
+  - `toolchain.md` has the new rows.
+
+Deviations:
+- The build backend is `uv_build`, as in `evals`, not hatchling.
+- The card's `cargo nextest` step was not run for this task. It touches no Rust, and T30.21's Rust run covers the same tree.
+
+Check:
+```text
+$ uv run --project scripts/vendor pytest scripts/vendor/tests -q
+12 passed in 0.05s
+$ uv run --project scripts/vendor cox-vendor anthropic-spec --check
+anthropic-spec: up to date   (exit 0; the vendored snapshot is byte-identical)
+```

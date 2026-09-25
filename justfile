@@ -26,6 +26,15 @@ eval *args:
 test-evals:
     uv run --project evals --extra tbench pytest evals/tests -q
 
+# Vendor a file no package manager fetches (plan.md A48), e.g.
+# `just vendor anthropic-spec` or `just vendor anthropic-spec --check`.
+vendor *ARGS:
+    uv run --project scripts/vendor cox-vendor {{ARGS}}
+
+# Tests for the vendor package; no network.
+vendor-test:
+    uv run --project scripts/vendor pytest scripts/vendor/tests -q
+
 bench:
     mise exec -- cargo run -q -p cox --example bench
 

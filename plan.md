@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P2 | 3 | 0% | |
-| T30.19 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T30.20 | todo | P1 | 3 | 0% | |
 | T30.21 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T30.22 | todo | P1 | 3 | 0% | |
@@ -728,24 +727,6 @@ Plan:
 Check: R§5.3 has the table; `just test-evals` green.
 Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
-
-#### T30.19 Vendored data through saved scripts: the Anthropic spec
-
-Depends: — · Size: ~150 Python + tests
-Goal: the creator's rule (A48). A file no package manager fetches is produced only by a saved, tested Python script that is re-run to update it. The first such file is `crates/cox-provider/schema/anthropic-openapi.json`, which today is re-vendored with a hand `curl` from its README.
-Plan:
-1. A uv-managed package `scripts/vendor` (`cox_vendor`, console script `cox-vendor`, Python pinned like `evals`) with a registry of vendored files. It is the one entry point for any later data file.
-2. `cox-vendor anthropic-spec`:
-   - downloads the snapshot URL and checks that the result parses as JSON with an `openapi` key;
-   - writes the file;
-   - rewrites the README's "Downloaded" and "sha256" rows.
-
-   The README's `curl` line becomes this command.
-3. Tests with no network: a stubbed download, one idempotence check (the same bytes give no diff), and one rejection of a non-JSON body.
-4. `just vendor` recipe; `toolchain.md` rows for the package and anything it pulls.
-
-Check: the package's tests pass. Running `cox-vendor anthropic-spec` leaves `git status` clean (same snapshot). `cargo nextest` is green.
-Out of scope: changing the snapshot URL.
 
 #### T30.20 Vendored data through saved scripts: prices and model lists from models.dev
 

@@ -1,0 +1,18 @@
+[project]
+name = "cox-vendor"
+version = "0.1.0"
+description = "The one entry point for a file no package manager fetches (plan.md A48): a vendored API spec, a price or model table, any JSON/YAML data pulled from outside the repo"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+cox-vendor = "cox_vendor.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
