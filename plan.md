@@ -7,8 +7,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T23.4 | todo | P2 | 1 | 0% | |
-| T27.2 | in progress | P1 | 2 | 60% | Claude Code / claude-sonnet-5 |
 | T27.4 | todo | P3 | 2 | 0% | |
+| T27.5 | todo | P2 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
 ## Reference
@@ -670,23 +670,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P27 — Agents you can see (goal: no "raw scaffolding noise")
 
-#### T27.2 Approvals labelled by source; agent cards
-
-Model: claude-sonnet-5 · Status: in progress · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
-Goal: an approval or question says which agent is asking; `/agents` shows one card per live agent instead of a line.
-Files: `crates/cox-protocol/src/types.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/picker.rs`.
-Steps: (1) `Event::ApprovalRequired` gains `source: Source { session: SessionId, agent: Option<String>, preset: Option<String> }` (subagent sessions forward their approvals to the parent surface already — attach the label there); the ACP and stream-json surfaces emit it as a field. (2) Modal header: `explore-2 asks: bash cargo test` in `theme.agent`; the main session shows no prefix. (3) `/agents` card: name, preset, model, tokens, cost, last tool, elapsed, state (from the T16.1 presence records plus the live task registry); `Enter` on a card opens its rollout read-only in the transcript overlay.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui approval_modal_shows_source_agent agents_cards_snapshot
-mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
-```
-Done when: the two snapshots exist and `docs/protocol.jsonschema` regenerates with the new field.
-Out of scope: talking to an agent mid-task (`@agent` messaging).
-Execution plan: finding — a subagent's approval is **not** forwarded today: `subagent::run_task` drops every child event but `Usage`/`ToolCallRequested`/`TurnDone`, so a `shell` child whose call escalates waits on its own `pending` until cancelled. (a) `cox-protocol`: `Source { session, agent, preset }`; `ApprovalRequired.source: Option<Source>` (`serde(default)`: rollout lines from before T27.2 read as `None`); schema regenerated. (b) `cox-core`: `turn::ask` fills the session's own `Source`; `AgentTool` names children `<preset>-<n>`; `run_task` relays a child `ApprovalRequired` to the parent labelled with that name, parks the call in the parent's `pending` without touching its state, and hands the parent's `Approve` back to the child; the child's `ApprovalDecided` is relayed too so the modal closes. Test `subagent_approval_carries_source` in `tests/subagent.rs` + a scenario. (c) `cox-tui` modal header `<agent> asks: …` in `theme.agent`, snapshot `approval_modal_shows_source_agent`; ACP title gets the same prefix; stream-json carries the field through serde. (d) Step 3 (`/agents` cards) after (a)–(c) land.
-Progress: (a)–(c) landed in `6ea9e0c` (`subagent_approval_carries_source`, `approval_modal_shows_source_agent` pass; schema regenerated). No subagent preset carries `ask_user`, so questions need no label yet. Open for the creator before step 3: the card's fields (model, tokens, last tool per subagent) are not on the parent's event stream — `run_task` only sees them on the child's — so step 3 needs either a new `Event::AgentProgress { task, model, tokens, cost_usd, last_tool }` relayed by `run_task` (§1.2 amendment) or a narrower card (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` + presence). `Enter` → read-only rollout needs a new transcript overlay fed by the binary from `cox-store`.
-Execution plan (step 3): creator confirmed the narrow card, no new `Event` variant, `Enter` → rollout split into a follow-up card. `state.tasks` gains the `Tier` (already on `TaskCreated`, previously dropped) and `state.tick` at creation, alongside the existing `(TaskId, label)`, so a running subagent/background task can show tier and elapsed the same way `Cell::Tool.started` already does for tool cells; `tasks::list`/`/tasks`/`status.rs` keep reading `state.tasks` by mapping the extra fields away, so `tasks.rs` and `status.rs` stay untouched. `agents_list` becomes `agents_cards`: one block per `Presence` (T16.1: session, status; preset/tier/cost/elapsed unknown, shown `-`) and one per live `state.tasks` entry (name = label, preset parsed from the label's `<preset-or-tool>: ` prefix, tier from the stored `Tier`, elapsed from `tick - started`, state `running`; cost stays `-` — a task only learns its cost at `TaskCompleted`, which already retires it from `state.tasks`). Files: `crates/cox-tui/src/state.rs` (prod); `crates/cox-tui/tests/agents.rs` (renames `agents_command_lists_the_fed_records_snapshot` to `agents_cards_snapshot`, extended with a running-task card; updates `agents_command_says_so_when_alone` for the new empty-state text). Verify: the card's Check, then the full gate.
-
 #### T27.4 `/loop`
 
 Model: sonnet · Status: open · Depends: T25.1 · Size: ~120 · Priority: P3 · Complexity: 2
@@ -700,6 +683,19 @@ mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
 ```
 Done when: both tests pass and `docs/getting-started.md` documents the command.
 Out of scope: cloud schedules.
+
+#### T27.5 `/agents` rollout overlay
+
+Model: - · Status: open · Depends: T27.2 · Size: ~150 · Priority: P2 · Complexity: 2
+Goal: `Enter` on an `/agents` card opens that agent's rollout read-only in the transcript overlay — the half of T27.2 step 3 the creator split out (§6 A29) because it needs `/agents` to stop being a static `Notice`.
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`.
+Steps: (1) `/agents` becomes a navigable list (`Context::Overlay`, arrow keys move a cursor) instead of a `Notice`, one row per `agents_cards` (T27.2) entry. (2) `Enter` on a sibling-session row asks the binary — the only side that talks to `cox-store` — for that session's rollout via `Store::rollout_read`, the same read `crates/cox/src/resume.rs` already does for `--resume`, and feeds it back as a new `Msg`; a subagent-task row has no `SessionId` on the wire yet, so it stays disabled until a follow-up gives a subagent its own resumable id. (3) The overlay renders the fed events read-only (no composer, no approvals), reusing `cells`/`view` rendering; `Esc` closes it.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui agents_overlay_opens_the_selected_rollout
+```
+Done when: the test passes and the overlay has a snapshot.
+Out of scope: editing or resuming from the overlay; a subagent's own rollout id.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
@@ -778,6 +774,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A26 `research.md` §8, `docs/design/improvement-plan-2026.md`, `ideas.md` — field survey of terminal coding agents (2026-09-22) and a proposed improvement plan. Why: user request to research what agent CLIs/TUIs ship in 2026, compare with cox and plan how to be more convenient and better-looking than the field. Effect: research §8 records the survey (four research agents, author-verified cox column and crate facts, ledger #29–36); the design doc holds nine proposed phases P22–P30 (trust fixes for dead config keys and the fixed-answer `ask_user`; terminal capabilities; themes and tool cards; message queue and `Shift+Tab`; checkpoints and `/rewind`; visible agents; context and cost visibility; `--plain`; lean profile and footprint) as task cards in the §2 format, with priorities, dependencies needing approval (§7 of the doc) and falsifiers; `ideas.md` lists the phases. No task is added to the §3 table or `todo.md`; no decision in §0 changes; nothing moves until the creator approves a phase.
 - A27 §3 P22–P30, top table, `todo.md`, `ideas.md`, §3.0, §5 M6 — the improvement plan approved and moved into the plan (2026-09-22). Why: the creator approved the A26 proposal and asked for every task in `plan.md` with concrete step-by-step instructions and a complexity rating. Effect: 48 tasks total: 44 open and 4 done (T22.5, T26.1, T26.2, T27.3); the cards use the §2 format (Model, Depends, Size, Priority, Complexity, Goal, Files, numbered Steps, bash Check, Done when, Out of scope), and the same ids appear in the top table and `todo.md`; `ideas.md` keeps only the unapproved later gates; `docs/design/improvement-plan-2026.md` keeps the survey, principles, pitch, non-goals and falsifiers and points to §3 for the cards. Cards were corrected against the code before the move: `ask_user` already has `Answers::Surface` (T22.1 wires it), background agents are already concurrent (T9.2) so T27.1 is about `bash` tasks and `Ctrl+B`, `SessionStart`/`Notification` already exist in `HookEvent` (T22.3 fires them), `similar` is already a workspace dependency (T24.5). Four new dependencies still need approval before their task starts: ratatui `scrolling-regions` feature (T23.2), crossterm `osc52` feature (T23.4), `terminal-colorsaurus` (T22.6), `two-face` (T24.3); each card names it. No decision in §0 changes; §1.13 keymap rows and §1.2 protocol variants that a card adds (`Submission::UserShell`, `Rewind`, `Background`; `Event::Checkpoint`, `Rewound`) are amended in that task's commit.
 - A28 §3 P22, T22.8 — `cox-mcp` `oauth_refresh_failure_is_a_warning` failed twice in loaded `cargo nextest run --workspace` runs (~5.5 s). Its assertion is about how an error is classified, but the whole connect ran under the bare 5 s handshake budget. Why: user request to find the real cause and make the test deterministic without weakening it. Effect: a test-only change. The test gets a connect budget a stall cannot reach; `connect_all`, the production budget and the sibling OAuth test are unchanged.
+- A29 §3 P27, T27.2, T27.5 — the creator's answer to T27.2's open question: the `/agents` card is the narrow one (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` and the T16.1 presence records), not a new `Event::AgentProgress`. Why: user request (today). Effect: T27.2 closes without a protocol change — per-subagent model, tokens and last tool stay undone until that event exists; `Enter` on a card opening its rollout read-only is split into the new T27.5, since it needs `/agents` to become a navigable list instead of a static `Notice`.
 
 ## 7. Risk register
 

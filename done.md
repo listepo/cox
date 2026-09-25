@@ -4065,3 +4065,35 @@ $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 $ mise exec -- cargo fmt --check
 (clean, after `cargo fmt`)
 ```
+
+#### T27.2 Approvals labelled by source; agent cards
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
+Goal: an approval or question says which agent is asking; `/agents` shows one card per live agent instead of a line.
+Files: `crates/cox-protocol/src/types.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/picker.rs`.
+Steps: (1) `Event::ApprovalRequired` gains `source: Source { session: SessionId, agent: Option<String>, preset: Option<String> }` (subagent sessions forward their approvals to the parent surface already — attach the label there); the ACP and stream-json surfaces emit it as a field. (2) Modal header: `explore-2 asks: bash cargo test` in `theme.agent`; the main session shows no prefix. (3) `/agents` card: name, preset, model, tokens, cost, last tool, elapsed, state (from the T16.1 presence records plus the live task registry); `Enter` on a card opens its rollout read-only in the transcript overlay.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui approval_modal_shows_source_agent agents_cards_snapshot
+mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
+```
+Done when: the two snapshots exist and `docs/protocol.jsonschema` regenerates with the new field.
+Out of scope: talking to an agent mid-task (`@agent` messaging).
+Execution plan: finding — a subagent's approval is **not** forwarded today: `subagent::run_task` drops every child event but `Usage`/`ToolCallRequested`/`TurnDone`, so a `shell` child whose call escalates waits on its own `pending` until cancelled. (a) `cox-protocol`: `Source { session, agent, preset }`; `ApprovalRequired.source: Option<Source>` (`serde(default)`: rollout lines from before T27.2 read as `None`); schema regenerated. (b) `cox-core`: `turn::ask` fills the session's own `Source`; `AgentTool` names children `<preset>-<n>`; `run_task` relays a child `ApprovalRequired` to the parent labelled with that name, parks the call in the parent's `pending` without touching its state, and hands the parent's `Approve` back to the child; the child's `ApprovalDecided` is relayed too so the modal closes. Test `subagent_approval_carries_source` in `tests/subagent.rs` + a scenario. (c) `cox-tui` modal header `<agent> asks: …` in `theme.agent`, snapshot `approval_modal_shows_source_agent`; ACP title gets the same prefix; stream-json carries the field through serde. (d) Step 3 (`/agents` cards) after (a)–(c) land.
+Execution plan (step 3, Claude Code / claude-sonnet-5): the creator answered the open question (§6 A29) with the narrow card, no new `Event` variant; `Enter` → rollout split into T27.5. `state.tasks` gains the `Tier` (already on `TaskCreated`, previously dropped) and `state.tick` at creation, alongside the existing `(TaskId, label)`, so a running subagent/background task can show tier and elapsed the same way `Cell::Tool.started` already does for tool cells; `tasks::list`/`/tasks`/`status.rs` keep reading `state.tasks` unchanged by mapping the extra fields away. `agents_list` becomes `agents_cards`: one block per `Presence` (T16.1: session, status; preset/tier/cost/elapsed unknown, shown `-`) and one per live `state.tasks` entry (name = label, preset parsed from the label's `<preset-or-tool>: ` prefix, tier from the stored `Tier`, elapsed from `tick - started`, state `running`; cost stays `-` — a task only learns its cost at `TaskCompleted`, which already retires it from `state.tasks`).
+
+What landed (commits `6ea9e0c` then `T27.2: /agents cards`): `6ea9e0c` landed steps (1)-(2) — `cox_protocol::types::Source`, `ApprovalRequired.source: Option<Source>` (serde default), `AgentTool` naming children `<preset>-<n>`, `subagent::relay_approval` forwarding a child's `ApprovalRequired`/`ApprovalDecided` through the parent's `pending` map, the TUI modal's `<agent> asks:` header in `theme.agent`, and the matching ACP title prefix. This session's commit landed step (3): `state.tasks: Vec<(TaskId, String, Tier, u64)>` (tier + creation tick added to the existing id/label pair), `Event::TaskCreated`/`TaskCompleted` handlers updated to fill and drop them, `Action::Tasks` mapping the tuple back down for `tasks::list` (`tasks.rs` and `status.rs` untouched), and `agents_list` replaced by `agents_cards(&state.agents, &state.tasks, state.tick)` — one card per sibling session (T16.1 presence: name = session id, state = presence status, preset/tier/cost/elapsed shown `-`) and one per live subagent/background task (name = label, preset parsed from the label's own `<preset>: ` prefix, tier, elapsed in ticks, state `running`, cost `-` until `TaskCompleted` retires it). `crates/cox-tui/tests/agents.rs`: `agents_command_lists_the_fed_records_snapshot` renamed to `agents_cards_snapshot` and extended with a running task; `agents_command_says_so_when_alone` updated for the new empty-state text (`no live agents`). `Enter` → read-only rollout overlay is split into T27.5 (§6 A29): the creator chose the narrow card over a new `Event::AgentProgress`, so per-subagent model/tokens/last tool stay undone until that event exists, and the overlay needs `/agents` to become a navigable list before a card can be opened. No `cox-protocol` change in this session's commit; `docs/protocol.jsonschema` is unchanged (there was no new field to regenerate for).
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui approval_modal_shows_source_agent agents_cards_snapshot
+Summary: 2 tests run: 2 passed, 245 skipped
+$ mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
+Summary: 1 test run: 1 passed, 175 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo nextest run --workspace
+Summary: 847 tests run: 847 passed, 3 skipped
+$ CARGO_INCREMENTAL=0 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
