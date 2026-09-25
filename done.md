@@ -509,3 +509,39 @@ Check:
 - `no_test_reads_the_real_keychain` passes.
 - `env -u ANTHROPIC_API_KEY COX_HOME=<tmp> cargo run --bin cox -- doctor` finishes with no keychain prompt and reports the key as missing.
 - `cargo nextest run --workspace`: 920 passed, 3 skipped; clippy and fmt clean.
+
+#### T29.3 `COX_*` env overrides for keys with an underscore
+
+Model: claude-opus-5-5 · Status: done 2026-09-23 · Depends: - · Size: ~80 · Priority: P1 · Complexity: 2
+Goal: `COX_TUI_SHOW_THINKING=full` sets `tui.show_thinking` (and `COX_HOOKS_TIMEOUT_S` sets `hooks.timeout_s`, `COX_TUI_SCREEN_READER` sets T29.1's `tui.screen_reader`). Today the env layer splits the name on every `_`, so any key that itself contains `_` becomes `tui.show.thinking` and fails `deny_unknown_fields` or is lost.
+Files: `crates/cox/src/config_load.rs`.
+Steps: (1) Replace `Env::split("_")` with a `map` that walks the key tree of `DEFAULT_CONFIG_TOML`: at each table take the longest child name that equals the rest of the env name or prefixes it followed by `_`, descend, and fall back to splitting the unmatched remainder on `_` (so `COX_TIERS_<custom>_MODEL` still reaches a user-defined tier as before). (2) Keep the `ignore` list ahead of the map, so it still matches pre-split names (`expect_sandbox`, and T29.1's `plain`, `ax_startup_quiet_ms`). (3) Regression test `config_env_overrides_keys_with_underscores` that sets `COX_TUI_SHOW_THINKING` and `COX_TIERS_CODE_MAX_TOKENS` and fails without the fix. `docs/config.md` is generated from `default.toml` and does not state the env rule, so it stays untouched; the rule is clarified in §1.6.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox config_env
+```
+Done when: the test passes, and `COX_TIERS_CODE_MODEL` (existing test) still works.
+Out of scope: env names for keys containing `-` (`providers.z-ai`), which a shell cannot export anyway.
+
+What landed (commit `T29.3: COX_* env overrides for keys with an underscore`): `default_key_tree()` extracts the embedded defaults as a figment `Dict`; `env_key(tree, name)` walks it taking the longest known name at each level and splits only the unmatched remainder on `_`; the env provider's `.split("_")` became `.map(env_key)`, still after `.ignore(...)`. Tests `config_env_overrides_keys_with_underscores` (load through every layer) and `env_key_resolves_known_keys_and_splits_the_rest` (`hooks.timeout_s`, `tiers.code.model`, and fallback into `tui.icons.*` / an unknown tier). §1.6 states the rule. Merge note: T29.1 adds `plain` and `ax_startup_quiet_ms` to the same `ignore` list; that still runs before the map, so its entries keep working unchanged.
+
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox config_env env_key
+        PASS config_load::tests::config_env_overrides_keys_with_underscores
+        PASS config_load::tests::config_env_overrides_project
+        PASS config_load::tests::env_key_resolves_known_keys_and_splits_the_rest
+$ # same test with `.split("_")` restored (fails without the fix):
+        FAIL unknown field: found `max`, expected one of `provider`, `model`, `effort`, `max_tokens`, `thinking`, `confirm` for key "default.tiers.code.max" in env
+$ COX_HOME=<scratch> COX_TUI_SHOW_THINKING=full COX_HOOKS_TIMEOUT_S=7 cargo run --bin cox -- config show --sources
+hooks.timeout_s = 7 # env
+tui.show_thinking = "full" # env
+$ mise exec -- cargo nextest run --workspace
+     708 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
+
+Landed on main 2026-09-26; originally merged only into `sync-2026-09-25-local-main` via PR #37.
