@@ -98,6 +98,7 @@ Programs the project uses and the direct packages from its manifests.
 | tree-sitter-rust | local | https://crates.io/crates/tree-sitter-rust | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | tui-textarea-2 | local | https://crates.io/crates/tui-textarea-2 | Rust dependency |
+| typify | local | https://github.com/oxidecomputer/typify | cox-provider: Anthropic stream wire types generated from `schema/anthropic-stream.json` (T30.10); proc-macro, build time only |
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
