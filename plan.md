@@ -6,10 +6,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.9 | todo | P1 | 3 | 0% | |
+| T30.9 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
-| T30.11 | todo | P1 | 3 | 0% | |
-| T30.12 | todo | P1 | 4 | 0% | |
+| T30.11 | in progress | P1 | 3 | 0% | Claude Code / claude-sonnet-5 |
+| T30.12 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
 
 ## Reference
 
@@ -664,16 +664,21 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 #### T30.9 Terminal-Bench run through Harbor
 
-Model: - · Status: open · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 3
+Model: claude-opus-5-5 · Status: in progress · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 3
 Goal: one real Terminal-Bench 2.x subset run with cox, inside a $1 budget the creator set, on colima (the creator's choice of Docker runtime). The current adapter never worked for real: it runs `cox` inside the task container, where nothing installs it and no key is passed, and it targets `terminal-bench` 0.2.x while TB 2.0 runs through Harbor.
-Plan: to be written when claimed: a Harbor installed-agent in `cox_evals.tbench` that copies a Linux `cox` build into the container and passes the key; per-task budget cap so the whole subset stays under $1; check free disk first (11 GB free at the time of writing; TB images are 0.5–2 GB each).
+Plan:
+1. Read Harbor's custom-agent contract and the TB 2.0 dataset (image arch, task list, how an agent is installed into the task container) from primary sources; record them with URLs in R§5.3.
+2. Build a static Linux `cox` for the task containers' arch (musl target; `cargo zigbuild` with mise's zig if a cross toolchain is needed — a new tool gets a `toolchain.md` row).
+3. Rewrite `cox_evals.tbench` as a Harbor agent: upload the binary into the container, run `cox run -p … --output-format json --budget <cap> --max-turns <cap>` there with `ANTHROPIC_API_KEY` passed from the host env, read usage and cost from the JSON; update `evals/tests/test_tbench.py` to the new contract.
+4. Start colima with a capped disk; check free host disk before and after pulling images; pick 3–5 small tasks so the whole run stays under $1 (per-task `--budget`).
+5. Run it, record pass rate, tokens and ledger cost in R§5.3 with sources, stop colima.
 Done when: `research.md` §5.3 has the TB subset's pass rate, tokens and ledger cost; T30.3 then closes.
 
 #### T30.11 OpenAI Responses wire types from async-openai
 
-Model: - · Status: open · Depends: - · Size: ~200 · Priority: P1 · Complexity: 3
+Model: claude-sonnet-5 · Status: in progress · Depends: - · Size: ~200 · Priority: P1 · Complexity: 3
 Goal: `openai/responses.rs` (the Codex-replacement backend) builds requests and parses stream events with `async-openai`'s Responses types instead of hand-written structs and `Value` walks (A40 step 1). Transport, retry, SSE framing, the `ProviderEvent` mapping and usage/ledger stay ours.
-Plan: to be written when claimed. Step 0 is a gate: add `async-openai` with `default-features = false` and only the Responses types feature; run `cargo tree -p cox-provider -e normal` and confirm it pulls no second HTTP stack (reqwest/hyper/tokio versions other than ours). If it does, stop and ask the creator (fallback: typify over a vendored `openai-openapi` subset, as in T30.12).
+Plan: step 0 is a gate: add `async-openai` with `default-features = false` and only the Responses types feature; run `cargo tree -p cox-provider -e normal` and confirm it pulls no second HTTP stack (reqwest/hyper/tokio versions other than ours). If it does, stop and ask the creator (fallback: typify over a vendored `openai-openapi` subset, as in T30.12). Then: a `openai/wire.rs` module re-exporting the used types; `responses.rs` builds the request with them (raw-JSON extras only where the type lacks a field cox sends) and deserializes each stream event by its `type` into them, unknown events ignored; tests for unknown events/fields; snapshots unchanged.
 Check:
 ```bash
 mise exec -- cargo nextest run -p cox-provider
@@ -683,9 +688,9 @@ Out of scope: OpenAI Chat (`chat.rs`), ChatGPT-account login.
 
 #### T30.12 Anthropic wire types generated from the vendored OpenAPI spec
 
-Model: - · Status: open · Depends: T30.10 · Size: ~300 (+ vendored spec) · Priority: P1 · Complexity: 4
+Model: claude-opus-5-5 · Status: in progress · Depends: T30.10 · Size: ~300 (+ vendored spec) · Priority: P1 · Complexity: 4
 Goal: the Anthropic backend (the Claude Code replacement) gets request *and* stream types generated with typify from Anthropic's own OpenAPI 3.1 spec, vendored in the repo, replacing T30.10's hand-curated schema subset (A40 step 2).
-Plan: to be written when claimed. Outline: vendor the last published Stainless snapshot (URL in R§4.3.1; record its sha256 beside it) under `crates/cox-provider/schema/`; a small extraction script turns `components.schemas` reachable from the Messages request and `MessageStreamEvent` into one JSON Schema (`$defs`, refs rewritten) that `typify::import_types!` consumes; the extracted file is committed and a test fails when it is stale against the vendored spec; `request.rs` serializes through the generated request types where they express what cox sends (`cache_control`, thinking, `effort`, tools) and keeps a raw-JSON escape hatch for anything the snapshot lacks.
+Plan: vendor the last published Stainless snapshot (URL in R§4.3.1; record its sha256 beside it) under `crates/cox-provider/schema/`; a small extraction script turns `components.schemas` reachable from the Messages request and `MessageStreamEvent` into one JSON Schema (`$defs`, refs rewritten) that `typify::import_types!` consumes; the extracted file is committed and a test fails when it is stale against the vendored spec; `request.rs` serializes through the generated request types where they express what cox sends (`cache_control`, thinking, `effort`, tools) and keeps a raw-JSON escape hatch for anything the snapshot lacks.
 Check:
 ```bash
 mise exec -- cargo nextest run -p cox-provider
