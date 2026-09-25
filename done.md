@@ -4235,3 +4235,29 @@ clean
 $ COX_HOME=<scratch> mise exec -- cargo run --bin cox -- doctor
 clean report (db opens, sandbox ok, git ok; unrelated pre-existing warnings only — no API key, no TERM)
 ```
+
+#### T22.9 Click-to-unfold a tool card
+
+Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: T22.4 · Size: ~100 · Priority: P3 · Complexity: 2
+Goal: with `tui.mouse = true`, a left click on a folded tool card in the live viewport unfolds it, and a second click folds it again (split out of T22.4, §6 A33).
+Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
+Steps: (1) `State` gains per-cell fold state keyed by transcript index, in place of the last-cell-only `expanded_last`. `Ctrl+O` and every existing fold path keep their behaviour. (2) `view.rs` records `cell_rows: Vec<(Range<u16>, usize)>` while drawing. (3) `on_mouse`: `Down(Left)` inside the viewport hit-tests `cell_rows` and toggles the matching tool cell's fold; a click anywhere else does nothing.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui update_mouse_click_unfolds_card
+```
+Done when: the test passes and the existing fold and `Ctrl+O` snapshots are unchanged.
+Out of scope: drag selection; clicks in modals and pickers.
+What landed (commit `T22.9: click-to-unfold a tool card`): `state.rs` replaces `expanded_last: bool` with `expanded: HashSet<usize>` (per transcript index) and adds `cell_rows: RefCell<Vec<(Range<u16>, usize)>>` — interior mutability, because `view`'s `&State` signature is shared by every render call site and test in the crate (dozens of them), and changing it would have blown the size limit many times over. `A::Expand` and a new `toggle_fold` helper flip a transcript index's set membership; `on_mouse` gains a `Down(Left)` branch that hit-tests `cell_rows` when no modal is open and toggles the matching cell. `view.rs`'s plain-transcript arm now builds `tool_spans` (each `Cell::Tool`'s line range) alongside `lines`, and a new `record_cell_rows` converts the spans still inside the scrolled/clipped viewport to absolute screen rows — the same coordinate space `MouseEvent::row` arrives in, since ratatui anchors an inline viewport's `Frame::area()` to the real cursor row rather than to zero (`ratatui-core` 0.1.2's `terminal/resize.rs` tests assert exactly this: `viewport_area` is `Rect::new(0, 4, ...)`-shaped, not `y = 0`). `cell_rows` is cleared on every draw so a click behind `Diff`/`Help`/`Agents`/`Transcript` never hits a stale card. The last tool cell still gets `Look.expand_last = Some(bool)` exactly as before — same `Ctrl+E` hint, same snapshots — and any other cell the user clicked gets `Some(true)` only, never `Some(false)`, so a cell nobody has touched still renders exactly as it always has.
+Deviations: (1) The card's Steps/Done-when say `Ctrl+O`; the key actually bound to `Action::Expand` (T24.4) is `Ctrl+E` (`keymap.rs`, `cells.rs`'s `ctrl_e_expands_last_card`, the screenshots' `Ctrl+E expand` hint) — a card-writing slip, most likely carried over from T22.4's own done.md deviation note. The implementation and its test follow the real key, `Ctrl+E`; nothing here changes `Ctrl+O` (`A::Transcript`, `state.show_diffs`).
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-tui update_mouse_click_unfolds_card
+        PASS [ 0.016s] (1/1) cox-tui state::tests::update_mouse_click_unfolds_card
+$ mise exec -- cargo nextest run --workspace
+     Summary [ 8.482s] 861 tests run: 861 passed, 3 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+     clean
+$ mise exec -- cargo fmt --check
+     clean
+```
