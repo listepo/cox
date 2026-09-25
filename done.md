@@ -1286,6 +1286,7 @@ cargo test -p cox-ext agents_   → 4 passed (3 integration + 1 unit)
 cargo test -p cox ext_lists     → 1 passed
 ```
 
+
 #### T7.4 Hooks
 Model: fable · Status: done 2026-09-03 · Depends: T2.1, T7.1 · Size: ~200
 Goal: Claude Code's hook protocol, fail open.
@@ -1304,6 +1305,7 @@ Check output:
 cargo test -p cox-ext hooks_            → 6 passed
 cargo test -p cox-core --test hooks     → 3 passed
 ```
+
 
 #### T7.5 `.claude/settings.json` import
 Model: fable · Status: done 2026-09-03 · Depends: T2.2, T7.4 · Size: ~120
@@ -1324,6 +1326,7 @@ cargo test -p cox-ext claude_settings_  → 3 passed
 cargo test -p cox config_claude         → 1 passed
 ```
 
+
 #### T7.6 MCP client
 Model: fable · Status: done 2026-09-03 · Depends: T3.8, T2.2 · Size: ~200
 Goal: servers from `.mcp.json` and config, stdio + Streamable HTTP, OAuth, deferred namespaced tools.
@@ -1341,6 +1344,7 @@ Check output:
 ```
 cargo test -p cox-mcp client_ → 4 passed (3 integration + 1 unit)
 ```
+
 
 #### T7.7 Design doc: extensions
 Model: fable · Status: done 2026-09-03 · Depends: T7.6 · Size: doc
@@ -2434,6 +2438,7 @@ $ mise exec -- cargo nextest run --workspace --no-fail-fast # 643 passed, 1 fail
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- cargo fmt --check # clean
 ```
 
+
 #### T27.3 Worktree isolation
 
 Model: claude-fable-5-1 · Status: done 2026-09-22 · Depends: T19.5 (gate, done), T27.1 · Size: ~200 · Priority: P2 · Complexity: 4
@@ -2954,35 +2959,6 @@ $ mise exec -- cargo nextest run -p cox --test tui_e2e
 $ mise exec -- cargo nextest run --workspace --no-fail-fast
      Summary [ 10.137s] 714 tests run: 714 passed, 3 skipped
      (an earlier run under heavy machine load failed both PTY tests on "status line never appeared within 30s" with a blank screen — first paint, not this change; rerun alone and in the full suite, both pass)
-
-#### T29.3 `COX_*` env overrides for keys with an underscore
-
-Model: claude-opus-5-5 · Status: done 2026-09-23 · Depends: - · Size: ~80 · Priority: P1 · Complexity: 2
-Goal: `COX_TUI_SHOW_THINKING=full` sets `tui.show_thinking` (and `COX_HOOKS_TIMEOUT_S` sets `hooks.timeout_s`, `COX_TUI_SCREEN_READER` sets T29.1's `tui.screen_reader`). Today the env layer splits the name on every `_`, so any key that itself contains `_` becomes `tui.show.thinking` and fails `deny_unknown_fields` or is lost.
-Files: `crates/cox/src/config_load.rs`.
-Steps: (1) Replace `Env::split("_")` with a `map` that walks the key tree of `DEFAULT_CONFIG_TOML`: at each table take the longest child name that equals the rest of the env name or prefixes it followed by `_`, descend, and fall back to splitting the unmatched remainder on `_` (so `COX_TIERS_<custom>_MODEL` still reaches a user-defined tier as before). (2) Keep the `ignore` list ahead of the map, so it still matches pre-split names (`expect_sandbox`, and T29.1's `plain`, `ax_startup_quiet_ms`). (3) Regression test `config_env_overrides_keys_with_underscores` that sets `COX_TUI_SHOW_THINKING` and `COX_TIERS_CODE_MAX_TOKENS` and fails without the fix. `docs/config.md` is generated from `default.toml` and does not state the env rule, so it stays untouched; the rule is clarified in §1.6.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox config_env
-```
-Done when: the test passes, and `COX_TIERS_CODE_MODEL` (existing test) still works.
-Out of scope: env names for keys containing `-` (`providers.z-ai`), which a shell cannot export anyway.
-
-What landed (commit `T29.3: COX_* env overrides for keys with an underscore`): `default_key_tree()` extracts the embedded defaults as a figment `Dict`; `env_key(tree, name)` walks it taking the longest known name at each level and splits only the unmatched remainder on `_`; the env provider's `.split("_")` became `.map(env_key)`, still after `.ignore(...)`. Tests `config_env_overrides_keys_with_underscores` (load through every layer) and `env_key_resolves_known_keys_and_splits_the_rest` (`hooks.timeout_s`, `tiers.code.model`, and fallback into `tui.icons.*` / an unknown tier). §1.6 states the rule. Merge note: T29.1 adds `plain` and `ax_startup_quiet_ms` to the same `ignore` list; that still runs before the map, so its entries keep working unchanged.
-
-Check:
-```text
-$ mise exec -- cargo nextest run -p cox config_env env_key
-        PASS config_load::tests::config_env_overrides_keys_with_underscores
-        PASS config_load::tests::config_env_overrides_project
-        PASS config_load::tests::env_key_resolves_known_keys_and_splits_the_rest
-$ # same test with `.split("_")` restored (fails without the fix):
-        FAIL unknown field: found `max`, expected one of `provider`, `model`, `effort`, `max_tokens`, `thinking`, `confirm` for key "default.tiers.code.max" in env
-$ COX_HOME=<scratch> COX_TUI_SHOW_THINKING=full COX_HOOKS_TIMEOUT_S=7 cargo run --bin cox -- config show --sources
-hooks.timeout_s = 7 # env
-tui.show_thinking = "full" # env
-$ mise exec -- cargo nextest run --workspace
-     708 passed, 3 skipped
 $ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
      clean
 $ mise exec -- cargo fmt --check
@@ -3129,6 +3105,7 @@ cost: $0.0000 this session
 Also run against the scratch home: `COX_PLAIN=1` (answering 3 denies the call), `tui.screen_reader = true` set with `cox config set` plus a positional first prompt (a bad answer re-prompts, 2 allows for the session), and an `ask_user` scenario (answering `2` returns `blue`).
 ```
 
+
 #### T30.2 Footprint benchmark
 
 Model: Claude Code / claude-haiku-4-5 · Status: done 2026-09-23 · Depends: — · Size: ~120 · Priority: P2 · Complexity: 2
@@ -3154,6 +3131,7 @@ replay RSS peak (30 turns, 60 provider calls, max): 26.6 MiB
 binary (/Users/listepo/GitHub/listepo/apps/cox/target/release/cox): 43.9 MiB (46012384 bytes)
 ```
 Deviations: (1) Replay is 30 user turns / 60 provider calls, not 50 — that is what the 5 committed transcripts hold (6 lines each incl. summary); context still grows turn to turn via `--resume`, which is what RSS measures. (2) Baseline lives at `scripts/footprint.json` next to the script (repo has no other committed-JSON convention; `evals/` keeps its data beside its runner too). (3) A 4th file, `website/content/_index.md`, carries the one website line the card requires, plus a `justfile` recipe line (no other path from `just footprint` to the script). (4) First-frame timing is spawn-to-first-stdout-byte of `stream-json`, not a PTY frame — headless `run` is the surface CI can measure deterministically. Cold-start timings vary with machine load (11–39 ms seen); RSS/binary are stable.
+
 
 #### T22.7 Leftover audit
 
@@ -3199,6 +3177,7 @@ $ COX_HOME=$(mktemp -d) cargo run -q --bin cox -- stats --project
 No usage records found
 ```
 
+
 #### T24.8 Screenshots and gallery
 
 Model: haiku · Status: done 2026-09-23 · Depends: T24.2, T24.4, T24.5, T24.6, T22.1 · Size: docs · Priority: P1 · Complexity: 1
@@ -3222,6 +3201,7 @@ $ hugo --minify (website/)
 built in 17 ms; 20 screenshots/* in docs/screens/index.html
 ```
 
+
 #### T25.6 `/init`
 
 Model: sonnet · Status: done 2026-09-23 · Depends: — · Size: ~140 · Priority: P1 · Complexity: 2
@@ -3244,6 +3224,7 @@ $ COX_HOME=/tmp/cox-scratch COX_PROVIDER=scripted COX_SCENARIO=crates/cox-core/t
 wrote AGENTS.md (473 bytes); rerun refuses without --force
 ```
 
+
 #### T28.1 Status-line segments
 
 Model: sonnet · Status: done 2026-09-23 · Depends: T24.1 · Size: ~120 · Priority: P1 · Complexity: 2
@@ -3264,6 +3245,7 @@ $ mise exec -- cargo nextest run -p cox-tui --test status status_at_60_100_160_c
 $ mise exec -- cargo nextest run -p cox-tui -p cox
 281 passed, 1 skipped (incl. tui_e2e with width-fitted row, plain_transcript with status: line)
 ```
+
 
 #### T30.1 `profile = "minimal"`
 
@@ -3721,32 +3703,6 @@ $ mise exec -- cargo fmt --check
      clean
 ```
 
-#### T23.8 `cargo run` picks `cox` again
-
-Model: claude-opus-5-5 · Status: done 2026-09-25 · Depends: T23.1 · Size: ~5 · Priority: P1 · Complexity: 1
-Goal: the documented `COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor` runs `cox` instead of failing with "could not determine which binary to run ... available binaries: cox, kitty_probe", and the T23.1 PTY tests still spawn `kitty_probe`.
-Files: `Cargo.toml`.
-Steps: (1) The root manifest is virtual, so `default-run` (a `[package]` key) is not available; add `default-members = ["crates/cox"]` to `[workspace]`, which is the set bare `cargo run`/`build` resolve against. `kitty_probe` stays where it is: every test/lint command in `AGENTS.md`, `justfile` and CI already passes `--workspace` or `-p`, so it is still built and `CARGO_BIN_EXE_kitty_probe` still resolves.
-Check:
-```bash
-# doctor exits 1 without an API key; the Check is that `cox` ran at all.
-out="$(COX_HOME="$(mktemp -d)" mise exec -- cargo run -q -- doctor 2>&1 || true)"
-grep -q '^toolchain: ' <<<"$out"
-mise exec -- cargo nextest run -p cox-tui --test shell
-```
-Execution plan: edit `Cargo.toml` `[workspace]`; run the Check, then nextest/clippy/fmt under `mise exec`; confirm `cargo fmt --check` still covers every member.
-Done when: the Check passes and the three workspace commands are clean.
-Deviations: first claimed and committed as T23.7 in a separate worktree; renumbered to T23.8 because T23.7 is "Resize hardening". The `Check` was rewritten while the task was open: `doctor` exits 1 without an API key, so the check greps its `toolchain:` row instead of the exit code.
-Out of scope: moving or feature-gating `kitty_probe` (either needs more code and the test would have to opt in to a feature).
-
-Check output:
-```
-$ out="$(COX_HOME="$(mktemp -d)" mise exec -- cargo run -q -- doctor 2>&1 || true)"; grep -q '^toolchain: ' <<<"$out"
-exit 0 (doctor itself exits 1: no API key in the scratch home)
-$ mise exec -- cargo nextest run -p cox-tui --test shell
-7 tests run: 7 passed, 0 skipped
-$ mise exec -- cargo nextest run --workspace
-841 tests run: 841 passed, 3 skipped
 #### T22.4 Mouse: wire `tui.mouse` or delete the key
 
 Model: claude-sonnet-5 · Status: done 2026-09-25 · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
