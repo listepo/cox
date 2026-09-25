@@ -6,6 +6,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.7 | in progress | P1 | 2 | 0% | Claude Code / claude-opus-5-5 |
+| T30.8 | todo | P1 | 2 | 0% | |
+| T30.9 | todo | P1 | 3 | 0% | |
 | T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
 
 ## Reference
@@ -659,6 +662,37 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.7 Evals as a Python package
+
+Model: claude-opus-5-5 · Status: in progress · Blocks: T30.8, T30.9 · Size: ~150 · Priority: P1 · Complexity: 2
+Goal: the eval scripts are one uv-managed package instead of loose files with no manifest: `evals/pyproject.toml` (`cox-evals`, `uv_build`), `evals/src/cox_evals/{harness,tbench}.py`, locked in `evals/uv.lock`, run as `uv run --project evals cox-evals …`. Python stays because a Harbor/Terminal-Bench agent has to be a Python class (T30.9).
+Files: `evals/pyproject.toml`, `evals/uv.lock`, `evals/.python-version`, `evals/src/cox_evals/__init__.py`, `harness.py` (was `evals/run.py`), `tbench.py` (was `evals/tbench/adapter.py`), `justfile`, `toolchain.md`, `rust.md` untouched. A package move cannot fit three files; the diff is mostly renames.
+Plan: (1) `git mv` both scripts into `src/cox_evals/` so history follows; (2) the hand-rolled TOML writer (`toml_escape`/`toml_value`/string-built `scenario_toml` and hook config) becomes `tomli-w`, which serialises the same tables; (3) task and hook paths resolve from the package's project root (`EVALS`), unchanged on disk; (4) `just eval` → `uv run --project evals cox-evals {{args}}`; (5) `toolchain.md`: uv, Python, and a `uv` package table (pyyaml, tomli-w, pytest); (6) active docs that name `evals/run.py` (plan T30.3 Check, `research.md` §5.3 reproduce line) point at the new command; `done.md` keeps its history.
+Check:
+```bash
+COX_PROVIDER=scripted uv run --project evals cox-evals --dry-run
+```
+Done when: the dry run is 10/10 like before the move and `just eval --dry-run` works.
+
+#### T30.8 Tests for the eval package
+
+Model: - · Status: open · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 2
+Goal: `cox_evals` has pytest tests that fail if the harness breaks, run by `just test-evals` with no network and no key.
+Files: `evals/tests/test_harness.py`, `evals/tests/test_tbench.py`, `justfile`.
+Plan: task loading and `--only` matching; the scripted scenario TOML round-trips through `tomllib` into the shape `Scripted` reads; the verify preset writes `AGENTS.md` and a `PostToolUse` hook config; result/token accounting from a `cox run` JSON payload (tokens, cost, exit code 2 → fail); an end-to-end dry run of one task against the built `cox` binary (skipped when none is built); the tbench adapter's self-test as a test.
+Check:
+```bash
+just test-evals
+```
+Done when: the suite is green and each listed behaviour has a test that fails when it breaks.
+
+#### T30.9 Terminal-Bench run through Harbor
+
+Model: - · Status: open · Depends: T30.7 · Size: ~150 · Priority: P1 · Complexity: 3
+Goal: one real Terminal-Bench 2.x subset run with cox, inside a $1 budget the creator set, on colima (the creator's choice of Docker runtime). The current adapter never worked for real: it runs `cox` inside the task container, where nothing installs it and no key is passed, and it targets `terminal-bench` 0.2.x while TB 2.0 runs through Harbor.
+Plan: to be written when claimed: a Harbor installed-agent in `cox_evals.tbench` that copies a Linux `cox` build into the container and passes the key; per-task budget cap so the whole subset stays under $1; check free disk first (11 GB free at the time of writing; TB images are 0.5–2 GB each).
+Done when: `research.md` §5.3 has the TB subset's pass rate, tokens and ledger cost; T30.3 then closes.
+
 #### T30.3 Eval run with a verification step
 
 Model: claude-opus-5-5 · Status: in progress · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
@@ -739,6 +773,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A35 §3 P30, T30.4, T30.3 — new card T30.4 (send `anthropic-workspace-id` from `ANTHROPIC_WORKSPACE_ID`) ahead of T30.3. Why: the creator's key is not scoped to a workspace, so every Anthropic call 400s; the creator chose teaching cox the header over issuing a workspace-scoped key. Effect: T30.3 step (3) runs after T30.4.
 - A36 §3 P30, T30.5, T30.3 — new card T30.5 (price every provider call through a `Priced` decorator) ahead of T30.3. Why: T1.7's `ledger_row` was never wired into a production path, so every ledger row costs $0 and budgets never fire; found during T30.4's live check; the creator chose fixing it before the paid eval run. Effect: T30.3 step (3) runs after T30.5; costs recorded before this fix are $0 and stay so (history is append-only).
 - A37 §3 P30, T30.6, T30.3 — new card T30.6 (the Anthropic stream emits `ToolUseEnd` on a tool block's `content_block_stop`) ahead of T30.3. Why: without it every Anthropic tool call is dropped; found by T30.3's first live task; the creator chose fixing it first. Effect: T30.3 step (3) runs after T30.6. `openai/chat.rs` never emits `ToolUseEnd` either; that is a separate, larger fix (interleaved calls by index) proposed to the creator, not part of T30.6.
+- A38 §3 P30, T30.7–T30.9 — the eval scripts become a uv-managed Python package with tests (T30.7, T30.8), and the Terminal-Bench part of T30.3 becomes T30.9 (Harbor agent, colima, $1 budget). Why: the creator asked for the scripts to be a proper package with tests before TB; the old adapter could not run for real. Effect: T30.3 closes after T30.9; `just eval` runs through uv.
 
 ## 7. Risk register
 
