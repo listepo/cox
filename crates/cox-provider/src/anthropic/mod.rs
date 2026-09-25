@@ -59,6 +59,8 @@ pub struct AnthropicProvider {
     pub base_url: String,
     /// The resolved credential (see [`resolve_api_key`]).
     pub api_key: String,
+    /// Sent as `anthropic-workspace-id` (see [`resolve_workspace_id`]).
+    pub workspace_id: Option<String>,
     /// TTL written into every `cache_control` block.
     pub ttl: CacheTtl,
     /// Whether to send `fallbacks: "default"` and its beta header.
@@ -93,6 +95,7 @@ impl AnthropicProvider {
         Ok(Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key: resolve_api_key()?,
+            workspace_id: resolve_workspace_id(),
             ttl,
             fallbacks,
             http,
@@ -116,6 +119,11 @@ impl AnthropicProvider {
         // An api key with non-ASCII bytes is a misconfigured credential, not
         // a transport failure: report it as an auth problem.
         h.insert("x-api-key", crate::http::api_key(&self.api_key)?);
+        if let Some(id) = &self.workspace_id {
+            // Same reasoning as the key: a bad id is a credential problem.
+            let value = HeaderValue::from_str(id).map_err(|_| ProviderError::Auth)?;
+            h.insert("anthropic-workspace-id", value);
+        }
 
         let betas = self.betas();
         if !betas.is_empty() {
@@ -158,6 +166,16 @@ impl AnthropicProvider {
 /// must never panic.
 pub fn resolve_api_key() -> Result<String, ProviderError> {
     crate::http::resolve_key_env_or_keyring("ANTHROPIC_API_KEY", "cox", "anthropic")
+}
+
+/// `ANTHROPIC_WORKSPACE_ID`, blank meaning unset. A key that is not scoped
+/// to a workspace gets a 400 on every call unless this header names one.
+/// Not a secret, so there is no keyring fallback.
+pub fn resolve_workspace_id() -> Option<String> {
+    std::env::var("ANTHROPIC_WORKSPACE_ID")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 #[async_trait]
@@ -284,6 +302,7 @@ mod tests {
         AnthropicProvider {
             base_url: "https://api.anthropic.com".into(),
             api_key: "sk-test".into(),
+            workspace_id: None,
             ttl: CacheTtl::FiveMinutes,
             fallbacks,
             http: reqwest::Client::new(),
@@ -319,6 +338,34 @@ mod tests {
             h.get("anthropic-beta").and_then(|v| v.to_str().ok()),
             Some(FALLBACKS_BETA)
         );
+    }
+
+    #[test]
+    fn workspace_header_is_sent_only_when_configured() {
+        let h = provider(false).headers().expect("headers build");
+        assert!(h.get("anthropic-workspace-id").is_none());
+
+        let mut p = provider(false);
+        p.workspace_id = Some("wrkspc_01abc".into());
+        let h = p.headers().expect("headers build");
+        assert_eq!(
+            h.get("anthropic-workspace-id")
+                .and_then(|v| v.to_str().ok()),
+            Some("wrkspc_01abc")
+        );
+
+        p.workspace_id = Some("bad\nid".into());
+        assert!(matches!(p.headers(), Err(ProviderError::Auth)));
+    }
+
+    #[test]
+    fn blank_workspace_env_means_unset() {
+        // Safety: see `missing_credential_is_auth_error_not_a_panic`.
+        unsafe { std::env::set_var("ANTHROPIC_WORKSPACE_ID", "  ") };
+        assert_eq!(resolve_workspace_id(), None);
+        unsafe { std::env::set_var("ANTHROPIC_WORKSPACE_ID", " wrkspc_01abc ") };
+        assert_eq!(resolve_workspace_id().as_deref(), Some("wrkspc_01abc"));
+        unsafe { std::env::remove_var("ANTHROPIC_WORKSPACE_ID") };
     }
 
     #[test]
