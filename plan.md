@@ -6,7 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.3 | in progress | P2 | 2 | 50% | Claude Code / claude-opus-5-5 |
+| T30.3 | in progress | P2 | 2 | 80% | Claude Code / claude-opus-5-5 |
 
 ## Reference
 
@@ -671,7 +671,7 @@ python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verif
 ```
 Done when: §5.3 has the table with both configurations and the run's cost from `cox stats`.
 Out of scope: leaderboard submission.
-Progress: steps (1)–(2) landed in `defba68` (`--preset verify` in `evals/run.py`, `evals/hooks/verify.sh`), verified offline only. Step (3), the paid run and the `research.md` §5.3 table, waits for the creator: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verify`.
+Progress: steps (1)–(2) landed in `defba68` (`--preset verify` in `evals/run.py`, `evals/hooks/verify.sh`), verified offline only. Step (3): the 10 in-repo tasks ran live with and without the preset (`4cd7bb6`, `research.md` §5.3: 9/10 both, $0.0515 vs $0.0626; `evals/run.py` now prints tokens). Left: the one Terminal-Bench 2.x run.
 
 ## 4. Definition of done for v0.1
 
