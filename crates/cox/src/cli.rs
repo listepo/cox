@@ -81,9 +81,7 @@ pub struct Cli {
     pub plain: bool,
 }
 
-/// Top-level subcommands (plan.md §1.12). Only `Run` and `Config` are
-/// implemented past their clap shape in T0.3; the rest print `not
-/// implemented` until their own task lands.
+/// Top-level subcommands (plan.md §1.12); `main.rs` dispatches each one.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Headless run: `cox run -p <prompt>`.
