@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T30.17 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 3 | 0% | |
 | T30.13 | todo | P2 | 3 | 0% | |
@@ -661,6 +662,19 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
+#### T30.17 One model of providers, models, prices and effort (design)
+
+Depends: — · Size: design only (≤ 1-page doc + research + follow-up cards)
+Goal: everything about providers, models, prices, reasoning effort, context windows, capabilities, keys and endpoints is represented once and handled by one code path per concern, so a new provider (LM Studio, T30.15) or a new model is an entry, not code. The creator's rule: this area must be as unified as possible. Per D15 the first step is the design, not code.
+Plan:
+1. Map the current state (config sections, provider constructors, key resolution, retries, model metadata, price tables, effort mapping, usage accounting, model-id resolution) with file:line and every divergence; record it in R§4.3.3.
+2. Find what can be decomposed and where the architecture improves: one provider descriptor (endpoint, API shape, auth, retry policy), one model catalog (context window, max output, efforts, capabilities, prices) with one lookup, one effort type mapped per wire in one place, one usage/cost path; which crate owns each (D2/D3 boundaries).
+3. Write `docs/design/providers.md` (≤ 1 page): the problem in one number, the target shape, what moves where, what is deleted, migration order.
+4. Propose the implementation as new cards (≤ 200 LOC / ≤ 3 files each) in a §6 amendment for the creator to approve; mark which existing cards (T30.15, T30.16) should wait for them.
+Check: R§4.3.3 and `docs/design/providers.md` exist; every divergence in R§4.3.3 is either addressed by a proposed card or explicitly kept with a reason.
+Done when: the creator has the design and the proposed cards.
+Out of scope: code changes.
+
 #### T30.15 LM Studio provider: the chat loop over `/v1/messages`
 
 Depends: — · Size: ~150
@@ -776,6 +790,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A41 §3 P30, T30.13 — new card: cox, Harbor's `claude-code` and `terminus-2` on the same 12 Terminal-Bench 2.0 tasks with the same local model (`bonsai-27b` in LM Studio), as a baseline before the optimization and refactoring pass, repeated after it (roadmap). Why: T30.9's 3/3 covered 3 of the 4 `easy` tasks and cannot be compared with anything; the creator chose same-model agents on a local model (no API spend), 12 tasks × 1 attempt.
 - A42 §3 P30, T30.14 — new card ahead of T30.13: the comparison runner becomes a tested `evals` module with registries of agents, providers and models (`cox-bench`). Why: the creator asked for a package/module supporting different providers, models and agents rather than a one-off script. Effect: T30.13 depends on T30.14 and runs through it.
 - A43 §3 P30, T30.15–T30.16 — new cards: a built-in `lmstudio` provider whose chat loop runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider (T30.15), and LM Studio's native `/api/v1/models` and `models/load` for the loaded context length, capabilities and load on demand (T30.16), with hand-written types (D3/A40 step 3). Why: the creator asked for LM Studio's own API as a local provider; R§4.3.2 shows the native chat endpoint takes no custom tool schemas, so the native API serves model state and the chat stays on Messages.
+- A44 §3 P30, T30.17 — new card: one model of providers, models, prices and effort; design first (D15), code only through cards the creator approves. Why: the creator's rule that provider, model, price and effort handling be as unified as possible, and the LM Studio provider (T30.15) should land in that shape.
 
 ## 7. Risk register
 
