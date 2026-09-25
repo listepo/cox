@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Opt-in eval harness (T12.1): one fresh tempdir per task, `setup`, a
 headless `cox run`, then `check`. Cost comes from the JSON output.
 
@@ -29,9 +28,12 @@ import tempfile
 import time
 from pathlib import Path
 
+import tomli_w
 import yaml
 
-EVALS = Path(__file__).resolve().parent
+# The uv project root (`evals/`); tasks and hooks live beside the package,
+# which uv installs editable, so `__file__` stays inside the checkout.
+EVALS = Path(__file__).resolve().parents[2]
 TASKS = EVALS / "tasks"
 HOOKS = EVALS / "hooks"
 
@@ -74,60 +76,33 @@ def find_cox_bin(explicit):
     raise SystemExit("no cox binary: build first (`cargo build -p cox`) or pass --cox-bin")
 
 
-def toml_escape(text):
-    return (
-        text.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-    )
-
-
-def toml_value(value):
-    if isinstance(value, str):
-        return f'"{toml_escape(value)}"'
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(v) for v in value) + "]"
-    if isinstance(value, dict):
-        inner = ", ".join(f"{k} = {toml_value(v)}" for k, v in value.items())
-        return "{ " + inner + " }"
-    raise TypeError(f"unsupported scenario value: {value!r}")
-
-
 def scenario_toml(turns):
     """Embedded dry-run turns to a Scripted provider scenario."""
     out = []
     for turn in turns or []:
         calls = turn.get("calls") or []
-        if not calls:
-            out.append(f'[[turn]]\ntext = "{toml_escape(turn.get("text", ""))}"\n')
-            continue
-        out.append(f'[[turn]]\ntext = "{toml_escape(turn.get("text", ""))}"\n')
-        for call in calls:
-            out.append(f'[[turn.tool_calls]]\nname = "{toml_escape(call["tool"])}"\n')
-            out.append(f"input = {toml_value(call.get('input', {}))}\n")
-        out.append(f'[[turn]]\ntext = "{toml_escape(turn.get("final", ""))}"\n')
-    return "".join(out)
+        head = {"text": turn.get("text", "")}
+        if calls:
+            head["tool_calls"] = [
+                {"name": call["tool"], "input": call.get("input", {})} for call in calls
+            ]
+        out.append(head)
+        if calls:
+            out.append({"text": turn.get("final", "")})
+    return tomli_w.dumps({"turn": out})
 
 
 def write_verify_preset(home):
     """T30.3: drop the addendum + hook config into a fresh COX_HOME."""
     (home / "AGENTS.md").write_text(VERIFY_ADDENDUM)
-    verify_sh = HOOKS / "verify.sh"
-    config = (
-        "[[hooks.PostToolUse]]\n"
-        f'matcher = "{toml_escape("edit|apply_patch|write")}"\n'
-        f'command = "{toml_escape(str(verify_sh))}"\n'
+    hook = {
+        "matcher": "edit|apply_patch|write",
+        "command": str(HOOKS / "verify.sh"),
         # Above the script's own 120s cap, so the cap (not this timeout)
         # is what fires on a hanging test command.
-        "timeout_s = 130\n"
-    )
-    (home / "config.toml").write_text(config)
+        "timeout_s": 130,
+    }
+    (home / "config.toml").write_text(tomli_w.dumps({"hooks": {"PostToolUse": [hook]}}))
 
 
 def run_task(task, *, cox_bin, dry_run, provider, model, preset=None):

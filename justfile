@@ -20,7 +20,7 @@ snap:
     mise exec -- cargo insta review
 
 eval *args:
-    mise exec -- python3 evals/run.py {{args}}
+    uv run --project evals cox-evals {{args}}
 
 bench:
     mise exec -- cargo run -q -p cox --example bench

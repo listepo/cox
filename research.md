@@ -277,7 +277,7 @@ to come from the environment:
 
 ```bash
 ANTHROPIC_API_KEY="$(security find-generic-password -s cox -a anthropic -w)" \
-  python3 evals/run.py --provider anthropic --model claude-sonnet-5 [--preset verify]
+  uv run --project evals cox-evals --provider anthropic --model claude-sonnet-5 [--preset verify]
 ```
 
 Terminal-Bench 2.x: not run yet.

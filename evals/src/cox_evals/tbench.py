@@ -6,7 +6,7 @@ the `terminal-bench` package when importable (verified against
 terminal-bench 0.2.18's `base_agent.py`); otherwise local shims with the
 same shape so this file self-tests without the harness installed:
 
-    python3 evals/tbench/adapter.py --self-test   # scripted dry run, offline
+    uv run --project evals python -m cox_evals.tbench --self-test   # scripted dry run, offline
 """
 
 import argparse
@@ -140,6 +140,10 @@ def self_test(cox_bin):
                     COX_SCENARIO=str(scenario))
 
     work = tempfile.mkdtemp()
+    # The scripted provider never reads it, but `perform_task` refuses to
+    # start without the provider's key, so the self-test failed on any
+    # machine without `OPENAI_API_KEY` exported.
+    os.environ.setdefault("OPENAI_API_KEY", "unused-by-scripted")
     agent = CoxAgent(model_name="openai/gpt-4o-mini", cox_bin=cox_bin, max_turns=5)
     result = agent.perform_task("Reply with exactly: done", LocalSession(work))
     assert result.failure_mode == FailureMode.NONE, result

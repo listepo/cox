@@ -15,6 +15,8 @@ Programs the project uses and the direct packages from its manifests.
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
 | dunnage | ketch | `just test` ends with a lossless cleanup of `target/` | https://github.com/listepo/dunnage |
+| uv | global (curl installer / brew) | Runs the `evals/` package (`just eval`) and locks its Python deps | https://github.com/astral-sh/uv |
+| python | uv (`evals/.python-version`) | Eval harness and the Terminal-Bench agent, which must be a Python class | https://github.com/python/cpython |
 
 ## ketch
 
@@ -100,3 +102,11 @@ Programs the project uses and the direct packages from its manifests.
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
+
+## uv (`evals/`)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| pyyaml | local | https://github.com/yaml/pyyaml | Reads `evals/tasks/*.yaml` |
+| tomli-w | local | https://github.com/hukkin/tomli-w | Writes scripted scenarios and the verify hook config |
+| pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the eval package |
