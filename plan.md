@@ -62,8 +62,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T34.6 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T34.7 | todo | P2 | 2 | 0% | |
-| T34.8 | todo | P2 | 2 | 0% | |
+| T34.7 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
+| T34.8 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.9 | todo | P1 | 3 | 0% | |
 | T35.2 | todo | P1 | 4 | 0% | |
 | T35.3 | todo | P2 | 5 | 0% | |
@@ -1358,12 +1358,14 @@ Check: `sibling_message_is_relayed_through_the_parent_session`, `message_cap_den
 Depends: T34.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs` (the transcript line and the `/agents` overlay)
 Goal: a delivered `TaskMessage` shows as a transcript line (sanitized through `cox_sanitize::sanitize`, D14) and updates the `/agents` card for that task (A29's narrow card, not a new progress event stream); `stream-json` needs no special case since `Event` already passes through generically (D2) — this card adds the test that proves it.
 Check: `insta` snapshot of a task-message transcript line and an updated `/agents` card; `stream_json_passes_task_message_through_unchanged` (headless e2e).
+Plan: starts before T34.6 lands, because `Event::TaskMessage` has existed since T34.4 and the tests feed the event straight into `update`. In `state.rs`, add a `TaskMessage` arm that pushes a sanitized transcript line labelled like `ApprovalRequired`'s relay, and touch that task's `/agents` card. Add the `view.rs` line style. For stream-json, one headless e2e that proves the event passes through unchanged.
 
 #### T34.8 ACP rendering, and the dropped task-lifecycle events
 
 Depends: T34.6 · Size: ~120 · Files: `crates/cox-acp/src/server.rs`
 Goal: `drive_prompt`'s event loop today falls into `Ok(_) => {}` for everything except `TurnDone` and `ApprovalRequired` (server.rs:344), so an ACP client (Zed, JetBrains) never sees `TaskCreated`/`TaskCompleted`/a delivered `TaskMessage`. This card gives those three their own arms: `TaskCreated`/`TaskCompleted` become a plan/task update the same way `ask_permission` already labels a relayed approval, and a `TaskMessage` renders with the same label.
 Check: `acp_reports_task_created_and_completed`, `acp_reports_a_delivered_task_message`.
+Plan: starts before T34.6 lands, because the three events already exist and the tests drive `drive_prompt` with injected events. Add three arms in `server.rs`: `TaskCreated`/`TaskCompleted` become a plan/tool-call update, and `TaskMessage` becomes an agent-message chunk with the task label. All text goes through `cox_sanitize::sanitize`.
 
 #### T34.9 e2e: two subagents messaging through the parent
 
