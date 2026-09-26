@@ -28,9 +28,9 @@ pub const EXIT_OK: i32 = 0;
 /// `bash` tool's own SIGTERM→SIGKILL grace (`crates/cox-tools/src/bash/
 /// mod.rs`'s `TERM_GRACE` plus its PTY-drain `REAP_GRACE`, ~2.5s) so
 /// `Session::wait_tasks_cleared` (T34.9 follow-up) cannot hang the
-/// headless exit on a `TaskKind::Shell` task this session's own
-/// `interrupt()` cannot reach.
-const SHELL_CANCEL_GRACE: Duration = Duration::from_secs(5);
+/// headless exit (or the TUI's, T34.11) on a `TaskKind::Shell` task this
+/// session's own `interrupt()` cannot reach.
+pub(crate) const SHELL_CANCEL_GRACE: Duration = Duration::from_secs(5);
 pub const EXIT_ERROR: i32 = 1;
 pub const EXIT_DENIED: i32 = 2;
 pub const EXIT_BUDGET: i32 = 3;

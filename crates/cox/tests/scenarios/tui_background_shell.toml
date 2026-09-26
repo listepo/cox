@@ -1,0 +1,14 @@
+# TUI counterpart of `subagent_background_shell.toml`: a detached `bash` on
+# a long `sleep` that is still running when the user quits the TUI.
+# `run_tui` (`crates/cox/src/session.rs`) must kill it before the process
+# exits rather than leave it orphaned (ppid 1). `4002` is a deliberately
+# uncommon duration, distinct from the headless test's `4001`, so each
+# test's `pgrep -f` check sees only its own process.
+
+[[turn]]
+tool_calls = [
+    { name = "bash", input = { command = "sleep 4002", background = true } },
+]
+
+[[turn]]
+text = "detached it"

@@ -853,6 +853,12 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         // The TUI never shut the core down, so `SessionEnd` hooks and the
         // presence record outlived the window (T16.2).
         rt.block_on(quit.submit(Submission::Shutdown))?;
+        // T34.11: the same kill headless `run` does before it exits (see
+        // its comment there): a detached `bash` still running would
+        // otherwise outlive this session — and, at quit, cox itself as an
+        // orphan. Every outcome leaves this session, so every one reaps it.
+        quit.interrupt();
+        rt.block_on(quit.wait_tasks_cleared(crate::run::SHELL_CANCEL_GRACE));
         let parent = quit.id();
         let (child, what) = match outcome {
             cox_tui::app::TuiOutcome::Clear => continue,
@@ -894,6 +900,10 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     if cli.worktree.is_some() {
         offer_worktree_removal(&rt, cwd);
     }
+    // T34.11: `rt`'s own `Drop` waits for every blocking task, including a
+    // shell `wait_tasks_cleared` gave up on, which hung quit for as long as
+    // that shell ran; same reasoning as `run`'s `shutdown_background`.
+    rt.shutdown_background();
     Ok(())
 }
 

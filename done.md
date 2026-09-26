@@ -1472,3 +1472,21 @@ Check:
 - No `.snap` file changed and no `.snap.new` was written.
 - In the worktree: nextest 1036 passed, 3 skipped. fmt, clippy, the slim build and `cargo deny` are clean.
 - On main after landing: nextest 1036 passed, 3 skipped. fmt, clippy and the slim build are clean.
+
+#### T34.11 Quitting the TUI kills a still-running background shell
+
+Depends: T34.9 · Size: ~60 · Files: `crates/cox/src/session.rs`, `crates/cox/src/run.rs`, `crates/cox/tests/tui_e2e.rs` (+ scenario `tests/scenarios/tui_background_shell.toml`)
+Why: T34.9 made headless `run` cancel and reap a detached `bash` before exit (`interrupt` → `wait_tasks_cleared(SHELL_CANCEL_GRACE)` → `shutdown_background`). `run_tui` builds its own runtime and only drops it, so a `bash {background: true}` still running at quit may outlive cox as an orphan (ppid 1).
+Plan:
+1. Reproduce: PTY e2e `tui_quit_kills_a_running_background_shell` — a scripted detached `sleep 4002`, quit with Ctrl+C ×2 while it runs, then `pgrep -f 'sleep 4002'`.
+2. If it leaks: after the last `Submission::Shutdown` in `run_tui`, run the same `interrupt` + `wait_tasks_cleared(SHELL_CANCEL_GRACE)` on each session the loop leaves (quit, `/clear`, fork, handoff), and end with `rt.shutdown_background()`. Make `SHELL_CANCEL_GRACE` `pub(crate)` in `run.rs` and reuse it; no new helper, no duplicate logic.
+3. Known limit, not fixed here: cancellation is turn-scoped, so a shell detached in an *older* turn (the user sent another prompt after it) holds a token `interrupt()` no longer reaches; `wait_tasks_cleared`'s deadline gives up on it. Recorded in `ideas.md` rather than widened into this card.
+
+Check: `tui_quit_kills_a_running_background_shell` fails before the change and passes after; the existing `tui_e2e` and `subagent_messaging` tests stay green; no `sleep 4002` is left running.
+Status: done 2026-09-26
+Result: reproduced, then fixed. Before the change, Ctrl+C ×2 with a detached `sleep 4002` running left cox hung (the runtime's `Drop` waits on the shell's blocking PTY reader, so `Tui::quit`'s 5 s exit check failed) and, once the test harness killed it, `sleep 4002` lived on with ppid 1. `run_tui` now calls `interrupt` + `wait_tasks_cleared(SHELL_CANCEL_GRACE)` after each session's `Shutdown` (quit, `/clear`, fork, handoff) and ends with `rt.shutdown_background()`; `SHELL_CANCEL_GRACE` is `pub(crate)` in `run.rs` and shared, no new helper.
+Not fixed (recorded in `ideas.md`): a shell detached in an older turn. Probed with `sleep 4003` detached, then a second prompt, then quit: quit now returns after the 5 s grace instead of hanging, but that process is still orphaned (ppid 1), because `interrupt()` only reaches the current turn's token.
+Check output:
+- `tui_quit_kills_a_running_background_shell` failed before the change (`cox did not exit`, orphan `sleep 4002` with ppid 1) and passes after (2.9 s).
+- nextest: 1036 passed, 3 skipped. fmt and clippy clean. No `sleep 4002`/`4003` left running.
+- On main after landing (cherry-picked from the separate session's branch): nextest 1037 passed, 3 skipped. fmt, clippy and the slim build are clean. No `sleep 4002`/`4003` left running.
