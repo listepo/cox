@@ -15,6 +15,8 @@ mod mcp_cmd;
 mod plain;
 #[cfg(feature = "plugins")]
 mod plugin_cmd;
+#[cfg(feature = "plugins")]
+mod plugin_ui;
 mod record;
 mod resume;
 mod run;

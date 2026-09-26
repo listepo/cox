@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
+use cox_protocol::plugin::{RenderIn, Slot, Widget};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
@@ -329,6 +330,10 @@ pub struct State {
     /// `Modal::PluginGrant` dialogs still waiting (T33.8): `on_key` pops the
     /// next one into `modal` once the current one is decided (`y`/`n`).
     pub pending_grants: VecDeque<PluginGrantDialog>,
+    /// Plugin `status.left`/`status.right` segments (T33.23, PL§8), in
+    /// declaration order, each with its last good render. `view` only ever
+    /// reads these; `status::on_plugin` fills them from `Msg::Plugin`.
+    pub plugin_status: Vec<crate::status::PluginSegment>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -421,6 +426,36 @@ pub enum Msg {
     /// overlay. `crates/cox/src/session.rs` answers this for real with
     /// `Store::rollout_read`; a test can also send it directly.
     Rollout(Vec<Event>),
+    /// What the runtime learned about a plugin's UI (T33.23, PL§8).
+    Plugin(PluginUiMsg),
+}
+
+/// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
+/// holds a plugin, so every render arrives here, cached in `State`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginUiMsg {
+    /// A plugin's granted slots after `cox_init`; each new one is rendered
+    /// once now, since it just became visible.
+    Declare { plugin: String, slots: Vec<Slot> },
+    /// `Effects.redraw` or `cox_redraw()`: render this plugin's slots again.
+    Redraw { plugin: String },
+    /// A `cox_render` answer that came back inside its deadline.
+    Rendered {
+        plugin: String,
+        slot: Slot,
+        widget: Widget,
+    },
+    /// A `cox_render` that timed out, failed or does not exist; the last
+    /// good render stays and the miss is counted.
+    Missed { plugin: String, slot: Slot },
+}
+
+/// What the TUI asks of a plugin; `crates/cox` serves it and answers with
+/// `Msg::Plugin`. Later cards add commands and keys here (PL§8).
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginRequest {
+    /// Call `plugin`'s `cox_render` with `input`.
+    Render { plugin: String, input: RenderIn },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -485,6 +520,9 @@ pub enum Cmd {
     /// `crates/cox`, which writes it. `n` never reaches here — `on_key`
     /// alone advances `pending_grants`, since skipping writes nothing.
     PluginGrant(GrantDecision),
+    /// A plugin call the runtime makes off-screen (T33.23); `app.rs`
+    /// forwards it to `crates/cox`, the only side that holds plugin hosts.
+    Plugin(PluginRequest),
 }
 
 impl State {
@@ -559,6 +597,7 @@ impl State {
             mouse: true,
             active_loop: None,
             pending_grants: VecDeque::new(),
+            plugin_status: Vec::new(),
         }
     }
 
@@ -724,7 +763,9 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.tick += 1;
             loop_tick(state)
         }
-        Msg::Resize(..) => Vec::new(),
+        // PL§8: a resize is one of the three times a plugin renders.
+        Msg::Resize(..) => crate::status::render_requests(state, None),
+        Msg::Plugin(msg) => crate::status::on_plugin(state, msg),
         Msg::Agents(agents) => {
             state.agents = agents;
             Vec::new()

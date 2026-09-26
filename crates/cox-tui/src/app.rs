@@ -28,7 +28,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
 use crate::cells::cell_lines;
-use crate::state::{Ask, Cmd, GrantDecision, Msg, State, update};
+use crate::state::{Ask, Cmd, GrantDecision, Msg, PluginRequest, State, update};
 use crate::view::view;
 
 /// Rows the live viewport keeps below the scrollback; a short terminal
@@ -96,6 +96,9 @@ pub enum TuiError {
 /// — this crate has no `toml_edit`-editing path of its own. `grants`
 /// (T33.8) carries a `Modal::PluginGrant`'s `y` out to `crates/cox`, which
 /// writes it — same reason as `persist`, this crate never touches the store.
+/// `plugins` (T33.23) carries each `Cmd::Plugin` to `crates/cox`, which holds
+/// the plugin hosts; the answer arrives on `feed` as `Msg::Plugin`.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     session: Session,
     mut state: State,
@@ -104,6 +107,7 @@ pub async fn run(
     mut questions: tokio::sync::mpsc::Receiver<Question>,
     persist: tokio::sync::mpsc::Sender<(String, String)>,
     grants: tokio::sync::mpsc::Sender<GrantDecision>,
+    plugins: tokio::sync::mpsc::Sender<PluginRequest>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
@@ -250,6 +254,12 @@ pub async fn run(
                     // grant is not persisted; the dialog already moved on.
                     Cmd::PluginGrant(decision) => {
                         let _ = grants.try_send(decision);
+                    }
+                    // T33.23: best-effort too — a request lost to a full
+                    // channel leaves the last good render on screen, and
+                    // the next redraw or resize asks again.
+                    Cmd::Plugin(request) => {
+                        let _ = plugins.try_send(request);
                     }
                 }
             }

@@ -1,0 +1,6 @@
+---
+source: crates/cox-tui/src/status.rs
+assertion_line: 520
+expression: "line_at(&state, 200).to_string()"
+---
+left #1 · sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · 0 tasks · cache 0% · [default] · right #2

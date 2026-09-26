@@ -1214,6 +1214,14 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         let (surfaced, surfaced_rx) = tokio::sync::mpsc::channel(1);
         let (grant_tx, mut grant_rx) =
             tokio::sync::mpsc::channel::<cox_tui::state::GrantDecision>(4);
+        // T33.23: `Cmd::Plugin` goes to `plugin_ui::serve`, answered on the
+        // feed. T33.44 passes the session's live hosts in place of none; a
+        // thread that fails to start only leaves plugin segments unrendered.
+        let (plugin_tx, plugin_rx) = tokio::sync::mpsc::channel(16);
+        #[cfg(feature = "plugins")]
+        let _ = crate::plugin_ui::serve(Vec::new(), plugin_rx, feed.clone());
+        #[cfg(not(feature = "plugins"))]
+        drop(plugin_rx);
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
         let poll = {
             let home = home.clone();
@@ -1322,6 +1330,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             surfaced_rx,
             persist_tx.clone(),
             grant_tx,
+            plugin_tx,
         ))?;
         poll.abort();
         // `/handoff`'s summary is the parent's `compact` call, so it runs
