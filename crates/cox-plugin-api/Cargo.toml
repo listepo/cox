@@ -9,11 +9,12 @@ license.workspace = true
 # `wasm32-unknown-unknown`, so no workspace crate and nothing that does I/O.
 [dependencies]
 serde = { workspace = true }
+# ABI fields that carry cox-protocol types are `serde_json::Value` (A52).
+serde_json = { workspace = true }
 schemars = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 # Tests parse `plugin.toml` text the way cox's config loader does (figment's
 # Toml provider, already workspace-pinned); loading proper lives in
 # `cox-plugin` (PL§2), so the api crate carries no TOML parser of its own.
