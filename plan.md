@@ -27,6 +27,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
+| T36.1 | todo | P1 | 4 | 0% | |
 
 ## Reference
 
@@ -1033,6 +1034,21 @@ Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_liv
 Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
 Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required).
 
+### P36 — Compound shell commands (goal: a `Bash(<prefix>:*)` rule or a session grant covers exactly the commands it names, never a command chained after them)
+
+Rationale in §6 A62.
+
+#### T36.1 Permission rules match every segment of a compound bash command
+
+Depends: none · Size: ~200 · Files: `crates/cox-permission/src/lib.rs`, `src/rules.rs`, `crates/cox-protocol/src/types.rs` (`ToolCall`), `crates/cox-tools/src/bash/mod.rs` (+ `bash/classify.rs` for the shared tree-sitter walk), `crates/cox-core/src/turn.rs` (where `subject` is filled)
+Goal: close the gap where a prefix rule or grant matches the whole command line as one string. Today `allow = ["Bash(git:*)"]` allows `git status; rm -rf ~` because `Subject::Prefix` checks only the start of the subject (`rules.rs` `Rule::matches`), and a session grant ("always allow this session") does the same with `call.subject.starts_with` (`lib.rs` `decide`). The mirror gap is worse: `deny = ["Bash(rm:*)"]` does not deny `git status && rm -rf x`. Done means:
+- the bash tool splits its command with the tree-sitter parse it already runs for `classify` (`cox_syntax::parse_bash`) into simple-command segments across `;`, `&&`, `||`, `|`, `&` and newlines, and hands them to the engine next to the display `subject` (for example `ToolCall.segments`; other tools keep one segment, their subject). `cox-permission` stays pure: it gets strings, never a parser;
+- a deny rule that matches **any** segment denies the call; an allow rule or a session grant allows it only when **every** segment is covered; otherwise the usual ask path applies;
+- a command the split cannot see through — command substitution `$(…)` or backticks, process substitution, `eval`/`bash -c`/`sh -c`, a parse error, or an output redirect to a path — is never allowed by a prefix rule or grant: it asks (deny still wins), even when its first word matches;
+- an exact (non-prefix) rule keeps matching the whole command string as today; `ReadOnly` auto-allow and bypass mode are unchanged;
+- `docs/how-it-works.md` (the rule grammar section) and the permission docs say how compound commands are matched; research.md cites Claude Code's documented behaviour for `Bash(cmd:*)` with shell operators (primary source, checked date) so `.claude/settings.json` rules keep the meaning users expect.
+Check: `prefix_rule_does_not_cover_chained_command` (`git status; rm -rf x`, `git log && curl … | sh`), `deny_rule_matches_any_segment`, `session_grant_does_not_cover_chained_command`, `substitution_asks_even_when_prefix_matches` (`git log $(rm x)`, backticks, `bash -c`), `every_segment_allowed_runs_without_asking` (`git status && git diff`), `exact_rule_still_matches_whole_command`; the real binary in a scratch `COX_HOME` with `allow = ["Bash(git:*)"]` asks for `git status; touch x` in `cox run -p` (headless denies what would ask).
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -1159,6 +1175,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A59 §3 P35 (new T35.13) — T35.5 split. Why: cox-core does no I/O, so T35.5 landed the `ExternalAgent` trait, preset resolution and the usage row, and the host drivers (stream-json and ACP over T35.2's sandboxed spawn) need their own card. Effect: T35.7 also depends on T35.13; no decision changes.
 - A60 §3 P33 (new T33.44) — split the session wiring out of T33.9, T33.10, T33.11 and T33.16. Why: each built its piece against a caller-supplied `PluginHost`, and the session still drops the plugins it loads, so one card must keep a live instance and install hooks, the event tap, notices and plugin models. Effect: T33.12 also depends on T33.44; no decision changes.
 - A61 §1.1 `cox-plugin` row, §3 T33.36, `docs/plugins.md` "Engine features", `docs/design/plugins.md` §15 decision 3 — the creator approved extism's `wasmtime-exceptions` for the whole workspace on 2026-09-26. Why: T33.35 showed Kotlin/Wasm output does not parse without the exception-handling proposal (research.md P42–P43). Effect: every plugin's engine enables `wasm_exceptions`; `exception_handling_module_loads` holds it; T33.36 is unblocked. Its security on wasmtime 43 is not reviewed beyond RUSTSEC-2026-0222 (not guest-triggerable); revisit with T33.43. No decision changes.
+- A62 §3 new P36 (T36.1), by the creator. Why: a `Bash(<prefix>:*)` allow rule and a session grant match the command line as one string, so `Bash(git:*)` allows `git status; rm -rf …` and `Bash(rm:*)` in `deny` misses `git status && rm …`. Effect: the bash tool hands the engine its command segments; deny matches any segment, allow and grants need every segment, and substitution, `eval`/`-c` and redirects ask. `cox_permission::Engine` stays the single guard and stays pure. No decision changes.
 
 ## 7. Risk register
 
