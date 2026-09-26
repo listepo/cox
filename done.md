@@ -2479,3 +2479,53 @@ Check:
 - pytest 44 passed.
 - In the worktree: nextest 1185 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing (with T33.26, T33.28, T33.13 and T35.7 together): nextest 1203 passed, 3 skipped; fmt, clippy, the slim build, the plugins workspace tests and the vendor pytest (44) clean.
+
+#### T35.11 ACP client terminals under the sandbox
+
+Depends: T35.2, T35.3 · Size: ~190 · Files: `crates/cox-acp/src/client.rs`, `crates/cox-acp/src/terminal.rs` (new)
+Goal: EA§4 allows a `terminal/*` request "only under the same `sandbox::Policy` already governing the spawned process". T35.3 refuses every such request, including when a sandbox grant is present, and advertises `terminal = false`. This card serves the terminal methods when a grant is present:
+- `terminal/create` runs the command under the process's own `sandbox::Policy`, through the same sandboxed spawn `bash` uses. There is no second spawn path, and the working directory goes through `path::confine`.
+- `terminal/output` returns the buffered output, capped at the request's `outputByteLimit`, and reports truncation.
+- `terminal/wait_for_exit`, `terminal/kill` and `terminal/release` behave as ACP defines them. A released or finished terminal frees its process; the process group is killed, as `bash` does.
+- Each command is judged by `cox_permission::Engine` as a `bash` call, just like a permission request.
+- `initialize_request()` advertises `terminal = true` only when the sandbox grant is present.
+Without a grant, the T35.3 refusal and its reason stay. Output shown to the user is sanitized, and output over the cap is archived before it is shortened.
+Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `acp_terminal_output_respects_byte_limit_and_reports_truncation`, `acp_terminal_release_kills_the_process_group`, `acp_terminal_command_is_judged_by_the_engine` and `acp_terminal_without_sandbox_grant_is_still_refused`.
+Status: done 2026-09-26
+Result: the ACP client serves `terminal/create`, `output`, `wait_for_exit`, `kill` and `release` when the agent runs under a sandbox grant, and advertises `terminal = true` only then (`initialize_request(sandboxed)`). Without a grant, it refuses with T35.3's reason as before.
+
+**Registry** (`crates/cox-acp/src/terminal.rs`) keeps one live terminal per id.
+- Each command runs through `cox_tools::bash::run_line`, a thin `pub` wrapper over bash's own runner. It uses the same `sandbox::command` wrap with the agent's `SandboxPolicy`, the same env allowlist, PTY, `setsid` and group signals, so there is no second spawner.
+- Output keeps the last `min(outputByteLimit, 1 MiB)` bytes, cut on a character boundary, reports `truncated`, and is sanitized.
+- A 30-minute ceiling stops terminals nobody releases.
+- `kill` stops the command and keeps the terminal. `release` stops it and forgets the terminal. The end of the session stops everything.
+
+**Judging** (`client.rs` `judge()`, which `permission()` also uses):
+- Each command is judged as a `bash` call. The line is the subject and the risk comes from `bash::classify`. `Ask` goes to the host approver, and the driver's `RefuseAsk` turns it into a refusal.
+- A line with control characters is refused. Without this, `git status\x1b[;rm -rf x` would match a `Bash(git:*)` rule once sanitized, while the shell ran `rm`.
+- The cwd passes `confined()` (`path::confine`).
+- `create` and `wait_for_exit` run off the dispatch loop, so `kill` still gets through.
+
+**Behaviour change in bash `run`:** a cancelled or timed-out run now always ends with a SIGKILL of the process group, even when the shell already exited on SIGTERM. Before this, a grandchild that ignored SIGTERM survived.
+
+Deviations:
+- 7 files instead of 2, and about 330 lines against ~190.
+- `cox-acp` now depends on `cox-tools` and `tokio-util` (workspace crates; `deps.rs` allows it).
+- `command` is treated as a shell fragment and each `args` entry is single-quoted.
+- The request's `env` is ignored.
+- A stopped command reports `signal: "SIGTERM"` with no exit code.
+
+Not done:
+- Output over the cap is not archived before it is shortened. `ClientHost` has no archive sink or ids, so this needs a follow-up card.
+- No real-binary run: it needs a real ACP agent CLI.
+- No dedicated test that terminals die at session end; that relies on each terminal's `DropGuard`.
+
+Check:
+- `acp_terminal_runs_under_the_sandbox_policy`: a write to `$HOME` is blocked, a write in the workspace lands, and the exit is non-zero.
+- `acp_terminal_output_respects_byte_limit_and_reports_truncation`
+- `acp_terminal_release_kills_the_process_group`: covers `kill` then `wait_for_exit`, and a background grandchild dies on `release`.
+- `acp_terminal_command_is_judged_by_the_engine`: a deny rule refuses, `Ask` goes to the approver, and the call is rated as `bash` with `classify` risk.
+- `acp_terminal_without_sandbox_grant_is_still_refused`
+- Two `terminal.rs` unit tests.
+- In the worktree: nextest 1189 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing: nextest 1209 passed, 3 skipped; fmt, clippy and the slim build clean.

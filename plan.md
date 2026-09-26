@@ -38,7 +38,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.9 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T35.11 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 
 ## Reference
 
@@ -1138,18 +1137,6 @@ Check: the doc's commands are checked against the real binary the way `doc_examp
 Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_live_fixtures.py` (+ its tests), `tests/fixtures/cursor/*.json` (data, recorded from one real run)
 Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
 Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required).
-
-#### T35.11 ACP client terminals under the sandbox
-
-Depends: T35.2, T35.3 · Size: ~190 · Files: `crates/cox-acp/src/client.rs`, `crates/cox-acp/src/terminal.rs` (new)
-Goal: EA§4 allows a `terminal/*` request "only under the same `sandbox::Policy` already governing the spawned process". T35.3 refuses every such request, including when a sandbox grant is present, and advertises `terminal = false`. This card serves the terminal methods when a grant is present:
-- `terminal/create` runs the command under the process's own `sandbox::Policy`, through the same sandboxed spawn `bash` uses. There is no second spawn path, and the working directory goes through `path::confine`.
-- `terminal/output` returns the buffered output, capped at the request's `outputByteLimit`, and reports truncation.
-- `terminal/wait_for_exit`, `terminal/kill` and `terminal/release` behave as ACP defines them. A released or finished terminal frees its process; the process group is killed, as `bash` does.
-- Each command is judged by `cox_permission::Engine` as a `bash` call, just like a permission request.
-- `initialize_request()` advertises `terminal = true` only when the sandbox grant is present.
-Without a grant, the T35.3 refusal and its reason stay. Output shown to the user is sanitized, and output over the cap is archived before it is shortened.
-Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `acp_terminal_output_respects_byte_limit_and_reports_truncation`, `acp_terminal_release_kills_the_process_group`, `acp_terminal_command_is_judged_by_the_engine` and `acp_terminal_without_sandbox_grant_is_still_refused`.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
