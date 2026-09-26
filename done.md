@@ -753,3 +753,136 @@ Deviations:
 
 Check:
 - `cargo nextest run -p cox-patch`: 14 passed; the 25-patch golden corpus in `cox-tools/tests/v4a.rs` passes unchanged.
+
+#### T30.27 `cox doctor`: catalog and price sync row
+
+Depends: T30.24 · Size: ~60 · Files: `crates/cox/src/doctor.rs`
+Goal: a model reachable from `[tiers.*]` or `[providers.*].models` with no catalog price is a doctor warning that names the model and points at `cox-vendor models` (item 5).
+Check:
+- a doctor test with a config naming an unpriced model;
+- `COX_HOME=/tmp/cox-scratch cox doctor` shows the row as green on the defaults.
+Status: done 2026-09-26
+
+What landed:
+- `Config::configured_model_ids()` in `cox-protocol` is the one enumeration of every reachable model (tiers, single-model sections, every `models` list, custom sections). `cox-models`' `usage_prices_cover_every_configured_model` test and the doctor row both use it.
+- `cox doctor` has a "catalog prices" row: every configured model without a catalog price is named, with the fix `uv run --project scripts/vendor cox-vendor models`.
+- Docs: "Implemented (T30.27)" under item 5 of `docs/design/providers.md`; the doctor-checks list in `docs/how-it-works.md`.
+
+Deviations:
+- Empty model ids (a compatible section with no default `model`) are skipped, so they never produce a blank warning.
+- Done in worktree `_worktrees/cox-t30.27`, then cherry-picked onto main.
+
+Check:
+- Tests: `catalog_prices_check_is_ok_on_the_default_config`, `catalog_prices_check_warns_and_names_an_unpriced_model`, `catalog_prices_check_names_every_unpriced_model_reachable_from_tiers`.
+- `COX_HOME=<scratch> cox doctor`: `catalog prices: ✓ 21 configured models priced`.
+
+#### T32.4 `cox-syntax`: tree-sitter and its grammars
+
+Depends: — · Moves: `cox-tools/src/outline.rs` and the parser setup from `bash/classify.rs` (one `parse_bash` fn).
+Why: dependencies (a), namely tree-sitter and five grammar crates, each a C build.
+Check: no `tree_sitter*` dependency is left in `cox-tools/Cargo.toml`; the classifier and outline tests are unchanged.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox-tools/src/outline.rs` moved with `git mv` to `crates/cox-syntax/src/outline.rs`, byte-identical. `cox-syntax` also owns `parse_bash`, the tree-sitter-bash parser setup; the risk walk in `bash/classify.rs` stays in `cox-tools` and calls it.
+- `cox-syntax` re-exports `tree_sitter::Node`, so `classify.rs` names the node type without a tree-sitter dependency.
+- tree-sitter and its five grammars left `cox-tools/Cargo.toml`. `cox-tools` re-exports `outline`.
+- `deps.rs`: `cox-syntax` has no workspace dependency; `cox-tools` may use it.
+- Docs: AGENTS.md layout row, plan.md §1.1 row and dependency sentence.
+
+Deviations:
+- `cargo check --target x86_64-unknown-linux-gnu -p cox-syntax` needs a Linux cross gcc for the grammars' C code, which this Mac lacks (true before the move too); `cargo zigbuild --target x86_64-unknown-linux-gnu -p cox-syntax` builds clean instead.
+- Done in worktree `_worktrees/cox-t32.4`, then cherry-picked onto main.
+
+Check:
+- `grep tree.sitter crates/cox-tools/Cargo.toml` is empty.
+- The outline tests (now in `cox-syntax`) and the bash classifier tests pass unchanged.
+
+#### T32.10 `cox-tokens`: token counting
+
+Depends: — · Moves: `cox-provider/src/tokens.rs`.
+Why: dependencies (a), namely tiktoken-rs and its BPE data.
+Check: `tiktoken-rs` appears only in `cox-tokens/Cargo.toml`; the `fixtures/count_tokens` tests pass.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox-provider/src/tokens.rs` moved with `git mv` to `crates/cox-tokens/src/lib.rs`, tests included, no logic change. The whole file moved: it uses no `cox-provider` item, and `count_anthropic` takes a plain `reqwest::Client`.
+- `cox-provider` re-exports it (`pub use cox_tokens as tokens;`), so `cox_provider::tokens::*` still resolves.
+- tiktoken-rs left `cox-provider/Cargo.toml`.
+- `deps.rs`: `cox-tokens` → `cox-protocol` only; `cox-provider` may use `cox-tokens`.
+- Docs: AGENTS.md layout row, plan.md §1.1 row and dependency sentence.
+
+Deviations:
+- Done in worktree `_worktrees/cox-t32.10`, then cherry-picked onto main.
+
+Check:
+- `tiktoken-rs` appears only in the root pin and `crates/cox-tokens/Cargo.toml`.
+- `cargo nextest run -p cox-tokens`: 7 passed, including `tokens_estimate_within_15_percent_of_fixtures` over `fixtures/count_tokens`.
+
+#### T32.8 `cox-permission`: the permission engine
+
+Depends: — · Moves: `cox-core/src/permission/*` (448).
+Why: guard (b), and it is pure.
+Plan: `cox-core` re-exports `permission`. In `deps.rs`, `cox-core` may depend on `cox-protocol` and `cox-permission`. The AGENTS.md trust list names the new crate.
+Check: `cox-permission` depends only on `cox-protocol`.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox-core/src/permission/{mod,policy,rules}.rs` moved with `git mv` to `crates/cox-permission/src/{lib,policy,rules}.rs`, tests included, no logic change. The engine uses only `cox_protocol` and globset, so it moved whole.
+- `cox-core` re-exports it (`pub use cox_permission as permission;`), so `cox_core::permission::Engine` and `cox_core::{Engine, Outcome}` still resolve.
+- globset left `cox-core/Cargo.toml`.
+- `deps.rs`: `cox-permission` → `cox-protocol` only; `cox-core` may use `cox-protocol`, `cox-models`, `cox-permission`.
+- Docs: AGENTS.md layout row and trust list, the SECURITY.md guard list, plan.md §1.1 row and dependency sentence.
+
+Deviations:
+- The `Engine::decide` doctest now imports `cox_permission::{Engine, Outcome}` and needs `serde_json` as a dev-dependency, because it compiles in its new crate.
+- Done in worktree `_worktrees/cox-t32.8`, then cherry-picked onto main.
+
+Check:
+- `cargo tree -p cox-permission --edges normal` shows only `cox-protocol` among workspace crates.
+- `cox-core/tests/permission.rs` and `policy_matrix.rs`: 58 passed, unchanged.
+
+#### T32.16 `cox-config`: the one config owner
+
+Depends: — · Moves: `crates/cox/src/config_load.rs`, `config_cmd.rs` (~990).
+Why: size (c) and reuse (d). This one crate owns loading, validation, editing and the schema drift test.
+Plan: `anyhow` becomes a `thiserror` enum; figment and toml_edit move with the files.
+Check: the config-schema drift test lives in the new crate and passes; `cox config` and `cox doctor` behave the same against a `COX_HOME` scratch tree.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox/src/config_load.rs` and `config_cmd.rs` moved with `git mv` to `crates/cox-config/src/load.rs` and `cmd.rs`: layering, project guards, provenance, `get`/`set`/`path`/`show_lines`. figment and toml_edit moved with them.
+- `ConfigError` (thiserror: `Io`, `Json`, `InvalidToml`, `EmptyKey`, `NotATable`) replaces the anyhow in those files; the messages are the old texts, and crates/cox converts with `?`.
+- crates/cox keeps what needs clap, cox-ext or cox-tui: the flag layer from `Cli`, the `.claude/settings.json` reader, `keymap()`, the printing, and a thin `load(cwd, cli)` wrapper. It re-exports the rest at the old `config_load`/`config_cmd` paths.
+- New drift test `config_jsonschema_matches_committed_file` with the committed `docs/config.jsonschema`.
+- `deps.rs`: `cox-config` → `cox-protocol` only. Docs: AGENTS.md layout row, plan.md §1.1 rows and dependency sentence.
+
+Deviations:
+- There was no config-schema drift test to move (done.md records that no committed `Config` schema existed), so the card's Check was met by adding one, per the AGENTS.md "Config files" rule.
+- `load` takes the flag layer and a Claude-settings callback, and `show` became `show_lines`; that kept cox-config free of clap, cox-ext, cox-tui and printing. No logic change.
+- `ENV_LOCK`/`temp_env` are `pub` behind a `test-util` feature so both crates share one helper.
+- Done in worktree `_worktrees/cox-t32.16`, then cherry-picked onto main.
+
+Check:
+- `cox config` (show, `--sources`, get, path, set, errors, comment-preserving set, project guards) and `cox doctor`, `--json doctor`: the old and new binaries' output against scratch `COX_HOME` trees diff empty (591 lines each, exit codes included).
+- `cargo nextest run -p cox-config`: 9 passed.
+
+#### T30.26 One effort map, with `Effort::Medium`
+
+Depends: T30.24 · Size: ~180 · Files: `cox-models`, `anthropic/request.rs`, `openai/responses.rs` (Chat's field is added in the same card if it fits, else a follow-up)
+Goal: `effort_for(api, Effort, &caps)` in `cox-models` is the one mapping (item 4).
+- Anthropic: `output_config.effort` plus adaptive thinking.
+- Responses: `reasoning.effort`.
+- Chat: `reasoning_effort`, only when the row declares it. Whether the OpenAI Chat API and LM Studio accept it is checked against their API references and recorded in R§4.3.3.
+- Jev: explicitly `None`.
+
+`Effort` gains `Medium`, and models.dev's `medium` maps to it.
+Check:
+- a table test over api × effort × caps;
+- `clamp_effort` tests pass with `Medium`;
+- request snapshots are unchanged except where `Medium` is new.
+Status: done 2026-09-26
+Result: `cox_models::effort_for(api, Effort, &Capabilities)` in `crates/cox-models/src/effort.rs` is the one mapping. Anthropic sends `output_config.effort`, plus adaptive thinking when `caps.adaptive_thinking`. Responses sends `reasoning.effort`. Chat sends `reasoning_effort` only when the `models` entry declares `reasoning_effort = true`. Jev sends nothing. `Effort::Medium` sits between Low and High; `cox-vendor` maps models.dev `medium` to it, and `/effort` accepts it.
+Sources (checked 2026-09-26): the OpenAI Chat reference (https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) lists `reasoning_effort` as optional and model-dependent. LM Studio's Chat Completions page (https://lmstudio.ai/docs/developer/openai-compat/chat-completions) does not list it. Both are recorded in R§4.3.3.
+Check: nextest 934 passed, 3 skipped; clippy and fmt clean; `just vendor-test` 36 passed. Only the help-overlay snapshot changed (the `/effort` line); no request snapshot changed.
+Not done: `default.toml` still has three-level effort sets. A live `cox-vendor models` run would add `medium` and also move one unrelated price (deepseek-v4-pro), so it stays a separate vendor refresh. `clamp_effort` still reads the section's `models` list, not `Catalog`.

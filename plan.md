@@ -9,20 +9,14 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.15 | todo | P2 | 3 | 0% | |
 | T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
-| T30.26 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T30.27 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T32.2 | todo | P2 | 4 | 0% | |
-| T32.4 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.5 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
 | T32.7 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
-| T32.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.9 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
-| T32.10 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T32.11 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
 | T32.12 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
 | T32.13 | todo | P2 | 4 | 0% | |
 | T32.14 | todo | P2 | 4 | 0% | |
-| T32.16 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.1 | todo | P1 | 4 | 0% | |
 | T33.2 | todo | P1 | 5 | 0% | |
 | T33.3 | todo | P1 | 5 | 0% | |
@@ -133,14 +127,18 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 
 | Crate | Owns | Key deps (pinned in T0.1; versions verified in R§4.5) |
 |-------|------|------|
-| `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow, dotenvy 0.15 |
+| `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
+| `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
-| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
+| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
-| `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12, typify 0.8 (build.rs: Anthropic wire types from the vendored spec, T30.10/T30.12), async-openai 0.42 (`response-types` only, T30.11) |
-| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, nix |
+| `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff | reqwest 0.12 (rustls), eventsource-stream 0.2.3, typify 0.8 (build.rs: Anthropic wire types from the vendored spec, T30.10/T30.12), async-openai 0.42 (`response-types` only, T30.11) |
+| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, shlex, nix |
 | `cox-sandbox` | `path::confine`, `sandbox::{seatbelt,bwrap,landlock}` (T32.3; split out of `cox-tools`): path confinement to the workspace roots and the platform sandbox front door. `cox-tools` re-exports both as `path` and `sandbox` | landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-patch` | the V4A patch engine (T32.6; split out of `cox-tools`): `parse` text ↔ AST, `stage` progressive hunk matching. Pure: no filesystem, no `ToolCx`; the `apply_patch` `Tool` impl stays in `cox-tools` (`v4a::tool`) so `path::confine` keeps one call site. `cox-tools` re-exports it as `v4a` | proptest 1.11 (dev) |
+| `cox-syntax` | tree-sitter and its grammars (T32.4; split out of `cox-tools`): `outline` (signature extraction for `read`'s outline mode) and `parse_bash` (the parser behind `bash`'s risk classifier). `cox-tools` re-exports `outline` at its old path | tree-sitter 0.27 + bash/rust/typescript/python/go grammars |
+| `cox-tokens` | token counting (T32.10; split out of `cox-provider`): `estimate`, `count_openai` (tiktoken), `count_anthropic` (the count-tokens endpoint). `cox-provider` re-exports it at the old `tokens` path | tiktoken-rs 0.12, reqwest 0.12 |
+| `cox-permission` | the permission `Engine` (T32.8; split out of `cox-core`): `Outcome`, the rule grammar, path rules. Pure; `cox-core` re-exports it at the old `permission` path | globset (path rules, T2.2) |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
@@ -152,7 +150,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-sandbox`, `cox-models`, `cox-patch`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`; `cox-provider` → `cox-protocol`, `cox-models`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol`, `cox-permission` (and may use `cox-models`); `cox-sandbox`, `cox-config`, `cox-models`, `cox-permission`, `cox-tokens`, `cox-patch`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-syntax` → no workspace crate; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`, `cox-syntax`; `cox-provider` → `cox-protocol`, `cox-models`, `cox-tokens`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -783,29 +781,6 @@ Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R�
 Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
 Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
 
-#### T30.26 One effort map, with `Effort::Medium`
-
-Depends: T30.24 · Size: ~180 · Files: `cox-models`, `anthropic/request.rs`, `openai/responses.rs` (Chat's field is added in the same card if it fits, else a follow-up)
-Goal: `effort_for(api, Effort, &caps)` in `cox-models` is the one mapping (item 4).
-- Anthropic: `output_config.effort` plus adaptive thinking.
-- Responses: `reasoning.effort`.
-- Chat: `reasoning_effort`, only when the row declares it. Whether the OpenAI Chat API and LM Studio accept it is checked against their API references and recorded in R§4.3.3.
-- Jev: explicitly `None`.
-
-`Effort` gains `Medium`, and models.dev's `medium` maps to it.
-Check:
-- a table test over api × effort × caps;
-- `clamp_effort` tests pass with `Medium`;
-- request snapshots are unchanged except where `Medium` is new.
-
-#### T30.27 `cox doctor`: catalog and price sync row
-
-Depends: T30.24 · Size: ~60 · Files: `crates/cox/src/doctor.rs`
-Goal: a model reachable from `[tiers.*]` or `[providers.*].models` with no catalog price is a doctor warning that names the model and points at `cox-vendor models` (item 5).
-Check:
-- a doctor test with a config naming an unpriced model;
-- `COX_HOME=/tmp/cox-scratch cox doctor` shows the row as green on the defaults.
-
 ### P32 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
 
 Every card in this phase:
@@ -830,12 +805,6 @@ Plan:
 
 Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
 
-#### T32.4 `cox-syntax`: tree-sitter and its grammars
-
-Depends: — · Moves: `cox-tools/src/outline.rs` and the parser setup from `bash/classify.rs` (one `parse_bash` fn).
-Why: dependencies (a), namely tree-sitter and five grammar crates, each a C build.
-Check: no `tree_sitter*` dependency is left in `cox-tools/Cargo.toml`; the classifier and outline tests are unchanged.
-
 #### T32.5 `cox-search`: grep and glob
 
 Depends: T32.3 · Moves: `cox-tools/src/grep.rs`, `glob.rs` (~870).
@@ -848,25 +817,12 @@ Depends: — · Moves: `cox-tools/src/web_fetch.rs`.
 Why: dependencies (a), so reqwest leaves `cox-tools`.
 Check: there is no `reqwest` in `cox-tools/Cargo.toml`.
 
-#### T32.8 `cox-permission`: the permission engine
-
-Depends: — · Moves: `cox-core/src/permission/*` (448).
-Why: guard (b), and it is pure.
-Plan: `cox-core` re-exports `permission`. In `deps.rs`, `cox-core` may depend on `cox-protocol` and `cox-permission`. The AGENTS.md trust list names the new crate.
-Check: `cox-permission` depends only on `cox-protocol`.
-
 #### T32.9 `cox-telemetry`: tracing setup and the OpenTelemetry stack
 
 Depends: — · Moves: `crates/cox/src/telemetry.rs`.
 Why: dependencies (a), five opentelemetry crates.
 Plan: the `otel` feature moves with it; `cox`'s `otel` forwards to it. Errors become a `thiserror` enum, because `anyhow` stays in `crates/cox` only.
 Check: builds with `--no-default-features` and with defaults are both green.
-
-#### T32.10 `cox-tokens`: token counting
-
-Depends: — · Moves: `cox-provider/src/tokens.rs`.
-Why: dependencies (a), namely tiktoken-rs and its BPE data.
-Check: `tiktoken-rs` appears only in `cox-tokens/Cargo.toml`; the `fixtures/count_tokens` tests pass.
 
 #### T32.11 `cox-provider-testkit`: scripted and replay providers
 
@@ -893,13 +849,6 @@ Depends: T32.12, T30.21–T30.26 as in T32.13.
 Moves: `cox-provider/src/openai/*` (~2.2k).
 Why: dependencies (a) (async-openai) and size (c).
 Check: `async-openai` appears only in this crate's `Cargo.toml`.
-
-#### T32.16 `cox-config`: the one config owner
-
-Depends: — · Moves: `crates/cox/src/config_load.rs`, `config_cmd.rs` (~990).
-Why: size (c) and reuse (d). This one crate owns loading, validation, editing and the schema drift test.
-Plan: `anyhow` becomes a `thiserror` enum; figment and toml_edit move with the files.
-Check: the config-schema drift test lives in the new crate and passes; `cox config` and `cox doctor` behave the same against a `COX_HOME` scratch tree.
 
 ### P33 — WASM plugins (goal: one package adds a status segment, a hook, a deferred tool and a provider without a cox release; §1.15 invariants 1, 8, 10 and 15–17 green; ≤ 50 ms warm start per plugin)
 
