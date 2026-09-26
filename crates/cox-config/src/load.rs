@@ -197,17 +197,53 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         full.tiers.think.confirm = without_project.tiers.think.confirm;
     }
 
+    // T33.42: the sandbox is exactly what contains a command a cloned
+    // repository chose, so the project layer must never be the reason a
+    // server's effective `sandbox` is `false` — an existing server or one
+    // it adds outright, same difference: only user config (and env/flags,
+    // `without_project`'s other layers) may opt a server out. A server is
+    // reverted unless `without_project` alone already yields `sandbox =
+    // false` for that name, i.e. a non-project layer opted it out on its
+    // own.
+    let weakened: Vec<String> = full
+        .mcp
+        .servers
+        .iter()
+        .filter(|(name, server)| {
+            !server.sandbox
+                && !without_project
+                    .mcp
+                    .servers
+                    .get(name.as_str())
+                    .is_some_and(|s| !s.sandbox)
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
+    if !weakened.is_empty() {
+        violations.push(GuardViolation {
+            key: "mcp.servers.*.sandbox",
+            project_value: format!("false ({})", weakened.join(", ")),
+            reverted_to: "true".to_string(),
+        });
+        for name in &weakened {
+            if let Some(server) = full.mcp.servers.get_mut(name) {
+                server.sandbox = true;
+            }
+        }
+    }
+
     violations
 }
 
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 8] = [
+const GUARDED_KEYS: [&str; 9] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
     "core.max_concurrent_subagents",
+    "mcp.servers.*.sandbox",
     "permissions.mode",
     "plugins.enabled",
     "sandbox.mode",
@@ -569,6 +605,64 @@ mod tests {
                 Some(&serde_json::json!({ "route": "cheap", "limit": 3 }))
             );
             assert!(!plugins.entries.contains_key("enabled"));
+        });
+    }
+
+    /// T33.42: a project layer must not be able to flip an existing,
+    /// user-configured server's `sandbox` off — that would silently drop
+    /// the wrap on a server the user already trusted as sandboxed, without
+    /// touching its command, so the change is easy to miss in review.
+    #[test]
+    fn config_project_cannot_disable_an_mcp_server_sandbox() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::write(
+            home.path().join("config.toml"),
+            "[mcp.servers.gh]\ncommand = \"gh-mcp\"\n\n[mcp.servers.opt-out]\ncommand = \"y\"\nsandbox = false\n",
+        )
+        .expect("write user config");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        // The project layer both disables an existing, user-trusted server
+        // and adds a brand-new one already unsandboxed — the sandbox is
+        // exactly what contains a command a cloned repository chose, so
+        // neither may take effect.
+        fs::write(
+            git_root.path().join(".cox/config.toml"),
+            "[mcp.servers.gh]\nsandbox = false\n\n[mcp.servers.new]\ncommand = \"x\"\nsandbox = false\n",
+        )
+        .expect("write project config");
+
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let loaded = load_plain(git_root.path()).expect("load succeeds");
+            let gh = &loaded.config.mcp.servers["gh"];
+            assert!(
+                gh.sandbox,
+                "the opt-out on an existing server must be ignored"
+            );
+            assert_eq!(
+                gh.command.as_deref(),
+                Some("gh-mcp"),
+                "the guard must revert only sandbox, not the whole server"
+            );
+            assert!(
+                loaded.config.mcp.servers["new"].sandbox,
+                "a project layer must not be able to add an unsandboxed server either"
+            );
+            // Only user config (and env/flags) may opt a server out: its
+            // own choice for a server it named must hold.
+            assert!(!loaded.config.mcp.servers["opt-out"].sandbox);
+            let violation = loaded
+                .violations
+                .iter()
+                .find(|v| v.key == "mcp.servers.*.sandbox")
+                .expect("both project-caused opt-outs are one violation");
+            assert!(violation.project_value.contains("gh"), "{violation:?}");
+            assert!(violation.project_value.contains("new"), "{violation:?}");
+            assert!(
+                !violation.project_value.contains("opt-out"),
+                "{violation:?}"
+            );
         });
     }
 

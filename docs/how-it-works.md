@@ -308,8 +308,9 @@ repository instruction files are all untrusted. Four guards from
 `AGENTS.md` cover them, and this doc's examples each touched one: the
 **permission engine** authorises every call (Example 3); **path
 confinement** (`cox_tools::path::confine`) rejects workspace escapes
-before a file tool runs; the **sandbox** confines shell commands unless
-the session chose `danger-full-access`; terminal **sanitisation**
+before a file tool runs; the **sandbox** confines shell commands and every
+stdio MCP server's process unless the session chose `danger-full-access`
+or, per server, `sandbox = false` (T33.42); terminal **sanitisation**
 strips escape sequences and bidi overrides before anything the model or
 a tool wrote is displayed. A broken hook, skill, or MCP server is a
 warning and an absence, never a fatal error.

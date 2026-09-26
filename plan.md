@@ -411,7 +411,7 @@ fail_open = true
 [mcp]
 timeout_s = 30
 deferred = true
-servers = {}                        # [mcp.servers.<name>] command/args/url/env — same shape as .mcp.json
+servers = {}                        # [mcp.servers.<name>] command/args/url/env/sandbox — same shape as .mcp.json, plus sandbox=false to opt a named stdio server out of the sandbox wrap (default true, T33.42)
 
 [plugins]
 enabled = true                      # --no-plugins / COX_PLUGINS_ENABLED; project config may turn it off, never back on (T33.6)

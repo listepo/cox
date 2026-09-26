@@ -1386,7 +1386,7 @@
       }
     },
     "McpServerConfig": {
-      "description": "One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`).",
+      "description": "One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`, plus\n`sandbox`, which `.mcp.json`/`~/.claude.json` do not carry).",
       "type": "object",
       "properties": {
         "command": {
@@ -1420,6 +1420,11 @@
             "type": "string"
           },
           "default": {}
+        },
+        "sandbox": {
+          "description": "Whether a stdio server runs under `sandbox::Policy` (T33.42,\n`docs/design/plugins.md` §14 decision 4). `false` opts this named\nserver out, for setups that need it; irrelevant to a `url` server.",
+          "type": "boolean",
+          "default": true
         }
       },
       "additionalProperties": false

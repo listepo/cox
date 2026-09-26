@@ -126,6 +126,9 @@ pub fn run(
         &crate::config_load::home_dir().join(".claude"),
     ));
 
+    // One row naming every stdio server opted out of the sandbox (T33.42).
+    results.push(check_mcp_sandbox(mcp));
+
     // One row per HTTP MCP server: is its token usable?
     let mut names: Vec<&String> = mcp
         .iter()
@@ -395,6 +398,26 @@ fn check_terminal(tui_theme: &str, tui_caps: &HashMap<String, bool>) -> CheckRes
 const PRICES_STALE_DAYS: u32 = 90;
 const PRICES_FIX: &str =
     "regenerate crates/cox-provider/prices.toml with `just vendor models` (plan.md A48)";
+
+/// One row naming every stdio server configured with `sandbox = false`
+/// (T33.42) — the wrap has no other visible signal once a server opts out.
+fn check_mcp_sandbox(mcp: &HashMap<String, McpServerConfig>) -> CheckResult {
+    let mut names: Vec<&str> = mcp
+        .iter()
+        .filter(|(_, c)| c.command.is_some() && !c.sandbox)
+        .map(|(n, _)| n.as_str())
+        .collect();
+    names.sort_unstable();
+    if names.is_empty() {
+        CheckResult::ok("mcp sandbox", "every stdio server is sandboxed".to_string())
+    } else {
+        CheckResult::warn(
+            "mcp sandbox",
+            format!("unsandboxed by config: {}", names.join(", ")),
+            "sandbox = false was set on purpose; drop it to re-enable the wrap".to_string(),
+        )
+    }
+}
 
 /// `mcp auth <name>`: `ok (expires in 3h)`, `ok (no expiry)`, `expired` or
 /// `none`. `none` is fine — the server may not ask for a login at all.
@@ -1022,5 +1045,44 @@ mod tests {
             "{}",
             result.detail
         );
+    }
+
+    /// T33.42 Check: `doctor_lists_unsandboxed_servers`.
+    #[test]
+    fn doctor_lists_unsandboxed_servers() {
+        let mut mcp = HashMap::new();
+        mcp.insert(
+            "clean".to_string(),
+            McpServerConfig {
+                command: Some("a".into()),
+                ..Default::default()
+            },
+        );
+        let ok = check_mcp_sandbox(&mcp);
+        assert_eq!(ok.status, "ok", "{}", ok.detail);
+
+        mcp.insert(
+            "opted-out".to_string(),
+            McpServerConfig {
+                command: Some("b".into()),
+                sandbox: false,
+                ..Default::default()
+            },
+        );
+        // A `url` server has no argv to wrap, so `sandbox = false` on one
+        // must not show up as if it were opted out.
+        mcp.insert(
+            "http".to_string(),
+            McpServerConfig {
+                url: Some("https://example.com/mcp".into()),
+                sandbox: false,
+                ..Default::default()
+            },
+        );
+        let warn = check_mcp_sandbox(&mcp);
+        assert_eq!(warn.status, "warn", "{}", warn.detail);
+        assert!(warn.detail.contains("opted-out"), "{}", warn.detail);
+        assert!(!warn.detail.contains("http"), "{}", warn.detail);
+        assert!(!warn.detail.contains("clean"), "{}", warn.detail);
     }
 }

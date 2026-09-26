@@ -123,6 +123,10 @@ fn servers_in(map: Option<&Value>) -> HashMap<String, McpServerConfig> {
                             .collect()
                     })
                     .unwrap_or_default(),
+                // `.mcp.json`/`~/.claude.json` carry no opt-out (T33.42):
+                // cox's own `[mcp.servers.<name>]` is where `sandbox = false`
+                // is set, and it fully shadows a same-named entry from here.
+                sandbox: true,
             };
             (name.clone(), cfg)
         })

@@ -982,8 +982,9 @@ impl Default for HooksConfig {
     }
 }
 
-/// One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`).
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+/// One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`, plus
+/// `sandbox`, which `.mcp.json`/`~/.claude.json` do not carry).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct McpServerConfig {
     /// Stdio launch command, for a local server.
@@ -994,6 +995,22 @@ pub struct McpServerConfig {
     pub url: Option<String>,
     /// Extra environment variables for a stdio server.
     pub env: HashMap<String, String>,
+    /// Whether a stdio server runs under `sandbox::Policy` (T33.42,
+    /// `docs/design/plugins.md` §14 decision 4). `false` opts this named
+    /// server out, for setups that need it; irrelevant to a `url` server.
+    pub sandbox: bool,
+}
+
+impl Default for McpServerConfig {
+    fn default() -> Self {
+        Self {
+            command: None,
+            args: Vec::new(),
+            url: None,
+            env: HashMap::new(),
+            sandbox: true,
+        }
+    }
 }
 
 /// `[mcp]` (plan.md §1.6/§1.1). `deny_unknown_fields` is not set for the
