@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.12 | todo | P2 | 4 | 0% | |
 | T33.13 | todo | P2 | 4 | 0% | |
 | T33.14 | todo | P2 | 4 | 0% | |
-| T33.15 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.20 | in progress | P2 | 5 | 5% | Claude Code / claude-opus-5-5 |
 | T33.21 | todo | P2 | 4 | 0% | |
@@ -770,12 +769,6 @@ Goal:
 - `cox_http` over reqwest: the host must match the allow-list, the body is capped, and a `net` entry equal to a configured provider host is refused at validation (PL§7d).
 - WASI preopens come only from `fs` and pass `confine`; reads mount `ro:`; `.git` and `.cox` are never writable. WASI is on only when `wasi = true` or `fs` is set.
 Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provider_host_is_rejected`, `fs_write_to_dot_git_is_refused`, `wasi_ctx_has_no_env`.
-
-#### T33.15 `cox_model_call` and `Job::Plugin`
-
-Depends: T33.9 · Size: ~170 · Files: `crates/cox-protocol/src/types.rs` (`Job::Plugin`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/hostfn.rs`
-Goal: a plugin's model call goes through the router at or below its granted tier (never `think`), passes the budget gate and writes one `usage` row with job `plugin:<id>`.
-Check: `plugin_model_call_writes_usage_row` (Scripted provider), `plugin_model_call_blocked_by_budget`, `plugin_cannot_reach_think_tier`; invariant 8 green.
 
 #### T33.18 Providers, ABI form (`PluginProvider`)
 

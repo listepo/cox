@@ -3,7 +3,6 @@
 - T33.12. Tools from plugins
 - T33.13. `cox_invoke_tool` through the engine
 - T33.14. `cox_http` and filesystem preopens
-- T33.15. `cox_model_call` and `Job::Plugin`
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
