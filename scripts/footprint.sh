@@ -41,58 +41,57 @@ if [ -z "$BIN" ]; then
   BIN="$ROOT/target/release/cox"
 fi
 
-now_ns() { date +%s%N; }
-# Timings report the best (minimum) of N runs, which is what --check gates on:
+# Timings (T30.4 follow-up). Measured in-process with python3's monotonic
+# clock, so no `date` spawns or `sleep` polling land inside the interval, and
+# reported as the best (minimum) of N runs, which is what --check gates on:
 # scheduler and I/O noise on a shared runner only ever adds time, so the
-# minimum is stable where the median of a few runs swings 2-3x between runs
-# of the same commit (T30.4 follow-up). The median is printed for context.
-min_ms() { python3 -c 'import sys; print(round(min(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
-median_ms() { python3 -c 'import statistics,sys; print(round(statistics.median(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
-
-# Calibration: best of 11 `/usr/bin/true` spawns under the same env. Shared
-# CI runners differ from each other (best-of-11 cold start seen from 7.0 to
-# 12.0 ms on identical commits), so --check scales timing baselines that carry
-# a `calib_ms` by how much slower this machine spawns a process than the one
-# that wrote the baseline. It only ever loosens, never tightens, the gate.
-: > "$SCRATCH/calib"
-for _ in $(seq 1 11); do
-  s="$(now_ns)"
-  COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" /usr/bin/true
-  echo "$(( $(now_ns) - s ))" >> "$SCRATCH/calib"
-done
-CALIB_MS="$(min_ms "$SCRATCH/calib")"
-
-# Cold start: best of 11 `cox --version` runs (spawn + clap + config load).
-: > "$SCRATCH/startup"
-for _ in $(seq 1 11); do
-  s="$(now_ns)"
-  COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" "$BIN" --version >/dev/null
-  echo "$(( $(now_ns) - s ))" >> "$SCRATCH/startup"
-done
-STARTUP_MS="$(min_ms "$SCRATCH/startup")"
-STARTUP_MED="$(median_ms "$SCRATCH/startup")"
-
-# First frame: spawn to first stream-json event with the scripted provider.
+# minimum is stable where a small-sample median swings 2-3x between runs of
+# the same commit. The median is printed for context.
+#
+#   calib        `/usr/bin/true`, best of 11: how fast this machine spawns a
+#                process. Shared CI runners differ from each other, so --check
+#                scales timing baselines that carry `calib_ms` by how much
+#                slower this machine is than the one that wrote the baseline
+#                (never faster: the gate only loosens).
+#   startup      `cox --version`, best of 11 (spawn + clap + config load).
+#   first frame  spawn to the first stream-json byte with the scripted
+#                provider, best of 7.
 printf '[[turn]]\ntext = "hello"\n' > "$SCRATCH/first.toml"
-: > "$SCRATCH/first"
-for _ in $(seq 1 7); do
-  s="$(now_ns)"
-  (cd "$ROOT" && COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" COX_PROVIDER=scripted \
-    COX_SCENARIO="$SCRATCH/first.toml" "$BIN" run -p "hi" --output-format stream-json \
-    --max-turns 2 --approve never --permission-mode auto --no-hooks --no-mcp \
-    > "$SCRATCH/first.jsonl" 2> "$SCRATCH/first.err") &
-  pid="$!"
-  for _ in $(seq 1 1000); do
-    [ -s "$SCRATCH/first.jsonl" ] && break
-    kill -0 "$pid" 2>/dev/null || break
-    sleep 0.01
-  done
-  echo "$(( $(now_ns) - s ))" >> "$SCRATCH/first"
-  wait "$pid" || { echo "first-frame run failed:" >&2; cat "$SCRATCH/first.err" >&2; exit 1; }
-  [ -s "$SCRATCH/first.jsonl" ] || { echo "first-frame run printed nothing" >&2; exit 1; }
-done
-FIRST_MS="$(min_ms "$SCRATCH/first")"
-FIRST_MED="$(median_ms "$SCRATCH/first")"
+mkdir -p "$SCRATCH/home"
+read -r CALIB_MS STARTUP_MS STARTUP_MED FIRST_MS FIRST_MED < <(python3 - "$BIN" "$SCRATCH" "$ROOT" <<'EOF'
+import os, statistics, subprocess, sys, time
+bin_, scratch, root = sys.argv[1:4]
+env = dict(os.environ, COX_HOME=scratch + '/home', HOME=scratch + '/home')
+def ms(xs): return '%.1f %.1f' % (min(xs) / 1e6, statistics.median(xs) / 1e6)
+def spawn(argv, n):
+    out = []
+    for _ in range(n):
+        t = time.perf_counter_ns()
+        subprocess.run(argv, env=env, stdout=subprocess.DEVNULL, check=True)
+        out.append(time.perf_counter_ns() - t)
+    return out
+calib = spawn(['/usr/bin/true'], 11)
+startup = spawn([bin_, '--version'], 11)
+fenv = dict(env, COX_PROVIDER='scripted', COX_SCENARIO=scratch + '/first.toml')
+argv = [bin_, 'run', '-p', 'hi', '--output-format', 'stream-json', '--max-turns', '2',
+        '--approve', 'never', '--permission-mode', 'auto', '--no-hooks', '--no-mcp']
+first = []
+for _ in range(7):
+    with open(scratch + '/first.err', 'wb') as err:
+        t = time.perf_counter_ns()
+        p = subprocess.Popen(argv, cwd=root, env=fenv, stdout=subprocess.PIPE, stderr=err)
+        byte = p.stdout.read(1)
+        first.append(time.perf_counter_ns() - t)
+        p.stdout.read()
+        rc = p.wait()
+    if rc != 0 or not byte:
+        sys.stderr.write('first-frame run failed (exit %d, %s output):\n' % (rc, 'some' if byte else 'no'))
+        sys.stderr.write(open(scratch + '/first.err').read())
+        sys.exit(1)
+print('%.1f' % (min(calib) / 1e6), ms(startup), ms(first))
+EOF
+)
+[ -n "${FIRST_MED:-}" ] || { echo "timing run failed" >&2; exit 1; }
 
 # Replay: every evals/token transcript becomes one Scripted scenario per user
 # turn; turns run back to back through --resume so context grows like a live
