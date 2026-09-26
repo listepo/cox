@@ -719,6 +719,11 @@
             "description": "A hook-driven LLM call.",
             "type": "string",
             "const": "hook"
+          },
+          {
+            "description": "A plugin's own `cox_model_call` (PL§7d, T33.15): the router runs it\nat or below the plugin's granted tier, never `think`, and the\nledger row's job tag is `plugin:<id>`. No `[jobs]` entry names it —\nits tier comes from the call itself, already grant-clamped.",
+            "type": "string",
+            "pattern": "^plugin:.+$"
           }
         ]
       },

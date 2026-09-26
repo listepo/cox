@@ -51,7 +51,10 @@ use crate::tasks::{Queued, cost_detail, message_line};
 
 /// A subagent shape: which job it reports as, which tools it may use, how
 /// long it may run and how big its answer may be.
-#[derive(Debug, Clone, Copy)]
+// `Job::Plugin`'s `String` payload (T33.15) means `Job`, and so `Preset`,
+// can no longer be `Copy`; `resolve` below clones a `&'static Preset`
+// instead of copying it.
+#[derive(Debug, Clone)]
 pub struct Preset {
     /// What the model passes as `preset`.
     pub name: &'static str,
@@ -186,10 +189,10 @@ impl AgentTool {
             .get("preset")
             .and_then(Value::as_str)
             .unwrap_or(EXPLORE.name);
-        if let Some(p) = PRESETS.iter().copied().find(|p| p.name == name) {
+        if let Some(p) = PRESETS.iter().find(|&p| p.name == name).cloned() {
             return Ok(Resolved {
                 name: p.name.to_string(),
-                job: p.job,
+                job: p.job.clone(),
                 tools: Some(p.tools.iter().map(|s| s.to_string()).collect()),
                 read_only: p.read_only,
                 max_turns: p.max_turns,
@@ -705,7 +708,7 @@ fn spawn(
     let child = parent.spawn_child(
         config,
         tools,
-        spec.job,
+        spec.job.clone(),
         spec.tier,
         cwd,
         resume,

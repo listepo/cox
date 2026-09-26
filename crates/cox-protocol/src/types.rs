@@ -75,8 +75,17 @@ pub enum Tier {
 }
 
 /// What a request is *for* (plan.md §1.4); every job is pinned to one tier in config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+///
+/// Every variant but `Plugin` is a bare tag (`"main"`, `"compact"`, …), the
+/// convention this file's header describes for field-less enums. `Plugin`
+/// breaks that shape — it carries the calling plugin's id — so `Job` gets
+/// hand-written `Serialize`/`Deserialize`/`JsonSchema` instead of deriving
+/// them: the wire and ledger form is still a single string, `"plugin:<id>"`
+/// (PL§7d, T33.15), which `to_tag`/`from_tag` (`cox-store`) and `tag`
+/// (`cox`'s `stats.rs`) already assume for every `Job` value. Losing `Copy`
+/// (a `String` payload cannot be `Copy`) is why call sites that used to
+/// read `self.job`/`row.job` as a value now clone it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Job {
     /// The main coding turn.
     Main,
@@ -101,6 +110,119 @@ pub enum Job {
     Agent,
     /// A hook-driven LLM call.
     Hook,
+    /// A plugin's own `cox_model_call` (PL§7d, T33.15): the router runs it
+    /// at or below the plugin's granted tier, never `think`, and the
+    /// ledger row's job tag is `plugin:<id>`. No `[jobs]` entry names it —
+    /// its tier comes from the call itself, already grant-clamped.
+    Plugin(String),
+}
+
+/// The bare tag every non-`Plugin` variant serializes as — kept in one
+/// place so the `Serialize`/`Deserialize`/`JsonSchema` impls below and the
+/// schema literals agree.
+const JOB_TAGS: [(&str, Job); 11] = {
+    // A `const` array can't hold a `String`-carrying variant, so this only
+    // ever binds the fieldless ones; `Job::Plugin` is handled separately
+    // everywhere this table is used.
+    [
+        ("main", Job::Main),
+        ("plan", Job::Plan),
+        ("compact", Job::Compact),
+        ("title", Job::Title),
+        ("summarize", Job::Summarize),
+        ("commit", Job::Commit),
+        ("memory", Job::Memory),
+        ("explore", Job::Explore),
+        ("shell", Job::Shell),
+        ("agent", Job::Agent),
+        ("hook", Job::Hook),
+    ]
+};
+
+impl Job {
+    /// The bare tag this job serializes as: one of the fixed strings above,
+    /// or `plugin:<id>` for `Job::Plugin`.
+    fn tag(&self) -> std::borrow::Cow<'static, str> {
+        match self {
+            Job::Plugin(id) => std::borrow::Cow::Owned(format!("plugin:{id}")),
+            other => JOB_TAGS
+                .iter()
+                .find(|(_, job)| job == other)
+                .map(|(tag, _)| std::borrow::Cow::Borrowed(*tag))
+                .unwrap_or(std::borrow::Cow::Borrowed("")),
+        }
+    }
+}
+
+impl Serialize for Job {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.tag())
+    }
+}
+
+impl<'de> Deserialize<'de> for Job {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        if let Some((_, job)) = JOB_TAGS.iter().find(|(tag, _)| *tag == s) {
+            return Ok(job.clone());
+        }
+        if let Some(id) = s.strip_prefix("plugin:")
+            && !id.is_empty()
+        {
+            return Ok(Job::Plugin(id.to_string()));
+        }
+        Err(serde::de::Error::unknown_variant(
+            &s,
+            &[
+                "main",
+                "plan",
+                "compact",
+                "title",
+                "summarize",
+                "commit",
+                "memory",
+                "explore",
+                "shell",
+                "agent",
+                "hook",
+                "plugin:<id>",
+            ],
+        ))
+    }
+}
+
+impl JsonSchema for Job {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("Job")
+    }
+
+    fn json_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "What a request is *for* (plan.md §1.4); every job is pinned to one tier in config.",
+            "oneOf": [
+                { "description": "The main coding turn.", "type": "string", "const": "main" },
+                { "description": "A `/think`/`--deep` plan.", "type": "string", "const": "plan" },
+                { "description": "Compaction summary.", "type": "string", "const": "compact" },
+                { "description": "Session title generation.", "type": "string", "const": "title" },
+                { "description": "Tool-result or transcript summarisation.", "type": "string", "const": "summarize" },
+                { "description": "Commit message generation.", "type": "string", "const": "commit" },
+                { "description": "Memory extraction.", "type": "string", "const": "memory" },
+                { "description": "An `explore` subagent.", "type": "string", "const": "explore" },
+                { "description": "A background shell/HTTP subagent.", "type": "string", "const": "shell" },
+                {
+                    "description": "A custom subagent definition (`.cox/agents`/`.claude/agents`,\nT34.1): its own `tier`/`model` decides the tier, not this job.",
+                    "type": "string",
+                    "const": "agent"
+                },
+                { "description": "A hook-driven LLM call.", "type": "string", "const": "hook" },
+                {
+                    "description": "A plugin's own `cox_model_call` (PL§7d, T33.15): the router runs it\nat or below the plugin's granted tier, never `think`, and the\nledger row's job tag is `plugin:<id>`. No `[jobs]` entry names it —\nits tier comes from the call itself, already grant-clamped.",
+                    "type": "string",
+                    "pattern": "^plugin:.+$"
+                }
+            ]
+        })
+    }
 }
 
 /// Reasoning effort passed to the provider.
@@ -1283,6 +1405,26 @@ mod tests {
     fn usage_sums_cache_fields() {
         let usage = sample_usage();
         assert_eq!(usage.context_tokens(), 100 + 30 + 5);
+    }
+
+    /// Every fieldless `Job` still serializes as its bare tag (unchanged by
+    /// the hand-written impl), and `Plugin` serializes/round-trips as
+    /// `plugin:<id>` — the literal ledger tag `to_tag`/`from_tag`
+    /// (`cox-store`) and `cox`'s `stats.rs` `tag()` both rely on (T33.15).
+    #[test]
+    fn job_tags_are_plain_strings_and_plugin_round_trips_by_id() {
+        assert_eq!(serde_json::to_value(Job::Main).unwrap(), "main");
+        assert_eq!(serde_json::to_value(Job::Hook).unwrap(), "hook");
+        assert_eq!(
+            serde_json::to_value(Job::Plugin("git-glance".into())).unwrap(),
+            "plugin:git-glance"
+        );
+        let round: Job = serde_json::from_value(serde_json::json!("plugin:git-glance")).unwrap();
+        assert_eq!(round, Job::Plugin("git-glance".into()));
+        let round: Job = serde_json::from_value(serde_json::json!("main")).unwrap();
+        assert_eq!(round, Job::Main);
+        assert!(serde_json::from_value::<Job>(serde_json::json!("plugin:")).is_err());
+        assert!(serde_json::from_value::<Job>(serde_json::json!("bogus")).is_err());
     }
 
     #[rstest]

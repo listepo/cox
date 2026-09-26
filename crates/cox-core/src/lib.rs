@@ -15,6 +15,7 @@ pub mod external_agent;
 mod hooks;
 pub mod init;
 pub mod memory_extract;
+mod plugin_model;
 pub mod redact;
 mod rewind;
 mod rollout;

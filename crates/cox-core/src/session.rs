@@ -1173,7 +1173,7 @@ impl Session {
                 session_id: self.id,
                 // One call per turn: the driver runs its own loop inside.
                 turn: 1,
-                job: self.job,
+                job: self.job.clone(),
                 tier,
                 provider: ProviderId::External,
                 model: ModelId(agent.name().to_string()),
@@ -1483,7 +1483,7 @@ impl Session {
             .usage_insert(&cox_protocol::UsageRow {
                 session_id: self.id,
                 turn: calls_so_far + 1,
-                job: self.job,
+                job: self.job.clone(),
                 tier: route.tier,
                 provider: self.provider.id(),
                 model: route.model.clone(),
@@ -1580,7 +1580,7 @@ impl Session {
         self.emit(Event::TurnStarted {
             turn,
             seq,
-            job: self.job,
+            job: self.job.clone(),
             tier,
             model,
         })

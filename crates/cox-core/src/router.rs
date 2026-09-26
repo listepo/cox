@@ -92,9 +92,18 @@ impl Router {
         overrides: &Overrides,
         confirm_think: bool,
     ) -> Result<Route, RouteError> {
-        let tier = match job {
+        // Matches by reference (`job` is no longer `Copy`, T33.15) so the
+        // `want` match below can still use it; only the `[jobs]` lookup
+        // needs an owned clone.
+        let tier = match &job {
             Job::Main => overrides.main_tier.unwrap_or(session_tier),
-            _ => config.jobs.tier_for(job),
+            // A plugin's `cox_model_call` already carries its own
+            // grant-clamped tier (never `think`, PL§7d); `[jobs]` has no
+            // per-plugin entry, so the caller passes the resolved tier
+            // through `session_tier`, the same slot `Job::Main` uses for
+            // `/model` (T33.15).
+            Job::Plugin(_) => session_tier,
+            _ => config.jobs.tier_for(job.clone()),
         };
         let tc = config.tiers.get(tier);
         if tier == Tier::Think && tc.confirm && !confirm_think {

@@ -1,0 +1,186 @@
+//! `ModelCaller for Session` (T33.15, PL§7d): the router, the budget gate
+//! and the ledger a plugin's `cox_model_call` runs through. `cox-plugin`
+//! may not depend on this crate (AGENTS.md's trust-boundary rule), so it
+//! reaches this over the `ModelCaller` trait `cox-protocol` defines;
+//! `crates/cox-plugin/src/hostfn.rs` blocks a plugin's worker thread on it
+//! rather than `.await`ing, since that thread is a plain OS thread, not a
+//! tokio runtime worker (`cox-plugin::host`).
+//!
+//! Shaped like `compact.rs`'s `summarise`: one request, no transcript, one
+//! ledger row. What is specific to a plugin call: the job tag
+//! (`Job::Plugin(id)`), and that its tier is already resolved by the
+//! caller (grant-clamped, never `think`) instead of looked up in `[jobs]`
+//! (`router.rs`'s `Job::Plugin` arm passes it straight through).
+
+use async_trait::async_trait;
+use cox_protocol::errors::CoreError;
+use cox_protocol::traits::ModelCaller;
+use cox_protocol::types::{Job, ProviderEvent, Request, Tier};
+use tokio::sync::mpsc;
+
+use crate::budget;
+use crate::router::{Overrides, Router};
+use crate::session::Session;
+
+#[async_trait]
+impl ModelCaller for Session {
+    async fn call(
+        &self,
+        id: &str,
+        tier: Tier,
+        request: Request,
+    ) -> Result<Vec<ProviderEvent>, CoreError> {
+        // Defense in depth (D5): `hostfn.rs` already clamps to the grant
+        // before calling here (`ModelTier` cannot even express `think`),
+        // but this trait is the one seam every path back to the router
+        // goes through, so it refuses `think` itself rather than trusting
+        // every future caller to have clamped correctly.
+        if tier == Tier::Think {
+            return Err(CoreError::Denied {
+                why: "a plugin model call may not reach the think tier".into(),
+            });
+        }
+        let job = Job::Plugin(id.to_string());
+        let route = Router::pick(&self.config, job.clone(), tier, &Overrides::default(), true)
+            .map_err(|error| CoreError::Config {
+                key: "tiers".into(),
+                message: error.notice(),
+            })?;
+        // The budget gate every provider call passes (D6h/invariant 8).
+        // `already_warned = true` collapses `budget::decide`'s three
+        // outcomes to `Stop`/`Proceed`: a plugin call has no session-level
+        // "warned once" flag to flip, and `Warn` would otherwise behave
+        // exactly like `Proceed` here anyway.
+        let spent = self.spent().await;
+        let cap = self.config.budget.session_usd;
+        if matches!(
+            budget::decide(spent, cap, self.config.budget.warn_at, true),
+            budget::Decision::Stop
+        ) {
+            return Err(CoreError::Budget { spent, cap });
+        }
+        // The host sets tier, model and job (PL§7d's `ModelCall` doc);
+        // everything else in the plugin's own request rides unchanged.
+        let req = Request {
+            tier: route.tier,
+            job: job.clone(),
+            model: route.model.clone(),
+            ..request
+        };
+        let (tx, mut rx) = mpsc::channel(64);
+        let provider = self.provider.clone();
+        let cancel = self.cancel_token();
+        let join = tokio::spawn(async move { provider.stream(req, tx, cancel).await });
+        let mut events = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            events.push(ev);
+        }
+        let usage = join
+            .await
+            .map_err(|_| CoreError::Interrupted)?
+            .map_err(|error| CoreError::Provider { error })?;
+        let effort = route.effort;
+        self.store
+            .usage_insert(&cox_protocol::UsageRow {
+                session_id: self.id,
+                turn: 0,
+                job,
+                tier: route.tier,
+                provider: self.provider.id(),
+                model: route.model,
+                effort: Some(effort),
+                usage,
+            })
+            .map_err(|error| CoreError::Store { error })?;
+        if budget::counts(route.tier, self.config.budget.cheap_counts) {
+            self.add_spend(usage.cost_usd).await;
+        }
+        Ok(events)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use cox_protocol::types::{Effort, ModelId, SystemBlock, Thinking};
+    use cox_provider::scripted::Scripted;
+
+    use super::*;
+    use crate::session::MemoryStore;
+
+    fn plugin_request() -> Request {
+        Request {
+            tier: Tier::Cheap,
+            job: Job::Main,
+            model: ModelId(String::new()),
+            system: vec![SystemBlock {
+                text: "you are a plugin's own prompt".into(),
+                cache: false,
+            }],
+            tools: vec![],
+            messages: vec![],
+            effort: Effort::Low,
+            max_tokens: 256,
+            thinking: Thinking::Off,
+            cache_breakpoints: vec![],
+            stop_sequences: vec![],
+        }
+    }
+
+    fn session_with(scenario: &str, cap: f64) -> (Session, Arc<MemoryStore>) {
+        let mut config = cox_protocol::Config::default();
+        config.budget.session_usd = cap;
+        let provider = Arc::new(Scripted::from_toml(scenario, "").expect("scenario parses"));
+        let store = Arc::new(MemoryStore::new());
+        let session = Session::new(
+            config,
+            provider,
+            vec![],
+            store.clone(),
+            store.clone(),
+            PathBuf::from("/tmp"),
+        )
+        .expect("session");
+        (session, store)
+    }
+
+    #[tokio::test]
+    async fn plugin_model_call_writes_usage_row() {
+        let (session, store) = session_with("[[turn]]\ntext = \"hi from the plugin call\"\n", 5.0);
+        let events = ModelCaller::call(&session, "git-glance", Tier::Cheap, plugin_request())
+            .await
+            .expect("plugin call succeeds");
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::TextDelta { .. })),
+            "{events:?}"
+        );
+        let rows = store.usage_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].job, Job::Plugin("git-glance".into()));
+        assert_eq!(rows[0].tier, Tier::Cheap);
+    }
+
+    #[tokio::test]
+    async fn plugin_model_call_blocked_by_budget() {
+        let (session, store) = session_with("[[turn]]\ntext = \"should never be sent\"\n", 0.0);
+        let error = ModelCaller::call(&session, "git-glance", Tier::Cheap, plugin_request())
+            .await
+            .expect_err("a zero cap refuses before the provider runs");
+        assert!(matches!(error, CoreError::Budget { .. }), "{error:?}");
+        assert!(store.usage_rows().is_empty());
+    }
+
+    #[tokio::test]
+    async fn plugin_cannot_reach_think_tier() {
+        let (session, store) = session_with("[[turn]]\ntext = \"never sent\"\n", 5.0);
+        let error = ModelCaller::call(&session, "git-glance", Tier::Think, plugin_request())
+            .await
+            .expect_err("think is refused before it routes anywhere");
+        assert!(matches!(error, CoreError::Denied { .. }), "{error:?}");
+        assert!(store.usage_rows().is_empty());
+    }
+}

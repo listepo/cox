@@ -310,6 +310,12 @@ impl JobsConfig {
             J::Shell => self.shell,
             J::Agent => self.agent,
             J::Hook => self.hook,
+            // A plugin's tier is its own grant-clamped request, resolved
+            // by the caller before `Router::pick` ever reaches this table
+            // (T33.15, `router.rs`'s `Job::Plugin` arm) — there is no
+            // per-plugin `[jobs]` entry to look up. The fallback here is
+            // never hit; `cheap` is the safe answer if it ever is.
+            J::Plugin(_) => Tier::Cheap,
         }
     }
 }

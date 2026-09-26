@@ -30,7 +30,9 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 # T33.11: `PluginHost::call` blocks on the plugin's worker, so `PluginHooks`
-# runs it on `spawn_blocking`; the workspace's one async runtime.
+# runs it on `spawn_blocking`; T33.15: `cox_model_call` blocks a plugin's
+# worker thread (a plain OS thread, not a tokio runtime worker) on
+# `ModelCaller::call` via `Handle::block_on`. The workspace's one async runtime.
 tokio = { workspace = true }
 # T33.9: `cox_log` writes to cox's log (PL§4); already workspace-pinned.
 tracing = { workspace = true }

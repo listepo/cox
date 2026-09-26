@@ -14,10 +14,13 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use cox_plugin_api::{AbiError, InitIn, NoticeLevel, PluginManifest, SessionInfo};
+use cox_plugin_api::{
+    AbiError, InitIn, ModelCall, ModelTier, NoticeLevel, PluginManifest, SessionInfo,
+};
 use cox_protocol::config::PluginsConfig;
-use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT};
-use cox_protocol::types::Level;
+use cox_protocol::errors::CoreError;
+use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT, ModelCaller};
+use cox_protocol::types::{Level, Request, Tier};
 use cox_protocol::{PluginStore, StoreError};
 use cox_sanitize::redact::scrub;
 use cox_sanitize::sanitize;
@@ -102,6 +105,12 @@ pub struct HostEnv {
     export: Mutex<String>,
     notices: Mutex<Vec<(Level, String)>>,
     log: Mutex<LogWindow>,
+    // T33.15: `cox_model_call`'s route to `cox-core`'s router/budget/ledger
+    // over the `ModelCaller` trait (this crate may not depend on cox-core),
+    // and the tokio handle to block this plugin's plain OS worker thread on
+    // it (`PluginHost`'s call, not a tokio runtime worker: `crate::host`).
+    model_caller: Option<Arc<dyn ModelCaller>>,
+    runtime: Option<tokio::runtime::Handle>,
 }
 
 impl HostEnv {
@@ -116,6 +125,8 @@ impl HostEnv {
             export: Mutex::new(String::new()),
             notices: Mutex::new(Vec::new()),
             log: Mutex::new(LogWindow::default()),
+            model_caller: None,
+            runtime: None,
         }
     }
 
@@ -130,6 +141,19 @@ impl HostEnv {
     /// The session's folded context, shared by all of its plugins.
     pub fn with_context(mut self, context: Arc<Context>) -> Self {
         self.context = context;
+        self
+    }
+
+    /// The seam `cox_model_call` routes through (T33.44 wires the real
+    /// `Session` and its runtime `Handle` in at session open; without this,
+    /// `cox_model_call` answers `Failed`).
+    pub fn with_model_caller(
+        mut self,
+        caller: Arc<dyn ModelCaller>,
+        runtime: tokio::runtime::Handle,
+    ) -> Self {
+        self.model_caller = Some(caller);
+        self.runtime = Some(runtime);
         self
     }
 
@@ -250,6 +274,7 @@ impl HostEnv {
                 self.require("context")?;
                 Ok(self.context.snapshot())
             }
+            "cox_model_call" => self.model_call(arg),
             other => Err(failed(&format!("`{other}` is not available in this cox"))),
         }
     }
@@ -294,6 +319,71 @@ impl HostEnv {
             NoticeLevel::Info => tracing::info!(plugin = %id, "{text}"),
             NoticeLevel::Warn => tracing::warn!(plugin = %id, "{text}"),
         }
+    }
+
+    /// `cox_model_call` (PL§7d, T33.15): the tier is clamped to the grant
+    /// (`model:code` covers `model:cheap`, mirroring `grant::covered`) and
+    /// never reaches `think` — `ModelTier` cannot even express it — then the
+    /// call blocks this plugin's worker thread on `ModelCaller::call`, which
+    /// runs it through the router and the budget gate and writes the one
+    /// `usage` row (`crates/cox-core/src/plugin_model.rs`).
+    fn model_call(&self, arg: Value) -> Result<Value, AbiError> {
+        self.outside_render()?;
+        let granted = if self.granted.contains(MODEL_CODE) {
+            Tier::Code
+        } else if self.granted.contains(MODEL_CHEAP) {
+            Tier::Cheap
+        } else {
+            return Err(AbiError::NotGranted {
+                capability: MODEL_CHEAP.into(),
+            });
+        };
+        let call: ModelCall = parse(arg)?;
+        let requested = match call.tier {
+            ModelTier::Cheap => Tier::Cheap,
+            ModelTier::Code => Tier::Code,
+        };
+        let tier = if tier_rank(requested) < tier_rank(granted) {
+            requested
+        } else {
+            granted
+        };
+        let request: Request = serde_json::from_value(call.request)
+            .map_err(|e| failed(&format!("bad request: {e}")))?;
+        let caller = self
+            .model_caller
+            .as_ref()
+            .ok_or_else(|| failed("model calls are not available in this cox"))?;
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| failed("model calls are not available in this cox"))?;
+        let events = runtime
+            .block_on(caller.call(&self.id, tier, request))
+            .map_err(model_call_error)?;
+        serde_json::to_value(events).map_err(|e| failed(&e.to_string()))
+    }
+}
+
+/// `model:cheap` and `model:code` (mirrors `grant.rs`'s private consts; not
+/// imported because this crate's `dispatch` should not need `grant::covered`
+/// for a single two-tier comparison).
+const MODEL_CHEAP: &str = "model:cheap";
+const MODEL_CODE: &str = "model:code";
+
+/// Lower is cheaper; `think` has no `ModelTier` variant so it never appears.
+fn tier_rank(tier: Tier) -> u8 {
+    match tier {
+        Tier::Cheap => 0,
+        Tier::Code => 1,
+        Tier::Think => 2,
+    }
+}
+
+fn model_call_error(error: CoreError) -> AbiError {
+    match error {
+        CoreError::Budget { .. } => AbiError::Budget,
+        other => failed(&other.to_string()),
     }
 }
 
@@ -602,5 +692,121 @@ mod tests {
         assert_eq!(init.granted["kv"], true);
         let bare = init_input(&manifest, &PluginsConfig::default(), session);
         assert_eq!(bare.config, json!({}));
+    }
+
+    /// A `ModelCaller` that records the tier it was called at and answers
+    /// with one `TextDelta`, standing in for `cox-core`'s `Session` (T33.15
+    /// wires the real one; T33.44 puts it in a live `HostEnv`).
+    #[derive(Default)]
+    struct FakeCaller {
+        seen_tier: Mutex<Option<Tier>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ModelCaller for FakeCaller {
+        async fn call(
+            &self,
+            _id: &str,
+            tier: Tier,
+            _request: Request,
+        ) -> Result<Vec<cox_protocol::types::ProviderEvent>, CoreError> {
+            *lock(&self.seen_tier) = Some(tier);
+            Ok(vec![cox_protocol::types::ProviderEvent::TextDelta {
+                text: "ok".into(),
+            }])
+        }
+    }
+
+    fn model_call_request(tier: ModelTier) -> Value {
+        let request = Request {
+            tier: Tier::Cheap,
+            job: cox_protocol::types::Job::Main,
+            model: cox_protocol::types::ModelId(String::new()),
+            system: vec![cox_protocol::types::SystemBlock {
+                text: "you are a plugin's own prompt".into(),
+                cache: false,
+            }],
+            tools: vec![],
+            messages: vec![],
+            effort: cox_protocol::types::Effort::Low,
+            max_tokens: 64,
+            thinking: cox_protocol::types::Thinking::Off,
+            cache_breakpoints: vec![],
+            stop_sequences: vec![],
+        };
+        json!({
+            "tier": tier,
+            "request": serde_json::to_value(request).expect("request serializes"),
+        })
+    }
+
+    fn env_with_caller(granted: Vec<String>) -> (Arc<HostEnv>, Arc<FakeCaller>) {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let caller = Arc::new(FakeCaller::default());
+        let env = Arc::new(
+            HostEnv::new("t")
+                .with_grant(granted, Arc::new(MemKv::default()))
+                .with_model_caller(caller.clone(), rt.handle().clone()),
+        );
+        // Leaking the runtime keeps its handle alive for the env's lifetime;
+        // the test process exits right after, so nothing outlives it.
+        std::mem::forget(rt);
+        (env, caller)
+    }
+
+    #[test]
+    fn model_call_denied_without_capability() {
+        let env = Arc::new(HostEnv::new("t"));
+        let reply = call(
+            &env,
+            "cox_model_call",
+            "cox_command",
+            model_call_request(ModelTier::Cheap),
+        );
+        assert_eq!(
+            reply,
+            json!({ "Err": { "kind": "not_granted", "capability": "model:cheap" } })
+        );
+    }
+
+    #[test]
+    fn model_call_denied_in_render() {
+        let (env, _caller) = env_with_caller(vec!["model:cheap".into()]);
+        let reply = call(
+            &env,
+            "cox_model_call",
+            "cox_render",
+            model_call_request(ModelTier::Cheap),
+        );
+        assert_eq!(reply, json!({ "Err": { "kind": "not_in_this_context" } }));
+    }
+
+    #[test]
+    fn model_call_clamps_tier_to_the_grant() {
+        let (env, caller) = env_with_caller(vec!["model:cheap".into()]);
+        let reply = call(
+            &env,
+            "cox_model_call",
+            "cox_command",
+            model_call_request(ModelTier::Code),
+        );
+        assert!(reply["Ok"].is_array(), "{reply}");
+        assert_eq!(*lock(&caller.seen_tier), Some(Tier::Cheap));
+    }
+
+    #[test]
+    fn model_call_round_trips_at_the_granted_tier() {
+        let (env, caller) = env_with_caller(vec!["model:code".into()]);
+        let reply = call(
+            &env,
+            "cox_model_call",
+            "cox_command",
+            model_call_request(ModelTier::Code),
+        );
+        assert_eq!(
+            reply,
+            json!({ "Ok": [{ "type": "text_delta", "text": "ok" }] })
+        );
+        assert_eq!(*lock(&caller.seen_tier), Some(Tier::Code));
     }
 }

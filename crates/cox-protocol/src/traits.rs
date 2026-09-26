@@ -517,6 +517,27 @@ pub trait ExternalAgent: Send + Sync {
     ) -> Result<Option<Usage>, crate::errors::CoreError>;
 }
 
+/// A plugin's `cox_model_call` (PL§7d, T33.15): the router, the budget gate
+/// and the ledger, reached this way because `cox-plugin` may not depend on
+/// `cox-core` (AGENTS.md's trust-boundary rule — anything that crosses a
+/// crate boundary lives behind a trait defined here). The session installs
+/// its own implementation into `HostEnv` (`cox-plugin::hostfn`), which
+/// blocks a plugin's worker thread on it rather than `.await`ing, since
+/// that thread is not a tokio runtime worker (`cox-plugin::host`).
+#[async_trait]
+pub trait ModelCaller: Send + Sync {
+    /// Runs `request` at `tier` — already resolved and clamped to the
+    /// plugin's grant, never `think` (D5) — as job `Job::Plugin(id)`: the
+    /// budget gate first (a `CoreError::Budget` refusal), then the
+    /// provider call, then one ledger row, same as any other job.
+    async fn call(
+        &self,
+        id: &str,
+        tier: crate::types::Tier,
+        request: crate::types::Request,
+    ) -> Result<Vec<crate::types::ProviderEvent>, crate::errors::CoreError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,5 +556,6 @@ mod tests {
         assert_object_safe::<dyn Relay>();
         assert_object_safe::<dyn ExternalAgent>();
         assert_object_safe::<dyn EventTap>();
+        assert_object_safe::<dyn ModelCaller>();
     }
 }
