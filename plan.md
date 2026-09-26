@@ -6,9 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T33.7 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.9 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.10 | todo | P2 | 4 | 0% | |
 | T33.11 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.12 | todo | P2 | 4 | 0% | |
@@ -62,7 +60,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | todo | P2 | 4 | 0% | |
-| T35.12 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 
 ## Reference
 
@@ -601,7 +598,7 @@ Status line (one row): `sonnet-5 · ctx 41% · $0.83 · workspace-write · 2 tas
 |-------|------|----------|
 | `cox-provider` | `ProviderError` | `Auth`, `RateLimited { retry_after }`, `Overloaded`, `BadRequest { message }`, `ContextTooLong { max, got }`, `Refusal { detail }`, `Network`, `Timeout`, `Cancelled`, `Parse { line }`, `Unsupported { feature }` |
 | `cox-tools` | `ToolError` | `Denied { why }`, `Confined { path, root }`, `SandboxDenied { detail }`, `Timeout`, `NotFound`, `Ambiguous { matches }`, `TooLarge { bytes, cap }`, `Binary`, `Io`, `Cancelled` |
-| `cox-core` | `CoreError` | `Budget { spent, cap }`, `Interrupted`, `Provider(ProviderError)`, `Tool { call, error }`, `Compaction`, `Config { key, message }`, `Store(StoreError)`, `Hook { id, error }` |
+| `cox-core` | `CoreError` | `Budget { spent, cap }`, `Interrupted`, `Provider(ProviderError)`, `ExternalAgent { agent, message }`, `Tool { call, error }`, `Compaction`, `Config { key, message }`, `Store(StoreError)`, `Hook { id, error }` |
 | `cox-store` | `StoreError` | `Open`, `Migrate { from, to }`, `Corrupt { path }`, `NotFound`, `Io`, `Sqlite` |
 | `cox-ext` | `ExtError` | `Frontmatter { path, line }`, `HookTimeout`, `HookCrashed { status }`, `TooLarge { path, budget }`, `Cycle { path }` |
 | `cox-mcp` | `McpError` | `Spawn`, `Handshake`, `Auth`, `Timeout`, `Transport`, `ToolFailed { server, tool }` |
@@ -762,26 +759,11 @@ Every card in this phase:
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
 
-#### T33.7 `cox plugin install | enable | disable`
-
-Depends: T33.6 · Size: ~180 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
-Goal:
-- `install <dir>` copies into `versions/<digest12>/` and writes `current` atomically; the only v1 source is a local path, recorded in the grant's `source`.
-- `enable [--project] [--yes]` prints the capabilities in words and asks on stdin.
-- `disable` clears `enabled`.
-Check: e2e in a scratch `COX_HOME`: install → enable `--yes` → `list` shows `loaded`; `disable` → `not loaded`; `project_plugin_needs_project_grant`.
-
 #### T33.8 TUI grant dialog
 
 Depends: T33.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox/src/session.rs`
 Goal: `Modal::PluginGrant` asks for each `NeedsApproval` plugin at session open, queued in the single modal slot. `y` grants that digest and `n` skips it for this session. Project plugins show their repository in warning style. Every manifest string is sanitized.
 Check: insta snapshots (a new plugin, a widened plugin with the diff, a project plugin); `grant_dialog_sanitizes_description`.
-
-#### T33.9 Base host functions and the context snapshot
-
-Depends: T33.6 · Size: ~190 · Files: `crates/cox-plugin/src/hostfn.rs`, `src/context.rs`
-Goal: `cox_log`, `cox_notify` (level capped at `Warn`), `cox_kv_*` (through `PluginStore`), `InitIn.config` from `[plugins.<id>]` (the `PluginsConfig` flatten, following `HooksConfig`), and `cox_context` folded from events. Each host function checks the grant and the calling context (PL§4).
-Check: `notify_cannot_raise_security_level`, `kv_denied_without_capability`, `context_snapshot_is_redacted` (a secret in a tool result does not reach the snapshot); the config docs drift test is green with the new section.
 
 #### T33.10 Events: the tap, the rings, `cox_on_event`
 
@@ -1324,18 +1306,6 @@ Goal: EA§4 allows a `terminal/*` request "only under the same `sandbox::Policy`
 - `initialize_request()` advertises `terminal = true` only when the sandbox grant is present.
 Without a grant, the T35.3 refusal and its reason stay. Output shown to the user is sanitized, and output over the cap is archived before it is shortened.
 Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `acp_terminal_output_respects_byte_limit_and_reports_truncation`, `acp_terminal_release_kills_the_process_group`, `acp_terminal_command_is_judged_by_the_engine` and `acp_terminal_without_sandbox_grant_is_still_refused`.
-
-#### T35.12 A dedicated error for a failed external agent
-
-Depends: T35.4 · Size: ~80 · Files: `crates/cox-protocol/src/errors.rs` (`CoreError`), `crates/cox-core/src/external_agent.rs`, `docs/protocol.jsonschema` (generated)
-Goal: T35.4 reports an external agent's `result` with `is_error: true` as `CoreError::Provider(ProviderError::BadRequest { message })`, because `CoreError` has no better variant. That misnames the failure: the provider did not fail, and a surface or a retry rule cannot tell the two apart.
-- Add `CoreError::ExternalAgent { agent, message }`, with the message sanitized by the caller-supplied guard, as T35.4 already does.
-- Map the error `result` line onto it.
-- Regenerate `docs/protocol.jsonschema` with its drift test.
-- Every surface that matches on `CoreError` (TUI, stream-json, ACP) shows it as the external agent's error. It must not trigger provider retry or fallback.
-Check: `stream_json_error_result_is_an_external_agent_error` (it replaces the `BadRequest` expectation in `result_line_ends_the_turn_and_an_error_result_reports_it_first`), `external_agent_error_is_not_retried_as_a_provider_error`; the protocol schema drift test is green.
-
-**Order.** T35.0 → T35.1 → T35.2 is the critical path (it also waits on T33.6, T33.19, T33.42, T34.1, T34.5, whichever lands last). After T35.2: T35.3 and T35.4 run in parallel → T35.5 → (T35.6, T35.8 in parallel) → T35.7 → T35.9; T35.10 runs whenever the creator has a key. The top table gets rows T35.0–T35.10; P1 for the design doc and the critical path through the host spawner and the preset wiring (T35.0–T35.2, T35.5), P2 for the two drivers, the plugin package, the fixture e2e, doctor reporting and the user guide (T35.3, T35.4, T35.6–T35.9), P3 for the optional live check (T35.10).
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 

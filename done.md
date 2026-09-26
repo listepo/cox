@@ -1696,3 +1696,79 @@ Check:
 - `project_mcp_json_shadows_plugin_server`, `plugin_stdio_server_runs_under_sandbox`, `changing_bundled_server_binary_changes_digest` pass, plus `symlinked_server_binary_is_refused`, `plugin_http_server_needs_its_host_in_net`, `net_allows_exact_hosts_and_strict_subdomains_of_a_wildcard`.
 - A real-binary run against a scratch `COX_HOME` showed the Seatbelt denial for a plugin server writing outside its roots.
 - On main after landing: nextest 1061 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.9 Base host functions and the context snapshot
+
+Depends: T33.6 · Size: ~190 · Files: `crates/cox-plugin/src/hostfn.rs`, `src/context.rs`
+Goal: `cox_log`, `cox_notify` (level capped at `Warn`), `cox_kv_*` (through `PluginStore`), `InitIn.config` from `[plugins.<id>]` (the `PluginsConfig` flatten, following `HooksConfig`), and `cox_context` folded from events. Each host function checks the grant and the calling context (PL§4).
+Check: `notify_cannot_raise_security_level`, `kv_denied_without_capability`, `context_snapshot_is_redacted` (a secret in a tool result does not reach the snapshot); the config docs drift test is green with the new section.
+Status: done 2026-09-26
+Result: the base `cox:host/v1` host functions exist on the wire the SDK (T33.27) expects: one JSON block in, `{"Ok":..}` or `{"Err":AbiError}` out.
+- **`crates/cox-plugin/src/hostfn.rs`** implements `cox_log`, `cox_notify`, `cox_kv_get`, `cox_kv_put`, `cox_kv_delete` and `cox_context`.
+  - Each call checks the grant (`NotGranted`) and the running export (`NotInThisContext` for notify and kv inside `cox_render`/`cox_render_item`).
+  - Notify: any level other than `info` becomes `Warn`, so a plugin never raises `Security` or `Budget`. Text is sanitized and secret-redacted; at most 16 notices queue until the session drains `HostEnv::take_notices()`.
+  - Log goes to `tracing`, 20 lines per second per plugin; dropped lines are counted.
+  - Kv goes through `PluginStore` as JSON; a quota refusal is `TooLarge` with the limit hit; keys are capped at 256 bytes.
+  - All 12 ABI imports are registered so any SDK plugin links; the six later ones answer `Err(Failed)` until their cards replace the arm in `HostEnv::dispatch`.
+  - `init_input(manifest, &PluginsConfig, SessionInfo) -> InitIn`: `config` is the plugin's `[plugins.<id>]` table or `{}`.
+- **`crates/cox-plugin/src/context.rs`**: `Context::fold(&Event)` and `snapshot()` (session id, cwd, main tier and model, usage totals, last 50 items without thinking, the last successful todo list, compactions). Redaction runs on read, string by string, so a secret split across two deltas is still caught.
+- `PluginHost::load` keeps its signature and calls the new `load_with(wasm, limits, Arc<HostEnv>)` with an environment that grants nothing.
+- `PluginsConfig` gains flattened `entries` for `[plugins.<id>]`; config schema and docs regenerated; `docs/plugins.md` describes kv limits, the snapshot and `InitIn.config`.
+Deviations:
+- `scrub`/`REDACTED` moved from `cox-core::redact` to `crates/cox-sanitize/src/redact.rs` (cox-plugin may depend on cox-sanitize only); cox-core re-exports them at the old path and keeps `scrub_event`; `deps.rs` allows cox-core → cox-sanitize.
+- `PluginStore::kv_delete(plugin_id, key)` added (trait had only `kv_delete_all`), with `kv_delete_removes_only_that_key`.
+- `KV_VALUE_LIMIT`/`KV_PLUGIN_LIMIT` moved to `cox_protocol::traits` so host and store report the same limits.
+- 19 files, ~1190 lines, well over the ~190 estimate.
+Not done (later cards):
+- Session wiring: `session.rs` still loads through the grant-nothing environment and drops the host; keeping a live instance (`HostEnv::new(id).with_grant(..).with_context(..)`, `load_with`, `init`, draining notices) needs an `Arc<dyn PluginStore>`.
+- Nothing calls `Context::fold` yet; T33.10's event tap should.
+- A project `.cox/config.toml` can set a user plugin's `[plugins.<id>]` table; no guard added. A plugin id `enabled` would collide with the fixed key.
+Check:
+- `notify_cannot_raise_security_level`, `kv_denied_without_capability`, `context_snapshot_is_redacted` pass; `plugin_table_flattens_into_entries` added.
+- In the worktree: nextest 1062 passed, 3 skipped (3 load timeouts in `mcp_serve`/`plain` passed on rerun); fmt and both clippy runs clean.
+- On main after landing (with T33.9, T33.7, T35.12): nextest 1074 passed, 3 skipped, 1 load timeout (`cox_mcp_serves_read_grep_and_glob_from_the_built_binary`) passed on its own rerun; fmt, clippy, the slim build and the guest `cargo test` clean.
+
+#### T33.7 `cox plugin install | enable | disable`
+
+Depends: T33.6 · Size: ~180 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal:
+- `install <dir>` copies into `versions/<digest12>/` and writes `current` atomically; the only v1 source is a local path, recorded in the grant's `source`.
+- `enable [--project] [--yes]` prints the capabilities in words and asks on stdin.
+- `disable` clears `enabled`.
+Check: e2e in a scratch `COX_HOME`: install → enable `--yes` → `list` shows `loaded`; `disable` → `not loaded`; `project_plugin_needs_project_grant`.
+Status: done 2026-09-26
+Result: `cox plugin install <dir> [--yes]`, `cox plugin enable <id> [--project] [--yes]` and `cox plugin disable <id> [--project]` exist, and `cox plugin list` runs a real `grant::check` per plugin.
+- `list` shows `granted`, `disabled` or `needs_approval` (with `grant_added`/`grant_removed`) instead of `unknown`, plus `loaded: bool` (`loaded`/`not loaded` in the human form). A missing or unreadable store counts as no grant.
+- `install` always targets the user scope (`~/.cox/plugins/<id>/versions/<digest12>/`): it parses, validates and digests the source directory through the same `load_manifest` path `discover` uses, copies it, writes `current` by temp file and rename, then runs the same approval flow as `enable`, recording `source = {kind: "path", path, digest}` (PL§1).
+- The shared `decide()` prints name, description and the capability list, each line through `cox_sanitize::sanitize`, and prompts `[y/N]` unless `--yes`; approval writes the grant in the shape `grant::capability_list` defines. A decline writes no row, so the next `enable` sees `NeedsApproval`, never a stale `Disabled`.
+- `enable`/`disable` look for project plugins only with `--project`; the grant is scoped to that repository root.
+Deviations:
+- `cox_plugin::discover::load_manifest` is now `pub` and takes `expect_id: Option<&str>`; `cox_store::now_rfc3339` is now `pub` (reused for `decided_at`).
+- The two T33.4 assertions in `crates/cox/tests/plugin_cli.rs` now expect `needs_approval` and `loaded == false`.
+Not done: `update`/`remove`/`new` (their own cards) and the TUI grant dialog (T33.8). `declared_summary` in `list` ignores `kv`/`context`/`model`, so such a plugin reads "no declared capabilities" though `grant` lists them; cosmetic, pre-existing.
+Check:
+- `install_then_enable_yes_then_list_shows_loaded_then_disable_shows_not_loaded` and `project_plugin_needs_project_grant` pass.
+- In the worktree: nextest 1058 passed, 3 skipped; fmt and both clippy runs clean. A real-binary run against a scratch `COX_HOME` (install → decline → list → enable --yes → list → disable → list --json) matched the Check's wording.
+- On main after landing (with T33.9, T33.7, T35.12): nextest 1074 passed, 3 skipped, 1 load timeout (`cox_mcp_serves_read_grep_and_glob_from_the_built_binary`) passed on its own rerun; fmt, clippy, the slim build and the guest `cargo test` clean.
+
+#### T35.12 A dedicated error for a failed external agent
+
+Depends: T35.4 · Size: ~80 · Files: `crates/cox-protocol/src/errors.rs` (`CoreError`), `crates/cox-core/src/external_agent.rs`, `docs/protocol.jsonschema` (generated)
+Goal: T35.4 reports an external agent's `result` with `is_error: true` as `CoreError::Provider(ProviderError::BadRequest { message })`, because `CoreError` has no better variant. That misnames the failure: the provider did not fail, and a surface or a retry rule cannot tell the two apart.
+- Add `CoreError::ExternalAgent { agent, message }`, with the message sanitized by the caller-supplied guard, as T35.4 already does.
+- Map the error `result` line onto it.
+- Regenerate `docs/protocol.jsonschema` with its drift test.
+- Every surface that matches on `CoreError` (TUI, stream-json, ACP) shows it as the external agent's error. It must not trigger provider retry or fallback.
+Check: `stream_json_error_result_is_an_external_agent_error` (it replaces the `BadRequest` expectation in `result_line_ends_the_turn_and_an_error_result_reports_it_first`), `external_agent_error_is_not_retried_as_a_provider_error`; the protocol schema drift test is green.
+
+**Order.** T35.0 → T35.1 → T35.2 is the critical path (it also waits on T33.6, T33.19, T33.42, T34.1, T34.5, whichever lands last). After T35.2: T35.3 and T35.4 run in parallel → T35.5 → (T35.6, T35.8 in parallel) → T35.7 → T35.9; T35.10 runs whenever the creator has a key. The top table gets rows T35.0–T35.10; P1 for the design doc and the critical path through the host spawner and the preset wiring (T35.0–T35.2, T35.5), P2 for the two drivers, the plugin package, the fixture e2e, doctor reporting and the user guide (T35.3, T35.4, T35.6–T35.9), P3 for the optional live check (T35.10).
+Status: done 2026-09-26
+Result: an external agent's error `result` is now `CoreError::ExternalAgent { agent, message }` (tag `external_agent`, shown as "external agent {agent} failed: {message}"), not `CoreError::Provider(BadRequest)`.
+- `StreamJsonMapper::new(turn, agent: impl Into<String>, sanitize)` takes the agent's plugin or preset id; T35.5 passes it.
+- Every surface renders `CoreError` through `Display` (TUI `Cell::Error`, stream-json `plain.rs`, ACP), and none matches on a variant, so no surface code changed.
+- The only retry classifier, `cox_provider_http::retry::retryable(&ProviderError)`, cannot take a `CoreError`, so the new variant can never reach provider retry or fallback.
+- `docs/protocol.jsonschema` regenerated by its drift test (one additive block); `plan.md` §1.14's `CoreError` row lists the variant.
+Check:
+- `stream_json_error_result_is_an_external_agent_error` (replaces `result_line_ends_the_turn_and_an_error_result_reports_it_first`) and `external_agent_error_is_not_retried_as_a_provider_error` pass.
+- In the worktree: nextest 1056 passed, 3 skipped; fmt, both clippy runs and the schema drift test clean.
+- On main after landing (with T33.9, T33.7, T35.12): nextest 1074 passed, 3 skipped, 1 load timeout (`cox_mcp_serves_read_grep_and_glob_from_the_built_binary`) passed on its own rerun; fmt, clippy, the slim build and the guest `cargo test` clean.

@@ -1,8 +1,6 @@
 # Todo
 
-- T33.7. `cox plugin install | enable | disable`
 - T33.8. TUI grant dialog
-- T33.9. Base host functions and the context snapshot
 - T33.10. Events: the tap, the rings, `cox_on_event`
 - T33.11. Hooks: plugins as a hook source
 - T33.12. Tools from plugins
@@ -56,4 +54,3 @@
 - T35.9. User guide: the Cursor plugin
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.11. ACP client terminals under the sandbox
-- T35.12. A dedicated error for a failed external agent
