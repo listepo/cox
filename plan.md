@@ -6,13 +6,13 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.15 | todo | P2 | 3 | 0% | |
+| T30.15 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
 | T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
 | T32.2 | todo | P2 | 4 | 0% | |
-| T32.13 | todo | P2 | 4 | 0% | |
-| T32.14 | todo | P2 | 4 | 0% | |
-| T33.1 | todo | P1 | 4 | 0% | |
+| T32.13 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
+| T32.14 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
+| T33.1 | in progress | P1 | 4 | 5% | Claude Code / opus-5.5 |
 | T33.2 | todo | P1 | 5 | 0% | |
 | T33.3 | todo | P1 | 5 | 0% | |
 | T33.4 | todo | P2 | 3 | 0% | |
