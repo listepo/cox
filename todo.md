@@ -1,6 +1,3 @@
 # Todo
 
-- T22.4. Mouse: wire `tui.mouse` or delete the key
-- T27.2. Approvals labelled by source; agent cards
-- T27.4. `/loop`
 - T30.3. Eval run with a verification step

@@ -147,7 +147,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `inline` = `true`
 - `show_thinking` = `"collapsed"` — collapsed | hidden | full
 - `screen_reader` = `false` — the plain surface (T29.1): flat labelled lines, numbered prompts, no cursor movement, BEL when a turn ends; same as `--plain` or `COX_PLAIN=1`
-- `mouse` = `true`
+- `mouse` = `true` — the wheel scrolls the transcript, the diff view and pickers 3 lines/rows a tick; no in-app toggle key, so false leaves the terminal's own mouse reporting (and text selection) untouched (T22.4)
 - `glyphs` = `"auto"` — auto | unicode | ascii
 - `icons` = `{}` — [tui.icons] name = "glyph" overrides one symbol
 - `color` = `"auto"` — auto | none | 16 | 256 | true (NO_COLOR forces none)

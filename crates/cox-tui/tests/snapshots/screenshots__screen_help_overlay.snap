@@ -31,6 +31,8 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit · y co
        /sessions                                                this project's recent sessions
        /expand <id>                                             show an archived tool output in full
        /agents                                                  live cox sessions in this workspace
+       /loop <interval> <prompt> [--budget usd] | /loop stop    repeat a prompt on a timer with its
+       own budget cap
        /skills                                                  list skills
        /hooks                                                   list hooks
        /mcp                                                     MCP servers and their tools

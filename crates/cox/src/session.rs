@@ -658,6 +658,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.diff_mode = cox_tui::diff::Mode::parse(&config.tui.diff);
         state.still = config.tui.motion == "reduced";
         state.notify = cox_tui::state::Notify::parse(&config.tui.notify);
+        // T22.4: the only switch for mouse capture is this config key.
+        state.mouse = config.tui.mouse;
         state.marks = cli.verbose > 0;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
@@ -697,6 +699,20 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                             Some(Ask::GitDiff) => {
                                 let diff = cox_tools::git::diff(&dir).await;
                                 if feed.send(Msg::Diff(diff)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            // T27.5: `Enter` on an `/agents` sibling-session
+                            // row asks for that session's rollout, the same
+                            // read `crates/cox/src/resume.rs` does for
+                            // `--resume`; a read error (store missing, id
+                            // stale) answers empty rather than killing the
+                            // poll loop the rest of `/agents` still needs.
+                            Some(Ask::Rollout(id)) => {
+                                let events = Store::open(&home)
+                                    .and_then(|store| store.rollout_read(&id))
+                                    .unwrap_or_default();
+                                if feed.send(Msg::Rollout(events)).await.is_err() {
                                     break;
                                 }
                             }

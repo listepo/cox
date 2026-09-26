@@ -19,9 +19,9 @@ const CTX_CELLS: usize = 5;
 
 /// One status segment: its text and whether it survives narrowing. The order
 /// below is display order; `fit` drops from the right in the documented
-/// order (git counts → cache → tasks → effort → sandbox → model → cost →
-/// ctx), so the row reads `model · ctx · cost · sandbox · effort · tasks ·
-/// cache · mode` at full width.
+/// order (loop countdown → git counts → cache → tasks → effort → sandbox →
+/// model → cost → ctx), so the row reads `model · ctx · cost · sandbox ·
+/// effort · tasks · cache · loop countdown · mode` at full width.
 fn segments(state: &State) -> Vec<(bool, String)> {
     let s = &state.status;
     let sep = state.glyphs.sep;
@@ -73,6 +73,14 @@ fn segments(state: &State) -> Vec<(bool, String)> {
     };
     let tasks = format!("{} tasks", state.tasks.len());
     let cache = format!("cache {cache_pct}%");
+    // T27.7: time left until `/loop`'s next turn, e.g. `↻ 4m12s`; `cells.rs`
+    // already formats a running tool call's elapsed time as `{secs}.{tenths}s`
+    // (no minutes), which does not fit a countdown that can run for hours, so
+    // this is its own small formatter rather than a shared one.
+    let loop_countdown = state.active_loop.as_ref().map(|lp| {
+        let secs = lp.next_at.saturating_sub(state.tick) / 10;
+        format!("↻ {}m{}s", secs / 60, secs % 60)
+    });
     let tail = match (s.busy, state.ctrl_c_armed) {
         (true, _) => format!(" {sep} working"),
         (false, true) => format!(" {sep} Ctrl+C again to quit"),
@@ -108,6 +116,11 @@ fn segments(state: &State) -> Vec<(bool, String)> {
     }
     out.push((false, tasks));
     out.push((false, cache));
+    // Right-most droppable: `fit` removes the last `false` segment first, so
+    // the countdown is the first thing to go on a narrow line.
+    if let Some(seg) = loop_countdown {
+        out.push((false, seg));
+    }
     out.push((true, format!("{head}[{mode}]{suffix}")));
     out
 }

@@ -6,9 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.4 | todo | P1 | 2 | 0% | |
-| T27.2 | todo | P1 | 2 | 60% | |
-| T27.4 | todo | P3 | 2 | 0% | |
 | T30.3 | todo | P2 | 2 | 50% | |
 
 ## Reference
@@ -356,7 +353,7 @@ endpoint = ""
 redact = true
 ```
 
-Precedence (D13): embedded defaults < `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `.claude/settings.json` (permissions/hooks/env only, imported) < `COX_<SECTION>_<KEY>` (e.g. `COX_TIERS_CODE_MODEL`) < CLI flags. Before figment runs, `dotenvy` loads `.env` then `.env.local` walking up from cwd (T0.7); missing files are ignored; already-set variables are left alone, so a key that arrived only via `.env` still shows as `env` in `cox config show --sources`. Project config may not raise `budget.*`, set `permissions.mode = "bypass"`, set `sandbox.mode = "danger-full-access"` or set `tiers.think.confirm = false`; violations are reported by `cox config show` and ignored. `cox config show --sources` prints every effective key with its origin; `cox config set <key> <value>` edits the user file with `toml_edit` preserving comments.
+Precedence (D13): embedded defaults < `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `.claude/settings.json` (permissions/hooks/env only, imported) < `COX_<SECTION>_<KEY>` (e.g. `COX_TIERS_CODE_MODEL`; names resolve against the default key tree, so `COX_TUI_SHOW_THINKING` sets `tui.show_thinking`, T29.3) < CLI flags. Before figment runs, `dotenvy` loads `.env` then `.env.local` walking up from cwd (T0.7); missing files are ignored; already-set variables are left alone, so a key that arrived only via `.env` still shows as `env` in `cox config show --sources`. Project config may not raise `budget.*`, set `permissions.mode = "bypass"`, set `sandbox.mode = "danger-full-access"` or set `tiers.think.confirm = false`; violations are reported by `cox config show` and ignored. `cox config show --sources` prints every effective key with its origin; `cox config set <key> <value>` edits the user file with `toml_edit` preserving comments.
 
 ### 1.7 Storage schema (`cox-store`)
 
@@ -643,20 +640,6 @@ Out of scope for the whole phase: any change under `crates/` — only `docs/desi
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
 
-#### T22.4 Mouse: wire `tui.mouse` or delete the key
-
-Model: sonnet · Status: open · Depends: — · Size: ~120 · Priority: P1 · Complexity: 2
-Goal: with `tui.mouse = true` the wheel scrolls the transcript overlay and pickers and a click on a folded tool card unfolds it; with `false` the terminal keeps native text selection.
-Files: `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`.
-Steps: (1) `app.rs`: `EnableMouseCapture` after raw mode iff `config.tui.mouse`; `DisableMouseCapture` in the restore path (also on panic hook). (2) `Msg::Mouse(MouseEvent)`: `ScrollUp/ScrollDown` → the same scroll path as `PageUp/PageDown` with 3 lines per tick; `Down(Left)` inside the viewport → hit-test the rendered cell rows (`view` records `cell_rows: Vec<(Range<u16>, CellId)>` in `State` during draw) → toggle fold. (3) `Ctrl+Shift+M`-free design: no toggle key; the config key is the switch, documented in `docs/config.md`. (4) If step 2 exceeds the size limit, deliver wheel scrolling only and file the click as a follow-up card in §6.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui update_mouse_wheel_scrolls_overlay update_mouse_click_unfolds_card
-mise exec -- cargo nextest run -p cox-tui --test shell pty_no_mouse_capture_when_disabled
-```
-Done when: the PTY e2e with `tui.mouse = false` sees no `?1000h`/`?1006h` in the output; with `true` the sequences appear once and are disabled on exit.
-Out of scope: drag selection inside the TUI (the terminal's own selection covers it when mouse is off).
-
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
 ### P24 — Looks (goal: a reviewer calls it beautiful; every state has a snapshot and an SVG)
@@ -669,36 +652,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P26 — Checkpoints and rewind (goal: `/rewind` that also covers what the shell changed)
 
 ### P27 — Agents you can see (goal: no "raw scaffolding noise")
-
-#### T27.2 Approvals labelled by source; agent cards
-
-Model: - · Status: open · Depends: — · Size: ~150 · Priority: P1 · Complexity: 2
-Goal: an approval or question says which agent is asking; `/agents` shows one card per live agent instead of a line.
-Files: `crates/cox-protocol/src/types.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox-tui/src/picker.rs`.
-Steps: (1) `Event::ApprovalRequired` gains `source: Source { session: SessionId, agent: Option<String>, preset: Option<String> }` (subagent sessions forward their approvals to the parent surface already — attach the label there); the ACP and stream-json surfaces emit it as a field. (2) Modal header: `explore-2 asks: bash cargo test` in `theme.agent`; the main session shows no prefix. (3) `/agents` card: name, preset, model, tokens, cost, last tool, elapsed, state (from the T16.1 presence records plus the live task registry); `Enter` on a card opens its rollout read-only in the transcript overlay.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui approval_modal_shows_source_agent agents_cards_snapshot
-mise exec -- cargo nextest run -p cox-core subagent_approval_carries_source
-```
-Done when: the two snapshots exist and `docs/protocol.jsonschema` regenerates with the new field.
-Out of scope: talking to an agent mid-task (`@agent` messaging).
-Execution plan: finding — a subagent's approval is **not** forwarded today: `subagent::run_task` drops every child event but `Usage`/`ToolCallRequested`/`TurnDone`, so a `shell` child whose call escalates waits on its own `pending` until cancelled. (a) `cox-protocol`: `Source { session, agent, preset }`; `ApprovalRequired.source: Option<Source>` (`serde(default)`: rollout lines from before T27.2 read as `None`); schema regenerated. (b) `cox-core`: `turn::ask` fills the session's own `Source`; `AgentTool` names children `<preset>-<n>`; `run_task` relays a child `ApprovalRequired` to the parent labelled with that name, parks the call in the parent's `pending` without touching its state, and hands the parent's `Approve` back to the child; the child's `ApprovalDecided` is relayed too so the modal closes. Test `subagent_approval_carries_source` in `tests/subagent.rs` + a scenario. (c) `cox-tui` modal header `<agent> asks: …` in `theme.agent`, snapshot `approval_modal_shows_source_agent`; ACP title gets the same prefix; stream-json carries the field through serde. (d) Step 3 (`/agents` cards) after (a)–(c) land.
-Progress: (a)–(c) landed in `6ea9e0c` (`subagent_approval_carries_source`, `approval_modal_shows_source_agent` pass; schema regenerated). No subagent preset carries `ask_user`, so questions need no label yet. Open for the creator before step 3: the card's fields (model, tokens, last tool per subagent) are not on the parent's event stream — `run_task` only sees them on the child's — so step 3 needs either a new `Event::AgentProgress { task, model, tokens, cost_usd, last_tool }` relayed by `run_task` (§1.2 amendment) or a narrower card (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` + presence). `Enter` → read-only rollout needs a new transcript overlay fed by the binary from `cox-store`.
-
-#### T27.4 `/loop`
-
-Model: sonnet · Status: open · Depends: T25.1 · Size: ~120 · Priority: P3 · Complexity: 2
-Goal: `/loop <interval> <prompt>` repeats a turn on a timer with its own budget cap; `cox run --loop <interval>` for scripts.
-Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`.
-Steps: (1) `State.loop: Option<Loop { prompt, interval, next_at, budget_usd, spent }>`; `Msg::Tick` enqueues the prompt (T25.1 queue) when due and the session is idle. (2) Status line shows `↻ 4m12s`; `/loop stop` or `Esc` on an empty composer stops it; `budget.session_usd` still applies on top. (3) `cox run --loop 5m -p "…" --max-iterations N` in `run.rs` (headless, exit 0 after N or budget).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui loop_enqueues_when_due_and_idle
-mise exec -- cargo nextest run -p cox run_loop_stops_after_max_iterations
-```
-Done when: both tests pass and `docs/getting-started.md` documents the command.
-Out of scope: cloud schedules.
 
 ### P28 — Context and cost visibility (goal: the ledger and the routing are visible, not just recorded)
 
@@ -776,6 +729,13 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A25 §3 P21 — TypeSafe Jev as a decision model (T21.0 scope gate). Why: user request to restore and improve the Jev note that was lost in an uncommitted working-copy overwrite of `plan.md`. Effect: new phase P21 with one `open` scope-gate task T21.0 (`docs/design/v0.2-jev.md`, Problem / The field / cox / Falsifiers / Review), mirroring the P19 gate shape: design doc first, no `crates/` changes, no new §1.1 dependency until the doc fixes the boundary (Jev answers never bypass the permission engine; fail open like hooks/skills/MCP). Restores the lost facts in their correct form — Jev is TypeSafe's System One decision model (state + Choice/Score/Noul questions in, probabilities + confidence out, `POST /v1/systemone` in its own JSON format, Python/JS SDKs, no OpenAPI; LangChain middleware and Vercel AI Gateway integrations; keys via waitlist at `console.typesafe.ai`; docs index at `docs.typesafe.ai/llms.txt`) — and maps the candidate call sites (router pick, permission classification, compaction/memory salience, skill suggestion) to the cookbook patterns (intent routing, confidence-gated routing, skill suggestion, LLM guardrails).
 - A26 `research.md` §8, `docs/design/improvement-plan-2026.md`, `ideas.md` — field survey of terminal coding agents (2026-09-22) and a proposed improvement plan. Why: user request to research what agent CLIs/TUIs ship in 2026, compare with cox and plan how to be more convenient and better-looking than the field. Effect: research §8 records the survey (four research agents, author-verified cox column and crate facts, ledger #29–36); the design doc holds nine proposed phases P22–P30 (trust fixes for dead config keys and the fixed-answer `ask_user`; terminal capabilities; themes and tool cards; message queue and `Shift+Tab`; checkpoints and `/rewind`; visible agents; context and cost visibility; `--plain`; lean profile and footprint) as task cards in the §2 format, with priorities, dependencies needing approval (§7 of the doc) and falsifiers; `ideas.md` lists the phases. No task is added to the §3 table or `todo.md`; no decision in §0 changes; nothing moves until the creator approves a phase.
 - A27 §3 P22–P30, top table, `todo.md`, `ideas.md`, §3.0, §5 M6 — the improvement plan approved and moved into the plan (2026-09-22). Why: the creator approved the A26 proposal and asked for every task in `plan.md` with concrete step-by-step instructions and a complexity rating. Effect: 48 tasks total: 44 open and 4 done (T22.5, T26.1, T26.2, T27.3); the cards use the §2 format (Model, Depends, Size, Priority, Complexity, Goal, Files, numbered Steps, bash Check, Done when, Out of scope), and the same ids appear in the top table and `todo.md`; `ideas.md` keeps only the unapproved later gates; `docs/design/improvement-plan-2026.md` keeps the survey, principles, pitch, non-goals and falsifiers and points to §3 for the cards. Cards were corrected against the code before the move: `ask_user` already has `Answers::Surface` (T22.1 wires it), background agents are already concurrent (T9.2) so T27.1 is about `bash` tasks and `Ctrl+B`, `SessionStart`/`Notification` already exist in `HookEvent` (T22.3 fires them), `similar` is already a workspace dependency (T24.5). Four new dependencies still need approval before their task starts: ratatui `scrolling-regions` feature (T23.2), crossterm `osc52` feature (T23.4), `terminal-colorsaurus` (T22.6), `two-face` (T24.3); each card names it. No decision in §0 changes; §1.13 keymap rows and §1.2 protocol variants that a card adds (`Submission::UserShell`, `Rewind`, `Background`; `Event::Checkpoint`, `Rewound`) are amended in that task's commit.
+- A28 §3 P22, T22.8 — `cox-mcp` `oauth_refresh_failure_is_a_warning` failed twice in loaded `cargo nextest run --workspace` runs (~5.5 s). Its assertion is about how an error is classified, but the whole connect ran under the bare 5 s handshake budget. Why: user request to find the real cause and make the test deterministic without weakening it. Effect: a test-only change. The test gets a connect budget a stall cannot reach; `connect_all`, the production budget and the sibling OAuth test are unchanged.
+- A29 §3 P27, T27.2, T27.5 — the creator's answer to T27.2's open question: the `/agents` card is the narrow one (name, preset, tier, cost, elapsed, state from `TaskCreated`/`TaskCompleted` and the T16.1 presence records), not a new `Event::AgentProgress`. Why: user request (today). Effect: T27.2 closes without a protocol change — per-subagent model, tokens and last tool stay undone until that event exists; `Enter` on a card opening its rollout read-only is split into the new T27.5, since it needs `/agents` to become a navigable list instead of a static `Notice`.
+- A30 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `false`. Why: the creator's decision after T22.4 made the key live. Mouse capture in the inline viewport takes the wheel from the terminal's own scrollback and plain text selection, and the key had been `true` only because nothing read it. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `false`; `tui.mouse = true` turns on the T22.4 wheel scrolling.
+- A31 §3 P27, T27.4, T27.6 — T27.4's card asked for `/loop` (TUI) and `cox run --loop` (headless) in one ≤3-file task (`crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/run.rs`), but the headless half also needs `crates/cox/src/cli.rs` for its new `RunArgs` flags (`--loop`, `--max-iterations`) — a fourth source file, over the cap. Why: plan.md §2 ("if the Check cannot pass without exceeding the size limit, split the task"). Effect: T27.4 lands only the TUI `/loop` (`commands.rs` + `state.rs`, `docs/getting-started.md`); the headless counterpart is the new T27.6 (`cli.rs` + `run.rs`), depending on T27.4 for the shared interval grammar. No design change — same goal, same budget-cap idea (T27.6 reuses the core's existing `StopReason::Budget` rather than inventing a second cap), split only on file count.
+- A32 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `true` again, which reverses A30. Why: the creator's later decision. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `true`; the terminal's own selection needs Shift/Option while cox runs, and `tui.mouse = false` gives it back.
+- A33 §3 P22, P27, T22.9, T27.7 — the two parts of approved cards that did not fit their size limits become cards of their own: T22.9 (T22.4's click on a folded tool card unfolds it) and T27.7 (T27.4's `↻ <time>` status-line segment for an active `/loop`). Why: the creator asked for every remaining task that needs no creator input; both halves were already approved as part of T22.4 and T27.4. Effect: two rows in the top table and `todo.md`; no new dependency.
+- A34 §3 P27, T27.5 — T27.5's card listed `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`, but the actual touch is `state.rs` + `view.rs` + `crates/cox-tui/tests/agents.rs` (the T27.2 snapshot test reads `/agents`'s old `Notice` cell and has to change now that it opens a modal) + `crates/cox/src/session.rs` (not `resume.rs`, which builds a turn-oriented `History` this overlay does not need — the poll loop wants the raw `Vec<Event>` `Store::rollout_read` already returns). A 3-files-only split was drafted (§6's earlier text) to land the `cox-tui` half and leave `session.rs` to a follow-up, but `session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout` — a stub costs the same one match arm as the real `Store::rollout_read` call, so the split would not have saved a file. Why: discovered mid-implementation, not planned; plan.md §2's split guidance assumed avoiding the file cost was possible, and it was not. Effect: T27.5 lands whole, 4 files instead of the usual 3 (state.rs, view.rs, tests/agents.rs, session.rs); no follow-up card.
 
 ## 7. Risk register
 

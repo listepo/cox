@@ -3,14 +3,18 @@
 //! and core events and executes the `Cmd`s it returns, and a test feeds it
 //! the same `Event`s a real session emits, so every screen is replayable.
 
-use std::collections::VecDeque;
+use std::cell::RefCell;
+use std::collections::{HashSet, VecDeque};
+use std::ops::Range;
 
-use cox_protocol::ids::{CallId, ItemId, TaskId};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use crate::banner::Banner;
 use crate::cells::Look;
@@ -121,11 +125,33 @@ pub enum Modal {
     /// `?` on an empty composer (T24.6): `KEYMAP` grouped by context, drawn
     /// over the transcript like the diff view.
     Help,
+    /// `/agents` (T27.5): a navigable list of `agents_rows`, replacing the
+    /// static T27.2 `Notice`. `Up`/`Down` move `selected`; `Enter` on a
+    /// sibling-session row (`ids[selected].is_some()`) asks the runtime for
+    /// its rollout. A task row's id is `None` — no `SessionId` on the wire
+    /// yet (plan.md §3 P27) — so `Enter` on it is a no-op.
+    Agents {
+        rows: Vec<String>,
+        ids: Vec<Option<SessionId>>,
+        selected: usize,
+    },
+    /// `Enter` on an `/agents` sibling-session row (T27.5): that session's
+    /// rollout, replayed into cells the same pipeline a live turn uses
+    /// (`Msg::Rollout`), drawn read-only over the transcript like `Diff`;
+    /// `scroll` is lines from the top. `Esc` closes it.
+    Transcript {
+        cells: Vec<Cell>,
+        scroll: usize,
+    },
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
 /// 15 rows, so a page is a little less).
 const DIFF_PAGE: usize = 10;
+
+/// Lines (or picker rows) one wheel tick moves (T22.4) — smaller than
+/// `DIFF_PAGE` because a tick is a nudge, not a page.
+const WHEEL_LINES: usize = 3;
 
 /// What the status line shows of the working tree; a mirror of
 /// `cox_tools::git::Status` so this crate keeps no `cox-tools` dependency
@@ -144,7 +170,10 @@ pub struct State {
     pub status: Status,
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
-    pub tasks: Vec<(TaskId, String)>,
+    /// `(id, label, tier, started)`: `tier` and `started` (`tick` at
+    /// `TaskCreated`) exist only so `/agents` (T27.2) can show a running
+    /// task's tier and elapsed time; `/tasks` still reads just the label.
+    pub tasks: Vec<(TaskId, String, Tier, u64)>,
     /// Recently finished tasks as `/tasks` lines: exit code and the
     /// `/expand` id of a shell task's output (T27.1).
     pub finished_tasks: Vec<String>,
@@ -187,10 +216,15 @@ pub struct State {
     pub show_diffs: bool,
     /// `tui.diff` (T24.5); the binary sets it from config.
     pub diff_mode: crate::diff::Mode,
-    /// `Ctrl+E` (T24.4): the last tool cell still in the viewport, expanded
-    /// past its fold rather than head/tail. `view.rs` is the only reader
-    /// that knows which cell is last, so it turns this into `Look.expand_last`.
-    pub expanded_last: bool,
+    /// `Ctrl+E` (T24.4) toggles the last tool cell's index into this set; a
+    /// click (T22.9) toggles whichever cell it lands on. Presence forces
+    /// that cell's output open past its fold; `view.rs` reads it per cell.
+    pub expanded: HashSet<usize>,
+    /// Screen rows each visible tool card occupies, `(rows, transcript
+    /// index)` (T22.9), recorded by `view.rs` on every draw so `on_mouse`
+    /// can hit-test a click — interior mutability, so `view` keeps its
+    /// `&State` every render call site and test already assumes.
+    pub cell_rows: RefCell<Vec<(Range<u16>, usize)>>,
     /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
     pub todo: Vec<(String, String)>,
     pub show_todo: bool,
@@ -260,6 +294,33 @@ pub struct State {
     /// The session's directory; `link::apply` links file paths under it
     /// (T23.3). Empty until the binary sets it, and then nothing is a file link.
     pub cwd: std::path::PathBuf,
+    /// `tui.mouse` (T22.4); the binary sets it from config. `app.rs` reads
+    /// this once at startup to decide whether to ask the terminal for mouse
+    /// reports at all — off leaves the terminal's own text selection
+    /// exactly as if cox never touched the mouse.
+    pub mouse: bool,
+    /// `/loop` (T27.4), if one is running. Named `active_loop` rather than
+    /// the card's literal `loop` — a reserved word.
+    pub active_loop: Option<Loop>,
+}
+
+/// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
+/// `State::tick` units (100 ms each — the same clock `cells.rs` already
+/// drives elapsed time and spinners from) rather than the wall clock, so a
+/// replayed `Msg::Tick` stream behaves identically in a test and for real.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loop {
+    pub prompt: String,
+    pub interval_ticks: u64,
+    pub next_at: u64,
+    /// This loop's own spend cap (`/loop`'s `--budget`, default: the
+    /// session cap `status.budget_cap_usd`); `budget.session_usd` still
+    /// applies underneath, enforced by the core as always.
+    pub budget_usd: f64,
+    /// `status.cost_usd` when the loop started, so its own cap tracks only
+    /// what the loop itself has spent, not the whole session.
+    pub started_cost_usd: f64,
+    pub iterations: u32,
 }
 
 /// `tui.notify` (T23.5): when a finished turn, an approval or a question
@@ -323,6 +384,14 @@ pub enum Msg {
     },
     /// The terminal gained (`true`) or lost focus (T23.5).
     Focus(bool),
+    /// A wheel tick or click (T22.4); `app.rs` only forwards these once
+    /// `tui.mouse` actually enabled capture, so `update` need not re-check it.
+    Mouse(MouseEvent),
+    /// The runtime's answer to `Ask::Rollout` (T27.5): a sibling session's
+    /// rollout events, replayed into cells for the read-only `Transcript`
+    /// overlay. `crates/cox/src/session.rs` answers this for real with
+    /// `Store::rollout_read`; a test can also send it directly.
+    Rollout(Vec<Event>),
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -330,6 +399,10 @@ pub enum Msg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
     GitDiff,
+    /// `/agents` (T27.5): a sibling session's rollout, the same read
+    /// `crates/cox/src/resume.rs` does for `--resume` (`Store::rollout_read`);
+    /// `crates/cox/src/session.rs` answers it for real.
+    Rollout(SessionId),
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -413,7 +486,8 @@ impl State {
             theme: Theme::dark(),
             show_diffs: true,
             diff_mode: crate::diff::Mode::Auto,
-            expanded_last: false,
+            expanded: HashSet::new(),
+            cell_rows: RefCell::new(Vec::new()),
             todo: Vec::new(),
             show_todo: false,
             marks: false,
@@ -436,6 +510,8 @@ impl State {
             notify: Notify::Auto,
             cwd: std::path::PathBuf::new(),
             focused: true,
+            mouse: true,
+            active_loop: None,
         }
     }
 
@@ -520,7 +596,9 @@ impl State {
     /// Which `KEYMAP` context the keys are in right now (T24.6).
     pub fn context(&self) -> Context {
         match &self.modal {
-            Some(Modal::Diff { .. } | Modal::Help) => Context::Overlay,
+            Some(
+                Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+            ) => Context::Overlay,
             Some(_) => Context::Modal,
             None if self.status.busy => Context::Running,
             None => Context::Idle,
@@ -595,7 +673,7 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
         Msg::Event(ev) => on_event(state, ev),
         Msg::Tick => {
             state.tick += 1;
-            Vec::new()
+            loop_tick(state)
         }
         Msg::Resize(..) => Vec::new(),
         Msg::Agents(agents) => {
@@ -625,7 +703,87 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.focused = focused;
             Vec::new()
         }
+        Msg::Mouse(ev) => on_mouse(state, ev),
+        Msg::Rollout(events) => {
+            state.modal = Some(Modal::Transcript {
+                cells: replay_cells(events),
+                scroll: 0,
+            });
+            Vec::new()
+        }
     }
+}
+
+/// Replays a rollout's events through the same `update`/`Msg::Event` path a
+/// live turn uses, into a scratch `State` nobody else sees, so the
+/// `/agents` overlay (T27.5) renders through the identical cell-building
+/// code instead of a second renderer — the same technique `tests/cells.rs`'s
+/// fixture replay already uses.
+fn replay_cells(events: Vec<Event>) -> Vec<Cell> {
+    let mut scratch = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    for ev in events {
+        update(&mut scratch, Msg::Event(ev));
+    }
+    scratch.transcript
+}
+
+/// A wheel tick (T22.4) or a left click (T22.9): a click only acts with no
+/// modal open, like the wheel's own `None` arm below, and only when it
+/// lands inside `cell_rows` — `view.rs`'s record of what is actually on
+/// screen after the last draw — so anywhere else does nothing.
+fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
+    if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+        if state.modal.is_none() {
+            let hit = state
+                .cell_rows
+                .borrow()
+                .iter()
+                .find(|(rows, _)| rows.contains(&ev.row))
+                .map(|&(_, i)| i);
+            if let Some(i) = hit {
+                return toggle_fold(state, i);
+            }
+        }
+        return Vec::new();
+    }
+    // The wheel reuses whichever scroll path the same context's keyboard
+    // already has, moving it `WHEEL_LINES` at a time; the plain transcript
+    // had none (`state.scroll` was dead until T22.4), so wheel is its first.
+    let up = match ev.kind {
+        MouseEventKind::ScrollUp => true,
+        MouseEventKind::ScrollDown => false,
+        _ => return Vec::new(),
+    };
+    match &mut state.modal {
+        Some(Modal::Picker(picker)) => {
+            let code = if up { KeyCode::Up } else { KeyCode::Down };
+            for _ in 0..WHEEL_LINES {
+                picker.key(KeyEvent::new(code, KeyModifiers::NONE));
+            }
+        }
+        Some(Modal::Diff { scroll, text }) => {
+            *scroll = if up {
+                scroll.saturating_sub(WHEEL_LINES)
+            } else {
+                (*scroll + WHEEL_LINES).min(text.lines().count().saturating_sub(1))
+            };
+        }
+        Some(
+            Modal::Approval(_)
+            | Modal::Question(_)
+            | Modal::Help
+            | Modal::Agents { .. }
+            | Modal::Transcript { .. },
+        ) => {}
+        None => {
+            state.scroll = if up {
+                state.scroll.saturating_add(WHEEL_LINES)
+            } else {
+                state.scroll.saturating_sub(WHEEL_LINES)
+            };
+        }
+    }
+    Vec::new()
 }
 
 /// `Cmd::Notify` for `body` when `tui.notify` says to ring now (T23.5).
@@ -829,10 +987,81 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             }
             Vec::new()
         }
+        Some(Modal::Agents {
+            rows,
+            ids,
+            mut selected,
+        }) => {
+            let mut cmds = Vec::new();
+            match key.code {
+                KeyCode::Esc => {}
+                KeyCode::Up => {
+                    selected = selected.saturating_sub(1);
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    });
+                }
+                KeyCode::Down => {
+                    if selected + 1 < rows.len() {
+                        selected += 1;
+                    }
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    });
+                }
+                // A task row's id is `None` (no `SessionId` on the wire
+                // yet, plan.md §3 P27): `Enter` on it just keeps the list.
+                KeyCode::Enter => {
+                    let ask = ids.get(selected).copied().flatten();
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    });
+                    if let Some(id) = ask {
+                        cmds.push(Cmd::Ask(Ask::Rollout(id)));
+                    }
+                }
+                _ => {
+                    state.modal = Some(Modal::Agents {
+                        rows,
+                        ids,
+                        selected,
+                    })
+                }
+            }
+            cmds
+        }
+        Some(Modal::Transcript { cells, scroll }) => {
+            // No upper clamp here (unlike `Diff`'s raw line count): `cells`
+            // wrap at render width, which this pure update has no access
+            // to, and `view.rs` already clamps the offset it actually uses.
+            let scroll = match key.code {
+                KeyCode::Esc | KeyCode::Char('?') => return Vec::new(),
+                KeyCode::PageDown => scroll + DIFF_PAGE,
+                KeyCode::PageUp => scroll.saturating_sub(DIFF_PAGE),
+                _ => scroll,
+            };
+            state.modal = Some(Modal::Transcript { cells, scroll });
+            Vec::new()
+        }
         None => {
+            let esc_idle_empty =
+                key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty();
+            // `/loop`'s stop key (T27.4): the same idle-empty `Esc`, ahead of
+            // Esc-Esc's rewind-timeline role below, so a running loop is
+            // always one `Esc` away.
+            if esc_idle_empty && state.active_loop.take().is_some() {
+                notice(state, Level::Info, "loop stopped".into());
+                return Vec::new();
+            }
             // `Esc Esc` on an idle empty composer opens the rewind timeline
             // (T26.2); a lone Esc still reaches the composer for vim.
-            if key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty() {
+            if esc_idle_empty {
                 let armed = state.esc_armed.take();
                 if armed.is_some_and(|t| state.tick.saturating_sub(t) <= ESC_ESC_TICKS) {
                     return open_rewind(state);
@@ -869,7 +1098,16 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
         A::Quit => vec![Cmd::Quit],
         A::Thinking => toggle(&mut state.show_thinking),
         A::Transcript => toggle(&mut state.show_diffs),
-        A::Expand => toggle(&mut state.expanded_last),
+        A::Expand => {
+            let last_tool = state
+                .transcript
+                .iter()
+                .rposition(|c| matches!(c, Cell::Tool { .. }));
+            match last_tool {
+                Some(i) => toggle_fold(state, i),
+                None => Vec::new(),
+            }
+        }
         A::Diff => vec![Cmd::Ask(Ask::GitDiff)],
         // `Ctrl+B` (T27.1): the newest pending `bash`/`agent` card becomes a
         // background task; the turn goes on without waiting for it.
@@ -955,6 +1193,16 @@ fn copy_text(state: &mut State, text: String) -> Vec<Cmd> {
 
 fn toggle(flag: &mut bool) -> Vec<Cmd> {
     *flag = !*flag;
+    Vec::new()
+}
+
+/// Flips transcript index `i`'s membership in `state.expanded` (T22.9),
+/// shared by `Ctrl+E` (always the last tool cell) and a click (whichever
+/// cell `on_mouse` hit-tested).
+fn toggle_fold(state: &mut State, i: usize) -> Vec<Cmd> {
+    if !state.expanded.remove(&i) {
+        state.expanded.insert(i);
+    }
     Vec::new()
 }
 
@@ -1099,32 +1347,45 @@ fn open_rewind(state: &mut State) -> Vec<Cmd> {
     Vec::new()
 }
 
-/// `/agents`: one line per live session of this workspace. Its cwd and
-/// paths are another process's input, so they go through `text::sanitize`.
-fn agents_list(agents: &[Presence]) -> String {
-    if agents.is_empty() {
-        return "no other cox sessions in this workspace".into();
-    }
-    agents
+/// `/agents` (T27.2, one row per T27.5): one row per live agent — a
+/// sibling cox session (T16.1 presence) or a subagent/background task this
+/// session started (`state.tasks`, fed by `TaskCreated`/`TaskCompleted`).
+/// The narrow row the creator chose over a new `Event::AgentProgress`:
+/// name, preset, tier, cost, elapsed, state. Presence carries none of
+/// preset/tier/cost/elapsed, so those show `-`; a task's cost shows `-`
+/// too while it runs — it is only known once `TaskCompleted` retires it
+/// from `state.tasks`. One line each (T27.5: a `Modal::Agents` row cannot
+/// span lines, unlike T27.2's two-line `Notice` card), paired with the
+/// `SessionId` `Enter` fetches a rollout for — `None` for a task, which has
+/// no resumable id on the wire yet (plan.md §3 P27).
+fn agents_rows(
+    agents: &[Presence],
+    tasks: &[(TaskId, String, Tier, u64)],
+    tick: u64,
+) -> Vec<(String, Option<SessionId>)> {
+    let mut rows: Vec<(String, Option<SessionId>)> = agents
         .iter()
         .map(|a| {
-            let files = if a.touched.is_empty() {
-                "no files edited yet".to_string()
-            } else {
-                format!("editing {}", a.touched.join(", "))
-            };
-            crate::text::sanitize(&format!(
-                "{} pid {} · {} · turn {} · {} · {}",
+            let text = crate::text::sanitize(&format!(
+                "{} · preset - · tier - · cost - · elapsed - · {}",
                 a.session,
-                a.pid,
-                a.status.name(),
-                a.turn,
-                a.cwd.display(),
-                files
-            ))
+                a.status.name()
+            ));
+            (text, Some(a.session))
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect();
+    rows.extend(tasks.iter().map(|(_, label, tier, started)| {
+        let preset = label.split_once(": ").map_or("-", |(p, _)| p);
+        let elapsed = tick.saturating_sub(*started);
+        let text = crate::text::sanitize(&format!(
+            "{label} · preset {preset} · tier {} · cost - · elapsed {}.{}s · running",
+            format!("{tier:?}").to_lowercase(),
+            elapsed / 10,
+            elapsed % 10
+        ));
+        (text, None)
+    }));
+    rows
 }
 
 /// T22.2: a `/name args` line naming a file command — something
@@ -1158,6 +1419,9 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
                 && command.name == "clear"
             {
                 state.queue.clear();
+                // T27.4: a fresh session should not keep firing an old
+                // loop's prompt into it.
+                state.active_loop = None;
                 return vec![Cmd::Clear];
             }
             return vec![Cmd::Submit(sub)];
@@ -1177,16 +1441,37 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             notice(state, Level::Info, text);
         }
         Action::Todo => state.show_todo = !state.show_todo,
-        Action::Tasks => notice(
-            state,
-            Level::Info,
-            tasks::list(&state.tasks, &state.finished_tasks),
-        ),
+        Action::Tasks => {
+            let running: Vec<(TaskId, String)> = state
+                .tasks
+                .iter()
+                .map(|(id, label, ..)| (*id, label.clone()))
+                .collect();
+            notice(
+                state,
+                Level::Info,
+                tasks::list(&running, &state.finished_tasks),
+            )
+        }
         Action::Vim => {
             let on = state.composer.vim_mode().is_none();
             state.composer.set_vim(on);
         }
-        Action::Agents => notice(state, Level::Info, agents_list(&state.agents)),
+        // T27.5: an empty list stays the T27.2 `Notice` (nothing to
+        // navigate); otherwise `/agents` opens the navigable overlay.
+        Action::Agents => {
+            let entries = agents_rows(&state.agents, &state.tasks, state.tick);
+            if entries.is_empty() {
+                notice(state, Level::Info, "no live agents".to_string());
+            } else {
+                let (rows, ids) = entries.into_iter().unzip();
+                state.modal = Some(Modal::Agents {
+                    rows,
+                    ids,
+                    selected: 0,
+                });
+            }
+        }
         Action::Sessions => {
             let text = if state.sessions.is_empty() {
                 "no sessions for this project yet".to_string()
@@ -1266,6 +1551,34 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
                 state.theme_rows.clone(),
             )));
         }
+        // T27.4: `interval` is whole seconds (`parse_interval`), so
+        // `* 10` (100 ms ticks) never loses precision; a bare `--budget`
+        // defaults to the session cap the status line already shows.
+        Action::LoopStart {
+            interval,
+            prompt,
+            budget_usd,
+        } => {
+            let interval_ticks = (interval.as_secs() * 10).max(1);
+            let budget_usd = budget_usd.unwrap_or(state.status.budget_cap_usd);
+            state.active_loop = Some(Loop {
+                prompt,
+                interval_ticks,
+                next_at: state.tick + interval_ticks,
+                budget_usd,
+                started_cost_usd: state.status.cost_usd,
+                iterations: 0,
+            });
+            let text = format!(
+                "loop started: every {}s, budget ${budget_usd:.2}",
+                interval.as_secs()
+            );
+            notice(state, Level::Info, text);
+        }
+        Action::LoopStop => match state.active_loop.take() {
+            Some(_) => notice(state, Level::Info, "loop stopped".into()),
+            None => notice(state, Level::Warn, "no loop running".into()),
+        },
     }
     Vec::new()
 }
@@ -1402,15 +1715,17 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
-        Event::TaskCreated { task, label, .. } => state.tasks.push((task, label)),
+        Event::TaskCreated { task, label, tier } => {
+            state.tasks.push((task, label, tier, state.tick));
+        }
         Event::TaskCompleted {
             task,
             exit_code,
             archive,
             ..
         } => {
-            if let Some(i) = state.tasks.iter().position(|(t, _)| *t == task) {
-                let (_, label) = state.tasks.remove(i);
+            if let Some(i) = state.tasks.iter().position(|(t, ..)| *t == task) {
+                let (_, label, ..) = state.tasks.remove(i);
                 let line = tasks::finished_line(task, &label, exit_code, archive);
                 state.finished_tasks.push(line);
                 let over = state
@@ -1472,6 +1787,36 @@ fn turn_done_cmds(state: &mut State, stop: StopReason) -> Vec<Cmd> {
     }
 }
 
+/// `Msg::Tick` (T27.4): `/loop`'s timer. A due loop fires through the same
+/// path an idle `Enter` uses — a direct `Submit`, not the T25.1 queue,
+/// which only defers while busy — so a turn still running just waits for a
+/// later tick instead of piling up. The loop's own budget is checked first,
+/// so a due-but-over-budget tick stops it instead of firing once more.
+fn loop_tick(state: &mut State) -> Vec<Cmd> {
+    let Some(lp) = state.active_loop.as_ref() else {
+        return Vec::new();
+    };
+    if state.status.cost_usd - lp.started_cost_usd >= lp.budget_usd {
+        state.active_loop = None;
+        notice(state, Level::Warn, "loop stopped: budget reached".into());
+        return Vec::new();
+    }
+    if state.status.busy || state.tick < lp.next_at {
+        return Vec::new();
+    }
+    let prompt = lp.prompt.clone();
+    let interval_ticks = lp.interval_ticks;
+    if let Some(lp) = state.active_loop.as_mut() {
+        lp.next_at = state.tick + interval_ticks;
+        lp.iterations += 1;
+    }
+    vec![Cmd::Submit(Submission::UserTurn {
+        text: prompt,
+        attachments: Vec::new(),
+        confirm_think: false,
+    })]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1488,6 +1833,20 @@ mod tests {
             update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
         }
         update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+    }
+
+    /// Types a slash command and submits it. `/` at column 0 opens the
+    /// palette (`Edit::OpenCommands`) but already left the `/` itself in the
+    /// composer, so — as `clear_command_emits_cmd_clear` established — `Esc`
+    /// closes the palette without losing it, then the rest types normally.
+    fn type_command(state: &mut State, line: &str) -> Vec<Cmd> {
+        let rest = line.strip_prefix('/').unwrap_or(line);
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        for c in rest.chars() {
+            update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)))
     }
 
     #[test]
@@ -1722,6 +2081,59 @@ mod tests {
         assert_eq!(state.queue, VecDeque::from(["first".to_string()]));
     }
 
+    /// T27.4: `/loop`'s timer fires a direct `Submit` (not the T25.1 queue)
+    /// once the session is idle and the tick it scheduled arrives; earlier
+    /// ticks are silent.
+    #[test]
+    fn loop_enqueues_when_due_and_idle() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        // The shortest interval `parse_interval` accepts, 1s = 10 ticks.
+        type_command(&mut state, "/loop 1s go");
+        assert!(state.active_loop.is_some());
+        for _ in 0..9 {
+            assert!(update(&mut state, Msg::Tick).is_empty());
+        }
+        assert_eq!(
+            update(&mut state, Msg::Tick),
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "go".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+    }
+
+    /// T27.4: `/loop stop` and an idle empty-composer `Esc` both end a
+    /// running loop; `Esc` takes it before Esc-Esc's rewind-timeline role.
+    #[test]
+    fn loop_stop_and_esc_both_end_a_running_loop() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        type_command(&mut state, "/loop 1h go");
+        assert!(state.active_loop.is_some());
+        type_command(&mut state, "/loop stop");
+        assert!(state.active_loop.is_none());
+
+        type_command(&mut state, "/loop 1h go");
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert!(state.active_loop.is_none());
+        assert!(
+            state.esc_armed.is_none(),
+            "the stop consumed the Esc, not the Esc-Esc rewind timer"
+        );
+    }
+
+    /// T27.4: once the loop's own spend equals its budget, the next tick
+    /// stops it instead of firing another turn.
+    #[test]
+    fn loop_stops_itself_when_its_own_budget_is_spent() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        type_command(&mut state, "/loop 1s go --budget 1.00");
+        state.status.cost_usd = 1.00;
+        assert_eq!(update(&mut state, Msg::Tick), Vec::new());
+        assert!(state.active_loop.is_none());
+    }
+
     /// T22.2: a markdown file command joins the `/` palette after the
     /// built-ins, a chosen row inserts `/name `, and `Enter` submits it as
     /// `Submission::Command { name, args }` — args tokenized like any line.
@@ -1933,6 +2345,146 @@ mod tests {
         let mut plain = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
         assert!(progress(&mut plain).is_empty());
         assert_eq!(crate::term::progress(Progress::Busy), "\x1b]9;4;3;0\x1b\\");
+    }
+
+    /// T22.4: a wheel tick reuses whichever context is open's own scroll —
+    /// the plain transcript's `state.scroll`, the diff view's `scroll`
+    /// field, or a picker's `selected` row — moving `WHEEL_LINES` at a time.
+    #[test]
+    fn update_mouse_wheel_scrolls_overlay() {
+        fn wheel(up: bool) -> Msg {
+            Msg::Mouse(MouseEvent {
+                kind: if up {
+                    MouseEventKind::ScrollUp
+                } else {
+                    MouseEventKind::ScrollDown
+                },
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            })
+        }
+
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        update(&mut state, wheel(true));
+        assert_eq!(state.scroll, WHEEL_LINES);
+        update(&mut state, wheel(false));
+        assert_eq!(state.scroll, 0);
+        // Never underflows past the bottom.
+        update(&mut state, wheel(false));
+        assert_eq!(state.scroll, 0);
+
+        state.modal = Some(Modal::Diff {
+            text: (0..20)
+                .map(|n| format!("line {n}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            scroll: 5,
+        });
+        update(&mut state, wheel(true));
+        assert_eq!(
+            state.modal,
+            Some(Modal::Diff {
+                text: (0..20)
+                    .map(|n| format!("line {n}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                scroll: 5 - WHEEL_LINES,
+            })
+        );
+
+        state.modal = Some(Modal::Picker(Picker::open(
+            Kind::Files,
+            vec!["a".into(), "b".into(), "c".into(), "d".into()],
+        )));
+        update(&mut state, wheel(false));
+        let Some(Modal::Picker(picker)) = &state.modal else {
+            panic!("picker closed");
+        };
+        assert_eq!(picker.selected, WHEEL_LINES.min(3));
+        update(&mut state, wheel(true));
+        let Some(Modal::Picker(picker)) = &state.modal else {
+            panic!("picker closed");
+        };
+        assert_eq!(picker.selected, 0);
+    }
+
+    /// T22.9: a click on a folded tool card's own rows (from `cell_rows`,
+    /// which `view()` records) forces it open via `state.expanded`, the
+    /// same set `Ctrl+E` flips; a second click folds it back.
+    #[test]
+    fn update_mouse_click_unfolds_card() {
+        use cox_protocol::types::Risk;
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let id = CallId::new();
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallRequested {
+                call: ToolCall {
+                    id,
+                    name: "bash".into(),
+                    input: serde_json::json!({}),
+                    risk: Risk::Exec,
+                    subject: "seq 20".into(),
+                },
+            }),
+        );
+        let body = (1..=20)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallOutput {
+                call_id: id,
+                delta: format!("{body}\n[exit 0 in 8ms]"),
+            }),
+        );
+        update(
+            &mut state,
+            Msg::Event(Event::ToolCallDone {
+                call_id: id,
+                result: ToolResult {
+                    ok: true,
+                    visible: String::new(),
+                    archive: None,
+                    bytes: 0,
+                    duration_ms: 8,
+                    diff: None,
+                },
+            }),
+        );
+
+        let area = ratatui::layout::Rect::new(0, 0, 60, 30);
+        let click = |row: u16| {
+            Msg::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 0,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        // Unfolding changes the transcript's line count, so the row to
+        // click is read back from `cell_rows` after each draw.
+        let card_row = |state: &State| -> u16 {
+            let mut buf = ratatui::buffer::Buffer::empty(area);
+            crate::view::view(state, area, &mut buf);
+            state.cell_rows.borrow()[0].0.start
+        };
+
+        let row = card_row(&state);
+        update(&mut state, click(row));
+        assert!(
+            state.expanded.contains(&0),
+            "a click on the folded card should force it open"
+        );
+
+        let row = card_row(&state);
+        update(&mut state, click(row));
+        assert!(
+            !state.expanded.contains(&0),
+            "a second click should fold the card back"
+        );
     }
 
     /// T23.4: `y` on an empty composer copies the last cell still held as

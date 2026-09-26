@@ -88,6 +88,20 @@ status line shows `-- NORMAL --`, `-- INSERT --`, `-- VISUAL --` or
 
 Not supported: `.` repeat, macros and registers.
 
+## Loop
+
+`/loop <interval> <prompt> [--budget <usd>]` repeats `prompt` on `interval`
+(`30s`, `5m`, `1h`, or a bare number of seconds) whenever the session is
+idle, until `/loop stop` or `Esc` on an empty composer ends it. `--budget`
+is this loop's own spend cap; leave it out and it defaults to the session
+cap (`budget.session_usd`), which still applies underneath either way.
+
+The headless counterpart is `cox run --loop <interval> -p "…"
+--max-iterations N`: same interval grammar, no `--budget` of its own —
+it stops after `N` turns or once the session hits `budget.session_usd`,
+whichever comes first. `Ctrl+C` between iterations exits cleanly with
+whatever already ran.
+
 ## What to read next
 
 | Doc | Contents |
@@ -113,11 +127,13 @@ One row under the composer, e.g.
   warns once past `budget.warn_at`.
 - `[plan]` is the permission mode badge; `effort:xhigh` appears only when
   `/effort` overrode the tier default.
+- `↻ 4m12s` appears only while a `/loop` is running: the time left until its
+  next turn. It disappears the moment no loop is active.
 - `cox --plain` prints the same segments as one `status: …` line per turn.
 
-Narrow terminals drop segments from the right in this order: git counts →
-cache → tasks → effort → sandbox → model → cost → ctx (the `ctx` bar and the
-mode badge never drop).
+Narrow terminals drop segments from the right in this order: loop countdown →
+git counts → cache → tasks → effort → sandbox → model → cost → ctx (the `ctx`
+bar and the mode badge never drop).
 
 ## Status
 
