@@ -58,6 +58,7 @@ mod tests {
         let agent = &manifest.external_agents[0];
         assert_eq!(agent.name, "cursor");
         assert_eq!(agent.command, "agent");
+        assert_eq!(agent.args, ["acp"], "the host adds no ACP subcommand");
         assert_eq!(agent.mode, AgentMode::Acp);
         assert_eq!(agent.key_env, "CURSOR_API_KEY");
         assert_eq!(manifest.validate(), Ok(()));

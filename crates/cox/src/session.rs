@@ -211,6 +211,24 @@ pub async fn open(
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
     session.set_agent_defs(agents_found.agents);
+    // T35.13: one driver per granted `[[external_agents]]` entry; an entry
+    // whose CLI or key is missing is left out with one warning (EA§7).
+    #[cfg(feature = "plugins")]
+    let plugin_warnings = {
+        let (drivers, left_out) = crate::external_agents::drivers(
+            plugins.external_agents,
+            &loaded.config,
+            cwd,
+            &writable,
+            std::env::var_os("PATH").as_deref(),
+            cox_provider::http::resolve_key,
+        );
+        session.set_external_agents(drivers);
+        plugin_warnings
+            .into_iter()
+            .chain(left_out)
+            .collect::<Vec<_>>()
+    };
     // T33.44: each granted plugin's `cox_init` ran once, in `plugin_tools`
     // above; its instance is shared by its tools, its hooks (below) and the
     // event tap `start_plugins` sets.
@@ -298,7 +316,6 @@ pub(crate) struct Plugins {
     /// `sandboxed_argv`: a driver spawns `ExternalAgentCommand::command`.
     /// Never an ungranted plugin's; empty without `writable`.
     #[cfg(feature = "plugins")]
-    #[allow(dead_code, reason = "T35.13's drivers are the first reader")]
     pub external_agents: Vec<cox_plugin::external_agent::ExternalAgentCommand>,
     /// Each loaded plugin's `[[models]]` rows by plugin id (T33.44).
     pub models: Vec<(String, Vec<cox_protocol::plugin::ModelDecl>)>,
@@ -650,6 +667,19 @@ fn plugin_agents(
     agents
 }
 
+/// The `[sandbox]` config as the policy a host-spawned process runs under:
+/// `sandboxed_argv`'s wrap and the ACP client's `fs/*` checks for the same
+/// external agent (T35.13) read one value.
+pub(crate) fn sandbox_policy(config: &Config) -> cox_protocol::SandboxPolicy {
+    cox_protocol::SandboxPolicy {
+        mode: config.sandbox.mode,
+        network: config.sandbox.network,
+        writable: config.sandbox.writable.clone(),
+        readonly_in_workspace: config.sandbox.readonly_in_workspace.clone(),
+        linux_backend: config.sandbox.linux_backend,
+    }
+}
+
 /// `program args` under `sandbox::command`, the guard `bash` runs under. The
 /// backend wraps a `<shell> -c <line>` triple last, so the line
 /// `exec "$0" "$@"` with the argv appended runs the program with no shell
@@ -668,16 +698,10 @@ pub(crate) fn sandboxed_argv(
     config: &Config,
     writable: &[PathBuf],
 ) -> Result<Vec<String>, String> {
-    use cox_protocol::{SandboxMode, SandboxPolicy};
+    use cox_protocol::SandboxMode;
     use cox_tools::sandbox::{self, Backend};
 
-    let policy = SandboxPolicy {
-        mode: config.sandbox.mode,
-        network: config.sandbox.network,
-        writable: config.sandbox.writable.clone(),
-        readonly_in_workspace: config.sandbox.readonly_in_workspace.clone(),
-        linux_backend: config.sandbox.linux_backend,
-    };
+    let policy = sandbox_policy(config);
     if policy.mode != SandboxMode::DangerFullAccess {
         match sandbox::backend(policy.linux_backend) {
             Some(Backend::Seatbelt | Backend::Bwrap) => {}

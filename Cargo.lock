@@ -896,6 +896,7 @@ checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 name = "cox"
 version = "0.1.2"
 dependencies = [
+ "agent-client-protocol",
  "anyhow",
  "assert_cmd",
  "async-trait",
@@ -6251,6 +6252,7 @@ checksum = "494815d09bf52b5548659851081238f0ca39ff638363907596da739561c62c52"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "libc",
  "pin-project-lite",

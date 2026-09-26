@@ -62,6 +62,15 @@ reqwest = { workspace = true }
 sha2 = { workspace = true }
 # T5.8: the binary owns the async runtime the TUI and core loop run on.
 tokio = { workspace = true }
+# T35.13: the external-agent drivers implement `ExternalAgent`
+# (`#[async_trait]`, its `CancellationToken`) and hand the spawned CLI's
+# tokio stdio to the ACP client, which reads `futures` I/O (`compat`).
+# Both were already dev-dependencies here and ship in the workspace.
+async-trait = { workspace = true }
+tokio-util = { workspace = true, features = ["compat"] }
+# T35.13: the ACP driver sends `session/new`/`session/prompt` and frames
+# the CLI's stdio (`ByteStreams`); already `cox-acp`'s dependency.
+agent-client-protocol = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -77,11 +86,6 @@ insta = { workspace = true }
 # T5.8: PTY end-to-end of the real binary (plan D10).
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
-# T22.1: the `ask_user` surface-wiring test builds a `ToolCx` by hand,
-# which needs a stub `Archive` (`#[async_trait]`, like cox-tools' own) and
-# a `CancellationToken`; both already ship in the workspace.
-async-trait = { workspace = true }
-tokio-util = { workspace = true }
 # T33.17: `plugin_chat_section_builds_openai_shaped_client` and
 # `plugin_provider_request_has_usage_row` drive a merged `[[provider]]`
 # section's real OpenAI-shaped client against a mock server, no real

@@ -7,6 +7,7 @@
 //! takes the caller's sandbox wrap, so an unwrapped external agent cannot be
 //! built by accident: the host owns `sandbox::Policy`, this crate does not.
 
+use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -92,6 +93,9 @@ pub struct ExternalAgentCommand {
     name: String,
     mode: AgentMode,
     key_env: String,
+    /// The agent's own program before the wrap: a bare PATH name or the
+    /// in-package file `package_program` checked.
+    cli: PathBuf,
     program: String,
     args: Vec<String>,
 }
@@ -106,8 +110,8 @@ impl ExternalAgentCommand {
         decl: &ExternalAgentDecl,
         wrap: impl FnOnce(&Path, &[String]) -> Result<Vec<String>, E>,
     ) -> Result<Self, ExternalAgentError> {
-        let program = package_program(dir, &decl.command)?;
-        let mut argv = wrap(&program, &decl.args)
+        let cli = package_program(dir, &decl.command)?;
+        let mut argv = wrap(&cli, &decl.args)
             .map_err(|e| ExternalAgentError::Sandbox(e.to_string()))?
             .into_iter();
         let program = argv
@@ -118,6 +122,7 @@ impl ExternalAgentCommand {
             name: decl.name.clone(),
             mode: decl.mode,
             key_env: decl.key_env.clone(),
+            cli,
             program,
             args: argv.collect(),
         })
@@ -143,6 +148,15 @@ impl ExternalAgentCommand {
         &self.key_env
     }
 
+    /// The agent's program as the manifest names it, when it cannot run
+    /// here: a bare name found in no `path` directory (the caller passes
+    /// `PATH`). An in-package program was already checked by `resolve`.
+    /// EA§7: such an entry is left out with one warning, never spawned to
+    /// fail on every turn.
+    pub fn missing_cli(&self, path: Option<&OsStr>) -> Option<&Path> {
+        missing_on_path(&self.cli, path).then_some(self.cli.as_path())
+    }
+
     /// The wrapped argv: the sandbox launcher first, the agent after it.
     pub fn argv(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.program.as_str()).chain(self.args.iter().map(String::as_str))
@@ -155,6 +169,40 @@ impl ExternalAgentCommand {
         let mut cmd = Command::new(&self.program);
         cmd.args(&self.args);
         cmd
+    }
+}
+
+/// Whether `program`, as [`package_program`] resolved it, is a bare PATH
+/// name found as an executable in no `path` directory. The one PATH lookup
+/// for an external agent's CLI: the session leaves such an entry out
+/// ([`ExternalAgentCommand::missing_cli`]) and `cox doctor` reports it
+/// (T35.8), so the two can never disagree.
+pub fn missing_on_path(program: &Path, path: Option<&OsStr>) -> bool {
+    // `package_program` returns a bare name only for a PATH program; an
+    // in-package one comes back joined onto the package directory.
+    if program.components().count() > 1 {
+        return false;
+    }
+    !path
+        .map(std::env::split_paths)
+        .into_iter()
+        .flatten()
+        .any(|dir| is_executable(&dir.join(program)))
+}
+
+/// What `exec` would run: a regular file, with an execute bit on unix.
+fn is_executable(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        meta.is_file() && meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        meta.is_file()
     }
 }
 
@@ -231,6 +279,28 @@ mod tests {
             missing,
             Err(ExternalAgentError::Program(ProgramError::Io { .. }))
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_cli_is_a_path_name_found_in_no_directory() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let pkg = tempfile::tempdir().expect("tempdir");
+        let bin = tempfile::tempdir().expect("tempdir");
+        let agent = ExternalAgentCommand::resolve("cur", pkg.path(), &decl("agent"), wrap)
+            .expect("resolves");
+        let path = std::env::join_paths([bin.path()]).expect("path");
+        assert_eq!(agent.missing_cli(Some(&path)), Some(Path::new("agent")));
+        assert_eq!(agent.missing_cli(None), Some(Path::new("agent")));
+        std::fs::write(bin.path().join("agent"), b"#!/bin/sh\n").expect("agent");
+        assert!(agent.missing_cli(Some(&path)).is_some(), "not executable");
+        std::fs::set_permissions(
+            bin.path().join("agent"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("chmod");
+        assert_eq!(agent.missing_cli(Some(&path)), None);
     }
 
     #[cfg(unix)]

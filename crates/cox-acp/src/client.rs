@@ -18,8 +18,8 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, CreateTerminalRequest, ErrorCode, InitializeRequest, PermissionOption,
     PermissionOptionKind, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, ToolKind,
-    WriteTextFileRequest, WriteTextFileResponse,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionNotification, SessionUpdate, ToolKind, WriteTextFileRequest, WriteTextFileResponse,
 };
 use agent_client_protocol::{Agent, Client, ConnectTo, ConnectionTo, Error};
 use cox_core::permission::{Engine, Outcome};
@@ -57,6 +57,9 @@ pub struct ClientHost {
     pub grants: Vec<(String, String)>,
     /// Answers `Outcome::Ask`.
     pub approver: Arc<dyn Approver>,
+    /// Where the agent's `session/update` notifications go (T35.13): the
+    /// driver turns them into cox events. `None` drops them.
+    pub updates: Option<tokio::sync::mpsc::UnboundedSender<SessionUpdate>>,
 }
 
 /// `ClientHost` plus the grants that grow while the connection lives.
@@ -89,9 +92,20 @@ pub async fn connect<R>(
     let shared = Arc::new(Shared { host, grants });
     let (perm, read, write) = (shared.clone(), shared.clone(), shared.clone());
     let sandboxed = shared.host.sandbox.is_some();
+    let updates = shared.host.updates.clone();
     Client
         .builder()
         .name("cox")
+        .on_receive_notification(
+            async move |note: SessionNotification, _cx| {
+                // A driver that stopped listening loses the update, never the turn.
+                if let Some(tx) = &updates {
+                    let _ = tx.send(note.update);
+                }
+                Ok(())
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
         .on_receive_request(
             async move |req: RequestPermissionRequest, responder, cx: ConnectionTo<Agent>| {
                 // An `Ask` waits on the user; off the dispatch loop so the
@@ -329,6 +343,7 @@ mod tests {
             approval: ApprovalPolicy::OnRequest,
             grants: vec![],
             approver,
+            updates: None,
         }
     }
 
@@ -389,6 +404,35 @@ mod tests {
             RequestPermissionOutcome::Selected(s) => Some(s.option_id.clone()),
             _ => None,
         }
+    }
+
+    #[tokio::test]
+    async fn acp_client_forwards_session_updates_to_the_driver() {
+        use agent_client_protocol::schema::v1::ContentChunk;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let approver = Arc::new(Recorder(Mutex::new(vec![]), Decision::Allow));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut host = host(dir.path(), None, approver);
+        host.updates = Some(tx);
+        std::fs::write(dir.path().join("a.txt"), "a").expect("file");
+        let path = dir.path().join("a.txt");
+        as_agent(host, async |cx| {
+            cx.send_notification(SessionNotification::new(
+                SessionId::new("s"),
+                SessionUpdate::AgentMessageChunk(ContentChunk::new("hi".into())),
+            ))?;
+            // A round trip after it, the way the prompt response follows a
+            // turn's updates: the client has dispatched the update by then.
+            let read = ReadTextFileRequest::new(SessionId::new("s"), path);
+            cx.send_request(read).block_task().await.map(|_| ())
+        })
+        .await;
+        let got = rx.recv().await.expect("one update");
+        assert!(
+            matches!(&got, SessionUpdate::AgentMessageChunk(c) if c.content == "hi".into()),
+            "{got:?}"
+        );
     }
 
     #[tokio::test]

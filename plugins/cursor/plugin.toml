@@ -10,8 +10,14 @@ wasm = "cursor.wasm"
 # `[capabilities]`, `[[provider]]` or `[[mcp]]` section. `mode = "acp"` is
 # this entry's protocol; `stream-json` (EA§5) is the manifest's documented
 # alternative for a plugin that wants the line-oriented mapper instead.
+# `args` is the mode's own invocation: the host adds nothing to it except,
+# for stream-json, the prompt as the last argument (T35.13). The
+# stream-json alternative is:
+#   mode = "stream-json"
+#   args = ["-p", "--output-format", "stream-json"]
 [[external_agents]]
 name = "cursor"
 command = "agent"
+args = ["acp"]
 mode = "acp"
 key_env = "CURSOR_API_KEY"

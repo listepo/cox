@@ -20,7 +20,7 @@ One new `plugin.toml` table, validated like `[[mcp]]` (PL§2):
 [[external_agents]]
 name = "cursor"        # fits the tool-name rule after prefixing
 command = "agent"      # in-package path, or a PATH program
-args = []
+args = ["acp"]         # the mode's own invocation (T35.13, below)
 mode = "acp"           # "acp" | "stream-json"
 key_env = "CURSOR_API_KEY"
 ```
@@ -41,6 +41,31 @@ too) — no second sandbox path. The capability is one more line
 `grant::check`'s `Verdict` lists in words ("Can run the external agent
 'cursor' via 'agent', key from `CURSOR_API_KEY`"); `Granted`/
 `NeedsApproval`/`Disabled` exactly as any other capability (PL§3).
+
+**What cox does not judge (T35.13).** The external agent's own tool calls
+— its reads, edits and shell commands inside its own process — are not
+judged per call by `cox_permission::Engine` or `PreToolUse` hooks: cox
+never sees them before they run. The guard is the process sandbox the wrap
+above put the CLI under, the same profile `bash` runs in. Only what the
+agent asks cox for goes through cox's guards: ACP
+`session/request_permission` through the Engine, `fs/*` through
+`path::confine` (§4). stream-json `tool_call` lines are shown after the
+fact (§5), never decided.
+
+**Host drivers (T35.13, `crates/cox/src/external_agents.rs`).** At session
+open, for each granted entry, the host builds one driver behind
+`ExternalAgent` and keeps it for the session (`Session::set_external_agents`,
+called next to `set_agent_defs`). A bare `command` found on no `PATH`
+directory, or a `key_env` that `resolve_key(key_env, <name>)` cannot
+resolve, leaves that entry out with one `Notice(Warn)` (§7). Each turn
+spawns the wrapped argv — manifest `args` first, so they carry the mode's
+own invocation (`["acp"]`, or `["-p", "--output-format", "stream-json"]`),
+then, for stream-json only, the prompt as the last argument — with the
+child env allowlist (`CHILD_ENV_ALLOWLIST`) plus `key_env` set to the key,
+nothing else of cox's environment, and cwd the session's. The CLI leads
+its own process group; however the turn ends (done, error, cancel), that
+group is SIGKILLed with `cox_tools::bash::kill_group`, the kill a cancelled
+`bash` ends with.
 
 ## 3. Reaching the model
 
@@ -76,6 +101,17 @@ process's workspace roots before touching disk; `terminal/*` runs only
 under the same `sandbox::Policy` already governing the spawned process, or
 is refused with the reason named — never a path the external agent picks
 for itself.
+
+The host's ACP driver (T35.13) runs one `initialize` → `session/new` →
+`session/prompt` per turn over the process's stdio and makes the agent's
+`agent_message_chunk` text the turn's one `AssistantMessage`. Its
+`ClientHost` gets the writable roots, the session cwd, the `[sandbox]`
+policy (`None` under `danger-full-access`), an Engine compiled from the
+session's `[permissions]`, its mode and approval policy, and no session
+grants. `ExternalAgent::turn` has no route to the session's
+`ApprovalRequired` relay yet, so an `Ask` verdict is refused with the reason
+named (fail closed) rather than prompted; a rule the Engine allows or denies
+is decided as usual.
 
 ## 5. stream-json mode
 

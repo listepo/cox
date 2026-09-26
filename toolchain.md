@@ -33,7 +33,7 @@ Programs the project uses and the direct packages from its manifests.
 
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
-| agent-client-protocol | local | https://crates.io/crates/agent-client-protocol | cox-acp |
+| agent-client-protocol | local | https://crates.io/crates/agent-client-protocol | cox-acp; crates/cox (the ACP external-agent driver, T35.13) |
 | anyhow | local | https://crates.io/crates/anyhow | CLI errors |
 | arboard | local | https://crates.io/crates/arboard | Rust dependency |
 | assert_cmd | local | https://crates.io/crates/assert_cmd | Rust dependency |
@@ -94,7 +94,7 @@ Programs the project uses and the direct packages from its manifests.
 | thiserror | local | https://crates.io/crates/thiserror | Error enums |
 | tiktoken-rs | local | https://crates.io/crates/tiktoken-rs | Rust dependency |
 | tokio | local | https://crates.io/crates/tokio | cox-core |
-| tokio-util | local | https://crates.io/crates/tokio-util | Rust dependency |
+| tokio-util | local | https://crates.io/crates/tokio-util | Rust dependency; `compat` feature (crates/cox, T35.13) bridges a spawned external agent's tokio stdio to the ACP client |
 | toml_edit | local | https://crates.io/crates/toml_edit | Rust dependency |
 | tracing | local | https://crates.io/crates/tracing | Logging |
 | tracing-appender | local | https://crates.io/crates/tracing-appender | Rust dependency |

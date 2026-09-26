@@ -11,7 +11,7 @@ use cox_core::permission::{Engine, Outcome, why_text};
 use cox_mcp::server::{CxTemplate, Gate, ToolServer};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::Store as _;
-use cox_protocol::types::{ApprovalPolicy, PermissionMode, SandboxMode, SandboxPolicy, ToolCall};
+use cox_protocol::types::{ApprovalPolicy, PermissionMode, SandboxMode, ToolCall};
 use cox_store::Store;
 
 use crate::cli::{Cli, McpAction, McpArgs};
@@ -86,13 +86,7 @@ pub fn run(cli: &Cli, args: &McpArgs, cwd: &Path) -> anyhow::Result<()> {
         writable_roots: roots.clone(),
         roots,
         cwd: cwd.to_path_buf(),
-        sandbox: SandboxPolicy {
-            mode: config.sandbox.mode,
-            network: config.sandbox.network,
-            writable: config.sandbox.writable.clone(),
-            readonly_in_workspace: config.sandbox.readonly_in_workspace.clone(),
-            linux_backend: config.sandbox.linux_backend,
-        },
+        sandbox: crate::session::sandbox_policy(&config),
         archive: store,
         session: SessionId::new(),
     };

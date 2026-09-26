@@ -371,6 +371,14 @@ fn signal(pid: u32, sig: Signal) {
     let _ = killpg(Pid::from_raw(pid as i32), sig);
 }
 
+/// SIGKILLs the process group led by `pid`, the kill a cancelled `bash`
+/// call ends with. `pub` so another host-spawned process that leads its own
+/// group (an external agent's CLI, T35.13) is reaped the same way, not by a
+/// second implementation.
+pub fn kill_group(pid: u32) {
+    signal(pid, Signal::SIGKILL);
+}
+
 async fn run(
     cmd: &Cmd,
     cwd: &Path,

@@ -536,7 +536,7 @@ fn check_external_agent_with(
     key_set: bool,
     wrap: impl FnOnce(&std::path::Path, &[String]) -> Result<Vec<String>, String>,
 ) -> CheckResult {
-    use cox_plugin::external_agent::package_program;
+    use cox_plugin::external_agent::{missing_on_path, package_program};
 
     let check = format!("external agent {}", decl.name);
     let key_detail = format!(
@@ -556,6 +556,17 @@ fn check_external_agent_with(
             );
         }
     };
+
+    // Under the wrap a missing PATH program fails inside the sandbox
+    // launcher, never as a spawn error, so ask PATH first — the same lookup
+    // that leaves the entry out of the session (T35.13).
+    if missing_on_path(&program, env::var_os("PATH").as_deref()) {
+        return CheckResult::warn(
+            &check,
+            format!("{} not found on PATH; {key_detail}", decl.command),
+            format!("install the `{}` CLI or fix `command`", decl.command),
+        );
+    }
 
     let argv = match wrap(&program, &[String::from("--version")]) {
         Ok(argv) => argv,
