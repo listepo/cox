@@ -620,8 +620,11 @@ fn plugin_agents(
 /// rather than run it bare; `danger-full-access` is the user's own choice.
 /// Shared by a plugin's `[[mcp]]` servers (`plugin_mcp`), its external
 /// agents (`plugin_agents`, T35.2) and, T33.42, every other stdio server
-/// (`sandbox_stdio_servers`) — one wrap, not two.
-fn sandboxed_argv(
+/// (`sandbox_stdio_servers`) — one wrap, not two. `pub(crate)` so
+/// `doctor::check_external_agents` (T35.8) can probe a granted entry's
+/// `--version` under the same wrap, without a second sandbox-wrap
+/// implementation.
+pub(crate) fn sandboxed_argv(
     program: &Path,
     args: &[String],
     config: &Config,

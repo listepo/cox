@@ -4,13 +4,18 @@
 //! capabilities (TERM, true colour, size), prices table age, whether every
 //! configured model has a catalog price (T30.27), what LM Studio runs when
 //! it is the code tier's provider (T30.16), `.claude/settings.json`,
-//! and one OAuth row per HTTP MCP server (T22.5).
+//! one OAuth row per HTTP MCP server (T22.5), and one row per granted
+//! `[[external_agents]]` entry (EA§7, T35.8).
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
 
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
+#[cfg(feature = "plugins")]
+use std::process::Stdio;
+#[cfg(feature = "plugins")]
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -64,10 +69,13 @@ impl CheckResult {
 /// `check_terminal`; `tui_caps` is `config.tui.caps` (T23.0), the `[tui.caps]`
 /// overrides `check_terminal` reports alongside the detected/queried value.
 /// `config` is the loaded config: `check_prefix` (T30.1) assembles the active
-/// profile's prefix and reports its T1.8 estimate.
+/// profile's prefix and reports its T1.8 estimate. `cwd` is the working
+/// directory the command ran from, used only to find a project plugin root
+/// for `check_external_agents` (T35.8) — the same root `mcp_servers` finds.
 pub fn run(
     json: bool,
     mcp: &HashMap<String, McpServerConfig>,
+    cwd: &std::path::Path,
     tui_theme: &str,
     tui_caps: &HashMap<String, bool>,
     config: &cox_protocol::Config,
@@ -128,6 +136,12 @@ pub fn run(
 
     // One row naming every stdio server opted out of the sandbox (T33.42).
     results.push(check_mcp_sandbox(mcp));
+
+    // One row per granted `[[external_agents]]` entry: CLI on PATH (+
+    // `--version`, best-effort), `key_env` set, sandboxed or refused
+    // (EA§7, T35.8). Empty in the slim build (no `plugins` feature) and
+    // when no plugin is granted.
+    results.extend(check_external_agents(cwd, &home, config));
 
     // One row per HTTP MCP server: is its token usable?
     let mut names: Vec<&String> = mcp
@@ -437,6 +451,219 @@ fn check_mcp_auth(name: &str) -> CheckResult {
             format!("run `cox mcp login {name}` once the keyring is available"),
         ),
     }
+}
+
+/// How long doctor waits on a granted external agent's `--version` probe: a
+/// hung CLI must not hang doctor (mirrors `LMSTUDIO_DOCTOR_TIMEOUT_S`).
+#[cfg(feature = "plugins")]
+const EXTERNAL_AGENT_VERSION_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// One row per granted `[[external_agents]]` entry (EA§7, T35.8): CLI found
+/// on `PATH` (+ `--version`, best-effort), `key_env` set or missing,
+/// sandboxed or refused. Reuses the same discover-and-grant walk
+/// `load_plugins` does (`cox plugin list`'s `plugin_cmd::verdict_for` walks
+/// it the same way) rather than a second discovery implementation — doctor
+/// only adds the `--version` probe on top. An entry has no `sandbox = false`
+/// opt-out (T35.2 is wrap-or-refuse), unlike a `[[mcp]]` server's T33.42
+/// row: the wrap either succeeds or the entry is refused outright.
+#[cfg(feature = "plugins")]
+fn check_external_agents(
+    cwd: &std::path::Path,
+    home: &std::path::Path,
+    config: &cox_protocol::Config,
+) -> Vec<CheckResult> {
+    use cox_plugin::discover::{self, State};
+    use cox_plugin::grant::{self, Verdict};
+    use cox_protocol::PluginStore as _;
+
+    let root = crate::config_load::find_git_root(cwd);
+    let found = discover::discover(home, root.as_deref());
+    let store = cox_store::Store::open(home).ok();
+    // §1.6: empty `workspace_roots` means the git root of `cwd`, else
+    // `cwd` — the same default `session::start` applies before it wraps a
+    // granted entry's argv.
+    let writable = if config.core.workspace_roots.is_empty() {
+        vec![root.clone().unwrap_or_else(|| cwd.to_path_buf())]
+    } else {
+        config.core.workspace_roots.clone()
+    };
+
+    let mut rows = Vec::new();
+    for p in &found.plugins {
+        let State::Loaded { manifest, digest } = &p.state else {
+            continue;
+        };
+        if manifest.external_agents.is_empty() {
+            continue;
+        }
+        let stored = grant::scope(p.source, root.as_deref()).and_then(|scope| {
+            store
+                .as_ref()
+                .and_then(|s| s.grant_get(&p.id, &scope, digest).ok().flatten())
+        });
+        if !matches!(
+            grant::check(manifest, digest, stored.as_ref()),
+            Verdict::Granted
+        ) {
+            continue;
+        }
+        for decl in &manifest.external_agents {
+            rows.push(check_external_agent(&p.dir, decl, config, &writable));
+        }
+    }
+    rows
+}
+
+/// The slim build has no plugin host, so there is never a granted entry.
+#[cfg(not(feature = "plugins"))]
+fn check_external_agents(
+    _cwd: &std::path::Path,
+    _home: &std::path::Path,
+    _config: &cox_protocol::Config,
+) -> Vec<CheckResult> {
+    Vec::new()
+}
+
+/// [`check_external_agent`]'s body with the sandbox wrap and the `key_env`
+/// lookup injected, so a test can exercise every branch (missing in-package
+/// file, sandbox refusal, missing CLI, found + version, missing key)
+/// without depending on this host's sandbox backend and without setting a
+/// real env var (mirrors `check_api_keys_with`, A49/T30.28).
+#[cfg(feature = "plugins")]
+fn check_external_agent_with(
+    dir: &std::path::Path,
+    decl: &cox_plugin_api::ExternalAgentDecl,
+    key_set: bool,
+    wrap: impl FnOnce(&std::path::Path, &[String]) -> Result<Vec<String>, String>,
+) -> CheckResult {
+    use cox_plugin::external_agent::package_program;
+
+    let check = format!("external agent {}", decl.name);
+    let key_detail = format!(
+        "key_env {} {}",
+        decl.key_env,
+        if key_set { "set" } else { "not set" }
+    );
+    let key_fix = format!("set {} to use external agent {:?}", decl.key_env, decl.name);
+
+    let program = match package_program(dir, &decl.command) {
+        Ok(p) => p,
+        Err(e) => {
+            return CheckResult::warn(
+                &check,
+                format!("{e}; {key_detail}"),
+                format!("fix `command` on plugin external agent {:?}", decl.name),
+            );
+        }
+    };
+
+    let argv = match wrap(&program, &[String::from("--version")]) {
+        Ok(argv) => argv,
+        Err(reason) => {
+            return CheckResult::warn(
+                &check,
+                format!(
+                    "refused: cannot run under the sandbox on this host ({reason}); {key_detail}"
+                ),
+                "install a sandbox backend for this host (AGENTS.md Trust boundaries)".to_string(),
+            );
+        }
+    };
+
+    let cli_detail = match probe_version(&argv) {
+        Ok(ProbeOutcome::Version(v)) => format!("sandboxed; found, {v}"),
+        Ok(ProbeOutcome::NoOutput) => "sandboxed; found; no version output".to_string(),
+        Ok(ProbeOutcome::TimedOut) => "sandboxed; found; --version timed out".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return CheckResult::warn(
+                &check,
+                format!("{} not found on PATH; {key_detail}", decl.command),
+                format!("install the `{}` CLI or fix `command`", decl.command),
+            );
+        }
+        Err(e) => {
+            return CheckResult::warn(
+                &check,
+                format!("cannot run {}: {e}; {key_detail}", decl.command),
+                format!("check the `{}` CLI installation", decl.command),
+            );
+        }
+    };
+
+    let detail = format!("{cli_detail}; {key_detail}");
+    if key_set {
+        CheckResult::ok(&check, detail)
+    } else {
+        CheckResult::warn(&check, detail, key_fix)
+    }
+}
+
+/// `key_env` is only ever checked for presence (D12/A49) — its value is
+/// never read into this process's own logic beyond `env::var`, and never
+/// printed or logged. Wraps `decl.command` with `session::sandboxed_argv`,
+/// the same wrap a driver's argv gets (`session::plugin_agents`), so the
+/// probe reflects the real sandbox this host would run the entry under.
+#[cfg(feature = "plugins")]
+fn check_external_agent(
+    dir: &std::path::Path,
+    decl: &cox_plugin_api::ExternalAgentDecl,
+    config: &cox_protocol::Config,
+    writable: &[PathBuf],
+) -> CheckResult {
+    let key_set = env::var(&decl.key_env).is_ok_and(|v| !v.is_empty());
+    check_external_agent_with(dir, decl, key_set, |program, args| {
+        crate::session::sandboxed_argv(program, args, config, writable)
+    })
+}
+
+/// What running an entry's wrapped `--version` argv found: the exit status
+/// is never checked — a CLI's `--version` handling is not a spec cox
+/// controls, so any line on stdout is reported best-effort (EA§7).
+#[cfg(feature = "plugins")]
+enum ProbeOutcome {
+    Version(String),
+    NoOutput,
+    TimedOut,
+}
+
+/// Runs `argv` (`program` then `args`) to completion or
+/// [`EXTERNAL_AGENT_VERSION_TIMEOUT`], whichever comes first, killing a
+/// process that outlives the deadline. `Err` only on spawn failure — a
+/// missing CLI surfaces as `io::ErrorKind::NotFound`.
+#[cfg(feature = "plugins")]
+fn probe_version(argv: &[String]) -> std::io::Result<ProbeOutcome> {
+    use std::io::Read as _;
+
+    let Some((program, args)) = argv.split_first() else {
+        return Ok(ProbeOutcome::NoOutput);
+    };
+    let mut child = ProcessCommand::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let start = Instant::now();
+    while child.try_wait()?.is_none() {
+        if start.elapsed() >= EXTERNAL_AGENT_VERSION_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(ProbeOutcome::TimedOut);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut out = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut out);
+    }
+    Ok(out
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map_or(ProbeOutcome::NoOutput, |l| {
+            ProbeOutcome::Version(l.to_string())
+        }))
 }
 
 fn parse_iso_date(s: &str) -> Option<(u32, u32, u32)> {
@@ -1084,5 +1311,111 @@ mod tests {
         assert!(warn.detail.contains("opted-out"), "{}", warn.detail);
         assert!(!warn.detail.contains("http"), "{}", warn.detail);
         assert!(!warn.detail.contains("clean"), "{}", warn.detail);
+    }
+
+    #[cfg(feature = "plugins")]
+    fn external_agent_decl(command: &str) -> cox_plugin_api::ExternalAgentDecl {
+        cox_plugin_api::ExternalAgentDecl {
+            name: "cursor".into(),
+            command: command.into(),
+            args: vec!["acp".into()],
+            mode: cox_plugin_api::AgentMode::Acp,
+            key_env: "CURSOR_API_KEY".into(),
+        }
+    }
+
+    /// An identity wrap: `program args`, unchanged — the probe then runs
+    /// exactly `decl.command --version` with no real sandbox involved, so
+    /// these tests never depend on this host's sandbox backend.
+    #[cfg(feature = "plugins")]
+    fn identity_wrap(program: &std::path::Path, args: &[String]) -> Result<Vec<String>, String> {
+        let mut argv = vec![program.display().to_string()];
+        argv.extend(args.iter().cloned());
+        Ok(argv)
+    }
+
+    /// T35.8 Check: `doctor_reports_missing_cli_as_a_warning_not_a_failure`.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn doctor_reports_missing_cli_as_a_warning_not_a_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let decl = external_agent_decl("cox-doctor-test-missing-cli-does-not-exist");
+        let result = check_external_agent_with(dir.path(), &decl, true, identity_wrap);
+        assert_eq!(result.status, "warn", "{}", result.detail);
+        assert!(
+            result.detail.contains("not found on PATH"),
+            "{}",
+            result.detail
+        );
+    }
+
+    /// T35.8 Check: `doctor_reports_key_env_set_and_cli_version`.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn doctor_reports_key_env_set_and_cli_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("bin")).expect("mkdir");
+        let script = dir.path().join("bin/agent");
+        std::fs::write(&script, "#!/bin/sh\necho v9.9.9\n").expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod +x");
+        }
+        let decl = external_agent_decl("bin/agent");
+
+        let found = check_external_agent_with(dir.path(), &decl, true, identity_wrap);
+        assert_eq!(found.status, "ok", "{}", found.detail);
+        assert!(found.detail.contains("v9.9.9"), "{}", found.detail);
+        assert!(
+            found.detail.contains("key_env CURSOR_API_KEY set"),
+            "{}",
+            found.detail
+        );
+
+        // Same CLI, but the key is missing: still a warning, and the CLI
+        // and version facts stay in the detail alongside it.
+        let no_key = check_external_agent_with(dir.path(), &decl, false, identity_wrap);
+        assert_eq!(no_key.status, "warn", "{}", no_key.detail);
+        assert!(no_key.detail.contains("v9.9.9"), "{}", no_key.detail);
+        assert!(
+            no_key.detail.contains("key_env CURSOR_API_KEY not set"),
+            "{}",
+            no_key.detail
+        );
+    }
+
+    /// A sandbox wrap failure is EA§2's wrap-or-refuse: still a warning,
+    /// never a hard failure, and named as a refusal rather than a missing
+    /// CLI or a missing key.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn doctor_reports_sandbox_refusal_as_a_warning_not_a_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let decl = external_agent_decl("agent");
+        let result = check_external_agent_with(dir.path(), &decl, true, |_, _| {
+            Err::<Vec<String>, _>(String::from("no sandbox backend on this host"))
+        });
+        assert_eq!(result.status, "warn", "{}", result.detail);
+        assert!(result.detail.contains("refused"), "{}", result.detail);
+        assert!(
+            result.detail.contains("no sandbox backend on this host"),
+            "{}",
+            result.detail
+        );
+    }
+
+    /// An in-package `command` that does not resolve (missing file, a
+    /// symlink) is a warning about the plugin's manifest, not a sandbox or
+    /// PATH question.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn doctor_reports_a_bad_in_package_command_as_a_warning() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let decl = external_agent_decl("bin/gone");
+        let result = check_external_agent_with(dir.path(), &decl, true, identity_wrap);
+        assert_eq!(result.status, "warn", "{}", result.detail);
+        assert_ne!(result.status, "fail");
     }
 }

@@ -55,6 +55,7 @@ fn main() -> anyhow::Result<()> {
             let code = doctor::run(
                 cli.json,
                 &servers,
+                &cwd,
                 &loaded.config.tui.theme,
                 &loaded.config.tui.caps,
                 &loaded.config,
