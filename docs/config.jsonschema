@@ -221,7 +221,8 @@
         "decide": {
           "route": null,
           "min_confidence": 0.6,
-          "route_ms": 300
+          "route_ms": 300,
+          "route_margin": 0.15
         }
       }
     },
@@ -1449,7 +1450,8 @@
           "default": {
             "route": null,
             "min_confidence": 0.6,
-            "route_ms": 300
+            "route_ms": 300,
+            "route_margin": 0.15
           }
         }
       },
@@ -1479,6 +1481,12 @@
           "format": "uint64",
           "minimum": 0,
           "default": 300
+        },
+        "route_margin": {
+          "description": "`route` offers `cheap` only when its predicted turn cost is at most\n`1 − route_margin` of the `code` cost (J5.2, T33.40.8): a switch\nforfeits the code tier's warm cache.",
+          "type": "number",
+          "format": "double",
+          "default": 0.15
         }
       },
       "additionalProperties": false

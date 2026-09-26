@@ -857,8 +857,9 @@ impl Session {
         };
         // T33.20: inside a user turn, the tier `route` advice chose stands in
         // for the static main tier on every call of that turn (it is never
-        // above it). T33.40.8 strips thinking from such a turn's own
-        // `Request`; history is never rewritten and no `ModelSwitched` fires.
+        // above it). `step` strips earlier turns' thinking from such a turn's
+        // own `Request` (T33.40.8); history is never rewritten and no
+        // `ModelSwitched` fires.
         if matches!(job, Job::Main) && routed.is_some() {
             overrides.main_tier = routed;
         }
@@ -1101,7 +1102,7 @@ impl Session {
                 return self.finish(turn, StopReason::Error).await;
             }
         };
-        let route = self.route_turn(route, &text).await?;
+        let route = self.route_turn(route, &text, confirm_think).await?;
         // §1.10 trigger, applied at the next turn's start rather than after
         // `TurnDone` so nothing follows a turn's last event (§1.3 rule 7).
         let (last, max_context) = (
@@ -1257,7 +1258,7 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives, startup_context) = {
+        let (history, calls_so_far, discovered, marks, archives, startup_context, routed) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -1266,6 +1267,7 @@ impl Session {
                 inner.turn_marks.iter().map(|m| m.start).collect::<Vec<_>>(),
                 inner.archives.clone(),
                 inner.startup_context.clone(),
+                inner.routed.is_some(),
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -1306,6 +1308,12 @@ impl Session {
                 microcompact_after,
                 &archives,
             );
+            let req_messages = match marks.last() {
+                Some(start) if routed => {
+                    crate::context::strip_thinking_before(req_messages, *start)
+                }
+                _ => req_messages,
+            };
             let mut req = assemble_with(
                 &req_messages,
                 &self.config,

@@ -1089,6 +1089,10 @@ pub struct DecideConfig {
     pub min_confidence: f64,
     /// `route`'s latency budget in milliseconds; a later answer is ignored.
     pub route_ms: u64,
+    /// `route` offers `cheap` only when its predicted turn cost is at most
+    /// `1 − route_margin` of the `code` cost (J5.2, T33.40.8): a switch
+    /// forfeits the code tier's warm cache.
+    pub route_margin: f64,
 }
 
 impl Default for DecideConfig {
@@ -1098,6 +1102,7 @@ impl Default for DecideConfig {
             // J11: a tier choice is a high-stakes answer.
             min_confidence: 0.6,
             route_ms: 300,
+            route_margin: 0.15,
         }
     }
 }

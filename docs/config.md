@@ -197,6 +197,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 
 - `min_confidence` = `0.6` — advice with lower or no confidence is ignored and the static pick stands
 - `route_ms` = `300` — route's latency budget; a later answer is ignored
+- `route_margin` = `0.15` — route offers cheap only when its predicted turn cost (catalog prices, last prefix size, cache write vs read) is at most (1 - route_margin) x the code tier's
 ## `[memory]`
 
 - `enabled` = `true`

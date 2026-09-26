@@ -4,10 +4,12 @@
 //! loop never guesses a model itself; a failing cheap call is retried on
 //! cheap because `pick` is stateless. `route_offer`/`apply_route` are the
 //! `route` decision point's monotone rule (PL§4, T33.20): advice may only
-//! move a main turn down.
+//! move a main turn down, and `cheap_pays` is its cache-aware filter
+//! (T33.40.8).
 
 use std::collections::HashMap;
 
+use cox_models::Price;
 use cox_protocol::Config;
 use cox_protocol::plugin::{Advice, Answer};
 use cox_protocol::types::{Content, Effort, Job, Message, ModelId, ProviderId, Thinking, Tier};
@@ -207,7 +209,7 @@ fn clamp_effort(config: &Config, provider: &str, model: &ModelId, want: Effort) 
 /// The tiers the `route` decision point may offer (PL§4, D5): at or below
 /// the static pick and never `think`, cheapest first. When every offered
 /// tier is the static pick there is nothing to choose and the point is not
-/// asked. T33.40.8 narrows this further with its cache-aware `cheap` filter.
+/// asked. `cheap_pays` narrows this further (T33.40.8).
 pub fn route_offer(static_tier: Tier) -> Vec<Tier> {
     [Tier::Cheap, Tier::Code]
         .into_iter()
@@ -237,6 +239,27 @@ pub fn apply_route(
         Some(tier) if confident && tier <= static_tier && tier != Tier::Think => (tier, true),
         _ => (static_tier, false),
     }
+}
+
+/// Provider calls one user turn is predicted to make (J5.2's worked example).
+const TURN_CALLS: f64 = 5.0;
+/// Output tokens, thinking included, one user turn is predicted to write.
+const TURN_OUTPUT: f64 = 3_000.0;
+
+/// Whether a turn on `cheap` is predicted to cost at most `1 − margin` of
+/// the same turn on `code` (J5.2). The `code` turn reads its warm prefix
+/// on every call; the switch writes `prefix` into the cheap tier's cache
+/// once, then reads it. A large prefix therefore makes a downgrade lose
+/// money even at half the list price, and the first turn (no prefix yet)
+/// always passes.
+pub fn cheap_pays(cheap: &Price, code: &Price, prefix: u32, margin: f64) -> bool {
+    let p = f64::from(prefix);
+    let code_cost = code.cache_read * p * TURN_CALLS + code.output * TURN_OUTPUT;
+    let cheap_cost = cheap.cache_write * p
+        + cheap.cache_read * p * (TURN_CALLS - 1.0)
+        + cheap.output * TURN_OUTPUT;
+    // NaN clamps to NaN and compares false: a broken margin never offers.
+    cheap_cost <= (1.0 - margin.clamp(0.0, 1.0)) * code_cost
 }
 
 /// Drops `Thinking` blocks after a model switch: a signature binds its block
@@ -454,6 +477,32 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].content, vec![text.clone()]);
         assert_eq!(out[1].content, vec![text]);
+    }
+
+    fn price(input: f64, output: f64, cache_write: f64, cache_read: f64) -> Price {
+        Price {
+            id: String::new(),
+            input,
+            output,
+            cache_write,
+            cache_read,
+            verified_on: String::new(),
+            source_url: String::new(),
+        }
+    }
+
+    #[test]
+    fn cheap_pays_follows_the_j5_2_cache_formula() {
+        // J19's prices: Haiku 4.5 is only 2x cheaper than Sonnet 5.
+        let (haiku, sonnet) = (price(1.0, 5.0, 1.25, 0.10), price(2.0, 10.0, 2.50, 0.20));
+        // J5.2's example, P = 30k: cheap $0.0645 against code $0.060.
+        assert!(!cheap_pays(&haiku, &sonnet, 30_000, 0.0));
+        // No prefix yet: half the output price wins.
+        assert!(cheap_pays(&haiku, &sonnet, 0, 0.15));
+        // Break-even at the default margin is P = 13 125.
+        assert!(cheap_pays(&haiku, &sonnet, 13_000, 0.15));
+        assert!(!cheap_pays(&haiku, &sonnet, 13_250, 0.15));
+        assert!(!cheap_pays(&haiku, &sonnet, 0, f64::NAN));
     }
 
     fn advice(order: Vec<u32>, confidence: Option<f64>) -> Advice {
