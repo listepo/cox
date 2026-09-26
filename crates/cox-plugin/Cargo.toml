@@ -8,6 +8,9 @@ license.workspace = true
 # The WASM plugin host (plan.md §1.1, A52, docs/design/plugins.md). The only
 # crate that depends on extism; `crates/cox/tests/deps.rs` holds that line.
 [dependencies]
+# T33.11: `PluginHooks` implements the protocol's `Hook`, an `async_trait`
+# trait; already a workspace dependency of every crate that implements it.
+async-trait = { workspace = true }
 cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2" }
 # T33.6: `grant::check` reads the `PluginGrant` row `PluginStore` returns;
 # PL§3 puts that trait and its types in the protocol crate.
@@ -26,6 +29,9 @@ serde_json = { workspace = true }
 # dependency of `cox`, `cox-store` and `cox-provider-testkit`.
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+# T33.11: `PluginHost::call` blocks on the plugin's worker, so `PluginHooks`
+# runs it on `spawn_blocking`; the workspace's one async runtime.
+tokio = { workspace = true }
 # T33.9: `cox_log` writes to cox's log (PL§4); already workspace-pinned.
 tracing = { workspace = true }
 # Only to switch on wasmtime's `anyhow` feature, which extism needs and does

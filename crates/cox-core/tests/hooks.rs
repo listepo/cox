@@ -48,6 +48,25 @@ impl Hook for Stub {
     }
 }
 
+/// A source whose events are granted rather than configured (a plugin's,
+/// PL§6): interested in `Notification` whatever `[hooks]` says.
+#[derive(Default)]
+struct Granted {
+    seen: Mutex<Vec<HookEvent>>,
+}
+
+#[async_trait]
+impl Hook for Granted {
+    fn interested(&self, event: HookEvent, _config: &cox_protocol::config::HooksConfig) -> bool {
+        event == HookEvent::Notification
+    }
+
+    async fn run(&self, event: HookEvent, _payload: Value, _timeout: Duration) -> HookOutcome {
+        self.seen.lock().unwrap().push(event);
+        HookOutcome::Continue
+    }
+}
+
 async fn run_one_tool(stub: Arc<Stub>) -> Vec<Event> {
     let (session, _store, mut rx) = common::open(
         &common::scenario("one_tool"),
@@ -86,6 +105,22 @@ async fn broken_hook_is_skipped_not_fatal() {
         seen,
         ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]
     );
+}
+
+#[tokio::test]
+async fn plugin_hook_fires_without_hooks_config() {
+    let granted = Arc::new(Granted::default());
+    let config = cox_protocol::Config::default();
+    assert!(config.hooks.events.is_empty());
+    let (session, _store, mut rx) = common::open(&common::scenario("one_tool"), config);
+    session.set_hook(granted.clone());
+    let running = common::spawn_turn(&session, "one_tool");
+    common::drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let seen = granted.seen.lock().unwrap();
+    // `Notification` (turn done) is dispatched only on the hook's own say.
+    assert!(seen.contains(&HookEvent::Notification), "{seen:?}");
+    assert!(!seen.contains(&HookEvent::SessionStart), "{seen:?}");
 }
 
 #[tokio::test]

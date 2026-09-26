@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use cox_protocol::config::HooksConfig;
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::Hook;
 use cox_protocol::types::{HookEvent, HookOutcome, Presence, PresenceStatus};
@@ -232,6 +233,15 @@ fn touch(record: &mut Presence, payload: &Value) {
 
 #[async_trait]
 impl Hook for PresenceHook {
+    /// Whatever the wrapped sources want: presence itself ignores the
+    /// observe-only triggers, and a plugin's granted hook is not in
+    /// `[hooks]`, so the config check alone would never run it (PL§6).
+    fn interested(&self, event: HookEvent, config: &HooksConfig) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.interested(event, config))
+    }
+
     async fn run(&self, event: HookEvent, payload: Value, timeout: Duration) -> HookOutcome {
         match event {
             HookEvent::UserPromptSubmit => self.update(|r| {

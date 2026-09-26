@@ -278,7 +278,7 @@ fn watch(shared: &Shared, cancel: &CancelHandle) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use cox_plugin_api::SessionInfo;
     use serde_json::{Value, json};
@@ -307,7 +307,8 @@ mod tests {
         (i32.const 0))
       (export "cox_init" (func $echo))"#;
 
-    fn module(body: &str) -> Vec<u8> {
+    /// A module with the kernel imports, `body`, and an echoing `cox_init`.
+    pub(crate) fn module(body: &str) -> Vec<u8> {
         format!("(module {IMPORTS} {body} {ECHO})").into_bytes()
     }
 

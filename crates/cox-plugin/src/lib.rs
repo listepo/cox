@@ -12,6 +12,8 @@
 //!   (PL§3, T33.6).
 //! - [`hostfn`] — the `cox:host/v1` host functions, each checked against
 //!   the grant and the calling export, and `cox_init`'s input (PL§4, T33.9).
+//! - [`hooks`] — `PluginHooks`: one plugin as a `Hook` source through
+//!   `cox_hook` (PL§6, T33.11).
 //! - [`context`] — the event-folded, redacted snapshot `cox_context`
 //!   returns (PL§5, T33.9).
 
@@ -21,6 +23,7 @@ pub mod context;
 pub mod discover;
 pub mod error;
 pub mod grant;
+pub mod hooks;
 pub mod host;
 pub mod hostfn;
 
@@ -28,5 +31,6 @@ pub use context::Context;
 pub use discover::{Discovered, Plugin, Source, State, package_digest};
 pub use error::PluginError;
 pub use grant::Verdict;
+pub use hooks::PluginHooks;
 pub use host::{CONTROL_DEPTH, EVENT_DEPTH, Lane, PluginHost};
 pub use hostfn::{HostEnv, init_input};

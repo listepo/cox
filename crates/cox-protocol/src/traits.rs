@@ -443,12 +443,24 @@ pub trait Worktrees: Send + Sync {
     async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError>;
 }
 
-/// A hook runner (`cox-ext`): executes one hook subprocess against the
-/// Claude Code JSON protocol and reports its verdict. Never returns a
-/// `Result` — a broken hook is always a `HookOutcome::Failed`, never a
+/// A hook source (`cox-ext`'s shell hooks, `cox-plugin`'s plugin hooks, or
+/// a chain of them): reports its verdict for one hook event. Never returns
+/// a `Result` — a broken hook is always a `HookOutcome::Failed`, never a
 /// panic or a fatal error (D14/AGENTS.md: "fail open on extensions").
 #[async_trait]
 pub trait Hook: Send + Sync {
+    /// Whether an observe-only trigger (`SessionStart`, `Notification`)
+    /// should be dispatched to this source at all. The default is the
+    /// `[hooks]` config check; a source configured elsewhere (a plugin's
+    /// granted hooks, PL§6) answers for itself, or it would never run.
+    fn interested(
+        &self,
+        event: crate::types::HookEvent,
+        config: &crate::config::HooksConfig,
+    ) -> bool {
+        config.events.contains_key(event.name())
+    }
+
     /// Runs the hook for `event` with `payload`, giving up after `timeout`.
     async fn run(
         &self,
