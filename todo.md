@@ -48,7 +48,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T33.44. The session keeps one live instance per granted plugin
 - T35.2. Host spawner, sandbox and grant
-- T35.5. Wiring as a subagent preset
 - T35.6. The Cursor plugin package
 - T35.7. e2e: a fake `agent` binary replaying recorded fixtures
 - T35.8. `cox doctor` reporting

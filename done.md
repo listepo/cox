@@ -1772,3 +1772,20 @@ Check:
 - `stream_json_error_result_is_an_external_agent_error` (replaces `result_line_ends_the_turn_and_an_error_result_reports_it_first`) and `external_agent_error_is_not_retried_as_a_provider_error` pass.
 - In the worktree: nextest 1056 passed, 3 skipped; fmt, both clippy runs and the schema drift test clean.
 - On main after landing (with T33.9, T33.7, T35.12): nextest 1074 passed, 3 skipped, 1 load timeout (`cox_mcp_serves_read_grep_and_glob_from_the_built_binary`) passed on its own rerun; fmt, clippy, the slim build and the guest `cargo test` clean.
+
+#### T35.5 Wiring as a subagent preset
+
+Depends: T35.3, T35.4, T34.1, T34.5 · Size: ~190 · Files: `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/src/tasks.rs`
+Goal: a granted `[[external_agents]]` entry registers as one more name `AgentTool::preset()` resolves (T34.1's path), so `agent(preset: "cursor")` dispatches it exactly like a discovered `.cox/agents/*.md` definition, picking its ACP (T35.3) or stream-json (T35.4) driver from the manifest's `mode`; a follow-up to a running or finished external-agent task, and a sibling message addressed to it, are routed the same way T34.5 already routes to any other child task — no second messaging path. Usage is recorded per EA§6 (a `$0`/`billed_externally: true` row unless the driver ever reports tokens).
+Check: `agent_dispatches_a_granted_external_agent_preset_by_name`, `task_message_reaches_a_running_external_agent_task` (reusing T34.5's fixture shape), `external_agent_turn_writes_a_billed_externally_usage_row`.
+Status: done 2026-09-26
+Result: the core side of external agents as subagent presets. The host drivers are split into T35.13.
+- `cox_protocol::traits::ExternalAgent { name(); async turn(turn, prompt, events, cancel) -> Result<Option<Usage>, CoreError> }`. `turn` returns `None` when the agent reported no tokens.
+- `Session::set_external_agents(Vec<Arc<dyn ExternalAgent>>)` is set once, like `set_agent_defs`. `run_turn_inner` hands a child's turn to `external_turn` when a driver is set. `external_turn` forwards the driver's events, writes each `AssistantMessage` into history, holds back the driver's `TurnDone`, writes the usage row, then emits `Usage` and ends the turn. A driver error becomes a non-fatal `Event::Error`.
+- The usage row is `provider = ProviderId::External` (new variant), `model = <name>`, `job = Agent`, `cost_usd = 0`, with tokens only when the driver reported them. This is EA§6's "billed externally" without a new column.
+- `subagent::resolve` looks up built-ins, then discovered defs, then external agents. An external preset gets no cox tools, `risk` is `Exec`, and the names appear in the tool description and in the unknown-preset error. `Spec` carries the driver, so a parked child resumes on the same one. Follow-ups and sibling messages use T34.5's path unchanged.
+Deviations:
+- Files are `cox-protocol` `traits.rs`/`types.rs` and `cox-core` `session.rs`/`subagent.rs`. The trait has to live in cox-protocol because cox-core does no I/O, and `tasks.rs` needed no change. About 240 lines without tests.
+- Picking the ACP or stream-json driver by `mode` is host work (both drivers do I/O), so it moved to T35.13.
+Check: `agent_dispatches_a_granted_external_agent_preset_by_name`, `task_message_reaches_a_running_external_agent_task` and `external_agent_turn_writes_a_billed_externally_usage_row` pass (in-process fake driver). In the worktree: nextest 1064 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing: nextest 1078 passed, 3 skipped; fmt, clippy and the slim build clean.
