@@ -1,6 +1,6 @@
 //! The plugin contract shared by the host (`cox-plugin`), the guest SDK and
-//! `cox_protocol::plugin`: the `plugin.toml` manifest and the ABI payloads
-//! today, the widget tree in a later P33 card. A crate of its own because the
+//! `cox_protocol::plugin`: the `plugin.toml` manifest, the ABI payloads and
+//! the widget tree. A crate of its own because the
 //! guest SDK builds it for `wasm32-unknown-unknown`, so it depends on no
 //! workspace crate and does no I/O (plan.md §1.1, A52).
 //!
@@ -8,11 +8,14 @@
 //!   committed as `docs/plugin.schema.json`.
 //! - [`abi`] — the ABI v1 payloads (PL§4); the schema is committed as
 //!   `docs/plugin-abi.schema.json`.
+//! - [`ui`] — the `Widget` tree `cox_render` returns (PL§8); its schema is
+//!   part of `docs/plugin-abi.schema.json`.
 
 #![warn(missing_docs)]
 
 pub mod abi;
 pub mod manifest;
+pub mod ui;
 
 pub use abi::{
     AbiError, Advice, Answer, CommandDecl, CommandIn, CommandOut, DecidePoint, Effects, EventBatch,
@@ -25,6 +28,8 @@ pub use manifest::{
     ModelDecl, ModelTier, PluginManifest, PriceDecl, ProviderApi, ProviderAuth, ProviderDecl,
     UiCaps,
 };
+
+pub use ui::{StyleToken, Widget};
 
 #[cfg(test)]
 mod tests {
@@ -91,6 +96,7 @@ mod tests {
             Question,
             Advice,
             AbiError,
+            Widget,
         );
         let schema = json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",

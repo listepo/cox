@@ -877,6 +877,300 @@
         }
       ],
       "description": "Why a host function refused or failed."
+    },
+    "Widget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Span"
+                }
+              }
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "description": "Plain lines."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "list": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "description": "The rows.",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Span"
+                    }
+                  }
+                },
+                "selected": {
+                  "description": "The highlighted row.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint",
+                  "minimum": 0,
+                  "default": null
+                }
+              },
+              "required": [
+                "items"
+              ]
+            }
+          },
+          "required": [
+            "list"
+          ],
+          "additionalProperties": false,
+          "description": "Lines with an optional highlighted index."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "table": {
+              "type": "object",
+              "properties": {
+                "header": {
+                  "description": "Column headings.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Span"
+                  }
+                },
+                "rows": {
+                  "description": "One cell per column.",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Span"
+                    }
+                  }
+                },
+                "widths": {
+                  "description": "Column widths in cells.",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint16",
+                    "minimum": 0,
+                    "maximum": 65535
+                  },
+                  "default": []
+                }
+              },
+              "required": [
+                "header",
+                "rows"
+              ]
+            }
+          },
+          "required": [
+            "table"
+          ],
+          "additionalProperties": false,
+          "description": "A table; a column without a width shares the rest equally."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "key_value": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/Span"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Span"
+                    }
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          },
+          "required": [
+            "key_value"
+          ],
+          "additionalProperties": false,
+          "description": "Aligned `key: value` rows."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gauge": {
+              "type": "object",
+              "properties": {
+                "ratio": {
+                  "description": "Fraction done.",
+                  "type": "number",
+                  "format": "double"
+                },
+                "label": {
+                  "description": "Text before the bar.",
+                  "$ref": "#/$defs/Span",
+                  "default": {
+                    "text": "",
+                    "style": "text",
+                    "bold": false,
+                    "italic": false
+                  }
+                }
+              },
+              "required": [
+                "ratio"
+              ]
+            }
+          },
+          "required": [
+            "gauge"
+          ],
+          "additionalProperties": false,
+          "description": "A one-row progress bar; `ratio` is clamped to `0..=1`."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stack": {
+              "type": "object",
+              "properties": {
+                "vertical": {
+                  "description": "Stacked top to bottom rather than left to right.",
+                  "type": "boolean"
+                },
+                "children": {
+                  "description": "The children.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Widget"
+                  }
+                },
+                "sizes": {
+                  "description": "Rows (vertical) or columns (horizontal) per child.",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint16",
+                    "minimum": 0,
+                    "maximum": 65535
+                  },
+                  "default": []
+                }
+              },
+              "required": [
+                "vertical",
+                "children"
+              ]
+            }
+          },
+          "required": [
+            "stack"
+          ],
+          "additionalProperties": false,
+          "description": "Children side by side or stacked; a child without a size shares the rest."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "block": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "description": "Title on the top border.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Span"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "child": {
+                  "description": "The content.",
+                  "$ref": "#/$defs/Widget"
+                }
+              },
+              "required": [
+                "child"
+              ]
+            }
+          },
+          "required": [
+            "block"
+          ],
+          "additionalProperties": false,
+          "description": "A bordered box around one child."
+        }
+      ],
+      "description": "The closed set of widgets (PL§8)."
+    },
+    "Span": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The text; the host sanitizes it before drawing."
+        },
+        "style": {
+          "$ref": "#/$defs/StyleToken",
+          "description": "Its colour role.",
+          "default": "text"
+        },
+        "bold": {
+          "type": "boolean",
+          "description": "Bold.",
+          "default": false
+        },
+        "italic": {
+          "type": "boolean",
+          "description": "Italic.",
+          "default": false
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "description": "A run of text with one style."
+    },
+    "StyleToken": {
+      "type": "string",
+      "enum": [
+        "text",
+        "dim",
+        "accent",
+        "user",
+        "agent",
+        "tool",
+        "ok",
+        "warn",
+        "error",
+        "diff_add",
+        "diff_del",
+        "diff_hunk",
+        "border",
+        "selection"
+      ],
+      "description": "A `Theme` field. The permission-mode tints are left out on purpose: the\ncomposer's mode colour is a trust signal a plugin must not imitate."
     }
   }
 }

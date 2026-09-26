@@ -15,6 +15,7 @@ pub mod link;
 pub mod markdown;
 pub mod modal;
 pub mod picker;
+pub mod plugin_ui;
 pub mod state;
 pub mod status;
 pub mod svg;
