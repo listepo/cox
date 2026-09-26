@@ -8,6 +8,9 @@ license.workspace = true
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 cox-core = { path = "../cox-core", version = "0.1.2" }
+# Every rendered `Event::Task*` string goes through the shared sanitize guard
+# before it reaches the ACP client (T34.8); a pure leaf, no new external dep.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 agent-client-protocol = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
