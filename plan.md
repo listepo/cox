@@ -23,8 +23,65 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T32.12 | todo | P2 | 3 | 0% | |
 | T32.13 | todo | P2 | 4 | 0% | |
 | T32.14 | todo | P2 | 4 | 0% | |
-| T32.15 | todo | P2 | 2 | 0% | |
 | T32.16 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
+| T33.1 | todo | P1 | 4 | 0% | |
+| T33.2 | todo | P1 | 5 | 0% | |
+| T33.3 | todo | P1 | 5 | 0% | |
+| T33.4 | todo | P2 | 3 | 0% | |
+| T33.5 | todo | P1 | 3 | 0% | |
+| T33.6 | todo | P1 | 4 | 0% | |
+| T33.7 | todo | P2 | 3 | 0% | |
+| T33.8 | todo | P2 | 3 | 0% | |
+| T33.9 | todo | P2 | 4 | 0% | |
+| T33.10 | todo | P2 | 4 | 0% | |
+| T33.11 | todo | P2 | 4 | 0% | |
+| T33.12 | todo | P2 | 4 | 0% | |
+| T33.13 | todo | P2 | 4 | 0% | |
+| T33.14 | todo | P2 | 4 | 0% | |
+| T33.15 | todo | P2 | 3 | 0% | |
+| T33.16 | todo | P2 | 3 | 0% | |
+| T33.17 | todo | P2 | 3 | 0% | |
+| T33.18 | todo | P2 | 5 | 0% | |
+| T33.19 | todo | P2 | 4 | 0% | |
+| T33.20 | todo | P2 | 5 | 0% | |
+| T33.21 | todo | P2 | 4 | 0% | |
+| T33.22 | todo | P2 | 5 | 0% | |
+| T33.23 | todo | P2 | 4 | 0% | |
+| T33.24 | todo | P2 | 3 | 0% | |
+| T33.25 | todo | P2 | 3 | 0% | |
+| T33.26 | todo | P2 | 4 | 0% | |
+| T33.27 | todo | P2 | 4 | 0% | |
+| T33.28 | todo | P2 | 4 | 0% | |
+| T33.29 | todo | P2 | 3 | 0% | |
+| T33.30 | todo | P2 | 2 | 0% | |
+| T33.31 | todo | P2 | 4 | 0% | |
+| T33.32 | todo | P2 | 3 | 0% | |
+| T33.33 | todo | P2 | 3 | 0% | |
+| T33.34 | todo | P2 | 4 | 0% | |
+| T33.35 | todo | P3 | 2 | 0% | |
+| T33.36 | todo | P2 | 4 | 0% | |
+| T33.37 | todo | P3 | 1 | 0% | |
+| T33.38 | todo | P2 | 3 | 0% | |
+| T33.39 | todo | P2 | 3 | 0% | |
+| T33.40.1 | todo | P1 | 5 | 0% | |
+| T33.40.2 | todo | P2 | 3 | 0% | |
+| T33.40.3 | todo | P2 | 4 | 0% | |
+| T33.40.4 | todo | P2 | 4 | 0% | |
+| T33.40.5 | todo | P2 | 3 | 0% | |
+| T33.40.6 | todo | P2 | 4 | 0% | |
+| T33.40.7 | todo | P2 | 3 | 0% | |
+| T33.40.8 | todo | P2 | 4 | 0% | |
+| T33.40.9 | todo | P2 | 4 | 0% | |
+| T33.40.10 | todo | P3 | 3 | 0% | |
+| T33.40.11 | todo | P2 | 2 | 0% | |
+| T33.40.12 | todo | P2 | 3 | 0% | |
+| T33.40.13 | todo | P2 | 3 | 0% | |
+| T33.40.14 | todo | P2 | 3 | 0% | |
+| T33.40.15 | todo | P2 | 3 | 0% | |
+| T33.40.16 | todo | P2 | 2 | 0% | |
+| T33.40.17 | todo | P3 | 2 | 0% | |
+| T33.41 | todo | P3 | 2 | 0% | |
+| T33.42 | todo | P2 | 3 | 0% | |
 
 ## Reference
 
@@ -36,7 +93,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 
 | # | Decision | Why (evidence in research.md) |
 |---|----------|-------------------------------|
-| D1 | **One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`, A47); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
+| D1 | **One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`, A47); `crates/cox/tests/deps.rs` holds the graph. No dylib plugin host. One WASM plugin host (extism) from v0.2: `docs/design/plugins.md`; it reaches the core only through traits in `cox-protocol`.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
 | D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP and the JSONL rollout are four consumers of one event stream. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
 | D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. **Where wire types come from (A40):** (1) a maintained Rust SDK's *types* when one exists (OpenAI: `async-openai` types only), else (2) types generated with typify from the vendor's published spec, vendored in the repo (Anthropic), else (3) hand-written. Transport, retry, SSE state machine, `ProviderEvent` mapping and the ledger stay ours in every case; SDK code is a `wire` module inside the provider, extracted to a crate only when a second consumer appears. Login: API keys only — Claude subscription OAuth is forbidden to third parties (R§4.3.1); ChatGPT login waits for an OpenAI document permitting it. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
 | D4 | **Adopt existing formats verbatim instead of inventing ones.** `AGENTS.md` (and `CLAUDE.md`) hierarchy; Agent Skills `SKILL.md`; Claude Code hook JSON protocol and `.claude/settings.json` permission-rule syntax (`Bash(npm run test:*)`), `.claude/commands/*.md`, `.claude/agents/*.md`; `.mcp.json`; Codex `apply_patch` (V4A) grammar; `--output-format stream-json`. cox-native equivalents live under `.cox/` with the same schemas. | A user with a Claude Code or Codex setup gets cox for free, and the rtok hook stack works unchanged (R§3). Every one of these is documented and already read by ≥ 2 agents. |
@@ -53,7 +110,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D15 | **Each component is designed against the field before it is built.** Every P-phase's first task is a ≤ 1-page `docs/design/<component>.md`: the problem in one measurable number, what Claude Code / Codex / Pi / OpenCode / aider do, what cox does and why it is at least as good, and what would falsify it. Written by the `code` tier; reviewed, not written, by `think`. | rtok D15. Copying a competitor caps cox at that competitor. |
 | D16 | **Observability is `tracing` with an optional OpenTelemetry GenAI exporter.** Spans carry `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`. Off by default; `cox stats` reads the ledger locally. | Codex ships opentelemetry 0.31 (R§1.3); the GenAI semconv is still experimental, so it stays behind a feature flag. |
 
-Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; git worktree isolation for subagents; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
+Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; git worktree isolation for subagents; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
 
 ## 1. Architecture
 
@@ -90,10 +147,12 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-sanitize` | `sanitize`, `sanitize_with`, `truncate` (T5.6; split out of `cox-tui` by T32.1): strips escape sequences, C0 controls, bidi overrides and zero-width runs from untrusted text before it reaches the terminal; width-aware truncation. `cox-tui` re-exports it as `text` | unicode-width 0.2 |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), two-face 0.3 (`syntect-fancy`; ~250 syntaxes, +0.33 MiB — T24.3), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
+| `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1 |
+| `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading; wasmtime 43 underneath), sha2 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-sandbox`, `cox-models`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`; `cox-provider` → `cox-protocol`, `cox-models`. No crate below `cox` depends on `cox-core`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-sandbox`, `cox-models`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`; `cox-provider` → `cox-protocol`, `cox-models`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -553,7 +612,7 @@ Retryable: `RateLimited`, `Overloaded`, `Network`, `Timeout` (provider) — expo
 
 ### 1.15 Cross-cutting invariants (each is a named test somewhere in §3)
 
-1. `prefix_bytes_identical_between_turns` (T2.3) · 2. `truncate_is_lossless_via_archive` (T2.5) · 3. `all_tool_results_return_in_one_message` (T2.1) · 4. `deny_beats_allow` (T2.2) · 5. `compaction_keeps_last_two_turns_verbatim` (T8.1) · 6. `resume_builds_identical_request` (T2.4) · 7. `no_event_after_turn_done` (T2.1) · 8. `every_request_has_a_usage_row` (T1.7) · 9. `think_requires_confirmation` (T9.1) · 10. `broken_hook_is_skipped_not_fatal` (T7.4) · 11. `sandbox_denies_write_outside_workspace` (T4.1/T4.2) · 12. `every_flag_has_a_config_key` (T0.3) · 13. `no_crate_below_cox_depends_on_core` (T0.1) · 14. `sanitize_strips_escapes` (T5.6).
+1. `prefix_bytes_identical_between_turns` (T2.3) · 2. `truncate_is_lossless_via_archive` (T2.5) · 3. `all_tool_results_return_in_one_message` (T2.1) · 4. `deny_beats_allow` (T2.2) · 5. `compaction_keeps_last_two_turns_verbatim` (T8.1) · 6. `resume_builds_identical_request` (T2.4) · 7. `no_event_after_turn_done` (T2.1) · 8. `every_request_has_a_usage_row` (T1.7) · 9. `think_requires_confirmation` (T9.1) · 10. `broken_hook_is_skipped_not_fatal` (T7.4) · 11. `sandbox_denies_write_outside_workspace` (T4.1/T4.2) · 12. `every_flag_has_a_config_key` (T0.3) · 13. `no_crate_below_cox_depends_on_core` (T0.1) · 14. `sanitize_strips_escapes` (T5.6) · 15. `plugin_tool_specs_frozen_within_session` (T33.12) · 16. `plugin_grant_reasked_on_digest_or_widening` (T33.6) · 17. `plugin_failure_is_skipped_not_fatal` (T33.3).
 
 ## 2. Working agreement for agents
 
@@ -841,19 +900,599 @@ Moves: `cox-provider/src/openai/*` (~2.2k).
 Why: dependencies (a) (async-openai) and size (c).
 Check: `async-openai` appears only in this crate's `Cargo.toml`.
 
-#### T32.15 `cox-provider-jev`
-
-Depends: T32.12, T30.21–T30.26 as in T32.13.
-Moves: `cox-provider/src/jev.rs`.
-Why: size (c).
-Check: the Jev tests pass unchanged.
-
 #### T32.16 `cox-config`: the one config owner
 
 Depends: — · Moves: `crates/cox/src/config_load.rs`, `config_cmd.rs` (~990).
 Why: size (c) and reuse (d). This one crate owns loading, validation, editing and the schema drift test.
 Plan: `anyhow` becomes a `thiserror` enum; figment and toml_edit move with the files.
 Check: the config-schema drift test lives in the new crate and passes; `cox config` and `cox doctor` behave the same against a `COX_HOME` scratch tree.
+
+### P33 — WASM plugins (goal: one package adds a status segment, a hook, a deferred tool and a provider without a cox release; §1.15 invariants 1, 8, 10 and 15–17 green; ≤ 50 ms warm start per plugin)
+
+Rationale in §6 A52; the design is `docs/design/plugins.md` (cited below as PL§n).
+
+Every card in this phase:
+
+- stays within 200 LOC and 3 source files (manifests, generated schemas, snapshots and fixtures do not count);
+- leaves a test that fails without it;
+- documents what it adds (`docs/design/plugins.md` if the design moves, `docs/config.md` through the drift test for new keys, `docs/plugins.md` user docs from T33.27 on);
+- runs the three standard commands.
+
+Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
+
+#### T33.1 `cox-plugin-api`: the manifest and its schema — blocker
+
+Depends: — · Size: ~180 · Files: `crates/cox-plugin-api/src/lib.rs`, `src/manifest.rs`, `crates/cox-protocol/src/lib.rs` (re-export)
+Goal: `plugin.toml` parses into typed `PluginManifest`/`Capabilities`/`Limits`/`ProviderDecl`/`ModelDecl`/`McpDecl` with `deny_unknown_fields`. `docs/plugin.schema.json` is generated and drift-tested.
+Plan:
+1. New pure crate (serde, serde_json, schemars). Add a `deps.rs` rule: no workspace dependency.
+2. Types and validation per PL§2: id regex, name lengths after prefixing, `net` is hosts not URLs, `fs` roots.
+3. `cox_protocol::plugin` re-export.
+4. Drift test modelled on `protocol_jsonschema_matches_committed_file`.
+Check: `manifest_rejects_unknown_keys`, `manifest_rejects_net_url`, `manifest_rejects_id_with_double_underscore`, `plugin_schema_matches_committed_file`; `cargo build -p cox-plugin-api --target wasm32-unknown-unknown` succeeds.
+
+#### T33.2 ABI v1 payload types — blocker
+
+Depends: T33.1 · Size: ~170 · Files: `crates/cox-plugin-api/src/abi.rs`, `src/lib.rs`
+Goal: every export and host-function payload in PL§4 (`InitIn/InitOut`, `EventBatch`, `Effects`, `HookCall`, `ToolCallIn`, `CommandIn/CommandOut`, `RenderIn`, `RenderItemIn`, `ProviderCall`, `ModelCall`, `HttpReq/HttpResp`, `Question/Advice`, `AbiError`) as `JsonSchema` types, with `docs/plugin-abi.schema.json` drift-tested.
+Plan: reuse the `cox-protocol` types that cross the ABI by referencing them in the schema, not copying them. Because `cox-plugin-api` must not depend on `cox-protocol` (T33.1 rule), those fields are `serde_json::Value` in the api crate, and `cox-plugin` converts them into the typed protocol values at the boundary. Say this in the module header. `CommandOut` is the closed enum from PL§4.
+Check: `abi_schema_matches_committed_file`; `command_out_has_no_submission_variant` (a serde round-trip of every variant); `unknown_fields_are_ignored_both_ways`.
+
+#### T33.3 `cox-plugin`: host crate, one worker per plugin — blocker
+
+Depends: T33.2 · Size: ~200 · Files: `crates/cox-plugin/src/lib.rs`, `src/host.rs`, `src/error.rs`
+Goal: load a module from bytes with extism (`default-features = false`) and call `cox_init` on a worker thread that owns the `Plugin`. Memory cap, per-call deadline via `CancelHandle`, and `PluginError` (thiserror) mapped from `extism::Error`.
+Plan:
+1. Add the `§1.1` row and the commit reason from A52.
+2. `deps.rs` rule: only `cox-plugin` depends on `extism`.
+3. Two queues: control first, then events (PL§4).
+4. Tests with inline WAT: an echo `cox_init`, an infinite loop, a `memory.grow` past the cap, a missing export.
+5. Before and after: record the release size with `scripts/footprint.sh` and a clean build with `cargo build --timings` in R§4.3.5 P25, then apply falsifier 1 of PL§12.
+Check: `wat_plugin_init_round_trips_json`, `runaway_call_is_cancelled_at_deadline`, `memory_cap_traps_not_panics`, `missing_optional_export_is_absent_not_error`, `http_request_is_compiled_out` (a WAT guest calling extism's `http_request` gets an error); R§4.3.5 P25 filled.
+
+#### T33.4 Discovery, package digest and `cox plugin list`
+
+Depends: T33.3 · Size: ~190 · Files: `crates/cox-plugin/src/discover.rs`, `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal: find user plugins (`~/.cox/plugins/<id>/current`) and project plugins (`<git root>/.cox/plugins/<id>`). The user plugin wins a clash with a notice. Validate each manifest, compute the SHA-256 tree digest (PL§1), and list plugins with their state.
+Plan: `cox plugin list [--json]` loads each granted plugin, runs `cox_init` against a stub session and reports its contributions. The grant state reads "unknown" until T33.6. `cox ext list` gains a plugins section.
+Check: `digest_changes_when_any_file_changes`, `user_plugin_shadows_project_plugin_with_notice`, `malformed_manifest_is_listed_as_skipped`; the real binary against a scratch `COX_HOME` lists a WAT fixture plugin.
+
+#### T33.5 Grants and kv in `cox-store` — blocker
+
+Depends: T33.1 · Size: ~190 · Files: `crates/cox-store/migrations/00000000000004_plugins/{up,down}.sql`, `crates/cox-store/src/models.rs`, `crates/cox-store/src/lib.rs` (+ `schema.rs`, generated)
+Goal: the `plugin_grants` and `plugin_kv` tables per PL§3 through Diesel's typed DSL, and a `PluginStore` trait in `cox-protocol` implemented by `Store`. The kv quota is enforced in the store.
+Check: `grant_rows_are_per_digest`, `kv_quota_rejects_oversize_value`, `kv_delete_all_removes_only_that_plugin`; `deps.rs` still has diesel only in `cox-store`.
+
+#### T33.6 Grant check and granted-only loading — blocker
+
+Depends: T33.4, T33.5 · Size: ~170 · Files: `crates/cox-plugin/src/grant.rs`, `crates/cox/src/session.rs`
+Goal: the pure `grant::check(manifest, digest, stored) -> Verdict { Granted | NeedsApproval { added, removed } | Disabled }`. Session open loads only `Granted` plugins. Headless and ACP print one `Notice(Warn)` per ungranted plugin naming the command to run. `plugins.enabled` is a config key with an env var and `--no-plugins` (D13).
+Check: `narrower_request_needs_no_reapproval`, `new_digest_needs_approval`, `widened_capability_is_reported_in_added`, `headless_never_loads_ungranted_plugin` (e2e, scratch `COX_HOME`); `every_flag_has_a_config_key` still green.
+
+#### T33.7 `cox plugin install | enable | disable`
+
+Depends: T33.6 · Size: ~180 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal:
+- `install <dir>` copies into `versions/<digest12>/` and writes `current` atomically; the only v1 source is a local path, recorded in the grant's `source`.
+- `enable [--project] [--yes]` prints the capabilities in words and asks on stdin.
+- `disable` clears `enabled`.
+Check: e2e in a scratch `COX_HOME`: install → enable `--yes` → `list` shows `loaded`; `disable` → `not loaded`; `project_plugin_needs_project_grant`.
+
+#### T33.8 TUI grant dialog
+
+Depends: T33.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox/src/session.rs`
+Goal: `Modal::PluginGrant` asks for each `NeedsApproval` plugin at session open, queued in the single modal slot. `y` grants that digest and `n` skips it for this session. Project plugins show their repository in warning style. Every manifest string is sanitized.
+Check: insta snapshots (a new plugin, a widened plugin with the diff, a project plugin); `grant_dialog_sanitizes_description`.
+
+#### T33.9 Base host functions and the context snapshot
+
+Depends: T33.6 · Size: ~190 · Files: `crates/cox-plugin/src/hostfn.rs`, `src/context.rs`
+Goal: `cox_log`, `cox_notify` (level capped at `Warn`), `cox_kv_*` (through `PluginStore`), `InitIn.config` from `[plugins.<id>]` (the `PluginsConfig` flatten, following `HooksConfig`), and `cox_context` folded from events. Each host function checks the grant and the calling context (PL§4).
+Check: `notify_cannot_raise_security_level`, `kv_denied_without_capability`, `context_snapshot_is_redacted` (a secret in a tool result does not reach the snapshot); the config docs drift test is green with the new section.
+
+#### T33.10 Events: the tap, the rings, `cox_on_event`
+
+Depends: T33.9 · Size: ~180 · Files: `crates/cox-protocol/src/traits.rs`, `crates/cox-core/src/session.rs`, `crates/cox-plugin/src/events.rs`
+Goal: `EventTap` in `cox-protocol`, and `Session::set_event_tap`, called in `emit` after the rollout append with the scrubbed event. A per-plugin ring of 256 with drop-oldest and a counter, delivered in batches with `first_seq`/`dropped`. `Effects.redraw` is forwarded.
+Check:
+- `tap_never_blocks_emit`: a plugin that sleeps in `cox_on_event` does not slow a scripted 50-turn session beyond noise;
+- `ring_drops_oldest_and_counts`;
+- `plugin_sees_only_subscribed_kinds`;
+- invariant 7 `no_event_after_turn_done` still green.
+
+#### T33.11 Hooks: plugins as a hook source
+
+Depends: T33.9 · Size: ~190 · Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-core/src/hooks.rs`, `crates/cox-plugin/src/hooks.rs`
+Goal:
+- `Hook::interested(event)` with the config check as the default, so `fire_configured` asks the hook instead of `[hooks]`.
+- The `ShellHooks` chaining loop becomes one shared function used by a new `HookChain`.
+- `PluginHooks` implements `Hook` through `cox_hook`.
+- Order: shell hooks first, then plugins by id; the deadline is the smaller of `hooks.timeout_s` and `limits.call_ms`.
+Check: `plugin_hook_fires_without_hooks_config`, `shell_block_wins_over_plugin`, `plugin_modify_chains_into_next_hook`, `plugin_hook_timeout_fails_open_with_notice`; invariant 10 `broken_hook_is_skipped_not_fatal` still green.
+
+#### T33.12 Tools from plugins
+
+Depends: T33.9 · Size: ~170 · Files: `crates/cox-plugin/src/tool.rs`, `crates/cox/src/session.rs`
+Goal: `WasmTool` implements `Tool` as `wasm__<id>__<tool>`. It is always deferred, its specs are frozen at `cox_init`, and tools are sorted by (id, tool) and appended after MCP. `Concurrency::Exclusive` per plugin. `cox_output` and `cox_cancelled` inside `cox_tool_call`.
+Check: `plugin_tool_specs_frozen_within_session` (new invariant 15); `prefix_bytes_identical_between_turns` with a plugin tool discovered mid-session; `plugin_tool_output_is_archived_before_truncation`.
+
+#### T33.13 `cox_invoke_tool` through the engine
+
+Depends: T33.12 · Size: ~150 · Files: `crates/cox-plugin/src/hostfn.rs`, `crates/cox-core/src/turn.rs` (a plugin-origin entry point that reuses the `PreToolUse` → engine → sandbox → archive path)
+Goal: a plugin calls only the tools listed in `invoke`, and each call passes `PreToolUse`, `Engine::decide`, the sandbox and the archive. `Ask` shows "plugin <id> asks to run …". Headless mode denies it. Hook, decide, provider and render contexts get `NotInThisContext`.
+Check: `plugin_invoke_denied_by_rule`, `plugin_invoke_outside_grant_is_refused`, `invoke_from_hook_context_is_refused`.
+
+#### T33.14 `cox_http` and filesystem preopens
+
+Depends: T33.9 · Size: ~180 · Files: `crates/cox-plugin/src/net.rs`, `src/fs.rs`
+Goal:
+- `cox_http` over reqwest: the host must match the allow-list, the body is capped, and a `net` entry equal to a configured provider host is refused at validation (PL§7d).
+- WASI preopens come only from `fs` and pass `confine`; reads mount `ro:`; `.git` and `.cox` are never writable. WASI is on only when `wasi = true` or `fs` is set.
+Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provider_host_is_rejected`, `fs_write_to_dot_git_is_refused`, `wasi_ctx_has_no_env`.
+
+#### T33.15 `cox_model_call` and `Job::Plugin`
+
+Depends: T33.9 · Size: ~170 · Files: `crates/cox-protocol/src/types.rs` (`Job::Plugin`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/hostfn.rs`
+Goal: a plugin's model call goes through the router at or below its granted tier (never `think`), passes the budget gate and writes one `usage` row with job `plugin:<id>`.
+Check: `plugin_model_call_writes_usage_row` (Scripted provider), `plugin_model_call_blocked_by_budget`, `plugin_cannot_reach_think_tier`; invariant 8 green.
+
+#### T33.16 Models: the plugin catalog layer
+
+Depends: T33.6, T30.24 · Size: ~150 · Files: `crates/cox-models/src/catalog.rs`, `crates/cox/src/session.rs`
+Goal: `Catalog::load` takes plugin rows. The layer order is built-in < plugin (fill-only for existing ids) < config < user prices. A price conflict is ignored with a notice. Two plugins defining the same new id: the lower id wins. `ModelRow.source` records where each row came from.
+Check: `plugin_cannot_override_builtin_price`, `plugin_fills_missing_context_window`, `config_overrides_plugin_row`, `duplicate_plugin_model_lower_id_wins`.
+
+#### T33.17 Providers, declarative form
+
+Depends: T33.16 · Size: ~130 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/provider.rs`
+Goal: a `[[provider]]` with `api = "chat" | "responses"` merges into `providers.custom` as a `CompatibleProviderConfig`. A user config section of the same name wins. The key comes through `resolve_key(api_key_env, name)`.
+Check: `plugin_chat_section_builds_openai_shaped_client` (wiremock), `config_section_shadows_plugin_section`, `plugin_provider_request_has_usage_row`.
+
+#### T33.18 Providers, ABI form (`PluginProvider`)
+
+Depends: T33.14, T33.17 · Size: ~190 · Files: `crates/cox-plugin/src/provider.rs`, `src/net.rs`, `crates/cox-core/src/router.rs`, `crates/cox-protocol/src/types.rs`, `crates/cox/src/session.rs`
+Goal: with `api = "plugin"`, `stream()` calls `cox_provider_stream` and forwards `ProviderEvent`s. The guest's `cox_http` is limited to `base_url`'s host, and the host injects the `auth` header from `resolve_key`, so the key never enters wasm memory. Missing usage is estimated; usage below half of cox's estimate is replaced by the estimate with one warning.
+Plan (amended 2026-09-26 for the Jev use case, R§4.3.6 J§4.3): `Router::pick` and `backend_for_with` register ABI provider sections by name, so a tier — including a legacy `typesafe` tier — resolves to them, not only to `providers.custom`. The ledger gets a `ProviderId::Plugin` bucket whose provider string is the section name, the same shape `Local` uses for compatible providers; `provider_name` returns it. `COX_PROVIDER=scripted`/`replay`, which short-circuits provider construction for the main turn, still builds plugin providers, so a scripted-main e2e can reach a real (wiremocked) plugin provider.
+Check: `provider_key_never_reaches_guest` (the WAT guest echoes its request headers, and the test asserts the key is absent); `underreported_usage_is_replaced_by_estimate`; `every_request_has_a_usage_row` with a plugin provider; `plugin_provider_section_resolves_by_name`; `scripted_provider_mode_still_builds_plugin_providers`.
+
+#### T33.19 MCP servers from plugins
+
+Depends: T33.6, T32.3 · Size: ~160 · Files: `crates/cox-mcp/src/discovery.rs`, `crates/cox/src/session.rs`
+Goal: `[[mcp]]` entries become the lowest-precedence discovery source (`plugin:<id>`), named `<id>-<name>`. `crates/cox` wraps a stdio command with the sandbox policy before `cox-mcp` spawns it. An in-package command is covered by the digest; an HTTP `url` must be in `net`.
+Check: `project_mcp_json_shadows_plugin_server`, `plugin_stdio_server_runs_under_sandbox` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `changing_bundled_server_binary_changes_digest`.
+
+#### T33.20 Decision points: the `Advisor` trait and `route`
+
+Depends: T33.15 · Size: ~190 · Files: `crates/cox-protocol/src/traits.rs` (+ `Event::Advised` in `types.rs`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/advisor.rs`
+Goal: `Advisor` set on `Session` like the hook, with `[plugins.decide]` naming one plugin per point plus `min_confidence` and a latency budget. `route` offers only tiers at or below the static pick and never `think`. Every answer is an `Event::Advised { applied }`. On silence, lateness or low confidence the static pick is used.
+Plan note (amended 2026-09-26, R§4.3.6 J20): a turn a decision plugin routes down must strip thinking blocks in its own `Request` only — never rewrite `inner.history` in place, and never emit `ModelSwitched` for a same-turn tier offer. That stripping, and the cache-aware filter that decides whether `cheap` is even offered, are implemented by T33.40.8; this card only wires the `Advisor` trait and the `route` offer through it.
+Check: `route_advice_never_routes_up`, `late_advice_falls_back_to_static_pick`, `advised_event_in_rollout_replays_identically`; `docs/protocol.jsonschema` regenerated.
+
+#### T33.21 Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
+
+Depends: T33.20 · Size: ~190 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-core/src/compact.rs`, `crates/cox-tools/src/tool_search.rs`
+Goal: the monotone rules from PL§4:
+- risk only raises, and (amended 2026-09-26, R§4.3.6 J§5.1) the core asks only when raising the call to `Destructive` would change the engine's outcome from `Allow` to `Ask` or `Deny` — this filter belongs here so every `risk`-capable plugin gets it, not only Jev;
+- `approve_hint` is warning-only (amended 2026-09-26, `docs/design/plugins.md` §14 decision 10): a plugin may add a caution note, never say a call "looks safe" — monotone the same direction as `risk`, never used to grant quiet approval;
+- compaction only happens earlier, never skipped when mandatory;
+- rank reorders or filters cox's own candidates.
+`salience` is wired only if it fits the size; otherwise it is a follow-up card noted here.
+Check: `risk_advice_cannot_lower_risk`, `risk_not_asked_when_outcome_would_not_change`, `approve_hint_cannot_say_looks_safe`, `compact_advice_cannot_skip_mandatory_compaction`, `rank_advice_cannot_add_tools`.
+
+#### T33.22 Widget tree and its terminal rendering
+
+Depends: T33.2 · Size: ~190 · Files: `crates/cox-plugin-api/src/ui.rs`, `crates/cox-tui/src/plugin_ui.rs`
+Goal: the closed `Widget` tree with `StyleToken`s naming `Theme` fields, and its conversion to ratatui lines with every string through `sanitize_with`. Limits: 512 nodes, depth 8, 16 KiB of text.
+Check: insta snapshots of every widget kind under two themes and `NO_COLOR`; `widget_text_is_sanitized` (an escape sequence and a bidi override are stripped); `oversize_widget_renders_placeholder`.
+
+#### T33.23 TUI status segments
+
+Depends: T33.10, T33.22 · Size: ~160 · Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
+Goal: `Msg::Plugin(PluginUiMsg)` and `Cmd::Plugin(PluginRequest)`. `status.left`/`status.right` segments are cached in `State`. `cox_render` runs only on redraw requests, resize or visibility, never from `view`. Plugin segments drop first on a narrow terminal. A render has 20 ms, and three misses show "⚠ <id> slow".
+Check: insta snapshots (wide and narrow); `view_never_calls_plugin` (a counting fake bus); `slow_render_keeps_last_good_segment`.
+
+#### T33.24 TUI panel and overlay
+
+Depends: T33.23 · Size: ~170 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`
+Goal: a bottom `panel` (≤ 8 rows, above the composer, toggled by the plugin's command or key) and `Modal::Plugin { id }` as a full-screen overlay that Esc closes. Sizes are sent through `Cmd::Plugin`.
+Check: insta snapshots of the panel open and closed and of the overlay; `esc_closes_plugin_overlay`.
+
+#### T33.25 Plugin commands and keys
+
+Depends: T33.23 · Size: ~180 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/keymap.rs`, `crates/cox-tui/src/commands.rs`
+Goal: `/<id>:<name>` in the palette after the built-ins, and a `CommandOut` limited to PL§4's closed set. Keys work only as `<leader> <key>`; `plugin.leader` can be rebound in `keybindings.toml`. Built-ins and user bindings win. A clash between plugins goes to the lower id and is reported by `Keymap::conflicts()`.
+Check: `builtin_command_wins_over_plugin`, `plugin_command_prompt_submits_user_turn`, `plugin_key_only_under_leader`, `plugin_key_conflict_is_reported`.
+
+#### T33.26 Custom rendering of tool results and messages
+
+Depends: T33.23 · Size: ~160 · Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`
+Goal: `cox_render_item` for `tool:<name>` and `item:assistant_message`, asked once when the cell completes and cached in the cell. `None`, a timeout or an error uses the built-in rendering. A target outside the plugin's own tools needs its explicit grant.
+Check: insta snapshots (plugin-rendered, and fallback after a timeout); `renderer_output_never_reaches_rollout_or_model` (the rollout and the next `Request` are byte-identical with and without the renderer).
+
+#### T33.27 Guest workspace and the Rust SDK
+
+Depends: T33.2 · Size: ~190 · Files: `plugins/Cargo.toml`, `plugins/sdk/src/lib.rs`, `mise.toml` (+ `.github/workflows/ci.yml` `targets:`; `plugins/mise.toml` created empty for later languages)
+Goal: `cox-plugin-sdk` over extism-pdk 1.4.1 and `cox-plugin-api`: typed wrappers for every export and host function in PL§4, plus a `register!` macro. Add `rust = { version = "1.97.1", targets = ["wasm32-unknown-unknown"] }`; the target is not a version bump. `docs/plugins.md` gets the author guide.
+Check: `cargo build --manifest-path plugins/Cargo.toml -p cox-plugin-sdk --target wasm32-unknown-unknown`; the main-workspace `cargo nextest run --workspace` still never builds guest code; the extism-pdk row is in §1.1 and `toolchain.md`.
+
+#### T33.28 Rust reference example and e2e
+
+Depends: T33.27, T33.11, T33.23, T33.25 · Size: ~190 · Files: `plugins/examples/rust/src/lib.rs`, `crates/cox-plugin-fixtures/build.rs`, `tests/plugins.rs`
+Goal: the shared example from PL§13 (a turn-count status segment, a `PostToolUse` failure counter, `/<id>:reset`, a `turn_started` subscription). `cox-plugin-fixtures` (`publish = false`) builds it to `OUT_DIR` for `wasm32-unknown-unknown`. With the target missing, the build fails and names `mise install`.
+Check: e2e with the real binary in a scratch `COX_HOME` and the Scripted provider: install → enable `--yes` → a two-turn `run -p` → the rollout shows the hook's effect and `cox plugin list --json` shows the contributions; `just bench` records the PL§11 timings in R§4.7.
+
+#### T33.29 `cox plugin new` and the Rust template
+
+Depends: T33.28 · Size: ~200 · Files: `crates/cox/src/plugin_new.rs`, `crates/cox/src/cli.rs`, `plugins/templates/rust/*.tmpl` (templates do not count)
+Goal: `cox plugin new <name> [--lang] [--dir] [--with …]` from PL§13:
+- one pure module maps (name, lang, with) to a list of files;
+- `plugin.toml` capabilities match `--with`;
+- only the chosen stub exports are written, plus a `justfile`, a README and a smoke test;
+- the name is validated and an existing directory is never overwritten;
+- headless defaults to `rust`.
+Check: e2e `cox plugin new demo --lang rust --with status,hook` in a scratch `COX_HOME` asserts the file tree and that the manifest validates against `docs/plugin.schema.json`; it then builds `--offline` with the SDK patched to the in-repo path and runs the smoke test. `new_refuses_existing_dir`, `new_rejects_invalid_name`.
+
+#### T33.30 `/plugin new` in the TUI
+
+Depends: T33.29 · Size: ~120 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
+Goal: the palette's `/plugin new <name>` asks for the language with `Modal::Picker` when it is not given, then sends a `Cmd` to the same `plugin_new` function. There is no second implementation.
+Check: insta snapshot of the picker; `tui_plugin_new_calls_shared_scaffold` (a fake executor records one call with the chosen language).
+
+#### T33.31 `cox plugin update` and rollback
+
+Depends: T33.7 · Size: ~190 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/install.rs`
+Goal: PL§1b: re-read the recorded path source, validate the schema, `api` and digest, print a capability diff, and support `--check`. Staging uses temp and rename; `current` is swapped only after approval; one `previous` is kept. `--rollback` reuses the stored grant for that digest. Headless and ACP never approve a widening.
+Check: e2e offline against a local path: install → rebuild with changed bytes → `update --check` shows the diff → `update` requires a re-grant → `--rollback` restores the old digest without asking; `update_in_headless_keeps_current_and_warns`.
+
+#### T33.32 `cox plugin remove`
+
+Depends: T33.31 · Size: ~150 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/install.rs`
+Goal: PL§1c: confirm (`--yes` skips), disable, delete the plugin's own directory (resolved and checked to be under `~/.cox/plugins/`, no symlinks followed out), delete every grant row, and delete kv unless `--keep-data`. Report config references and edit none of them. A project plugin keeps its files.
+Check: e2e: remove → files, grants, kv and contributions are gone and a sibling plugin is untouched; `--keep-data` keeps kv; `remove_refuses_path_outside_plugins_dir` (a symlinked version dir).
+
+#### T33.33 `/plugin update | remove | list | reload` in the TUI
+
+Depends: T33.30, T33.32 · Size: ~140 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
+Goal: the palette entries reach the same `plugin_cmd` functions through `Cmd`. Remove asks through a modal. `/plugin reload` means `/clear` with a notice that the cache prefix restarts. In-session remove stops the instance; its frozen tools answer `Denied { why: "plugin removed" }`.
+Check: insta snapshot of the remove confirmation; `removed_plugin_tool_is_denied_until_next_session`.
+
+#### T33.34 Go: SDK wrapper, template, example
+
+Depends: T33.29 · Size: ~200 · Files: `plugins/sdk-go/cox.go`, `plugins/examples/go/main.go`, `plugins/templates/go/*.tmpl`; `plugins/mise.toml` gets go and tinygo; CI job `plugin-examples`
+Goal: a thin Go package over `github.com/extism/go-pdk` (v1.1.3) for the PL§4 exports and host functions (`//go:wasmimport` in `cox:host/v1`). The same example is built with TinyGo `-target wasip1 -buildmode=c-shared` (`wasi = true`). `cox plugin new --lang go`.
+Check: `plugin_example_go` is `#[ignore = "needs go and tinygo: run just plugin-examples go"]` locally and runs in the `plugin-examples` CI job, where a missing toolchain fails the job; it asserts the same rollout effect as T33.28.
+
+#### T33.35 Kotlin: feasibility spike
+
+Depends: T33.28 · Size: ~80 (spike; a throwaway branch of files under `plugins/spikes/kotlin`, not merged) · Files: `research.md` §4.3.5, `docs/design/plugins.md` §13
+Goal: prove or refute that a Kotlin/Wasm `wasmWasi` module (the latest Kotlin, R§4.3.5 P32) with `@WasmImport("extism:host/env", …)` and `@WasmExport` loads in extism 1.30.0 and round-trips `cox_init`, with and without extism's `wasmtime-exceptions` feature (P33–P34).
+Falsifier: the module fails to instantiate under the wasmtime 43 extism pins, or needs a feature cox will not enable → Kotlin stays out of `--lang` and PL§13 records why. If it passes only with `wasmtime-exceptions`, ask the creator before enabling it.
+Check: R§4.3.5 gains the spike's facts with versions; the PL§13 row says "proven" or "refuted".
+
+#### T33.36 Kotlin: thin PDK, template, example (only if T33.35 passes)
+
+Depends: T33.35 · Size: ~200 · Files: `plugins/sdk-kotlin/src/…/Cox.kt`, `plugins/examples/kotlin/src/…/Main.kt`, `plugins/templates/kotlin/*.tmpl`; `plugins/mise.toml` gets java, gradle and kotlin
+Goal: a cox-owned minimal Kotlin PDK over the raw extism imports (there is no maintained one, R§4.3.5 P30), the same example, and `--lang kotlin`.
+Check: `plugin_example_kotlin` is ignored with its reason locally and runs in the CI job.
+
+#### T33.37 Dart: WASI re-check spike
+
+Depends: T33.28 · Size: ~60 · Files: `research.md` §4.3.5, `docs/design/plugins.md` §13
+Goal: re-check whether the latest Dart can emit a module that runs outside JS (dart-lang/sdk#56366, R§4.3.5 P35) and load it in extism.
+Falsifier: `dart compile wasm` output still needs a JS bootstrap → Dart stays an MCP-server-only exception (T33.38) and the spike is repeated when #56366 closes.
+Check: R§4.3.5 records the Dart version tried and the result.
+
+#### T33.38 Dart: MCP-server plugin template and example
+
+Depends: T33.19, T33.29, T33.37 · Size: ~170 · Files: `plugins/examples/dart/bin/server.dart`, `plugins/templates/dart/*.tmpl`, `crates/cox/src/plugin_new.rs`; `plugins/mise.toml` gets dart
+Goal: `--lang dart` scaffolds a package whose only capability is an `[[mcp]]` stdio server (`dart compile exe`, `dart_mcp` 0.5.2), with no `plugin.wasm`. `--with` accepts only `tool` and `mcp` for Dart and says why for anything else. The example serves one `count` tool.
+Check: `plugin_example_dart` is ignored with its reason locally and runs in the CI job (the tool is callable through `mcp__<id>-count__count` and runs under the sandbox); `new_dart_rejects_status_with_reason`.
+
+#### T33.39 `cox doctor` and `cox ext` plugin reporting
+
+Depends: T33.28 · Size: ~150 · Files: `crates/cox/src/doctor.rs`, `crates/cox/src/ext_cmd.rs`
+Goal: a doctor plugins row listing, for each plugin:
+- loaded, skipped (with reason), not granted, or dev;
+- exports disabled by the three-failure breaker;
+- catalog price conflicts (T33.16);
+- the wasmtime cache directory size.
+`cox ext list` shows the same state.
+Check: doctor snapshots in a scratch `COX_HOME` with one healthy, one broken and one ungranted plugin; `disabled_export_is_visible_in_doctor`.
+
+#### T33.40 Jev as the first plugin
+
+Rationale: A25/P21, evidence `research.md` §4.3.6 (cited below as J§n/Jn). These seventeen cards test the ABI-form provider, the models, and the decision-point capabilities end to end against a real (wiremocked) use case, prove or refute PL§12 falsifier 3, and carry out `docs/design/plugins.md` §14 decision 8 (C1): the built-in `typesafe` client leaves the core once the plugin reaches parity. T33.18, T33.20 and T33.21 above already carry the amendments this use case needed.
+
+#### T33.40.1 ABI: two-phase decide, own-provider call-out, batched questions — blocker
+
+Depends: T33.2, T33.14, T33.15, T33.18, T33.20 · Size: ~180 · Files: `crates/cox-plugin-api/src/abi.rs`, `crates/cox-plugin/src/advisor.rs`, `crates/cox-plugin/src/net.rs`
+Goal: close the gap that PL§12 falsifier 3 predicts (J§4.1–4.3). Today a decision plugin can reach its own provider only through a deadlock (`cox_model_call` into its own `cox_provider_stream`) or a ledger bypass (`cox_http` from `cox_decide`). This card adds a path with neither.
+Plan:
+1. ABI changes:
+   - `DecideOut = Advice(Option<Advice>) | Call(ModelCall)`;
+   - the new optional export `cox_decide_resume(DecideResume { question, events }) -> Option<Advice>`;
+   - `ModelCall.target = Tier(t) | OwnProvider { name, model }`;
+   - `Question.items: Vec<QuestionItem>` (one answer per item).
+   
+   These are minor additions: `api` stays 1. Regenerate `docs/plugin-abi.schema.json`.
+2. `PluginAdvisor`: on `Call`, check that the target is a `[[provider]]` of the same plugin. Then run it through the budget gate → the provider registry (`PluginProvider`) → `Priced`, which writes one `usage` row with `job = plugin:<id>`. Then call `cox_decide_resume` with the events. The point's latency budget covers all three steps. Any failure along the way is `None`, and the local default applies.
+3. `net.rs`: `cox_http` to a provider section's host is allowed only inside `cox_provider_stream`. Everywhere else it returns `NotInThisContext`.
+4. PL§4: add the exports and state the context rule.
+Check:
+- `decide_call_out_writes_one_usage_row`: a WAT guest returns `Call`, and its own `cox_provider_stream` returns fixed events;
+- `decide_call_out_over_budget_falls_back`;
+- `decide_cannot_target_another_plugins_provider`;
+- `http_to_provider_host_outside_provider_stream_is_refused`;
+- `batched_question_answers_each_item`;
+- `abi_schema_matches_committed_file`;
+- invariant 8 `every_request_has_a_usage_row` still green.
+
+#### T33.40.2 Jev guest crate: the System One wire
+
+Depends: T33.27 · Size: ~190 · Files: `plugins/jev/src/lib.rs`, `plugins/jev/src/wire.rs`, `plugins/Cargo.toml` (member; `plugins/jev/Cargo.toml` and `plugins/jev/plugin.toml` are manifests)
+Goal: the typed wire, pure and tested on the host target:
+- `SystemOneRequest { state: Value, model, questions: BTreeMap<String, Question> }`, where `Question` is `Choice { instructions, criteria }`, `Score { instructions, levels }` or `Noul { instructions, criteria? }`;
+- `Answer`, and `parse` returning a typed error with no default guessed.
+
+It is ported from `crates/cox-provider/src/jev.rs` with two fixes:
+- a Noul's certainty is `|2p − 1|`, not `p`, because the API returns no Noul confidence (J11);
+- state plus the longest question is capped at 32k estimated tokens (J6).
+
+The manifest declares `id = "jev"` and `[[provider]] name = "typesafe", api = "plugin"`. `decide`, `context` and `[[models]]` (`jev-1.13.0`, `jev-latest`, `context_window = 64000`, price 0.042/0.0) are added by later cards.
+Plan: the extism-pdk glue sits behind `cfg(target_arch = "wasm32")`, so the pure modules test on the host. Port the six `jev.rs` tests with the documented bodies (J1, J2). A `just plugin-test` recipe runs the crate's tests, and the `plugins` CI job runs it.
+Check: `cargo test --manifest-path plugins/Cargo.toml -p cox-plugin-jev`, with these tests:
+- `choice_answer_parses_with_probabilities`;
+- `score_answer_parses_with_legend`;
+- `noul_certainty_is_distance_from_half`;
+- `missing_answers_is_an_error_not_a_guess`;
+- `unknown_answer_kind_is_an_error`;
+- `state_over_32k_tokens_is_truncated_with_marker`;
+- `manifest_validates` (through `cox-plugin-api`'s parser).
+
+`cargo build … --target wasm32-unknown-unknown` succeeds.
+
+#### T33.40.3 Jev provider export
+
+Depends: T33.40.2, T33.16, T33.18 · Size: ~170 · Files: `plugins/jev/src/provider.rs`, `plugins/jev/src/lib.rs`, `crates/cox-plugin-fixtures/build.rs`
+Goal: `cox_provider_stream` speaks System One over `cox_http` (PL§7a ABI form). The host injects the key.
+- A decision call (`Job::Plugin("jev")` with the JSON body in its one user message) is sent verbatim.
+- A request from a tier that names `typesafe` gets the old lossy mapping and one `Notice(Warn)`: "typesafe is a decision model; no tier should route to it" (J13).
+- Map the status codes from J4 to the ABI error kinds, so the host's retry treats 429 and 529 as transient.
+- Pass usage through unchanged; the host applies the estimate floor (T33.18).
+- Add the `[[models]]` rows.
+- `cox-plugin-fixtures` also builds `jev.wasm`.
+Check:
+- guest tests `decision_call_body_is_sent_verbatim`, `tier_request_uses_lossy_mapping_and_warns` and `status_529_maps_to_transient`;
+- `cargo build -p cox-plugin-fixtures` produces both fixtures, and with the wasm target missing it fails naming `mise install`.
+
+#### T33.40.4 Jev plugin as a provider, end to end and offline
+
+Depends: T33.40.3, T33.7 · Size: ~180 · Files: `tests/plugins_jev.rs` (+ `tests/fixtures/jev/*.json`, fixtures)
+Goal: prove the provider path through the real binary with no network and no keychain (J§8).
+Plan:
+1. A scratch `COX_HOME`. Install and enable the built fixture package from its local folder (C3) with `--yes`.
+2. Main turns come from `COX_PROVIDER=scripted`.
+3. Jev is wiremock on 127.0.0.1, reached through `[providers.typesafe] base_url` in the scratch config, with `TYPESAFE_API_KEY=test-key` in the env.
+4. A test-only scripted command makes one decision call. It reuses T33.40.1's WAT harness pattern.
+Check:
+- `jev_request_carries_host_injected_bearer` and `jev_key_never_reaches_guest`;
+- `jev_call_writes_usage_row_with_plugin_job` (provider `typesafe`, model `jev-1.13.0`, cost from the plugin catalog row);
+- `jev_call_blocked_by_budget_falls_back`;
+- `jev_401_is_one_notice_and_fail_open`;
+- `jev_529_retries_max_retries_times`;
+- `three_failures_disable_decide_export`;
+- `cox plugin list --json` shows the provider and model contributions.
+
+#### T33.40.5 Parity: the `typesafe` table configures the plugin's section
+
+Depends: T33.40.4 · Size: ~120 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/provider.rs`, `crates/cox/src/doctor.rs`
+Goal: while both exist, one name serves one client.
+- When the `jev` plugin is loaded, the provider `typesafe` is its `PluginProvider`. The `[providers.typesafe]` table (the built-in default, or the user's) supplies `base_url`, `api_key_env`, `timeout_s`, `max_retries` and `model`, and the user wins, as for declarative sections.
+- Without the plugin, the built-in `JevProvider` runs as today.
+- `cox doctor` says which client serves `typesafe`.
+Check: `typesafe_table_overrides_plugin_transport`, `builtin_jev_used_when_plugin_absent`, and a doctor snapshot for each case (in a scratch `COX_HOME`).
+
+#### T33.40.6 `risk` advisor: raise only
+
+Depends: T33.21 (as amended: ask only when the outcome could change), T33.40.1, T33.40.4 · Size: ~190 · Files: `plugins/jev/src/risk.rs`, `plugins/jev/src/lib.rs`, `tests/plugins_jev.rs`
+Goal: J§5.1. There is one request per tool batch. The state is the task, the cwd, the sandbox mode and, for each call, `tool`, `subject`, `input` and `classifier_risk`, never tool output. The questions are the `severity` Score and the `irreversible`, `external_effect` and `exfiltration` Nouls. The thresholds sit in `[plugins.jev.risk]` with the J§5.1 defaults. The advice is "raise to Destructive" or none, and the core keeps `max(builtin, advised)`. `capabilities.decide` gains `risk`.
+Check:
+- guest tests:
+  - `risk_state_never_contains_tool_output`;
+  - `risk_thresholds_raise_on_any_hazard`;
+  - `risk_low_answers_give_no_advice`;
+  - `risk_config_overrides_thresholds`;
+- e2e in `Auto` mode with a confining sandbox, where a scripted `git push --force origin main` is auto-allowed without the plugin:
+  - a high fixture gives `Ask`, headless denies, and `Advised { point: risk, applied: true }` is in the rollout;
+  - a low fixture leaves the call allowed;
+  - a wiremock delay past 200 ms leaves it allowed with `Advised { applied: false }`;
+  - `one_jev_request_per_tool_batch` (the wiremock count for a batch of 3);
+- `risk_advice_cannot_lower_risk` still green.
+
+#### T33.40.7 Eval E1: risk escalation against the classifier alone
+
+Depends: T33.40.6 · Size: ~200 · Files: `evals/src/cox_evals/jev_risk.py`, `evals/tests/test_jev_risk.py`, `evals/risk/commands.yaml` (data)
+Goal: measure J§5.1 against the no-Jev baseline at a hard budget cap.
+- The corpus has about 300 labelled commands: must-ask (force push, publish, deploy, remote delete, pipe-to-shell, credential exfiltration) and benign (build, test, grep, formatting, local git). The labels and a one-line reason are in the file.
+- Each command is one scripted bash call in `Auto` mode with the sandbox on. The scripted provider costs $0, and Jev is live.
+- The run is repeated without the plugin as the baseline.
+Plan:
+1. A `cox_evals` module with a registry entry, not a script (eval-tooling rule).
+2. Read the ledger total for `job = plugin:jev` after each batch, and stop at `--max-usd 0.10`.
+3. Metrics:
+   - the recall gain on must-ask commands the baseline auto-allows;
+   - the false-raise rate on benign commands;
+   - the late-fallback rate at 200 ms and at 500 ms;
+   - p50 and p95 latency;
+   - $.
+4. The live run needs `TYPESAFE_API_KEY` from the creator. `--dry-run` runs the baseline only.
+5. Record the table in R§5 with the Jev model version (`jev-1.13.0`, pinned), the date and the reproduce command.
+Falsifier: if the false-raise rate exceeds 10 %, or the p95 late-fallback rate exceeds 20 %, `risk` is not recommended by default, and the user guide says so.
+Check: `just test-evals` is green offline (corpus schema, metric maths, budget stop, command line). R§5 has the E1 table.
+
+#### T33.40.8 `route` in the core: cache-aware downgrade offer, turn-local thinking strip
+
+Depends: T33.20 · Size: ~170 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`
+Goal: J§5.2, core side (C2).
+- The `route` point is offered only for `Job::Main`, once per `UserTurn`, sticky for that turn's calls.
+- It is never offered for `Plan`, for subagents, or after `/model`.
+- `cheap` is offered only when its predicted turn cost is ≤ `(1 − route_margin)` × the `code` cost. The prediction uses catalog prices, the last request's prefix size and the cache-read vs cache-write formula in J§5.2. `route_margin` goes in `[plugins.decide]` (default 0.15).
+- A downgraded turn strips thinking in its own `Request` only. `inner.history` is unchanged, and there is no `ModelSwitched`.
+Check:
+- `downgrade_not_offered_when_cache_loss_exceeds_saving`;
+- `downgrade_offered_on_first_turn`;
+- `routed_down_turn_keeps_history_thinking`: the next `code` request's prefix is byte-identical, and invariant 1 stays green;
+- `route_never_offered_for_plan_job`;
+- `model_override_disables_route_point`;
+- `route_advice_never_routes_up` still green;
+- `docs/config.md` drift test green.
+
+#### T33.40.9 `route` advisor: downgrade only
+
+Depends: T33.40.8, T33.40.1, T33.40.4 · Size: ~170 · Files: `plugins/jev/src/route.rs`, `plugins/jev/src/lib.rs`, `tests/plugins_jev.rs`
+Goal: J§5.2, plugin side.
+- The state is the prompt, the todo list, a summary of the last turn and the number of files touched.
+- The questions are the `tier` Choice over the offered tiers (with the plugin's descriptions and `other` → `code`) and the `wants_depth` Noul.
+- The advice is `cheap` only when:
+  - the choice is `cheap`;
+  - confidence ≥ 0.8;
+  - `wants_depth` < 0.3;
+  - the last turn did not error.
+- `capabilities.decide` gains `route`.
+Check:
+- guest tests `route_needs_high_confidence`, `route_keeps_code_after_error_turn` and `route_other_means_code`;
+- e2e over two scripted turns:
+  - a fixture choosing `cheap` at 0.9 gives a main-turn `usage` row on tier `cheap` and `Advised { applied: true }`;
+  - at 0.7 the turn runs on `code`;
+  - a fixture naming `think` is ignored, and the static pick runs.
+
+#### T33.40.10 Eval E2: route downgrade against the static pick
+
+Depends: T33.40.9 · Size: ~180 · Files: `evals/src/cox_evals/harness.py` (the `jev-route` preset), `evals/tests/test_harness.py`, `evals/tasks/11-…14-*.yaml` (data: four tasks that need the code tier, such as a multi-file rename with a failing test)
+Goal: measure J§5.2 with money on the line and a hard cap. Every task runs twice, as the baseline and with `[plugins.decide] route = "jev"`, on real Anthropic tiers with live Jev.
+Plan:
+1. The preset is a registry entry.
+2. Caps: `--budget` per run, and a total cap of `--max-usd 3.00` read from the ledger, after which the run stops.
+3. Metrics:
+   - pass rate;
+   - $ per task by (tier, job);
+   - the downgrade rate;
+   - cache read/write tokens;
+   - Jev p95 latency.
+4. Keys (`ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`) come from the creator's env. They are never read from the keychain.
+5. R§5 gets the table with the model versions and the date.
+Falsifier: if any task that passes in the baseline fails with the plugin, or the median saving per task is below 15 %, `route` stays off by default, and the guide says so.
+Check: `just test-evals` is green offline (preset expansion, cap stop, the paired table). R§5 has the E2 table.
+
+#### T33.40.11 User guide: the Jev plugin
+
+Depends: T33.40.6, T33.40.9 · Size: ~150 · Files: `docs/plugins/jev.md`, `docs/plugins.md` (link), `crates/cox/tests/doc_examples.rs`
+Goal: one page for users. It covers:
+- what Jev is and is not (J13);
+- building it from `plugins/jev` (`just plugin jev`) and `cox plugin install <dir>` (C3);
+- the key through `TYPESAFE_API_KEY` or the keyring entry `cox/typesafe`;
+- enabling points in `[plugins.decide]`;
+- per point, the exact state sent to TypeSafe (J17);
+- costs in `cox stats` as `plugin:jev`;
+- fail-open behaviour and `cox doctor` rows;
+- the E1/E2 results and the defaults they justify;
+- the migration from `[providers.typesafe]` (J§7).
+Check: `doc_examples` parses every `toml` block on the page against `Config` or the plugin manifest schema and fails on drift.
+
+#### T33.40.12 Remove the built-in Jev client
+
+Depends: T33.40.5, T33.40.6 (parity: the provider and one advisor are served by the plugin) · Size: ~120 edited (the deleted `jev.rs` does not count) · Files: `crates/cox-provider/src/jev.rs` (deleted), `crates/cox-provider/src/lib.rs`, `crates/cox/src/session.rs`
+Goal: C1, step 1.
+- The `typesafe` arm of `backend_for_with` returns the plugin's `PluginProvider` when the plugin is loaded.
+- Otherwise it returns a typed "provided by plugin jev, not loaded" error, which the router step (T33.40.13) turns into fail-open.
+- `jev.rs`'s tests now live in `plugins/jev` (T33.40.2).
+Check: `rg -n 'jev' crates/cox-provider/src` is empty; `typesafe_backend_without_plugin_is_typed_error`; the three standard commands green.
+
+#### T33.40.13 Router and `ProviderId` without Jev
+
+Depends: T33.40.12 · Size: ~120 · Files: `crates/cox-protocol/src/types.rs`, `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
+Goal: C1, step 2.
+- `ProviderId::Jev` goes, replaced by T33.18's plugin bucket; it is never serialized in events (J§7).
+- The `typesafe` pin in `Router::pick` goes; plugin sections resolve generically.
+- A tier naming a legacy plugin provider (the table `("typesafe", "jev")`) with the plugin absent fails open (D14): one `Notice(Warn)` "Jev moved to a plugin: build `plugins/jev` and run `cox plugin install <dir>`", and that tier uses its `default.toml` provider and model for the session.
+Check: `legacy_typesafe_tier_without_plugin_uses_default_tier_with_notice`, `typesafe_tier_with_plugin_routes_to_plugin_section`, `unknown_provider_still_errors`; `docs/protocol.jsonschema` regenerated.
+
+#### T33.40.14 Config tombstone, `default.toml`, schema and doctor
+
+Depends: T33.40.13 · Size: ~150 · Files: `crates/cox-protocol/src/config.rs`, `crates/cox/src/doctor.rs`, `crates/cox-protocol/default.toml` (config data; `docs/config.md` and the config schema are generated)
+Goal: C1, step 3. An old config loads.
+- `JevProviderConfig` becomes `LegacyTypesafe`: the same keys, still `deny_unknown_fields`, an `Option` with no default section.
+- It stays a named field, so the table can never fall into the flattened `custom` map as a chat-shaped `CompatibleProviderConfig` (J§7).
+- Its knobs feed the plugin's `typesafe` section. Its `models` rows join the config catalog layer.
+- The `[providers.typesafe]` block leaves `default.toml`.
+- The doctor's key check covers plugin provider sections generically. A leftover table without the plugin is a doctor warning with the install pointer.
+Check:
+- `old_typesafe_table_loads_with_notice` (a config file from before this change);
+- `typesafe_table_never_becomes_compatible_section`;
+- `unknown_key_in_typesafe_table_still_rejected`;
+- a doctor snapshot;
+- the config drift test and `every_flag_has_a_config_key` green.
+
+#### T33.40.15 Catalog, prices and vendor script without Jev
+
+Depends: T33.40.14, T33.16 · Size: ~110 · Files: `crates/cox-models/src/catalog.rs`, `crates/cox-models/src/price.rs`, `scripts/vendor/src/cox_vendor/models.py` (+ its tests; `prices.toml` is regenerated by the script, A48)
+Goal: C1, step 4.
+- The `typesafe` special cases in `Catalog::load` and `price.rs` go.
+- `cox-vendor models` stops keeping `jev-latest` as a known exception, and its re-run drops the row from `prices.toml`.
+- Jev's price and window now come only from the plugin row. `cox doctor` shows `source = plugin:jev`, and T30.27's price-sync row stays green.
+Check: `jev_price_comes_from_plugin_row`, `catalog_without_plugin_has_no_jev_row`, the vendor pytest suite, `just vendor models --check` clean.
+
+#### T33.40.16 Docs and plan sweep after the removal
+
+Depends: T33.40.15 · Size: ~80 · Files: `docs/design/providers.md`, `docs/design/crates.md`, `docs/design/v0.2-jev.md` (+ `plan.md`)
+Goal: no doc describes a built-in Jev.
+- `providers.md` loses the Jev family.
+- `crates.md` loses the `cox-provider-jev` row.
+- `v0.2-jev.md` gets a closing note that the integration shipped as the `jev` plugin (A52, T33.40), with the eval verdicts.
+- In `plan.md`, T32.15 is dropped with a reason, and the PL§2 example uses `name = "typesafe"`.
+Check: `rg -n -i 'jev|typesafe' crates docs` matches only the plugin, the tombstone, the migration notice and the history. All docs drift tests are green.
+
+#### T33.40.17 Optional: record live fixtures (needs the creator's key)
+
+Depends: T33.40.6, T33.40.9 · Size: ~150 · Files: `scripts/vendor/src/cox_vendor/jev_fixtures.py`, `scripts/vendor/tests/test_jev_fixtures.py`, `tests/fixtures/jev/*.json` (data)
+Goal: replace the hand-built fixtures, which follow the documented shapes, with recorded ones.
+- The script sends the plugin's own `risk` and `route` question sets for a handful of fixed states.
+- It redacts with the rollout scrubber, writes the bodies and records the model version and the date.
+- It runs only with `TYPESAFE_API_KEY` set by the creator. It never reads the keychain.
+Check: the offline pytest (body construction, redaction, no key means a clear exit) is green. With recorded fixtures, T33.40.4 and T33.40.6 stay green unchanged.
+
+#### T33.41 Optional: `cox plugin link` (dev loop)
+
+Depends: T33.7 · Size: ~110 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/grant.rs`
+Goal: use a built plugin in place without installing it. A linked plugin asks again only when its capabilities widen, never on byte changes. It is marked `dev` in `list`, `doctor` and the TUI grant dialog. `cox plugin build` and `cox plugin dev` are not planned (PL§13).
+Check: `linked_plugin_rebuild_does_not_reask`, `linked_plugin_widening_reasks`, `linked_plugin_marked_dev_everywhere`.
+
+#### T33.42 Sandbox every MCP stdio server, with a per-server opt-out
+
+Depends: T33.19 · Size: ~140 · Files: `crates/cox-mcp/src/client.rs`, `crates/cox/src/session.rs`, `crates/cox-protocol/src/config.rs`
+Goal: extend the sandbox wrap from T33.19 to every MCP stdio server, not only plugin-shipped ones (`docs/design/plugins.md` §7c, resolved 2026-09-26, §14 decision 4). `crates/cox` wraps every stdio command with `sandbox::Policy` before `cox-mcp` spawns it, including today's user-configured `.mcp.json`/config servers. A per-server `sandbox = false` key opts a named server out, for setups that need it, and `cox doctor` gains a row naming any server that opted out.
+Check: `every_stdio_server_runs_under_sandbox_by_default`, `sandbox_false_opts_a_named_server_out`, `doctor_lists_unsandboxed_servers`; existing `.mcp.json`/config MCP e2e tests still pass with the wrap applied.
+
+**Order.** T33.1 → T33.2 → T33.3 → T33.4 → T33.5 → T33.6 is the critical path. After it these can run in parallel:
+
+- T33.7–T33.8;
+- T33.9 → (T33.10, T33.11, T33.12, T33.14, T33.15);
+- T33.16 → T33.17 → T33.18;
+- T33.19 (after T32.3) → T33.42;
+- T33.20 → T33.21.
+
+TUI: T33.22 → T33.23 → (T33.24, T33.25, T33.26). SDK and languages: T33.27 → T33.28 → T33.29 → T33.30, then T33.31 → T33.32 → T33.33; T33.34; T33.35 → T33.36; T33.37 → T33.38. Then T33.39; T33.40.1–T33.40.17 (own order below); T33.41 and T33.42 whenever they are wanted. The top table gets rows T33.1–T33.39, T33.41–T33.42 and T33.40.1–T33.40.17; P2 by default, P1 for the blockers T33.1–T33.6 and T33.40.1, P3 for the optional cards (T33.41, T33.40.17), the paid eval E2 (T33.40.10) and the Kotlin/Dart feasibility spikes (T33.35, T33.37).
+
+**T33.40 order.**
+
+- Main line: T33.40.1 and T33.40.2 (in parallel) → T33.40.3 → T33.40.4 → T33.40.5.
+- Risk: T33.40.6 → T33.40.7.
+- Route: T33.40.8, which can start after T33.20 → T33.40.9 → T33.40.10.
+- Docs: T33.40.11 after T33.40.6 and T33.40.9. Its results section is filled by T33.40.7 and T33.40.10.
+- Removal (C1): T33.40.12 → T33.40.13 → T33.40.14 → T33.40.15 → T33.40.16, starting once T33.40.5 and T33.40.6 are done. It does not wait for the evals.
+- T33.40.17 runs whenever the creator has a key.
+
+The paid runs are T33.40.7 (≤ $0.10, approved) and T33.40.10 (≤ $3, needs the creator's go-ahead each time).
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
@@ -867,7 +1506,7 @@ Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (s
 4. `cox stats` shows cost by tier and job; the `just bench` table in `research.md` §4.6 shows measured savings for each D6 mechanism; cache-read ratio on turn ≥ 3 of a typical session is ≥ 80 %.
 5. `cox run -p` and `cox acp` pass their conformance tests; `cox mcp` serves `read`/`grep`/`glob` to Claude Code.
 6. No `unwrap`/`panic!` outside tests; `cargo deny` clean; fuzz jobs green.
-7. The fourteen invariants in §1.15 each have a passing, named test.
+7. The seventeen invariants in §1.15 each have a passing, named test.
 
 ## 5. Roadmap
 
@@ -939,6 +1578,39 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A49 §3 P30, AGENTS.md — new card T30.28 and a convention, by the creator: tests never read the real OS keychain; they inject the lookup. Why: test runs prompted for the macOS login password and read the developer's real key. Effect: T30.28 runs after T30.23; the T30.13 keychain prompt stays with T30.13.
 - A50 (renumbered from `t31-beta-mvp`'s own A35 — that branch's numbering was against a different, older `main`) §3 P31, §4 — beta readiness: an audit of the v0.1 definition of done found five gaps the code can close, and each became a task (T31.1–T31.5). Criterion 6 had eight `expect` calls on production paths (the three request-body builders, the Jev client, the CLI override tree, `cox config show`); criterion 5 had no test of the shipped `cox mcp` binary, and writing one showed the default selection advertised an `outline` tool that does not exist (an outline is `read` with `mode = "outline"`); the README quick start used a top-level `cox -p` that clap rejects; the `Command` doc still said most subcommands print `not implemented`. Why: user request — determine what the beta needs and do it in one branch. Effect: `cox mcp` serves `read`, `grep`, `glob` by default; the README and `Command` doc no longer lie about the CLI shape; the work landed on branch `t31-beta-mvp` rather than `main` because the user asked for one branch, and was cherry-picked onto `main` on 2026-09-26 after `main` had moved through T30.19–T30.28 in the meantime. Landing found two of the five tasks already overtaken: T30.23 (A46 U1) had independently made `JevProvider::with_key`/`new` take `&Transport` and return `Result<Self, ProviderError>`, with `session::provider_for` already propagating it — T31.2 is dropped as fully superseded, no code changed; T30.11–T30.12's typed `wire::CreateMessageParams`/`wire::CreateResponse` rewrite had already removed the `expect` this branch targeted from the Anthropic and OpenAI Responses builders, so T31.1 keeps only its `openai/chat.rs` hunk. T31.3–T31.5 landed unchanged. Not done here: the paid eval and cache-ratio measurement (T30.3) and the macOS signing secrets — the release workflow refuses an unsigned build by design, and that stays the creator's call.
 - A51 §3 P30, AGENTS.md — new card T30.29, by the creator ("fix every keychain place so fakes are used"): `COX_KEYRING=off` switches the OS keyring off in the binary, and `.cargo/config.toml` sets it for every cargo-run process. Why: the T30.28 seams covered tests, but smoke runs of the rebuilt binary (`cargo run -- doctor`) still raised keychain prompts. Effect: A49's rule now covers dev runs too; T30.13's real runs set the key's env var. (A50 is taken by the T31 landing.)
+
+- A52 §0 D1 and the "Deferred to v0.2+" line, §1.1, §1.15, §3 P33, `roadmap.md` — WASM plugin host, approved by the creator. It implements `docs/design/plugins.md`.
+  - **The host.** An extism 1.30.0 host in the new crate `cox-plugin`, a pure ABI and manifest crate `cox-plugin-api` (re-exported as `cox_protocol::plugin`), and a separate guest cargo workspace `plugins/` (`cox-plugin-sdk` over extism-pdk 1.4.1, examples and templates).
+  - **What a plugin can contribute**, each as a manifest capability the user approves per package digest: hooks, called methods, a context snapshot, event subscription, TUI status segments, a bottom panel or overlay, slash commands and keys under a leader, custom rendering of tool results and messages, model providers (declarative `chat`/`responses` sections, or the ABI `Provider`), catalog rows (a fill-only layer between built-in and config), MCP server declarations (stdio servers run under `sandbox::Policy`), and answers at the core's decision points (the `Advisor` trait; Jev is the first user).
+  - **Why.** The creator decided it: runtime extism, the full contribution set above, capabilities approved on install and enable and re-asked on changed bytes or wider capabilities, and design and plan before code. This overrides the evidence gate in `extensions.md` and `v0.2-wasm.md` (falsifier 1: three requests MCP cannot serve), which is recorded as superseded, not refuted.
+  - **Effect on §0.**
+    - D1's last sentence "No WASM or dylib plugin host in v0.1." becomes "No dylib plugin host. One WASM plugin host (extism) from v0.2: `docs/design/plugins.md`; it reaches the core only through traits in `cox-protocol`."
+    - "WASM plugin host (extism 1.30)" leaves the Deferred-to-v0.2+ line.
+    - D2, D6(e), D9 and D14 are unchanged; the design keeps each (plugins.md §§4–7, 10).
+  - **Effect on §1.1.** Two crate rows (`cox-plugin-api`, `cox-plugin`) and the dependency-direction line.
+  - **Effect on §1.15.** Three invariants: 15 `plugin_tool_specs_frozen_within_session`, 16 `plugin_grant_reasked_on_digest_or_widening`, 17 `plugin_failure_is_skipped_not_fatal`; §4's definition of done now names seventeen invariants, not fourteen.
+  - **Effect on `roadmap.md`.** The v0.2 line "WASM plugins (extism)" moves into P33 and is deleted from the roadmap; two new roadmap lines take its place (publishing the SDK once the ABI is stable, and installing from git/URL).
+  - **Effect on AGENTS.md.** Layout rows for the two crates and `plugins/`. The trust list says a plugin host function never replaces one of the four guards.
+  - **Effect on other tasks.**
+    - T33.19 wraps plugin-shipped MCP stdio servers with the sandbox after T32.3 (`cox-sandbox`).
+    - T33.16 extends `Catalog::load` from T30.24.
+    - T33.18 reuses `resolve_key` from T30.21.
+  - **Creator decisions, 2026-09-26** (resolving this amendment's open questions and the ones the Jev use case raised, T33.40; recorded in full in `docs/design/plugins.md` §14):
+    1. SDK/API publishing (`cox-plugin-api`, `cox-plugin-sdk`) waits for a stable ABI; it is a `roadmap.md` item, not a P33 card.
+    2. Dart stays the documented MCP-stdio-server exception (PL§13); the re-check spike (T33.37) stays in the plan.
+    3. Kotlin: T33.35 spikes first; if it passes, cox keeps its own thin PDK (T33.36) and turns on extism's `wasmtime-exceptions` feature only if the spike needs it.
+    4. Every MCP stdio server, not only a plugin's, runs under `sandbox::Policy`, with a per-server opt-out in config — its own card, T33.42, not folded into T33.19.
+    5. `route`: a plugin may only downgrade the tier (D5 holds); the core offers a downgrade only when its own cost estimate predicts a saving (T33.40.8, from the Jev research R§4.3.6 J§5.2).
+    6. Install sources in v1 stay local-folder-only (PL§1); git/URL sources move to `roadmap.md`.
+    7. CI gets a separate `plugin-examples` job (go, tinygo, java, gradle, kotlin, dart), as PL§13 already specified.
+    8. The built-in `[providers.typesafe]` client (`crates/cox-provider/src/jev.rs`) leaves the core once the Jev plugin reaches parity — the tombstone config type, fail-open notice and removal cards are T33.40.12–T33.40.16.
+    9. Jev evals: only E1 (`risk`, Jev only, capped at $0.10, T33.40.7) is approved to run now. E2 (`route`, real Anthropic plus Jev, capped at $3, T33.40.10) stays in the plan but needs the creator's explicit go-ahead before each run.
+    10. `approve_hint` becomes warning-only: a plugin may add a caution note, never say a call "looks safe" (monotone like `risk`, T33.21).
+    11. The `risk` advisor is enabled only by an explicit line in `[plugins.decide]`, never automatically on install; the grant dialog states exactly what data leaves the machine.
+    12. T32.15 (`cox-provider-jev`) is dropped: its table row and card move to `done.md` as "Status: dropped 2026-09-26" with the reason, and it leaves `todo.md`. After parity, `jev.rs` is deleted outright (T33.40.12), not extracted into a crate.
+    13. The Jev research's ABI fix (T33.40.1): `cox_decide` returns either an `Advice` or a `ModelCall`, which the host runs against the plugin's own provider through the budget gate and ledger before calling `cox_decide_resume`; `cox_http` to a provider host is allowed only inside `cox_provider_stream`; `Question` is batched. `docs/design/plugins.md` §4 and its manifest example (§2) are updated, and the example provider is named `typesafe`, not `jev` (the plugin id stays `jev`).
+    14. The release ships no prebuilt Jev plugin archive; users build it from `plugins/jev` (`just plugin jev`) and `cox plugin install <dir>`.
+  - **Not decided further:** anything not listed above and not in `docs/design/plugins.md` §14 stays open for a later amendment.
 
 ## 7. Risk register
 

@@ -17,5 +17,62 @@
 - T32.12. `cox-provider-http`: HTTP, retry, SSE and key resolution
 - T32.13. `cox-provider-anthropic`
 - T32.14. `cox-provider-openai`
-- T32.15. `cox-provider-jev`
 - T32.16. `cox-config`: the one config owner
+- T33.1. `cox-plugin-api`: the manifest and its schema
+- T33.2. ABI v1 payload types
+- T33.3. `cox-plugin`: host crate, one worker per plugin
+- T33.4. Discovery, package digest and `cox plugin list`
+- T33.5. Grants and kv in `cox-store`
+- T33.6. Grant check and granted-only loading
+- T33.7. `cox plugin install | enable | disable`
+- T33.8. TUI grant dialog
+- T33.9. Base host functions and the context snapshot
+- T33.10. Events: the tap, the rings, `cox_on_event`
+- T33.11. Hooks: plugins as a hook source
+- T33.12. Tools from plugins
+- T33.13. `cox_invoke_tool` through the engine
+- T33.14. `cox_http` and filesystem preopens
+- T33.15. `cox_model_call` and `Job::Plugin`
+- T33.16. Models: the plugin catalog layer
+- T33.17. Providers, declarative form
+- T33.18. Providers, ABI form (`PluginProvider`)
+- T33.19. MCP servers from plugins
+- T33.20. Decision points: the `Advisor` trait and `route`
+- T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
+- T33.22. Widget tree and its terminal rendering
+- T33.23. TUI status segments
+- T33.24. TUI panel and overlay
+- T33.25. Plugin commands and keys
+- T33.26. Custom rendering of tool results and messages
+- T33.27. Guest workspace and the Rust SDK
+- T33.28. Rust reference example and e2e
+- T33.29. `cox plugin new` and the Rust template
+- T33.30. `/plugin new` in the TUI
+- T33.31. `cox plugin update` and rollback
+- T33.32. `cox plugin remove`
+- T33.33. `/plugin update | remove | list | reload` in the TUI
+- T33.34. Go: SDK wrapper, template, example
+- T33.35. Kotlin: feasibility spike
+- T33.36. Kotlin: thin PDK, template, example
+- T33.37. Dart: WASI re-check spike
+- T33.38. Dart: MCP-server plugin template and example
+- T33.39. `cox doctor` and `cox ext` plugin reporting
+- T33.40.1. ABI: two-phase decide, own-provider call-out, batched questions
+- T33.40.2. Jev guest crate: the System One wire
+- T33.40.3. Jev provider export
+- T33.40.4. Jev plugin as a provider, end to end and offline
+- T33.40.5. Parity: the `typesafe` table configures the plugin's section
+- T33.40.6. `risk` advisor: raise only
+- T33.40.7. Eval E1: risk escalation against the classifier alone
+- T33.40.8. `route` in the core: cache-aware downgrade offer, turn-local thinking strip
+- T33.40.9. `route` advisor: downgrade only
+- T33.40.10. Eval E2: route downgrade against the static pick
+- T33.40.11. User guide: the Jev plugin
+- T33.40.12. Remove the built-in Jev client
+- T33.40.13. Router and `ProviderId` without Jev
+- T33.40.14. Config tombstone, `default.toml`, schema and doctor
+- T33.40.15. Catalog, prices and vendor script without Jev
+- T33.40.16. Docs and plan sweep after the removal
+- T33.40.17. Optional: record live fixtures (needs the creator's key)
+- T33.41. Optional: `cox plugin link` (dev loop)
+- T33.42. Sandbox every MCP stdio server, with a per-server opt-out

@@ -725,3 +725,10 @@ Check:
 - landlock and seccompiler appear only in the root pin and `crates/cox-sandbox/Cargo.toml`.
 - `cargo check --target x86_64-unknown-linux-gnu -p cox-sandbox` is green (the Linux-gated code compiles).
 - The full suite after landing on main is in the commit below.
+
+#### T32.15 `cox-provider-jev`
+
+Status: dropped 2026-09-26 · Depends: T32.12, T30.21–T30.26 as in T32.13 · Priority: P2 · Complexity: 2
+Goal (as planned): move `cox-provider/src/jev.rs` into its own crate `cox-provider-jev` (size, item c).
+Reason for dropping: superseded by §6 A52 (T33.40, the Jev-as-a-plugin work). Once the Jev plugin reaches parity (T33.40.5–T33.40.6), `jev.rs` is deleted outright by T33.40.12, not extracted into a crate — the built-in Jev client is going away, so splitting it into its own crate first would be immediately undone. Recorded here rather than left `todo`, per the creator's decision of 2026-09-26 (`docs/design/plugins.md` §14 decision 12).
+Check: n/a — no code moved for this task.

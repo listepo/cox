@@ -258,6 +258,327 @@ Findings:
 - **Shared packages.** `packages/`: only `packages/crates/file-backup` exists, and cox has no matching code to replace with it.
 - **Build time.** Not measured yet. The gain from moving heavy dependencies behind their own crates is expected, not shown. The first extraction card records `cargo build --timings` before and after.
 
+### 4.3.5 WASM plugin host: extism and the precedents (A52, `docs/design/plugins.md`, checked 2026-09-26)
+
+Primary sources only. Crate facts come from the crates.io API (`https://crates.io/api/v1/crates/<name>` and `/<version>/dependencies`) and from the published crate sources (`https://static.crates.io/crates/<name>/<name>-<version>.crate`), read at the version named. Lines cited as `src/…:N` are in that crate's published source.
+
+| # | Fact | Source (primary) | Checked |
+|---|---|---|---|
+| P1 | `extism` latest stable is 1.30.0, published 2026-06-04, BSD-3-Clause. `extism-manifest` and `extism-convert` are 1.30.0, same day. | https://crates.io/api/v1/crates/extism, `/extism-manifest`, `/extism-convert` | 2026-09-26 |
+| P2 | `extism-pdk` (guest SDK) latest stable is 1.4.1, published 2025-05-19. It depends on `extism-convert ^1.10`, `extism-pdk-derive ^1.4.1`, `serde`, `serde_json`, `base64`, `anyhow`. | https://crates.io/api/v1/crates/extism-pdk, `/extism-pdk/1.4.1/dependencies` | 2026-09-26 |
+| P3 | `extism` 1.30.0 depends on `wasmtime ^43`, `wasi-common ^43` and `wiggle ^43`. The wasmtime features it enables are `cache`, `gc`, `gc-drc`, `cranelift`, `coredump`, `wat`, `parallel-compilation`, `pooling-allocator`, `demangle`. The latest `wasmtime` is 49.0.1 (2026-09-24), so cox would get the wasmtime extism pins, six majors behind. | https://crates.io/api/v1/crates/extism/1.30.0/dependencies; https://crates.io/api/v1/crates/wasmtime | 2026-09-26 |
+| P4 | Other normal dependencies of `extism` 1.30.0: `anyhow 1`, `tracing 0.1`, `tracing-subscriber ^0.3.23` (`std`, `env-filter`, `fmt`), `toml ^0.9`, `serde_json`, `sha2 ^0.10`, `glob`, `url`, `uuid` (`v4`), `libc`, `async-trait`; `ureq ^3.0` is optional. `cbindgen` is a build dependency. | same as P3 | 2026-09-26 |
+| P5 | Default features are `http`, `register-http`, `register-filesystem` and `wasmtime-default-features`. `http` and `register-http` pull `ureq`. With `default-features = false`, the plugin HTTP host function refuses every request (`src/pdk.rs:180-192`), URL-sourced modules are refused (`src/manifest.rs:81-84`), and file-sourced modules are refused (`src/manifest.rs:42-44`). Bytes passed in by the host still load. | https://crates.io/api/v1/crates/extism/1.30.0 (`features`); `extism-1.30.0/src/pdk.rs`, `src/manifest.rs` | 2026-09-26 |
+| P6 | `extism::Error` is "a wrapper around a dynamic error type" (anyhow). A host crate therefore has to map it into its own `thiserror` enum at the boundary. | https://docs.rs/extism/1.30.0/extism/ | 2026-09-26 |
+| P7 | `PluginBuilder` methods: `with_wasi(bool)`, `with_function(name, args, returns, UserData<T>, f)`, `with_function_in_namespace`, `with_functions`, `with_fuel_limit(u64)`, `with_cache_config(dir)`, `with_cache_disabled()`, `with_wasmtime_config(Config)`, `with_debug_options`, `build() -> Result<Plugin, Error>`, `compile() -> Result<CompiledPlugin, Error>`. `Plugin::new_from_compiled(&CompiledPlugin)` builds an instance from a compiled module. | https://docs.rs/extism/1.30.0/extism/struct.PluginBuilder.html, `/struct.Plugin.html` | 2026-09-26 |
+| P8 | `Plugin` is `Send` and `Sync` (`unsafe impl`, `src/plugin.rs:182-183`). `Plugin::call` takes `&'b mut self` (`src/plugin.rs:1124`), so one instance runs one call at a time. Other methods: `function_exists`, `cancel_handle`, `fuel_consumed`, `reset`, `call_with_host_context`. | https://docs.rs/extism/1.30.0/extism/struct.Plugin.html; `extism-1.30.0/src/plugin.rs` | 2026-09-26 |
+| P9 | `CancelHandle` is `Clone + Send + Sync`, and `cancel()` stops a running call from another thread. | https://docs.rs/extism/1.30.0/extism/struct.CancelHandle.html | 2026-09-26 |
+| P10 | `Pool::get(timeout)` returns `Ok(None)` when no instance frees up in time. The maximum instance count is set through `PoolBuilder`. | https://docs.rs/extism/1.30.0/extism/struct.Pool.html | 2026-09-26 |
+| P11 | `Manifest` fields: `wasm`, `memory: MemoryOptions`, `config: BTreeMap<String,String>` (read by the guest's `config::get`), `allowed_hosts: Option<Vec<String>>` (empty = no host; wildcards allowed), `allowed_paths: Option<BTreeMap<String, PathBuf>>` (WASI preopens; a `ro:` key prefix mounts read-only, `src/current_plugin.rs:354`), `timeout_ms: Option<u64>`. | https://docs.rs/extism-manifest/1.30.0/extism_manifest/struct.Manifest.html; `extism-1.30.0/src/current_plugin.rs` | 2026-09-26 |
+| P12 | `MemoryOptions` fields: `max_pages: Option<u32>` (64 KiB WASM pages), `max_http_response_bytes: Option<u64>`, `max_var_bytes: Option<u64>` ("default value is 1mb"; `0` disables vars). | https://docs.rs/extism-manifest/1.30.0/extism_manifest/struct.MemoryOptions.html | 2026-09-26 |
+| P13 | `timeout_ms` works through wasmtime epoch interruption driven by a timer thread (`src/plugin.rs:56`, `src/timer.rs`). A timed-out call returns `Error("timeout")` (`src/plugin.rs:1081`). | `extism-1.30.0/src/plugin.rs`, `src/timer.rs` | 2026-09-26 |
+| P14 | A `Wasm` source may carry a `hash`. extism checks it as SHA-256 and refuses a mismatch (`src/manifest.rs:18-30`). | `extism-1.30.0/src/manifest.rs` | 2026-09-26 |
+| P15 | A module given as bytes may be WAT text as well as a binary: the loader accepts input that starts with `(module` (`src/manifest.rs:125-135`, wasmtime `wat` feature from P3). This lets host tests use inline WAT with no build step. | `extism-1.30.0/src/manifest.rs` | 2026-09-26 |
+| P16 | `with_wasi(true)` builds a `wasi-common` preview-1 `WasiCtx` whose only directories are the `allowed_paths` preopens (`src/current_plugin.rs:345-365`). | `extism-1.30.0/src/current_plugin.rs` | 2026-09-26 |
+| P17 | The Rust PDK README uses the `wasm32-unknown-unknown` target with `crate-type = ["cdylib"]`, and names `wasm32-wasip1` as the alternative when WASI is needed (README lines 31-78). Host functions are imported with `#[host_fn] extern "ExtismHost" { … }` (README line 322). Guest helpers: `input`, `output`, `config::get`, `var::{get,set,remove}`. | `extism-pdk-1.4.1/README.md`, `src/lib.rs`, `src/config.rs`, `src/var.rs` | 2026-09-26 |
+| P18 | Zellij's `ZellijPlugin` has `load(&mut self, BTreeMap<String,String>)`, `update(&mut self, Event) -> bool` (returning `true` asks for a `render`), `pipe(&mut self, PipeMessage) -> bool` and `render(&mut self, rows, cols)`, which is called only after an update asks for it or on resize. | `zellij-tile-0.45.1/src/lib.rs:33-48` (crates.io 0.45.1, 2026-08-28) | 2026-09-26 |
+| P19 | Zellij plugins `subscribe` to `EventType`s and call `request_permission` over 14 permission types (`ReadApplicationState`, `RunCommands`, `FullHdAccess`, `InterceptInput`, …). The answer comes back as the `PermissionRequestResult` event. | https://zellij.dev/documentation/plugin-api-events.html, https://zellij.dev/documentation/plugin-api-permissions.html | 2026-09-26 |
+| P20 | Zed extensions: an `extension.toml` manifest, Rust compiled to `wasm32-wasip2` against `zed_extension_api` (latest 0.7.0, 2025-09-12). Capabilities are declared in `extension.toml` (`process:exec`, `download_file`, `npm:install`, with wildcard patterns). Users narrow them with the `granted_extension_capabilities` setting. | https://zed.dev/docs/extensions/developing-extensions, https://zed.dev/docs/extensions/capabilities, https://crates.io/api/v1/crates/zed_extension_api | 2026-09-26 |
+| P21 | Claude Code plugins are directory bundles with `.claude-plugin/plugin.json` plus `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, `monitors/`, `output-styles/`, `themes/`, `bin/`, `.mcp.json` and `.lsp.json`. No component is loaded into the process. | https://code.claude.com/docs/en/plugins-reference ("Standard layout") | 2026-09-26 |
+| P22 | mise's `rust` tool takes a `targets` option (array or comma list) and adds missing targets even when the toolchain is already installed. | https://mise.jdx.dev/lang/rust.html | 2026-09-26 |
+| P23 | `dtolnay/rust-toolchain` takes a `targets` input ("Comma-separated string of additional targets to install e.g. wasm32-unknown-unknown"). cox CI uses `dtolnay/rust-toolchain@1.97.1` (`.github/workflows/ci.yml:23`). | https://github.com/dtolnay/rust-toolchain; repo file | 2026-09-26 |
+| P24 | The repo pins `rust = "1.97.1"` with no `targets` (`mise.toml`). On the author's machine, 1.97.1 has `wasm32-unknown-unknown` installed and not `wasm32-wasip1` (`rustup target list --installed`). This is machine state, not a repo guarantee. | `mise.toml`; local `rustup` | 2026-09-26 |
+| P25 | **unverified**: what wasmtime 43 + cranelift add to the release binary and to a clean build. No primary source gives a number for cox's profile. T33.2 measures it with `scripts/footprint.sh` and `cargo build --timings` before and after. | — | — |
+| P26 | `github.com/extism/go-pdk` is official. Its latest release is v1.1.3 (2025-03-18) and the repo was last pushed 2026-01-22. The README recommends TinyGo (`tinygo build -o plugin.wasm -target wasip1 -buildmode=c-shared main.go`), says TinyGo ≥ 0.34 supports reactor modules natively, and also documents standard Go (`GOOS="wasip1" GOARCH="wasm" go build -buildmode=c-shared`). Exports use `//go:wasmexport`. | https://github.com/extism/go-pdk; https://api.github.com/repos/extism/go-pdk/releases | 2026-09-26 |
+| P27 | Go 1.24 added the `go:wasmexport` directive, and `-buildmode=c-shared` builds a reactor/library on `GOOS=wasip1`. The latest Go is 1.27.1. | https://go.dev/doc/go1.24 (WebAssembly section); https://go.dev/dl/?mode=json | 2026-09-26 |
+| P28 | The latest TinyGo is v0.42.0 (2026-09-01). | https://api.github.com/repos/tinygo-org/tinygo/releases/latest | 2026-09-26 |
+| P29 | The extism GitHub organisation has PDKs for Rust, Go, C, C++, AssemblyScript, Haskell, .NET, Zig, JS, Python and MoonBit, and none for Kotlin or Dart. | https://api.github.com/orgs/extism/repos (repos with `pdk` in the name) | 2026-09-26 |
+| P30 | The only Kotlin PDK found is the community repo `LizAinslie/extism-kotlin-pdk`, last pushed 2023-11-30 (5 stars): dead by the workspace rule. No Dart PDK was found; the only Dart extism repos are *host* SDKs (`AmiK2001/extism-dart-sdk`). | https://api.github.com/search/repositories?q=extism+kotlin, `?q=extism+dart`, `?q=extism+pdk+dart` | 2026-09-26 |
+| P31 | Kotlin/Wasm is Beta. The `wasmWasi` target "supports WASI 0.1, also known as Preview 1", with 0.2 planned, and names Node.js, Wasmtime, Deno and WasmEdge as runtimes. Browsers need "garbage collection and legacy exception handling". The page does not say which exception-handling encoding `wasmWasi` emits. | https://kotlinlang.org/docs/wasm-overview.html, https://kotlinlang.org/docs/wasm-wasi.html | 2026-09-26 |
+| P32 | `kotlin.wasm.WasmExport` and `WasmImport` exist since Kotlin 1.8 and are experimental (opt-in `ExperimentalWasmInterop`). The latest Kotlin is v2.4.20 (2026-09-07). | https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.wasm/; https://api.github.com/repos/JetBrains/kotlin/releases/latest | 2026-09-26 |
+| P33 | The extism 1.30.0 engine config turns on `wasm_tail_call`, `wasm_function_references` and `wasm_gc`. It turns on `wasm_exceptions` only under its non-default `wasmtime-exceptions` feature (`src/plugin.rs:60-66`). | `extism-1.30.0/src/plugin.rs`; https://crates.io/api/v1/crates/extism/1.30.0 (`features`) | 2026-09-26 |
+| P34 | The current wasmtime docs list `gc`, `function-references`, `exception-handling` and `tail-call` as Tier 1. The page names no version and does not say whether "legacy" exception handling is supported. **unverified** for wasmtime 43, the version extism pins. | https://docs.wasmtime.dev/stability-tiers.html | 2026-09-26 |
+| P35 | dart2wasm output "currently targets JavaScript environments … and thus currently doesn't support execution in standard Wasm run-times like wasmtime and wasmer". It needs WasmGC and a JS bootstrap. The WASI/component-model proposal dart-lang/sdk#56366 is open. The latest Dart stable is 3.13.4 (2026-09-15). | https://dart.dev/web/wasm; https://github.com/dart-lang/sdk/issues/56366; https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION | 2026-09-26 |
+| P36 | `dart_mcp` (the Dart team, `dart-lang/ai`) latest is 0.5.2 (2026-06-29). | https://pub.dev/api/packages/dart_mcp | 2026-09-26 |
+| P37 | The mise registry has `go` (core), `tinygo` (aqua), `kotlin` (github:JetBrains/kotlin), `java` (core), `gradle` (aqua) and `dart` (http). | `mise registry` (local mise, registry as of 2026-09-26) | 2026-09-26 |
+
+### 4.3.6 Jev as the first cox plugin (T33.40, A25/A52, checked 2026-09-26)
+
+Input for the T33.40 cards (`cards.md`). Cited in the cards as J§n and Jn. Primary sources are TypeSafe's own docs and posts, plus this repository. No request went to the Jev API and none went to a model API. Jev's behaviour is therefore not measured in this note. Anything only the vendor claims says **vendor claim**, and anything this note could not confirm says **unverified**.
+
+Creator decisions from 2026-09-26 are applied throughout:
+
+- **C1.** Once the plugin exists, the built-in `typesafe` section and `jev.rs` leave the core. An old config still loads, with a notice and a pointer to `cox plugin install` (D14).
+- **C2.** At `route`, a plugin may only downgrade the tier.
+- **C3.** In v1, plugins install only from a local folder.
+- **C4.** SDK publishing waits for a stable ABI. The Jev plugin builds from `plugins/` in the repository.
+
+#### J1. Sources
+
+| # | Fact | Source (primary) | Checked |
+|---|---|---|---|
+| J1 | The endpoint is `POST https://api.typesafe.ai/v1/systemone` with `Authorization: Bearer <key>` and `Content-Type: application/json`. The request has `state`, `model` and `questions` (a map keyed by the caller's ids). The response has `model`, `answers` (the same keys) and `usage {input_tokens, output_tokens}`. | https://docs.typesafe.ai/api.md | 2026-09-26 |
+| J2 | Question types: `noul` returns a P(yes) between 0 and 1, with an optional `criteria` that defines true and false. `choice` has at most 255 options and returns `choice`, `probabilities` and `confidence`. `score` takes an ordered rubric of 2 to 10 levels and returns `score`, `legend`, `probabilities` and `confidence`. Every type has `type` and `instructions`, which may be a string, an object or an array. | https://docs.typesafe.ai/api.md; https://docs.typesafe.ai/primitives/choice.md | 2026-09-26 |
+| J3 | Choice `criteria` is a map from option to description. For options that are easy to confuse, the description can be an object with `what`, `not_for` and `examples`. The docs recommend an `other` or "none of the above" option when the list may not be complete. | https://docs.typesafe.ai/primitives/choice.md | 2026-09-26 |
+| J4 | Errors: 401 means an invalid key, 422 an invalid body, and 429 or 529 a rate limit or overload, "use exponential backoff". | https://docs.typesafe.ai/api.md | 2026-09-26 |
+| J5 | Models: `jev-1.13.0` is the current stable model. The aliases `jev-latest` and `jev-preview` both point to it. | https://docs.typesafe.ai/models.md | 2026-09-26 |
+| J6 | Limits: "64k tokens per request; 32k tokens for `state` plus the longest question". Input is text only. | https://docs.typesafe.ai/models.md | 2026-09-26 |
+| J7 | Price: input $0.042/MTok, output free. | https://docs.typesafe.ai/models.md; https://typesafe.ai/blog/introducing-system-one-models-and-jev | 2026-09-26 |
+| J8 | Rate limits: "250,000 tokens per second / 1,200 requests per minute", and they "are adjusting dynamically". | https://docs.typesafe.ai/models.md | 2026-09-26 |
+| J9 | Latency: "End-to-end response time is 70ms-500ms" (**vendor claim**; cox has not measured it, and the network path from the user is not included). The post's own date reads 2026-09-15 in the body and 2026-09-25 in the header (**unverified** which is right). | https://typesafe.ai/blog/introducing-system-one-models-and-jev | 2026-09-26 |
+| J10 | Batching: 13 questions (8 Noul, 2 Choice, 3 Score) over a document of about 54 000 characters cost $0.000497 and took 0.27 s as one call. As 13 separate calls they cost $0.006090 and took 2.71 s (the sum of sequential calls). Model `jev-1.12`, 5 repeats. | https://docs.typesafe.ai/cookbooks/parallel_questions.md | 2026-09-26 |
+| J11 | Confidence is one number in [0, 1] derived from the probability distribution. **Noul answers carry no confidence.** Thresholds should scale with the stakes. The examples use a floor of 0.5 or 0.6 and require more than 0.85 or 0.9 for high-stakes automatic actions. Confidence-gated routing: below the floor, fall back to "a different system". | https://docs.typesafe.ai/confidence.md; https://docs.typesafe.ai/patterns/confidence-routing.md | 2026-09-26 |
+| J12 | Documented weaknesses of Jev 1.13: literal reading; poor counting, arithmetic and date comparison; "Accuracy falls as the state grows with content unrelated to the decision"; it "does not treat [adversarial content] as hostile by default" and can be steered by injected instructions; it is not built to generate text. | https://docs.typesafe.ai/model-jaggedness/jev-1.13.md | 2026-09-26 |
+| J13 | Jev inside coding agents: "Jev is not a drop-in replacement" for the agent's LLM, and "There is no `model: 'jev-latest'` setting". Jev is meant as a decision call inside the agent's code (routing, scoring, verification). | https://docs.typesafe.ai/introduction/coding-agents.md | 2026-09-26 |
+| J14 | Skill suggestion: one Choice over 182 skills plus Noul gates, then a rerank of the top three. Over 488 requests with Claude Haiku 4.5, wrong loads fell from 16.8 % to 7.3 % and needless loads from 9.8 % to 4.0 %. Gate and fit thresholds are 0.30. The suggestion fixed 37 requests and broke 7. | https://docs.typesafe.ai/cookbooks/skill_suggestion.md | 2026-09-26 |
+| J15 | Guardrails: a Noul per hazard plus a Score for severity. Review threshold 0.35; action threshold 0.70 (strict) or 0.85 (permissive); severity block at 2.0. The recipe publishes no measured precision or recall. | https://docs.typesafe.ai/cookbooks/llm_guardrails.md | 2026-09-26 |
+| J16 | `state` may be a string, a JSON object or an array. An object is recommended so that each part has a name. Keep content in `state` and judgments in the questions. | https://docs.typesafe.ai/concepts/state.md | 2026-09-26 |
+| J17 | Data: TypeSafe says it does not train on user data. Zero data retention is offered to enterprise customers only, through sales. The docs index names no processing location and no SLA (**unverified** in the DPA itself). | https://docs.typesafe.ai/legal.md | 2026-09-26 |
+| J18 | The cox code as of `22a1138` plus the working tree: `crates/cox-provider/src/jev.rs` (558 lines); `[providers.typesafe]` in `crates/cox-protocol/default.toml:375-381` with `context_window=128000`; `JevProviderConfig` at `config.rs:520-552`; the router arms at `router.rs:131,155`; `ProviderId::Jev` at `types.rs:997`; `provider_name` at `cox-core/src/session.rs:1457`; the session arm at `crates/cox/src/session.rs:900`; the doctor arm at `doctor.rs:215`; the catalog and price special cases at `cox-models/src/catalog.rs:184` and `price.rs:173-179`; the price row at `prices.toml:197` ($0.042 input). No code path calls Jev (plan.md P21: "no call sites yet"). | repository | 2026-09-26 |
+| J19 | Prices in cox's catalog: `claude-sonnet-5` costs $2 input, $10 output, $2.50 cache write and $0.20 cache read. `claude-haiku-4-5` costs $1, $5, $1.25 and $0.10. | `crates/cox-provider/prices.toml:26-50` (source platform.claude.com/docs/pricing, verified_on 2026-09-02) | 2026-09-26 |
+| J20 | A model switch today rewrites history: `Session` runs `inner.history = strip_thinking(&inner.history)` (`cox-core/src/session.rs:672`). With `sandbox` confining it, `Exec` is auto-allowed (`permission/mod.rs:187`), and so is `Write` under `Auto` (`:186`). | repository | 2026-09-26 |
+
+#### J2. What Jev is, as cox uses it
+
+Jev is a "System One" decision model. A request carries one `state` (a string or a JSON object) and a map of typed questions. Choice picks from ≤255 described options. Score rates on an ordered rubric of 2–10 levels. Noul gives a yes-probability. The response answers every question in the same call, with a probability for each option or level, and a `confidence` for Choice and Score. Jev generates no text (J1–J3, J12, J13). Questions in one request are independent, so all the questions cox has at one moment belong in one call (J10).
+
+For cox this means three things:
+
+1. **Jev is an `Advisor`, not a tier.** J13 says so outright, and it matches the code: a tier routed to `typesafe` today would get a JSON decision where it expects a title, a summary or a turn. The provider form exists only as the transport that carries the ledger row, the budget gate and the key. No tier should name it.
+2. **State must be small and focused.** Accuracy falls with irrelevant state (J12), and the hard cap is 32k tokens of state plus the longest question (J6). Each decision point builds its own state object of about 0.3–2k tokens. The transcript is never sent.
+3. **Jev can be steered by injection (J12).** The state includes model- and tool-written text: commands, file names, tool output. Only a monotone rule makes an answer safe to use. `risk` may only raise, and `route` may only lower, which spends less and never loosens a permission. Jev can never be the reason something becomes *allowed*.
+
+**Where the current code disagrees with the docs** (fix it in the plugin, not in `jev.rs`, which is going away):
+
+- **Context window.** `context_window = 128000` (`default.toml:381`) contradicts the 64k-per-request limit (J6). The plugin's `[[models]]` row uses 64 000, and the state builders cap state at 32k tokens minus the question.
+- **Noul confidence.** `parse_response` sets a Noul's confidence to `noul` itself (`jev.rs:162`). The API returns no Noul confidence (J11), and P(yes) = 0.05 is a *confident no*, not a low-confidence answer. The plugin uses `|2p − 1|` as the Noul certainty and puts its thresholds on `p` directly.
+- **The request body.** `build_body` collapses a whole `Request` into `state` with one fixed Noul (`jev.rs:48-86`). The plugin builds the questions for each point itself. The lossy mapping stays only as the fallback for a tier that names the provider.
+- **The model id.** Evals pin `jev-1.13.0`, so a result names the model that produced it. Users keep `jev-latest` (J5).
+
+#### J3. Limits that shape the design
+
+| Limit | Value | Consequence |
+|---|---|---|
+| Latency | 70–500 ms end to end (J9, vendor claim) | This is above the design's default `risk` budget of 200 ms at the upper end. Ask only when the answer could change the outcome (J6.1), batch all calls of one tool batch into one request, and measure the late-fallback rate (E1). |
+| Tokens per request | 64k, of which 32k for state plus the longest question (J6) | A per-point state builder with a hard cap. |
+| Options per Choice | ≤255 (J2) | `rank` over `tool_search` candidates fits (BM25 top 20). |
+| Rate | 1 200 rpm, 250k tok/s (J8) | Not binding for one user. The host's retry reuses the 429/529 backoff (J4). |
+| Price | $0.042/MTok input, output free (J7) | Negligible next to a coding turn (J7 below). Latency, not money, is the cost. |
+| Data | No training on user data; zero retention only for enterprise (J17) | Every point is opt-in (`[plugins.decide]`). The grant dialog and the user guide list, for each point, exactly what leaves the machine. State is built from the scrubbed event stream, the same redaction as the rollout (PL§5). |
+| Early access | The wire may change (v0.2-jev falsifier 3) | This is the reason the wire belongs in a plugin: when it changes, the fix is a plugin update, not a cox release. |
+
+#### J4. ABI gaps found (PL§12 falsifier 3 applies)
+
+Writing the Jev plugin against the design as it stands exposes four gaps. All four are fixed before `api = 1` freezes (card T33.40.1).
+
+1. **Deadlock or ledger bypass inside `cox_decide`.** The plugin must reach its own provider while answering a question. There are two ways today, and both are wrong:
+   - `cox_model_call` inside `cox_decide` routes by *tier*, so it cannot reach the `typesafe` section. If it could, the host would dispatch to the same plugin's `cox_provider_stream`. That plugin's only worker is blocked in `cox_decide` (`call` is `&mut self`, P8), so the call deadlocks.
+   - `cox_http` to the provider's `base_url` host is allowed "all but render" (PL§4), so the guest could POST to Jev directly with the host-injected key. That request gets no budget gate and no `usage` row, which breaks invariant 8.
+   
+   **Fix, a two-phase decide.** `cox_decide(Question) -> DecideOut::{ Advice(Option<Advice>) | Call(ModelCall) }`. The host runs the `ModelCall` against the plugin's own provider section, through budget gate → `PluginProvider` → `Priced` → one `usage` row with `job = plugin:<id>`. The worker is free by then, so there is no re-entry. The host then calls `cox_decide_resume(DecideResume { question, events }) -> Option<Advice>`. `ModelCall` gains `target: Tier(t) | OwnProvider { name, model }`, and `OwnProvider` may name only a `[[provider]]` of the same plugin. The whole exchange shares the point's latency budget.
+2. **`cox_http` to a provider host outside `cox_provider_stream`.** Allow it only inside `cox_provider_stream`, and return `NotInThisContext` everywhere else. With that rule, raw HTTP to a paid endpoint never escapes the ledger.
+3. **Batching.** Give `Question` `items: Vec<…>`, so that one `risk` question covers every call in a tool batch. That is one Jev request instead of N (J10: 12× cheaper and 10× faster for 13 questions).
+4. **Registry and ids for plugin ABI providers.**
+   - `Router::pick` and `backend_for_with` know only the fixed names plus `providers.custom` (`router.rs:125-143`). T33.18 must register ABI sections by name so a tier (or a legacy `typesafe` tier) resolves to them.
+   - `ProviderId` is a closed enum (`types.rs:990`). T33.18 must choose the ledger id for plugin providers. The proposal is a `ProviderId::Plugin` bucket with the section name as the ledger's provider string, as the `Local` bucket works for compatible providers. `provider_name` (`session.rs:1457`) then returns the section name.
+   - The e2e harness sets `COX_PROVIDER=scripted`, which short-circuits provider construction. It must still build plugin providers, so the main turns are scripted while Jev is served by wiremock.
+
+One more requirement lands on T33.20. A turn routed down must strip thinking blocks **in its own `Request` only**. It must never rewrite `inner.history` or emit `ModelSwitched` (J20). Otherwise the next `code` turn loses every cache read after the first thinking block.
+
+#### J5. Use cases, ranked
+
+Legend:
+
+- **Point** is the decision point from PL§4 or the hook or event it hangs on.
+- **Rule** is the monotone rule the core enforces.
+- Every use case fails open (D14): with no key, a network error, a timeout past the point budget, a parse error, low confidence or three strikes, the built-in behaviour runs unchanged and one `Event::Advised { applied: false }` or `Notice(Warn)` records why.
+
+| Rank | Use case | Point | Verdict |
+|---|---|---|---|
+| 1 | Bash/tool risk escalation | `risk` | **Do first.** It can only make cox safer, it can be measured for pennies (E1), and it involves no D5 question. |
+| 2 | Tier downgrade of a main turn | `route` | **Do second, measured.** It is the only money lever, but at default prices the saving is uncertain (J5.2). It stays off by default until E2 shows a saving at no loss in pass rate. |
+| 3 | Deferred-tool ranking | `rank` (`tool_search`) | **Later.** It can be measured only with a large MCP tool set, and cox has no such eval corpus. It is a card after E1 and E2. |
+| 4 | Earlier compaction at a task boundary | `compact` | **Later.** The benefit (context-token-turns, `stats.rs`) is small with cache reads at 0.1× input, and it is hard to separate from noise. It is an `ideas.md` line. |
+| 5 | Memory salience filter | `salience` | **Later.** It needs T33.21's optional wiring first. The rule "may drop a candidate, never add one" is sound. |
+| — | Tool-output truncation choice (which lines survive) | none (new point) | **Drop for now.** It changes model-visible text from untrusted input that Jev can be steered by (J12), and it needs a new decision point. It is an idea. |
+| — | "Looks safe" approve hint | `approve_hint` | **Drop.** An injected command can make Jev say "safe", and the badge would then nudge the user to approve. The only safe shape is warning-only ("Jev: likely irreversible"), which `risk` already covers by raising the prompt. The proposal is to remove `approve_hint` from PL§4, or make it warning-only (question 3). |
+| — | Skill ranking | `rank` (skills) | **Drop from v1.** The skills index sits in the cache-stable prefix (`context.rs:82-131`), so reordering it per turn breaks invariant 1. Adding a hint message is not "reorder or filter". J14's gains are real, but they need a hint channel after the last breakpoint, which is a design change. |
+| — | Subagent dispatch | none | **Drop.** The model already decides this, and `explore` already runs on `cheap`. There is no fixed-option judgment for cox to own. |
+| — | Stop/continue ("claimed done without running tests?") | `Stop` hook | **Drop from v1.** Acting on it means injecting text into the turn, which no monotone rule allows. It stays an idea for a hook-based verifier. |
+| — | Commit message or plan triage | `Job::Commit`/`Plan` | **Drop.** Commit messages are text generation, which Jev does not do (J12). Plan triage would route *up* to `think`, which D5 and C2 forbid. At most it could be a display-only hint, which is not worth a call. |
+
+##### J5.1 `risk`: raise the risk of a call the engine would auto-allow
+
+- **Hangs on.** `gate` (`cox-core/src/turn.rs`), after `PreToolUse` and before `Engine::decide`. That is T33.21's `risk` point.
+- **Asked only when it matters.** The core asks only if raising the call to `Destructive` would change the engine's outcome from `Allow` to `Ask` or `Deny`. That covers `Exec` under a confining sandbox, `Write` under `Auto`, and rule matches that allow by risk (J20). ReadOnly calls, calls already `Ask`, and `Bypass` mode never ask. This filter belongs in T33.21 (a plan amendment to that card). It removes most calls, so latency hits only the calls whose outcome is actually in play.
+- **Question** (one request for the whole tool batch, J4.3). State is an object with the fields below. The tool output is never sent.
+  - `task`: the last user message, trimmed to 1k tokens;
+  - `cwd`, the workspace roots and the sandbox mode;
+  - per call: `tool`, `subject`, and `input` (for bash, the command; for edits, the path plus a diff summary with line counts);
+  - `classifier_risk`.
+  
+  Questions per call:
+  - `severity`: a Score over 4 levels whose descriptions mirror `Risk` (read-only / writes inside the workspace / runs a process / destroys data or reaches beyond the subject);
+  - `irreversible`: a Noul ("cannot be undone by git or the checkpoint");
+  - `external_effect`: a Noul ("pushes, publishes, deploys, sends, or deletes outside the workspace");
+  - `exfiltration`: a Noul ("sends workspace content or credentials to a network destination").
+- **What cox does.** The risk rises to `Destructive` when any of these holds:
+  - `irreversible ≥ 0.7`;
+  - `external_effect ≥ 0.7`;
+  - `exfiltration ≥ 0.5`;
+  - `severity ≥ 2.5` with confidence ≥ `min_confidence` (default 0.6, J11).
+  
+  The thresholds live in the plugin's config table (`[plugins.jev.risk]`), and the core clamps the result to `max(builtin, advised)`. The engine then asks in the TUI and denies in headless mode. `Event::Advised { point: risk, applied: true }` carries the probabilities.
+- **Benefit.** A command the classifier misses stops auto-running: `git push --force`, `curl … | sh` when the network is allowed, `terraform apply`, `kubectl delete`, `npm publish`, `aws s3 rm`, `DROP TABLE` through `psql -c`.
+- **Measure (E1, card T33.40.7).**
+  - A labelled corpus of about 300 commands in two sets: must-ask, and benign.
+  - The main provider is scripted, so it costs $0. Jev is live.
+  - Metrics:
+    - the recall gain on must-ask commands that the baseline auto-allows;
+    - the false-raise rate on benign commands;
+    - the late-fallback rate at a 200 ms budget;
+    - p50 and p95 latency;
+    - $ from the ledger (`job = plugin:jev`).
+  - Budget cap: $0.10.
+- **Cost per session.** About 20–60 asked calls per 100 tool calls, batched to about 10–30 requests of 0.6–1.5k tokens each. That is ≤ 45k tokens, or **≤ $0.002**. The added wall time is 1–15 s at 70–500 ms per request (J9, vendor claim).
+- **Failure mode.** On a late or missing answer the built-in classifier's risk stands. False positives cost the user an extra prompt. The falsifier: if the false-raise rate exceeds 10 %, or more than 20 % of answers arrive late at p95, `risk` is not recommended by default, and the guide says so.
+
+##### J5.2 `route`: downgrade a main turn from `code` to `cheap` (C2)
+
+- **Hangs on.** `Router::pick` for `Job::Main` only, once per `UserTurn`. The choice sticks for every provider call in that turn, so a tool loop never flips back and forth. It is never asked for `Job::Plan` (the user explicitly asked for `think`), for subagents, or after `/model` pinned a tier.
+- **What the core offers.** Only tiers at or below the static pick (T33.20), and never `think` (D5, C2). A new **cache-aware filter** (card T33.40.8) offers `cheap` only when the predicted cost of the turn on `cheap` is at most `(1 − margin)` of its predicted cost on `code`. The prediction uses catalog prices and the last request's prefix size.
+
+  The prices make this necessary (J19). Haiku 4.5 is only 2× cheaper than Sonnet 5, and a switch forfeits the code tier's cache reads. For one turn with prefix P, k provider calls and output O (thinking included):
+
+  ```text
+  code  ≈ 0.20·P·k            + 10·O_code
+  cheap ≈ 1.25·P + 0.10·P·(k−1) + 5·O_cheap          ($/MTok)
+  ```
+
+  At P = 30k, k = 5 and O = 3k on both tiers, `cheap` costs $0.0645 and `code` $0.060, so the downgrade loses money. It wins early in a session (small P), or when the `code` turn's adaptive thinking multiplies O_code. Only a measurement settles it (E2), and the filter keeps a downgrade from making things worse.
+- **Question.**
+  - State:
+    - `prompt`: the user message, ≤ 2k tokens;
+    - `todo`: the todo list;
+    - `last_turn`: tool names, errors, and whether it ended in an error;
+    - `files_touched_count`.
+  - Questions:
+    - `tier`: a Choice over the offered tiers. The descriptions come from the plugin: `cheap` is "mechanical: read, print, list, rename, run a named command, answer from context"; `code` is "reasoning over code: multi-file edits, debugging, design". An explicit `other` → `code`;
+    - `wants_depth`: a Noul, "the user asks for careful or deep work".
+- **What cox does.** It applies `cheap` only when:
+  - `choice == cheap`;
+  - `confidence ≥ 0.8` (a high-stakes action, J11);
+  - `wants_depth < 0.3`;
+  - the last turn did not end in an error.
+  
+  Everything else uses the static pick. `Event::Advised { point: route }` records the choice and the probabilities.
+- **Measure (E2, card T33.40.10).** The `evals/tasks` suite plus four tasks that need the code tier, run once with and once without the plugin, on real Anthropic with live Jev. Metrics:
+  - pass rate;
+  - $ per task from the ledger, grouped by (tier, job);
+  - the downgrade rate;
+  - Jev latency.
+  
+  Caps: `--budget` per run, $3 in total.
+- **Cost per session.** One request of about 1.5k tokens per user turn: 20 turns is 30k tokens, or **$0.0013**, plus 70–500 ms per user turn (not per tool call).
+- **Failure mode.** On silence or a late answer, the static pick runs. The worst case of a wrong downgrade is a weaker turn. The user sees `↓cheap` in the status and can `/model code`. That override stops the point for the session.
+
+##### J5.3 Later: `rank`, `compact`, `salience`
+
+- **`rank`.** A Choice over BM25's top 20 in `tool_search`, with an `other` option (J3), may reorder or filter the list. Measure it by hit@1 against a labelled query set over a large MCP tool list. About 3k tokens per search.
+- **`compact`.** A Noul "the current task is finished" after `TurnDone`, asked when the context is ≥ 40 % of the window. It may compact earlier than the threshold, never later. Measure it by `context_token_turns` and $ per session.
+- **`salience`.** A Score per extracted memory item, which may drop an item and never add one.
+
+All three wait for the E1/E2 results. A plugin update can add them with no cox release.
+
+#### J6. Cost per session (all points on)
+
+| Point | Requests | Tokens | $ |
+|---|---|---|---|
+| risk | 10–30 | ≤ 45k | ≤ 0.0019 |
+| route | 20 | 30k | 0.0013 |
+| total | ≤ 50 | ≤ 75k | **≤ $0.004** |
+
+Jev's price (J7) is under 0.1 % of a typical coding session ($0.5–5 at the J19 prices), so the budget gate never blocks it in practice. It still runs, because invariant 8 applies to every request. The real cost is wall time: every request is on the critical path of a turn or a tool call.
+
+#### J7. What moves, what stays, migration
+
+**Into the plugin** (`plugins/jev/`, guest crate `cox-plugin-jev`, built from the repository workspace per C4):
+
+- **The System One wire.** Request types for the three question kinds and a response parser. The Noul-confidence fix and the 64k/32k limits come with them (J2). The status codes from J4 map to the ABI's error kinds, so the host's retry treats 429 and 529 as transient.
+- **`cox_provider_stream`.** A request marked as a decision call (`Job::Plugin("jev")` plus a JSON body in its one user message) is sent verbatim. A request from a tier that names the provider gets the old lossy mapping and a `Notice(Warn)` once: "typesafe is a decision model; no tier should route to it".
+- **The manifest.**
+
+  ```toml
+  [[provider]]
+  name = "typesafe"
+  api = "plugin"
+  base_url = "https://api.typesafe.ai"
+  api_key_env = "TYPESAFE_API_KEY"
+  auth = "bearer"
+  ```
+
+  The name is kept on purpose. The env var, the keyring entry `cox/typesafe`, the ledger's provider string and any `tiers.*.provider = "typesafe"` keep working without edits. PL§2's example says `name = "jev"` and should change.
+- **`[[models]]`.** `jev-1.13.0` and `jev-latest`, with `context_window = 64000` and price `{input = 0.042, output = 0.0}`. After removal (C1) these are the only rows, so the price comes from the plugin layer, and `cox doctor` shows `source = plugin:jev` (T33.16, T33.39).
+- **`cox_decide` and `cox_decide_resume`.** The questions, state builders and thresholds for `risk` and `route`, in one reviewable module per point, as v0.2-jev's review guidance asks.
+- **Capabilities.** `decide = ["risk", "route"]`, `context = true`, and nothing else: no `net` (the provider section covers the host), no `fs`, no `kv`, no tools. The call-out to its own provider is implied by `decide` plus `[[provider]]`, and the grant dialog shows it as "sends decision questions to api.typesafe.ai; costs appear as plugin:jev".
+
+**Stays in the host.** It all stays behind the four guards, and all of it is generic:
+
+- `resolve_key` and the keyring;
+- auth-header injection;
+- retry and backoff around `PluginProvider` (`retry::Policy` from the section's `max_retries`);
+- the budget gate, `Priced` and the `usage` row;
+- catalog layering;
+- the monotone rules and `Event::Advised`;
+- the cache-aware route filter;
+- the "ask only when it could change the outcome" filter for `risk`;
+- `Engine`.
+
+**Removed from the core after parity (C1).** The removal cards T33.40.12–T33.40.16 take out:
+
+- `jev.rs` and its `mod`;
+- `JevProviderConfig` (it becomes a tombstone, below);
+- the `typesafe` arms in `router.rs`, `session.rs` and `doctor.rs`;
+- `ProviderId::Jev`, which never appears in a serialized event or rollout (it is only mapped to the string `"typesafe"`), so removing it breaks no stored data;
+- the `default.toml` section;
+- the price row and the catalog and price special cases;
+- the vendor script's `typesafe` exception;
+- T32.15 (`cox-provider-jev`), which becomes moot.
+
+**Back-compat for existing configs (the design's open question 8):**
+
+| Old config | During parity (T33.40.5) | After removal (T33.40.12–14) |
+|---|---|---|
+| `[providers.typesafe]` table | With the plugin loaded, its knobs (`base_url`, `api_key_env`, `timeout_s`, `max_retries`, `model`) configure the plugin's `typesafe` section. The user wins, as for declarative sections. Without the plugin, the built-in client runs as today. | It still parses. It becomes a **tombstone** type `LegacyTypesafe` with the same keys (`deny_unknown_fields` kept) and feeds the plugin section's knobs. Without the plugin: one `Notice(Warn)` "Jev moved to a plugin: build `plugins/jev` and run `cox plugin install <dir>`", plus a `cox doctor` row. **Why a named tombstone:** removing the field would let the table fall into the `#[serde(flatten)] custom` map as a `CompatibleProviderConfig` with the default `api = "chat"`. That would silently POST chat bodies to `api.typesafe.ai`. |
+| `models = [...]` in that table | Filled into the catalog as today | Accepted by the tombstone. Its rows still go through the config catalog layer (config beats plugin). |
+| `tiers.<t>.provider = "typesafe"` | Resolves to the plugin section when loaded, else to the built-in | Resolves to the plugin section when it is loaded. Otherwise **fail open** (D14): `Notice(Warn)` with the install pointer, and that tier uses its `default.toml` provider and model for the session. |
+| A tier model `jev-*` under another provider | unchanged | unchanged. The router does not look at the model id. |
+| `[plugins.decide] risk = "jev"` with the plugin absent | Point off, plus `Notice(Warn)` | same |
+| `TYPESAFE_API_KEY` and keyring `cox/typesafe` | used by the host for the section `typesafe` | same, because the name is unchanged |
+| Ledger rows with provider `"typesafe"` | unchanged | unchanged. New rows carry the same provider string and `job = plugin:jev`. |
+
+#### J8. How tests stay offline
+
+There is no key and no network, and the keychain is never touched (A49, A51).
+
+- **Guest unit tests (host target).** The wire, the state builders, the question sets, the thresholds and the Noul certainty are pure Rust in `plugins/jev/src/*.rs`. extism-pdk glue sits behind `cfg(target_arch = "wasm32")`. `cargo test --manifest-path plugins/Cargo.toml -p cox-plugin-jev` runs in the `plugins` CI job. The fixtures are the documented response shapes (J1, J2, and the ones `jev.rs`'s tests already use), inline as in `jev.rs`.
+- **Host e2e (`tests/plugins_jev.rs`).**
+  - `crates/cox-plugin-fixtures/build.rs` builds the plugin, as T33.28 builds the example.
+  - The real binary runs against a scratch `COX_HOME`. Main turns come from `COX_PROVIDER=scripted`.
+  - Jev is a wiremock server on 127.0.0.1 whose `/v1/systemone` returns fixture bodies, reached through `[providers.typesafe] base_url` in the scratch config.
+  - The key is an env var, `TYPESAFE_API_KEY=test-key`, so `resolve_key` never reaches the keyring. Cargo also sets `COX_KEYRING=off`.
+  - The asserts cover:
+    - the bearer header seen by wiremock and absent from the guest (the T33.18 pattern);
+    - one `usage` row per request with `job = plugin:jev`;
+    - the budget-gate block;
+    - `Advised` in the rollout;
+    - 401 → one notice and fail-open;
+    - 529 → the retry count;
+    - a delay past the budget → fallback;
+    - three strikes → the export disabled.
+- **Replay.** `Replay` cassettes are keyed by the `Request` hash (`replay.rs:57`). A call-out is an ordinary `Request`, so a recorded cassette can back it later. That needs a key to record (optional card T33.40.17, run only by the creator). Until then, wiremock fixtures are the offline source.
+- **Evals** (`evals/`, per the eval-tooling rule). E1 and E2 are `cox_evals` modules with pytest tests that run offline: corpus loading, metric maths, budget stop and the command line. Only the live run needs `TYPESAFE_API_KEY` (and `ANTHROPIC_API_KEY` for E2), set by the creator.
+
 ### 4.4 Routing evidence (D5)
 Copilot's auto model selection is praised because it is explicit, priced (10 % discount) and switchable; Claude Code's Haiku delegation is complained about because it is silent. aider's `--weak-model` (commits, summaries) and OpenCode's small model for titles are the same pattern. Jobs that tolerate a small model, by consensus of the surveyed tools: titles, summaries, commit messages, compaction, search/explore, tool-result summarisation, classification. Effect-size numbers from the survey ("4.2× savings", "Codex 3–4× fewer tokens than Claude Code") are unsourced and dropped. [med]
 
