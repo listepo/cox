@@ -2529,3 +2529,215 @@ Check:
 - Two `terminal.rs` unit tests.
 - In the worktree: nextest 1189 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1209 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.41 Optional: `cox plugin link` (dev loop)
+
+Depends: T33.7 · Size: ~110 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/grant.rs`
+Goal: use a built plugin in place without installing it. A linked plugin asks again only when its capabilities widen, never on byte changes. It is marked `dev` in `list`, `doctor` and the TUI grant dialog. `cox plugin build` and `cox plugin dev` are not planned (PL§13).
+Check: `linked_plugin_rebuild_does_not_reask`, `linked_plugin_widening_reasks`, `linked_plugin_marked_dev_everywhere`.
+Status: done 2026-09-26
+Result: `cox plugin link <dir> [--yes]` points a user plugin at a working directory, so the author rebuilds in place without reinstalling.
+- **Pointer.** `install::link` writes the `link` pointer, reusing `write_pointer`/`read_pointer`. `discover::resolve_user_dir` prefers `link` over `current`, and `Plugin.dev` marks a linked plugin.
+- **Grant key.** `Plugin::grant_digest()` is the one grant key every call site uses (`enable`, `disable`, `verdict_for`, `link`, the TUI grant requests): `link_digest()` for a dev plugin, a fixed path-independent constant, and the content digest otherwise.
+  - Why a fixed key: `PluginStore::grant_get` matches `(plugin_id, scope, digest)` exactly, so a rebuild-volatile digest would never find the row again.
+- **Re-asking.** `grant::check` accepts a digest mismatch only for a grant whose `source.kind == "link"`. So a rebuild does not re-ask, and widening the capabilities still does.
+- `cox plugin update` refuses a linked plugin with "linked plugin: rebuild in place".
+- `list` (text and JSON) and the TUI grant dialog mark the plugin "(dev)".
+Deviations:
+- The grant storage key is the fixed `link_digest()`, not the live digest (see above). `check` still receives the live digest for display.
+Not done:
+- `cox doctor` has no `dev` marker yet; T33.39 can read `discover::Plugin.dev` directly.
+- The TUI grant path (`GrantDecision` → `write_plugin_grant`) still writes `source = {}` for every grant, which predates this card. A TUI-approved grant for a linked plugin is stored under the right key, but it re-asks after the next rebuild until the CLI `link`/`enable` rewrites it with `source.kind = "link"`. The follow-up is to thread `source` through `GrantDecision`.
+Check:
+- `linked_plugin_rebuild_does_not_reask`, `linked_plugin_widening_reasks`, `non_linked_plugin_still_reasks_on_changed_bytes`
+- `link_pointer_wins_over_current_and_pins_the_grant_digest`
+- `link_writes_a_readable_pointer_and_repointing_overwrites_it`
+- `plugin_grant_dialog_marks_a_linked_plugin_dev`
+- e2e with the real binary in a scratch `COX_HOME`: `link_grants_in_place_survives_rebuild_and_reasks_on_widening`, `update_on_a_linked_plugin_names_the_dev_loop`
+- In the worktree: nextest 1118 passed, 3 skipped; fmt, clippy and the slim build clean.
+- Rebased onto T33.44/T35.8. Two call sites the merge had left keyed by the live content digest now use `grant_digest()`: `session::load_plugins` and `doctor::check_external_agents`. Without the fix, a linked plugin re-asked or was skipped on every session open and doctor run. `update`/`rollback` refuse a linked plugin before any grant lookup. `remove` deletes the whole directory, pointer included (`remove_also_clears_the_link_pointer`).
+- In the worktree after the rebase: nextest 1173 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.40.8 `route` in the core: cache-aware downgrade offer, turn-local thinking strip
+
+Depends: T33.20 · Size: ~170 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`
+Goal: J§5.2, core side (C2).
+- The `route` point is offered only for `Job::Main`, once per `UserTurn`, sticky for that turn's calls.
+- It is never offered for `Plan`, for subagents, or after `/model`.
+- `cheap` is offered only when its predicted turn cost is ≤ `(1 − route_margin)` × the `code` cost. The prediction uses catalog prices, the last request's prefix size and the cache-read vs cache-write formula in J§5.2. `route_margin` goes in `[plugins.decide]` (default 0.15).
+- A downgraded turn strips thinking in its own `Request` only. `inner.history` is unchanged, and there is no `ModelSwitched`.
+Check:
+- `downgrade_not_offered_when_cache_loss_exceeds_saving`;
+- `downgrade_offered_on_first_turn`;
+- `routed_down_turn_keeps_history_thinking`: the next `code` request's prefix is byte-identical, and invariant 1 stays green;
+- `route_never_offered_for_plan_job`;
+- `model_override_disables_route_point`;
+- `route_advice_never_routes_up` still green;
+- `docs/config.md` drift test green.
+Status: done 2026-09-26
+Result: the `route` decision point is hygienic in the core.
+- **Skipped** (static pick kept, advisor not asked) by `Session::route_turn` when:
+  - the job is not `Job::Main` (subagents, Plan);
+  - `/think` or `--deep` is set (`confirm_think`);
+  - the static tier is `think`;
+  - `/model` set `overrides.main_tier`.
+- **Cache-aware filter.** `router::cheap_pays(cheap, code, prefix, margin)` is the J5.2 formula, with k = 5 turns and O = 3000 output tokens from its worked example:
+  - code = cache_read·P·k + out·O
+  - cheap = cache_write·P + cache_read·P·(k−1) + out·O
+  - `cheap` is offered only when the saving beats `margin`. `P` is `last_context_tokens`; prices come from `PriceTable::embedded()` (a static `OnceLock`, the same table the ledger's `Priced` wrapper uses).
+  - When only the static tier would remain, nothing is asked.
+- **Knob.** `[plugins.decide] route_margin` (default 0.15, clamped to [0, 1]; NaN never offers cheap). Break-even at default prices is about 13k prefix tokens. `docs/config.jsonschema` and `docs/config.md` are regenerated.
+- **Thinking strip.** `context::strip_thinking_before(messages, turn_start)` reuses `router::strip_thinking` on the request copy before the current turn and keeps the running turn's own blocks, which a thinking tool loop needs. `inner.history` is never rewritten and no `ModelSwitched` is emitted.
+Deviations:
+- `cox-core` now depends on the workspace crate `cox-models`. `deps.rs` already allowed this; no external crate was added.
+- About 90 lines of non-test code (~300 in total with tests and regenerated docs) against ~170, across 8 source files. `advise.rs` did not exist when the card was written.
+- A tier whose model has no catalog price (for example a local cheap tier) is never offered, because no saving can be shown.
+- User price files are not considered; this matches what `Priced` uses today.
+- Only `/model` (`main_tier`) disables the point; a `--tier <tier>=<model>` override alone leaves it on.
+Check:
+- `downgrade_not_offered_when_cache_loss_exceeds_saving`
+- `downgrade_offered_on_first_turn`
+- `routed_down_turn_keeps_history_thinking`
+- `route_never_offered_for_plan_job`
+- `model_override_disables_route_point`
+- `cheap_pays_follows_the_j5_2_cache_formula`
+- `route_advice_never_routes_up` (unchanged); config drift tests; invariant-1 prefix tests
+- The real binary with a scratch `COX_HOME`: `cox config get plugins.decide.route_margin` prints 0.15, and `cox doctor` runs.
+- In the worktree: nextest 1193 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.21 Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
+
+Depends: T33.20 · Size: ~190 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-core/src/compact.rs`, `crates/cox-tools/src/tool_search.rs`
+Goal: the monotone rules from PL§4:
+- risk only raises, and (amended 2026-09-26, R§4.3.6 J§5.1) the core asks only when raising the call to `Destructive` would change the engine's outcome from `Allow` to `Ask` or `Deny` — this filter belongs here so every `risk`-capable plugin gets it, not only Jev;
+- `approve_hint` is warning-only (amended 2026-09-26, `docs/design/plugins.md` §14 decision 10): a plugin may add a caution note, never say a call "looks safe" — monotone the same direction as `risk`, never used to grant quiet approval;
+- compaction only happens earlier, never skipped when mandatory;
+- rank reorders or filters cox's own candidates.
+`salience` is wired only if it fits the size; otherwise it is a follow-up card noted here.
+Check: `risk_advice_cannot_lower_risk`, `risk_not_asked_when_outcome_would_not_change`, `approve_hint_cannot_say_looks_safe`, `compact_advice_cannot_skip_mandatory_compaction`, `rank_advice_cannot_add_tools`.
+Status: done 2026-09-26
+Result: four monotone decision points, in `crates/cox-core/src/monotone.rs`, can only move toward caution.
+- **`risk`**
+  - Asked only when the point is configured, the call is neither `ReadOnly` nor `Destructive`, `Engine::decide(call)` is `Allow`, and the same call marked `Destructive` would not be `Allow`. So it is never asked in bypass mode or for calls that already ask.
+  - The `Answer::Score` uses J5.1's 0–3 scale; ≥ 2.5 means `Destructive`, and `confidence >= min_confidence` is required.
+  - The result is `max(builtin, advised)`. The Engine still decides; the advice only changes its input.
+  - The question state is `{tool, subject, input, classifier_risk}`, scrubbed and clipped to 2k chars. Tool output is never sent.
+  - It runs in `turn::gate` after PreToolUse. A call the user edited is recomputed from `tool.risk` and not re-advised.
+- **`approve_hint`**
+  - `Answer::Noul` counts only when `p_yes >= min_confidence`.
+  - The core then frames its own Warn `Event::Notice`: `caution from plugin <id>: <sanitized note ≤200>`, just before `ApprovalRequired`.
+  - No answer can yield a "looks safe" message.
+- **`compact`**
+  - A due compaction runs without asking.
+  - Otherwise the advisor is asked only when there are more turns than `keep_turns`; a yes compacts earlier.
+  - State: `{context_tokens, max_context, compact_at, turns}`.
+- **`rank`**
+  - The options are the names in `tool_search`'s `structured.discovered`.
+  - A confident `Answer::Choice` keeps the valid indices once each, in the plugin's order. It can reorder or filter the discoveries, never add to them.
+- **All points**
+  - `[plugins.decide]` gains `risk`/`risk_ms`=200, `approve_hint`/`approve_hint_ms`=200, `compact`/`compact_ms`=500 and `rank`/`rank_ms`=300, sharing `min_confidence`. `default.toml`, `docs/config.jsonschema` and `docs/config.md` are regenerated.
+  - Every answer emits `Event::Advised`, and `note` is kept only on an applied `approve_hint`. Silence, lateness or low confidence keeps the static behaviour.
+Deviations:
+- `salience` is split into the new card T33.21.1.
+- A new `monotone.rs` plus one-line hunks in `turn.rs`/`session.rs` replace the card's `compact.rs` and `tool_search.rs`. That is about 285 lines outside tests (doc comments included) plus about 35 lines of wiring and config, against ~190.
+- `rank` filters only which tools join the next request. The `tool_search` text the model reads still lists every hit. Skill-match ranking is not wired.
+- The caution arrives as a `Notice`, not as a field on `ApprovalRequired`.
+- `risk` asks once per call; `Question` has no batch `items` yet (T33.40.1).
+- The test-only fake advisor is duplicated from `advise.rs` tests. `route_turn` could reuse the shared `ask_point` helper later.
+Check:
+- `risk_advice_cannot_lower_risk`
+- `risk_not_asked_when_outcome_would_not_change`
+- `approve_hint_cannot_say_looks_safe`
+- `compact_advice_cannot_skip_mandatory_compaction`
+- `rank_advice_cannot_add_tools`
+- The real binary with a scratch `COX_HOME`: `cox config get plugins.decide` shows the new keys.
+- In the worktree: nextest 1208 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T35.9 User guide: the Cursor plugin
+
+Depends: T35.7 · Size: ~130 · Files: `docs/plugins/cursor.md`, `docs/plugins.md` (link), `crates/cox/tests/doc_examples.rs`
+Goal: install and grant the plugin, set `CURSOR_API_KEY`, dispatch it with `agent(preset: "cursor")`, read `cox doctor`'s row when something is missing — the same shape `docs/plugins/jev.md` (T33.40.11) already gives Jev.
+Check: the doc's commands are checked against the real binary the way `doc_examples.rs` already checks other pages.
+Status: done 2026-09-26
+Result: `docs/plugins/cursor.md` is the user guide for the Cursor plugin:
+- install and grant (`cox plugin install plugins/cursor --yes`);
+- set the dashboard-issued `CURSOR_API_KEY`;
+- dispatch with `agent(preset: "cursor")`;
+- ACP (default, `args = ["acp"]`) versus the stream-json mode;
+- `cox doctor`'s row for a missing CLI or key.
+The limits are stated: ACP permission requests that would need the user are refused, each turn starts a fresh CLI process, and no usage is reported. `docs/plugins.md` (the authoring guide) now points to it at the top.
+Deviations:
+- `docs/plugins/jev.md`, the shape the card cites, does not exist yet (T33.40.11). The page is written from the real behaviour instead: plugin.toml, `external_agents.rs`, `doctor.rs`'s messages and EA§1–§8.
+- `crates/cox/tests/doc_examples.rs` did not exist, so it is created here, narrowly, for this page.
+- 67 doc lines plus 78 test lines, against ~130.
+Check:
+- `cursor_doc_commands_match_the_real_binary`: the real binary in a scratch `COX_HOME`/`HOME`, with `CURSOR_API_KEY` unset and an empty PATH, installs a scratch copy of the repo's `plugins/cursor/plugin.toml` (with a stub wasm) using the doc's literal command. It asserts the printed capability line and the `cox doctor` "external agent cursor" row verbatim against the doc. There is no network, no key and no keychain.
+- In the worktree: nextest 1210 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.29 `cox plugin new` and the Rust template
+
+Depends: T33.28 · Size: ~200 · Files: `crates/cox/src/plugin_new.rs`, `crates/cox/src/cli.rs`, `plugins/templates/rust/*.tmpl` (templates do not count)
+Goal: `cox plugin new <name> [--lang] [--dir] [--with …]` from PL§13:
+- one pure module maps (name, lang, with) to a list of files;
+- `plugin.toml` capabilities match `--with`;
+- only the chosen stub exports are written, plus a `justfile`, a README and a smoke test;
+- the name is validated and an existing directory is never overwritten;
+- headless defaults to `rust`.
+Check: e2e `cox plugin new demo --lang rust --with status,hook` in a scratch `COX_HOME` asserts the file tree and that the manifest validates against `docs/plugin.schema.json`; it then builds `--offline` with the SDK patched to the in-repo path and runs the smoke test. `new_refuses_existing_dir`, `new_rejects_invalid_name`.
+Status: done 2026-09-26
+Result: `cox plugin new <name> [--lang rust] [--dir <dir>] [--with <caps>]` scaffolds the PL§13 tree: `Cargo.toml`, `plugin.toml`, `src/lib.rs`, `tests/smoke.rs`, `justfile`, `README.md` and `.gitignore`.
+- **Templates.** They live in `plugins/templates/rust/*.tmpl`. `cox:with=<caps>` … `cox:end` blocks are kept only for the chosen capabilities, and a skip stack resolves nested blocks.
+- **Manifest.** `[capabilities]` matches `--with` exactly.
+- **Id rule.** It is reused from `cox_plugin_api::is_plugin_id`, which is now public and re-exported; there is no second regex.
+- **Existing directories.** They are never overwritten.
+- **Reuse.** `plugin_new::scaffold` and `write` are plain functions, so T33.30's TUI command calls the same code.
+- **Other languages.** Only `rust` has a template; the others answer `UnsupportedLang`, naming PL§13.
+- **Dependency.** `thiserror` becomes a direct dependency of `crates/cox` for `PluginNewError`. It is already a workspace dependency with a `toolchain.md` row.
+Deviations:
+- The SDK dependency is a git dependency. Cargo's `[patch]` cannot resolve a fresh git source `--offline`, so the offline e2e rewrites that line to a `path` dependency on `plugins/sdk` before building.
+- A nested-block bug was caught only by the real build; it is guarded by `render_keeps_only_its_chosen_nested_arm` and a brace-balance assertion.
+Check:
+- `new_rejects_invalid_name`
+- `new_refuses_existing_dir`
+- `new_writes_the_pl13_tree_and_a_manifest_that_validates`: the exact 7-file tree, and `discover::load_manifest` validates it.
+- `new_scaffold_builds_offline_and_its_smoke_test_passes`: `cox plugin new demo --lang rust --with status,hook`, then an offline wasm32 build and the scaffold's own smoke test.
+- 9 unit tests in `plugin_new.rs`.
+- In the worktree: nextest 1216 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.39 `cox doctor` and `cox ext` plugin reporting
+
+Depends: T33.28 · Size: ~150 · Files: `crates/cox/src/doctor.rs`, `crates/cox/src/ext_cmd.rs`
+Goal: a doctor plugins row listing, for each plugin:
+- loaded, skipped (with reason), not granted, or dev;
+- exports disabled by the three-failure breaker;
+- catalog price conflicts (T33.16);
+- the wasmtime cache directory size.
+`cox ext list` shows the same state.
+Check: doctor snapshots in a scratch `COX_HOME` with one healthy, one broken and one ungranted plugin; `disabled_export_is_visible_in_doctor`.
+Status: done 2026-09-26
+Result: `cox doctor` reports plugins.
+- **`doctor::check_plugins`** gives one row per discovered plugin: `loaded`, `disabled`, `not granted` or `skipped: <reason>`.
+  - A linked plugin (`cox plugin link`, T33.41) also carries `dev`, the same word `cox plugin list` shows.
+  - It reuses `discover::discover` and `plugin_cmd::verdict_for`, which is now `pub(crate)` and keyed by `grant_digest()`.
+  - It is only ever `ok` or `warn`, never `fail`: extensions fail open.
+- **Price conflicts.** A granted plugin's `[[models]]` feed `cox_models::Catalog::load`, and that plugin's catalog warnings are appended to its row.
+- **Cache size.** `check_plugin_cache` reports the size of `<COX_HOME>/cache/wasmtime`; an absent directory is 0 bytes and `ok`.
+- **`cox ext list`** gains a `plugins` section built from the same walk and row shape (human and JSON), so the two surfaces cannot disagree.
+Deviations:
+- The three-failure export breaker does not exist yet (T33.40.4), and its state lives per session in memory. So `check_plugins_with(.., disabled_exports)` is the reporting slot, and `check_plugins` passes an empty map. Whoever lands the breaker threads the map in.
+- The wasmtime cache is still disabled (`with_cache_disabled()`), so the cache row reads 0 bytes today.
+- The `dev` word was wired while landing, after T33.41 reached main.
+- About 204 lines of code plus about 155 lines of tests, against ~150.
+Check:
+- `doctor_plugin_rows_report_healthy_broken_and_ungranted`: a healthy granted plugin with a price conflict, a broken one and an ungranted one.
+- `disabled_export_is_visible_in_doctor`
+- `plugin_cache_size_is_zero_when_not_yet_created`
+- `plugin_cache_size_sums_files_recursively`
+- The real binary with a scratch `COX_HOME`: `cox doctor` exits 0 and prints the plugin cache row.
+- In the worktree: nextest 1207 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.

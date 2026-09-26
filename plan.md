@@ -8,8 +8,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
-| T33.21 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T33.29 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
+| T33.21.1 | todo | P2 | 3 | 0% | |
 | T33.30 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.33 | todo | P2 | 3 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
@@ -17,14 +16,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.36 | todo | P2 | 4 | 0% | |
 | T33.37 | in progress | P3 | 1 | 5% | Claude Code / claude-sonnet-5 |
 | T33.38 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.39 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.40.1 | todo | P1 | 5 | 0% | |
 | T33.40.3 | todo | P2 | 4 | 0% | |
 | T33.40.4 | todo | P2 | 4 | 0% | |
 | T33.40.5 | todo | P2 | 3 | 0% | |
 | T33.40.6 | todo | P2 | 4 | 0% | |
 | T33.40.7 | todo | P2 | 3 | 0% | |
-| T33.40.8 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.40.9 | todo | P2 | 4 | 0% | |
 | T33.40.10 | todo | P3 | 3 | 0% | |
 | T33.40.11 | todo | P2 | 2 | 0% | |
@@ -34,9 +31,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.15 | todo | P2 | 3 | 0% | |
 | T33.40.16 | todo | P2 | 2 | 0% | |
 | T33.40.17 | todo | P3 | 2 | 0% | |
-| T33.41 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T35.9 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T35.10 | todo | P3 | 2 | 0% | |
 
 ## Reference
@@ -752,27 +747,11 @@ Goal: with `api = "plugin"`, `stream()` calls `cox_provider_stream` and forwards
 Plan (amended 2026-09-26 for the Jev use case, R§4.3.6 J§4.3): `Router::pick` and `backend_for_with` register ABI provider sections by name, so a tier — including a legacy `typesafe` tier — resolves to them, not only to `providers.custom`. The ledger gets a `ProviderId::Plugin` bucket whose provider string is the section name, the same shape `Local` uses for compatible providers; `provider_name` returns it. `COX_PROVIDER=scripted`/`replay`, which short-circuits provider construction for the main turn, still builds plugin providers, so a scripted-main e2e can reach a real (wiremocked) plugin provider.
 Check: `provider_key_never_reaches_guest` (the WAT guest echoes its request headers, and the test asserts the key is absent); `underreported_usage_is_replaced_by_estimate`; `every_request_has_a_usage_row` with a plugin provider; `plugin_provider_section_resolves_by_name`; `scripted_provider_mode_still_builds_plugin_providers`.
 
-#### T33.21 Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
+#### T33.21.1 Decision point: `salience`
 
-Depends: T33.20 · Size: ~190 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-core/src/compact.rs`, `crates/cox-tools/src/tool_search.rs`
-Goal: the monotone rules from PL§4:
-- risk only raises, and (amended 2026-09-26, R§4.3.6 J§5.1) the core asks only when raising the call to `Destructive` would change the engine's outcome from `Allow` to `Ask` or `Deny` — this filter belongs here so every `risk`-capable plugin gets it, not only Jev;
-- `approve_hint` is warning-only (amended 2026-09-26, `docs/design/plugins.md` §14 decision 10): a plugin may add a caution note, never say a call "looks safe" — monotone the same direction as `risk`, never used to grant quiet approval;
-- compaction only happens earlier, never skipped when mandatory;
-- rank reorders or filters cox's own candidates.
-`salience` is wired only if it fits the size; otherwise it is a follow-up card noted here.
-Check: `risk_advice_cannot_lower_risk`, `risk_not_asked_when_outcome_would_not_change`, `approve_hint_cannot_say_looks_safe`, `compact_advice_cannot_skip_mandatory_compaction`, `rank_advice_cannot_add_tools`.
-
-#### T33.29 `cox plugin new` and the Rust template
-
-Depends: T33.28 · Size: ~200 · Files: `crates/cox/src/plugin_new.rs`, `crates/cox/src/cli.rs`, `plugins/templates/rust/*.tmpl` (templates do not count)
-Goal: `cox plugin new <name> [--lang] [--dir] [--with …]` from PL§13:
-- one pure module maps (name, lang, with) to a list of files;
-- `plugin.toml` capabilities match `--with`;
-- only the chosen stub exports are written, plus a `justfile`, a README and a smoke test;
-- the name is validated and an existing directory is never overwritten;
-- headless defaults to `rust`.
-Check: e2e `cox plugin new demo --lang rust --with status,hook` in a scratch `COX_HOME` asserts the file tree and that the manifest validates against `docs/plugin.schema.json`; it then builds `--offline` with the SDK patched to the in-repo path and runs the smoke test. `new_refuses_existing_dir`, `new_rejects_invalid_name`.
+Depends: T33.21 · Size: ~120 · Files: `crates/cox-core/src/memory_extract.rs`, `crates/cox-core/src/monotone.rs`, `crates/cox-protocol/src/config.rs`
+Goal: PL§4 `salience`, split out of T33.21. Memory extraction asks the `[plugins.decide] salience` plugin (within `salience_ms`, default 300) for a `Score` per extracted item; items are scrubbed and one question carries every item of the extraction. The score only orders or drops items against the `[memory]` thresholds; it never adds or edits an item and never lowers a threshold. Silence, lateness or low confidence keeps every item. Every answer emits `Event::Advised { point: salience }`. Regenerate `docs/config.jsonschema`, `docs/config.md` and `default.toml` through their drift tests.
+Check: `salience_advice_cannot_add_memory_items`, `salience_thresholds_stay_in_config`, `late_salience_keeps_every_item`.
 
 #### T33.30 `/plugin new` in the TUI
 
@@ -817,17 +796,6 @@ Check: R§4.3.5 records the Dart version tried and the result.
 Depends: T33.19, T33.29, T33.37 · Size: ~170 · Files: `plugins/examples/dart/bin/server.dart`, `plugins/templates/dart/*.tmpl`, `crates/cox/src/plugin_new.rs`; `plugins/mise.toml` gets dart
 Goal: `--lang dart` scaffolds a package whose only capability is an `[[mcp]]` stdio server (`dart compile exe`, `dart_mcp` 0.5.2), with no `plugin.wasm`. `--with` accepts only `tool` and `mcp` for Dart and says why for anything else. The example serves one `count` tool.
 Check: `plugin_example_dart` is ignored with its reason locally and runs in the CI job (the tool is callable through `mcp__<id>-count__count` and runs under the sandbox); `new_dart_rejects_status_with_reason`.
-
-#### T33.39 `cox doctor` and `cox ext` plugin reporting
-
-Depends: T33.28 · Size: ~150 · Files: `crates/cox/src/doctor.rs`, `crates/cox/src/ext_cmd.rs`
-Goal: a doctor plugins row listing, for each plugin:
-- loaded, skipped (with reason), not granted, or dev;
-- exports disabled by the three-failure breaker;
-- catalog price conflicts (T33.16);
-- the wasmtime cache directory size.
-`cox ext list` shows the same state.
-Check: doctor snapshots in a scratch `COX_HOME` with one healthy, one broken and one ungranted plugin; `disabled_export_is_visible_in_doctor`.
 
 #### T33.40 Jev as the first plugin
 
@@ -935,23 +903,6 @@ Plan:
 5. Record the table in R§5 with the Jev model version (`jev-1.13.0`, pinned), the date and the reproduce command.
 Falsifier: if the false-raise rate exceeds 10 %, or the p95 late-fallback rate exceeds 20 %, `risk` is not recommended by default, and the user guide says so.
 Check: `just test-evals` is green offline (corpus schema, metric maths, budget stop, command line). R§5 has the E1 table.
-
-#### T33.40.8 `route` in the core: cache-aware downgrade offer, turn-local thinking strip
-
-Depends: T33.20 · Size: ~170 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`
-Goal: J§5.2, core side (C2).
-- The `route` point is offered only for `Job::Main`, once per `UserTurn`, sticky for that turn's calls.
-- It is never offered for `Plan`, for subagents, or after `/model`.
-- `cheap` is offered only when its predicted turn cost is ≤ `(1 − route_margin)` × the `code` cost. The prediction uses catalog prices, the last request's prefix size and the cache-read vs cache-write formula in J§5.2. `route_margin` goes in `[plugins.decide]` (default 0.15).
-- A downgraded turn strips thinking in its own `Request` only. `inner.history` is unchanged, and there is no `ModelSwitched`.
-Check:
-- `downgrade_not_offered_when_cache_loss_exceeds_saving`;
-- `downgrade_offered_on_first_turn`;
-- `routed_down_turn_keeps_history_thinking`: the next `code` request's prefix is byte-identical, and invariant 1 stays green;
-- `route_never_offered_for_plan_job`;
-- `model_override_disables_route_point`;
-- `route_advice_never_routes_up` still green;
-- `docs/config.md` drift test green.
 
 #### T33.40.9 `route` advisor: downgrade only
 
@@ -1067,12 +1018,6 @@ Goal: replace the hand-built fixtures, which follow the documented shapes, with 
 - It runs only with `TYPESAFE_API_KEY` set by the creator. It never reads the keychain.
 Check: the offline pytest (body construction, redaction, no key means a clear exit) is green. With recorded fixtures, T33.40.4 and T33.40.6 stay green unchanged.
 
-#### T33.41 Optional: `cox plugin link` (dev loop)
-
-Depends: T33.7 · Size: ~110 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/grant.rs`
-Goal: use a built plugin in place without installing it. A linked plugin asks again only when its capabilities widen, never on byte changes. It is marked `dev` in `list`, `doctor` and the TUI grant dialog. `cox plugin build` and `cox plugin dev` are not planned (PL§13).
-Check: `linked_plugin_rebuild_does_not_reask`, `linked_plugin_widening_reasks`, `linked_plugin_marked_dev_everywhere`.
-
 #### T33.43 Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 
 Depends: an extism release after v1.30.0 that pins wasmtime ≥ 48 (extism `main` already pins 48; checked 2026-09-26) · Size: ~30 · Files: `Cargo.toml`, `Cargo.lock`, `deny.toml`
@@ -1125,12 +1070,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
-
-#### T35.9 User guide: the Cursor plugin
-
-Depends: T35.7 · Size: ~130 · Files: `docs/plugins/cursor.md`, `docs/plugins.md` (link), `crates/cox/tests/doc_examples.rs`
-Goal: install and grant the plugin, set `CURSOR_API_KEY`, dispatch it with `agent(preset: "cursor")`, read `cox doctor`'s row when something is missing — the same shape `docs/plugins/jev.md` (T33.40.11) already gives Jev.
-Check: the doc's commands are checked against the real binary the way `doc_examples.rs` already checks other pages.
 
 #### T35.10 Optional: live check against a real Cursor account (needs the creator's key)
 

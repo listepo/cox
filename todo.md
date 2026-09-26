@@ -2,8 +2,7 @@
 
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
-- T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
-- T33.29. `cox plugin new` and the Rust template
+- T33.21.1. Decision point: `salience`
 - T33.30. `/plugin new` in the TUI
 - T33.33. `/plugin update | remove | list | reload` in the TUI
 - T33.34. Go: SDK wrapper, template, example
@@ -11,14 +10,12 @@
 - T33.36. Kotlin: thin PDK, template, example
 - T33.37. Dart: WASI re-check spike
 - T33.38. Dart: MCP-server plugin template and example
-- T33.39. `cox doctor` and `cox ext` plugin reporting
 - T33.40.1. ABI: two-phase decide, own-provider call-out, batched questions
 - T33.40.3. Jev provider export
 - T33.40.4. Jev plugin as a provider, end to end and offline
 - T33.40.5. Parity: the `typesafe` table configures the plugin's section
 - T33.40.6. `risk` advisor: raise only
 - T33.40.7. Eval E1: risk escalation against the classifier alone
-- T33.40.8. `route` in the core: cache-aware downgrade offer, turn-local thinking strip
 - T33.40.9. `route` advisor: downgrade only
 - T33.40.10. Eval E2: route downgrade against the static pick
 - T33.40.11. User guide: the Jev plugin
@@ -28,7 +25,5 @@
 - T33.40.15. Catalog, prices and vendor script without Jev
 - T33.40.16. Docs and plan sweep after the removal
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
-- T33.41. Optional: `cox plugin link` (dev loop)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
-- T35.9. User guide: the Cursor plugin
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
