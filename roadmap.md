@@ -11,6 +11,7 @@ Approved work that is not yet in the active plan.
 - repo map
 - architect/editor mode
 - ~~TypeSafe Jev decision model (System One: Choice/Score/Noul) — scope gate T21.0~~
+- T30.13 cox vs Claude Code vs Terminus 2 on the same local model — moved from `plan.md` by the creator on 2026-09-26 (the run was stopped part-way; uncommitted `evals/` work is kept in `_worktrees/cox-t30.13`). The full card (plan, Check, Done when) is in `plan.md` at commit 855fe68; it goes back unchanged when this is scheduled.
 
 ## Plugins (after P33 ships)
 

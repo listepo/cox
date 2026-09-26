@@ -1,6 +1,5 @@
 # Todo
 
-- T30.13. cox vs Claude Code vs Terminus 2 on the same local model
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 - T33.6. Grant check and granted-only loading
 - T33.7. `cox plugin install | enable | disable`

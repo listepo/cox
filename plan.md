@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.13 | todo | P3 | 3 | 0% | |
 | T32.2 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
 | T33.7 | todo | P2 | 3 | 0% | |
@@ -738,24 +737,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 ### P29 — Accessibility (goal: usable with a screen reader and without motion)
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
-
-#### T30.13 cox vs Claude Code vs Terminus 2 on the same local model
-
-Depends: T30.14 (done) · Size: ~120
-Goal: a like-for-like Terminal-Bench 2.0 baseline, taken before the optimization and refactoring pass and repeated after it (roadmap): the same 12 tasks, the same local model, one attempt each, three agents — cox (`cox_evals.tbench:CoxAgent`), Harbor's built-in `claude-code` and `terminus-2`. The difference in pass rate, tokens and wall time is then the agent's, not the model's. The 3/3 in R§5.3 says nothing about this: those were 3 of the dataset's 4 `easy` tasks (55 are `medium`, 30 `hard`).
-Model: `prism-ml/bonsai-27b` (Qwen 3.5 architecture, 2-bit MLX, 8.5 GB), already in LM Studio, chosen by the creator. No API spend.
-Tasks (fixed; `random.Random(3013).sample` over the `difficulty` field of each `task.toml` at terminal-bench-2 `69671fb`): medium `build-cython-ext`, `build-pmars`, `compile-compcert`, `mteb-leaderboard`, `query-optimize`, `regex-log`, `sanitize-git-repo`, `tune-mjcf`; hard `dna-assembly`, `password-recovery`, `path-tracing-reverse`, `regex-chess`.
-Plan:
-1. Serve the model: LM Studio's server on the host with the context raised well above its default (agents' prompts do not fit 4k); read the loaded context back from `GET /api/v1/models` (`lms load --context-length` was not honoured in T30.14's check, R§4.3.2) and record it with the LM Studio version. One cheap call per API shape: OpenAI Chat `/v1/chat/completions` (cox, Terminus 2 via LiteLLM) and Anthropic Messages `/v1/messages` (Claude Code via `ANTHROPIC_BASE_URL`). If LM Studio has no Messages endpoint, check its docs for one first, then stop and ask before adding a proxy.
-2. Reach it from the containers: cox and Claude Code run inside the task container, so they need the host address colima exposes to its VM (`host.lima.internal`); Terminus 2 runs on the host and uses `localhost`. Verify with `curl` from a throwaway container.
-3. Teach `CoxAgent` the local provider: a `base_url` kwarg that writes `[providers.local]` into the container's fresh `COX_HOME/config.toml` and runs `--provider local`, no key required for it; tests in `evals/tests/test_tbench.py`.
-4. Disk: at least 15 GB free before building 12 images; `docker image prune` between agents if needed; colima with a capped disk as in T30.9. Rebuild the Linux cox from current `main` and record the commit.
-5. Run the three agents one after another, same `-i` list, `-n 1` (one model server serializes requests anyway), `--force-build`, jobs dir under `~/.cache/cox-evals/tb-jobs`. The task timeouts are the only cap for all three; cox gets no `--budget` limit that the others lack.
-6. Record in R§5.3 a per-task table (pass, tokens, wall time for each agent), the totals, the cox commit, Harbor, LM Studio and model versions, the dataset commit and the reproduce commands, with sources; stop colima and unload the model.
-Check: R§5.3 has the table; `just test-evals` green.
-Done when: the three agents' results on the 12 tasks with `bonsai-27b` are in R§5.3.
-Out of scope: leaderboard submission (5 attempts × 89 tasks); paid models; the repeat run after the refactoring (roadmap).
-Postponed by the creator (lowest priority). A first run started on 2026-09-25 and was stopped mid-way. Its partial job dirs are under `~/.cache/cox-evals/tb-jobs/2026-09-25__23-4*`; they are not a result. The provider work (T30.21–T30.26) lands before this run, so the baseline will not be taken before that refactoring. The first run prompted for the macOS login password to read the key from the keychain; that is this card's problem, solved when it is picked up (read the key once per run, not per task).
 
 ### P32 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
 
