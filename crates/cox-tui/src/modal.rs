@@ -7,6 +7,7 @@
 //! the renderer the edit card and `Ctrl+G` use. The `?` keymap overlay
 //! (T24.6) draws here too, from the live `keymap::Keymap` (T25.5).
 
+use cox_protocol::GrantScope;
 use cox_protocol::ids::CallId;
 use cox_protocol::types::{Decision, Diff, ToolCall, Why};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -181,6 +182,117 @@ impl Approval {
             Style::default().add_modifier(Modifier::DIM),
         ));
         out.push(Line::raw(keys));
+        out
+    }
+}
+
+/// `Modal::PluginGrant` (T33.8, PL§3): one `NeedsApproval` plugin from
+/// session open. More than one queues in `state.rs`'s `pending_grants`,
+/// since the TUI has one modal slot. `y` grants the full requested
+/// capability list at this digest; `n` skips it for this session only —
+/// there is no "always" key, since a grant is always decided per digest.
+/// `crates/cox` builds one of these per plugin (`session::plugin_grant_requests`)
+/// and never this crate: no store read, no filesystem, matches every other
+/// modal here.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PluginGrantDialog {
+    pub plugin_id: String,
+    pub digest: String,
+    pub scope: GrantScope,
+    /// The full requested capability list (PL§3's unit of approval) — what
+    /// `y` grants, not just `added`.
+    pub capabilities: Vec<String>,
+    name: String,
+    description: String,
+    /// Requested and not granted, sorted (mirrors `grant::Verdict`'s field
+    /// of the same name; for a brand-new plugin this is the whole request).
+    added: Vec<String>,
+    /// Granted and no longer requested, sorted.
+    removed: Vec<String>,
+    /// A project plugin's repository root (PL§3: shown in warning style);
+    /// `None` for a user plugin.
+    repo: Option<String>,
+}
+
+impl PluginGrantDialog {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        plugin_id: String,
+        digest: String,
+        scope: GrantScope,
+        name: String,
+        description: String,
+        capabilities: Vec<String>,
+        added: Vec<String>,
+        removed: Vec<String>,
+        repo: Option<String>,
+    ) -> Self {
+        Self {
+            plugin_id,
+            digest,
+            scope,
+            capabilities,
+            name,
+            description,
+            added,
+            removed,
+            repo,
+        }
+    }
+
+    /// `Some(true)`: grant. `Some(false)`: skip for this session. `None`
+    /// keeps the modal open — only `y`/`n` decide it (PL§3: no "always").
+    pub fn key(&self, key: KeyEvent) -> Option<bool> {
+        match key.code {
+            KeyCode::Char('y') => Some(true),
+            KeyCode::Char('n') | KeyCode::Esc => Some(false),
+            _ => None,
+        }
+    }
+
+    /// The prompt, the plugin's description, the repository line for a
+    /// project plugin, the capability diff and the keys. Every manifest
+    /// string (`name`, `description`, `repo`, each capability) passes
+    /// `sanitize`: a plugin's own `plugin.toml` is untrusted repository or
+    /// download content, the same boundary `Approval`'s `why` crosses.
+    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let digest12 = &self.digest[..self.digest.len().min(12)];
+        let mut out = vec![Line::styled(
+            format!(
+                " plugin {} ({}) wants to load {} digest {}",
+                sanitize(&self.name),
+                sanitize(&self.plugin_id),
+                g.sep,
+                sanitize(digest12),
+            ),
+            bold.fg(theme.warn),
+        )];
+        if !self.description.is_empty() {
+            out.push(Line::raw(format!(" {}", sanitize(&self.description))));
+        }
+        if let Some(repo) = &self.repo {
+            out.push(Line::styled(
+                format!(" project plugin {} repository {}", g.sep, sanitize(repo)),
+                Style::default().fg(theme.warn),
+            ));
+        }
+        let joined = |caps: &[String]| {
+            caps.iter()
+                .map(|c| sanitize(c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        if !self.added.is_empty() {
+            out.push(Line::raw(format!(" wants: {}", joined(&self.added))));
+        }
+        if !self.removed.is_empty() {
+            out.push(Line::styled(
+                format!(" no longer asks for: {}", joined(&self.removed)),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
+        out.push(Line::raw(" [y]es  [n]o"));
         out
     }
 }
@@ -449,5 +561,77 @@ mod tests {
         })
         .expect("draw");
         insta::assert_snapshot!(crate::view::buffer_to_string(term.backend().buffer()));
+    }
+
+    fn plugin_grant(added: &[&str], removed: &[&str], repo: Option<&str>) -> PluginGrantDialog {
+        let added: Vec<String> = added.iter().map(|s| s.to_string()).collect();
+        let removed: Vec<String> = removed.iter().map(|s| s.to_string()).collect();
+        PluginGrantDialog::new(
+            "git-glance".into(),
+            "a".repeat(64),
+            repo.map_or(GrantScope::User, |r| {
+                GrantScope::Project(std::path::PathBuf::from(r))
+            }),
+            "Git Glance".into(),
+            "Shows a one-line git summary in the status bar".into(),
+            added.clone(),
+            added,
+            removed,
+            repo.map(String::from),
+        )
+    }
+
+    fn render_grant(dialog: &PluginGrantDialog) -> String {
+        let lines = dialog.lines(&Glyphs::default(), &Theme::dark());
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let mut term = Terminal::new(TestBackend::new(72, height)).expect("test terminal");
+        term.draw(|f| Paragraph::new(lines).render(f.area(), f.buffer_mut()))
+            .expect("draw");
+        crate::view::buffer_to_string(term.backend().buffer())
+    }
+
+    /// T33.8, PL§3: a brand-new plugin's `added` is its whole request
+    /// (`grant::check` with no stored grant), no `removed`, no repository.
+    #[test]
+    fn new_plugin_grant_snapshot() {
+        insta::assert_snapshot!(render_grant(&plugin_grant(
+            &["kv", "net:api.github.com"],
+            &[],
+            None
+        )));
+    }
+
+    /// A plugin whose package widened: `added`/`removed` show the diff
+    /// (`grant::Verdict::NeedsApproval`).
+    #[test]
+    fn widened_plugin_grant_shows_the_diff() {
+        insta::assert_snapshot!(render_grant(&plugin_grant(
+            &["model:code"],
+            &["model:cheap"],
+            None
+        )));
+    }
+
+    /// PL§3: a project plugin's repository shows in warning style.
+    #[test]
+    fn project_plugin_grant_shows_its_repository() {
+        insta::assert_snapshot!(render_grant(&plugin_grant(
+            &["fs.write:$WORKSPACE"],
+            &[],
+            Some("/home/user/repo")
+        )));
+    }
+
+    /// A plugin's `plugin.toml` is untrusted content (repository or
+    /// download): `description` must never carry an escape sequence or a
+    /// bidi override into the terminal.
+    #[test]
+    fn grant_dialog_sanitizes_description() {
+        let mut dialog = plugin_grant(&["kv"], &[], None);
+        dialog.description = "\u{1b}[31mred\u{1b}[0m \u{202e}evil\u{202c}".into();
+        let text = render_grant(&dialog);
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+        assert!(!text.contains('\u{202e}'), "{text:?}");
+        assert!(text.contains("red evil"), "{text:?}");
     }
 }

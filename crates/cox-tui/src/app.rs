@@ -28,7 +28,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
 use crate::cells::cell_lines;
-use crate::state::{Ask, Cmd, Msg, State, update};
+use crate::state::{Ask, Cmd, GrantDecision, Msg, State, update};
 use crate::view::view;
 
 /// Rows the live viewport keeps below the scrollback; a short terminal
@@ -93,7 +93,9 @@ pub enum TuiError {
 /// arrives on `feed`. `questions` carries each `ask_user` call (T22.1); its
 /// reply sender is answered from here, never from `state::update`. `persist`
 /// carries a `/theme` choice's `(key, value)` (T24.2) out to `config_cmd::set`
-/// — this crate has no `toml_edit`-editing path of its own.
+/// — this crate has no `toml_edit`-editing path of its own. `grants`
+/// (T33.8) carries a `Modal::PluginGrant`'s `y` out to `crates/cox`, which
+/// writes it — same reason as `persist`, this crate never touches the store.
 pub async fn run(
     session: Session,
     mut state: State,
@@ -101,6 +103,7 @@ pub async fn run(
     ask: tokio::sync::mpsc::Sender<Ask>,
     mut questions: tokio::sync::mpsc::Receiver<Question>,
     persist: tokio::sync::mpsc::Sender<(String, String)>,
+    grants: tokio::sync::mpsc::Sender<GrantDecision>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
@@ -241,6 +244,12 @@ pub async fn run(
                         let mut out = io::stdout();
                         out.write_all(bytes.as_bytes())?;
                         out.flush()?;
+                    }
+                    // T33.8: best-effort, like `PersistConfig` — a full
+                    // channel or a closed receiver just means this one
+                    // grant is not persisted; the dialog already moved on.
+                    Cmd::PluginGrant(decision) => {
+                        let _ = grants.try_send(decision);
                     }
                 }
             }

@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
 use std::ops::Range;
 
+use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
@@ -24,7 +25,7 @@ use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
 use crate::keymap::{self, Keymap};
 use crate::markdown;
-use crate::modal::{Approval, Question, QuestionAnswer};
+use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
@@ -132,6 +133,9 @@ pub enum Modal {
     Approval(Approval),
     /// `ask_user` (T22.1): blocks the turn until a key answers or dismisses it.
     Question(Question),
+    /// `NeedsApproval` at session open (T33.8, PL§3); more than one queues
+    /// in `pending_grants` below, since this is the same one modal slot.
+    PluginGrant(PluginGrantDialog),
     Picker(Picker),
     /// `Ctrl+G` (T15.3): the working tree's `git diff HEAD`, drawn over the
     /// transcript; `scroll` is lines from the top.
@@ -322,6 +326,9 @@ pub struct State {
     /// `/loop` (T27.4), if one is running. Named `active_loop` rather than
     /// the card's literal `loop` — a reserved word.
     pub active_loop: Option<Loop>,
+    /// `Modal::PluginGrant` dialogs still waiting (T33.8): `on_key` pops the
+    /// next one into `modal` once the current one is decided (`y`/`n`).
+    pub pending_grants: VecDeque<PluginGrantDialog>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -427,6 +434,19 @@ pub enum Ask {
     Rollout(SessionId),
 }
 
+/// `Modal::PluginGrant`'s `y` (T33.8, PL§3): the full requested capability
+/// list to write at `digest` in `scope`. Carried out to `crates/cox` over a
+/// channel, the same shape `persist`'s `(String, String)` carries a
+/// `/theme` choice out to `config_cmd::set` — this crate never touches the
+/// store itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrantDecision {
+    pub plugin_id: String,
+    pub digest: String,
+    pub scope: GrantScope,
+    pub capabilities: Vec<String>,
+}
+
 /// The only effects `update` may request; the runtime performs them.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Cmd {
@@ -461,6 +481,10 @@ pub enum Cmd {
         title: String,
         body: String,
     },
+    /// `Modal::PluginGrant`'s `y` (T33.8): `app.rs` forwards this to
+    /// `crates/cox`, which writes it. `n` never reaches here — `on_key`
+    /// alone advances `pending_grants`, since skipping writes nothing.
+    PluginGrant(GrantDecision),
 }
 
 impl State {
@@ -534,6 +558,7 @@ impl State {
             focused: true,
             mouse: true,
             active_loop: None,
+            pending_grants: VecDeque::new(),
         }
     }
 
@@ -676,7 +701,9 @@ fn progress(state: &mut State) -> Option<Cmd> {
     }
     let want = match (state.status.busy, &state.modal) {
         (false, _) => Progress::Idle,
-        (true, Some(Modal::Approval(_) | Modal::Question(_))) => Progress::Paused,
+        (true, Some(Modal::Approval(_) | Modal::Question(_) | Modal::PluginGrant(_))) => {
+            Progress::Paused
+        }
         (true, _) => Progress::Busy,
     };
     (want != state.progress).then(|| {
@@ -796,6 +823,7 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
         Some(
             Modal::Approval(_)
             | Modal::Question(_)
+            | Modal::PluginGrant(_)
             | Modal::Help
             | Modal::Agents { .. }
             | Modal::Transcript { .. },
@@ -898,6 +926,37 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             Some(QuestionAnswer::Dismissed) => vec![Cmd::Answer(question.call, None)],
             None => {
                 state.modal = Some(Modal::Question(question));
+                Vec::new()
+            }
+        },
+        // T33.8, PL§3: `y`/`n` decide one dialog and `pending_grants`
+        // supplies the next, so the queue drains one key at a time without
+        // this crate ever writing the grant itself.
+        Some(Modal::PluginGrant(grant)) => match grant.key(key) {
+            Some(granted) => {
+                let text = if granted {
+                    format!("granted {}; it will load next session", grant.plugin_id)
+                } else {
+                    format!("skipped {} for this session", grant.plugin_id)
+                };
+                state.transcript.push(Cell::Notice {
+                    level: Level::Info,
+                    text,
+                });
+                state.modal = state.pending_grants.pop_front().map(Modal::PluginGrant);
+                if granted {
+                    vec![Cmd::PluginGrant(GrantDecision {
+                        plugin_id: grant.plugin_id,
+                        digest: grant.digest,
+                        scope: grant.scope,
+                        capabilities: grant.capabilities,
+                    })]
+                } else {
+                    Vec::new()
+                }
+            }
+            None => {
+                state.modal = Some(Modal::PluginGrant(grant));
                 Vec::new()
             }
         },

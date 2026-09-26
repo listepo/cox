@@ -111,6 +111,7 @@ async fn main() {
     let (ask_tx, _ask_rx) = mpsc::channel::<cox_tui::state::Ask>(4);
     let (_question_tx, question_rx) = mpsc::channel::<cox_tui::app::Question>(1);
     let (persist_tx, _persist_rx) = mpsc::channel::<(String, String)>(4);
+    let (grant_tx, _grant_rx) = mpsc::channel::<cox_tui::state::GrantDecision>(4);
 
     let scenario = std::env::var("COX_PROBE_SCENARIO").unwrap_or_default();
     tokio::spawn(async move {
@@ -202,7 +203,16 @@ async fn main() {
         let _ = feed_tx.send(Msg::Key(ctrl_c)).await;
     });
 
-    let _ = cox_tui::app::run(session, state, feed_rx, ask_tx, question_rx, persist_tx).await;
+    let _ = cox_tui::app::run(
+        session,
+        state,
+        feed_rx,
+        ask_tx,
+        question_rx,
+        persist_tx,
+        grant_tx,
+    )
+    .await;
 }
 
 /// One streamed chunk of the reply `item`.

@@ -2,12 +2,14 @@
 //! store and the built-in tool set. Kept out of `main.rs` so the TUI and
 //! `cox run -p` (T6.1) assemble the same session the same way.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cox_core::{History, Session};
 use cox_protocol::Config;
+#[cfg(feature = "plugins")]
+use cox_protocol::GrantScope;
 use cox_protocol::config::{McpServerConfig, Transport};
 use cox_protocol::ids::{ItemId, SessionId};
 use cox_protocol::traits::{Hook, Provider, SessionRow, Store as _, Tool};
@@ -521,6 +523,105 @@ fn sandbox_stdio_servers(
             unwrapped.join(", ")
         ));
     }
+}
+
+/// T33.8 (PL§3): the `NeedsApproval` plugins from the same discovery walk
+/// `plugin_notices` performs, shaped for `Modal::PluginGrant` instead of a
+/// warning line — the TUI is the only surface with somewhere interactive to
+/// put the choice (`run_tui`, below); headless and ACP still get the text
+/// notice `plugin_notices` already emits, unchanged. A store read error,
+/// like `plugin_notices`, counts as no grant: it must never let a dialog
+/// offer to widen a grant it cannot actually confirm.
+#[cfg(feature = "plugins")]
+fn plugin_grant_requests(
+    config: &Config,
+    home: &Path,
+    cwd: &Path,
+    store: &dyn cox_protocol::PluginStore,
+) -> Vec<cox_tui::modal::PluginGrantDialog> {
+    use cox_plugin::discover::{self, State};
+    use cox_plugin::grant::{self, Verdict};
+
+    if !config.plugins.enabled {
+        return Vec::new();
+    }
+    let root = config_load::find_git_root(cwd);
+    let found = discover::discover(home, root.as_deref());
+    let mut out = Vec::new();
+    for p in &found.plugins {
+        let State::Loaded { manifest, digest } = &p.state else {
+            continue;
+        };
+        // A project plugin discovered with no git root has nowhere to
+        // write a grant, so it stays a `plugin_notices` text warning only.
+        let Some(scope) = grant::scope(p.source, root.as_deref()) else {
+            continue;
+        };
+        let stored = store.grant_get(&p.id, &scope, digest).ok().flatten();
+        let Verdict::NeedsApproval { added, removed } =
+            grant::check(manifest, digest, stored.as_ref())
+        else {
+            continue;
+        };
+        let repo = match &scope {
+            GrantScope::Project(root) => Some(root.display().to_string()),
+            GrantScope::User => None,
+        };
+        out.push(cox_tui::modal::PluginGrantDialog::new(
+            p.id.clone(),
+            digest.clone(),
+            scope,
+            manifest.name.clone(),
+            manifest.description.clone(),
+            grant::capability_list(manifest),
+            added,
+            removed,
+            repo,
+        ));
+    }
+    out
+}
+
+/// The slim build never discovers a plugin, so there is never a dialog to
+/// queue.
+#[cfg(not(feature = "plugins"))]
+fn plugin_grant_requests(
+    _config: &Config,
+    _home: &Path,
+    _cwd: &Path,
+    _store: &dyn cox_protocol::PluginStore,
+) -> Vec<cox_tui::modal::PluginGrantDialog> {
+    Vec::new()
+}
+
+/// Writes one plugin grant (T33.8): forwards to `plugin_cmd::write_grant`,
+/// the single place a `PluginGrant` row is assembled — T33.7's `cox plugin
+/// enable`/`install` write through the same function, so this module never
+/// grows its own copy of that literal or of `cox_store::now_rfc3339`'s
+/// timestamp. Feature-gated like `plugin_grant_requests`: the slim build
+/// has no `plugin_cmd` module to forward to, and there is never a decision
+/// to write in that build anyway.
+#[cfg(feature = "plugins")]
+fn write_plugin_grant(
+    store: &Store,
+    decision: cox_tui::state::GrantDecision,
+) -> Result<(), cox_protocol::StoreError> {
+    crate::plugin_cmd::write_grant(
+        store,
+        &decision.plugin_id,
+        &decision.scope,
+        &decision.digest,
+        decision.capabilities,
+        serde_json::json!({}),
+    )
+}
+
+#[cfg(not(feature = "plugins"))]
+fn write_plugin_grant(
+    _store: &Store,
+    _decision: cox_tui::state::GrantDecision,
+) -> Result<(), cox_protocol::StoreError> {
+    Ok(())
 }
 
 /// The model id an `lmstudio` session sends: the section's pin, else
@@ -1068,9 +1169,25 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         // T22.4: the only switch for mouse capture is this config key.
         state.mouse = config.tui.mouse;
         state.marks = cli.verbose > 0;
+        // T33.8, PL§3: one `Modal::PluginGrant` per `NeedsApproval` plugin,
+        // queued in `pending_grants` since the TUI has one modal slot. A
+        // fresh `Store::open` here, like the poll task's own reads below —
+        // `open()` already moved its store into `session`. A read error
+        // (a locked or missing file) leaves the queue empty rather than
+        // failing the whole session open (D14: fail open on extensions).
+        let mut pending_grants: VecDeque<_> = Store::open(&home)
+            .map(|gs| plugin_grant_requests(config, &home, cwd, &gs))
+            .unwrap_or_default()
+            .into();
+        state.modal = pending_grants
+            .pop_front()
+            .map(cox_tui::state::Modal::PluginGrant);
+        state.pending_grants = pending_grants;
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
         let (surfaced, surfaced_rx) = tokio::sync::mpsc::channel(1);
+        let (grant_tx, mut grant_rx) =
+            tokio::sync::mpsc::channel::<cox_tui::state::GrantDecision>(4);
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
         let poll = {
             let home = home.clone();
@@ -1140,6 +1257,17 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                                 break;
                             }
                         }
+                        // T33.8: `Modal::PluginGrant`'s `y`, written here —
+                        // the one place in this surface that opens the
+                        // store, same reasoning as `Ask::Rollout` above.
+                        // Best-effort: a write that fails (a locked or
+                        // full store) leaves the plugin ungranted, same as
+                        // any other `plugin_notices` warning.
+                        Some(decision) = grant_rx.recv() => {
+                            if let Ok(gs) = Store::open(&home) {
+                                let _ = write_plugin_grant(&gs, decision);
+                            }
+                        }
                     }
                 }
             })
@@ -1167,6 +1295,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             ask,
             surfaced_rx,
             persist_tx.clone(),
+            grant_tx,
         ))?;
         poll.abort();
         // `/handoff`'s summary is the parent's `compact` call, so it runs

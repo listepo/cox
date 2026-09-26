@@ -104,10 +104,17 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::Approval(a)) => a.lines(&look),
         _ => Vec::new(),
     };
+    // T33.8: same reason as `approval` — `view` needs the line count for
+    // the band's height before it draws the transcript below it.
+    let grant = match &state.modal {
+        Some(Modal::PluginGrant(g)) => g.lines(&state.glyphs, &state.theme),
+        _ => Vec::new(),
+    };
     let modal = match &state.modal {
         Some(Modal::Approval(_)) => u16::try_from(approval.len()).unwrap_or(u16::MAX),
         Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
+        Some(Modal::PluginGrant(_)) => u16::try_from(grant.len()).unwrap_or(u16::MAX),
         // The diff view, the agents list and the rollout overlay all take
         // the transcript's rows (`Context::Overlay`), not a band of their own.
         Some(
@@ -238,6 +245,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::Picker(p)) => {
             Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
         }
+        Some(Modal::PluginGrant(_)) => Paragraph::new(grant).render(modal_area, buf),
         // Drawn over the transcript above, like `Diff`/`Help`; no band here.
         Some(
             Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
