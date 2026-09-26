@@ -948,9 +948,11 @@ dependencies = [
  "cox-provider",
  "cox-sandbox",
  "cox-sanitize",
+ "cox-tools",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

@@ -319,9 +319,10 @@ impl ExternalAgent for Acp {
             updates: Some(tx),
         };
         let cwd = h.cwd.clone();
+        let sandboxed = h.sandbox.is_some();
         let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
         let run = cox_acp::connect(transport, host, async move |cx| {
-            cx.send_request(cox_acp::initialize_request())
+            cx.send_request(cox_acp::initialize_request(sandboxed))
                 .block_task()
                 .await?;
             let session = cx

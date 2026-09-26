@@ -9,17 +9,23 @@
 //! guard of its own: `session/request_permission` is decided by
 //! `cox_permission::Engine` (via `cox_core::permission`), `fs/*` paths go
 //! through `cox_sandbox::path::confine` plus the sandbox policy already
-//! governing the process, and `terminal/*` is refused with the reason named.
+//! governing the process, and a `terminal/create` command is judged by the
+//! same engine as a `bash` call, then run by `terminal` under the process's
+//! own sandbox policy — or refused, with the reason named, when the process
+//! has no sandbox grant.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    ClientCapabilities, CreateTerminalRequest, ErrorCode, InitializeRequest, PermissionOption,
-    PermissionOptionKind, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionNotification, SessionUpdate, ToolKind, WriteTextFileRequest, WriteTextFileResponse,
+    ClientCapabilities, CreateTerminalRequest, CreateTerminalResponse, ErrorCode,
+    InitializeRequest, KillTerminalRequest, KillTerminalResponse, PermissionOption,
+    PermissionOptionKind, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
+    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
+    TerminalId, TerminalOutputRequest, ToolKind, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
 };
 use agent_client_protocol::{Agent, Client, ConnectTo, ConnectionTo, Error};
 use cox_core::permission::{Engine, Outcome};
@@ -28,6 +34,8 @@ use cox_protocol::types::{
     ApprovalPolicy, Decision, PermissionMode, Risk, SandboxMode, SandboxPolicy, ToolCall, Why,
 };
 use cox_sandbox::path::confine;
+
+use crate::terminal::{Terminals, command_line};
 
 /// Where an `Ask` verdict reaches the user. The caller implements it over
 /// the session's existing `ApprovalRequired` relay (labelled with the
@@ -62,19 +70,22 @@ pub struct ClientHost {
     pub updates: Option<tokio::sync::mpsc::UnboundedSender<SessionUpdate>>,
 }
 
-/// `ClientHost` plus the grants that grow while the connection lives.
+/// `ClientHost` plus what grows while the connection lives: session grants
+/// and the terminals, whose commands stop when this is dropped.
 struct Shared {
     host: ClientHost,
     grants: Mutex<Vec<(String, String)>>,
+    terminals: Terminals,
 }
 
 /// The `initialize` request that matches what `connect` serves: text-file
-/// reads and writes, and no client terminal.
-pub fn initialize_request() -> InitializeRequest {
+/// reads and writes, and a client terminal only when the process has a
+/// sandbox grant (`sandboxed`, i.e. `ClientHost::sandbox` is `Some`).
+pub fn initialize_request(sandboxed: bool) -> InitializeRequest {
     let mut caps = ClientCapabilities::default();
     caps.fs.read_text_file = true;
     caps.fs.write_text_file = true;
-    caps.terminal = false;
+    caps.terminal = sandboxed;
     InitializeRequest::new(ProtocolVersion::V1).client_capabilities(caps)
 }
 
@@ -89,9 +100,15 @@ pub async fn connect<R>(
     main_fn: impl AsyncFnOnce(ConnectionTo<Agent>) -> Result<R, Error>,
 ) -> Result<R, Error> {
     let grants = Mutex::new(host.grants.clone());
-    let shared = Arc::new(Shared { host, grants });
+    let terminals = Terminals::default();
+    let shared = Arc::new(Shared {
+        host,
+        grants,
+        terminals,
+    });
     let (perm, read, write) = (shared.clone(), shared.clone(), shared.clone());
-    let sandboxed = shared.host.sandbox.is_some();
+    let (create, output, wait) = (shared.clone(), shared.clone(), shared.clone());
+    let (kill, release) = (shared.clone(), shared.clone());
     let updates = shared.host.updates.clone();
     Client
         .builder()
@@ -128,8 +145,55 @@ pub async fn connect<R>(
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |_req: CreateTerminalRequest, responder, _cx| {
-                responder.respond_with_error(refused(terminal_refusal(sandboxed)))
+            async move |req: CreateTerminalRequest, responder, cx: ConnectionTo<Agent>| {
+                // The engine may `Ask`, which waits on the user.
+                let shared = create.clone();
+                cx.spawn(async move {
+                    responder.respond_with_result(create_terminal(&shared, req).await)
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: TerminalOutputRequest, responder, _cx| {
+                let out = output.terminals.output(&req.terminal_id);
+                responder.respond_with_result(out.ok_or_else(|| unknown(&req.terminal_id)))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: WaitForTerminalExitRequest, responder, cx: ConnectionTo<Agent>| {
+                // Off the dispatch loop: `terminal/kill` must still get through.
+                let shared = wait.clone();
+                cx.spawn(async move {
+                    let id = req.terminal_id;
+                    let status = shared.terminals.wait(&id).await;
+                    responder.respond_with_result(
+                        status
+                            .map(WaitForTerminalExitResponse::new)
+                            .ok_or_else(|| unknown(&id)),
+                    )
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: KillTerminalRequest, responder, _cx| {
+                let done = kill.terminals.kill(&req.terminal_id);
+                responder.respond_with_result(
+                    done.map(|()| KillTerminalResponse::new())
+                        .ok_or_else(|| unknown(&req.terminal_id)),
+                )
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: ReleaseTerminalRequest, responder, _cx| {
+                let done = release.terminals.release(&req.terminal_id);
+                responder.respond_with_result(
+                    done.map(|()| ReleaseTerminalResponse::new())
+                        .ok_or_else(|| unknown(&req.terminal_id)),
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -139,8 +203,15 @@ pub async fn connect<R>(
 
 /// Engine verdict → the option the agent offered that matches it.
 async fn permission(shared: &Shared, req: RequestPermissionRequest) -> RequestPermissionResponse {
+    let call = tool_call_for(&shared.host, &req);
+    let decision = judge(shared, &call).await;
+    RequestPermissionResponse::new(pick(&req.options, &decision))
+}
+
+/// The engine's verdict on `call`, an `Ask` answered by the approver, and an
+/// `AllowForSession` remembered for the rest of the connection.
+async fn judge(shared: &Shared, call: &ToolCall) -> Decision {
     let host = &shared.host;
-    let call = tool_call_for(host, &req);
     let sandbox = host
         .sandbox
         .as_ref()
@@ -148,7 +219,7 @@ async fn permission(shared: &Shared, req: RequestPermissionRequest) -> RequestPe
     let grants = shared.grants.lock().map(|g| g.clone()).unwrap_or_default();
     let decision = match host
         .engine
-        .decide(&call, host.mode, host.approval, sandbox, &grants)
+        .decide(call, host.mode, host.approval, sandbox, &grants)
     {
         Outcome::Allow { .. } => Decision::Allow,
         Outcome::Deny { reason, .. } => Decision::Deny { reason },
@@ -157,9 +228,68 @@ async fn permission(shared: &Shared, req: RequestPermissionRequest) -> RequestPe
     if matches!(decision, Decision::AllowForSession)
         && let Ok(mut g) = shared.grants.lock()
     {
-        g.push((call.name, call.subject));
+        g.push((call.name.clone(), call.subject.clone()));
     }
-    RequestPermissionResponse::new(pick(&req.options, &decision))
+    decision
+}
+
+/// Runs the command only under the process's own sandbox policy and only
+/// when the engine allows it as a `bash` call, with the cwd confined like
+/// any `fs/*` path.
+async fn create_terminal(
+    shared: &Shared,
+    req: CreateTerminalRequest,
+) -> Result<CreateTerminalResponse, Error> {
+    let host = &shared.host;
+    let Some(policy) = &host.sandbox else {
+        return Err(refused(
+            "terminal/create refused: the external agent runs without a sandbox grant, \
+             and cox never runs a command outside the sandbox",
+        ));
+    };
+    let line = command_line(&req);
+    // The engine judges what it is shown; a line that sanitizing would alter
+    // could run something other than what the rules matched.
+    let subject = cox_sanitize::sanitize(&line);
+    if subject != line {
+        return Err(refused(
+            "terminal/create refused: the command contains control characters",
+        ));
+    }
+    let call = ToolCall {
+        id: CallId::new(),
+        name: "bash".into(),
+        input: serde_json::json!({ "command": line }),
+        risk: cox_tools::bash::classify(&line),
+        subject,
+    };
+    match judge(shared, &call).await {
+        Decision::Allow | Decision::AllowForSession => {}
+        Decision::Deny { reason } => {
+            return Err(refused(format!("terminal/create refused: {reason}")));
+        }
+        Decision::Edit { .. } => {
+            return Err(refused(
+                "terminal/create refused: an edited command cannot be handed back to the agent",
+            ));
+        }
+    }
+    let cwd = match &req.cwd {
+        Some(cwd) => confined(host, cwd)?,
+        None => host.cwd.clone(),
+    };
+    let id = shared.terminals.create(
+        line,
+        cwd,
+        host.roots.clone(),
+        policy.clone(),
+        req.output_byte_limit,
+    );
+    Ok(CreateTerminalResponse::new(id))
+}
+
+fn unknown(id: &TerminalId) -> Error {
+    refused(format!("no terminal {} (released or never created)", id.0))
 }
 
 /// Never grants the agent more than the engine allowed: a one-off `Allow`
@@ -286,19 +416,6 @@ fn confined(host: &ClientHost, path: &Path) -> Result<PathBuf, Error> {
     confine(&host.roots, &host.cwd, raw).map_err(|e| refused(format!("fs request refused: {e}")))
 }
 
-/// cox never runs a command for the agent outside the sandbox, and with one
-/// it still offers no client terminal (`initialize_request` says so): the
-/// agent's own shell already runs under that same sandbox.
-fn terminal_refusal(sandboxed: bool) -> &'static str {
-    if sandboxed {
-        "terminal/create refused: cox offers external agents no client terminal; \
-         the agent's own shell already runs under its sandbox"
-    } else {
-        "terminal/create refused: the external agent runs without a sandbox grant, \
-         and cox never runs a command outside the sandbox"
-    }
-}
-
 fn refused(reason: impl Into<String>) -> Error {
     Error::new(ErrorCode::InvalidParams.into(), reason)
 }
@@ -308,7 +425,8 @@ mod tests {
     use super::*;
     use agent_client_protocol::Channel;
     use agent_client_protocol::schema::v1::{
-        PermissionOptionId, SessionId, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+        PermissionOptionId, SessionId, TerminalExitStatus, ToolCallId, ToolCallUpdate,
+        ToolCallUpdateFields,
     };
     use cox_protocol::config::PermissionsConfig;
     use serde_json::json;
@@ -522,7 +640,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn acp_client_terminal_request_without_sandbox_grant_is_refused() {
+    async fn acp_terminal_without_sandbox_grant_is_still_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let approver = Arc::new(Recorder(Mutex::new(vec![]), Decision::Allow));
         let host = host(dir.path(), None, approver);
@@ -539,6 +657,180 @@ mod tests {
             err.message
         );
         assert!(!dir.path().join("pwned").exists());
-        assert!(!initialize_request().client_capabilities.terminal);
+        assert!(!initialize_request(false).client_capabilities.terminal);
+        assert!(initialize_request(true).client_capabilities.terminal);
+    }
+
+    /// Creates a terminal for `line` and waits for it to end.
+    async fn run_to_exit(
+        cx: &ConnectionTo<Client>,
+        line: &str,
+        limit: Option<u64>,
+    ) -> Result<(TerminalId, TerminalExitStatus), Error> {
+        let s = SessionId::new("s");
+        let req = CreateTerminalRequest::new(s.clone(), line).output_byte_limit(limit);
+        let id = cx.send_request(req).block_task().await?.terminal_id;
+        let wait = WaitForTerminalExitRequest::new(s, id.clone());
+        let exit = cx.send_request(wait).block_task().await?.exit_status;
+        Ok((id, exit))
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test]
+    async fn acp_terminal_runs_under_the_sandbox_policy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The temp dir is writable by design, so the escape target is under
+        // $HOME, as in T4.1/T4.2.
+        let home = std::env::var("HOME").expect("HOME");
+        let outside = format!("{home}/.cox-acp-terminal-escape-{}", std::process::id());
+        let approver = Arc::new(Recorder(Mutex::new(vec![]), Decision::Allow));
+        let host = host(
+            dir.path(),
+            Some(policy(SandboxMode::WorkspaceWrite)),
+            approver,
+        );
+        let line = format!("echo in > inside; echo x > '{outside}'");
+        let (_, exit) = as_agent(host, async |cx| run_to_exit(&cx, &line, None).await).await;
+        let leaked = Path::new(&outside).exists();
+        let _ = std::fs::remove_file(&outside);
+        assert!(!leaked, "the terminal let a write escape to {outside}");
+        let inside = std::fs::read_to_string(dir.path().join("inside")).expect("ran in the cwd");
+        assert_eq!(inside, "in\n");
+        assert_ne!(exit.exit_code, Some(0), "{exit:?}");
+    }
+
+    #[tokio::test]
+    async fn acp_terminal_output_respects_byte_limit_and_reports_truncation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let approver = Arc::new(Recorder(Mutex::new(vec![]), Decision::Allow));
+        let sandbox = Some(policy(SandboxMode::WorkspaceWrite));
+        let host = host(dir.path(), sandbox, approver);
+        let (exit, out) = as_agent(host, async |cx| {
+            let (id, exit) = run_to_exit(&cx, "printf abcdefghij", Some(4)).await?;
+            let req = TerminalOutputRequest::new(SessionId::new("s"), id);
+            Ok((exit, cx.send_request(req).block_task().await?))
+        })
+        .await;
+        assert_eq!(exit.exit_code, Some(0), "{exit:?}");
+        assert_eq!(out.output, "ghij");
+        assert!(out.truncated);
+        assert_eq!(out.exit_status, Some(exit));
+    }
+
+    #[tokio::test]
+    async fn acp_terminal_release_kills_the_process_group() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let approver = Arc::new(Recorder(Mutex::new(vec![]), Decision::Allow));
+        let sandbox = Some(policy(SandboxMode::WorkspaceWrite));
+        let host = host(dir.path(), sandbox, approver);
+        let pid_file = dir.path().join("bg.pid");
+        let (killed, bg, after) = as_agent(host, async |cx| {
+            let s = SessionId::new("s");
+            let create = |line: &str| CreateTerminalRequest::new(s.clone(), line);
+            // `kill` ends a command and leaves the terminal to wait on.
+            let id = cx
+                .send_request(create("sleep 300"))
+                .block_task()
+                .await?
+                .terminal_id;
+            cx.send_request(KillTerminalRequest::new(s.clone(), id.clone()))
+                .block_task()
+                .await?;
+            let wait = WaitForTerminalExitRequest::new(s.clone(), id);
+            let killed = cx.send_request(wait).block_task().await?.exit_status;
+            // `release` takes a background child of the command down too.
+            let line = "sleep 300 & echo $! > bg.pid; sleep 300";
+            let id = cx
+                .send_request(create(line))
+                .block_task()
+                .await?
+                .terminal_id;
+            let bg = wait_for_pid(&pid_file).await;
+            cx.send_request(ReleaseTerminalRequest::new(s.clone(), id.clone()))
+                .block_task()
+                .await?;
+            let after = cx
+                .send_request(TerminalOutputRequest::new(s.clone(), id))
+                .block_task()
+                .await;
+            Ok((killed, bg, after))
+        })
+        .await;
+        assert_eq!(killed.signal.as_deref(), Some("SIGTERM"), "{killed:?}");
+        assert!(after.is_err(), "a released terminal is gone");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while alive(bg) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pid {bg} outlived release"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    async fn wait_for_pid(file: &Path) -> u32 {
+        for _ in 0..200 {
+            if let Some(pid) = std::fs::read_to_string(file)
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+            {
+                return pid;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        panic!("the command never wrote {}", file.display());
+    }
+
+    fn alive(pid: u32) -> bool {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+
+    #[tokio::test]
+    async fn acp_terminal_command_is_judged_by_the_engine() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "keep").expect("seed");
+        let approver = Arc::new(Recorder(
+            Mutex::new(vec![]),
+            Decision::Deny {
+                reason: "user said no".into(),
+            },
+        ));
+        let sandbox = Some(policy(SandboxMode::WorkspaceWrite));
+        let host = host(dir.path(), sandbox, approver.clone());
+        let (rule, asked, hidden) = as_agent(host, async |cx| {
+            let s = SessionId::new("s");
+            let create = |cmd: &str, args: &[&str]| {
+                CreateTerminalRequest::new(s.clone(), cmd)
+                    .args(args.iter().map(|a| a.to_string()).collect())
+            };
+            let rule = cx.send_request(create("rm", &["-rf", "victim"]));
+            let rule = rule.block_task().await;
+            let asked = cx
+                .send_request(create("touch", &["made"]))
+                .block_task()
+                .await;
+            let hidden = cx.send_request(create("git status\u{1b}[;rm -rf victim", &[]));
+            let hidden = hidden.block_task().await;
+            Ok((rule, asked, hidden))
+        })
+        .await;
+        let rule = rule.expect_err("a deny rule refuses the command");
+        assert!(rule.message.contains("refused"), "{}", rule.message);
+        let asked = asked.expect_err("the approver's deny refuses the command");
+        assert!(asked.message.contains("user said no"), "{}", asked.message);
+        let hidden = hidden.expect_err("an escape sequence is refused");
+        assert!(hidden.message.contains("control"), "{}", hidden.message);
+        assert_eq!(std::fs::read_to_string(&victim).expect("kept"), "keep");
+        assert!(!dir.path().join("made").exists());
+        let seen = approver.0.lock().expect("lock");
+        assert_eq!(seen.len(), 1, "only the unmatched command is escalated");
+        assert_eq!(seen[0].name, "bash");
+        assert_eq!(seen[0].subject, "touch made");
+        assert_eq!(seen[0].risk, cox_tools::bash::classify("touch made"));
     }
 }

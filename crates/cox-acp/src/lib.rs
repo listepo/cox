@@ -8,6 +8,7 @@ pub mod client;
 pub mod client_tools;
 pub mod map;
 pub mod server;
+mod terminal;
 
 pub use client::{Approver, ClientHost, connect, initialize_request};
 pub use client_tools::ClientLink;

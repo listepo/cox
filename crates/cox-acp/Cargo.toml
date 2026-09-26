@@ -15,9 +15,14 @@ cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 # the same `path::confine` guard and sandbox policy as every other path
 # (EA§4); a guard crate, no new external dep.
 cox-sandbox = { path = "../cox-sandbox", version = "0.1.2" }
+# An external agent's `terminal/*` command runs through `bash`'s own runner
+# and is rated by its `classify` (T35.11, EA§4): no second spawn path.
+cox-tools = { path = "../cox-tools", version = "0.1.2" }
 agent-client-protocol = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
+# `CancellationToken`, the stop signal `bash`'s runner takes (T35.11).
+tokio-util = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 

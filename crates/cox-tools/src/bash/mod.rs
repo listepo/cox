@@ -379,6 +379,45 @@ pub fn kill_group(pid: u32) {
     signal(pid, Signal::SIGKILL);
 }
 
+/// How a command run through `run_line` ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Exit {
+    /// The exit code, or 128 plus the signal that ended it.
+    pub code: Option<u32>,
+    /// Why it was stopped early (`cancelled`, `timed out`), if it was.
+    pub stopped: Option<&'static str>,
+}
+
+/// Runs one `sh -c` command line exactly as `bash` does — same sandbox wrap,
+/// env allowlist, PTY and process-group kill — with `roots` as both the
+/// readable and the writable workspace. `pub` so a host that runs a command
+/// for someone else (an external agent's ACP terminal, T35.11) has no second
+/// spawn path. Output streams to `output` with ANSI stripped; `cancel` ends
+/// the run with SIGTERM, then SIGKILL, of the whole group.
+pub async fn run_line(
+    line: &str,
+    cwd: &Path,
+    roots: &[PathBuf],
+    sandbox: &SandboxPolicy,
+    cancel: &CancellationToken,
+    output: &mpsc::Sender<String>,
+    timeout: Duration,
+) -> Result<Exit, ToolError> {
+    let cmd = Cmd {
+        line: line.to_owned(),
+        shell: Shell::Sh.path()?,
+    };
+    let workspace = Workspace {
+        read: roots,
+        write: roots,
+    };
+    let run = run(&cmd, cwd, workspace, sandbox, cancel, output, timeout).await?;
+    Ok(Exit {
+        code: run.code,
+        stopped: run.ended,
+    })
+}
+
 async fn run(
     cmd: &Cmd,
     cwd: &Path,
@@ -500,7 +539,9 @@ async fn run(
         }
     }
     phase.store(STOP, Ordering::Relaxed);
-    if !exited {
+    // A stopped run ends with the group SIGKILLed even after its shell went
+    // down on SIGTERM: a child that ignores SIGTERM must not outlive it.
+    if !exited || run.ended.is_some() {
         signal(pid, Signal::SIGKILL);
     }
     run.elapsed = start.elapsed();

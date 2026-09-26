@@ -336,7 +336,9 @@ fn no_crate_below_cox_depends_on_core() {
     // cox-sanitize (T32.1's guard), nothing else; cox-tui also on its
     // renderers, cox-render (T32.2); cox-acp also on the cox-sandbox guard,
     // whose `path::confine` serves an external agent's `fs/*` requests when
-    // cox is its ACP client (T35.3, EA§4).
+    // cox is its ACP client (T35.3, EA§4), and on cox-tools, whose `bash`
+    // runner and `classify` serve that agent's `terminal/*` requests with no
+    // second spawn path (T35.11).
     let surface_allowed: HashSet<&str> = ["cox-core", "cox-protocol", "cox-sanitize"]
         .into_iter()
         .collect();
@@ -345,8 +347,8 @@ fn no_crate_below_cox_depends_on_core() {
         assert!(
             d.iter().all(|dep| surface_allowed.contains(dep.as_str())
                 || (crate_name == "cox-tui" && dep == "cox-render")
-                || (crate_name == "cox-acp" && dep == "cox-sandbox")),
-            "{crate_name} may only depend on cox-core/cox-protocol/cox-sanitize (and cox-tui on cox-render, cox-acp on cox-sandbox) among workspace crates, found {d:?}"
+                || (crate_name == "cox-acp" && (dep == "cox-sandbox" || dep == "cox-tools"))),
+            "{crate_name} may only depend on cox-core/cox-protocol/cox-sanitize (and cox-tui on cox-render, cox-acp on cox-sandbox and cox-tools) among workspace crates, found {d:?}"
         );
     }
 
