@@ -193,6 +193,10 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[plugins]`
 
 - `enabled` = `true` — WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins. A [plugins.<id>] table is that plugin's own config, passed unchanged to its cox_init as InitIn.config; the plugin validates it
+## `[plugins.decide]`
+
+- `min_confidence` = `0.6` — advice with lower or no confidence is ignored and the static pick stands
+- `route_ms` = `300` — route's latency budget; a later answer is ignored
 ## `[memory]`
 
 - `enabled` = `true`

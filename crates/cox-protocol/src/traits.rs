@@ -538,6 +538,26 @@ pub trait ModelCaller: Send + Sync {
     ) -> Result<Vec<crate::types::ProviderEvent>, crate::errors::CoreError>;
 }
 
+/// A decision plugin's answers to the core's typed questions (PL§4
+/// "Decision points", T33.20): `cox-plugin`'s `PluginAdvisor` calls the
+/// guest's `cox_decide`. Not a `Hook`, on purpose — a hook's `Modify` has no
+/// monotone rule, so the core keeps the decision: it offers the options,
+/// applies the point's rule and uses its static pick on silence.
+#[async_trait]
+pub trait Advisor: Send + Sync {
+    /// The plugin id `[plugins.decide]` names this advisor by.
+    fn id(&self) -> &str;
+
+    /// Answers `question` within `budget`. Never fails: `None` is silence
+    /// (not granted for the point, a trap, a timeout, garbage), and the
+    /// core falls back to its static pick (D14, fail open).
+    async fn advise(
+        &self,
+        question: crate::plugin::Question,
+        budget: Duration,
+    ) -> Option<crate::plugin::Advice>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

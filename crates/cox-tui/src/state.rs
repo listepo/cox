@@ -1990,6 +1990,9 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
+        // T33.20: the `TurnStarted` that follows already carries the
+        // advised tier and model, so the status line needs nothing more.
+        Event::Advised { .. } => {}
         Event::TaskCreated { task, label, tier } => {
             state.tasks.push((task, label, tier, state.tick, None));
         }

@@ -478,6 +478,8 @@ fn start_plugins(
         return (Vec::new(), notices);
     }
     let hooks = live.hooks();
+    // T33.20: the session asks only the plugin `[plugins.decide]` names.
+    session.set_advisors(live.advisors());
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(Level, String)>();
     let emitter = session.clone();
     tokio::spawn(async move {

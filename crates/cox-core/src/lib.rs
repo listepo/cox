@@ -5,6 +5,7 @@
 
 #![warn(missing_docs)]
 
+mod advise;
 mod budget;
 pub mod cache_diag;
 mod checkpoint;

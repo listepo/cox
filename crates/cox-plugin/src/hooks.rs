@@ -100,7 +100,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::host::tests::module;
+    use crate::host::tests::{answering, module, spinning};
 
     fn granted(events: &[&str]) -> Vec<String> {
         events
@@ -114,32 +114,10 @@ mod tests {
         PluginHooks::new("p", Arc::new(host), &granted(events))
     }
 
-    /// A `cox_hook` that answers the `len` bytes of JSON at offset 0.
-    fn answering(json: &str) -> String {
-        let escaped = json.replace('"', "\\\"");
-        format!(
-            r#"(memory 1)
-               (data (i32.const 0) "{escaped}")
-               (func (export "cox_hook") (result i32) (local $off i64) (local $i i64)
-                 (local.set $off (call $alloc (i64.const {len})))
-                 (block $done (loop $copy
-                   (br_if $done (i64.ge_u (local.get $i) (i64.const {len})))
-                   (call $store (i64.add (local.get $off) (local.get $i))
-                     (i32.load8_u (i32.wrap_i64 (local.get $i))))
-                   (local.set $i (i64.add (local.get $i) (i64.const 1)))
-                   (br $copy)))
-                 (call $output_set (local.get $off) (i64.const {len}))
-                 (i32.const 0))"#,
-            len = json.len()
-        )
-    }
-
-    const SPIN: &str = r#"(func (export "cox_hook") (result i32) (loop $l (br $l)) (i32.const 0))"#;
-
     #[tokio::test]
     async fn plugin_hook_answers_only_its_granted_events() {
         let hooks = plugin(
-            &answering(r#"{"type":"block","reason":"no"}"#),
+            &answering(EXPORT, r#"{"type":"block","reason":"no"}"#),
             &Limits::default(),
             &["PreToolUse"],
         );
@@ -177,7 +155,7 @@ mod tests {
             (short_call_ms, Duration::from_secs(60)),
             (long_call_ms, Duration::from_millis(100)),
         ] {
-            let hooks = plugin(SPIN, &limits, &["PreToolUse"]);
+            let hooks = plugin(&spinning(EXPORT), &limits, &["PreToolUse"]);
             let started = Instant::now();
             let out = hooks.run(HookEvent::PreToolUse, json!({}), timeout).await;
             assert!(

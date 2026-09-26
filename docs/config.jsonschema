@@ -217,7 +217,12 @@
       "description": "`[plugins]`",
       "$ref": "#/$defs/PluginsConfig",
       "default": {
-        "enabled": true
+        "enabled": true,
+        "decide": {
+          "route": null,
+          "min_confidence": 0.6,
+          "route_ms": 300
+        }
       }
     },
     "memory": {
@@ -483,7 +488,7 @@
       "additionalProperties": false
     },
     "Tier": {
-      "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+      "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.\n\nOrdered cheapest first (declaration order), the one tier ordering every\n\"never up\" rule compares with: a plugin's model-call grant clamp\n(PL§7d) and the `route` decision point (PL§4, T33.20).",
       "oneOf": [
         {
           "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
@@ -1437,9 +1442,46 @@
           "description": "Whether any plugin loads at all; `--no-plugins` sets it to `false`.",
           "type": "boolean",
           "default": true
+        },
+        "decide": {
+          "description": "`[plugins.decide]` (PL§4, T33.20): which plugin answers each\ndecision point.",
+          "$ref": "#/$defs/DecideConfig",
+          "default": {
+            "route": null,
+            "min_confidence": 0.6,
+            "route_ms": 300
+          }
         }
       },
       "additionalProperties": true
+    },
+    "DecideConfig": {
+      "description": "`[plugins.decide]` (PL§4 \"Decision points\", T33.20): one plugin per\npoint; a point with no plugin is off, so nothing leaves the machine for\nit. `deny_unknown_fields` so a mistyped point fails loudly instead of\nsilently staying off.",
+      "type": "object",
+      "properties": {
+        "route": {
+          "description": "The plugin id that answers `route` (a main turn's tier, only down).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "min_confidence": {
+          "description": "Advice whose confidence is below this (or absent) is ignored.",
+          "type": "number",
+          "format": "double",
+          "default": 0.6
+        },
+        "route_ms": {
+          "description": "`route`'s latency budget in milliseconds; a later answer is ignored.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 300
+        }
+      },
+      "additionalProperties": false
     },
     "MemoryConfig": {
       "description": "`[memory]` (plan.md §1.6).",

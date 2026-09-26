@@ -2,11 +2,14 @@
 //! routing choice: which tier a job runs on, which model string it sends,
 //! and whether the `think` tier's confirmation gate blocks the turn. The
 //! loop never guesses a model itself; a failing cheap call is retried on
-//! cheap because `pick` is stateless.
+//! cheap because `pick` is stateless. `route_offer`/`apply_route` are the
+//! `route` decision point's monotone rule (PL§4, T33.20): advice may only
+//! move a main turn down.
 
 use std::collections::HashMap;
 
 use cox_protocol::Config;
+use cox_protocol::plugin::{Advice, Answer};
 use cox_protocol::types::{Content, Effort, Job, Message, ModelId, ProviderId, Thinking, Tier};
 
 /// Fable 5.1 list prices shown by the think gate (Anthropic first-party,
@@ -199,6 +202,41 @@ fn clamp_effort(config: &Config, provider: &str, model: &ModelId, want: Effort) 
         .or_else(|| supported.iter().min())
         .copied()
         .unwrap_or(want)
+}
+
+/// The tiers the `route` decision point may offer (PL§4, D5): at or below
+/// the static pick and never `think`, cheapest first. When every offered
+/// tier is the static pick there is nothing to choose and the point is not
+/// asked. T33.40.8 narrows this further with its cache-aware `cheap` filter.
+pub fn route_offer(static_tier: Tier) -> Vec<Tier> {
+    [Tier::Cheap, Tier::Code]
+        .into_iter()
+        .filter(|tier| *tier <= static_tier)
+        .collect()
+}
+
+/// Applies `route` advice to the static pick: the first choice, when it is
+/// one of `offer` and its confidence reaches `min_confidence`. Returns the
+/// tier and whether the advice was followed; anything else keeps the static
+/// pick. Re-checks "never up" itself so no caller's `offer` can widen it.
+pub fn apply_route(
+    static_tier: Tier,
+    offer: &[Tier],
+    advice: &Advice,
+    min_confidence: f64,
+) -> (Tier, bool) {
+    let confident = advice.confidence.is_some_and(|c| c >= min_confidence);
+    let choice = match &advice.answer {
+        Answer::Choice { order } => order
+            .first()
+            .and_then(|i| offer.get(usize::try_from(*i).ok()?))
+            .copied(),
+        Answer::Score { .. } | Answer::Noul { .. } => None,
+    };
+    match choice {
+        Some(tier) if confident && tier <= static_tier && tier != Tier::Think => (tier, true),
+        _ => (static_tier, false),
+    }
 }
 
 /// Drops `Thinking` blocks after a model switch: a signature binds its block
@@ -416,5 +454,56 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].content, vec![text.clone()]);
         assert_eq!(out[1].content, vec![text]);
+    }
+
+    fn advice(order: Vec<u32>, confidence: Option<f64>) -> Advice {
+        Advice {
+            answer: Answer::Choice { order },
+            confidence,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn route_advice_never_routes_up() {
+        assert_eq!(route_offer(Tier::Cheap), vec![Tier::Cheap]);
+        assert_eq!(route_offer(Tier::Code), vec![Tier::Cheap, Tier::Code]);
+        assert_eq!(route_offer(Tier::Think), vec![Tier::Cheap, Tier::Code]);
+        // Even an offer a caller widened past the rule cannot route up.
+        let wide = [Tier::Cheap, Tier::Code, Tier::Think];
+        for static_tier in wide {
+            for offer in [route_offer(static_tier), wide.to_vec()] {
+                for i in 0..4 {
+                    let (tier, _) =
+                        apply_route(static_tier, &offer, &advice(vec![i], Some(1.0)), 0.6);
+                    assert!(tier <= static_tier, "{static_tier:?} -> {tier:?}");
+                    assert!(tier != Tier::Think || static_tier == Tier::Think);
+                }
+            }
+        }
+        let offer = route_offer(Tier::Code);
+        assert_eq!(
+            apply_route(Tier::Code, &offer, &advice(vec![0, 1], Some(0.9)), 0.6),
+            (Tier::Cheap, true)
+        );
+        for low in [
+            advice(vec![0], Some(0.5)),
+            advice(vec![0], None),
+            advice(vec![], Some(1.0)),
+        ] {
+            assert_eq!(
+                apply_route(Tier::Code, &offer, &low, 0.6),
+                (Tier::Code, false)
+            );
+        }
+        let score = Advice {
+            answer: Answer::Score { value: 0.0 },
+            confidence: Some(1.0),
+            note: None,
+        };
+        assert_eq!(
+            apply_route(Tier::Code, &offer, &score, 0.6),
+            (Tier::Code, false)
+        );
     }
 }

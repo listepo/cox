@@ -63,7 +63,13 @@ pub enum Concurrency {
 }
 
 /// A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+///
+/// Ordered cheapest first (declaration order), the one tier ordering every
+/// "never up" rule compares with: a plugin's model-call grant clamp
+/// (PL§7d) and the `route` decision point (PL§4, T33.20).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Tier {
     /// Haiku-class or local; mechanical work, never chosen for the main coding turn.
@@ -1091,6 +1097,20 @@ pub enum Event {
         /// The new model.
         to: ModelId,
     },
+    /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
+    /// for every answer, used or not, so replay and `cox stats` see which
+    /// advice changed the core's pick; it never feeds model history.
+    Advised {
+        /// Which point asked.
+        point: crate::plugin::DecidePoint,
+        /// The plugin `[plugins.decide]` names for the point.
+        plugin: String,
+        /// The plugin's answer as given.
+        advice: crate::plugin::Advice,
+        /// Whether the core followed it (its choice may equal the static
+        /// pick); `false` means it was ignored and the static pick stood.
+        applied: bool,
+    },
     /// An informational or warning message, not part of the model-visible transcript.
     Notice {
         /// Severity.
@@ -1445,6 +1465,7 @@ mod tests {
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
+    #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
     #[case::error(Event::Error { error: CoreError::Interrupted, fatal: false })]

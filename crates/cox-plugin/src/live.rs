@@ -14,10 +14,11 @@ use cox_protocol::PluginStore;
 use cox_protocol::config::PluginsConfig;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{EventTap, Hook, ModelCaller};
+use cox_protocol::traits::{Advisor, EventTap, Hook, ModelCaller};
 use cox_protocol::types::{Event, Level, ProviderEvent, Request, Tier};
 
 use crate::PluginError;
+use crate::advisor::PluginAdvisor;
 use crate::context::Context;
 use crate::events::{PluginTap, Redraw, subscriptions};
 use crate::grant;
@@ -233,6 +234,19 @@ impl LivePlugins {
             .map(|p| {
                 let hooks = PluginHooks::new(p.id(), p.host.clone(), &p.granted);
                 (p.id().to_string(), Arc::new(hooks) as Arc<dyn Hook>)
+            })
+            .collect()
+    }
+
+    /// Each started plugin as a decision-point source (T33.20); the session
+    /// asks only the one `[plugins.decide]` names for a point, and a plugin
+    /// without that point's grant answers nothing.
+    pub fn advisors(&self) -> Vec<Arc<dyn Advisor>> {
+        self.plugins
+            .iter()
+            .filter(|p| p.init.is_some())
+            .map(|p| {
+                Arc::new(PluginAdvisor::new(p.id(), p.host.clone(), &p.granted)) as Arc<dyn Advisor>
             })
             .collect()
     }

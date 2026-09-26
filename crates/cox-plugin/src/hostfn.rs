@@ -343,11 +343,8 @@ impl HostEnv {
             ModelTier::Cheap => Tier::Cheap,
             ModelTier::Code => Tier::Code,
         };
-        let tier = if tier_rank(requested) < tier_rank(granted) {
-            requested
-        } else {
-            granted
-        };
+        // `Tier`'s order is cost order, so the cheaper of the two is the clamp.
+        let tier = requested.min(granted);
         let request: Request = serde_json::from_value(call.request)
             .map_err(|e| failed(&format!("bad request: {e}")))?;
         let caller = self
@@ -370,15 +367,6 @@ impl HostEnv {
 /// for a single two-tier comparison).
 const MODEL_CHEAP: &str = "model:cheap";
 const MODEL_CODE: &str = "model:code";
-
-/// Lower is cheaper; `think` has no `ModelTier` variant so it never appears.
-fn tier_rank(tier: Tier) -> u8 {
-    match tier {
-        Tier::Cheap => 0,
-        Tier::Code => 1,
-        Tier::Think => 2,
-    }
-}
 
 fn model_call_error(error: CoreError) -> AbiError {
     match error {

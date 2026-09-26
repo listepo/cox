@@ -541,6 +541,39 @@
         ]
       },
       {
+        "description": "A decision plugin answered a decision point (PL§4, T33.20). Recorded\nfor every answer, used or not, so replay and `cox stats` see which\nadvice changed the core's pick; it never feeds model history.",
+        "type": "object",
+        "properties": {
+          "point": {
+            "description": "Which point asked.",
+            "$ref": "#/$defs/DecidePoint"
+          },
+          "plugin": {
+            "description": "The plugin `[plugins.decide]` names for the point.",
+            "type": "string"
+          },
+          "advice": {
+            "description": "The plugin's answer as given.",
+            "$ref": "#/$defs/Advice"
+          },
+          "applied": {
+            "description": "Whether the core followed it (its choice may equal the static\npick); `false` means it was ignored and the static pick stood.",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "const": "advised"
+          }
+        },
+        "required": [
+          "type",
+          "point",
+          "plugin",
+          "advice",
+          "applied"
+        ]
+      },
+      {
         "description": "An informational or warning message, not part of the model-visible transcript.",
         "type": "object",
         "properties": {
@@ -728,7 +761,7 @@
         ]
       },
       "Tier": {
-        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.\n\nOrdered cheapest first (declaration order), the one tier ordering every\n\"never up\" rule compares with: a plugin's model-call grant clamp\n(PL§7d) and the `route` decision point (PL§4, T33.20).",
         "oneOf": [
           {
             "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
@@ -1470,6 +1503,137 @@
         "description": "TaskId: a 26-character Crockford-base32 ULID.",
         "type": "string",
         "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "DecidePoint": {
+        "description": "A decision point (PL§4 \"Decision points\").",
+        "oneOf": [
+          {
+            "description": "Tier for a user turn; only down.",
+            "type": "string",
+            "const": "route"
+          },
+          {
+            "description": "Severity of a tool call; only up.",
+            "type": "string",
+            "const": "risk"
+          },
+          {
+            "description": "A caution note on the approval modal; never \"looks safe\".",
+            "type": "string",
+            "const": "approve_hint"
+          },
+          {
+            "description": "Compact now; only earlier.",
+            "type": "string",
+            "const": "compact"
+          },
+          {
+            "description": "Reorder or filter candidates; never add.",
+            "type": "string",
+            "const": "rank"
+          },
+          {
+            "description": "Salience of a memory item.",
+            "type": "string",
+            "const": "salience"
+          }
+        ]
+      },
+      "Advice": {
+        "description": "`cox_decide` output. The core applies the point's monotone rule and\nuses its local default when confidence is below `min_confidence`.",
+        "type": "object",
+        "properties": {
+          "answer": {
+            "description": "The answer.",
+            "$ref": "#/$defs/Answer"
+          },
+          "confidence": {
+            "description": "In `[0, 1]`; absent when the model gives none (a yes/no, J11).",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "note": {
+            "description": "A caution note, for `approve_hint`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
+      "Answer": {
+        "description": "The three question kinds a decision model answers.",
+        "oneOf": [
+          {
+            "description": "Indices into `Question.options`, best first.",
+            "type": "object",
+            "properties": {
+              "order": {
+                "description": "The ranking.",
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "choice"
+              }
+            },
+            "required": [
+              "kind",
+              "order"
+            ]
+          },
+          {
+            "description": "A score on the point's scale.",
+            "type": "object",
+            "properties": {
+              "value": {
+                "description": "The score.",
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "const": "score"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ]
+          },
+          {
+            "description": "A yes/no probability.",
+            "type": "object",
+            "properties": {
+              "p_yes": {
+                "description": "P(yes) in `[0, 1]`.",
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "const": "noul"
+              }
+            },
+            "required": [
+              "kind",
+              "p_yes"
+            ]
+          }
+        ]
       },
       "StopReason": {
         "description": "Why a provider call or a turn stopped.\n\nReused for both `ProviderEvent::Stop` (one provider call) and\n`Event::TurnDone` (the whole turn); a provider only ever emits\n`EndTurn`/`Refusal`/`Error`, the others are added by `cox-core` once it\nhas aggregated multiple calls in a turn.",
@@ -2687,7 +2851,7 @@
         ]
       },
       "Tier": {
-        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.\n\nOrdered cheapest first (declaration order), the one tier ordering every\n\"never up\" rule compares with: a plugin's model-call grant clamp\n(PL§7d) and the `route` decision point (PL§4, T33.20).",
         "oneOf": [
           {
             "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",

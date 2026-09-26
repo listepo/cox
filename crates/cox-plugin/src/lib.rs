@@ -27,9 +27,12 @@
 //!   program resolution `[[mcp]]` shares (EA§2, T35.2).
 //! - [`live`] — a session's live plugins: one instance per granted plugin,
 //!   `cox_init` once, shared by hooks, the tap and tools (T33.44).
+//! - [`advisor`] — a plugin's granted decision points behind the protocol's
+//!   `Advisor` trait, calling `cox_decide` (PL§4, T33.20).
 
 #![warn(missing_docs)]
 
+pub mod advisor;
 pub mod context;
 pub mod discover;
 pub mod error;
@@ -43,6 +46,7 @@ pub mod install;
 pub mod live;
 pub mod provider;
 
+pub use advisor::PluginAdvisor;
 pub use context::Context;
 pub use discover::{Discovered, Plugin, Source, State, package_digest};
 pub use error::PluginError;

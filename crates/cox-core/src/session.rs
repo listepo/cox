@@ -10,8 +10,8 @@ use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store, Tool,
-    Worktrees,
+    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store,
+    Tool, Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
@@ -86,6 +86,9 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
+    /// The tier `route` advice moved the running user turn to (T33.20);
+    /// `None` outside a turn and whenever the static pick stands.
+    pub(crate) routed: Option<Tier>,
     /// Running background tasks: label, tier and kind by id (T9.2, T27.1).
     pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
     /// Subagents a follow-up can reach, running or finished (T34.5, SM§2).
@@ -173,6 +176,9 @@ pub struct Session {
     /// surface. Not copied to children: a child writes its own rollout, so
     /// its sequence numbers would interleave with the parent's.
     event_tap: Arc<OnceLock<Arc<dyn EventTap>>>,
+    /// Decision-point sources (T33.20, PL§4), installed once by the surface
+    /// like the hook. Not copied to children: `route` is a main-turn point.
+    advisors: Arc<OnceLock<Vec<Arc<dyn Advisor>>>>,
     /// The driver this child's turns run on instead of the model, set once
     /// by `subagent::spawn` for an external-agent preset; unset otherwise.
     external: Arc<OnceLock<Arc<dyn ExternalAgent>>>,
@@ -412,6 +418,7 @@ impl Session {
             self_task: Arc::new(OnceLock::new()),
             external_agents: Arc::new(OnceLock::new()),
             event_tap: Arc::new(OnceLock::new()),
+            advisors: Arc::new(OnceLock::new()),
             external: Arc::new(OnceLock::new()),
             task_names: Arc::new(Mutex::new(HashMap::new())),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
@@ -438,6 +445,7 @@ impl Session {
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
+                routed: None,
                 tasks: HashMap::new(),
                 children: HashMap::new(),
                 message_counts: HashMap::new(),
@@ -577,6 +585,17 @@ impl Session {
 
     pub(crate) fn hook(&self) -> Option<Arc<dyn Hook>> {
         self.hook.get().cloned()
+    }
+
+    /// Installs the decision-point sources (T33.20); a second call is
+    /// ignored, like `set_hook`.
+    pub fn set_advisors(&self, advisors: Vec<Arc<dyn Advisor>>) {
+        let _ = self.advisors.set(advisors);
+    }
+
+    /// The advisor `[plugins.decide]` names by plugin id, if it is live.
+    pub(crate) fn advisor(&self, id: &str) -> Option<Arc<dyn Advisor>> {
+        self.advisors.get()?.iter().find(|a| a.id() == id).cloned()
     }
 
     /// Installs the pre-image source for `/rewind` (T26.1); a second call
@@ -803,11 +822,18 @@ impl Session {
         job: Job,
         confirm_think: bool,
     ) -> Result<Route, RouteError> {
-        let (overrides, tier) = {
+        let (mut overrides, routed) = {
             let inner = self.inner.lock().await;
-            (inner.overrides.clone(), self.tier)
+            (inner.overrides.clone(), inner.routed)
         };
-        Router::pick(&self.config, job, tier, &overrides, confirm_think)
+        // T33.20: inside a user turn, the tier `route` advice chose stands in
+        // for the static main tier on every call of that turn (it is never
+        // above it). T33.40.8 strips thinking from such a turn's own
+        // `Request`; history is never rewritten and no `ModelSwitched` fires.
+        if matches!(job, Job::Main) && routed.is_some() {
+            overrides.main_tier = routed;
+        }
+        Router::pick(&self.config, job, self.tier, &overrides, confirm_think)
     }
 
     /// `/model <tier> [model]` (T9.1 step 3): main turns run on `tier` with
@@ -948,6 +974,9 @@ impl Session {
             .run_turn_inner(turn, text, confirm_think)
             .instrument(span.clone())
             .await;
+        // T33.20: `route` advice holds for its own turn only, however the
+        // turn ended.
+        self.inner.lock().await.routed = None;
         if let Err(error) = &result {
             span.record("error.type", error.to_string());
             span.record("otel.status_code", "ERROR");
@@ -1043,6 +1072,7 @@ impl Session {
                 return self.finish(turn, StopReason::Error).await;
             }
         };
+        let route = self.route_turn(route, &text).await?;
         // §1.10 trigger, applied at the next turn's start rather than after
         // `TurnDone` so nothing follows a turn's last event (§1.3 rule 7).
         let (last, max_context) = (

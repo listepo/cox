@@ -1061,6 +1061,9 @@ pub struct PluginsConfig {
     /// plugin validates its own table, so cox never needs its shape.
     #[serde(flatten)]
     pub entries: HashMap<String, serde_json::Value>,
+    /// `[plugins.decide]` (PL§4, T33.20): which plugin answers each
+    /// decision point.
+    pub decide: DecideConfig,
 }
 
 impl Default for PluginsConfig {
@@ -1068,6 +1071,33 @@ impl Default for PluginsConfig {
         Self {
             enabled: true,
             entries: HashMap::new(),
+            decide: DecideConfig::default(),
+        }
+    }
+}
+
+/// `[plugins.decide]` (PL§4 "Decision points", T33.20): one plugin per
+/// point; a point with no plugin is off, so nothing leaves the machine for
+/// it. `deny_unknown_fields` so a mistyped point fails loudly instead of
+/// silently staying off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DecideConfig {
+    /// The plugin id that answers `route` (a main turn's tier, only down).
+    pub route: Option<String>,
+    /// Advice whose confidence is below this (or absent) is ignored.
+    pub min_confidence: f64,
+    /// `route`'s latency budget in milliseconds; a later answer is ignored.
+    pub route_ms: u64,
+}
+
+impl Default for DecideConfig {
+    fn default() -> Self {
+        Self {
+            route: None,
+            // J11: a tier choice is a high-stakes answer.
+            min_confidence: 0.6,
+            route_ms: 300,
         }
     }
 }

@@ -312,6 +312,32 @@ pub(crate) mod tests {
         format!("(module {IMPORTS} {body} {ECHO})").into_bytes()
     }
 
+    /// An `export` that answers the `len` bytes of JSON at offset 0; shared
+    /// by the hook (`cox_hook`) and advisor (`cox_decide`) tests.
+    pub(crate) fn answering(export: &str, json: &str) -> String {
+        let escaped = json.replace('"', "\\\"");
+        format!(
+            r#"(memory 1)
+               (data (i32.const 0) "{escaped}")
+               (func (export "{export}") (result i32) (local $off i64) (local $i i64)
+                 (local.set $off (call $alloc (i64.const {len})))
+                 (block $done (loop $copy
+                   (br_if $done (i64.ge_u (local.get $i) (i64.const {len})))
+                   (call $store (i64.add (local.get $off) (local.get $i))
+                     (i32.load8_u (i32.wrap_i64 (local.get $i))))
+                   (local.set $i (i64.add (local.get $i) (i64.const 1)))
+                   (br $copy)))
+                 (call $output_set (local.get $off) (i64.const {len}))
+                 (i32.const 0))"#,
+            len = json.len()
+        )
+    }
+
+    /// An `export` that never returns, to exercise a deadline.
+    pub(crate) fn spinning(export: &str) -> String {
+        format!(r#"(func (export "{export}") (result i32) (loop $l (br $l)) (i32.const 0))"#)
+    }
+
     fn load(body: &str, limits: &Limits) -> PluginHost {
         PluginHost::load("t", &module(body), limits).expect("module loads")
     }
