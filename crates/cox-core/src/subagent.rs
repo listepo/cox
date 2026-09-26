@@ -17,6 +17,12 @@
 //! T34.5: a subagent keeps answering follow-ups (SM§2, §3, §5). The parent
 //! routes every message — a child never holds a sibling's handle — and
 //! owns the causal hop count; delivery is always a whole new turn.
+//!
+//! T35.5: a granted `[[external_agents]]` entry is one more name `preset`
+//! resolves (EA§3). Its child is an ordinary child session whose turns
+//! run on the host's `ExternalAgent` driver instead of the model
+//! (`Session::external_turn`), so follow-ups, sibling messages, parking
+//! and waking all take the T34.5 path above unchanged.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -26,7 +32,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use async_trait::async_trait;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{ItemId, SessionId, TaskId};
-use cox_protocol::traits::{Relay, Tool, ToolCx, Worktree};
+use cox_protocol::traits::{ExternalAgent, Relay, Tool, ToolCx, Worktree};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Level, Message,
     ModelId, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock, Tier, ToolCall,
@@ -92,7 +98,6 @@ const CUSTOM_RESULT_CAP_TOKENS: usize = SHELL.result_cap_tokens;
 /// A dispatch target flattened from either a built-in [`Preset`] or a
 /// discovered `AgentDef`, so `tools_for`/`call` match on it once instead
 /// of on the source everywhere they need a field.
-#[derive(Debug)]
 struct Resolved {
     name: String,
     job: Job,
@@ -107,6 +112,18 @@ struct Resolved {
     /// `model`/`tier_for`, falling back to the parent's tier when the
     /// model is `inherit` or absent (`cox_protocol::agent::tier_for`).
     natural_tier: Tier,
+    /// The driver an external-agent preset runs on (T35.5); `None` for a
+    /// model-driven one.
+    external: Option<Arc<dyn ExternalAgent>>,
+}
+
+impl std::fmt::Debug for Resolved {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Resolved")
+            .field("name", &self.name)
+            .field("external", &self.external.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 /// What a subagent may spend when the call does not say: a quarter of
@@ -149,6 +166,18 @@ impl AgentTool {
             .collect()
     }
 
+    /// Granted external-agent names (T35.5) not shadowed by a built-in or
+    /// discovered preset, which resolve first.
+    fn external_names(&self) -> Vec<String> {
+        let custom = self.custom_names();
+        self.parent
+            .external_agents()
+            .iter()
+            .map(|a| a.name().to_string())
+            .filter(|n| !PRESETS.iter().any(|p| p.name == n) && !custom.contains(n))
+            .collect()
+    }
+
     /// Built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`,
     /// even if a same-named file is discovered), then a discovered
     /// `AgentDef` by exact name; a miss lists both.
@@ -166,6 +195,7 @@ impl AgentTool {
                 max_turns: p.max_turns,
                 result_cap_tokens: p.result_cap_tokens,
                 natural_tier: self.parent.config.jobs.tier_for(p.job),
+                external: None,
             });
         }
         if let Some(def) = self
@@ -183,10 +213,31 @@ impl AgentTool {
                 result_cap_tokens: CUSTOM_RESULT_CAP_TOKENS,
                 natural_tier: cox_protocol::agent::tier_for(def.model.as_deref())
                     .unwrap_or(self.parent.tier),
+                external: None,
+            });
+        }
+        if let Some(agent) = self
+            .parent
+            .external_agents()
+            .iter()
+            .find(|a| a.name() == name)
+        {
+            // No cox tools: the external agent runs its own inside its
+            // own sandboxed process (EA§2).
+            return Ok(Resolved {
+                name: name.to_string(),
+                job: Job::Agent,
+                tools: Some(Vec::new()),
+                read_only: false,
+                max_turns: CUSTOM_MAX_TURNS,
+                result_cap_tokens: CUSTOM_RESULT_CAP_TOKENS,
+                natural_tier: self.parent.tier,
+                external: Some(agent.clone()),
             });
         }
         let mut names: Vec<String> = PRESETS.iter().map(|p| p.name.to_string()).collect();
         names.extend(self.custom_names());
+        names.extend(self.external_names());
         Err(ToolError::Denied {
             why: format!(
                 "unknown agent preset {name:?}; available presets: {}",
@@ -216,6 +267,9 @@ impl AgentTool {
     /// allowlist (or the call's `tools`, narrowed to it for a read-only
     /// preset), never `agent` itself.
     fn tools_for(&self, resolved: &Resolved, input: &Value) -> Vec<Arc<dyn Tool>> {
+        if resolved.external.is_some() {
+            return Vec::new();
+        }
         let wanted: Option<Vec<String>> = input
             .get("tools")
             .and_then(Value::as_array)
@@ -283,6 +337,13 @@ impl Tool for AgentTool {
                 custom.join(", ")
             ));
         }
+        let external = self.external_names();
+        if !external.is_empty() {
+            description.push_str(&format!(
+                " External agents from plugins, which run their own tools: {}.",
+                external.join(", ")
+            ));
+        }
         ToolSpec {
             name: "agent".to_string(),
             description,
@@ -315,6 +376,11 @@ impl Tool for AgentTool {
         let Ok(resolved) = self.resolve(input) else {
             return Risk::Exec;
         };
+        // Its own tools are invisible to cox, so it counts as running
+        // anything (the same class `StreamJsonMapper` gives its calls).
+        if resolved.external.is_some() {
+            return Risk::Exec;
+        }
         self.tools_for(&resolved, input)
             .iter()
             .map(|t| t.spec().risk)
@@ -401,6 +467,7 @@ impl Tool for AgentTool {
             preset_name: preset.name.clone(),
             result_cap_tokens: preset.result_cap_tokens,
             label: format!("{}: {}", preset.name, first_line(&task_text)),
+            external: preset.external.clone(),
         };
         let child = spawn(&self.parent, task, &spec, None).map_err(core_error)?;
         let Some(events) = child.events() else {
@@ -595,6 +662,8 @@ pub(crate) struct Spec {
     preset_name: String,
     result_cap_tokens: usize,
     label: String,
+    /// Carried so a woken child resumes on the same driver (T35.5).
+    external: Option<Arc<dyn ExternalAgent>>,
 }
 
 impl Spec {
@@ -647,6 +716,9 @@ fn spawn(
         child.set_writable_roots(vec![wt.path.clone()]);
     }
     child.set_self_task(task);
+    if let Some(agent) = &spec.external {
+        child.set_external(agent.clone());
+    }
     Ok(child)
 }
 
@@ -1464,6 +1536,7 @@ text = "it was 42"
             preset_name: "explore".into(),
             result_cap_tokens: 1000,
             label: "explore: a".into(),
+            external: None,
         }
     }
 
@@ -1983,6 +2056,178 @@ text = "it was 42"
                 Some(Child::Finished(_))
             ),
             "denied, so the message is not queued: still dormant, not woken"
+        );
+    }
+
+    /// Stands in for the host's CLI driver (T35.2 spawns the real one): each
+    /// turn records its prompt and answers `<name> did: <prompt>`; with a
+    /// parent in `poke`, its first turn messages its own task mid-run, the
+    /// way T34.5's `Poke` tool does from a model child.
+    struct FakeAgent {
+        prompts: StdMutex<Vec<String>>,
+        parent: OnceLock<Session>,
+        poke: bool,
+        reported: Option<Usage>,
+    }
+
+    #[async_trait]
+    impl ExternalAgent for FakeAgent {
+        fn name(&self) -> &str {
+            "cursor"
+        }
+        async fn turn(
+            &self,
+            turn: cox_protocol::ids::TurnId,
+            prompt: String,
+            events: mpsc::Sender<Event>,
+            _cancel: CancellationToken,
+        ) -> Result<Option<Usage>, CoreError> {
+            let first = {
+                let mut prompts = self.prompts.lock().expect("lock");
+                prompts.push(prompt.clone());
+                prompts.len() == 1
+            };
+            if let (true, true, Some(parent)) = (first, self.poke, self.parent.get()) {
+                let task = *parent
+                    .inner
+                    .lock()
+                    .await
+                    .children
+                    .keys()
+                    .next()
+                    .expect("child");
+                let text = "ping".to_string();
+                let sub = Submission::TaskMessage {
+                    task,
+                    from: None,
+                    hop: 0,
+                    text,
+                };
+                parent.submit(sub).await?;
+            }
+            let item = ItemId::new();
+            let text = format!("cursor did: {prompt}");
+            let kind = cox_protocol::types::ItemKind::AssistantMessage { text };
+            let _ = events.send(Event::ItemStarted { item, kind }).await;
+            let _ = events.send(Event::ItemDone { item }).await;
+            let stop = cox_protocol::types::StopReason::EndTurn;
+            let _ = events.send(Event::TurnDone { turn, stop }).await;
+            Ok(self.reported)
+        }
+    }
+
+    /// A parent with `agent` granted as the one external agent, in bypass
+    /// mode: an external preset is `Exec` risk, and approval is not the claim.
+    async fn external_parent(
+        toml: &str,
+        agent: Arc<FakeAgent>,
+    ) -> (Session, Arc<crate::MemoryStore>, mpsc::Receiver<Event>) {
+        let provider = Arc::new(Scripted::from_toml(toml, "").expect("scenario"));
+        let store = Arc::new(crate::MemoryStore::new());
+        let cwd = PathBuf::from("/tmp/cox-subagent-unit");
+        let mut config = cox_protocol::Config::default();
+        config.core.workspace_roots = vec![cwd.clone()];
+        let session = Session::new(config, provider, vec![], store.clone(), store.clone(), cwd)
+            .expect("session");
+        let _ = agent.parent.set(session.clone());
+        session.set_external_agents(vec![agent]);
+        let rx = session.events().expect("events");
+        let mode = cox_protocol::types::PermissionMode::Bypass;
+        let sub = Submission::SetPermissionMode { mode };
+        session.submit(sub).await.expect("mode");
+        (session, store, rx)
+    }
+
+    fn fake(poke: bool, reported: Option<Usage>) -> Arc<FakeAgent> {
+        Arc::new(FakeAgent {
+            prompts: StdMutex::new(Vec::new()),
+            parent: OnceLock::new(),
+            poke,
+            reported,
+        })
+    }
+
+    fn tool_results(events: &[Event]) -> Vec<String> {
+        let done = events.iter().filter_map(|e| match e {
+            Event::ToolCallDone { result, .. } => Some(result.visible.clone()),
+            _ => None,
+        });
+        done.collect()
+    }
+
+    const DISPATCH: &str = r#"
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "work", preset = "cursor" } }]
+[[turn]]
+text = "done"
+"#;
+
+    #[tokio::test]
+    async fn agent_dispatches_a_granted_external_agent_preset_by_name() {
+        let agent = fake(false, None);
+        let (parent, store, mut rx) = external_parent(DISPATCH, agent.clone()).await;
+        let tool = AgentTool::new(parent.clone());
+        assert!(
+            tool.spec().description.contains("cursor"),
+            "offered to the model"
+        );
+
+        let events = parent_turn(&parent, &mut rx).await;
+        assert_eq!(tool_results(&events), ["cursor did: work"]);
+        assert_eq!(*agent.prompts.lock().expect("lock"), ["work"]);
+        let rows = store.usage_rows();
+        let row = rows.iter().find(|r| r.provider == ProviderId::External);
+        let row = row.expect("the external turn has a usage row");
+        assert_eq!((row.usage.input_tokens, row.usage.output_tokens), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn task_message_reaches_a_running_external_agent_task() {
+        let agent = fake(true, None);
+        let (parent, _, mut rx) = external_parent(DISPATCH, agent.clone()).await;
+        let events = parent_turn(&parent, &mut rx).await;
+
+        let ping = "[message from parent] ping";
+        assert_eq!(tool_results(&events), [format!("cursor did: {ping}")]);
+        assert_eq!(
+            *agent.prompts.lock().expect("lock"),
+            ["work", ping],
+            "delivered as a whole new turn after the running one"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_agent_turn_writes_a_billed_externally_usage_row() {
+        let reported = Usage {
+            input_tokens: 7,
+            output_tokens: 3,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            estimated: false,
+            cost_usd: 9.5,
+            latency_ms: 0,
+        };
+        let (parent, store, mut rx) = external_parent(DISPATCH, fake(false, Some(reported))).await;
+        parent_turn(&parent, &mut rx).await;
+
+        let rows = store.usage_rows();
+        let external: Vec<_> = rows
+            .iter()
+            .filter(|r| r.provider == ProviderId::External)
+            .collect();
+        assert_eq!(external.len(), 1, "one row per external turn: {rows:?}");
+        let row = external[0];
+        assert_eq!(row.model.0, "cursor");
+        assert_eq!(row.job, Job::Agent);
+        assert_eq!(
+            (row.usage.input_tokens, row.usage.output_tokens),
+            (7, 3),
+            "reported tokens kept"
+        );
+        assert_eq!(
+            row.usage.cost_usd, 0.0,
+            "never priced: billed on the user's plan"
         );
     }
 }

@@ -1035,6 +1035,9 @@ pub enum ProviderId {
     Local,
     /// TypeSafe System One API (Jev decision model, T21.1).
     Jev,
+    /// An external CLI agent from a plugin (EA§6, T35.5): billed on the
+    /// user's own plan, so its ledger rows are `$0` and never priced here.
+    External,
 }
 
 /// One block of the system prompt, with its own cache eligibility (plan.md §1.9).

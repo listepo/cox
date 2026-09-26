@@ -5,6 +5,8 @@
 //! signatures, never on `cox-provider`/`cox-tools`/`cox-mcp`/`cox-store`.
 //! `Relay` (T34.6, SM§4) is the same shape for `send_message`: `cox-tools`
 //! needs no `Session` handle, only this narrow hook back into it.
+//! `ExternalAgent` (T35.5, EA§3) is the process an external-agent preset
+//! runs, spawned by the host so `cox-core` stays I/O-free.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -468,6 +470,30 @@ pub trait Relay: Send + Sync {
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError>;
 }
 
+/// A granted `[[external_agents]]` entry's driver (EA§3, T35.5): another
+/// vendor's CLI agent that `agent(preset: <name>)` dispatches in place of a
+/// model. Implemented by the host, which spawns the CLI under the session's
+/// `sandbox::Policy` (EA§2) and speaks ACP or stream-json per the
+/// manifest's `mode`; `cox-core` only feeds it turns, so it never opens the
+/// process itself.
+#[async_trait]
+pub trait ExternalAgent: Send + Sync {
+    /// The dispatch name (`cursor`), also the usage row's model.
+    fn name(&self) -> &str;
+    /// Runs one turn for `prompt`, streaming the agent's work on `events`
+    /// as cox events (`StreamJsonMapper` for stream-json); a `TurnDone` it
+    /// sends ends the turn early. Returns the tokens the agent reported,
+    /// `None` when it reports none (EA§6: never estimated); an `Err` is
+    /// shown as the turn's non-fatal `Error`.
+    async fn turn(
+        &self,
+        turn: crate::ids::TurnId,
+        prompt: String,
+        events: mpsc::Sender<crate::types::Event>,
+        cancel: CancellationToken,
+    ) -> Result<Option<Usage>, crate::errors::CoreError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,5 +510,6 @@ mod tests {
         assert_object_safe::<dyn Hook>();
         assert_object_safe::<dyn Checkpointer>();
         assert_object_safe::<dyn Relay>();
+        assert_object_safe::<dyn ExternalAgent>();
     }
 }

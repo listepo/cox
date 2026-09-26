@@ -10,7 +10,7 @@ use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Archive, ArchivePut, Checkpointer, Hook, Provider, Store, Tool, Worktrees,
+    Archive, ArchivePut, Checkpointer, ExternalAgent, Hook, Provider, Store, Tool, Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
@@ -164,6 +164,13 @@ pub struct Session {
     /// after the child session exists; unset for the session the user is
     /// talking to.
     self_task: Arc<OnceLock<TaskId>>,
+    /// Granted `[[external_agents]]` drivers the surface built (T35.5,
+    /// EA§3), offered by the `agent` tool like `agent_defs`; not copied to
+    /// children, for the same reason.
+    external_agents: Arc<OnceLock<Vec<Arc<dyn ExternalAgent>>>>,
+    /// The driver this child's turns run on instead of the model, set once
+    /// by `subagent::spawn` for an external-agent preset; unset otherwise.
+    external: Arc<OnceLock<Arc<dyn ExternalAgent>>>,
     /// Exact registry name (`explore-2`) → task id (T34.6, SM§4), one map
     /// per subagent tree: the parent owns it, `spawn_child` hands every
     /// child the same `Arc` (T34.9) so a child's own `Relay::send_message`
@@ -398,6 +405,8 @@ impl Session {
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
             self_task: Arc::new(OnceLock::new()),
+            external_agents: Arc::new(OnceLock::new()),
+            external: Arc::new(OnceLock::new()),
             task_names: Arc::new(Mutex::new(HashMap::new())),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
             tasks_idle: Arc::new(Notify::new()),
@@ -602,6 +611,23 @@ impl Session {
 
     pub(crate) fn agent_defs(&self) -> &[AgentDef] {
         self.agent_defs.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Installs the granted external-agent drivers (T35.5); the surface
+    /// leaves out an entry whose CLI or key is missing (EA§7). A second
+    /// call is ignored like `set_agent_defs`, keeping `agent`'s schema
+    /// byte-stable (D6e).
+    pub fn set_external_agents(&self, agents: Vec<Arc<dyn ExternalAgent>>) {
+        let _ = self.external_agents.set(agents);
+    }
+
+    pub(crate) fn external_agents(&self) -> &[Arc<dyn ExternalAgent>] {
+        self.external_agents.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// `subagent::spawn` calls this once for an external-agent child.
+    pub(crate) fn set_external(&self, agent: Arc<dyn ExternalAgent>) {
+        let _ = self.external.set(agent);
     }
 
     /// `subagent::spawn` calls this once, right after the child exists
@@ -1027,17 +1053,23 @@ impl Session {
         // like every index write.
         let _ = self.store.rollout_index(&self.id, seq, &text);
         crate::checkpoint::mark_turn(self, seq);
-        self.emit_turn_started(turn, seq, route.tier, route.model.clone())
-            .await?;
+        let external = self.external.get().cloned();
+        let model = external
+            .as_ref()
+            .map_or_else(|| route.model.clone(), |a| ModelId(a.name().to_string()));
+        self.emit_turn_started(turn, seq, route.tier, model).await?;
         self.emit(Event::ItemStarted {
             item: user_item,
             kind: ItemKind::UserMessage {
-                text,
+                text: text.clone(),
                 attachments: vec![],
             },
         })
         .await?;
         self.emit(Event::ItemDone { item: user_item }).await?;
+        if let Some(agent) = external {
+            return self.external_turn(agent, turn, route.tier, text).await;
+        }
 
         loop {
             match self.step(turn).await? {
@@ -1045,6 +1077,92 @@ impl Session {
                 Step::Done => return Ok(()),
             }
         }
+    }
+
+    /// An external-agent child's turn (T35.5, EA§3): the driver stands where
+    /// the provider would and runs its own tools inside its own sandboxed
+    /// process, so its events are recorded as they come; each answer joins
+    /// history like a model's, so `run_task` distils it unchanged. Its
+    /// `TurnDone` is held back until the usage row (EA§6: `$0`, tokens
+    /// only if reported) is written, since nothing may follow `TurnDone`.
+    async fn external_turn(
+        &self,
+        agent: Arc<dyn ExternalAgent>,
+        turn: TurnId,
+        tier: Tier,
+        prompt: String,
+    ) -> Result<(), CoreError> {
+        let (tx, mut rx) = mpsc::channel(64);
+        let started = std::time::Instant::now();
+        let (driver, cancel) = (agent.clone(), self.cancel_token());
+        let run = tokio::spawn(async move { driver.turn(turn, prompt, tx, cancel).await });
+        let mut stop = None;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                Event::TurnDone { stop: s, .. } => stop = Some(s),
+                ev => {
+                    if let Event::ItemStarted {
+                        kind: ItemKind::AssistantMessage { text },
+                        ..
+                    } = &ev
+                    {
+                        self.inner.lock().await.history.push(Message {
+                            role: Role::Assistant,
+                            content: vec![Content::Text { text: text.clone() }],
+                        });
+                    }
+                    self.emit(ev).await?;
+                }
+            }
+        }
+        let reported = match run.await {
+            Ok(Ok(reported)) => reported,
+            Ok(Err(error)) => {
+                self.emit(Event::Error {
+                    error,
+                    fatal: false,
+                })
+                .await?;
+                stop = Some(StopReason::Error);
+                None
+            }
+            Err(_) => {
+                stop = Some(StopReason::Interrupted);
+                None
+            }
+        };
+        let mut usage = reported.unwrap_or(cox_protocol::types::Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            estimated: false,
+            cost_usd: 0.0,
+            latency_ms: 0,
+        });
+        // Billed on the user's own plan, never cox's ledger (EA§6).
+        usage.cost_usd = 0.0;
+        usage.latency_ms = started.elapsed().as_millis() as u64;
+        self.store
+            .usage_insert(&cox_protocol::UsageRow {
+                session_id: self.id,
+                // One call per turn: the driver runs its own loop inside.
+                turn: 1,
+                job: self.job,
+                tier,
+                provider: ProviderId::External,
+                model: ModelId(agent.name().to_string()),
+                effort: None,
+                usage,
+            })
+            .map_err(|error| CoreError::Store { error })?;
+        self.emit(Event::Usage { turn, usage }).await?;
+        let stop = stop.unwrap_or(if self.cancel_token().is_cancelled() {
+            StopReason::Interrupted
+        } else {
+            StopReason::EndTurn
+        });
+        self.finish(turn, stop).await
     }
 
     /// One provider call and its tool batch. The turn loop is just
@@ -1573,6 +1691,7 @@ fn provider_name(provider: ProviderId) -> &'static str {
         ProviderId::OpenAi => "openai",
         ProviderId::Local => "local",
         ProviderId::Jev => "typesafe",
+        ProviderId::External => "external",
     }
 }
 
