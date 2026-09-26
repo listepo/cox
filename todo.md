@@ -61,7 +61,6 @@
 - T34.1. Wire custom agent definitions into the `agent` tool
 - T34.2. A subagent concurrency cap
 - T34.3. `ask_user` from a subagent, labelled with `Source`
-- T34.4. Protocol types for task messaging
 - T34.5. Core routing in the parent
 - T34.6. The `send_message` tool
 - T34.7. TUI and stream-json rendering
