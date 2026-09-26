@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cox_protocol::traits::Store as _;
+use cox_protocol::types::Level;
 
 use crate::cli::Cli;
 use crate::{config_load, session};
@@ -35,8 +36,26 @@ impl cox_acp::SessionFactory for AcpFactory {
         let mdir = session::memory_dir_for(&config, &home, &req.cwd);
         let tools = session::tools(self.answer.clone(), &store, mdir);
         let tools = session::with_client_tools(tools, req.link, req.client_fs, req.client_terminal);
+        let warnings = session::plugin_notices(&config, &home, &req.cwd, store.as_ref());
         let session =
             cox_core::Session::new(config, provider, tools, store.clone(), store, req.cwd)?;
+        // `create` is sync but runs on the ACP server's runtime; the
+        // notices queue in the session's event channel ahead of any prompt.
+        if !warnings.is_empty() {
+            let notify = session.clone();
+            match tokio::runtime::Handle::try_current() {
+                Ok(rt) => {
+                    rt.spawn(async move {
+                        for text in warnings {
+                            let _ = notify.notice(Level::Warn, text).await;
+                        }
+                    });
+                }
+                Err(_) => warnings
+                    .iter()
+                    .for_each(|text| eprintln!("cox: warning: {text}")),
+            }
+        }
         Ok(session)
     }
 }

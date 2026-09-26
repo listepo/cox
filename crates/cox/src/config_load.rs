@@ -69,6 +69,7 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("verbose", "core.log_level"),
         ("no-hooks", "hooks.enabled"),
         ("no-mcp", "mcp.enabled"),
+        ("no-plugins", "plugins.enabled"),
         ("plain", "tui.screen_reader"),
         // `cox init` (plan.md T25.6) headlessly.
         ("force", "runtime.force"),
@@ -194,6 +195,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
     }
     if cli.no_mcp {
         set_dotted(&mut root, keys["no-mcp"], JsonValue::from(false));
+    }
+    if cli.no_plugins {
+        set_dotted(&mut root, keys["no-plugins"], JsonValue::from(false));
     }
     if cli.plain {
         set_dotted(&mut root, keys["plain"], JsonValue::from(true));

@@ -75,6 +75,9 @@ pub struct Cli {
     /// Disable MCP servers for this invocation.
     #[arg(long = "no-mcp", global = true)]
     pub no_mcp: bool,
+    /// Load no WASM plugins for this invocation (T33.6).
+    #[arg(long = "no-plugins", global = true)]
+    pub no_plugins: bool,
     /// Plain surface for screen readers: labelled lines, numbered prompts,
     /// no cursor movement (also `COX_PLAIN=1`, `tui.screen_reader`).
     #[arg(long)]

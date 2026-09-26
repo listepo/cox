@@ -8,13 +8,17 @@
 //! - [`error`] — `PluginError`, mapped from `extism::Error`.
 //! - [`discover`] — finds user and project plugins, validates each
 //!   manifest and computes its package digest (PL§1, T33.4).
+//! - [`grant`] — the pure grant check and the granted-capability list
+//!   (PL§3, T33.6).
 
 #![warn(missing_docs)]
 
 pub mod discover;
 pub mod error;
+pub mod grant;
 pub mod host;
 
 pub use discover::{Discovered, Plugin, Source, State, package_digest};
 pub use error::PluginError;
+pub use grant::Verdict;
 pub use host::{CONTROL_DEPTH, EVENT_DEPTH, Lane, PluginHost};

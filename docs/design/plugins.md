@@ -181,6 +181,8 @@ There is no general kv table today (`schema.rs:13-87`). A narrow `PluginStore` t
 - `NeedsApproval { added, removed }`: a new digest, or wider capabilities.
 - `Disabled`.
 
+The granted list (T33.6) is a sorted JSON array of strings, one line per capability: `events:<tag>`, `hooks:<name>`, `tools:<name>`, `invoke:<name>`, `net:<host>`, `fs.read:<root>`, `fs.write:<root>`, `decide:<point>`, `ui.render:<target>`, the flags `wasi`, `context`, `kv`, `ui.status`, `ui.panel`, `ui.overlay`, `ui.commands`, `ui.keys`, `model:cheap` or `model:code`, plus one line per `[[provider]]` (`provider:<name> <base_url> key=<env>`), `[[mcp]]` (`mcp:<name> <command args | url>`) and `[[external_agents]]` entry. The model tier is the one ordered entry: a `model:code` grant covers a `model:cheap` request. A row whose `capabilities` is not such an array grants nothing, and a store read error counts as no grant. `Disabled` wins over the digest check. A project `.cox/config.toml` may turn `plugins.enabled` off but never on (the project-config guard list).
+
 By surface:
 
 - **TUI.** At session open, each `NeedsApproval` plugin gets a `Modal::PluginGrant`. The TUI has one modal slot (`crates/cox-tui/src/state.rs:114-135`), so the dialogs queue. It lists the capabilities in words and, for project plugins, the repository in warning style. The keys are `y` (grant) and `n` (skip for this session). There is no "always" key: a grant is always per digest.

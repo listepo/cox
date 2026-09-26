@@ -155,6 +155,7 @@ pub async fn open(
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd, interactive).await);
     }
+    let plugin_warnings = plugin_notices(&config, &home, cwd, store.as_ref());
     let session = match resume {
         Some((id, history)) => Session::resume(
             config,
@@ -206,7 +207,91 @@ pub async fn open(
     for warning in served.iter().flat_map(|s| s.model.warnings()) {
         session.notice(Level::Warn, warning).await?;
     }
+    for warning in plugin_warnings {
+        session.notice(Level::Warn, warning).await?;
+    }
     Ok((session, loaded))
+}
+
+/// T33.6 (PL§3): discovers plugins, checks each against its grant and
+/// loads only the `Granted` ones. Returns one warning per plugin that did
+/// not load, naming the command to run — headless and ACP never approve,
+/// matching headless approval with no approver (`run.rs`). Empty when
+/// `plugins.enabled` is off. A store read error counts as "no grant": it
+/// must never let an unapproved plugin load.
+#[cfg(feature = "plugins")]
+pub(crate) fn plugin_notices(
+    config: &Config,
+    home: &Path,
+    cwd: &Path,
+    store: &dyn cox_protocol::PluginStore,
+) -> Vec<String> {
+    use cox_plugin::discover::{self, State};
+    use cox_plugin::grant::{self, Verdict};
+
+    if !config.plugins.enabled {
+        return Vec::new();
+    }
+    let root = config_load::find_git_root(cwd);
+    let found = discover::discover(home, root.as_deref());
+    let mut notices = found.notices;
+    for p in &found.plugins {
+        let id = &p.id;
+        let (manifest, digest) = match &p.state {
+            State::Loaded { manifest, digest } => (manifest, digest),
+            State::Skipped { reason } => {
+                notices.push(format!("plugin {id} skipped: {reason}"));
+                continue;
+            }
+        };
+        let stored = grant::scope(p.source, root.as_deref())
+            .and_then(|scope| store.grant_get(id, &scope, digest).ok().flatten());
+        let enable = grant::enable_command(id, p.source);
+        match grant::check(manifest, digest, stored.as_ref()) {
+            Verdict::Granted => {
+                // T33.9 keeps the instance and runs `cox_init`; until then
+                // the load proves the granted package still compiles, and a
+                // failure is a visible warning, never fatal (D14).
+                let loaded = std::fs::read(p.dir.join(&manifest.wasm))
+                    .map_err(|e| e.to_string())
+                    .and_then(|wasm| {
+                        cox_plugin::PluginHost::load(id, &wasm, &manifest.limits)
+                            .map_err(|e| e.to_string())
+                    });
+                if let Err(e) = loaded {
+                    notices.push(format!("plugin {id} failed to load: {e}"));
+                }
+            }
+            Verdict::Disabled => {
+                notices.push(format!(
+                    "plugin {id} is disabled; run `{enable}` to load it"
+                ));
+            }
+            Verdict::NeedsApproval { added, .. } => {
+                let asks = if added.is_empty() {
+                    String::from("its package changed")
+                } else {
+                    format!("it asks for {}", added.join(", "))
+                };
+                notices.push(format!(
+                    "plugin {id} is not loaded: {asks} and needs approval; run `{enable}`"
+                ));
+            }
+        }
+    }
+    notices
+}
+
+/// The slim build has no plugin host, so there is never a plugin to warn
+/// about.
+#[cfg(not(feature = "plugins"))]
+pub(crate) fn plugin_notices(
+    _config: &Config,
+    _home: &Path,
+    _cwd: &Path,
+    _store: &dyn cox_protocol::PluginStore,
+) -> Vec<String> {
+    Vec::new()
 }
 
 /// The model id an `lmstudio` session sends: the section's pin, else

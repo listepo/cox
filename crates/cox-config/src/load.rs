@@ -176,6 +176,18 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         full.sandbox.mode = without_project.sandbox.mode;
     }
 
+    // T33.6 (PL§1, D14): a repository must not switch plugins back on
+    // after the user turned them off; its own plugins still need a grant,
+    // but the user's off switch has to hold regardless.
+    if full.plugins.enabled && !without_project.plugins.enabled {
+        violations.push(GuardViolation {
+            key: "plugins.enabled",
+            project_value: "true".to_string(),
+            reverted_to: "false".to_string(),
+        });
+        full.plugins.enabled = false;
+    }
+
     if !full.tiers.think.confirm && without_project.tiers.think.confirm {
         violations.push(GuardViolation {
             key: "tiers.think.confirm",
@@ -191,12 +203,13 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 7] = [
+const GUARDED_KEYS: [&str; 8] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
     "core.max_concurrent_subagents",
     "permissions.mode",
+    "plugins.enabled",
     "sandbox.mode",
     "tiers.think.confirm",
 ];
@@ -503,6 +516,33 @@ mod tests {
                     .any(|v| v.key == "core.max_concurrent_subagents")
             );
             assert_eq!(loaded.source_of("core.max_concurrent_subagents"), "default");
+        });
+    }
+
+    /// T33.6: the user's `plugins.enabled = false` holds against a
+    /// repository's own `.cox/config.toml` turning plugins back on.
+    #[test]
+    fn config_project_cannot_turn_plugins_on() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::write(
+            home.path().join("config.toml"),
+            "[plugins]\nenabled = false\n",
+        )
+        .expect("write user config");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        fs::write(
+            git_root.path().join(".cox/config.toml"),
+            "[plugins]\nenabled = true\n",
+        )
+        .expect("write project config");
+
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let loaded = load_plain(git_root.path()).expect("load succeeds");
+            assert!(!loaded.config.plugins.enabled, "turn-on must be ignored");
+            assert!(loaded.violations.iter().any(|v| v.key == "plugins.enabled"));
+            assert_eq!(loaded.source_of("plugins.enabled"), "user");
         });
     }
 

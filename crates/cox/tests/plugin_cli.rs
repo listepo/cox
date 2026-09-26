@@ -3,6 +3,8 @@
 //! `list` must never compile or run a plugin's module (PL§1 line 47/445: a
 //! project plugin is untrusted until granted, T33.6), so a project plugin
 //! whose `cox_init` would trap is still listed, unharmed, as `discovered`.
+//! T33.6 Check: a headless run loads only granted plugins and warns once per
+//! ungranted one, naming the command to run.
 
 #![cfg(feature = "plugins")]
 
@@ -111,4 +113,82 @@ fn cox_plugin_list_never_runs_a_project_plugins_module() {
     assert_eq!(plugins[0]["source"], "project");
     assert_eq!(plugins[0]["state"], "discovered", "{v}");
     assert_eq!(plugins[0]["grant"], "unknown");
+}
+
+/// The package bytes are not wasm, so loading one is a visible "failed to
+/// load" warning: that warning is the proof a plugin was loaded at all.
+const NOT_WASM: &str = "not a wasm module";
+
+const TEXT_ONLY: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../cox-core/tests/scenarios/text_only.toml"
+);
+
+fn headless(home: &Path, cwd: &Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_cox"));
+    cmd.current_dir(cwd)
+        .env("COX_HOME", home)
+        .env("HOME", home)
+        .env("COX_PROVIDER", "scripted")
+        .env("COX_SCENARIO", TEXT_ONLY)
+        .args(["--cwd", cwd.to_str().unwrap(), "run", "-p", "hi"])
+        .args(["--output-format", "stream-json"]);
+    cmd
+}
+
+fn stdout_of(cmd: &mut Command) -> String {
+    String::from_utf8(cmd.assert().success().get_output().stdout.clone()).unwrap()
+}
+
+#[test]
+fn headless_never_loads_ungranted_plugin() {
+    use cox_protocol::{GrantScope, PluginGrant, PluginStore as _, Store as _};
+
+    let home = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+
+    // A user plugin granted for its exact digest.
+    let staged = home.path().join("plugins/good/versions/staged");
+    std::fs::create_dir_all(&staged).unwrap();
+    std::fs::write(staged.join("plugin.toml"), manifest("good")).unwrap();
+    std::fs::write(staged.join("plugin.wasm"), NOT_WASM).unwrap();
+    let digest = cox_plugin::package_digest(&staged).unwrap();
+    std::fs::rename(&staged, staged.with_file_name(&digest[..12])).unwrap();
+    std::fs::write(home.path().join("plugins/good/current"), &digest[..12]).unwrap();
+    let store = cox_store::Store::open(home.path()).unwrap();
+    store
+        .grant_put(&PluginGrant {
+            plugin_id: "good".into(),
+            scope: GrantScope::User,
+            digest,
+            capabilities: serde_json::json!([]),
+            enabled: true,
+            source: serde_json::json!({}),
+            decided_at: "2026-09-26T00:00:00Z".into(),
+        })
+        .unwrap();
+    drop(store);
+
+    // A project plugin nobody granted.
+    let trap = repo.path().join(".cox/plugins/trap");
+    std::fs::create_dir_all(&trap).unwrap();
+    std::fs::write(trap.join("plugin.toml"), manifest("trap")).unwrap();
+    std::fs::write(trap.join("plugin.wasm"), NOT_WASM).unwrap();
+
+    let out = stdout_of(&mut headless(home.path(), repo.path()));
+    assert!(out.contains("plugin good failed to load"), "{out}");
+    assert!(!out.contains("plugin trap failed to load"), "{out}");
+    assert_eq!(
+        out.matches("run `cox plugin enable trap --project`")
+            .count(),
+        1,
+        "{out}"
+    );
+
+    let off = stdout_of(headless(home.path(), repo.path()).arg("--no-plugins"));
+    assert!(
+        !off.contains("plugin good") && !off.contains("plugin trap"),
+        "{off}"
+    );
 }

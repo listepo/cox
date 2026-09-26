@@ -213,6 +213,13 @@
         "servers": {}
       }
     },
+    "plugins": {
+      "description": "`[plugins]`",
+      "$ref": "#/$defs/PluginsConfig",
+      "default": {
+        "enabled": true
+      }
+    },
     "memory": {
       "description": "`[memory]`",
       "$ref": "#/$defs/MemoryConfig",
@@ -1416,6 +1423,17 @@
         }
       },
       "additionalProperties": false
+    },
+    "PluginsConfig": {
+      "description": "`[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even\nwhen on, only a plugin granted for its exact digest loads (PL§3). Not\n`deny_unknown_fields`: T33.9 flattens the per-plugin `[plugins.<id>]`\ntables in here, the `HooksConfig`/`McpConfig` pattern.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether any plugin loads at all; `--no-plugins` sets it to `false`.",
+          "type": "boolean",
+          "default": true
+        }
+      }
     },
     "MemoryConfig": {
       "description": "`[memory]` (plan.md §1.6).",

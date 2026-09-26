@@ -9,6 +9,9 @@ license.workspace = true
 # crate that depends on extism; `crates/cox/tests/deps.rs` holds that line.
 [dependencies]
 cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2" }
+# T33.6: `grant::check` reads the `PluginGrant` row `PluginStore` returns;
+# PL§3 puts that trait and its types in the protocol crate.
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 extism = { workspace = true }
 # T33.4: `plugin.toml` is parsed the way `config_load` parses cox's own
 # config (figment's `Toml` provider, already workspace-pinned); this is the

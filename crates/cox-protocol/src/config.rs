@@ -55,6 +55,8 @@ pub struct Config {
     pub hooks: HooksConfig,
     /// `[mcp]`
     pub mcp: McpConfig,
+    /// `[plugins]`
+    pub plugins: PluginsConfig,
     /// `[memory]`
     pub memory: MemoryConfig,
     /// `[telemetry]`
@@ -1018,6 +1020,23 @@ impl Default for McpConfig {
             enabled: true,
             servers: HashMap::new(),
         }
+    }
+}
+
+/// `[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even
+/// when on, only a plugin granted for its exact digest loads (PL§3). Not
+/// `deny_unknown_fields`: T33.9 flattens the per-plugin `[plugins.<id>]`
+/// tables in here, the `HooksConfig`/`McpConfig` pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct PluginsConfig {
+    /// Whether any plugin loads at all; `--no-plugins` sets it to `false`.
+    pub enabled: bool,
+}
+
+impl Default for PluginsConfig {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 
