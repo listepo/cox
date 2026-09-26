@@ -1757,6 +1757,8 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }
         }
         Event::SessionStarted { .. } | Event::Compacted { .. } => {}
+        // T34.7 gives this its own transcript line and `/agents` card update.
+        Event::TaskMessage { .. } => {}
     }
     cmds
 }

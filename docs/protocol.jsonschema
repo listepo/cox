@@ -608,6 +608,47 @@
           "error",
           "fatal"
         ]
+      },
+      {
+        "description": "A follow-up for a background task was delivered or relayed (T34.4,\nSM§1); same fields as `Submission::TaskMessage`. Renders as one\ntranscript line labelled like a relayed approval (T34.7); ACP gives\nit its own arm instead of falling into `Ok(_) => {}` (T34.8).",
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "The task the message is addressed to.",
+            "$ref": "#/$defs/TaskId"
+          },
+          "from": {
+            "description": "Who it is from; `None` for the parent/user, `Some` for a sibling.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TaskId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hop": {
+            "description": "How many relays this message has been through (SM§5's loop guard).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "text": {
+            "description": "The message text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "task_message"
+          }
+        },
+        "required": [
+          "type",
+          "task",
+          "hop",
+          "text"
+        ]
       }
     ],
     "$defs": {
@@ -2456,6 +2497,47 @@
         "required": [
           "type"
         ]
+      },
+      {
+        "description": "A follow-up for a background task, addressed by `TaskId` (T34.4,\nSM§1). Only ever submitted to the **parent** session: `from: None`\nis the parent/user, `Some(id)` a sibling relayed through the parent\n(SM§3). `hop` is set only by the parent and never trusted from a\ntool call (SM§5); T34.5 gives it a router, T34.6 the tool that\nproduces it.",
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "The task the message is addressed to.",
+            "$ref": "#/$defs/TaskId"
+          },
+          "from": {
+            "description": "Who it is from; `None` for the parent/user, `Some` for a sibling.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TaskId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hop": {
+            "description": "How many relays this message has been through (SM§5's loop guard).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "text": {
+            "description": "The message text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "task_message"
+          }
+        },
+        "required": [
+          "type",
+          "task",
+          "hop",
+          "text"
+        ]
       }
     ],
     "$defs": {
@@ -2718,6 +2800,11 @@
             ]
           }
         ]
+      },
+      "TaskId": {
+        "description": "TaskId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
       }
     }
   }

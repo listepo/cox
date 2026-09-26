@@ -771,6 +771,22 @@ pub enum Submission {
     },
     /// Wind down the session cleanly.
     Shutdown,
+    /// A follow-up for a background task, addressed by `TaskId` (T34.4,
+    /// SM§1). Only ever submitted to the **parent** session: `from: None`
+    /// is the parent/user, `Some(id)` a sibling relayed through the parent
+    /// (SM§3). `hop` is set only by the parent and never trusted from a
+    /// tool call (SM§5); T34.5 gives it a router, T34.6 the tool that
+    /// produces it.
+    TaskMessage {
+        /// The task the message is addressed to.
+        task: TaskId,
+        /// Who it is from; `None` for the parent/user, `Some` for a sibling.
+        from: Option<TaskId>,
+        /// How many relays this message has been through (SM§5's loop guard).
+        hop: u32,
+        /// The message text.
+        text: String,
+    },
 }
 
 /// Everything a consumer (TUI, `stream-json`, ACP, the rollout file) can
@@ -970,6 +986,20 @@ pub enum Event {
         error: CoreError,
         /// Whether the whole session must end (`StoreError::Corrupt`, `Config`) or just the turn.
         fatal: bool,
+    },
+    /// A follow-up for a background task was delivered or relayed (T34.4,
+    /// SM§1); same fields as `Submission::TaskMessage`. Renders as one
+    /// transcript line labelled like a relayed approval (T34.7); ACP gives
+    /// it its own arm instead of falling into `Ok(_) => {}` (T34.8).
+    TaskMessage {
+        /// The task the message is addressed to.
+        task: TaskId,
+        /// Who it is from; `None` for the parent/user, `Some` for a sibling.
+        from: Option<TaskId>,
+        /// How many relays this message has been through (SM§5's loop guard).
+        hop: u32,
+        /// The message text.
+        text: String,
     },
 }
 
@@ -1270,6 +1300,7 @@ mod tests {
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
     #[case::error(Event::Error { error: CoreError::Interrupted, fatal: false })]
+    #[case::task_message(Event::TaskMessage { task: TaskId::new(), from: Some(TaskId::new()), hop: 1, text: "ping".into() })]
     fn event_json_roundtrip(#[case] event: Event) {
         let json = serde_json::to_string(&event).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
@@ -1304,10 +1335,37 @@ mod tests {
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
     #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
+    #[case::task_message(Submission::TaskMessage { task: TaskId::new(), from: None, hop: 0, text: "follow up".into() })]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");
         let back: Submission = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(submission, back);
+    }
+
+    /// T34.4: the wire shape SM§1 specifies, both directions and both
+    /// `from` cases (parent/user vs. a sibling `TaskId`), survive a JSON
+    /// round trip byte-for-byte in the fields that matter.
+    #[test]
+    fn task_message_round_trips_through_serde() {
+        let sub = Submission::TaskMessage {
+            task: TaskId::new(),
+            from: None,
+            hop: 0,
+            text: "from the parent".into(),
+        };
+        let json = serde_json::to_string(&sub).expect("serialize");
+        let back: Submission = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(sub, back);
+
+        let event = Event::TaskMessage {
+            task: TaskId::new(),
+            from: Some(TaskId::new()),
+            hop: 2,
+            text: "from a sibling".into(),
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, back);
     }
 
     /// plan.md T0.2 step 4: grep the serialized form for the `type` tag and

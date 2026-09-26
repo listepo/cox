@@ -610,6 +610,10 @@ impl Session {
                 let _ = hooks::fire(self, HookEvent::SessionEnd, serde_json::json!({})).await;
                 Ok(())
             }
+            // T34.5 gives this a router (resolve `task` to a running child
+            // handle or a finished session, then queue/resume it); until
+            // then it is a no-op rather than a silent match on `_`.
+            Submission::TaskMessage { .. } => Ok(()),
             _ => Ok(()),
         }
     }

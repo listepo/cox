@@ -487,6 +487,10 @@ async fn run_task(
                 Some(ev @ Event::ApprovalDecided { by: DecidedBy::User, .. }) => {
                     let _ = parent.emit(ev).await;
                 }
+                // T34.5 turns a child's own `TaskMessage` (`to: "parent"` or a
+                // sibling, SM§3) into the parent's `Submission::TaskMessage`
+                // instead of dropping it here.
+                Some(Event::TaskMessage { .. }) => {}
                 Some(_) => {}
                 None => break Err(ToolError::Io),
             },
