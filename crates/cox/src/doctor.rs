@@ -5,7 +5,12 @@
 //! configured model has a catalog price (T30.27), what LM Studio runs when
 //! it is the code tier's provider (T30.16), `.claude/settings.json`,
 //! one OAuth row per HTTP MCP server (T22.5), and one row per granted
-//! `[[external_agents]]` entry (EA§7, T35.8).
+//! `[[external_agents]]` entry (EA§7, T35.8), and one row per discovered
+//! plugin: loaded, skipped (with reason), not granted, or dev, plus
+//! catalog price conflicts (T33.16) and the wasmtime compilation cache's
+//! on-disk size (PL§6/PL§10, T33.39). `cox ext list` (`ext_cmd.rs`) shows
+//! the same per-plugin state through `check_plugins`, so the two surfaces
+//! never disagree.
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
 
 use std::collections::HashMap;
@@ -142,6 +147,16 @@ pub fn run(
     // (EA§7, T35.8). Empty in the slim build (no `plugins` feature) and
     // when no plugin is granted.
     results.extend(check_external_agents(cwd, &home, config));
+
+    // One row per discovered plugin: loaded, skipped, not granted, or dev,
+    // plus catalog price conflicts (T33.16) in the detail (T33.39). Empty
+    // in the slim build and when no plugin is discovered.
+    results.extend(check_plugins(cwd, &home, config));
+
+    // The wasmtime compilation cache's on-disk size. Empty in the slim
+    // build.
+    #[cfg(feature = "plugins")]
+    results.push(check_plugin_cache(&home));
 
     // One row per HTTP MCP server: is its token usable?
     let mut names: Vec<&String> = mcp
@@ -682,6 +697,169 @@ fn probe_version(argv: &[String]) -> std::io::Result<ProbeOutcome> {
         }))
 }
 
+/// One row per discovered plugin (PL§6/PL§10, T33.39): loaded, skipped
+/// (with reason), not granted, or dev. Reuses `plugin_cmd::verdict_for`,
+/// the one pure grant answer every surface shares, and the same
+/// discover-and-grant walk `check_external_agents` and `cox plugin list`
+/// use, so this never becomes a third verdict implementation.
+#[cfg(feature = "plugins")]
+pub(crate) fn check_plugins(
+    cwd: &std::path::Path,
+    home: &std::path::Path,
+    config: &cox_protocol::Config,
+) -> Vec<CheckResult> {
+    check_plugins_with(cwd, home, config, &HashMap::new())
+}
+
+/// The slim build has no plugin host, so there is never a discovered
+/// plugin.
+#[cfg(not(feature = "plugins"))]
+pub(crate) fn check_plugins(
+    _cwd: &std::path::Path,
+    _home: &std::path::Path,
+    _config: &cox_protocol::Config,
+) -> Vec<CheckResult> {
+    Vec::new()
+}
+
+/// [`check_plugins`]'s body with the breaker's per-session disabled-export
+/// map injected (mirrors `check_api_keys_with`), so a test can prove a
+/// disabled export is visible without a live session: nothing today
+/// tracks that map across a `cox doctor` process (PL§10's "for the
+/// session" breaker is in-memory and doctor is a fresh process each run),
+/// so `check_plugins` always passes an empty one; wire in the real map
+/// once a session's breaker state can be read from outside it.
+#[cfg(feature = "plugins")]
+fn check_plugins_with(
+    cwd: &std::path::Path,
+    home: &std::path::Path,
+    config: &cox_protocol::Config,
+    disabled_exports: &HashMap<String, Vec<String>>,
+) -> Vec<CheckResult> {
+    use cox_plugin::discover::{self, State};
+    use cox_plugin::grant::Verdict;
+
+    let root = crate::config_load::find_git_root(cwd);
+    let found = discover::discover(home, root.as_deref());
+    let store = cox_store::Store::open(home).ok();
+
+    // Granted plugins' `[[models]]` feed the catalog so a price or field
+    // conflict with the built-in table (T33.16) shows up per plugin below;
+    // `check_catalog_prices` still passes `&[]` for the top-level catalog
+    // check until session.rs keeps loaded manifests around to share (that
+    // wiring is T33.16's own "Left").
+    let mut granted: Vec<(&str, &cox_plugin_api::PluginManifest)> = Vec::new();
+    for p in &found.plugins {
+        if let State::Loaded { manifest, digest } = &p.state {
+            let verdict = crate::plugin_cmd::verdict_for(
+                p,
+                manifest,
+                digest,
+                store.as_ref(),
+                root.as_deref(),
+            );
+            if verdict == Verdict::Granted {
+                granted.push((p.id.as_str(), manifest));
+            }
+        }
+    }
+    let plugin_models: Vec<cox_models::PluginModels<'_>> = granted
+        .iter()
+        .map(|(id, m)| cox_models::PluginModels {
+            plugin: id,
+            models: &m.models,
+        })
+        .collect();
+    let catalog = cox_models::Catalog::load(config, &plugin_models, None).ok();
+
+    let mut rows = Vec::new();
+    for p in &found.plugins {
+        let check = format!("plugin {}", p.id);
+        let (manifest, digest) = match &p.state {
+            State::Skipped { reason } => {
+                rows.push(CheckResult::warn(
+                    &check,
+                    format!("skipped: {reason}"),
+                    String::new(),
+                ));
+                continue;
+            }
+            State::Loaded { manifest, digest } => (manifest, digest),
+        };
+        let verdict =
+            crate::plugin_cmd::verdict_for(p, manifest, digest, store.as_ref(), root.as_deref());
+        let mut parts = vec![match &verdict {
+            Verdict::Granted => "loaded".to_string(),
+            Verdict::Disabled => "disabled".to_string(),
+            Verdict::NeedsApproval { .. } => "not granted".to_string(),
+        }];
+        if p.dev {
+            // Same word `cox plugin list` shows for a `cox plugin link` package (T33.41).
+            parts.push("dev".to_string());
+        }
+        if let Some(exports) = disabled_exports.get(&p.id)
+            && !exports.is_empty()
+        {
+            parts.push(format!(
+                "exports disabled by three failures: {}",
+                exports.join(", ")
+            ));
+        }
+        if let Some(catalog) = &catalog {
+            let prefix = format!("plugin {} ", p.id);
+            let conflicts: Vec<&str> = catalog
+                .warnings()
+                .iter()
+                .filter(|w| w.starts_with(&prefix))
+                .map(String::as_str)
+                .collect();
+            if !conflicts.is_empty() {
+                parts.push(format!("catalog conflicts: {}", conflicts.join("; ")));
+            }
+        }
+        let detail = parts.join("; ");
+        rows.push(if matches!(verdict, Verdict::Granted) {
+            CheckResult::ok(&check, detail)
+        } else {
+            CheckResult::warn(&check, detail, String::new())
+        });
+    }
+    rows
+}
+
+/// The wasmtime compilation cache's on-disk size at
+/// `<COX_HOME>/cache/wasmtime` (T33.39). Caching itself is off today —
+/// `PluginHost::load_with` (`cox-plugin/src/host.rs`) calls
+/// `with_cache_disabled()`, and this path is "wired by a later card" — so
+/// an absent directory reports 0 bytes, never a warning.
+#[cfg(feature = "plugins")]
+fn check_plugin_cache(home: &std::path::Path) -> CheckResult {
+    let dir = home.join("cache").join("wasmtime");
+    let bytes = dir_size(&dir);
+    CheckResult::ok("plugin cache", format!("{} ({bytes} bytes)", dir.display()))
+}
+
+/// Best-effort recursive byte total; an unreadable entry is skipped rather
+/// than failing the whole check (fail open on extensions).
+#[cfg(feature = "plugins")]
+fn dir_size(dir: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            match entry.metadata() {
+                Ok(meta) if meta.is_dir() => stack.push(entry.path()),
+                Ok(meta) => total += meta.len(),
+                _ => {}
+            }
+        }
+    }
+    total
+}
+
 fn parse_iso_date(s: &str) -> Option<(u32, u32, u32)> {
     let mut parts = s.split('-');
     let y = parts.next()?.parse().ok()?;
@@ -901,7 +1079,9 @@ fn check_prefix(config: &cox_protocol::Config) -> CheckResult {
 
 /// One result as the human output prints it: the status line, then a
 /// `fix:` line unless it passed.
-fn human(result: &CheckResult) -> String {
+/// `pub(crate)` so `ext_cmd::list` (T33.39) renders a plugin row the same
+/// way doctor does, instead of a second formatter.
+pub(crate) fn human(result: &CheckResult) -> String {
     let status_str = match result.status.as_str() {
         "ok" => "✓",
         "warn" => "⚠",
@@ -1433,5 +1613,160 @@ mod tests {
         let result = check_external_agent_with(dir.path(), &decl, true, identity_wrap);
         assert_eq!(result.status, "warn", "{}", result.detail);
         assert_ne!(result.status, "fail");
+    }
+
+    /// Stages a minimal plugin package at `<home>/plugins/<id>` (the same
+    /// stage-then-activate steps `cox plugin install` runs,
+    /// `plugin_cmd::install`) and returns its parsed manifest and digest.
+    /// `extra` is TOML appended after the required fields, e.g. a
+    /// `[[models]]` row (T33.16).
+    #[cfg(feature = "plugins")]
+    fn stage_plugin(
+        home: &std::path::Path,
+        id: &str,
+        extra: &str,
+    ) -> (cox_plugin_api::PluginManifest, String) {
+        let src = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            src.path().join("plugin.toml"),
+            format!(
+                "api = 1\nid = {id:?}\nversion = \"0.1.0\"\nname = \"Demo\"\nwasm = \"plugin.wasm\"\n{extra}"
+            ),
+        )
+        .expect("manifest");
+        let (manifest, digest) =
+            cox_plugin::discover::load_manifest(src.path(), &src.path().join("plugin.toml"), None)
+                .expect("valid manifest");
+        let plugin_dir = cox_plugin::install::plugin_dir(home, id);
+        cox_plugin::install::stage(src.path(), &plugin_dir, &digest).expect("stage");
+        cox_plugin::install::activate(&plugin_dir, cox_plugin::install::short(&digest))
+            .expect("activate");
+        (manifest, digest)
+    }
+
+    /// Grants `id` at `digest` in the user scope, the same row
+    /// `cox plugin install --yes` would write.
+    #[cfg(feature = "plugins")]
+    fn grant_plugin(
+        store: &cox_store::Store,
+        manifest: &cox_plugin_api::PluginManifest,
+        digest: &str,
+    ) {
+        use cox_protocol::{PluginGrant, PluginStore as _};
+
+        store
+            .grant_put(&PluginGrant {
+                plugin_id: manifest.id.clone(),
+                scope: cox_plugin::grant::scope(cox_plugin::discover::Source::User, None)
+                    .expect("user scope"),
+                digest: digest.to_string(),
+                capabilities: serde_json::json!(cox_plugin::grant::capability_list(manifest)),
+                enabled: true,
+                source: serde_json::json!({}),
+                decided_at: "2026-09-26T00:00:00Z".to_string(),
+            })
+            .expect("grant");
+    }
+
+    /// T33.39 Check: a scratch `COX_HOME` with one healthy (granted) plugin
+    /// whose `[[models]]` price conflicts with the built-in catalog
+    /// (T33.16), one broken plugin (no `current` pointer, so it never even
+    /// parses) and one ungranted plugin (staged but never approved) —
+    /// `check_plugins` reports all three, sorted by id, never as `fail`
+    /// (extensions fail open).
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn doctor_plugin_rows_report_healthy_broken_and_ungranted() {
+        let home = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(home.path().join("plugins")).expect("mkdir");
+
+        let (healthy, healthy_digest) = stage_plugin(
+            home.path(),
+            "healthy",
+            "\n[[models]]\nid = \"claude-haiku-4-5\"\nprice = { input = 999.0, output = 999.0 }\n",
+        );
+        let store = cox_store::Store::open(home.path()).expect("store");
+        grant_plugin(&store, &healthy, &healthy_digest);
+
+        // Broken: the directory exists but has no `current` pointer, so
+        // discovery cannot even find a version to read.
+        std::fs::create_dir_all(home.path().join("plugins/broken")).expect("mkdir");
+
+        // Ungranted: staged and activated, never approved.
+        stage_plugin(home.path(), "ungranted", "");
+
+        let config = cox_protocol::Config::default();
+        let rows = check_plugins(home.path(), home.path(), &config);
+        let ids: Vec<&str> = rows.iter().map(|r| r.check.as_str()).collect();
+        assert_eq!(ids, ["plugin broken", "plugin healthy", "plugin ungranted"]);
+        assert!(rows.iter().all(|r| r.status != "fail"), "{rows:?}");
+
+        assert_eq!(rows[0].status, "warn");
+        assert!(rows[0].detail.starts_with("skipped:"), "{}", rows[0].detail);
+
+        assert_eq!(rows[1].status, "ok", "{}", rows[1].detail);
+        assert!(rows[1].detail.contains("loaded"), "{}", rows[1].detail);
+        assert!(
+            rows[1].detail.contains("catalog conflicts")
+                && rows[1].detail.contains("claude-haiku-4-5"),
+            "{}",
+            rows[1].detail
+        );
+
+        assert_eq!(rows[2].status, "warn");
+        assert_eq!(rows[2].detail, "not granted");
+    }
+
+    /// T33.39 Check `disabled_export_is_visible_in_doctor`: the breaker's
+    /// per-plugin disabled-export list, injected through
+    /// `check_plugins_with` the way `check_api_keys_with` injects a key
+    /// lookup, shows up in the plugin's row.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn disabled_export_is_visible_in_doctor() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let (manifest, digest) = stage_plugin(home.path(), "flaky", "");
+        let store = cox_store::Store::open(home.path()).expect("store");
+        grant_plugin(&store, &manifest, &digest);
+
+        let mut disabled = HashMap::new();
+        disabled.insert("flaky".to_string(), vec!["cox_decide".to_string()]);
+        let config = cox_protocol::Config::default();
+        let rows = check_plugins_with(home.path(), home.path(), &config, &disabled);
+        let row = rows
+            .iter()
+            .find(|r| r.check == "plugin flaky")
+            .expect("row");
+        assert!(
+            row.detail
+                .contains("exports disabled by three failures: cox_decide"),
+            "{}",
+            row.detail
+        );
+    }
+
+    /// An absent `<COX_HOME>/cache/wasmtime` (caching is off today,
+    /// `cox-plugin/src/host.rs`) is 0 bytes and `ok`, never a warning.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn plugin_cache_size_is_zero_when_not_yet_created() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let result = check_plugin_cache(home.path());
+        assert_eq!(result.status, "ok");
+        assert!(result.detail.contains("0 bytes"), "{}", result.detail);
+    }
+
+    /// The cache size sums file bytes recursively once something writes
+    /// under it.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn plugin_cache_size_sums_files_recursively() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let sub = home.path().join("cache/wasmtime/sub");
+        std::fs::create_dir_all(&sub).expect("mkdir");
+        std::fs::write(sub.join("a.bin"), vec![0u8; 10]).expect("write");
+        std::fs::write(home.path().join("cache/wasmtime/b.bin"), vec![0u8; 5]).expect("write");
+        let result = check_plugin_cache(home.path());
+        assert!(result.detail.contains("15 bytes"), "{}", result.detail);
     }
 }

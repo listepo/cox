@@ -1,7 +1,9 @@
 //! `cox ext` (plan.md T7.3 step 3): what instruction files, skills, commands
 //! and agent definitions are in effect for this cwd. Lives in the binary
 //! because it needs both the config roots and every cox-ext discoverer;
-//! hooks and MCP servers join the report in T7.4/T7.6.
+//! hooks and MCP servers join the report in T7.4/T7.6. `plugins` (T33.39)
+//! shows the same per-plugin state as `cox doctor`, through
+//! `doctor::check_plugins` — one walk, one row shape, two surfaces.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -26,6 +28,14 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
     let defs = agents::discover(&agents::agent_dirs(ch, cl, pr));
     let cmds = commands::discover(&commands::command_dirs(ch, cl, pr));
     let found = skills::discover(&skills::skill_dirs(ch, cl, pr));
+    // T33.39: loaded, skipped, not granted, or dev, plus catalog price
+    // conflicts (T33.16) — the same row `cox doctor` shows. Config-loaded
+    // best-effort, same as `report`'s `unwrap_or_default`, so a broken
+    // config never hides the rest of `ext list`.
+    let config = config_load::load(cwd, cli)
+        .map(|l| l.config)
+        .unwrap_or_default();
+    let plugin_rows = crate::doctor::check_plugins(cwd, &cox_home, &config);
     if !json {
         let mut out = String::new();
         // T34.10: `disabled: true` still discovers here, marked, even
@@ -52,6 +62,14 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
             "skills",
             found.skills.iter().map(|s| s.name.as_str()),
         );
+        if plugin_rows.is_empty() {
+            let _ = writeln!(out, "plugins: none");
+        } else {
+            let _ = writeln!(out, "plugins:");
+            for row in &plugin_rows {
+                let _ = write!(out, " {}", crate::doctor::human(row));
+            }
+        }
         return out;
     }
     serde_json::json!({
@@ -64,6 +82,7 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
         })).collect::<Vec<_>>(),
         "commands": cmds.commands.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
         "skills": found.skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+        "plugins": serde_json::to_value(&plugin_rows).unwrap_or_default(),
     })
     .to_string()
 }

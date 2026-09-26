@@ -671,8 +671,10 @@ fn default_source(source: Source, dev: bool, dir: &Path) -> serde_json::Value {
 /// link`, T33.41) and runs it through `grant::check`, the one pure answer
 /// every surface shares, passing the real `digest` so it can still tell a
 /// genuine mismatch from a linked one. A missing or unreadable store
-/// counts as no grant, never a wider one.
-fn verdict_for(
+/// counts as no grant, never a wider one. `pub(crate)` so
+/// `doctor::check_plugins` and `ext_cmd::list` (T33.39) share this same
+/// walk instead of a third verdict implementation.
+pub(crate) fn verdict_for(
     p: &discover::Plugin,
     manifest: &PluginManifest,
     digest: &str,
