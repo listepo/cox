@@ -331,6 +331,23 @@ impl Tool for AgentTool {
                 why: "missing or empty \"task\"".into(),
             })?
             .to_string();
+        // T34.2 review: a burst of parallel `agent` calls in one turn (the
+        // core dispatches `Concurrency::Parallel` tools concurrently) must
+        // not all pass a count-then-register check — `try_reserve_agent_slot`
+        // checks the cap and reserves a slot in one atomic step. The guard
+        // frees it on drop: kept as a local for the foreground path (freed
+        // when `call()` returns, however it returns) and moved into the
+        // background closure below (freed when that child actually finishes).
+        let cap = self.parent.config.core.max_concurrent_subagents;
+        let agent_slot =
+            self.parent
+                .try_reserve_agent_slot(cap)
+                .map_err(|running| ToolError::Denied {
+                    why: format!(
+                        "subagent concurrency cap reached: {running} of {cap} \
+                         `agent` tasks already running"
+                    ),
+                })?;
         let preset = self.resolve(&input)?;
         let tools = self.tools_for(&preset, &input);
         let tier = self.resolve_tier(&preset, &input)?;
@@ -424,7 +441,13 @@ impl Tool for AgentTool {
             .and_then(Value::as_bool)
             .unwrap_or(false)
         {
-            tokio::spawn(drive(self.parent.clone(), task, child, task_text, io));
+            let parent = self.parent.clone();
+            tokio::spawn(async move {
+                // T34.2: the slot stays reserved for this child's whole run,
+                // not just until `call()` returns its "started" pointer.
+                let _agent_slot = agent_slot;
+                drive(parent, task, child, task_text, io).await;
+            });
             return Ok(ToolOutput {
                 text: format!(
                     "background task {task} started: {label}\n\
@@ -1416,5 +1439,180 @@ text = "it was 42"
         // An independent message, sent during a turn its task started, is hop 1.
         relay(&parent, c, b, "hello".into()).await.expect("relay");
         assert_eq!(parent.next_queued(b).await.map(|q| q.hop), Some(1));
+    }
+
+    /// Like `test_agent_tool`, but with a chosen `core.max_concurrent_subagents`
+    /// (T34.2), for the cap tests below — they never let a child turn run,
+    /// so the throwaway `Scripted` provider is never actually called.
+    fn agent_tool_with_cap(cap: u32) -> AgentTool {
+        let mut config = cox_protocol::Config::default();
+        config.core.max_concurrent_subagents = cap;
+        let store = Arc::new(crate::MemoryStore::new());
+        let provider =
+            Arc::new(cox_provider::scripted::Scripted::from_toml("", "").expect("scripted"));
+        let session = Session::new(
+            config,
+            provider,
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-subagent-unit"),
+        )
+        .expect("session");
+        AgentTool::new(session)
+    }
+
+    /// A `ToolCx` good enough to drive `AgentTool::call`'s cap check, which
+    /// returns before touching any of these fields for real (`resolve`
+    /// hasn't even run yet on the denied path).
+    fn test_cx(tool: &AgentTool) -> ToolCx {
+        let (tx, _rx) = mpsc::channel(8);
+        ToolCx {
+            roots: tool.parent.config.core.workspace_roots.clone(),
+            writable_roots: tool.parent.config.core.workspace_roots.clone(),
+            cwd: tool.parent.cwd.clone(),
+            sandbox: cox_protocol::types::SandboxPolicy {
+                mode: tool.parent.config.sandbox.mode,
+                network: tool.parent.config.sandbox.network,
+                writable: tool.parent.config.sandbox.writable.clone(),
+                readonly_in_workspace: tool.parent.config.sandbox.readonly_in_workspace.clone(),
+                linux_backend: tool.parent.config.sandbox.linux_backend,
+            },
+            archive: Arc::new(crate::MemoryStore::new()),
+            cancel: CancellationToken::new(),
+            output: tx,
+            session: tool.parent.id,
+            call: cox_protocol::ids::CallId::new(),
+            agent: None,
+            preset: None,
+        }
+    }
+
+    /// T34.2: over the cap, `call()` denies before spawning a child at all,
+    /// naming both the cap and how many slots are already reserved — the
+    /// same shape as the "unknown preset" denial above. The slots are
+    /// taken directly via `try_reserve_agent_slot` (not a full `call()`
+    /// each), so this is the narrowest possible proof of the check itself;
+    /// `agent_calls_reserve_exactly_cap_slots_under_a_parallel_burst` below
+    /// proves it holds under real concurrent `call()`s too.
+    #[tokio::test]
+    async fn agent_call_denied_when_concurrent_cap_reached() {
+        let tool = agent_tool_with_cap(2);
+        let _a = tool.parent.try_reserve_agent_slot(2).expect("slot 1 of 2");
+        let _b = tool.parent.try_reserve_agent_slot(2).expect("slot 2 of 2");
+
+        let err = tool
+            .call(json!({"task": "one too many"}), &test_cx(&tool))
+            .await
+            .expect_err("cap reached");
+        let ToolError::Denied { why } = err else {
+            panic!("expected Denied, got {err:?}");
+        };
+        assert!(why.contains("cap"), "{why:?}");
+        assert!(
+            why.contains("2 of 2"),
+            "names the cap and running count: {why:?}"
+        );
+    }
+
+    /// T34.2: dropping a reservation guard (a running task completing,
+    /// erroring, or being cancelled all drop it the same way) frees the
+    /// slot — the very next call no longer trips the cap check. Proven by
+    /// handing it an invalid preset instead of a working one: a cap denial
+    /// would still say "cap reached"; `resolve()`'s own "unknown preset"
+    /// text proves the call got past the cap check this time.
+    #[tokio::test]
+    async fn agent_call_allowed_after_a_running_task_completes() {
+        let tool = agent_tool_with_cap(1);
+        let holding = tool.parent.try_reserve_agent_slot(1).expect("the one slot");
+
+        let full = tool
+            .call(json!({"task": "denied while full"}), &test_cx(&tool))
+            .await
+            .expect_err("cap reached");
+        assert!(
+            matches!(full, ToolError::Denied { ref why } if why.contains("cap")),
+            "{full:?}"
+        );
+
+        drop(holding); // the guard's `Drop` frees the slot, as a finished task's would
+        let after = tool
+            .call(
+                json!({"task": "past the cap", "preset": "nope"}),
+                &test_cx(&tool),
+            )
+            .await
+            .expect_err("unknown preset, not a cap denial");
+        let ToolError::Denied { why } = after else {
+            panic!("expected Denied, got {after:?}");
+        };
+        assert!(
+            why.contains("unknown agent preset"),
+            "cap should no longer be the blocker: {why:?}"
+        );
+    }
+
+    /// Like `agent_tool_with_cap`, but with `cap` scripted turns so the
+    /// exactly-`cap` background children the burst test below lets past
+    /// the reservation can each finish their one-shot child turn (no tool
+    /// calls, so one scripted answer ends it) instead of erroring against
+    /// an empty script; the child gets no tools of its own (`vec![]`,
+    /// like `agent_tool_with_cap`), so it never needs one.
+    fn agent_tool_with_cap_and_turns(cap: u32) -> AgentTool {
+        let mut config = cox_protocol::Config::default();
+        config.core.max_concurrent_subagents = cap;
+        let toml: String = (0..cap)
+            .map(|i| format!("[[turn]]\ntext = \"ok {i}\"\n\n"))
+            .collect();
+        let store = Arc::new(crate::MemoryStore::new());
+        let provider =
+            Arc::new(cox_provider::scripted::Scripted::from_toml(&toml, "").expect("scripted"));
+        let session = Session::new(
+            config,
+            provider,
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-subagent-unit"),
+        )
+        .expect("session");
+        AgentTool::new(session)
+    }
+
+    /// T34.2 review: the card this fixes is exactly "a burst of parallel
+    /// `agent` calls in one turn" — `turn.rs` dispatches
+    /// `Concurrency::Parallel` tools (which `agent` is) concurrently via
+    /// its own `JoinSet`, so a count-then-register cap check races: ten
+    /// calls checked against a cap of eight can all read "0 running" before
+    /// any of them registers. Ten real concurrent `call()`s over a cap of
+    /// three must let exactly three through and deny the other seven, on
+    /// every run, however the runtime happens to interleave them.
+    #[tokio::test]
+    async fn agent_calls_reserve_exactly_cap_slots_under_a_parallel_burst() {
+        let cap = 3u32;
+        let n = 10usize;
+        let tool = Arc::new(agent_tool_with_cap_and_turns(cap));
+        let mut handles = Vec::with_capacity(n);
+        for i in 0..n {
+            let tool = tool.clone();
+            handles.push(tokio::spawn(async move {
+                let cx = test_cx(&tool);
+                tool.call(
+                    json!({"task": format!("task {i}"), "background": true}),
+                    &cx,
+                )
+                .await
+            }));
+        }
+        let (mut ok, mut denied) = (0usize, 0usize);
+        for h in handles {
+            match h.await.expect("join") {
+                Ok(_) => ok += 1,
+                Err(ToolError::Denied { why }) if why.contains("cap") => denied += 1,
+                Err(other) => panic!("unexpected error: {other:?}"),
+            }
+        }
+        assert_eq!(ok, cap as usize, "exactly the cap's worth of calls succeed");
+        assert_eq!(denied, n - cap as usize, "the rest are denied by the cap");
     }
 }

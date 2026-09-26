@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::agent::AgentDef;
@@ -157,6 +157,14 @@ pub struct Session {
     agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
     /// The one "checkpoints off" warning per session has been emitted.
     pub(crate) checkpoint_warned: Arc<AtomicBool>,
+    /// T34.2's `core.max_concurrent_subagents` cap: how many `agent` slots
+    /// this session has reserved right now. A plain atomic, not the
+    /// `inner.tasks` map: a burst of parallel `agent` calls (the core's own
+    /// `turn.rs` dispatches `Concurrency::Parallel` tools concurrently) must
+    /// check-and-reserve in one indivisible step, which an `await`-ing
+    /// `Mutex` round trip cannot give without a `Drop` guard that itself
+    /// needs to run async cleanup; a compare-exchange loop needs neither.
+    pub(crate) agent_slots: Arc<AtomicU32>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
     pub(crate) inner: Arc<Mutex<Inner>>,
@@ -363,6 +371,7 @@ impl Session {
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
+            agent_slots: Arc::new(AtomicU32::new(0)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
             inner: Arc::new(Mutex::new(Inner {

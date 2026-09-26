@@ -142,6 +142,18 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         without_project.budget.warn_at,
     );
 
+    // T34.2 review: a cost/concurrency guard like the budget keys above —
+    // a project layer must not be able to widen how many `agent` tasks a
+    // session lets run at once.
+    if full.core.max_concurrent_subagents > without_project.core.max_concurrent_subagents {
+        violations.push(GuardViolation {
+            key: "core.max_concurrent_subagents",
+            project_value: full.core.max_concurrent_subagents.to_string(),
+            reverted_to: without_project.core.max_concurrent_subagents.to_string(),
+        });
+        full.core.max_concurrent_subagents = without_project.core.max_concurrent_subagents;
+    }
+
     if full.permissions.mode == PermissionMode::Bypass
         && without_project.permissions.mode != PermissionMode::Bypass
     {
@@ -179,10 +191,11 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 6] = [
+const GUARDED_KEYS: [&str; 7] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
+    "core.max_concurrent_subagents",
     "permissions.mode",
     "sandbox.mode",
     "tiers.think.confirm",
@@ -458,6 +471,38 @@ mod tests {
                     .any(|v| v.key == "budget.session_usd")
             );
             assert_eq!(loaded.source_of("budget.session_usd"), "default");
+        });
+    }
+
+    /// T34.2 review: `core.max_concurrent_subagents` is a cost/concurrency
+    /// guard like the budget keys — a project's `.cox/config.toml` must not
+    /// be able to raise it, the same treatment `config_project_cannot_raise_budget`
+    /// proves for `budget.session_usd`.
+    #[test]
+    fn config_project_cannot_raise_max_concurrent_subagents() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        fs::write(
+            git_root.path().join(".cox/config.toml"),
+            "[core]\nmax_concurrent_subagents = 999\n",
+        )
+        .expect("write project config");
+
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let loaded = load_plain(git_root.path()).expect("load succeeds");
+            assert_eq!(
+                loaded.config.core.max_concurrent_subagents, 8,
+                "raise must be ignored"
+            );
+            assert!(
+                loaded
+                    .violations
+                    .iter()
+                    .any(|v| v.key == "core.max_concurrent_subagents")
+            );
+            assert_eq!(loaded.source_of("core.max_concurrent_subagents"), "default");
         });
     }
 

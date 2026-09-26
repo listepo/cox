@@ -143,6 +143,15 @@ pub struct CoreConfig {
     pub max_turns: u32,
     /// `core.parallel_tools`: max concurrent `Concurrency::Parallel` calls.
     pub parallel_tools: u32,
+    /// `core.max_concurrent_subagents` (T34.2): cap on `TaskKind::Agent`
+    /// tasks running at once for a session, foreground and background
+    /// together — a loop of `background: true` `agent` calls cannot
+    /// silently multiply cost or exhaust the parent's budget slice faster
+    /// than the user can notice. Matches the shape of Codex's
+    /// `agents.max_concurrent_threads_per_session` and Claude Code's
+    /// `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as
+    /// a config key (D13), not an env var.
+    pub max_concurrent_subagents: u32,
     /// `core.log_level`: a `tracing` filter string.
     pub log_level: String,
     /// `core.profile`: the assembled-prefix profile, `""` (default) or
@@ -159,6 +168,7 @@ impl Default for CoreConfig {
             workspace_roots: Vec::new(),
             max_turns: 200,
             parallel_tools: 4,
+            max_concurrent_subagents: 8,
             log_level: "info".to_string(),
             profile: String::new(),
         }

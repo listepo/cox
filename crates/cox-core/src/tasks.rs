@@ -17,6 +17,9 @@
 
 use std::collections::VecDeque;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use cox_protocol::ArchivePut;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{ArchiveId, CallId, ItemId, TaskId, TurnId};
@@ -62,6 +65,23 @@ pub(crate) struct Detachable {
     pub call: CallId,
     pub tool: String,
     pub subject: String,
+}
+
+/// T34.2: holds one of the session's `core.max_concurrent_subagents`
+/// slots; frees it on drop. `AgentTool::call` binds this to a local that
+/// outlives every early return in the foreground path (Rust runs its
+/// `Drop` regardless of which `?` exits the function), and moves it into
+/// the spawned task's own `async move` block for a `background: true`
+/// call, so the slot is held until that child's run actually finishes
+/// rather than until `call()` returns its "started" pointer.
+pub(crate) struct AgentSlotGuard {
+    slots: Arc<AtomicU32>,
+}
+
+impl Drop for AgentSlotGuard {
+    fn drop(&mut self) {
+        self.slots.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// History pointer on completion: label, id, detail (cost, or exit code and
@@ -282,6 +302,35 @@ impl Session {
             text,
         })
         .await
+    }
+
+    /// T34.2's `core.max_concurrent_subagents` cap, checked and reserved in
+    /// one step: a burst of parallel `agent` calls in the same turn (the
+    /// core's own `turn.rs` dispatches `Concurrency::Parallel` tools
+    /// concurrently, `agent` among them) must not all read the same count
+    /// and all pass — a separate check-then-register across an `await`
+    /// races, since two calls can both observe the pre-registration count
+    /// before either registers. `Err` carries how many slots were already
+    /// reserved, for the denial text; `Ok` carries the guard that frees the
+    /// slot on drop, so every exit (success, error, cancellation, a failed
+    /// `resolve`/`spawn_child`) releases it exactly once without the
+    /// caller having to remember to.
+    pub(crate) fn try_reserve_agent_slot(&self, cap: u32) -> Result<AgentSlotGuard, u32> {
+        loop {
+            let current = self.agent_slots.load(Ordering::Acquire);
+            if current >= cap {
+                return Err(current);
+            }
+            if self
+                .agent_slots
+                .compare_exchange_weak(current, current + 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return Ok(AgentSlotGuard {
+                    slots: self.agent_slots.clone(),
+                });
+            }
+        }
     }
 
     /// Completion report: the pointer line enters history for the model,

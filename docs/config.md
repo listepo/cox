@@ -8,6 +8,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `workspace_roots` = `[]` — empty = git root of cwd, else cwd; extra roots via --add-dir
 - `max_turns` = `200` — per UserTurn, counts provider calls
 - `parallel_tools` = `4`
+- `max_concurrent_subagents` = `8` — cap on running TaskKind::Agent tasks, foreground + background (T34.2)
 - `log_level` = `"info"` — tracing filter; file log at ~/.cox/logs/cox.log
 - `profile` = `""` — "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
 ## `[tiers.cheap]`

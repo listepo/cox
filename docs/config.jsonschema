@@ -12,6 +12,7 @@
         "workspace_roots": [],
         "max_turns": 200,
         "parallel_tools": 4,
+        "max_concurrent_subagents": 8,
         "log_level": "info",
         "profile": ""
       }
@@ -269,6 +270,13 @@
           "format": "uint32",
           "minimum": 0,
           "default": 4
+        },
+        "max_concurrent_subagents": {
+          "description": "`core.max_concurrent_subagents` (T34.2): cap on `TaskKind::Agent`\ntasks running at once for a session, foreground and background\ntogether — a loop of `background: true` `agent` calls cannot\nsilently multiply cost or exhaust the parent's budget slice faster\nthan the user can notice. Matches the shape of Codex's\n`agents.max_concurrent_threads_per_session` and Claude Code's\n`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as\na config key (D13), not an env var.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 8
         },
         "log_level": {
           "description": "`core.log_level`: a `tracing` filter string.",
