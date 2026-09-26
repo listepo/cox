@@ -28,11 +28,20 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
     let found = skills::discover(&skills::skill_dirs(ch, cl, pr));
     if !json {
         let mut out = String::new();
-        section(
-            &mut out,
-            "agents",
-            defs.agents.iter().map(|a| a.name.as_str()),
-        );
+        // T34.10: `disabled: true` still discovers here, marked, even
+        // though the `agent` tool's own description omits it.
+        let agent_lines: Vec<String> = defs
+            .agents
+            .iter()
+            .map(|a| {
+                if a.disabled {
+                    format!("{} (disabled)", a.name)
+                } else {
+                    a.name.clone()
+                }
+            })
+            .collect();
+        section(&mut out, "agents", agent_lines.iter().map(String::as_str));
         section(
             &mut out,
             "commands",
@@ -51,6 +60,7 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
             "description": a.description,
             "tools": a.tools,
             "model": a.model,
+            "disabled": a.disabled,
         })).collect::<Vec<_>>(),
         "commands": cmds.commands.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
         "skills": found.skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),

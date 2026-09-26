@@ -33,6 +33,9 @@ struct Header {
     description: Option<String>,
     tools: Option<serde_yaml::Value>,
     model: Option<String>,
+    /// T34.10: `disabled: true` hides the def from the model without
+    /// removing it from disk or from `cox ext list`.
+    disabled: Option<bool>,
 }
 
 /// `~/.cox/agents`, `~/.claude/agents`, `.cox/agents`, `.claude/agents`.
@@ -108,6 +111,7 @@ fn parse_agent_text(path: &Path, text: &str) -> Result<AgentDef, String> {
         model: header.model,
         path: path.to_path_buf(),
         body: body.trim().to_string(),
+        disabled: header.disabled.unwrap_or(false),
     })
 }
 
@@ -130,5 +134,21 @@ mod tests {
         let shell = &found.agents[1];
         assert_eq!(shell.tools, ["bash", "web_fetch"]);
         assert_eq!(shell.model.as_deref(), Some("haiku"));
+    }
+
+    #[test]
+    fn agents_disabled_frontmatter_field_is_parsed() {
+        let def = parse_agent_text(
+            &PathBuf::from("<test>/blocked.md"),
+            "---\nname: blocked\ndescription: not for the model\ndisabled: true\n---\nbody",
+        )
+        .unwrap();
+        assert!(def.disabled);
+        let enabled = parse_agent_text(
+            &PathBuf::from("<test>/scout.md"),
+            "---\nname: scout\ndescription: looks around\n---\nbody",
+        )
+        .unwrap();
+        assert!(!enabled.disabled);
     }
 }

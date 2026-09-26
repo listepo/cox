@@ -257,6 +257,33 @@ fn ext_lists_commands_and_agents_from_the_project_tree() {
     assert!(text.contains("notices: none"), "{text}");
 }
 
+#[test]
+fn ext_list_marks_a_disabled_agent_but_still_shows_it() {
+    // T34.10: `disabled: true` hides a def from the `agent` tool's own
+    // description (crates/cox-core/src/subagent.rs), but `cox ext list`
+    // still reports it, marked, since it exists on disk either way.
+    let work = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(work.path().join(".cox/agents")).unwrap();
+    std::fs::write(
+        work.path().join(".cox/agents/blocked.md"),
+        "---\nname: blocked\ndescription: not for the model\ndisabled: true\n---\nbody",
+    )
+    .unwrap();
+    let out = assert_cmd::Command::cargo_bin("cox")
+        .unwrap()
+        .args(["--cwd", work.path().to_str().unwrap(), "ext", "list"])
+        .env("COX_HOME", home.path())
+        .env("HOME", home.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("blocked (disabled)"), "{text}");
+}
+
 /// `cox stats` reads the store under `COX_HOME`, not one it creates in the
 /// working directory — the latter made every session look unbilled.
 #[test]

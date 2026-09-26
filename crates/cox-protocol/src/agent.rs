@@ -31,6 +31,14 @@ pub struct AgentDef {
     pub path: PathBuf,
     /// The system prompt for the child.
     pub body: String,
+    /// `disabled: true` in the frontmatter (T34.10): the definition still
+    /// discovers and shows up in `cox ext list`, but the `agent` tool's own
+    /// description omits it and `resolve` treats its name as unknown — the
+    /// same "known to disk, invisible to the model" split OpenCode's
+    /// `permission: deny` gives a subagent (research.md §4.3.7). Claude
+    /// Code's documented subagent frontmatter (research.md M1) has no field
+    /// for this, so there is no existing name to match.
+    pub disabled: bool,
 }
 
 impl AgentDef {
@@ -90,6 +98,7 @@ mod tests {
             model: None,
             path: PathBuf::from("<test>"),
             body: String::new(),
+            disabled: false,
         };
         let parent = [
             ("read".to_string(), 0),

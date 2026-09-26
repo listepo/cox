@@ -134,13 +134,16 @@ impl AgentTool {
         }
     }
 
-    /// Discovered names not already shadowed by a built-in preset — used
-    /// both in the tool description and in the "unknown preset" error, so
-    /// the two never disagree about what is dispatchable.
+    /// Discovered names not already shadowed by a built-in preset, and not
+    /// `disabled: true` (T34.10) — used both in the tool description and in
+    /// the "unknown preset" error, so the two never disagree about what is
+    /// dispatchable. A disabled def still discovers (`cox ext list` shows
+    /// it, marked); it just never appears here.
     fn custom_names(&self) -> Vec<String> {
         self.parent
             .agent_defs()
             .iter()
+            .filter(|d| !d.disabled)
             .map(|d| d.name.clone())
             .filter(|n| !PRESETS.iter().any(|p| p.name == n))
             .collect()
@@ -165,7 +168,12 @@ impl AgentTool {
                 natural_tier: self.parent.config.jobs.tier_for(p.job),
             });
         }
-        if let Some(def) = self.parent.agent_defs().iter().find(|d| d.name == name) {
+        if let Some(def) = self
+            .parent
+            .agent_defs()
+            .iter()
+            .find(|d| d.name == name && !d.disabled)
+        {
             return Ok(Resolved {
                 name: def.name.clone(),
                 job: Job::Agent,
@@ -1001,6 +1009,7 @@ mod tests {
             model: Some("haiku".into()),
             path: PathBuf::from("<test>/.cox/agents/reviewer.md"),
             body: "You review changes for correctness.".into(),
+            disabled: false,
         }]);
         let err = tool
             .resolve(&json!({"preset": "nope"}))
@@ -1011,6 +1020,47 @@ mod tests {
         for name in ["explore", "shell", "reviewer"] {
             assert!(why.contains(name), "{name:?} missing from {why:?}");
         }
+    }
+
+    /// T34.10: `disabled: true` still discovers (the def reaches
+    /// `set_agent_defs`, so `cox ext list` would still show it) but the
+    /// `agent` tool neither offers it in its own description nor resolves
+    /// it by name — matching OpenCode's `permission: deny` (research.md
+    /// §4.3.7). The unknown-preset error also stays silent about it, since
+    /// that error's own name list comes from `custom_names`.
+    #[test]
+    fn disabled_agent_def_is_discovered_but_not_offered_to_the_model() {
+        let tool = test_agent_tool(vec![AgentDef {
+            name: "blocked".into(),
+            description: "not for the model".into(),
+            tools: vec![],
+            model: None,
+            path: PathBuf::from("<test>/.cox/agents/blocked.md"),
+            body: "internal only".into(),
+            disabled: true,
+        }]);
+        assert!(
+            !tool.spec().description.contains("blocked"),
+            "{}",
+            tool.spec().description
+        );
+        let err = tool
+            .resolve(&json!({"preset": "blocked"}))
+            .expect_err("disabled preset must not resolve");
+        let ToolError::Denied { why } = err else {
+            panic!("expected Denied, got {err:?}");
+        };
+        // `why` echoes the requested (invalid) name back once, so check
+        // only the "available presets" list it also names — that list
+        // must not offer `blocked` as something the model could retry.
+        let available = why
+            .split("available presets: ")
+            .nth(1)
+            .expect("error names the available presets");
+        assert!(
+            !available.contains("blocked"),
+            "disabled name offered as available: {why:?}"
+        );
     }
 
     use std::sync::{Mutex as StdMutex, OnceLock};
