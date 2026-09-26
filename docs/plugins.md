@@ -97,6 +97,18 @@ Each wrapper returns `SdkResult<T>`. `SdkError::Host(AbiError)` means cox refuse
 
 `invoke_tool` is refused inside `hook`, `decide` and `provider_stream` because the agent loop is waiting on those calls, so a tool run from inside them would deadlock.
 
+## Engine features
+
+cox runs every plugin on one engine configuration; a module that needs a WebAssembly proposal outside it fails to load with a parse error.
+
+| Feature | State | Why |
+| --- | --- | --- |
+| tail calls, function references, GC | on | extism 1.30.0 always enables them |
+| exception handling (`try_table`, `throw`, tags) | on | extism's `wasmtime-exceptions` feature, turned on for the workspace (plan.md A61): Kotlin/Wasm output uses it unconditionally and does not parse without it (research.md R§4.3.5 P42–P43) |
+| WASI | off | wasmtime 43 has an unfixed WASI filesystem advisory (RUSTSEC-2026-0269); it stays off until the extism bump (A55, T33.43) |
+
+The exception switch is workspace-wide: it is one flag on the engine, not a per-plugin capability, so any plugin may use exceptions. It adds guest-visible instructions only; the host still gives each plugin its own engine and store, the same memory cap and the same per-call deadline. RUSTSEC-2026-0222 names exception-related embedder APIs (`ExnRefPre::new`, `Tag::new`), but it needs the host to move objects between engines, which neither extism nor cox does, so enabling the proposal does not make it reachable from a guest (`deny.toml`). The exception-handling support in wasmtime 43 itself has not been reviewed beyond that advisory; revisit it with the T33.43 bump.
+
 ## The wire, for other languages
 
 The SDK is a thin layer over one rule, which a guest in any language can follow with its own extism PDK:

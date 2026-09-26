@@ -136,7 +136,10 @@ agent-client-protocol = "2.0"
 # the guest `http_request` host function and URL/file module loading; cox
 # loads modules from bytes only and routes plugin HTTP through its own
 # grant-checked `cox_http` (PL§4, R§4.3.5 P5).
-extism = { version = "1.30.0", default-features = false }
+# `wasmtime-exceptions` turns on the Wasm exception-handling proposal
+# (`Config::wasm_exceptions`) and nothing else; Kotlin/Wasm output needs it
+# to parse (R§4.3.5 P42-P43). Approved by the creator for every plugin (A61).
+extism = { version = "1.30.0", default-features = false, features = ["wasmtime-exceptions"] }
 # extism 1.30.0 does not build with its default features off: it relies on
 # wasmtime 43's `anyhow` feature (`wasmtime::Error` -> `anyhow::Error`), which
 # only its `wasmtime-default-features` turns on, together with the whole

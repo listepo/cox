@@ -518,6 +518,18 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn exception_handling_module_loads() {
+        // A61: Kotlin/Wasm emits `try_table`/`throw`; without extism's
+        // `wasmtime-exceptions` the module fails to parse (R§4.3.5 P42).
+        let body = r#"(tag $e)
+            (func (export "throws") (result i32)
+              (block $caught (try_table (catch_all $caught) (throw $e)))
+              (i32.const 0))"#;
+        let host = PluginHost::load("t", &module(body), &Limits::default());
+        assert!(host.is_ok(), "exceptions proposal is on: {:?}", host.err());
+    }
+
+    #[test]
     fn control_queue_is_served_before_events() {
         let job = |export: &str| Job {
             export: export.into(),
