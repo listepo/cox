@@ -1170,3 +1170,58 @@ Check:
 - A "say hi" run exited with code 0: 5666 input tokens, $0 usage row.
 - Load on demand is tested only against wiremock; no model was loaded or unloaded on the live server.
 - nextest: 982 passed, 3 skipped in the worktree.
+
+#### T33.4 Discovery, package digest and `cox plugin list`
+
+Depends: T33.3 · Size: ~190 · Files: `crates/cox-plugin/src/discover.rs`, `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal: find user plugins (`~/.cox/plugins/<id>/current`) and project plugins (`<git root>/.cox/plugins/<id>`). The user plugin wins a clash with a notice. Validate each manifest, compute the SHA-256 tree digest (PL§1), and list plugins with their state.
+Plan: `cox plugin list [--json]` loads each granted plugin, runs `cox_init` against a stub session and reports its contributions. The grant state reads "unknown" until T33.6. `cox ext list` gains a plugins section.
+Check: `digest_changes_when_any_file_changes`, `user_plugin_shadows_project_plugin_with_notice`, `malformed_manifest_is_listed_as_skipped`; the real binary against a scratch `COX_HOME` lists a WAT fixture plugin.
+Status: done 2026-09-26
+Result: `cox_plugin::discover(cox_home, project_root)` scans `~/.cox/plugins/<id>/` (following `current` → `versions/<digest12>/`) and `<git root>/.cox/plugins/<id>/`. When both define the same id, the user plugin wins and a shadowing notice is recorded.
+`load_manifest` parses `plugin.toml` with figment and checks that the `id` matches its directory, then runs `validate()`. It rejects a `wasm` path that is absolute or contains `..`; project content is untrusted (D14), and `cox-plugin` cannot call `confine`.
+`package_digest` is SHA-256 over the sorted `(relative path, length, bytes)` of every file.
+`cox plugin list [--json]` reports each plugin's id, source, version, digest, declared capabilities and grant. It executes no plugin code: the state is `discovered` and the grant is `unknown` until T33.6, which compiles and runs `cox_init` only for granted plugins. All of it sits behind the `plugins` feature.
+Review fix: the first version compiled every discovered plugin and ran `cox_init`, project plugins included, before any grant existed. That broke PL§1 ("a project plugin never loads until the user enables it"), so it was removed and a regression test added.
+Deviations:
+- About 560 lines instead of ~190.
+- A fourth file, `crates/cox/tests/plugin_cli.rs`, because the Check runs the real binary.
+- `cox-plugin-api` is now an optional dependency of `crates/cox`.
+Check: all pass:
+- `digest_changes_when_any_file_changes`
+- `user_plugin_shadows_project_plugin_with_notice`
+- `malformed_manifest_is_listed_as_skipped`
+- `wasm_path_escaping_package_dir_is_skipped`
+- `contributions_summary_lists_only_nonempty_kinds`
+- `cox_plugin_list_reports_a_wat_fixture_plugin`: the real binary against a scratch `COX_HOME`
+- `cox_plugin_list_never_runs_a_project_plugins_module`
+Slim clippy is clean. nextest: 977 passed, 3 skipped in the worktree.
+
+#### T34.1 Wire custom agent definitions into the `agent` tool
+
+Depends: — · Size: ~190 · Files: `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/Cargo.toml` (new path dependency on `cox-ext`)
+Goal: `agent(preset: "<name>")` dispatches an `AgentDef` discovered by `cox_ext::agents::discover` (`.cox/agents/*.md`, `.claude/agents/*.md`, home variants) exactly as the built-in `explore`/`shell` presets already do, and the `agent` schema gains a `tier` field — closing the gap between §1.11's documented `agent` row and the code, which today only ever resolves the two hardcoded presets (`AgentTool::preset`, `PRESETS.iter().copied().find(...)`; `cox-ext::agents::discover` is otherwise called only by `cox ext list`).
+Plan:
+1. `Session::new`/`resume` discover `AgentDef`s once per session build (the same roots `cox ext list` already reads) and hand them to `AgentTool::new`.
+2. `AgentTool::preset()` tries the built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`), then a discovered `AgentDef` by exact name; a miss lists both the built-in and the discovered names in the `ToolError::Denied`.
+3. `tools_for()` uses `AgentDef::restrict` when the resolved preset came from a definition, the existing `Preset.tools` path otherwise.
+4. `call()` reads an optional `tier` input; when present it overrides `tier_for(def.model)` (or the built-in preset's job tier), but only downward — clamped the same way the router already clamps a decision-point's tier offer (D5 "never up").
+5. The `preset` input schema drops its fixed two-value enum for a free-form string; the tool's own description keeps naming `explore`/`shell` and says custom names come from `.claude/agents`/`.cox/agents`.
+Check: `agent_dispatches_a_discovered_custom_preset_by_name`, `agent_unknown_preset_lists_builtin_and_discovered_names_in_error`, `agent_tier_override_is_honored_and_clamped_never_above_config`; the existing `subagent_presets_are_explore_and_shell` and `subagent_budget_is_a_slice_of_parent` stay green unchanged.
+Status: done 2026-09-26
+Result: `agent(preset: "<name>")` now dispatches a custom definition found in `.cox/agents` / `.claude/agents` (and the home variants), just as it dispatches `explore` and `shell`.
+- Discovery runs once, when `crates/cox` builds the session. The definitions are installed with `Session::set_agent_defs`, so `cox-core` does no I/O and the tool schema stays byte-stable for the session.
+- `AgentDef`, `restrict` and `tier_for` moved to `cox_protocol::agent`, because the type crosses crate boundaries. `cox_ext::agents` re-exports them, so `cox-core` gains no dependency on `cox-ext`.
+- `resolve()` checks the built-in presets first, then the discovered definitions. An unknown name is denied, and the error lists every name.
+- A new `tier` input can only lower the tier (D5). The tool description names the custom presets.
+- Custom presets are charged to the new `Job::Agent`, default tier `cheap`, so `cox stats` does not count them as `shell`.
+- `docs/config.jsonschema`, `docs/config.md` and `docs/protocol.jsonschema` are regenerated.
+Review fixes: the first version made `cox-core` depend on `cox-ext` and tagged custom presets `Job::Shell`.
+Deviations:
+- `agent_unknown_preset_lists_builtin_and_discovered_names_in_error` is a unit test on `resolve()` instead of a full-turn test. A failed resolve falls back to `Risk::Exec`, which would stall a turn test on an approval.
+- The `cox acp` session build still does not install the definitions. That gap already existed for skills and MCP there.
+- 14 files changed.
+Check:
+- Pass: `agent_dispatches_a_discovered_custom_preset_by_name`, `agent_unknown_preset_lists_builtin_and_discovered_names_in_error`, `agent_tier_override_is_honored_and_clamped`, `agent_def_restrict_keeps_only_named_tools_in_parent_order`. The existing subagent tests are unchanged.
+- Real binary with a scripted provider: `.cox/agents/reviewer.md` ran at the cheap tier.
+- nextest: 966 passed, 3 skipped in the worktree.

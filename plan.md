@@ -8,7 +8,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | --- | --- | --- | --- | --- | --- |
 | T30.13 | in progress | P3 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.2 | todo | P2 | 4 | 0% | |
-| T33.4 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
 | T33.7 | todo | P2 | 3 | 0% | |
 | T33.8 | todo | P2 | 3 | 0% | |
@@ -62,7 +61,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.41 | todo | P3 | 2 | 0% | |
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T34.1 | in progress | P0 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T34.2 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.3 | todo | P1 | 2 | 0% | |
 | T34.5 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
@@ -158,7 +156,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), two-face 0.3 (`syntect-fancy`; ~250 syntaxes, +0.33 MiB — T24.3), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
 | `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1, thiserror |
-| `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading), wasmtime 43 (declared only for the `anyhow` feature extism needs without its defaults), sha2; linked into `crates/cox` behind the default-on `plugins` feature (A55) |
+| `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading), wasmtime 43 (declared only for the `anyhow` feature extism needs without its defaults), sha2 (package digest), figment (`plugin.toml`); linked into `crates/cox` behind the default-on `plugins` feature (A55) |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
@@ -804,13 +802,6 @@ Every card in this phase:
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
 
-#### T33.4 Discovery, package digest and `cox plugin list`
-
-Depends: T33.3 · Size: ~190 · Files: `crates/cox-plugin/src/discover.rs`, `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
-Goal: find user plugins (`~/.cox/plugins/<id>/current`) and project plugins (`<git root>/.cox/plugins/<id>`). The user plugin wins a clash with a notice. Validate each manifest, compute the SHA-256 tree digest (PL§1), and list plugins with their state.
-Plan: `cox plugin list [--json]` loads each granted plugin, runs `cox_init` against a stub session and reports its contributions. The grant state reads "unknown" until T33.6. `cox ext list` gains a plugins section.
-Check: `digest_changes_when_any_file_changes`, `user_plugin_shadows_project_plugin_with_notice`, `malformed_manifest_is_listed_as_skipped`; the real binary against a scratch `COX_HOME` lists a WAT fixture plugin.
-
 #### T33.6 Grant check and granted-only loading — blocker
 
 Depends: T33.4, T33.5 · Size: ~170 · Files: `crates/cox-plugin/src/grant.rs`, `crates/cox/src/session.rs`
@@ -1354,18 +1345,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T34.0 (blocks T34.4–T34.9).
-
-#### T34.1 Wire custom agent definitions into the `agent` tool
-
-Depends: — · Size: ~190 · Files: `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/Cargo.toml` (new path dependency on `cox-ext`)
-Goal: `agent(preset: "<name>")` dispatches an `AgentDef` discovered by `cox_ext::agents::discover` (`.cox/agents/*.md`, `.claude/agents/*.md`, home variants) exactly as the built-in `explore`/`shell` presets already do, and the `agent` schema gains a `tier` field — closing the gap between §1.11's documented `agent` row and the code, which today only ever resolves the two hardcoded presets (`AgentTool::preset`, `PRESETS.iter().copied().find(...)`; `cox-ext::agents::discover` is otherwise called only by `cox ext list`).
-Plan:
-1. `Session::new`/`resume` discover `AgentDef`s once per session build (the same roots `cox ext list` already reads) and hand them to `AgentTool::new`.
-2. `AgentTool::preset()` tries the built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`), then a discovered `AgentDef` by exact name; a miss lists both the built-in and the discovered names in the `ToolError::Denied`.
-3. `tools_for()` uses `AgentDef::restrict` when the resolved preset came from a definition, the existing `Preset.tools` path otherwise.
-4. `call()` reads an optional `tier` input; when present it overrides `tier_for(def.model)` (or the built-in preset's job tier), but only downward — clamped the same way the router already clamps a decision-point's tier offer (D5 "never up").
-5. The `preset` input schema drops its fixed two-value enum for a free-form string; the tool's own description keeps naming `explore`/`shell` and says custom names come from `.claude/agents`/`.cox/agents`.
-Check: `agent_dispatches_a_discovered_custom_preset_by_name`, `agent_unknown_preset_lists_builtin_and_discovered_names_in_error`, `agent_tier_override_is_honored_and_clamped_never_above_config`; the existing `subagent_presets_are_explore_and_shell` and `subagent_budget_is_a_slice_of_parent` stay green unchanged.
 
 #### T34.2 A subagent concurrency cap
 

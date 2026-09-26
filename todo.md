@@ -2,7 +2,6 @@
 
 - T30.13. cox vs Claude Code vs Terminus 2 on the same local model
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
-- T33.4. Discovery, package digest and `cox plugin list`
 - T33.6. Grant check and granted-only loading
 - T33.7. `cox plugin install | enable | disable`
 - T33.8. TUI grant dialog
@@ -56,7 +55,6 @@
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
-- T34.1. Wire custom agent definitions into the `agent` tool
 - T34.2. A subagent concurrency cap
 - T34.3. `ask_user` from a subagent, labelled with `Source`
 - T34.5. Core routing in the parent
