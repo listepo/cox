@@ -950,11 +950,11 @@ dependencies = [
 name = "cox-provider"
 version = "0.1.2"
 dependencies = [
- "async-openai",
  "async-trait",
  "cox-models",
  "cox-protocol",
  "cox-provider-http",
+ "cox-provider-openai",
  "cox-provider-testkit",
  "cox-tokens",
  "futures",
@@ -983,6 +983,25 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "cox-provider-openai"
+version = "0.1.2"
+dependencies = [
+ "async-openai",
+ "async-trait",
+ "cox-models",
+ "cox-protocol",
+ "cox-provider-http",
+ "futures",
+ "insta",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "wiremock",
 ]
 
 [[package]]

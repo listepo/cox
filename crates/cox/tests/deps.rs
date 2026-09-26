@@ -233,10 +233,28 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-provider-http"]
     );
 
+    // cox-provider-openai (T32.14) is the OpenAI Responses/Chat wires and
+    // the only crate that pulls in async-openai. It depends on cox-protocol,
+    // cox-models (the catalog row behind effort/capabilities) and
+    // cox-provider-http (transport, retry, SSE) — never back on
+    // cox-provider, which re-exports it at the old `openai` path.
+    let provider_openai_allowed: HashSet<&str> =
+        ["cox-protocol", "cox-models", "cox-provider-http"]
+            .into_iter()
+            .collect();
+    assert!(
+        deps["cox-provider-openai"]
+            .iter()
+            .all(|d| provider_openai_allowed.contains(d.as_str())),
+        "cox-provider-openai may only depend on cox-protocol/cox-models/cox-provider-http among workspace crates, found {:?}",
+        deps["cox-provider-openai"]
+    );
+
     // cox-provider additionally depends on cox-models (`Priced` prices every
     // call through the catalog's `PriceTable`, T30.24), cox-tokens
     // (re-exported at the old `tokens` path, T32.10), cox-provider-http
-    // (re-exported at the old `http`/`retry`/`sse` paths, T32.12) and
+    // (re-exported at the old `http`/`retry`/`sse` paths, T32.12),
+    // cox-provider-openai (re-exported at the old `openai` path, T32.14) and
     // cox-provider-testkit (T32.11): `scripted`/`replay` are thin glue over
     // the pure scenario/cassette helpers moved there, and `from_env` uses
     // them in production (COX_PROVIDER=scripted|replay), not just in tests.
@@ -245,6 +263,7 @@ fn no_crate_below_cox_depends_on_core() {
         "cox-models",
         "cox-tokens",
         "cox-provider-http",
+        "cox-provider-openai",
         "cox-provider-testkit",
     ]
     .into_iter()
@@ -258,7 +277,7 @@ fn no_crate_below_cox_depends_on_core() {
         provider_deps
             .iter()
             .all(|dep| provider_allowed.contains(dep.as_str())),
-        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http/cox-provider-testkit among workspace crates, found {provider_deps:?}"
+        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http/cox-provider-openai/cox-provider-testkit among workspace crates, found {provider_deps:?}"
     );
 
     // cox-provider-testkit (T32.11) is a pure leaf, same shape as

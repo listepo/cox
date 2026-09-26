@@ -29,7 +29,6 @@
 pub mod anthropic;
 pub use cox_provider_http::http;
 pub mod jev;
-pub mod openai;
 pub mod replay;
 pub use cox_provider_http::retry;
 pub mod scripted;
@@ -41,6 +40,12 @@ pub mod usage;
 /// re-exported here at the old path so `cox_provider::tokens::*` keeps
 /// working for existing callers.
 pub use cox_tokens as tokens;
+
+/// T32.14: the OpenAI Responses/Chat wires moved to their own crate
+/// (dependency (a): `async-openai`, and size (c) — `docs/design/crates.md`);
+/// re-exported here at the old path so `cox_provider::openai::*` keeps
+/// working for existing callers.
+pub use cox_provider_openai as openai;
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
