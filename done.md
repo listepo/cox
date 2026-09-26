@@ -2152,3 +2152,143 @@ Check:
   - After the grant, the `declared` summary covers only `[capabilities]`. This predates the card: the same gap noted under T33.7 for jev's `[[provider]]`.
 - In the worktree: nextest 1143 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing (with T33.25): nextest 1164 passed, 3 skipped; fmt, clippy, the slim build, the wasm32 build and the cursor test clean. T35.13 later sets `args = ["acp"]` in `plugin.toml`.
+
+#### T33.20 Decision points: the `Advisor` trait and `route`
+
+Depends: T33.15 · Size: ~190 · Files: `crates/cox-protocol/src/traits.rs` (+ `Event::Advised` in `types.rs`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/advisor.rs`
+Goal: `Advisor` set on `Session` like the hook, with `[plugins.decide]` naming one plugin per point plus `min_confidence` and a latency budget. `route` offers only tiers at or below the static pick and never `think`. Every answer is an `Event::Advised { applied }`. On silence, lateness or low confidence the static pick is used.
+Plan note (amended 2026-09-26, R§4.3.6 J20): a turn a decision plugin routes down must strip thinking blocks in its own `Request` only — never rewrite `inner.history` in place, and never emit `ModelSwitched` for a same-turn tier offer. That stripping, and the cache-aware filter that decides whether `cheap` is even offered, are implemented by T33.40.8; this card only wires the `Advisor` trait and the `route` offer through it.
+Check: `route_advice_never_routes_up`, `late_advice_falls_back_to_static_pick`, `advised_event_in_rollout_replays_identically`; `docs/protocol.jsonschema` regenerated.
+Status: done 2026-09-26
+Result: the first decision point, `route`, is wired end to end.
+- **`Advisor` trait** (`cox_protocol::traits`): `id()` and `async advise(Question, Duration) -> Option<Advice>`. `None` means the static pick.
+- **Config.** `[plugins.decide]` is `DecideConfig { route, min_confidence = 0.6, route_ms = 300 }`, flat with one field per point and `deny_unknown_fields`. `docs/config.jsonschema`, `docs/config.md` and `default.toml` are regenerated.
+- **Tier order.** `Tier` derives `Ord` (Cheap < Code < Think). This is now the only place tiers are compared: the model-call grant clamp in `hostfn.rs` became `requested.min(granted)`, and its private `tier_rank` is gone.
+- **Router.** `router::route_offer(static)` offers only `cheap`/`code` at or below the static pick, never `think`; nothing is asked when the static pick is `cheap`. `router::apply_route` takes the advice only if its first choice was offered and its confidence is at least `min_confidence`; missing confidence never counts.
+- **Session** (`Session::route_turn` in `cox-core/src/advise.rs`):
+  - It runs after the think gate in `run_turn_inner`. The question carries the static tier and the prompt, scrubbed by `cox_sanitize::redact::scrub` and cut to 8000 chars.
+  - The core enforces `route_ms` with `tokio::time::timeout` on top of the plugin deadline.
+  - A followed tier lives in `Inner::routed` for every main-job call of that turn and is cleared however the turn ends. History is never rewritten and no `ModelSwitched` is emitted.
+  - Subagents get no advisors.
+- **Event.** Every answer emits `Event::Advised { point, plugin, advice, applied }` before `TurnStarted`; `docs/protocol.jsonschema` is regenerated. Silence or lateness emits nothing and keeps the static pick, and so does an advised tier that cannot be routed (with `applied = false`).
+- **Plugin side.** `cox_plugin::PluginAdvisor` calls `cox_decide` only for points granted as `decide:<point>` and treats any error as silence. `LivePlugins::advisors()` is wired at `start_plugins` via `session.set_advisors`. The WAT test helpers `answering` and `spinning` are shared in `host::tests`.
+Deviations:
+- About 320 lines excluding tests against ~190, and more than three files: session wiring, the config table, `advise.rs`, `LivePlugins::advisors`, a no-op TUI arm, the `tier_rank` dedup and the test-helper move.
+Not done (other cards):
+- T33.40.8 owns stripping thinking blocks from a routed-down turn's own `Request`, the cache-aware `cheap` filter, and skipping `Job::Plan`, `/think` and turns after `/model`. The seam is `route_offer` plus a comment in `route_for`. Until then, a routed-down turn can carry thinking blocks, and only when `[plugins.decide] route` is set.
+- `[plugins.decide]` is not on the project-config guard list. A project can name an advisor, which still needs a `decide:route` grant and can only route down. This belongs with the `[plugins.<id>]` guard gap noted under T33.9.
+- A `route` naming a plugin that is not live is silently off, with no warning.
+- `cox plugin remove` does not report `[plugins.decide]` references (PL§1c).
+- The two-phase `DecideOut` is T33.40.1.
+Check:
+- `route_advice_never_routes_up`, `late_advice_falls_back_to_static_pick`, `advised_event_in_rollout_replays_identically`
+- `low_confidence_advice_is_recorded_but_not_applied`, three `plugin_advisor_*` tests, and an `advised` case in `event_json_roundtrip`
+- The real binary with a scratch `COX_HOME`: `cox config get plugins.decide` shows the table, and an unknown point is rejected.
+- In the worktree: nextest 1164 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T33.20, T33.12 and T35.13 together): nextest 1183 passed, 3 skipped; fmt, clippy, the slim build and the cox-plugin-cursor tests clean.
+
+#### T33.12 Tools from plugins
+
+Depends: T33.9, T33.44 · Size: ~170 · Files: `crates/cox-plugin/src/tool.rs`, `crates/cox/src/session.rs`
+Goal: `WasmTool` implements `Tool` as `wasm__<id>__<tool>`. It is always deferred, its specs are frozen at `cox_init`, and tools are sorted by (id, tool) and appended after MCP. `Concurrency::Exclusive` per plugin. `cox_output` and `cox_cancelled` inside `cox_tool_call`.
+Check: `plugin_tool_specs_frozen_within_session` (new invariant 15); `prefix_bytes_identical_between_turns` with a plugin tool discovered mid-session; `plugin_tool_output_is_archived_before_truncation`.
+Status: done 2026-09-26
+Result: plugins contribute tools.
+
+**WasmTool** (`crates/cox-plugin/src/tool.rs`):
+- `WasmTool` implements `Tool` as `wasm__<id>__<tool>` (`tool::PREFIX`, `tool::qualified`). Plugin ids have no `_`, so the second `__` always ends the id.
+- Its spec is frozen from the one `cox_init`. It is always deferred and `Concurrency::Exclusive`, whatever the plugin declares.
+- `risk` is the declared value, or `Write` when none is declared (mirrors MCP's `readOnlyHint`). `subject` is the qualified name.
+- Only granted `tools:<name>` entries are kept; an ungranted or duplicate entry is dropped with a warning.
+
+**Calls:**
+- `call` sends `ToolCallIn` to `cox_tool_call` off the async runtime, under the plugin's `call_ms` deadline. A lock shared by the plugin's tools allows one call per plugin at a time.
+- Cancel returns `ToolError::Cancelled` at once; the guest stops cooperatively through `cox_cancelled`. A timeout becomes `ToolError::Timeout`; any other error becomes an `is_error` output.
+- Only `text` and `is_error` are kept. `structured` is dropped because the core reads `structured.discovered` as a `tool_search` result, and a plugin must not be able to forge it.
+- `cox_output` and `cox_cancelled` (`hostfn.rs`) work only inside `cox_tool_call` and answer `NotInThisContext` elsewhere.
+
+**Session wiring:**
+- `open()` picks the session id (the resumed one, or `SessionId::new()`) and runs `cox_init` in `plugin_tools()` before `Session::new_with_id`/`resume`. The tool list is therefore complete at construction, and the cache prefix is byte-stable by construction.
+- `LivePlugins::tools()` sorts by (id, tool). The tools are appended after MCP.
+- `LivePlugins::start` skips plugins already started, so `start_plugins` is otherwise unchanged.
+
+Deviations:
+- Design (b), init before `Session::new`, instead of late registration. Late registration would need a shared mutable tool list across session clones, `AgentTool`'s parent handle and the `tool_search` index.
+- The `tool_search` index is now built after MCP and plugin tools are added. Before, deferred MCP tools (and `mcp.deferred` defaults to true) could never be found by `tool_search`; that bug is fixed here.
+- `cox_model_call` from inside `cox_init` answers Denied ("no session is serving model calls"), because init now runs before the session exists.
+- About 230 lines of code against ~170, across 7 source files. `tokio-util` is a dev-dependency of `cox-plugin`; it is already a workspace dependency.
+
+Not done:
+- The optional `cox_tool_subject` and `cox_tool_risk` exports are not called, because `Tool::subject` and `Tool::risk` are synchronous.
+- No real-binary run with an installed plugin tool; the session tests go through the real discover/grant/load path.
+
+For later cards:
+- T33.13 adds `cox_invoke_tool` in `HostEnv::dispatch` behind `invoke:<name>` grants, through PreToolUse → Engine → sandbox → archive, and refuses a nested call into the calling plugin (it would deadlock).
+- T33.33 catches a removed plugin's `wasm__<id>__*` name where the tool lookup in `turn.rs` finds nothing, and answers `ToolError::Denied`.
+
+Check:
+- `plugin_tool_specs_frozen_within_session`
+- `prefix_bytes_identical_between_turns_with_plugin_tool_discovered`: records a real session. The system and tool prefix changes once at discovery, then stays byte-identical over three turns.
+- `plugin_tool_output_is_archived_before_truncation`: all 20 000 bytes are archived, and the model's text carries `expand #<id>`.
+- `tool_call_streams_output_and_stops_on_cox_cancelled`
+- `output_and_cancelled_work_only_inside_tool_call`
+- In the worktree: nextest 1161 passed, 3 skipped; fmt, clippy and the slim build clean. The real binary with a scripted provider and a scratch `COX_HOME` exits 0.
+- On main after landing (with T33.20, T33.12 and T35.13 together): nextest 1183 passed, 3 skipped; fmt, clippy, the slim build and the cox-plugin-cursor tests clean.
+
+#### T35.13 Host drivers: install granted external agents in the session
+
+Depends: T35.2, T35.5, T35.12 · Size: ~180 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/external_agent.rs`, `crates/cox-acp/src/client.rs`
+Goal: split from T35.5, whose core side landed as the `ExternalAgent` trait and `Session::set_external_agents`. For each granted `[[external_agents]]` entry, `crates/cox` builds one driver behind `ExternalAgent` over T35.2's sandboxed `Command`:
+- `mode = "stream-json"` runs the CLI per turn and feeds stdout lines to `StreamJsonMapper::new(turn, name, cox_sanitize::sanitize)` (T35.4, T35.12).
+- `mode = "acp"` wraps T35.3's `connect` with a `ClientHost` built from the session's roots, sandbox, engine and grants.
+- The answer arrives as `ItemStarted { AssistantMessage }`. The driver never sends `Usage`, returns `Some(usage)` only when the CLI reported tokens, and honours `cancel`.
+- One driver per entry is kept for the session. An entry whose CLI or `key_env` is missing is left out with one Warn notice (EA§7).
+- `set_external_agents` is called next to `set_agent_defs`. `docs/design/external-agents.md` says that the agent's own tool calls are not judged per call by the Engine or PreToolUse hooks; the process sandbox is the guard (EA§2).
+Check: `stream_json_driver_answers_a_child_task` (fake CLI script under the sandbox), `missing_cli_leaves_the_preset_out_with_one_warning`, `cancel_kills_the_external_agent_process`.
+Status: done 2026-09-26
+Result: `crates/cox/src/external_agents.rs` (feature `plugins`) holds the host drivers behind `cox_protocol::traits::ExternalAgent`.
+
+- **`drivers(agents, config, cwd, writable, PATH, key_fn)`** returns the drivers plus one warning per entry it leaves out.
+  - An entry is left out when its CLI is not on PATH (`external_agent::missing_on_path`, the single PATH lookup that doctor also uses) or its key does not resolve.
+  - The key comes from `key_fn` = `resolve_key(key_env, <entry name>)` in the binary.
+  - `session.rs` calls `set_external_agents` right after `set_agent_defs`, and the warnings join the plugin warnings.
+
+- **What every child gets:**
+  - a cleared env plus `CHILD_ENV_ALLOWLIST` (`PATH`, `HOME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `USER`, `SHELL`) plus `key_env`;
+  - the session cwd;
+  - the sandbox wrap (`session::sandboxed_argv`, whose policy comes from the single `session::sandbox_policy`, which `mcp_cmd.rs` now reuses too);
+  - its own process group, killed however the turn ends (`cox_tools::bash::kill_group`, reusing bash's `killpg`).
+
+- **Arguments:** the manifest `args` are the mode's own invocation. The host adds only the prompt, as the last argument, for stream-json.
+
+- **StreamJson driver:** one CLI run per turn. Each stdout line goes through `StreamJsonMapper` with `sanitize`, and the mapper's `TurnDone` ends the turn. An exit without a `result` line is `CoreError::ExternalAgent`, carrying the sanitized end of stderr.
+
+- **Acp driver:** `cox_acp::connect`, then `initialize` → `session/new` → one `session/prompt` per turn.
+  - `agent_message_chunk` text becomes one `AssistantMessage`. `ClientHost.updates` forwards `session/update`.
+  - `fs/*` is confined to the writable roots.
+  - A permission request is decided by an `Engine` compiled from the same `[permissions]`, mode and approval policy. `Ask` is refused with a reason naming a permissions rule.
+
+- **Usage and cancel:** neither driver reports `Usage` (they return `Ok(None)`), and both honour cancel.
+
+- **Docs:** `docs/design/external-agents.md` §2 now says the agent's own tool calls are not judged per call by the Engine or PreToolUse hooks, because the process sandbox is the guard. §2 and §4 describe the drivers.
+
+- **Cursor package:** `plugins/cursor/plugin.toml` now declares `args = ["acp"]`, with the stream-json alternative documented; its schema test asserts it.
+
+- **doctor:** it runs `missing_on_path` before the `--version` probe, so a CLI missing under the sandbox wrap reports "not found on PATH" instead of "no version output".
+
+Deviations:
+- ACP approvals that would need the user are refused rather than shown. `ExternalAgent::turn` cannot reach the session's approval prompt, and the session's `Engine` and grants are crate-private. This needs a core change and its own card.
+- Every turn starts a fresh CLI process, for ACP too, so the agent's earlier context does not carry over.
+- There is no usage: ACP's `PromptResponse.usage` is behind an unstable feature, and stream-json's result line has no token counts.
+- The ACP driver has no end-to-end test; that is T35.7.
+- `async-trait` and `tokio-util` (with `compat`) move from `crates/cox` dev-dependencies to normal ones, and `agent-client-protocol` is added (already a workspace dependency). There are no new crates in `Cargo.lock`, and the `toolchain.md` rows are updated.
+
+Check:
+- `stream_json_driver_answers_a_child_task`: a real parent `Session` with a scripted provider, where `agent(preset:"cursor")` runs a fake CLI under the real Seatbelt wrap.
+- `missing_cli_leaves_the_preset_out_with_one_warning`
+- `cancel_kills_the_external_agent_process`
+- `acp_client_forwards_session_updates_to_the_driver`
+- The three card tests were rerun 15 times with no failures.
+- The real binary, run against a scratch `COX_HOME` (`run -p` with the scripted provider, then `doctor`), exits 0.
+- In the worktree after the rebase: nextest 1170 passed, 3 skipped; fmt, clippy and the slim build clean; `cox-plugin-cursor` tests pass.
+- On main after landing (with T33.20, T33.12 and T35.13 together): nextest 1183 passed, 3 skipped; fmt, clippy, the slim build and the cox-plugin-cursor tests clean.

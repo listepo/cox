@@ -6,11 +6,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T33.12 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.13 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
-| T33.20 | in progress | P2 | 5 | 5% | Claude Code / claude-opus-5-5 |
 | T33.21 | todo | P2 | 4 | 0% | |
 | T33.24 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.26 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
@@ -46,7 +44,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | todo | P2 | 4 | 0% | |
-| T35.13 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 
 ## Reference
 
@@ -746,12 +743,6 @@ Every card in this phase:
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
 
-#### T33.12 Tools from plugins
-
-Depends: T33.9, T33.44 · Size: ~170 · Files: `crates/cox-plugin/src/tool.rs`, `crates/cox/src/session.rs`
-Goal: `WasmTool` implements `Tool` as `wasm__<id>__<tool>`. It is always deferred, its specs are frozen at `cox_init`, and tools are sorted by (id, tool) and appended after MCP. `Concurrency::Exclusive` per plugin. `cox_output` and `cox_cancelled` inside `cox_tool_call`.
-Check: `plugin_tool_specs_frozen_within_session` (new invariant 15); `prefix_bytes_identical_between_turns` with a plugin tool discovered mid-session; `plugin_tool_output_is_archived_before_truncation`.
-
 #### T33.13 `cox_invoke_tool` through the engine
 
 Depends: T33.12 · Size: ~150 · Files: `crates/cox-plugin/src/hostfn.rs`, `crates/cox-core/src/turn.rs` (a plugin-origin entry point that reuses the `PreToolUse` → engine → sandbox → archive path)
@@ -772,13 +763,6 @@ Depends: T33.14, T33.17 · Size: ~190 · Files: `crates/cox-plugin/src/provider.
 Goal: with `api = "plugin"`, `stream()` calls `cox_provider_stream` and forwards `ProviderEvent`s. The guest's `cox_http` is limited to `base_url`'s host, and the host injects the `auth` header from `resolve_key`, so the key never enters wasm memory. Missing usage is estimated; usage below half of cox's estimate is replaced by the estimate with one warning.
 Plan (amended 2026-09-26 for the Jev use case, R§4.3.6 J§4.3): `Router::pick` and `backend_for_with` register ABI provider sections by name, so a tier — including a legacy `typesafe` tier — resolves to them, not only to `providers.custom`. The ledger gets a `ProviderId::Plugin` bucket whose provider string is the section name, the same shape `Local` uses for compatible providers; `provider_name` returns it. `COX_PROVIDER=scripted`/`replay`, which short-circuits provider construction for the main turn, still builds plugin providers, so a scripted-main e2e can reach a real (wiremocked) plugin provider.
 Check: `provider_key_never_reaches_guest` (the WAT guest echoes its request headers, and the test asserts the key is absent); `underreported_usage_is_replaced_by_estimate`; `every_request_has_a_usage_row` with a plugin provider; `plugin_provider_section_resolves_by_name`; `scripted_provider_mode_still_builds_plugin_providers`.
-
-#### T33.20 Decision points: the `Advisor` trait and `route`
-
-Depends: T33.15 · Size: ~190 · Files: `crates/cox-protocol/src/traits.rs` (+ `Event::Advised` in `types.rs`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/advisor.rs`
-Goal: `Advisor` set on `Session` like the hook, with `[plugins.decide]` naming one plugin per point plus `min_confidence` and a latency budget. `route` offers only tiers at or below the static pick and never `think`. Every answer is an `Event::Advised { applied }`. On silence, lateness or low confidence the static pick is used.
-Plan note (amended 2026-09-26, R§4.3.6 J20): a turn a decision plugin routes down must strip thinking blocks in its own `Request` only — never rewrite `inner.history` in place, and never emit `ModelSwitched` for a same-turn tier offer. That stripping, and the cache-aware filter that decides whether `cheap` is even offered, are implemented by T33.40.8; this card only wires the `Advisor` trait and the `route` offer through it.
-Check: `route_advice_never_routes_up`, `late_advice_falls_back_to_static_pick`, `advised_event_in_rollout_replays_identically`; `docs/protocol.jsonschema` regenerated.
 
 #### T33.21 Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
 
@@ -1201,17 +1185,6 @@ Goal: EA§4 allows a `terminal/*` request "only under the same `sandbox::Policy`
 - `initialize_request()` advertises `terminal = true` only when the sandbox grant is present.
 Without a grant, the T35.3 refusal and its reason stay. Output shown to the user is sanitized, and output over the cap is archived before it is shortened.
 Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `acp_terminal_output_respects_byte_limit_and_reports_truncation`, `acp_terminal_release_kills_the_process_group`, `acp_terminal_command_is_judged_by_the_engine` and `acp_terminal_without_sandbox_grant_is_still_refused`.
-
-#### T35.13 Host drivers: install granted external agents in the session
-
-Depends: T35.2, T35.5, T35.12 · Size: ~180 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/external_agent.rs`, `crates/cox-acp/src/client.rs`
-Goal: split from T35.5, whose core side landed as the `ExternalAgent` trait and `Session::set_external_agents`. For each granted `[[external_agents]]` entry, `crates/cox` builds one driver behind `ExternalAgent` over T35.2's sandboxed `Command`:
-- `mode = "stream-json"` runs the CLI per turn and feeds stdout lines to `StreamJsonMapper::new(turn, name, cox_sanitize::sanitize)` (T35.4, T35.12).
-- `mode = "acp"` wraps T35.3's `connect` with a `ClientHost` built from the session's roots, sandbox, engine and grants.
-- The answer arrives as `ItemStarted { AssistantMessage }`. The driver never sends `Usage`, returns `Some(usage)` only when the CLI reported tokens, and honours `cancel`.
-- One driver per entry is kept for the session. An entry whose CLI or `key_env` is missing is left out with one Warn notice (EA§7).
-- `set_external_agents` is called next to `set_agent_defs`. `docs/design/external-agents.md` says that the agent's own tool calls are not judged per call by the Engine or PreToolUse hooks; the process sandbox is the guard (EA§2).
-Check: `stream_json_driver_answers_a_child_task` (fake CLI script under the sandbox), `missing_cli_leaves_the_preset_out_with_one_warning`, `cancel_kills_the_external_agent_process`.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 

@@ -1,10 +1,8 @@
 # Todo
 
-- T33.12. Tools from plugins
 - T33.13. `cox_invoke_tool` through the engine
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
-- T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
 - T33.24. TUI panel and overlay
 - T33.26. Custom rendering of tool results and messages
@@ -40,4 +38,3 @@
 - T35.9. User guide: the Cursor plugin
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.11. ACP client terminals under the sandbox
-- T35.13. Host drivers: install granted external agents in the session
