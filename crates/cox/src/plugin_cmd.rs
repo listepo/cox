@@ -1,22 +1,25 @@
-//! `cox plugin` (plan.md T33.4, T33.7): `list`, `install`, `enable`,
-//! `disable`. `list` reports discovery results only — id, source, version,
+//! `cox plugin` (plan.md T33.4, T33.7, T33.31): `list`, `install`,
+//! `enable`, `disable`, `update`. `list` reports discovery results only — id, source, version,
 //! digest and the manifest's *declared* capabilities, plus the real grant
 //! state from `grant::check` (T33.7; T33.6 landed the check itself in
 //! `session.rs`'s session-open path) — and never compiles or runs a
 //! plugin's module (PL§1 line 47/445: a project plugin is untrusted
 //! repository content and must not load before the user grants it).
-//! `install`/`enable`/`disable` are the only writers of `plugin_grants`
-//! outside a session open. Every manifest string this module prints
+//! `install`/`enable`/`disable`/`update` are the only writers of
+//! `plugin_grants` outside a session open. The files on disk change only
+//! through `cox_plugin::install`; this module keeps the prompts and output. Every manifest string this module prints
 //! (`name`, `description`, a capability line) goes through
 //! `cox_sanitize::sanitize`, since a plugin's `plugin.toml` is untrusted
 //! input the same way a tool result is (AGENTS "Trust boundaries").
 
 use std::fmt::Write as _;
 use std::fs;
+use std::io::IsTerminal as _;
 use std::path::Path;
 
 use cox_plugin::discover::{self, Source, State};
 use cox_plugin::grant::{self, Verdict};
+use cox_plugin::install;
 use cox_plugin_api::{Capabilities, PluginManifest};
 use cox_protocol::{GrantScope, PluginGrant, PluginStore as _, Store as _};
 use cox_sanitize::sanitize;
@@ -66,16 +69,16 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
 /// records `{kind: "path", path, digest}`").
 pub fn install(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
     let home = cli.home.clone().unwrap_or_else(cox_home);
+    // Absolute, so `update` can re-read the recorded source from any cwd.
+    let dir = &fs::canonicalize(dir)
+        .map_err(|e| anyhow::anyhow!("cannot install {}: {e}", dir.display()))?;
     let manifest_path = dir.join("plugin.toml");
     let (manifest, digest) = discover::load_manifest(dir, &manifest_path, None)
         .map_err(|e| anyhow::anyhow!("cannot install {}: {e}", dir.display()))?;
-    let digest12 = &digest[..12];
-    let plugin_dir = home.join("plugins").join(&manifest.id);
-    let dest = plugin_dir.join("versions").join(digest12);
-    if !dest.exists() {
-        copy_dir_recursive(dir, &dest)?;
-    }
-    write_current_atomic(&plugin_dir, digest12)?;
+    let digest12 = install::short(&digest);
+    let plugin_dir = install::plugin_dir(&home, &manifest.id);
+    let dest = install::stage(dir, &plugin_dir, &digest)?;
+    install::activate(&plugin_dir, digest12)?;
     println!(
         "installed {} v{} (digest {digest12}) into {}",
         manifest.id,
@@ -183,6 +186,207 @@ pub fn disable(cli: &Cli, cwd: &Path, id: &str, project: bool) -> anyhow::Result
     Ok(())
 }
 
+/// `cox plugin update [<id>… | --all] [--check] [--rollback] [--yes]`
+/// (PL§1b, T33.31). User plugins only: a project plugin is read in place,
+/// so there is nothing to update. Each id is handled on its own, so one
+/// broken source does not stop the rest; any failure makes the exit
+/// non-zero.
+pub fn update(
+    cli: &Cli,
+    ids: &[String],
+    all: bool,
+    check: bool,
+    rollback: bool,
+    yes: bool,
+) -> anyhow::Result<()> {
+    let home = cli.home.clone().unwrap_or_else(cox_home);
+    let found = discover::discover(&home, None);
+    let store = Store::open(&home)?;
+    let targets: Vec<&str> = if all {
+        found.plugins.iter().map(|p| p.id.as_str()).collect()
+    } else {
+        ids.iter().map(String::as_str).collect()
+    };
+    let mut failed = false;
+    for id in targets {
+        let Some(p) = found.plugins.iter().find(|p| p.id == id) else {
+            println!("plugin {id} not found (update covers installed user plugins)");
+            failed = true;
+            continue;
+        };
+        let done = if rollback {
+            rollback_one(&store, &home, p, yes)
+        } else {
+            update_one(&store, &home, p, check, yes)
+        };
+        if let Err(e) = done {
+            println!("plugin {id}: {e:#}");
+            failed = true;
+        }
+    }
+    if failed {
+        anyhow::bail!("not every plugin was updated");
+    }
+    Ok(())
+}
+
+/// PL§1b steps 1–8 for one plugin: re-read the source the current grant
+/// recorded, validate and digest it through `discover::load_manifest`,
+/// print the capability diff against that grant, then stage and switch.
+fn update_one(
+    store: &Store,
+    home: &Path,
+    p: &discover::Plugin,
+    check: bool,
+    yes: bool,
+) -> anyhow::Result<()> {
+    let id = p.id.as_str();
+    let current = match &p.state {
+        State::Loaded { digest, .. } => digest.as_str(),
+        State::Skipped { reason } => anyhow::bail!("current version is skipped: {reason}"),
+    };
+    let stored = store
+        .grant_get(id, &GrantScope::User, current)
+        .ok()
+        .flatten();
+    let src = stored
+        .as_ref()
+        .filter(|g| g.source["kind"] == "path")
+        .and_then(|g| g.source["path"].as_str())
+        .map(Path::new)
+        .ok_or_else(|| {
+            anyhow::anyhow!("no recorded source path; reinstall with `cox plugin install <dir>`")
+        })?;
+    let (manifest, digest) = discover::load_manifest(src, &src.join("plugin.toml"), Some(id))
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", src.display()))?;
+    if digest == current {
+        println!("plugin {id} is up to date ({})", install::short(current));
+        return Ok(());
+    }
+    println!(
+        "plugin {id}: {} -> {} (v{})",
+        install::short(current),
+        install::short(&digest),
+        sanitize(&manifest.version)
+    );
+    print_diff(&manifest, &digest, stored.as_ref());
+    if check {
+        return Ok(());
+    }
+    let plugin_dir = install::plugin_dir(home, id);
+    install::stage(src, &plugin_dir, &digest)?;
+    let source = serde_json::json!({
+        "kind": "path",
+        "path": src.display().to_string(),
+        "digest": digest,
+    });
+    switch_to(
+        store,
+        &plugin_dir,
+        id,
+        (&manifest, &digest),
+        source,
+        yes,
+        "",
+    )
+}
+
+/// `--rollback`: make `previous` current again. Its grant is keyed on its
+/// own digest (PL§3), so a grant still on file lets it switch without
+/// asking; a revoked or missing one asks like any other new digest.
+fn rollback_one(store: &Store, home: &Path, p: &discover::Plugin, yes: bool) -> anyhow::Result<()> {
+    let id = p.id.as_str();
+    let plugin_dir = install::plugin_dir(home, id);
+    let Some(previous) = install::read_pointer(&plugin_dir, install::PREVIOUS)? else {
+        println!("plugin {id} has no previous version to roll back to");
+        return Ok(());
+    };
+    let dir = plugin_dir.join("versions").join(&previous);
+    // Digested again rather than trusted by name: a tampered directory
+    // gets a different digest, so no stored grant matches it.
+    let (manifest, digest) = discover::load_manifest(&dir, &dir.join("plugin.toml"), Some(id))
+        .map_err(|e| anyhow::anyhow!("cannot read previous version: {e}"))?;
+    let source = match &p.state {
+        State::Loaded { digest, .. } => store
+            .grant_get(id, &GrantScope::User, digest)
+            .ok()
+            .flatten()
+            .map(|g| g.source),
+        State::Skipped { .. } => None,
+    }
+    .unwrap_or_else(|| default_source(Source::User, &dir));
+    switch_to(
+        store,
+        &plugin_dir,
+        id,
+        (&manifest, &digest),
+        source,
+        yes,
+        " --rollback",
+    )
+}
+
+/// Makes a staged version current once its grant allows it: a grant on
+/// file for that exact digest switches at once; otherwise the user is
+/// asked through `decide`. Headless never approves (PL§1b): stdin that is
+/// not a terminal — `cox run -p`, ACP, a pipe, CI — gets no prompt at all,
+/// even if it could supply a `y`, so `current` stays and a warning names
+/// the command to run. Only `--yes`, a user's own provisioning script,
+/// approves without a terminal.
+fn switch_to(
+    store: &Store,
+    plugin_dir: &Path,
+    id: &str,
+    (manifest, digest): (&PluginManifest, &str),
+    source: serde_json::Value,
+    yes: bool,
+    flag: &str,
+) -> anyhow::Result<()> {
+    let digest12 = install::short(digest);
+    let own = store
+        .grant_get(id, &GrantScope::User, digest)
+        .ok()
+        .flatten();
+    let approved = if grant::check(manifest, digest, own.as_ref()) == Verdict::Granted {
+        true
+    } else if !yes && !std::io::stdin().is_terminal() {
+        println!("warning: update for {id} waits for approval: run `cox plugin update {id}{flag}`");
+        return Ok(());
+    } else {
+        decide(store, id, &GrantScope::User, digest, manifest, source, yes)?
+    };
+    if approved {
+        install::activate(plugin_dir, digest12)?;
+        println!("plugin {id} is now at {digest12}");
+    }
+    Ok(())
+}
+
+/// PL§1b step 4: what the new manifest asks for beyond the stored grant
+/// (`+`, first so it stands out) and what it no longer asks for (`-`).
+/// Computed by `grant::check` itself so the diff and the load decision
+/// never disagree; a disabled grant is diffed as if enabled, since
+/// `Disabled` would otherwise hide the capabilities it granted.
+fn print_diff(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGrant>) {
+    let active = stored.map(|g| PluginGrant {
+        enabled: true,
+        ..g.clone()
+    });
+    let Verdict::NeedsApproval { added, removed } = grant::check(manifest, digest, active.as_ref())
+    else {
+        return;
+    };
+    if added.is_empty() && removed.is_empty() {
+        println!("  capabilities unchanged; the new bytes still need approval");
+    }
+    for cap in &added {
+        println!("  + {} (new)", sanitize(cap));
+    }
+    for cap in &removed {
+        println!("  - {}", sanitize(cap));
+    }
+}
+
 /// Prints the capability list in words and asks on stdin unless `yes`;
 /// on approval, upserts the grant (`grant_put` replaces any row at the
 /// same `(plugin_id, scope, digest)`, PL§3) and returns whether it is now
@@ -264,31 +468,6 @@ fn default_source(source: Source, dir: &Path) -> serde_json::Value {
         Source::Project => serde_json::json!({ "kind": "project" }),
         Source::User => serde_json::json!({ "kind": "path", "path": dir.display().to_string() }),
     }
-}
-
-fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_recursive(&from, &to)?;
-        } else if ty.is_file() {
-            fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
-}
-
-/// Writes `<plugin_dir>/current` via a temp file plus rename, atomic on
-/// one filesystem (PL§1b).
-fn write_current_atomic(plugin_dir: &Path, digest12: &str) -> std::io::Result<()> {
-    fs::create_dir_all(plugin_dir)?;
-    let tmp = plugin_dir.join("current.tmp");
-    fs::write(&tmp, digest12)?;
-    fs::rename(&tmp, plugin_dir.join("current"))
 }
 
 /// The grant verdict for one discovered, loaded plugin: looks up the row

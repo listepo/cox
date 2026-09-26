@@ -8,6 +8,9 @@
 //! T33.7 Check: `install` → `enable --yes` → `list` reports `loaded`;
 //! `disable` → `list` reports `not loaded`; a project plugin needs
 //! `--project` to be granted at all (`project_plugin_needs_project_grant`).
+//! T33.31 Check: `update --check` shows the diff, `update` needs a
+//! re-grant, `--rollback` restores the old digest without asking, and a
+//! headless `update` keeps `current` and warns.
 
 #![cfg(feature = "plugins")]
 
@@ -349,4 +352,146 @@ fn project_plugin_needs_project_grant() {
         elsewhere["plugins"][0]["grant"], "needs_approval",
         "a project grant must not cover a different repository: {elsewhere}"
     );
+}
+
+fn stdout_ok(cmd: &mut Command) -> String {
+    String::from_utf8(cmd.assert().success().get_output().stdout.clone()).unwrap()
+}
+
+fn current_of(home: &Path, id: &str) -> String {
+    std::fs::read_to_string(home.join("plugins").join(id).join("current")).unwrap()
+}
+
+/// Installs `demo` from `src` with `--yes`, returning its `current`.
+fn installed(home: &Path, cwd: &Path, src: &Path) -> String {
+    write_plugin(src, "demo");
+    cox_plugin(home, cwd, &["install", src.to_str().unwrap(), "--yes"])
+        .assert()
+        .success();
+    current_of(home, "demo")
+}
+
+/// T33.31 Check: install → rebuild with changed bytes and a widened
+/// manifest → `update --check` shows the diff and changes nothing →
+/// `update` without `--yes` keeps `current` → `update --yes` re-grants and
+/// switches → `--rollback` restores the old digest without asking (stdin
+/// is not a terminal, so any prompt would have declined).
+#[test]
+fn update_check_regrant_then_rollback_restores_old_digest() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let src = tempfile::tempdir().unwrap();
+    let old = installed(home.path(), cwd.path(), src.path());
+
+    let up_to_date = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["update", "demo"],
+    ));
+    assert!(up_to_date.contains("up to date"), "{up_to_date}");
+
+    std::fs::write(src.path().join("plugin.wasm"), "rebuilt wasm bytes").unwrap();
+    let widened = format!("{}\n[capabilities]\nkv = true\n", manifest("demo"));
+    std::fs::write(src.path().join("plugin.toml"), widened).unwrap();
+
+    let check = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["update", "demo", "--check"],
+    ));
+    assert!(check.contains(&format!("{old} -> ")), "{check}");
+    assert!(check.contains("+ kv (new)"), "{check}");
+    assert_eq!(
+        current_of(home.path(), "demo"),
+        old,
+        "--check changes nothing"
+    );
+    assert_eq!(
+        std::fs::read_dir(home.path().join("plugins/demo/versions"))
+            .unwrap()
+            .count(),
+        1,
+        "--check stages nothing"
+    );
+
+    cox_plugin(home.path(), cwd.path(), &["update", "demo"])
+        .assert()
+        .success();
+    assert_eq!(
+        current_of(home.path(), "demo"),
+        old,
+        "no re-grant, no switch"
+    );
+
+    let granted = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["update", "demo", "--yes"],
+    ));
+    let new = current_of(home.path(), "demo");
+    assert_ne!(new, old, "{granted}");
+    let listed = list_json(home.path(), cwd.path());
+    assert_eq!(listed["plugins"][0]["digest12"], new.as_str(), "{listed}");
+    assert_eq!(listed["plugins"][0]["grant"], "granted", "{listed}");
+
+    let back = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["update", "demo", "--rollback"],
+    ));
+    assert_eq!(current_of(home.path(), "demo"), old, "{back}");
+    assert!(!back.contains("waits for approval"), "{back}");
+    let listed = list_json(home.path(), cwd.path());
+    assert_eq!(listed["plugins"][0]["grant"], "granted", "{listed}");
+    assert!(
+        home.path()
+            .join("plugins/demo/versions")
+            .join(&new)
+            .is_dir(),
+        "the rolled-back-from version is kept as previous"
+    );
+}
+
+/// PL§1b: headless never approves. With no terminal and no `--yes`, a new
+/// digest is staged but `current` stays, and the warning names the
+/// command to run. The same holds for a rollback whose grant was revoked.
+#[test]
+fn update_in_headless_keeps_current_and_warns() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let src = tempfile::tempdir().unwrap();
+    let old = installed(home.path(), cwd.path(), src.path());
+    std::fs::write(src.path().join("plugin.wasm"), "rebuilt wasm bytes").unwrap();
+
+    // Piped stdin could say "y"; headless must not read it as approval.
+    let out =
+        stdout_ok(cox_plugin(home.path(), cwd.path(), &["update", "demo"]).write_stdin("y\n"));
+    assert!(
+        out.contains("update for demo waits for approval: run `cox plugin update demo`"),
+        "{out}"
+    );
+    assert_eq!(current_of(home.path(), "demo"), old);
+    let listed = list_json(home.path(), cwd.path());
+    assert_eq!(listed["plugins"][0]["grant"], "granted", "{listed}");
+
+    // Revoke the old version's grant, then switch with `--yes`: a headless
+    // rollback to the revoked digest must ask, so it keeps the new one.
+    cox_plugin(home.path(), cwd.path(), &["disable", "demo"])
+        .assert()
+        .success();
+    cox_plugin(home.path(), cwd.path(), &["update", "demo", "--yes"])
+        .assert()
+        .success();
+    let new = current_of(home.path(), "demo");
+    assert_ne!(new, old);
+    let out = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["update", "demo", "--rollback"],
+    ));
+    assert!(
+        out.contains("run `cox plugin update demo --rollback`"),
+        "{out}"
+    );
+    assert_eq!(current_of(home.path(), "demo"), new);
 }

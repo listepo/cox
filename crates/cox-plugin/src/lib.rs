@@ -10,6 +10,8 @@
 //!   manifest and computes its package digest (PL§1, T33.4).
 //! - [`grant`] — the pure grant check and the granted-capability list
 //!   (PL§3, T33.6).
+//! - [`install`] — the user plugin's on-disk layout: staging a package into
+//!   `versions/<digest12>/` and the `current`/`previous` swap (PL§1b, T33.31).
 //! - [`hostfn`] — the `cox:host/v1` host functions, each checked against
 //!   the grant and the calling export, and `cox_init`'s input (PL§4, T33.9).
 //! - [`hooks`] — `PluginHooks`: one plugin as a `Hook` source through
@@ -31,6 +33,7 @@ pub mod grant;
 pub mod hooks;
 pub mod host;
 pub mod hostfn;
+pub mod install;
 pub mod provider;
 
 pub use context::Context;

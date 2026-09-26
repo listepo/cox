@@ -339,7 +339,7 @@ pub struct PluginArgs {
     pub action: Option<PluginAction>,
 }
 
-/// `cox plugin` subcommands (T33.4, T33.7).
+/// `cox plugin` subcommands (T33.4, T33.7, T33.31).
 #[cfg(feature = "plugins")]
 #[derive(Subcommand, Debug, Clone)]
 pub enum PluginAction {
@@ -378,6 +378,25 @@ pub enum PluginAction {
         /// The grant to clear is the project one, not the user one.
         #[arg(long)]
         project: bool,
+    },
+    /// Re-read each plugin's recorded source, show the capability diff
+    /// and, on approval, switch to it; one previous version is kept (PL§1b).
+    Update {
+        /// The plugin ids to update.
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        ids: Vec<String>,
+        /// Update every installed user plugin.
+        #[arg(long)]
+        all: bool,
+        /// Print what would change and change nothing.
+        #[arg(long, conflicts_with = "rollback")]
+        check: bool,
+        /// Switch back to the kept previous version.
+        #[arg(long)]
+        rollback: bool,
+        /// Skip the stdin prompt and grant what the new manifest asks for.
+        #[arg(long)]
+        yes: bool,
     },
 }
 

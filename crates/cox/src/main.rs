@@ -99,6 +99,13 @@ fn main() -> anyhow::Result<()> {
             Some(crate::cli::PluginAction::Disable { id, project }) => {
                 plugin_cmd::disable(&cli, &cwd, id, *project)
             }
+            Some(crate::cli::PluginAction::Update {
+                ids,
+                all,
+                check,
+                rollback,
+                yes,
+            }) => plugin_cmd::update(&cli, ids, *all, *check, *rollback, *yes),
         },
         Some(Command::Run(args)) => {
             let code = run::run(&cli, args, &cwd)?;
