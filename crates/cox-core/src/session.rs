@@ -225,6 +225,30 @@ impl Session {
         archive: Arc<dyn Archive>,
         cwd: PathBuf,
     ) -> Result<Self, CoreError> {
+        Self::new_with_id(
+            SessionId::new(),
+            config,
+            provider,
+            tools,
+            store,
+            archive,
+            cwd,
+        )
+    }
+
+    /// [`Session::new`] under an id the caller picked: a surface whose
+    /// tools come from something that must see the id first (a plugin's
+    /// `cox_init`, T33.12) chooses it before the session exists, so the
+    /// tool list is complete at construction and the prefix never changes.
+    pub fn new_with_id(
+        id: SessionId,
+        config: cox_protocol::Config,
+        provider: Arc<dyn Provider>,
+        tools: Vec<Arc<dyn Tool>>,
+        store: Arc<dyn Store>,
+        archive: Arc<dyn Archive>,
+        cwd: PathBuf,
+    ) -> Result<Self, CoreError> {
         let mut session = Self::build(
             config,
             provider,
@@ -233,6 +257,7 @@ impl Session {
             archive,
             cwd,
             None,
+            id,
             None,
             Job::Main,
             Tier::Code,
@@ -268,6 +293,7 @@ impl Session {
             archive,
             cwd,
             Some((id, history)),
+            id,
             None,
             Job::Main,
             Tier::Code,
@@ -310,6 +336,7 @@ impl Session {
             self.archive.clone(),
             cwd.unwrap_or_else(|| self.cwd.clone()),
             resume,
+            SessionId::new(),
             Some(self.id),
             job,
             tier,
@@ -335,6 +362,8 @@ impl Session {
         archive: Arc<dyn Archive>,
         cwd: PathBuf,
         resume: Option<(SessionId, History)>,
+        // The id of a session that is not resumed.
+        fresh: SessionId,
         parent_id: Option<SessionId>,
         job: Job,
         tier: Tier,
@@ -368,7 +397,7 @@ impl Session {
                     )
                 }
                 None => (
-                    SessionId::new(),
+                    fresh,
                     Vec::new(),
                     config.permissions.mode,
                     Vec::new(),

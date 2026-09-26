@@ -111,6 +111,15 @@ pub struct HostEnv {
     // it (`PluginHost`'s call, not a tokio runtime worker: `crate::host`).
     model_caller: Option<Arc<dyn ModelCaller>>,
     runtime: Option<tokio::runtime::Handle>,
+    tool: Mutex<Option<ToolSlot>>,
+}
+
+/// The running `cox_tool_call`'s end of its `ToolCx` (T33.12): where
+/// `cox_output` lines go and what `cox_cancelled` reads. Closures, so this
+/// crate needs neither the channel nor the token type by name.
+pub(crate) struct ToolSlot {
+    pub(crate) output: Box<dyn Fn(String) + Send + Sync>,
+    pub(crate) cancelled: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl HostEnv {
@@ -127,6 +136,7 @@ impl HostEnv {
             log: Mutex::new(LogWindow::default()),
             model_caller: None,
             runtime: None,
+            tool: Mutex::new(None),
         }
     }
 
@@ -186,6 +196,12 @@ impl HostEnv {
     /// Records the export the worker is about to call (`""` when idle).
     pub(crate) fn enter(&self, export: &str) {
         export.clone_into(&mut lock(&self.export));
+    }
+
+    /// Binds (or, with `None`, releases) the tool call `cox_output` and
+    /// `cox_cancelled` act on; `WasmTool` holds it for one call.
+    pub(crate) fn bind_tool(&self, slot: Option<ToolSlot>) {
+        *lock(&self.tool) = slot;
     }
 
     /// Every `cox:host/v1` import, bound to this environment.
@@ -275,6 +291,20 @@ impl HostEnv {
                 Ok(self.context.snapshot())
             }
             "cox_model_call" => self.model_call(arg),
+            "cox_output" => {
+                self.in_tool_call()?;
+                let line: String = parse(arg)?;
+                if let Some(slot) = lock(&self.tool).as_ref() {
+                    (slot.output)(line);
+                }
+                Ok(Value::Null)
+            }
+            "cox_cancelled" => {
+                self.in_tool_call()?;
+                // No bound call means its caller already gave up on it.
+                let slot = lock(&self.tool);
+                Ok(Value::Bool(slot.as_ref().is_none_or(|s| (s.cancelled)())))
+            }
             other => Err(failed(&format!("`{other}` is not available in this cox"))),
         }
     }
@@ -294,6 +324,14 @@ impl HostEnv {
         match lock(&self.export).as_str() {
             "cox_render" | "cox_render_item" => Err(AbiError::NotInThisContext),
             _ => Ok(()),
+        }
+    }
+
+    /// `cox_output`/`cox_cancelled` exist only inside `cox_tool_call` (PL§4).
+    fn in_tool_call(&self) -> Result<(), AbiError> {
+        match lock(&self.export).as_str() {
+            crate::tool::EXPORT => Ok(()),
+            _ => Err(AbiError::NotInThisContext),
         }
     }
 
@@ -526,6 +564,7 @@ pub(crate) mod tests {
                 (i32.const 0))
               (func (export "cox_init") (result i32) (i32.const 0))
               (export "cox_command" (func $relay))
+              (export "cox_tool_call" (func $relay))
               (export "cox_render" (func $relay)))"#
         )
         .into_bytes()
@@ -625,6 +664,37 @@ pub(crate) mod tests {
         let env = Arc::new(HostEnv::new("t").with_grant(vec!["context".into()], store));
         let reply = call(&env, "cox_context", "cox_render", Value::Null);
         assert!(reply["Ok"]["items"].is_array(), "{reply}");
+    }
+
+    #[test]
+    fn output_and_cancelled_work_only_inside_tool_call() {
+        let env = Arc::new(HostEnv::new("t"));
+        let refused = json!({ "Err": { "kind": "not_in_this_context" } });
+        assert_eq!(call(&env, "cox_output", "cox_command", json!("x")), refused);
+        assert_eq!(
+            call(&env, "cox_cancelled", "cox_command", Value::Null),
+            refused
+        );
+        // Unbound: the caller has gone, so the guest should stop.
+        assert_eq!(
+            call(&env, "cox_cancelled", "cox_tool_call", Value::Null),
+            json!({ "Ok": true })
+        );
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let sink = lines.clone();
+        env.bind_tool(Some(ToolSlot {
+            output: Box::new(move |line| lock(&sink).push(line)),
+            cancelled: Box::new(|| false),
+        }));
+        assert_eq!(
+            call(&env, "cox_output", "cox_tool_call", json!("step 1")),
+            json!({ "Ok": null })
+        );
+        assert_eq!(
+            call(&env, "cox_cancelled", "cox_tool_call", Value::Null),
+            json!({ "Ok": false })
+        );
+        assert_eq!(*lock(&lines), ["step 1"]);
     }
 
     #[test]

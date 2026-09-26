@@ -48,3 +48,6 @@ cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+# T33.12: a test builds the `ToolCx` a `WasmTool` runs under, whose
+# `cancel` is tokio-util's token; already a workspace dependency.
+tokio-util = { workspace = true }

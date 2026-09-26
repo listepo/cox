@@ -167,23 +167,25 @@ pub async fn open(
     all.push(Arc::new(SendMessageTool));
     // T22.2: the deferred `skill` tool hands skill bodies out on demand
     // (its spec is `deferred`, `ReadOnly`; broken skills are skipped above,
-    // D14). `tool_search` answers from the spec list it was built with, so
-    // its index is rebuilt over the full set — the swap-by-name shape of
-    // `with_question_surface` — or the deferred `skill` could never be
-    // discovered (D6d).
+    // D14); `with_tool_search_index` below makes it discoverable.
     all.push(Arc::new(cox_ext::skills::SkillTool::new(found.skills)));
-    let specs: Vec<_> = all.iter().map(|t| t.spec()).collect();
-    all = all
-        .into_iter()
-        .map(|t| match t.spec().name.as_str() {
-            "tool_search" => Arc::new(ToolSearchTool::new(specs.clone())) as Arc<dyn Tool>,
-            _ => t,
-        })
-        .collect();
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd, interactive, plugins.mcp, &writable).await);
     }
-    let plugin_warnings = plugins.notices;
+    #[cfg_attr(not(feature = "plugins"), allow(unused_mut))]
+    let mut plugin_warnings = plugins.notices;
+    let id = resume.as_ref().map_or_else(SessionId::new, |(id, _)| *id);
+    #[cfg(feature = "plugins")]
+    let mut live = plugins.live;
+    #[cfg(feature = "plugins")]
+    all.extend(plugin_tools(
+        &mut live,
+        &loaded.config.plugins,
+        id,
+        cwd,
+        &mut plugin_warnings,
+    ));
+    let all = with_tool_search_index(all);
     let session = match resume {
         Some((id, history)) => Session::resume(
             config,
@@ -195,7 +197,8 @@ pub async fn open(
             id,
             history,
         )?,
-        None => Session::new(
+        None => Session::new_with_id(
+            id,
             config,
             provider,
             all,
@@ -208,17 +211,12 @@ pub async fn open(
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
     session.set_agent_defs(agents_found.agents);
-    // T33.44: each granted plugin's `cox_init` runs once, now that the
-    // session id exists; its instance is shared by its hooks (below) and
-    // the event tap `start_plugins` sets.
+    // T33.44: each granted plugin's `cox_init` ran once, in `plugin_tools`
+    // above; its instance is shared by its tools, its hooks (below) and the
+    // event tap `start_plugins` sets.
     #[cfg(feature = "plugins")]
-    let (plugin_hooks, plugin_started) = start_plugins(
-        &session,
-        plugins.live,
-        &loaded.config.plugins,
-        cwd,
-        plugin_ui,
-    );
+    let (plugin_hooks, plugin_started) =
+        start_plugins(&session, live, &loaded.config.plugins, cwd, plugin_ui);
     #[cfg(not(feature = "plugins"))]
     let (plugin_hooks, plugin_started) = {
         drop(plugin_ui);
@@ -542,6 +540,28 @@ fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::
         }
     });
     crate::plugin_ui::redraw(ui.feed)
+}
+
+/// T33.12 (PL§7): runs each loaded plugin's `cox_init` for session `id`
+/// before the session is built, so its granted tools (`wasm__<id>__<tool>`,
+/// always deferred, sorted by (id, tool)) are in the tool list from the
+/// first request and the cache-stable prefix never changes under a running
+/// session. `start_plugins` then finds them started (`LivePlugins::start`
+/// skips a started plugin). Init failures and dropped tools become
+/// `warnings`; the plugin notices `cox_init` queued stay queued for
+/// `start_plugins`. `cox_model_call` from `cox_init` finds no session yet.
+#[cfg(feature = "plugins")]
+fn plugin_tools(
+    live: &mut cox_plugin::LivePlugins,
+    config: &cox_protocol::config::PluginsConfig,
+    id: SessionId,
+    cwd: &Path,
+    warnings: &mut Vec<String>,
+) -> Vec<Arc<dyn Tool>> {
+    warnings.extend(live.start(config, id, cwd));
+    let (tools, dropped) = live.tools();
+    warnings.extend(dropped);
+    tools
 }
 
 /// The slim build has no plugin host, so there is never a plugin to load.
@@ -1876,6 +1896,22 @@ pub(crate) fn with_client_tools(
         })
         .collect()
 }
+/// Rebuilds `tool_search` over the complete tool list — built-ins, the
+/// deferred `skill` (T22.2), MCP and plugin tools (T33.12) — by the
+/// swap-by-name shape of `with_question_surface`: it answers from the specs
+/// it was built with, so a deferred tool missing here could never be
+/// discovered (D6d).
+fn with_tool_search_index(tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn Tool>> {
+    let specs: Vec<_> = tools.iter().map(|t| t.spec()).collect();
+    tools
+        .into_iter()
+        .map(|t| match t.spec().name.as_str() {
+            "tool_search" => Arc::new(ToolSearchTool::new(specs.clone())) as Arc<dyn Tool>,
+            _ => t,
+        })
+        .collect()
+}
+
 /// Swaps the fixed-answer `ask_user` `tools()` built for one that surfaces
 /// each question instead (T22.1): only `run_tui` has somewhere to show it.
 /// Same swap-by-name shape as `with_client_tools`; the spec is unchanged
@@ -3104,5 +3140,223 @@ mod tests {
         let p = provider_for_served(&cfg, fake_key, None, &plugins.catalog_rows())
             .expect("anthropic builds");
         assert_eq!(p.capabilities().max_context, 1_000_000);
+    }
+
+    /// T33.12: every request a scripted session sends, for prefix checks.
+    #[cfg(feature = "plugins")]
+    struct Recorder {
+        inner: cox_provider::scripted::Scripted,
+        sent: std::sync::Mutex<Vec<cox_protocol::types::Request>>,
+    }
+
+    #[cfg(feature = "plugins")]
+    #[async_trait::async_trait]
+    impl Provider for Recorder {
+        fn id(&self) -> ProviderId {
+            self.inner.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.inner.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: cox_protocol::types::Request,
+            sink: tokio::sync::mpsc::Sender<cox_protocol::types::ProviderEvent>,
+            cancel: tokio_util::sync::CancellationToken,
+        ) -> Result<cox_protocol::types::Usage, cox_protocol::errors::ProviderError> {
+            self.sent.lock().expect("sent").push(req.clone());
+            self.inner.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(
+            &self,
+            req: &cox_protocol::types::Request,
+        ) -> Result<u32, cox_protocol::errors::ProviderError> {
+            self.inner.count_tokens(req).await
+        }
+    }
+
+    /// Bytes the `dump` tool of `tool_plugin_wat` answers.
+    #[cfg(feature = "plugins")]
+    const DUMP_BYTES: usize = 20_000;
+
+    /// T33.12 fixture: `cox_init` declares one read-only tool, `dump`;
+    /// `cox_tool_call` answers `DUMP_BYTES` of `a`, past the visible cap.
+    #[cfg(feature = "plugins")]
+    fn tool_plugin_wat() -> String {
+        let init = r#"{"tools":[{"name":"dump","description":"dump the quarterly report","risk":"read_only","input_schema":{"type":"object"}}]}"#;
+        format!(
+            r##"(module
+              (import "extism:host/env" "alloc" (func $alloc (param i64) (result i64)))
+              (import "extism:host/env" "store_u8" (func $store (param i64 i32)))
+              (import "extism:host/env" "output_set" (func $output_set (param i64 i64)))
+              (memory 1)
+              (data (i32.const 0) "{data}")
+              (data (i32.const 1024) "{{\"text\":\"")
+              (data (i32.const 1040) "\"}}")
+              (func $put (param $off i64) (param $p i32) (param $len i32) (local $i i32)
+                (block $end (loop $next
+                  (br_if $end (i32.ge_u (local.get $i) (local.get $len)))
+                  (call $store (i64.add (local.get $off) (i64.extend_i32_u (local.get $i)))
+                    (i32.load8_u (i32.add (local.get $p) (local.get $i))))
+                  (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                  (br $next))))
+              (func (export "cox_init") (result i32) (local $off i64)
+                (local.set $off (call $alloc (i64.const {init_len})))
+                (call $put (local.get $off) (i32.const 0) (i32.const {init_len}))
+                (call $output_set (local.get $off) (i64.const {init_len})) (i32.const 0))
+              (func (export "cox_tool_call") (result i32) (local $off i64) (local $i i64)
+                (local.set $off (call $alloc (i64.const {total})))
+                (call $put (local.get $off) (i32.const 1024) (i32.const 9))
+                (block $end (loop $next
+                  (br_if $end (i64.ge_u (local.get $i) (i64.const {n})))
+                  (call $store (i64.add (local.get $off) (i64.add (i64.const 9) (local.get $i)))
+                    (i32.const 97))
+                  (local.set $i (i64.add (local.get $i) (i64.const 1)))
+                  (br $next)))
+                (call $put (i64.add (local.get $off) (i64.const {tail})) (i32.const 1040) (i32.const 2))
+                (call $output_set (local.get $off) (i64.const {total})) (i32.const 0)))"##,
+            data = init.replace('"', "\\\""),
+            init_len = init.len(),
+            n = DUMP_BYTES,
+            tail = DUMP_BYTES + 9,
+            total = DUMP_BYTES + 11,
+        )
+    }
+
+    /// `open`'s order for a session with plugin tools: load, `cox_init`
+    /// under the chosen id (`plugin_tools`), build with the full tool list
+    /// and a `tool_search` indexed over it, then `start_plugins`.
+    #[cfg(feature = "plugins")]
+    async fn session_with_plugin_tools(
+        home: &Path,
+        work: &Path,
+        scenario: &str,
+    ) -> (Session, Arc<Store>, Arc<Recorder>) {
+        install_granted(
+            home,
+            "big",
+            "[capabilities]\ntools = [\"dump\"]\n",
+            &tool_plugin_wat(),
+        );
+        let store = Arc::new(Store::open(home).expect("store"));
+        let config = Config::default();
+        let plugins = load_plugins(&config, home, work, store.clone(), None);
+        let (mut live, mut warnings) = (plugins.live, plugins.notices);
+        let id = SessionId::new();
+        let mut all: Vec<Arc<dyn Tool>> = vec![Arc::new(ToolSearchTool::new(vec![]))];
+        all.extend(plugin_tools(
+            &mut live,
+            &config.plugins,
+            id,
+            work,
+            &mut warnings,
+        ));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let recorder = Arc::new(Recorder {
+            inner: cox_provider::scripted::Scripted::from_toml(scenario, "").expect("scenario"),
+            sent: std::sync::Mutex::default(),
+        });
+        let session = Session::new_with_id(
+            id,
+            config.clone(),
+            recorder.clone(),
+            with_tool_search_index(all),
+            store.clone(),
+            store.clone(),
+            work.to_path_buf(),
+        )
+        .expect("session");
+        let (hooks, _) = start_plugins(&session, live, &config.plugins, work, None);
+        session.set_hook(Arc::new(cox_ext::hooks::HookChain::new(None, hooks)));
+        (session, store, recorder)
+    }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn prefix_bytes_identical_between_turns_with_plugin_tool_discovered() {
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        let scenario = r#"
+[[turn]]
+[[turn.tool_calls]]
+name = "tool_search"
+input = { query = "quarterly report" }
+[[turn]]
+text = "found it"
+[[turn]]
+text = "two"
+[[turn]]
+text = "three"
+"#;
+        let (session, _store, recorder) =
+            session_with_plugin_tools(home.path(), work.path(), scenario).await;
+        for text in ["one", "two", "three"] {
+            user_turn(&session, text).await;
+        }
+        let sent = recorder.sent.lock().expect("sent").clone();
+        assert_eq!(sent.len(), 4);
+        let prefix = |r: &cox_protocol::types::Request| {
+            serde_json::to_vec(&(&r.system[0..=2], &r.tools)).expect("prefix")
+        };
+        let has_dump =
+            |r: &cox_protocol::types::Request| r.tools.iter().any(|t| t.name == "wasm__big__dump");
+        // Deferred until `tool_search` finds it; then the prefix changes
+        // once and stays byte-identical for every later request.
+        assert!(!has_dump(&sent[0]) && has_dump(&sent[1]));
+        assert_ne!(prefix(&sent[0]), prefix(&sent[1]));
+        assert_eq!(prefix(&sent[1]), prefix(&sent[2]));
+        assert_eq!(prefix(&sent[2]), prefix(&sent[3]));
+    }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn plugin_tool_output_is_archived_before_truncation() {
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        let scenario = r#"
+[[turn]]
+[[turn.tool_calls]]
+name = "wasm__big__dump"
+input = {}
+[[turn]]
+text = "done"
+"#;
+        let (session, store, recorder) =
+            session_with_plugin_tools(home.path(), work.path(), scenario).await;
+        user_turn(&session, "dump it").await;
+        let result = store
+            .rollout_read(&session.id())
+            .expect("rollout")
+            .into_iter()
+            .find_map(|ev| match ev {
+                Event::ToolCallDone { result, .. } => Some(result),
+                _ => None,
+            })
+            .expect("the dump call finished");
+        let archive = result.archive.expect("archived");
+        let full = "a".repeat(DUMP_BYTES);
+        assert_eq!(
+            store.archive_get(&archive.id).expect("row"),
+            full.as_bytes()
+        );
+        // What the model saw is shortened and points at the archive row.
+        let pointer = format!("expand #{}", archive.id);
+        assert!(result.visible.len() < full.len(), "{}", result.visible);
+        assert!(result.visible.contains(&pointer), "{}", result.visible);
+        let sent = recorder.sent.lock().expect("sent").clone();
+        let seen = sent[1]
+            .messages
+            .iter()
+            .flat_map(|m| &m.content)
+            .find_map(|c| match c {
+                cox_protocol::types::Content::ToolResult { content, .. } => Some(content),
+                _ => None,
+            })
+            .expect("a tool result");
+        assert!(seen.contains(&pointer), "{seen}");
     }
 }

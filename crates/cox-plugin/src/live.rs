@@ -14,7 +14,7 @@ use cox_protocol::PluginStore;
 use cox_protocol::config::PluginsConfig;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{Advisor, EventTap, Hook, ModelCaller};
+use cox_protocol::traits::{Advisor, EventTap, Hook, ModelCaller, Tool};
 use cox_protocol::types::{Event, Level, ProviderEvent, Request, Tier};
 
 use crate::PluginError;
@@ -249,6 +249,23 @@ impl LivePlugins {
                 Arc::new(PluginAdvisor::new(p.id(), p.host.clone(), &p.granted)) as Arc<dyn Advisor>
             })
             .collect()
+    }
+
+    /// Each started plugin's granted tools (PL§7, T33.12), built from the
+    /// `cox_init` that already ran and sorted by (plugin id, tool), plus a
+    /// warning per declared tool that was dropped.
+    pub fn tools(&self) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
+        let mut started: Vec<&Live> = self.plugins.iter().filter(|p| p.init.is_some()).collect();
+        started.sort_by(|a, b| a.id().cmp(b.id()));
+        let mut tools = Vec::new();
+        let mut warnings = Vec::new();
+        for p in started {
+            let specs = p.init.as_ref().map_or(&[][..], |i| &i.tools[..]);
+            let (mine, dropped) = crate::tool::declared(p.id(), &p.host, &p.env, &p.granted, specs);
+            tools.extend(mine.into_iter().map(|t| Arc::new(t) as Arc<dyn Tool>));
+            warnings.extend(dropped);
+        }
+        (tools, warnings)
     }
 
     /// Each started plugin's instance by id: what the TUI's render server

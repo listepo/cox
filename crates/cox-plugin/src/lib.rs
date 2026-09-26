@@ -29,6 +29,8 @@
 //!   `cox_init` once, shared by hooks, the tap and tools (T33.44).
 //! - [`advisor`] — a plugin's granted decision points behind the protocol's
 //!   `Advisor` trait, calling `cox_decide` (PL§4, T33.20).
+//! - [`tool`] — `WasmTool`: a plugin's granted tool as a deferred `Tool`
+//!   named `wasm__<id>__<tool>`, its spec frozen at `cox_init` (PL§7, T33.12).
 
 #![warn(missing_docs)]
 
@@ -45,6 +47,7 @@ pub mod hostfn;
 pub mod install;
 pub mod live;
 pub mod provider;
+pub mod tool;
 
 pub use advisor::PluginAdvisor;
 pub use context::Context;
@@ -56,3 +59,4 @@ pub use hooks::PluginHooks;
 pub use host::{CONTROL_DEPTH, EVENT_DEPTH, Lane, PluginHost};
 pub use hostfn::{HostEnv, init_input};
 pub use live::{Live, LivePlugins, Notices, SessionTap};
+pub use tool::WasmTool;
