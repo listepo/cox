@@ -59,6 +59,7 @@
         "memory": "cheap",
         "explore": "cheap",
         "shell": "cheap",
+        "agent": "cheap",
         "hook": "cheap"
       }
     },
@@ -450,6 +451,11 @@
         },
         "shell": {
           "description": "`jobs.shell`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "agent": {
+          "description": "`jobs.agent`",
           "$ref": "#/$defs/Tier",
           "default": "cheap"
         },

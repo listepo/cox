@@ -114,6 +114,18 @@ pub async fn open(
     for notice in &found.notices {
         eprintln!("cox: warning: {notice}");
     }
+    // T34.1: subagent definitions are discovered once here, at session
+    // build, the same roots `cox ext list` reads — never inside `cox-core`,
+    // which does no filesystem I/O of its own (`agent_defs` on `Session`
+    // is set below, after construction, like `set_worktrees`).
+    let agents_found = cox_ext::agents::discover(&cox_ext::agents::agent_dirs(
+        Some(&home),
+        Some(&claude_home),
+        Some(&project),
+    ));
+    for notice in &agents_found.notices {
+        eprintln!("cox: warning: {notice}");
+    }
     let mut all = tools(answer, &store, mdir);
     if let Some(tx) = questions {
         all = with_question_surface(all, tx);
@@ -159,6 +171,7 @@ pub async fn open(
     if worktree_main.is_some() {
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
+    session.set_agent_defs(agents_found.agents);
     // A14: the presence hook wraps the user's shell hooks so the other
     // sessions of this workspace see every surface, `--no-hooks` or not.
     let shell: Option<Arc<dyn Hook>> = loaded.config.hooks.enabled.then(|| {

@@ -3,6 +3,16 @@
 //! result cap. It lives in `cox-core` rather than `cox-tools` because a
 //! child session *is* the loop, not I/O, and `cox-tools` may not depend on
 //! this crate; the presets are plain data here for the same reason.
+//!
+//! T34.1: `preset` also resolves a discovered `AgentDef` (`.cox/agents`,
+//! `.claude/agents`) by name, so a custom definition dispatches exactly
+//! like `explore`/`shell`. `AgentDef`/`tier_for` live in
+//! `cox_protocol::agent`, not `cox-ext` (which reads the filesystem and
+//! this crate may not depend on): the surface
+//! (`crates/cox/src/session.rs`) runs discovery once at session build and
+//! hands the result to `Session::set_agent_defs`, keeping this crate
+//! I/O-free. A custom preset's usage rows are tagged `Job::Agent`; its own
+//! `tier`/`model` decides the actual tier, not the job.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -65,6 +75,32 @@ pub const SHELL: Preset = Preset {
 
 const PRESETS: &[Preset] = &[EXPLORE, SHELL];
 
+/// A generic, non-read-only default for a discovered `AgentDef`: the
+/// same shape as [`SHELL`], since a custom preset's own `tools:` (not
+/// `read_only`) is what narrows it.
+const CUSTOM_MAX_TURNS: u32 = SHELL.max_turns;
+const CUSTOM_RESULT_CAP_TOKENS: usize = SHELL.result_cap_tokens;
+
+/// A dispatch target flattened from either a built-in [`Preset`] or a
+/// discovered `AgentDef`, so `tools_for`/`call` match on it once instead
+/// of on the source everywhere they need a field.
+#[derive(Debug)]
+struct Resolved {
+    name: String,
+    job: Job,
+    /// `None` means every parent tool (an `AgentDef` with an empty
+    /// `tools:`); built-in presets always name theirs explicitly.
+    tools: Option<Vec<String>>,
+    read_only: bool,
+    max_turns: u32,
+    result_cap_tokens: usize,
+    /// The tier this dispatch would run at with no `tier` override: the
+    /// job's configured tier for a built-in preset, or the def's own
+    /// `model`/`tier_for`, falling back to the parent's tier when the
+    /// model is `inherit` or absent (`cox_protocol::agent::tier_for`).
+    natural_tier: Tier,
+}
+
 /// What a subagent may spend when the call does not say: a quarter of
 /// what the parent has left, so four background explorers cannot drain it.
 const DEFAULT_SLICE: f64 = 0.25;
@@ -90,25 +126,81 @@ impl AgentTool {
         }
     }
 
-    fn preset(input: &Value) -> Result<Preset, ToolError> {
+    /// Discovered names not already shadowed by a built-in preset — used
+    /// both in the tool description and in the "unknown preset" error, so
+    /// the two never disagree about what is dispatchable.
+    fn custom_names(&self) -> Vec<String> {
+        self.parent
+            .agent_defs()
+            .iter()
+            .map(|d| d.name.clone())
+            .filter(|n| !PRESETS.iter().any(|p| p.name == n))
+            .collect()
+    }
+
+    /// Built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`,
+    /// even if a same-named file is discovered), then a discovered
+    /// `AgentDef` by exact name; a miss lists both.
+    fn resolve(&self, input: &Value) -> Result<Resolved, ToolError> {
         let name = input
             .get("preset")
             .and_then(Value::as_str)
             .unwrap_or(EXPLORE.name);
-        PRESETS
-            .iter()
-            .copied()
-            .find(|p| p.name == name)
-            .ok_or_else(|| ToolError::Denied {
-                why: format!("unknown agent preset {name:?}; use explore or shell"),
-            })
+        if let Some(p) = PRESETS.iter().copied().find(|p| p.name == name) {
+            return Ok(Resolved {
+                name: p.name.to_string(),
+                job: p.job,
+                tools: Some(p.tools.iter().map(|s| s.to_string()).collect()),
+                read_only: p.read_only,
+                max_turns: p.max_turns,
+                result_cap_tokens: p.result_cap_tokens,
+                natural_tier: self.parent.config.jobs.tier_for(p.job),
+            });
+        }
+        if let Some(def) = self.parent.agent_defs().iter().find(|d| d.name == name) {
+            return Ok(Resolved {
+                name: def.name.clone(),
+                job: Job::Agent,
+                tools: (!def.tools.is_empty()).then(|| def.tools.clone()),
+                read_only: false,
+                max_turns: CUSTOM_MAX_TURNS,
+                result_cap_tokens: CUSTOM_RESULT_CAP_TOKENS,
+                natural_tier: cox_protocol::agent::tier_for(def.model.as_deref())
+                    .unwrap_or(self.parent.tier),
+            });
+        }
+        let mut names: Vec<String> = PRESETS.iter().map(|p| p.name.to_string()).collect();
+        names.extend(self.custom_names());
+        Err(ToolError::Denied {
+            why: format!(
+                "unknown agent preset {name:?}; available presets: {}",
+                names.join(", ")
+            ),
+        })
     }
 
-    /// The parent's tools this call may hand to the child: the preset's
-    /// allowlist (or the call's `tools`, narrowed to it for `explore`),
-    /// never `agent` itself.
-    fn tools_for(&self, preset: Preset, input: &Value) -> Vec<Arc<dyn Tool>> {
-        let wanted: Vec<String> = input
+    /// The `tier` a run at `resolved.natural_tier` may be asked to switch
+    /// to: only down (D5 "never up"), and only to a name the router knows.
+    fn resolve_tier(&self, resolved: &Resolved, input: &Value) -> Result<Tier, ToolError> {
+        let Some(raw) = input.get("tier").and_then(Value::as_str) else {
+            return Ok(resolved.natural_tier);
+        };
+        let requested = parse_tier(raw).ok_or_else(|| ToolError::Denied {
+            why: format!("unknown tier {raw:?}; use cheap, code or think"),
+        })?;
+        let clamped = if tier_rank(requested) <= tier_rank(resolved.natural_tier) {
+            requested
+        } else {
+            resolved.natural_tier
+        };
+        Ok(clamped)
+    }
+
+    /// The parent's tools this call may hand to the child: the resolved
+    /// allowlist (or the call's `tools`, narrowed to it for a read-only
+    /// preset), never `agent` itself.
+    fn tools_for(&self, resolved: &Resolved, input: &Value) -> Vec<Arc<dyn Tool>> {
+        let wanted: Option<Vec<String>> = input
             .get("tools")
             .and_then(Value::as_array)
             .map(|names| {
@@ -118,42 +210,72 @@ impl AgentTool {
                     .map(str::to_string)
                     .collect()
             })
-            .unwrap_or_else(|| preset.tools.iter().map(|s| s.to_string()).collect());
+            .or_else(|| resolved.tools.clone());
         self.parent
             .tools
             .iter()
             .filter(|t| {
                 let spec = t.spec();
                 spec.name != "agent"
-                    && wanted.contains(&spec.name)
-                    && (!preset.read_only || spec.risk == Risk::ReadOnly)
+                    && wanted.as_ref().is_none_or(|w| w.contains(&spec.name))
+                    && (!resolved.read_only || spec.risk == Risk::ReadOnly)
             })
             .cloned()
             .collect()
     }
 }
 
+/// `cheap` < `code` < `think`, for the "never up" clamp (D5); `Tier` has
+/// no `Ord` of its own because nothing else needs to compare tiers.
+fn tier_rank(t: Tier) -> u8 {
+    match t {
+        Tier::Cheap => 0,
+        Tier::Code => 1,
+        Tier::Think => 2,
+    }
+}
+
+fn parse_tier(s: &str) -> Option<Tier> {
+    match s {
+        "cheap" => Some(Tier::Cheap),
+        "code" => Some(Tier::Code),
+        "think" => Some(Tier::Think),
+        _ => None,
+    }
+}
+
 #[async_trait]
 impl Tool for AgentTool {
     fn spec(&self) -> ToolSpec {
-        ToolSpec {
-            name: "agent".to_string(),
-            description: "Delegate a self-contained task to a subagent that runs on the \
+        let mut description = "Delegate a self-contained task to a subagent that runs on the \
                 cheap tier with its own tool set and budget, and returns only its answer. \
                 Presets: `explore` (read-only file tools, answer ≤ 1k tokens) for \"find \
                 where X is handled and report file:line\", `shell` (bash, web_fetch) for \
                 builds, test runs and HTTP calls whose full output you do not need. Pass \
                 `task` with everything the subagent needs to know; it does not see this \
-                conversation. Optional: `tools` to narrow the tool list, `budget_usd`, \
+                conversation. Optional: `tools` to narrow the tool list, `tier` (`cheap`, \
+                `code` or `think`) to run the task on a cheaper tier than its preset's \
+                default — never a more expensive one, `budget_usd`, \
                 `isolation: \"worktree\"` to run the task in its own git worktree and \
                 branch (named after the task id) so its edits never touch this checkout; \
                 the answer then ends with the worktree path and branch."
-                .to_string(),
+            .to_string();
+        let custom = self.custom_names();
+        if !custom.is_empty() {
+            description.push_str(&format!(
+                " Custom presets from `.cox/agents`/`.claude/agents`: {}.",
+                custom.join(", ")
+            ));
+        }
+        ToolSpec {
+            name: "agent".to_string(),
+            description,
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "task": {"type": "string"},
-                    "preset": {"type": "string", "enum": ["explore", "shell"]},
+                    "preset": {"type": "string"},
+                    "tier": {"type": "string", "enum": ["cheap", "code", "think"]},
                     "tools": {"type": "array", "items": {"type": "string"}},
                     "budget_usd": {"type": "number", "minimum": 0},
                     "background": {"type": "boolean"},
@@ -168,16 +290,16 @@ impl Tool for AgentTool {
     }
 
     fn subject(&self, input: &Value) -> String {
-        Self::preset(input).map_or_else(|_| "?".into(), |p| p.name.to_string())
+        self.resolve(input).map_or_else(|_| "?".into(), |r| r.name)
     }
 
     /// The riskiest tool the child may use (plan.md §1.11: "inherits max
     /// of its tools").
     fn risk(&self, input: &Value) -> Risk {
-        let Ok(preset) = Self::preset(input) else {
+        let Ok(resolved) = self.resolve(input) else {
             return Risk::Exec;
         };
-        self.tools_for(preset, input)
+        self.tools_for(&resolved, input)
             .iter()
             .map(|t| t.spec().risk)
             .max_by_key(|r| rank(*r))
@@ -193,9 +315,9 @@ impl Tool for AgentTool {
                 why: "missing or empty \"task\"".into(),
             })?
             .to_string();
-        let preset = Self::preset(&input)?;
-        let tools = self.tools_for(preset, &input);
-        let tier = self.parent.config.jobs.tier_for(preset.job);
+        let preset = self.resolve(&input)?;
+        let tools = self.tools_for(&preset, &input);
+        let tier = self.resolve_tier(&preset, &input)?;
         let mut config = self.parent.config.clone();
         config.budget.session_usd = slice(
             config.budget.session_usd,
@@ -283,10 +405,16 @@ impl Tool for AgentTool {
             let parent = self.parent.clone();
             let (cancel, progress) = (cx.cancel.clone(), cx.output.clone());
             let bg_label = label.clone();
+            // `preset` itself is not `Copy` (T34.1), so only what the child
+            // run needs is cloned into the `async move` closure; `preset`
+            // stays intact for the `structured` reply built after `spawn`.
+            let preset_name = preset.name.clone();
+            let result_cap_tokens = preset.result_cap_tokens;
             tokio::spawn(async move {
                 let io = RunIo {
                     name,
-                    preset,
+                    preset_name,
+                    result_cap_tokens,
                     tier,
                     events,
                     cancel,
@@ -339,7 +467,8 @@ impl Tool for AgentTool {
             task_text,
             RunIo {
                 name,
-                preset,
+                preset_name: preset.name.clone(),
+                result_cap_tokens: preset.result_cap_tokens,
                 tier,
                 events,
                 cancel: cx.cancel.clone(),
@@ -395,7 +524,7 @@ async fn relay_approval(parent: &Session, child: &Session, call: ToolCall, why: 
     let source = Source {
         session: child.id(),
         agent: Some(io.name.clone()),
-        preset: Some(io.preset.name.to_string()),
+        preset: Some(io.preset_name.clone()),
     };
     let asked = parent.emit(Event::ApprovalRequired {
         call,
@@ -431,7 +560,11 @@ struct TaskOutcome {
 struct RunIo {
     /// `<preset>-<n>`: how its approvals are labelled on the parent's surface.
     name: String,
-    preset: Preset,
+    /// The dispatched preset/def's own name (T34.1: `Resolved` is not
+    /// `Copy`, unlike the old `Preset`, so this is cloned out of it once
+    /// rather than moved, which would strand the caller's own copy).
+    preset_name: String,
+    result_cap_tokens: usize,
     tier: Tier,
     events: mpsc::Receiver<Event>,
     cancel: CancellationToken,
@@ -476,7 +609,10 @@ async fn run_task(
                     turns += 1;
                 }
                 Some(Event::ToolCallRequested { call }) => {
-                    let _ = io.progress.send(format!("[{}] {}\n", io.preset.name, call.name)).await;
+                    let _ = io
+                        .progress
+                        .send(format!("[{}] {}\n", io.preset_name, call.name))
+                        .await;
                 }
                 Some(Event::TurnDone { .. }) => break Ok(()),
                 Some(Event::ApprovalRequired { call, why, .. }) => {
@@ -518,12 +654,12 @@ async fn run_task(
         })
         .unwrap_or_else(|| "(the subagent produced no answer)".to_string());
     let mut summarised = false;
-    if result.len() / 4 > io.preset.result_cap_tokens {
-        if let Some(short) = summarize(parent, &result, io.preset.result_cap_tokens).await {
+    if result.len() / 4 > io.result_cap_tokens {
+        if let Some(short) = summarize(parent, &result, io.result_cap_tokens).await {
             result = short;
             summarised = true;
         } else {
-            result.truncate(io.preset.result_cap_tokens * 4);
+            result.truncate(io.result_cap_tokens * 4);
             result.push_str("\n[cut at the result cap]");
         }
     }
@@ -626,7 +762,32 @@ fn core_error(e: CoreError) -> ToolError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use cox_protocol::agent::AgentDef;
+
     use super::*;
+
+    /// An `AgentTool` over a throwaway session, for `resolve`'s own claims
+    /// (unit-level, no turn ever runs). T34.1 made `resolve`/`preset`
+    /// resolution an instance method — it now reads discovered defs off
+    /// the parent session — so this replaces the old bare-function call.
+    fn test_agent_tool(defs: Vec<AgentDef>) -> AgentTool {
+        let store = Arc::new(crate::MemoryStore::new());
+        let provider =
+            Arc::new(cox_provider::scripted::Scripted::from_toml("", "").expect("scripted"));
+        let session = Session::new(
+            cox_protocol::Config::default(),
+            provider,
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-subagent-unit"),
+        )
+        .expect("session");
+        session.set_agent_defs(defs);
+        AgentTool::new(session)
+    }
 
     #[test]
     fn subagent_budget_is_a_slice_of_parent() {
@@ -643,13 +804,45 @@ mod tests {
 
     #[test]
     fn subagent_presets_are_explore_and_shell() {
-        let explore = AgentTool::preset(&json!({}));
+        let tool = test_agent_tool(vec![]);
+        let explore = tool.resolve(&json!({}));
         assert_eq!(
             explore.map(|p| (p.name, p.read_only)),
-            Ok(("explore", true))
+            Ok(("explore".to_string(), true))
         );
-        let shell = AgentTool::preset(&json!({"preset": "shell"}));
-        assert_eq!(shell.map(|p| (p.name, p.read_only)), Ok(("shell", false)));
-        assert!(AgentTool::preset(&json!({"preset": "nope"})).is_err());
+        let shell = tool.resolve(&json!({"preset": "shell"}));
+        assert_eq!(
+            shell.map(|p| (p.name, p.read_only)),
+            Ok(("shell".to_string(), false))
+        );
+        assert!(tool.resolve(&json!({"preset": "nope"})).is_err());
+    }
+
+    /// T34.1: an unrecognised name is denied, and the error names both the
+    /// built-in presets and whatever `.cox/agents`/`.claude/agents`
+    /// discovered. Unit-level (like the test above), not a full turn: a
+    /// failed `resolve` makes `risk()` fall back to `Exec` (pre-existing,
+    /// unchanged behaviour — an unresolvable call could be anything), which
+    /// would otherwise need an approval answer before `call()`'s own
+    /// friendlier text ever surfaces as a tool result.
+    #[test]
+    fn agent_unknown_preset_lists_builtin_and_discovered_names_in_error() {
+        let tool = test_agent_tool(vec![AgentDef {
+            name: "reviewer".into(),
+            description: "reviews a diff".into(),
+            tools: vec!["read".into()],
+            model: Some("haiku".into()),
+            path: PathBuf::from("<test>/.cox/agents/reviewer.md"),
+            body: "You review changes for correctness.".into(),
+        }]);
+        let err = tool
+            .resolve(&json!({"preset": "nope"}))
+            .expect_err("unknown preset");
+        let ToolError::Denied { why } = err else {
+            panic!("expected Denied, got {err:?}");
+        };
+        for name in ["explore", "shell", "reviewer"] {
+            assert!(why.contains(name), "{name:?} missing from {why:?}");
+        }
     }
 }

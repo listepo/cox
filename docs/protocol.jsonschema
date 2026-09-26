@@ -711,6 +711,11 @@
             "const": "shell"
           },
           {
+            "description": "A custom subagent definition (`.cox/agents`/`.claude/agents`,\nT34.1): its own `tier`/`model` decides the tier, not this job.",
+            "type": "string",
+            "const": "agent"
+          },
+          {
             "description": "A hook-driven LLM call.",
             "type": "string",
             "const": "hook"

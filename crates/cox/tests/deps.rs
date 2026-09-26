@@ -286,6 +286,10 @@ fn no_crate_below_cox_depends_on_core() {
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in, and
     // on cox-permission, T32.8, re-exported at the old `permission` path).
+    // T34.1's `agent` tool matches a custom preset by `AgentDef`, but that
+    // type lives in `cox_protocol::agent` precisely so this crate never
+    // needs `cox-ext`, which does the filesystem read (`agents::discover`)
+    // the surface (`crates/cox/src/session.rs`) runs instead.
     let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models", "cox-permission"]
         .into_iter()
         .collect();

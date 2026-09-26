@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
+use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
@@ -139,6 +140,11 @@ pub struct Session {
     /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
     /// installed by the surface, shared with children. Absent in tests.
     worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
+    /// Custom subagent definitions the surface discovered on disk (T34.1:
+    /// `cox_ext::agents::discover`, which this crate never calls itself);
+    /// installed like `worktrees`, empty until then. Not copied to
+    /// children — only `new`/`resume` push the `agent` tool at all.
+    agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
     /// The one "checkpoints off" warning per session has been emitted.
     pub(crate) checkpoint_warned: Arc<AtomicBool>,
     tx: mpsc::Sender<Event>,
@@ -325,6 +331,7 @@ impl Session {
             checkpointer: Arc::new(OnceLock::new()),
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
+            agent_defs: Arc::new(OnceLock::new()),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
@@ -512,6 +519,18 @@ impl Session {
 
     pub(crate) fn worktrees(&self) -> Option<Arc<dyn Worktrees>> {
         self.worktrees.get().cloned()
+    }
+
+    /// Installs the custom subagent definitions the surface discovered
+    /// (T34.1); a second call is ignored like `set_worktrees`. Discovery
+    /// happens once at session build, so the `agent` tool's schema stays
+    /// byte-stable for the rest of the session (D6e).
+    pub fn set_agent_defs(&self, defs: Vec<AgentDef>) {
+        let _ = self.agent_defs.set(defs);
+    }
+
+    pub(crate) fn agent_defs(&self) -> &[AgentDef] {
+        self.agent_defs.get().map(Vec::as_slice).unwrap_or(&[])
     }
 
     /// Feeds one submission into the state machine.

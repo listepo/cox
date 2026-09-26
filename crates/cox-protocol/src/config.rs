@@ -276,6 +276,8 @@ pub struct JobsConfig {
     pub explore: Tier,
     /// `jobs.shell`
     pub shell: Tier,
+    /// `jobs.agent`
+    pub agent: Tier,
     /// `jobs.hook`
     pub hook: Tier,
 }
@@ -294,6 +296,7 @@ impl JobsConfig {
             J::Memory => self.memory,
             J::Explore => self.explore,
             J::Shell => self.shell,
+            J::Agent => self.agent,
             J::Hook => self.hook,
         }
     }
@@ -311,6 +314,7 @@ impl Default for JobsConfig {
             memory: Tier::Cheap,
             explore: Tier::Cheap,
             shell: Tier::Cheap,
+            agent: Tier::Cheap,
             hook: Tier::Cheap,
         }
     }

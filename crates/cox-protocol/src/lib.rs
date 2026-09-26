@@ -10,6 +10,7 @@
 //! process lives behind a trait in `cox-protocol`").
 //!
 //! - [`ids`] — ULID newtypes (`SessionId`, `TurnId`, `ItemId`, `CallId`, `ArchiveId`, `TaskId`).
+//! - [`agent`] — `AgentDef`, `tier_for`: a discovered subagent definition. Not reachable from `Submission`/`Event` (no wire schema), but crosses the `cox-ext` → `cox-core` boundary, so it lives here (T34.1).
 //! - [`types`] — `Submission`, `Event`, the provider-neutral `Request`/`Content`, `ToolSpec`, and everything reachable from them.
 //! - [`errors`] — the error taxonomy (plan.md §1.14): `ProviderError`, `ToolError`, `CoreError`, `StoreError`, `ExtError`, `McpError`.
 //! - [`traits`] — `Provider`, `Tool`, `ToolCx`, `Store`, `Hook`, `Archive`, `PluginStore`: the seams every other crate implements against.
@@ -18,6 +19,7 @@
 
 #![warn(missing_docs)]
 
+pub mod agent;
 pub mod config;
 pub mod errors;
 pub mod ids;

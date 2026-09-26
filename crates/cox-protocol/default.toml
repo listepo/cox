@@ -37,6 +37,7 @@ commit = "cheap"
 memory = "cheap"
 explore = "cheap"
 shell = "cheap"
+agent = "cheap"
 hook = "cheap"
 
 [providers.anthropic]

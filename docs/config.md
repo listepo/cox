@@ -42,6 +42,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `memory` = `"cheap"`
 - `explore` = `"cheap"`
 - `shell` = `"cheap"`
+- `agent` = `"cheap"`
 - `hook` = `"cheap"`
 ## `[providers.anthropic]`
 

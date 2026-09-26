@@ -96,6 +96,9 @@ pub enum Job {
     Explore,
     /// A background shell/HTTP subagent.
     Shell,
+    /// A custom subagent definition (`.cox/agents`/`.claude/agents`,
+    /// T34.1): its own `tier`/`model` decides the tier, not this job.
+    Agent,
     /// A hook-driven LLM call.
     Hook,
 }
