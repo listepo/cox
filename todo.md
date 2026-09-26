@@ -20,7 +20,6 @@
 - T33.19. MCP servers from plugins
 - T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
-- T33.22. Widget tree and its terminal rendering
 - T33.23. TUI status segments
 - T33.24. TUI panel and overlay
 - T33.25. Plugin commands and keys
@@ -67,7 +66,6 @@
 - T34.8. ACP rendering, and the dropped task-lifecycle events
 - T34.9. e2e: two subagents messaging through the parent
 - T34.10. Optional: per-subagent visibility gate
-- T35.1. Manifest capability types and schema drift
 - T35.2. Host spawner, sandbox and grant
 - T35.3. ACP client adapter
 - T35.4. stream-json adapter
