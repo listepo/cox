@@ -541,14 +541,25 @@ text = "done"
 
     /// T35.13 Check: cancelling a turn kills the CLI's whole process group —
     /// here a background `sleep` the fake agent started, which a kill of the
-    /// leader alone would orphan — and the turn ends at once.
+    /// leader alone would orphan — and the turn ends at once. The `sleep`
+    /// holds a FIFO's write end, so its end shows as EOF on the read end:
+    /// a pid would not do, since under Linux bwrap the agent sees only its
+    /// own pid namespace.
     #[tokio::test]
     async fn cancel_kills_the_external_agent_process() {
+        use std::io::Read as _;
+        use std::time::Duration;
+
         let ws = tempfile::tempdir().expect("ws");
-        let pidfile = ws.path().join("sleep.pid");
+        let fifo = ws.path().join("alive");
+        let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+        assert!(made.is_ok_and(|s| s.success()), "mkfifo");
         let script = format!(
-            "#!/bin/sh\nsleep 60 &\necho $! > '{}'\nwait\n",
-            pidfile.display()
+            "#!/bin/sh
+sleep 60 > '{}' &
+wait
+",
+            fifo.display()
         );
         let Some((agent, config)) = fake_cli(ws.path(), AgentMode::StreamJson, &script) else {
             return;
@@ -560,35 +571,34 @@ text = "done"
             let (driver, cancel) = (driver.clone(), cancel.clone());
             tokio::spawn(async move { driver.turn(TurnId::new(), "work".into(), tx, cancel).await })
         };
-        let pid = loop {
-            if let Some(pid) = std::fs::read_to_string(&pidfile)
-                .ok()
-                .and_then(|s| s.trim().parse::<i32>().ok())
-            {
-                break pid;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        };
-        let alive = |pid: i32| {
-            std::process::Command::new("kill")
-                .args(["-0", &pid.to_string()])
-                .status()
-                .is_ok_and(|s| s.success())
-        };
-        assert!(alive(pid), "the fake agent's child never started");
+        // A plain thread, not `spawn_blocking`: if the `sleep` never opens
+        // the FIFO this thread blocks for good, and must not hold the
+        // runtime's shutdown too.
+        let (opened, is_open) = tokio::sync::oneshot::channel();
+        let (closed, is_closed) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let Ok(mut reader) = std::fs::File::open(&fifo) else {
+                return;
+            };
+            let _ = opened.send(());
+            // EOF once no writer is left.
+            let _ = reader.read_to_end(&mut Vec::new());
+            let _ = closed.send(());
+        });
+        let started = tokio::time::timeout(Duration::from_secs(10), is_open).await;
+        assert!(
+            matches!(started, Ok(Ok(()))),
+            "the fake agent's child never started"
+        );
         cancel.cancel();
-        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), run).await;
+        let ended = tokio::time::timeout(Duration::from_secs(5), run).await;
         let ended = ended.expect("the turn ended on cancel").expect("join");
         assert!(matches!(ended, Ok(None)), "{ended:?}");
-        let mut gone = false;
-        for _ in 0..100 {
-            if !alive(pid) {
-                gone = true;
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-        assert!(gone, "the agent's background process outlived the cancel");
+        let gone = tokio::time::timeout(Duration::from_secs(2), is_closed).await;
+        assert!(
+            matches!(gone, Ok(Ok(()))),
+            "the agent's background process outlived the cancel"
+        );
     }
 
     #[test]
