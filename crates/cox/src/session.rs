@@ -2591,8 +2591,10 @@ mod tests {
     fn external_agent_command_is_wrapped_by_sandbox_before_spawn() {
         use cox_tools::sandbox::{Backend, backend};
 
-        let pkg = tempfile::tempdir().expect("tempdir");
         let ws = tempfile::tempdir().expect("tempdir");
+        // Inside the workspace: Linux bwrap gives the wrapped program a
+        // private `/tmp`, where a package in its own temp dir would not exist.
+        let pkg = tempfile::tempdir_in(ws.path()).expect("tempdir");
         let home = std::env::var("HOME").expect("HOME");
         let outside = format!("{home}/.cox-agent-escape-{}", std::process::id());
         let args = [ws.path().display().to_string(), outside.clone()];
@@ -2740,8 +2742,9 @@ mod tests {
                 return;
             }
         }
-        let pkg = tempfile::tempdir().expect("tempdir");
         let ws = tempfile::tempdir().expect("tempdir");
+        // Inside the workspace, as in the external-agent test above.
+        let pkg = tempfile::tempdir_in(ws.path()).expect("tempdir");
         std::fs::create_dir(pkg.path().join("bin")).expect("mkdir");
         let server = pkg.path().join("bin/server");
         std::fs::write(

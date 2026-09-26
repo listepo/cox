@@ -383,12 +383,15 @@ mod tests {
     /// A package whose `bin/agent` is `script`, resolved and wrapped by the
     /// session's real sandbox wrap; `None` where this host has no argv
     /// sandbox backend (the wrap refuses, T35.2's own test covers that).
+    /// The package sits inside the workspace: Linux bwrap gives the wrapped
+    /// CLI a private `/tmp`, where a package in its own temp dir would not
+    /// exist for it.
     fn fake_cli(
-        pkg: &Path,
         ws: &Path,
         mode: AgentMode,
         script: &str,
     ) -> Option<(ExternalAgentCommand, Config)> {
+        let pkg = &ws.join("pkg");
         std::fs::create_dir_all(pkg.join("bin")).expect("mkdir");
         std::fs::write(pkg.join("bin/agent"), script).expect("agent");
         let exec = std::fs::Permissions::from_mode(0o755);
@@ -447,13 +450,8 @@ text = "done"
     /// CLI's answer — with the key from `key_env` — is the task's result.
     #[tokio::test]
     async fn stream_json_driver_answers_a_child_task() {
-        let (pkg, ws) = (
-            tempfile::tempdir().expect("pkg"),
-            tempfile::tempdir().expect("ws"),
-        );
-        let Some((agent, config)) =
-            fake_cli(pkg.path(), ws.path(), AgentMode::StreamJson, STREAM_JSON)
-        else {
+        let ws = tempfile::tempdir().expect("ws");
+        let Some((agent, config)) = fake_cli(ws.path(), AgentMode::StreamJson, STREAM_JSON) else {
             return;
         };
         let driver = one_driver(agent, &config, ws.path());
@@ -546,17 +544,13 @@ text = "done"
     /// leader alone would orphan — and the turn ends at once.
     #[tokio::test]
     async fn cancel_kills_the_external_agent_process() {
-        let (pkg, ws) = (
-            tempfile::tempdir().expect("pkg"),
-            tempfile::tempdir().expect("ws"),
-        );
+        let ws = tempfile::tempdir().expect("ws");
         let pidfile = ws.path().join("sleep.pid");
         let script = format!(
             "#!/bin/sh\nsleep 60 &\necho $! > '{}'\nwait\n",
             pidfile.display()
         );
-        let Some((agent, config)) = fake_cli(pkg.path(), ws.path(), AgentMode::StreamJson, &script)
-        else {
+        let Some((agent, config)) = fake_cli(ws.path(), AgentMode::StreamJson, &script) else {
             return;
         };
         let driver = one_driver(agent, &config, ws.path());

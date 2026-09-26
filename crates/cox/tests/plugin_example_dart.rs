@@ -78,7 +78,10 @@ fn plugin_example_dart() {
         exe.display()
     );
 
-    let home = tempfile::tempdir().unwrap();
+    // `COX_HOME` (where the package is installed) lives outside `/tmp`:
+    // Linux bwrap gives the wrapped server a private `/tmp`, where the
+    // installed `build/example_dart` would not exist for it.
+    let home = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let cwd = tempfile::tempdir().unwrap();
     let (home, cwd) = (home.path(), cwd.path());
 

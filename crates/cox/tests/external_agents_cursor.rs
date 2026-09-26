@@ -64,7 +64,11 @@ impl Rig {
     /// user config's `[permissions] allow` rules.
     fn new(mode: &str, fixture_name: &str, args: &[&str], allow: &[&str]) -> Rig {
         let dir = || tempfile::tempdir().expect("tempdir");
-        let (home, work, bin, pkg) = (dir(), dir(), dir(), dir());
+        // The `PATH` dir lives outside `/tmp`: Linux bwrap gives the wrapped
+        // CLI a private `/tmp`, so an `agent` there would not exist for it.
+        // A real CLI is never installed under `/tmp`.
+        let bin = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).expect("tempdir");
+        let (home, work, pkg) = (dir(), dir(), dir());
         let rig = Rig { home, work, bin };
         let agent = rig.bin.path().join("agent");
         std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_fake_agent"), agent).expect("agent");
