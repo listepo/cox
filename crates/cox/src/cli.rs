@@ -398,6 +398,19 @@ pub enum PluginAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Disable, delete the plugin's own directory and grants, and delete
+    /// its kv unless `--keep-data` (PL§1c). A project plugin's files are
+    /// repository content and stay; only its grant and kv go.
+    Remove {
+        /// The plugin id, as its directory is named.
+        id: String,
+        /// Keep the plugin's stored kv rows.
+        #[arg(long)]
+        keep_data: bool,
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[cfg(test)]

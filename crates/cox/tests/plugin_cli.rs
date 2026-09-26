@@ -11,6 +11,9 @@
 //! T33.31 Check: `update --check` shows the diff, `update` needs a
 //! re-grant, `--rollback` restores the old digest without asking, and a
 //! headless `update` keeps `current` and warns.
+//! T33.32 Check: `remove` deletes the plugin's directory, every grant row
+//! and its kv, leaving a sibling plugin untouched; `--keep-data` keeps the
+//! kv; declining (no `--yes`, no terminal) deletes nothing.
 
 #![cfg(feature = "plugins")]
 
@@ -494,4 +497,217 @@ fn update_in_headless_keeps_current_and_warns() {
         "{out}"
     );
     assert_eq!(current_of(home.path(), "demo"), new);
+}
+
+/// Installs and grants `id` from a fresh source directory under `home`.
+fn installed_as(home: &Path, cwd: &Path, id: &str) {
+    let src = tempfile::tempdir().unwrap();
+    write_plugin(src.path(), id);
+    cox_plugin(
+        home,
+        cwd,
+        &["install", src.path().to_str().unwrap(), "--yes"],
+    )
+    .assert()
+    .success();
+}
+
+/// T33.32 Check: `remove` deletes the plugin's directory, every grant row
+/// and its kv (unless `--keep-data`), and leaves a sibling plugin's files,
+/// grant and kv untouched.
+#[test]
+fn plugin_remove_deletes_files_grants_kv_and_leaves_a_sibling_untouched() {
+    use cox_protocol::{GrantScope, PluginStore as _, Store as _};
+
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+
+    let sibling_src = tempfile::tempdir().unwrap();
+    write_plugin(sibling_src.path(), "sibling");
+    installed_as(home.path(), cwd.path(), "demo");
+    let before = list_json(home.path(), cwd.path());
+    let demo_digest = before["plugins"][0]["digest"]
+        .as_str()
+        .expect("demo's full digest")
+        .to_string();
+    cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["install", sibling_src.path().to_str().unwrap(), "--yes"],
+    )
+    .assert()
+    .success();
+
+    let store = cox_store::Store::open(home.path()).unwrap();
+    store.kv_put("demo", "k", b"demo-value").unwrap();
+    store.kv_put("sibling", "k", b"sibling-value").unwrap();
+    drop(store);
+
+    assert!(home.path().join("plugins/demo").exists());
+    assert!(home.path().join("plugins/sibling").exists());
+
+    let out = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["remove", "demo", "--yes"],
+    ));
+    assert!(out.contains("plugin demo removed"), "{out}");
+
+    assert!(
+        !home.path().join("plugins/demo").exists(),
+        "demo's directory is gone"
+    );
+    assert!(
+        home.path().join("plugins/sibling").exists(),
+        "sibling's directory stays"
+    );
+
+    let listed = list_json(home.path(), cwd.path());
+    let plugins = listed["plugins"].as_array().unwrap();
+    assert!(
+        plugins.iter().all(|p| p["id"] != "demo"),
+        "demo is no longer discovered: {listed}"
+    );
+    let sibling = plugins
+        .iter()
+        .find(|p| p["id"] == "sibling")
+        .unwrap_or_else(|| panic!("sibling missing from {listed}"));
+    assert_eq!(sibling["grant"], "granted", "{listed}");
+    assert_eq!(sibling["loaded"], true, "{listed}");
+
+    let store = cox_store::Store::open(home.path()).unwrap();
+    assert_eq!(
+        store.kv_get("demo", "k").unwrap(),
+        None,
+        "demo's kv is gone"
+    );
+    assert_eq!(
+        store.kv_get("sibling", "k").unwrap(),
+        Some(b"sibling-value".to_vec()),
+        "sibling's kv stays"
+    );
+    // Every grant row for `demo` is gone, at its own digest too — not just
+    // absent from `list`, which only checks the digest currently on disk.
+    assert_eq!(
+        store
+            .grant_get("demo", &GrantScope::User, &demo_digest)
+            .unwrap(),
+        None,
+        "demo's grant row is gone"
+    );
+}
+
+/// T33.32 Check: `--keep-data` keeps the kv even though the directory and
+/// grants are still deleted.
+#[test]
+fn plugin_remove_keep_data_keeps_kv() {
+    use cox_protocol::{PluginStore as _, Store as _};
+
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    installed_as(home.path(), cwd.path(), "demo");
+
+    let store = cox_store::Store::open(home.path()).unwrap();
+    store.kv_put("demo", "k", b"keep-me").unwrap();
+    drop(store);
+
+    cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["remove", "demo", "--keep-data", "--yes"],
+    )
+    .assert()
+    .success();
+
+    assert!(!home.path().join("plugins/demo").exists());
+    let store = cox_store::Store::open(home.path()).unwrap();
+    assert_eq!(
+        store.kv_get("demo", "k").unwrap(),
+        Some(b"keep-me".to_vec()),
+        "--keep-data keeps the kv"
+    );
+}
+
+/// PL§1c step 1: without `--yes`, `remove` asks through `confirm` (the
+/// same stdin prompt `install`/`enable` use). This test process's own
+/// stdin is not a terminal (`cargo nextest run` redirects it), so
+/// `read_line` hits EOF and `confirm` declines deterministically — the
+/// same idiom `install_then_enable_yes_then_list_shows_loaded_then_disable_shows_not_loaded`
+/// already relies on. Declining must delete nothing.
+#[test]
+fn plugin_remove_without_yes_and_no_terminal_deletes_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    installed_as(home.path(), cwd.path(), "demo");
+
+    let out = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["remove", "demo"],
+    ));
+    assert!(out.contains("plugin demo not removed"), "{out}");
+    assert!(
+        home.path().join("plugins/demo").exists(),
+        "declining must not delete anything"
+    );
+}
+
+/// An id nothing discovers (never installed, either location) is a no-op,
+/// not an error.
+#[test]
+fn plugin_remove_of_unknown_id_is_a_no_op() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+
+    let out = stdout_ok(&mut cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["remove", "ghost", "--yes"],
+    ));
+    assert!(out.contains("plugin ghost not found"), "{out}");
+}
+
+/// PL§1c: a project plugin's files are repository content and stay; only
+/// its grant and kv go.
+#[test]
+fn plugin_remove_of_a_project_plugin_keeps_its_files() {
+    use cox_protocol::{PluginStore as _, Store as _};
+
+    let home = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    write_plugin(&repo.path().join(".cox/plugins/proj"), "proj");
+    cox_plugin(
+        home.path(),
+        repo.path(),
+        &["enable", "proj", "--project", "--yes"],
+    )
+    .assert()
+    .success();
+    let store = cox_store::Store::open(home.path()).unwrap();
+    store.kv_put("proj", "k", b"v").unwrap();
+    drop(store);
+
+    let out = stdout_ok(&mut cox_plugin(
+        home.path(),
+        repo.path(),
+        &["remove", "proj", "--yes"],
+    ));
+    assert!(out.contains("its files"), "{out}");
+    assert!(
+        repo.path().join(".cox/plugins/proj/plugin.toml").exists(),
+        "a project plugin's files are repository content, not remove's to delete"
+    );
+
+    let store = cox_store::Store::open(home.path()).unwrap();
+    assert_eq!(
+        store.kv_get("proj", "k").unwrap(),
+        None,
+        "the project plugin's kv is still deleted"
+    );
+    let listed = list_json(home.path(), repo.path());
+    assert_eq!(
+        listed["plugins"][0]["grant"], "needs_approval",
+        "the grant is gone, so it is discovered but ungranted again: {listed}"
+    );
 }

@@ -1,9 +1,10 @@
 //! The on-disk layout of a user plugin (PL§1, §1b) and the only code that
-//! changes it: staging a package into `versions/<digest12>/`, and moving
-//! the `current`/`previous` pointers. `cox plugin install`, `update` and
-//! `update --rollback` all go through here, so there is one staging path and
-//! one swap. Separate from `discover`, which only reads this layout, and
-//! free of prompts and printing, which stay with the CLI in `crates/cox`.
+//! changes it: staging a package into `versions/<digest12>/`, moving the
+//! `current`/`previous` pointers, and deleting the whole `<id>` directory.
+//! `cox plugin install`, `update`, `update --rollback` and `remove` all go
+//! through here, so there is one staging path, one swap and one delete.
+//! Separate from `discover`, which only reads this layout, and free of
+//! prompts and printing, which stay with the CLI in `crates/cox`.
 //!
 //! ```text
 //! <cox_home>/plugins/<id>/
@@ -66,6 +67,36 @@ pub fn stage(src: &Path, plugin_dir: &Path, digest: &str) -> io::Result<PathBuf>
     fs::rename(&tmp, &dest)?;
     sync_dir(&versions);
     Ok(dest)
+}
+
+/// Deletes a user plugin's whole directory (PL§1c step 3, T33.32).
+/// Canonicalizes the target first and refuses to touch it unless it
+/// resolves to somewhere inside `<cox_home>/plugins/` — guards against the
+/// `<id>` directory itself having become a symlink that points outside
+/// that root. Once past that check, `remove_dir_all` walks the tree on its
+/// own account: it does not follow a symlink it finds inside, it only
+/// unlinks it (the same guarantee `prune` above already relies on), so an
+/// inner symlink loses only itself, never its target. A directory that is
+/// already gone is not an error, so `remove` is safe to retry.
+pub fn remove(cox_home: &Path, id: &str) -> io::Result<()> {
+    let dir = plugin_dir(cox_home, id);
+    if !dir.exists() {
+        return Ok(());
+    }
+    let plugins_root = fs::canonicalize(cox_home.join("plugins"))?;
+    let resolved = fs::canonicalize(&dir)?;
+    if !resolved.starts_with(&plugins_root) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "refusing to remove {}: resolves to {}, outside {}",
+                dir.display(),
+                resolved.display(),
+                plugins_root.display()
+            ),
+        ));
+    }
+    fs::remove_dir_all(&resolved)
 }
 
 /// Reads a pointer file (`CURRENT` or `PREVIOUS`); `None` when it is
@@ -236,5 +267,53 @@ mod tests {
             Some(digests[2].as_str())
         );
         assert!(plugin.join("versions").join(&digests[2]).is_dir());
+    }
+
+    #[test]
+    fn remove_deletes_the_plugin_directory() {
+        let home = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let digest = package(src.path(), "one");
+        let plugin = plugin_dir(home.path(), "demo");
+        stage(src.path(), &plugin, &digest).unwrap();
+        activate(&plugin, short(&digest)).unwrap();
+        assert!(plugin.exists());
+
+        remove(home.path(), "demo").unwrap();
+
+        assert!(!plugin.exists());
+    }
+
+    #[test]
+    fn remove_of_a_missing_plugin_is_a_no_op() {
+        let home = tempfile::tempdir().unwrap();
+        assert!(remove(home.path(), "ghost").is_ok());
+    }
+
+    /// A tampered `<id>` directory that has become a symlink pointing
+    /// outside `<cox_home>/plugins/` must never be followed: `remove`
+    /// refuses it and the escaped target is untouched.
+    #[test]
+    #[cfg(unix)]
+    fn remove_refuses_path_outside_plugins_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("canary"), b"keep").unwrap();
+        // Canonicalize before comparing: on macOS the tempdir base itself
+        // sits behind a symlink (`/tmp` -> `/private/tmp`).
+        let outside_root = fs::canonicalize(outside.path()).unwrap();
+        fs::create_dir_all(home.path().join("plugins")).unwrap();
+        std::os::unix::fs::symlink(&outside_root, home.path().join("plugins/evil")).unwrap();
+
+        let result = remove(home.path(), "evil");
+
+        assert!(
+            result.is_err(),
+            "must refuse a plugin dir that resolves outside plugins/"
+        );
+        assert!(
+            outside_root.join("canary").exists(),
+            "must not touch the escaped target"
+        );
     }
 }

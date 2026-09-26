@@ -108,6 +108,9 @@ fn main() -> anyhow::Result<()> {
                 rollback,
                 yes,
             }) => plugin_cmd::update(&cli, ids, *all, *check, *rollback, *yes),
+            Some(crate::cli::PluginAction::Remove { id, keep_data, yes }) => {
+                plugin_cmd::remove(&cli, &cwd, id, *keep_data, *yes)
+            }
         },
         Some(Command::Run(args)) => {
             let code = run::run(&cli, args, &cwd)?;

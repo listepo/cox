@@ -1,16 +1,19 @@
-//! `cox plugin` (plan.md T33.4, T33.7, T33.31): `list`, `install`,
-//! `enable`, `disable`, `update`. `list` reports discovery results only — id, source, version,
+//! `cox plugin` (plan.md T33.4, T33.7, T33.31, T33.32): `list`, `install`,
+//! `enable`, `disable`, `update`, `remove`. `list` reports discovery results only — id, source, version,
 //! digest and the manifest's *declared* capabilities, plus the real grant
 //! state from `grant::check` (T33.7; T33.6 landed the check itself in
 //! `session.rs`'s session-open path) — and never compiles or runs a
 //! plugin's module (PL§1 line 47/445: a project plugin is untrusted
 //! repository content and must not load before the user grants it).
-//! `install`/`enable`/`disable`/`update` are the only writers of
+//! `install`/`enable`/`disable`/`update`/`remove` are the only writers of
 //! `plugin_grants` outside a session open. The files on disk change only
 //! through `cox_plugin::install`; this module keeps the prompts and output. Every manifest string this module prints
 //! (`name`, `description`, a capability line) goes through
 //! `cox_sanitize::sanitize`, since a plugin's `plugin.toml` is untrusted
 //! input the same way a tool result is (AGENTS "Trust boundaries").
+//! `remove` (PL§1c) never needs the manifest to parse: a plugin whose
+//! `plugin.toml` is corrupt must still be removable, so it is found by
+//! whether its directory exists, not through `discover`.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -21,12 +24,12 @@ use cox_plugin::discover::{self, Source, State};
 use cox_plugin::grant::{self, Verdict};
 use cox_plugin::install;
 use cox_plugin_api::{Capabilities, PluginManifest};
-use cox_protocol::{GrantScope, PluginGrant, PluginStore as _, Store as _};
+use cox_protocol::{Config, GrantScope, PluginGrant, PluginStore as _, Store as _};
 use cox_sanitize::sanitize;
 use cox_store::Store;
 
 use crate::cli::Cli;
-use crate::config_load::{cox_home, find_git_root};
+use crate::config_load::{self, cox_home, find_git_root};
 
 /// `cox plugin list [--json]`.
 pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
@@ -228,6 +231,131 @@ pub fn update(
         anyhow::bail!("not every plugin was updated");
     }
     Ok(())
+}
+
+/// `cox plugin remove <id> [--keep-data] [--yes]` (PL§1c, T33.32). Found by
+/// whether `<home>/plugins/<id>` or `<git root>/.cox/plugins/<id>` exists,
+/// not through `discover`: a plugin whose `plugin.toml` no longer parses
+/// must still be removable. Steps 2 and 4 of PL§1c collapse into one:
+/// `grants_delete` removes every grant row for the id up front, which
+/// already makes `grant::check` answer `NeedsApproval` for any digest, so
+/// a concurrent session's next open cannot load it — the same effect
+/// `disable` would have had, without needing to know which exact digest is
+/// current. A project plugin's files are repository content (PL§1c): only
+/// its grant and kv go, and the path is printed for the user to delete
+/// with git.
+pub fn remove(cli: &Cli, cwd: &Path, id: &str, keep_data: bool, yes: bool) -> anyhow::Result<()> {
+    let home = cli.home.clone().unwrap_or_else(cox_home);
+    let user_dir = install::plugin_dir(&home, id);
+    let git_root = find_git_root(cwd);
+    let project_dir = git_root
+        .as_deref()
+        .map(|root| root.join(".cox/plugins").join(id));
+    let user_exists = user_dir.exists();
+    let project_exists = project_dir.as_deref().is_some_and(Path::exists);
+    if !user_exists && !project_exists {
+        println!("plugin {id} not found");
+        return Ok(());
+    }
+    if !yes && !confirm(&format!("remove plugin {id}?")) {
+        println!("plugin {id} not removed");
+        return Ok(());
+    }
+
+    let store = Store::open(&home)?;
+    store.grants_delete(id)?;
+
+    if user_exists {
+        install::remove(&home, id)?;
+    }
+    if let Some(project_dir) = &project_dir
+        && project_exists
+    {
+        println!(
+            "plugin {id} is a project plugin; its files at {} stay — remove them with git if you want them gone",
+            project_dir.display()
+        );
+    }
+
+    if keep_data {
+        println!("plugin {id}: kept its stored data (--keep-data)");
+    } else {
+        store.kv_delete_all(id)?;
+    }
+
+    println!("plugin {id} removed");
+
+    if let Ok(loaded) = config_load::load(cwd, cli) {
+        for r in config_refs(&loaded.config, id) {
+            println!("note: config still references {id}: {r}");
+        }
+        for r in keybinding_refs(&home, id) {
+            println!("note: keybindings.toml still references {id}: {r}");
+        }
+    }
+    Ok(())
+}
+
+/// PL§1c step 6: what in the effective config still names `id` after
+/// removal — never edited, only reported. Checked against the merged
+/// `Config` rather than grepping the raw TOML text, so a reference through
+/// a layered project or env override is still caught.
+fn config_refs(config: &Config, id: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    if config.plugins.entries.contains_key(id) {
+        refs.push(format!("[plugins.{id}]"));
+    }
+    if let Some(decide) = config
+        .plugins
+        .entries
+        .get("decide")
+        .and_then(|v| v.as_object())
+    {
+        for (point, plugin) in decide {
+            if plugin.as_str() == Some(id) {
+                refs.push(format!("[plugins.decide] {point} = \"{id}\""));
+            }
+        }
+    }
+    let prefix = format!("{id}-");
+    let mut provider_names: Vec<&str> = Vec::new();
+    for name in config.providers.custom.keys() {
+        if name == id || name.starts_with(prefix.as_str()) {
+            refs.push(format!("[providers.{name}]"));
+            provider_names.push(name.as_str());
+        }
+    }
+    for (tier_name, tier) in [
+        ("cheap", &config.tiers.cheap),
+        ("code", &config.tiers.code),
+        ("think", &config.tiers.think),
+    ] {
+        if provider_names.contains(&tier.provider.as_str()) {
+            refs.push(format!(
+                "tiers.{tier_name}.provider = \"{}\"",
+                tier.provider
+            ));
+        }
+    }
+    for name in config.mcp.servers.keys() {
+        if name == id || name.starts_with(prefix.as_str()) {
+            refs.push(format!("[mcp.servers.{name}]"));
+        }
+    }
+    refs
+}
+
+/// PL§1c step 6's `keybindings.toml` rows for `plugin.<id>.*`: a plain
+/// text scan, since `keybindings.toml` is a separate file `cox-config`
+/// does not merge into `Config` (T25.5, `crate::config_load::keymap`).
+fn keybinding_refs(home: &Path, id: &str) -> Vec<String> {
+    let text = fs::read_to_string(home.join("keybindings.toml")).unwrap_or_default();
+    let prefix = format!("plugin.{id}.");
+    text.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with(prefix.as_str()))
+        .map(str::to_string)
+        .collect()
 }
 
 /// PL§1b steps 1–8 for one plugin: re-read the source the current grant
@@ -628,5 +756,83 @@ mod tests {
             }),
             ("needs approval (kv)".to_string(), "not loaded")
         );
+    }
+
+    #[test]
+    fn config_refs_reports_plugins_table_and_decide_entry_and_edits_nothing() {
+        let mut config = Config::default();
+        config
+            .plugins
+            .entries
+            .insert("git-glance".to_string(), serde_json::json!({"foo": 1}));
+        config.plugins.entries.insert(
+            "decide".to_string(),
+            serde_json::json!({"route": "git-glance"}),
+        );
+
+        let refs = config_refs(&config, "git-glance");
+
+        assert!(
+            refs.contains(&"[plugins.git-glance]".to_string()),
+            "{refs:?}"
+        );
+        assert!(
+            refs.iter()
+                .any(|r| r.contains("decide") && r.contains("route")),
+            "{refs:?}"
+        );
+        // Unrelated ids never show up.
+        assert!(config_refs(&config, "other-id").is_empty());
+    }
+
+    #[test]
+    fn config_refs_reports_a_provider_section_and_the_tier_naming_it() {
+        let mut config = Config::default();
+        config.providers.custom.insert(
+            "git-glance-relay".to_string(),
+            cox_protocol::config::CompatibleProviderConfig::default(),
+        );
+        config.tiers.code.provider = "git-glance-relay".to_string();
+
+        let refs = config_refs(&config, "git-glance");
+
+        assert!(
+            refs.contains(&"[providers.git-glance-relay]".to_string()),
+            "{refs:?}"
+        );
+        assert!(
+            refs.contains(&"tiers.code.provider = \"git-glance-relay\"".to_string()),
+            "{refs:?}"
+        );
+    }
+
+    #[test]
+    fn config_refs_reports_an_mcp_server_named_after_the_plugin() {
+        let mut config = Config::default();
+        config
+            .mcp
+            .servers
+            .insert("git-glance-relay".to_string(), Default::default());
+
+        let refs = config_refs(&config, "git-glance");
+
+        assert!(
+            refs.contains(&"[mcp.servers.git-glance-relay]".to_string()),
+            "{refs:?}"
+        );
+    }
+
+    #[test]
+    fn keybinding_refs_reports_rows_for_the_plugin_only() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(
+            home.path().join("keybindings.toml"),
+            "plugin.git-glance.status = \"ctrl-g\"\nplugin.other.status = \"ctrl-o\"\n",
+        )
+        .unwrap();
+
+        let refs = keybinding_refs(home.path(), "git-glance");
+
+        assert_eq!(refs, vec!["plugin.git-glance.status = \"ctrl-g\""]);
     }
 }
