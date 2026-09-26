@@ -13,7 +13,6 @@
 - T33.28. Rust reference example and e2e
 - T33.29. `cox plugin new` and the Rust template
 - T33.30. `/plugin new` in the TUI
-- T33.32. `cox plugin remove`
 - T33.33. `/plugin update | remove | list | reload` in the TUI
 - T33.34. Go: SDK wrapper, template, example
 - T33.35. Kotlin: feasibility spike
@@ -40,7 +39,6 @@
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T33.44. The session keeps one live instance per granted plugin
-- T35.2. Host spawner, sandbox and grant
 - T35.6. The Cursor plugin package
 - T35.7. e2e: a fake `agent` binary replaying recorded fixtures
 - T35.8. `cox doctor` reporting

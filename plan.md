@@ -19,7 +19,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.28 | todo | P2 | 4 | 0% | |
 | T33.29 | todo | P2 | 3 | 0% | |
 | T33.30 | todo | P2 | 2 | 0% | |
-| T33.32 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.33 | todo | P2 | 3 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
 | T33.35 | todo | P3 | 2 | 0% | |
@@ -46,7 +45,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.41 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T33.44 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T35.2 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T35.6 | todo | P2 | 2 | 0% | |
 | T35.7 | todo | P2 | 4 | 0% | |
 | T35.8 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
@@ -845,12 +843,6 @@ Depends: T33.29 · Size: ~120 · Files: `crates/cox-tui/src/commands.rs`, `crate
 Goal: the palette's `/plugin new <name>` asks for the language with `Modal::Picker` when it is not given, then sends a `Cmd` to the same `plugin_new` function. There is no second implementation.
 Check: insta snapshot of the picker; `tui_plugin_new_calls_shared_scaffold` (a fake executor records one call with the chosen language).
 
-#### T33.32 `cox plugin remove`
-
-Depends: T33.31 · Size: ~150 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/install.rs`
-Goal: PL§1c: confirm (`--yes` skips), disable, delete the plugin's own directory (resolved and checked to be under `~/.cox/plugins/`, no symlinks followed out), delete every grant row, and delete kv unless `--keep-data`. Report config references and edit none of them. A project plugin keeps its files.
-Check: e2e: remove → files, grants, kv and contributions are gone and a sibling plugin is untouched; `--keep-data` keeps kv; `remove_refuses_path_outside_plugins_dir` (a symlinked version dir).
-
 #### T33.33 `/plugin update | remove | list | reload` in the TUI
 
 Depends: T33.30, T33.32 · Size: ~140 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
@@ -1211,12 +1203,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
-
-#### T35.2 Host spawner, sandbox and grant — blocker
-
-Depends: T35.1, T33.6, T33.19, T33.42 · Size: ~190 · Files: `crates/cox-plugin/src/external_agent.rs` (new), `crates/cox/src/session.rs`
-Goal: resolve a granted `[[external_agents]]` entry to a `std::process::Command` (in-package path or PATH program), the same resolution shape T33.19 gives `[[mcp]]`; `crates/cox` wraps it with `sandbox::Policy` before spawning, exactly as it already does for a plugin's MCP stdio server (PL§7c) — no second sandbox path. The capability is one more line the grant dialog lists in words (PL§2's "the capability list is the unit of approval"); `grant::check` needs no change, since it already treats the manifest's capability set generically.
-Check: `external_agent_command_is_wrapped_by_sandbox_before_spawn`, `path_program_is_shown_verbatim_at_approval`, `ungranted_external_agent_is_not_spawned` (matches `headless_never_loads_ungranted_plugin`, T33.6).
 
 #### T35.6 The Cursor plugin package
 

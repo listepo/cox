@@ -1948,3 +1948,44 @@ Check:
 - Also added: `plugin_segment_text_is_sanitized_and_capped`, plus `render_answer_carries_the_widget` and `slow_render_is_missed_at_its_deadline` (WAT fixture).
 - In the worktree: nextest 1117 passed, 3 skipped; fmt and both clippy runs clean.
 - On main after landing: nextest 1116 passed, 3 skipped, 1 load failure (`bash_cancel_stops_the_command`) passed three reruns on its own; fmt, clippy and the slim build clean.
+
+#### T35.2 Host spawner, sandbox and grant — blocker
+
+Depends: T35.1, T33.6, T33.19, T33.42 · Size: ~190 · Files: `crates/cox-plugin/src/external_agent.rs` (new), `crates/cox/src/session.rs`
+Goal: resolve a granted `[[external_agents]]` entry to a `std::process::Command` (in-package path or PATH program), the same resolution shape T33.19 gives `[[mcp]]`; `crates/cox` wraps it with `sandbox::Policy` before spawning, exactly as it already does for a plugin's MCP stdio server (PL§7c) — no second sandbox path. The capability is one more line the grant dialog lists in words (PL§2's "the capability list is the unit of approval"); `grant::check` needs no change, since it already treats the manifest's capability set generically.
+Check: `external_agent_command_is_wrapped_by_sandbox_before_spawn`, `path_program_is_shown_verbatim_at_approval`, `ungranted_external_agent_is_not_spawned` (matches `headless_never_loads_ungranted_plugin`, T33.6).
+Status: done 2026-09-26
+Result: a granted plugin's `[[external_agents]]` entry resolves to a sandbox-wrapped command.
+- `cox_plugin::external_agent::package_program(dir, command)` is T33.19's `plugin_program`, moved so there is one copy. It accepts a PATH program as written or a regular file inside the package, and refuses symlinks, `..` and absolute paths. `plugin_mcp` calls it.
+- `ExternalAgentCommand::resolve(plugin, dir, decl, wrap)` is the only constructor, so an unwrapped command cannot be built. A failed or empty wrap refuses the entry (`ExternalAgentError::Sandbox`).
+  - Accessors: `plugin()`, `name()`, `mode()`, `key_env()`, `argv()`.
+  - `command()` returns a fresh, already-wrapped `std::process::Command`. The caller sets env, stdio and cwd, and supplies the key from `key_env`.
+- `load_plugins` keeps its single walk and fills `Plugins.external_agents` through `plugin_agents`, which wraps with `sandboxed_argv`. When the wrap is impossible the entry is skipped with a notice (wrap-or-refuse). Ungranted plugins resolve nothing.
+- The approval line keeps T35.1's format, `agent:<name> <command args> key=<key_env>`. It shows a PATH program verbatim, and the CLI prompt and TUI dialog both list it.
+Deviations: no per-entry `sandbox = false` opt-out for external agents; EA§2 and T35.8 mention one, and it would need its own card. `Plugins.external_agents` carries `#[allow(dead_code)]` until T35.13 reads it.
+Check:
+- `external_agent_command_is_wrapped_by_sandbox_before_spawn` (the agent really runs under Seatbelt: a write in the workspace lands, one under `$HOME` is denied), `path_program_is_shown_verbatim_at_approval` and `ungranted_external_agent_is_not_spawned` pass. `headless_never_loads_ungranted_plugin` and `plugin_stdio_server_runs_under_sandbox` still pass.
+- In the worktree: nextest 1116 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing (with T35.2, T33.32): nextest 1135 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.32 `cox plugin remove`
+
+Depends: T33.31 · Size: ~150 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/install.rs`
+Goal: PL§1c: confirm (`--yes` skips), disable, delete the plugin's own directory (resolved and checked to be under `~/.cox/plugins/`, no symlinks followed out), delete every grant row, and delete kv unless `--keep-data`. Report config references and edit none of them. A project plugin keeps its files.
+Check: e2e: remove → files, grants, kv and contributions are gone and a sibling plugin is untouched; `--keep-data` keeps kv; `remove_refuses_path_outside_plugins_dir` (a symlinked version dir).
+Status: done 2026-09-26
+Result: `cox plugin remove <id> [--keep-data] [--yes]` (PL§1c).
+- `cox_plugin::install::remove(cox_home, id)` canonicalizes `<home>/plugins/<id>` and refuses, deleting nothing, if the result is not under `<home>/plugins/`. Otherwise it runs `remove_dir_all`, which never follows an inner symlink. A missing directory is a no-op.
+- `plugin_cmd::remove` finds the plugin by directory (user or `<git root>/.cox/plugins/<id>`), so a plugin with a broken manifest can still be removed. The steps:
+  1. Confirm through `confirm()` unless `--yes`. Headless without `--yes` deletes nothing.
+  2. `grants_delete(id)` for every scope and digest.
+  3. Delete a user plugin's files. A project plugin keeps its files and the path is printed.
+  4. `kv_delete_all(id)` unless `--keep-data`.
+  5. List config references and edit none: `[plugins.<id>]`, `[plugins.decide]` entries, `[providers.<id>-*]` and any `tiers.*.provider` that names one, `[mcp.servers.<id>-*]`, and `keybindings.toml` `plugin.<id>.*`.
+Deviations: PL§1c's "disable" and "delete every grant row" collapse into one `grants_delete` up front. That leaves every digest ungranted without needing a readable current digest. The store already had `grants_delete` and `kv_delete_all`. No `--project` flag.
+Not done: the TUI `/plugin remove` and stopping a running instance's tools are T33.33.
+Check:
+- The e2e tests pass: remove clears files, grants and kv and leaves a sibling plugin untouched; `--keep-data` keeps kv; a decline deletes nothing; an unknown id is a no-op; a project plugin keeps its files.
+- `remove_refuses_path_outside_plugins_dir` (a symlinked `<id>` directory, canary survives), two more `install.rs` tests and six `config_refs`/`keybinding_refs` tests pass.
+- In the worktree: nextest 1122 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing (with T35.2, T33.32): nextest 1135 passed, 3 skipped; fmt, clippy and the slim build clean.
