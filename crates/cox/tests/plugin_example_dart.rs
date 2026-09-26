@@ -5,20 +5,13 @@
 //! test through `--run-ignored only`; the `plugin-examples` CI job does
 //! both, and a missing toolchain there fails the job.
 //!
-//! KNOWN GAP (see the T33.38 report): `crates/cox/src/session.rs`'s
-//! `load_plugins` always reads `manifest.wasm` and only registers a
-//! plugin's `[[mcp]]` servers once that read succeeds; `wasm` is a
-//! required, non-optional field on `cox_plugin_api::PluginManifest` with
-//! no wasm-less path today. The Dart example ships no `plugin.wasm` by
-//! design (Dart cannot emit one extism can load, research.md §4.3.5 P44),
-//! so as of this commit `cox plugin install`/`enable` stage and grant it,
-//! but the session never starts `bin/server.dart`: `cox run` itself exits
-//! non-zero with `"stop":{"type":"error"}` once the scripted turn tries the
-//! `count` tool (confirmed locally with Dart 3.13.4 installed and the
-//! example built — see the T33.38 report), so this test fails before it
-//! even reaches the tool-result assertions below. Not because Dart or the
-//! example are broken, but because the host has no wasm-less load path yet.
-//! A follow-up card must add one before this test can pass for real.
+//! The example ships no `plugin.wasm` by design (Dart cannot emit one
+//! extism can load, research.md §4.3.5 P44); its `plugin.toml` has no
+//! `wasm` line at all, which `PluginManifest::validate` (PL§13/§14) and
+//! `crates/cox/src/session.rs`'s `load_plugins` both accept because its
+//! one capability is `[[mcp]]` — `load_plugins` never tries to read a wasm
+//! this package does not have, and registers the `count` server exactly
+//! like a wasm plugin's.
 
 #![cfg(feature = "plugins")]
 
@@ -88,6 +81,18 @@ fn plugin_example_dart() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
     let (home, cwd) = (home.path(), cwd.path());
+
+    // Headless has no approver (`run.rs`'s "no approver in headless mode"),
+    // so the `count` tool needs an explicit allow rule the way
+    // `external_agents_cursor.rs`'s `Rig` grants its plugin's tool calls —
+    // `mcp__<id>-<name>__*`, the exact name `cox_mcp` registers this
+    // server's tools under (`crates/cox-permission/src/rules.rs`'s
+    // `<prefix>*` rule syntax).
+    std::fs::write(
+        home.join("config.toml"),
+        "[permissions]\nallow = [\"mcp__example-dart-count__*\"]\n",
+    )
+    .unwrap();
 
     stdout(cox(home, cwd).args(["plugin", "install", dir.to_str().unwrap(), "--yes"]));
     stdout(cox(home, cwd).args(["plugin", "enable", "example-dart", "--yes"]));

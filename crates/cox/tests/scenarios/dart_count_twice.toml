@@ -9,3 +9,6 @@ tool_calls = [
     { name = "mcp__example-dart-count__count", input = {} },
     { name = "mcp__example-dart-count__count", input = {} },
 ]
+
+[[turn]]
+text = "done"

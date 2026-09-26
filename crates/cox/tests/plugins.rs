@@ -127,7 +127,7 @@ fn example_plugin_counts_turns_in_its_status_and_resets_them() {
     let dir = Path::new(EXAMPLE_DIR);
     let (manifest, _) =
         cox_plugin::discover::load_manifest(dir, &dir.join("plugin.toml"), None).unwrap();
-    let wasm = std::fs::read(dir.join(&manifest.wasm)).unwrap();
+    let wasm = std::fs::read(dir.join(manifest.wasm.as_deref().unwrap())).unwrap();
     let store: Arc<dyn PluginStore> = Arc::new(cox_store::Store::open(home.path()).unwrap());
     let mut live = LivePlugins::default();
     live.load(&manifest, &wasm, store).unwrap();

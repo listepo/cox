@@ -28,8 +28,11 @@
       "default": ""
     },
     "wasm": {
-      "description": "The module to load, relative to the package directory.",
-      "type": "string"
+      "description": "The module to load, relative to the package directory. Absent only\nwhen the package's sole capability is an `[[mcp]]` stdio/HTTP server\n(PL§13/§14, T33.38): `validate` then requires `capabilities` to be\nits default and `provider`/`models`/`external_agents` to be empty,\nsince every other capability class needs a wasm export to back it.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "wasi": {
       "description": "True for wasip1 guests; no preopens unless `capabilities.fs` grants them.",
@@ -109,8 +112,7 @@
     "api",
     "id",
     "version",
-    "name",
-    "wasm"
+    "name"
   ],
   "$defs": {
     "Limits": {

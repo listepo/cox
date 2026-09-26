@@ -778,7 +778,7 @@ pub(crate) mod tests {
             version: "0.1.0".into(),
             name: "Jev".into(),
             description: String::new(),
-            wasm: "plugin.wasm".into(),
+            wasm: Some("plugin.wasm".into()),
             wasi: false,
             limits: Limits::default(),
             capabilities: Capabilities {

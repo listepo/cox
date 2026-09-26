@@ -396,14 +396,22 @@ pub(crate) fn load_plugins(
             Verdict::Granted => {
                 // T33.44: compiled once under its real grant and kept;
                 // `start_plugins` runs `cox_init`. A failure is a visible
-                // warning, never fatal (D14).
-                let loaded = std::fs::read(p.dir.join(&manifest.wasm))
-                    .map_err(|e| e.to_string())
-                    .and_then(|wasm| {
-                        out.live
-                            .load(manifest, &wasm, store.clone())
-                            .map_err(|e| e.to_string())
-                    });
+                // warning, never fatal (D14). No `wasm` (PL§13/§14,
+                // T33.38): `validate()` already refused anything but an
+                // `[[mcp]]`-only package here, so there is no extism
+                // instance to compile — its `[[mcp]]` servers below are
+                // registered exactly like a wasm plugin's, same sandbox
+                // spawn and same grant check, just with nothing in `live`.
+                let loaded = match &manifest.wasm {
+                    Some(wasm_path) => std::fs::read(p.dir.join(wasm_path))
+                        .map_err(|e| e.to_string())
+                        .and_then(|wasm| {
+                            out.live
+                                .load(manifest, &wasm, store.clone())
+                                .map_err(|e| e.to_string())
+                        }),
+                    None => Ok(()),
+                };
                 if loaded.is_ok() && !manifest.provider.is_empty() {
                     plugin_providers.push(cox_plugin::provider::PluginProviders {
                         plugin: id.as_str(),
@@ -2768,6 +2776,77 @@ mod tests {
         let _ = std::fs::remove_file(&outside);
         assert!(ws.path().join("inside").exists(), "the server never ran");
         assert!(!leaked, "the sandbox let a plugin server write {outside}");
+    }
+
+    /// T33.38 Check (PL§13/§14): a wasm-less `[[mcp]]`-only package —
+    /// staged, discovered and granted exactly as `install_granted` does for
+    /// a wasm plugin, just with no `plugin.wasm` — installs, is granted,
+    /// and its `[[mcp]]` server comes back from `load_plugins` and gets
+    /// named `count-count` by `cox_mcp::discovery::add_plugin`, the same
+    /// `<id>-<name>` a wasm plugin's server gets. `load_plugins` must not
+    /// try to `fs::read` a `wasm` this manifest does not have.
+    #[cfg(all(feature = "plugins", unix))]
+    #[test]
+    fn wasm_less_mcp_only_plugin_installs_grants_and_registers_its_server() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let home = tempfile::tempdir().expect("tempdir");
+        let staged = home.path().join("plugins/count/versions/staged");
+        std::fs::create_dir_all(staged.join("bin")).expect("plugin dir");
+        let server = staged.join("bin/server");
+        std::fs::write(&server, "#!/bin/sh\nexit 0\n").expect("server");
+        std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        std::fs::write(
+            staged.join("plugin.toml"),
+            "api = 1\nid = \"count\"\nversion = \"0.1.0\"\nname = \"count\"\n\n\
+             [[mcp]]\nname = \"count\"\ncommand = \"bin/server\"\n",
+        )
+        .expect("plugin.toml");
+        let digest = cox_plugin::package_digest(&staged).expect("digest");
+        std::fs::rename(&staged, staged.with_file_name(&digest[..12])).expect("stage");
+        std::fs::write(home.path().join("plugins/count/current"), &digest[..12]).expect("current");
+
+        let found = cox_plugin::discover::discover(home.path(), None);
+        let plugin = found
+            .plugins
+            .iter()
+            .find(|p| p.id == "count")
+            .expect("discovered");
+        let cox_plugin::State::Loaded { manifest, digest } = &plugin.state else {
+            panic!("count did not load: {:?}", found.notices);
+        };
+        assert_eq!(manifest.wasm, None, "the fixture ships no plugin.wasm");
+        let grant_store = Store::open(home.path()).expect("store");
+        crate::plugin_cmd::write_grant(
+            &grant_store,
+            "count",
+            &GrantScope::User,
+            digest,
+            cox_plugin::grant::capability_list(manifest),
+            serde_json::json!({}),
+        )
+        .expect("grant");
+
+        let config = Config::default();
+        let work = tempfile::tempdir().expect("tempdir");
+        let roots = vec![work.path().to_path_buf()];
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let out = load_plugins(&config, home.path(), work.path(), store, Some(&roots));
+        assert!(
+            out.notices.iter().all(|n| !n.contains("failed to load")),
+            "{:?}",
+            out.notices
+        );
+        assert_eq!(out.mcp.len(), 1, "{:?}", out.mcp);
+        assert_eq!(out.mcp[0].0, "count");
+
+        let mut discovered = cox_mcp::discovery::Discovered::default();
+        cox_mcp::discovery::add_plugin(&mut discovered, "count", out.mcp[0].1.clone());
+        assert!(
+            discovered.servers.contains_key("count-count"),
+            "{:?}",
+            discovered.servers.keys().collect::<Vec<_>>()
+        );
     }
 
     /// T33.42 Check: `every_stdio_server_runs_under_sandbox_by_default`.

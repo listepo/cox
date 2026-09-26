@@ -28,8 +28,12 @@ pub struct PluginManifest {
     /// One-line description shown at approval.
     #[serde(default)]
     pub description: String,
-    /// The module to load, relative to the package directory.
-    pub wasm: String,
+    /// The module to load, relative to the package directory. Absent only
+    /// when the package's sole capability is an `[[mcp]]` stdio/HTTP server
+    /// (PL§13/§14, T33.38): `validate` then requires `capabilities` to be
+    /// its default and `provider`/`models`/`external_agents` to be empty,
+    /// since every other capability class needs a wasm export to back it.
+    pub wasm: Option<String>,
     /// True for wasip1 guests; no preopens unless `capabilities.fs` grants them.
     #[serde(default)]
     pub wasi: bool,
@@ -313,6 +317,10 @@ pub enum ManifestError {
     /// A `key_env` is not an env var name.
     #[error("key_env {0:?} must be an env var name such as CURSOR_API_KEY, not a value")]
     KeyEnv(String),
+    /// `wasm` is absent, but the manifest declares something besides
+    /// `[[mcp]]` servers: only an `[[mcp]]`-only package may omit `wasm`.
+    #[error("wasm is required unless the package's only capability is [[mcp]] (PL§13/§14)")]
+    MissingWasm,
 }
 
 impl PluginManifest {
@@ -323,6 +331,15 @@ impl PluginManifest {
         }
         if !is_plugin_id(&self.id) {
             return Err(ManifestError::Id(self.id.clone()));
+        }
+        if self.wasm.is_none() {
+            let mcp_only = self.capabilities == Capabilities::default()
+                && self.provider.is_empty()
+                && self.models.is_empty()
+                && self.external_agents.is_empty();
+            if !mcp_only {
+                return Err(ManifestError::MissingWasm);
+            }
         }
         let caps = &self.capabilities;
         for tool in &caps.tools {
@@ -616,6 +633,69 @@ args = ["--stdio"]
         let mut m = example();
         m.api = 2;
         assert_eq!(m.validate(), Err(ManifestError::ApiMajor(2)));
+    }
+
+    /// PL§13/§14 (T33.38): a package whose only capability is an `[[mcp]]`
+    /// server may ship no `plugin.wasm` at all.
+    #[test]
+    fn manifest_allows_a_wasm_less_mcp_only_package() {
+        let toml = r#"
+api = 1
+id = "count-dart"
+version = "0.1.0"
+name = "count"
+
+[[mcp]]
+name = "count"
+command = "build/count"
+"#;
+        let m = parse(toml).expect("a wasm-less mcp-only manifest parses");
+        assert_eq!(m.wasm, None);
+        assert_eq!(m.validate(), Ok(()));
+    }
+
+    /// The same package, but it also declares a wasm-backed capability
+    /// (PL§13/§14): nothing but `[[mcp]]` may go without `wasm`.
+    #[test]
+    fn manifest_rejects_a_wasm_less_package_that_declares_a_capability() {
+        let toml = r#"
+api = 1
+id = "count-dart"
+version = "0.1.0"
+name = "count"
+
+[capabilities]
+tools = ["summarise"]
+
+[[mcp]]
+name = "count"
+command = "build/count"
+"#;
+        let m = parse(toml).expect("still a structurally valid manifest");
+        assert_eq!(m.validate(), Err(ManifestError::MissingWasm));
+    }
+
+    /// Every non-`[[mcp]]` list that also gates the wasm-less exemption:
+    /// `provider`, `models` and `external_agents` each need `wasm` too.
+    #[test]
+    fn manifest_rejects_a_wasm_less_package_with_provider_models_or_agents() {
+        let base = r#"
+api = 1
+id = "count-dart"
+version = "0.1.0"
+name = "count"
+"#;
+        let provider = format!(
+            "{base}\n[[provider]]\nname = \"p\"\napi = \"chat\"\nbase_url = \"https://x\"\n"
+        );
+        let models = format!("{base}\n[[models]]\nid = \"m\"\n");
+        let agents = format!(
+            "{base}\n[[external_agents]]\nname = \"a\"\ncommand = \"agent\"\nmode = \"acp\"\nkey_env = \"A_KEY\"\n"
+        );
+        for toml in [provider, models, agents] {
+            let m = parse(&toml).expect("structurally valid manifest");
+            assert_eq!(m.validate(), Err(ManifestError::MissingWasm));
+        }
     }
 
     /// EA§1's `plugin.toml` example, appended to the PL§2 fixture.

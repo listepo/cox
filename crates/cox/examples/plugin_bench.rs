@@ -58,7 +58,11 @@ async fn main() -> anyhow::Result<()> {
     let dir = Path::new(EXAMPLE_DIR);
     let (manifest, _) = cox_plugin::discover::load_manifest(dir, &dir.join("plugin.toml"), None)
         .map_err(anyhow::Error::msg)?;
-    let wasm = std::fs::read(dir.join(&manifest.wasm))?;
+    let wasm_path = manifest
+        .wasm
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("the bench plugin has no wasm to load"))?;
+    let wasm = std::fs::read(dir.join(wasm_path))?;
     let store: Arc<dyn PluginStore> = Arc::new(cox_store::Store::open(home.path())?);
 
     // The host runs with wasmtime's compilation cache off until its card

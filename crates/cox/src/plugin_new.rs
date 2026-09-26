@@ -425,9 +425,26 @@ mod tests {
             "a Dart plugin has no wasm-backed capabilities: {manifest}"
         );
         assert!(
+            !manifest.contains("wasm ="),
+            "a wasm-less mcp-only package ships no wasm line: {manifest}"
+        );
+        assert!(
             !manifest.contains("cox:with"),
             "a marker leaked: {manifest}"
         );
+
+        // PL§13/§14 (T33.38): the host's own validator must accept this
+        // wasm-less, mcp-only manifest exactly as scaffolded, so the
+        // scaffolder and the loader never drift apart on "mcp-only".
+        let tmp =
+            std::env::temp_dir().join(format!("cox-plugin-new-test-dart-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        write(&tmp, &files).unwrap();
+        let (parsed, _) =
+            cox_plugin::discover::load_manifest(&tmp, &tmp.join("plugin.toml"), Some("demo"))
+                .expect("the scaffolded manifest loads and validates");
+        assert_eq!(parsed.wasm, None);
+        let _ = fs::remove_dir_all(&tmp);
 
         let server = &files
             .iter()

@@ -193,7 +193,7 @@ mod tests {
             version: "0.1.0".into(),
             name: "Demo".into(),
             description: String::new(),
-            wasm: "plugin.wasm".into(),
+            wasm: Some("plugin.wasm".into()),
             wasi: false,
             limits: Default::default(),
             capabilities: caps,

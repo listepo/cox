@@ -1615,25 +1615,18 @@ mod tests {
         assert_ne!(result.status, "fail");
     }
 
-    /// Stages a minimal plugin package at `<home>/plugins/<id>` (the same
-    /// stage-then-activate steps `cox plugin install` runs,
-    /// `plugin_cmd::install`) and returns its parsed manifest and digest.
-    /// `extra` is TOML appended after the required fields, e.g. a
-    /// `[[models]]` row (T33.16).
+    /// Stages a minimal plugin package at `<home>/plugins/<id>` from a
+    /// complete `plugin.toml` body (the same stage-then-activate steps
+    /// `cox plugin install` runs, `plugin_cmd::install`) and returns its
+    /// parsed manifest and digest.
     #[cfg(feature = "plugins")]
-    fn stage_plugin(
+    fn stage_plugin_toml(
         home: &std::path::Path,
         id: &str,
-        extra: &str,
+        toml: &str,
     ) -> (cox_plugin_api::PluginManifest, String) {
         let src = tempfile::tempdir().expect("tempdir");
-        std::fs::write(
-            src.path().join("plugin.toml"),
-            format!(
-                "api = 1\nid = {id:?}\nversion = \"0.1.0\"\nname = \"Demo\"\nwasm = \"plugin.wasm\"\n{extra}"
-            ),
-        )
-        .expect("manifest");
+        std::fs::write(src.path().join("plugin.toml"), toml).expect("manifest");
         let (manifest, digest) =
             cox_plugin::discover::load_manifest(src.path(), &src.path().join("plugin.toml"), None)
                 .expect("valid manifest");
@@ -1642,6 +1635,24 @@ mod tests {
         cox_plugin::install::activate(&plugin_dir, cox_plugin::install::short(&digest))
             .expect("activate");
         (manifest, digest)
+    }
+
+    /// A minimal wasm plugin, staged via [`stage_plugin_toml`]. `extra` is
+    /// TOML appended after the required fields, e.g. a `[[models]]` row
+    /// (T33.16).
+    #[cfg(feature = "plugins")]
+    fn stage_plugin(
+        home: &std::path::Path,
+        id: &str,
+        extra: &str,
+    ) -> (cox_plugin_api::PluginManifest, String) {
+        stage_plugin_toml(
+            home,
+            id,
+            &format!(
+                "api = 1\nid = {id:?}\nversion = \"0.1.0\"\nname = \"Demo\"\nwasm = \"plugin.wasm\"\n{extra}"
+            ),
+        )
     }
 
     /// Grants `id` at `digest` in the user scope, the same row
@@ -1715,6 +1726,33 @@ mod tests {
 
         assert_eq!(rows[2].status, "warn");
         assert_eq!(rows[2].detail, "not granted");
+    }
+
+    /// T33.38 Check (PL§13/§14): a wasm-less `[[mcp]]`-only plugin is
+    /// reported "loaded" exactly like a wasm plugin's — `check_plugins`
+    /// never reads `wasm`, granted or not, so its absence is not an error.
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn doctor_reports_a_wasm_less_mcp_only_plugin_as_loaded() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let (manifest, digest) = stage_plugin_toml(
+            home.path(),
+            "count",
+            "api = 1\nid = \"count\"\nversion = \"0.1.0\"\nname = \"count\"\n\n\
+             [[mcp]]\nname = \"count\"\ncommand = \"bin/server\"\n",
+        );
+        assert_eq!(manifest.wasm, None, "the fixture ships no plugin.wasm");
+        let store = cox_store::Store::open(home.path()).expect("store");
+        grant_plugin(&store, &manifest, &digest);
+
+        let config = cox_protocol::Config::default();
+        let rows = check_plugins(home.path(), home.path(), &config);
+        let row = rows
+            .iter()
+            .find(|r| r.check == "plugin count")
+            .expect("row");
+        assert_eq!(row.status, "ok", "{}", row.detail);
+        assert!(row.detail.contains("loaded"), "{}", row.detail);
     }
 
     /// T33.39 Check `disabled_export_is_visible_in_doctor`: the breaker's

@@ -257,10 +257,14 @@ pub fn load_manifest(
     // path or a `..` component before anything reads it (T33.4's own loader
     // owns this, since `cox-plugin` cannot depend on `cox-sandbox::confine`,
     // per `crates/cox/tests/deps.rs`'s allowed-deps list for this crate).
-    if !wasm_path_is_safe(&manifest.wasm) {
+    // `validate()` already refused a `None` here for anything but an
+    // `[[mcp]]`-only package (PL§13/§14, T33.38), so there is nothing to
+    // path-check when it is absent.
+    if let Some(wasm) = &manifest.wasm
+        && !wasm_path_is_safe(wasm)
+    {
         return Err(format!(
-            "wasm {:?} must be a path inside the package directory",
-            manifest.wasm
+            "wasm {wasm:?} must be a path inside the package directory"
         ));
     }
     let digest = package_digest(dir).map_err(|e| format!("cannot digest package: {e}"))?;
