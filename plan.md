@@ -27,6 +27,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
+| T36.2 | todo | P1 | 3 | 0% | |
 
 ## Reference
 
@@ -1038,6 +1039,16 @@ Check: the recorded fixture round-trips through T35.7's mapper unchanged; the sc
 
 Rationale in §6 A62.
 
+#### T36.2 The read-only rating and deny see through assignments, wrappers and `sh -c`
+
+Depends: T36.1 · Size: ~150 · Files: `crates/cox-tools/src/bash/classify.rs`, `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/tests/bash.rs`, `crates/cox-core/tests/permission.rs`, `docs/how-it-works.md`
+Goal: close the gaps T36.1 left (its done.md card, "Not done"). `classify` drops variable assignments as if they did not change what runs, so `GIT_PAGER='rm x' git log` and `export PATH=/tmp/evil; git status` are rated `ReadOnly` and run without asking (only the sandbox applies). Done means:
+- a command with an assignment prefix, or a line with `export`/`declare`/`unset`/a bare assignment, is never rated `ReadOnly`; at least `Exec`, so it takes the normal ask path. A short allow-list of assignments known not to change what runs (for example `LC_ALL`, `LANG`, `TZ`, `NO_COLOR`) may stay read-only, with its source in research.md;
+- deny and ask matching strips the wrappers Claude Code strips (`timeout`, `nice`, `nohup`, `time`, bare `xargs`, per research.md §8.5 row 38) before matching a command, so `nohup rm -rf x` is caught by `Bash(rm:*)` in `deny`;
+- deny looks inside `sh -c '…'`/`bash -c '…'` string arguments (split with the same walk); allow still never covers them (T36.1);
+- read-only commands without such a prefix still auto-allow as today.
+Check: `assignment_prefix_is_not_read_only` (`GIT_PAGER='rm x' git log`, `PAGER=… man ls`, `export PATH=/tmp/evil; git status`), `safe_locale_assignment_stays_read_only`, `deny_sees_through_wrappers` (`nohup rm -rf x`, `timeout 5 rm x`), `deny_looks_inside_sh_c`; the real binary in a scratch `COX_HOME` asks (headless: denies) `GIT_PAGER='touch x' git log` and `x` is not created.
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -1166,6 +1177,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A61 §1.1 `cox-plugin` row, §3 T33.36, `docs/plugins.md` "Engine features", `docs/design/plugins.md` §15 decision 3 — the creator approved extism's `wasmtime-exceptions` for the whole workspace on 2026-09-26. Why: T33.35 showed Kotlin/Wasm output does not parse without the exception-handling proposal (research.md P42–P43). Effect: every plugin's engine enables `wasm_exceptions`; `exception_handling_module_loads` holds it; T33.36 is unblocked. Its security on wasmtime 43 is not reviewed beyond RUSTSEC-2026-0222 (not guest-triggerable); revisit with T33.43. No decision changes.
 - A62 §3 new P36 (T36.1), by the creator. Why: a `Bash(<prefix>:*)` allow rule and a session grant match the command line as one string, so `Bash(git:*)` allows `git status; rm -rf …` and `Bash(rm:*)` in `deny` misses `git status && rm …`. Effect: the bash tool hands the engine its command segments; deny matches any segment, allow and grants need every segment, and substitution, `eval`/`-c` and redirects ask. `cox_permission::Engine` stays the single guard and stays pure. No decision changes.
 - A63 §3 T33.36 — Kotlin waits for WASI, by the creator. Why: the T33.36 draft showed that any real Kotlin/Wasm module imports `wasi_snapshot_preview1::random_get` from Kotlin's own stdlib (`Any.hashCode` → `Random.Default`), and cox loads plugins with WASI off (A55), so the host refuses the module (research.md P45); the T33.35 spike module had no WASI imports only because it did nothing (P41). The creator chose to wait rather than define `random_get` alone in the host or stub it at build time. Effect: T33.36 depends on T33.43, like T33.34 (Go); `wasmtime-exceptions` stays on (A61). No decision changes.
+- A64 §3 P36 (new T36.2), by the creator. Why: T36.1's follow-ups are security gaps: an assignment prefix (`GIT_PAGER='rm x' git log`) keeps a command rated `ReadOnly`, so it runs without asking; wrappers (`nohup rm …`) and `sh -c` strings hide a command from deny. Effect: one card; `cox_permission::Engine` stays the single guard. No decision changes.
 
 ## 7. Risk register
 
