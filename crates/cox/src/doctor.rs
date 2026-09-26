@@ -1588,8 +1588,12 @@ mod tests {
     #[cfg(feature = "plugins")]
     #[test]
     fn doctor_reports_sandbox_refusal_as_a_warning_not_a_failure() {
+        // An in-package program, so the PATH check before the wrap passes
+        // whether or not this host has an `agent` CLI installed.
         let dir = tempfile::tempdir().expect("tempdir");
-        let decl = external_agent_decl("agent");
+        std::fs::create_dir(dir.path().join("bin")).expect("mkdir");
+        std::fs::write(dir.path().join("bin/agent"), "#!/bin/sh\n").expect("write script");
+        let decl = external_agent_decl("bin/agent");
         let result = check_external_agent_with(dir.path(), &decl, true, |_, _| {
             Err::<Vec<String>, _>(String::from("no sandbox backend on this host"))
         });
