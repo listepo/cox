@@ -33,7 +33,7 @@ use cox_tools::tool_search::ToolSearchTool;
 use cox_tools::v4a::ApplyPatchTool;
 use cox_tools::web_fetch::WebFetchTool;
 use cox_tools::write::WriteTool;
-use cox_tui::state::{Ask, GitStatus, Msg, State};
+use cox_tui::state::{Ask, GitStatus, Msg, PluginNewRequest, State};
 
 use crate::cli::Cli;
 use crate::config_cmd;
@@ -568,6 +568,38 @@ fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::
         }
     });
     crate::plugin_ui::redraw(ui.feed)
+}
+
+/// T33.30's `Cmd::PluginNew` executor: the same `plugin_new::scaffold`/
+/// `write` pair `cox plugin new` calls (`main.rs`), so there is only one
+/// implementation of the name/language/capability mapping. Maps the
+/// picker's or `--lang`'s string back to `Lang`, and each `--with` word
+/// back to `Capability`, here — the one place that happens, since
+/// `cox-tui` cannot depend on this crate's types. Writes under
+/// `cwd`/`name`; `write` already refuses an existing directory.
+#[cfg(feature = "plugins")]
+fn run_plugin_new(cwd: &Path, request: &PluginNewRequest) -> Result<String, String> {
+    use clap::ValueEnum;
+
+    let lang = crate::plugin_new::Lang::from_str(&request.lang, true)
+        .map_err(|_| format!("unknown plugin language {:?}", request.lang))?;
+    let with = request
+        .with
+        .iter()
+        .map(|w| crate::plugin_new::Capability::from_str(w, true))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| format!("unknown capability in --with: {:?}", request.with))?;
+    let dir = cwd.join(&request.name);
+    let files =
+        crate::plugin_new::scaffold(&request.name, lang, &with).map_err(|e| e.to_string())?;
+    crate::plugin_new::write(&dir, &files).map_err(|e| e.to_string())?;
+    Ok(format!("scaffolded {} in {}", request.name, dir.display()))
+}
+
+/// The slim build has no `plugin_new` module (T33.30).
+#[cfg(not(feature = "plugins"))]
+fn run_plugin_new(_cwd: &Path, _request: &PluginNewRequest) -> Result<String, String> {
+    Err("this build has no plugin support (built without --features plugins)".to_string())
 }
 
 /// T33.12 (PL§7): runs each loaded plugin's `cox_init` for session `id`
@@ -1320,6 +1352,21 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             feed: feed.clone(),
             requests: plugin_rx,
         };
+        // T33.30: `/plugin new`'s executor, spawned per session like the
+        // plugin UI channel above — its answer rides this session's `feed`.
+        let (plugin_new_tx, mut plugin_new_rx) = tokio::sync::mpsc::channel::<PluginNewRequest>(4);
+        {
+            let cwd = cwd.to_path_buf();
+            let feed = feed.clone();
+            rt.spawn(async move {
+                while let Some(request) = plugin_new_rx.recv().await {
+                    let result = run_plugin_new(&cwd, &request);
+                    if feed.send(Msg::PluginNew(result)).await.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
         let (session, loaded) = rt.block_on(open(
             cli,
             cwd,
@@ -1588,6 +1635,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             persist_tx.clone(),
             grant_tx,
             plugin_tx,
+            plugin_new_tx,
         ))?;
         poll.abort();
         // `/handoff`'s summary is the parent's `compact` call, so it runs

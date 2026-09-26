@@ -363,6 +363,10 @@ pub struct State {
     /// Plugin renderer targets for finished cells, `(plugin, target)` in
     /// declaration order (T33.26, PL§8); the first match wins.
     pub plugin_renderers: Vec<(String, String)>,
+    /// `/plugin new <name> [--with ...]` awaiting the language picker's
+    /// choice (T33.30), the same two-step shape `rewind_to` above uses for
+    /// `/rewind`'s turn-then-what picks.
+    pub pending_plugin_new: Option<(String, Vec<String>)>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -457,6 +461,10 @@ pub enum Msg {
     Rollout(Vec<Event>),
     /// What the runtime learned about a plugin's UI (T33.23, PL§8).
     Plugin(PluginUiMsg),
+    /// The runtime's answer to `Cmd::PluginNew` (T33.30): `Ok` names where
+    /// the package landed, `Err` names why `plugin_new::scaffold`/`write`
+    /// refused. Shown as a notice, the same as `Event::Notice`.
+    PluginNew(Result<String, String>),
 }
 
 /// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
@@ -551,6 +559,18 @@ pub struct GrantDecision {
     pub capabilities: Vec<String>,
 }
 
+/// `/plugin new`'s request to the runtime (T33.30, PL§13), carried out to
+/// `crates/cox` over a channel like `GrantDecision` above. `lang` is a
+/// string, not `plugin_new::Lang`, because `cox-tui` cannot depend on
+/// `crates/cox`'s types (plan.md §1.1); `crates/cox`'s `session.rs` maps it
+/// back with `Lang::from_str`, the one place that mapping happens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginNewRequest {
+    pub name: String,
+    pub lang: String,
+    pub with: Vec<String>,
+}
+
 /// The only effects `update` may request; the runtime performs them.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Cmd {
@@ -592,6 +612,11 @@ pub enum Cmd {
     /// A plugin call the runtime makes off-screen (T33.23); `app.rs`
     /// forwards it to `crates/cox`, the only side that holds plugin hosts.
     Plugin(PluginRequest),
+    /// `/plugin new`'s picker (or a bare `--lang`) resolved a language
+    /// (T33.30): `app.rs` forwards this to `crates/cox`, which runs the
+    /// same `plugin_new::scaffold`/`write` pair `cox plugin new` calls and
+    /// answers on the feed as `Msg::PluginNew`.
+    PluginNew(PluginNewRequest),
 }
 
 impl State {
@@ -671,6 +696,7 @@ impl State {
             plugin_panel_open: None,
             term: (80, 24),
             plugin_renderers: Vec::new(),
+            pending_plugin_new: None,
         }
     }
 
@@ -910,6 +936,14 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
                 cells: replay_cells(events),
                 scroll: 0,
             });
+            Vec::new()
+        }
+        Msg::PluginNew(result) => {
+            let (level, text) = match result {
+                Ok(text) => (Level::Info, text),
+                Err(text) => (Level::Warn, text),
+            };
+            notice(state, level, text);
             Vec::new()
         }
     }
@@ -1178,6 +1212,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         })];
                     }
                 }
+                // T33.30: the second (and only) step of `/plugin new`
+                // without `--lang` — `name`/`with` were stashed when the
+                // picker opened, the same way `Kind::Rewind` stashes
+                // `rewind_to` for `Kind::RewindWhat` above.
+                Pick::Chosen(choice) if picker.kind == Kind::PluginLang => {
+                    if let Some((name, with)) = state.pending_plugin_new.take() {
+                        return vec![Cmd::PluginNew(PluginNewRequest {
+                            name,
+                            lang: choice,
+                            with,
+                        })];
+                    }
+                }
                 Pick::Chosen(choice) => match picker.kind {
                     Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
                     // Resuming in place needs `app::run` to return a request;
@@ -1200,9 +1247,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                             .to_string();
                         state.composer.set_text(&text);
                     }
-                    // `Themes` is intercepted by its own guarded arm above
-                    // and never reaches this generic one.
-                    Kind::Rewind | Kind::RewindWhat | Kind::Themes => {}
+                    // `Themes` and `PluginLang` are each intercepted by
+                    // their own guarded arm above and never reach this
+                    // generic one.
+                    Kind::Rewind | Kind::RewindWhat | Kind::Themes | Kind::PluginLang => {}
                     Kind::Shell => {
                         let mut line = state.composer.text();
                         let keep = line.len() - picker::last_word(&line).len();
@@ -1939,6 +1987,32 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         Action::PluginCommand { plugin, name, args } => {
             return vec![Cmd::Plugin(PluginRequest::Command { plugin, name, args })];
         }
+        // T33.30: `--lang` already named a language, so there is nothing
+        // to pick — the request goes straight to the runtime, which is the
+        // one place that validates it (`plugin_new::scaffold`'s errors).
+        Action::PluginNew {
+            name,
+            lang: Some(lang),
+            with,
+        } => {
+            return vec![Cmd::PluginNew(PluginNewRequest { name, lang, with })];
+        }
+        // No `--lang`: stash `name`/`with` and ask the picker, the same
+        // two-step shape `Action::Rewind` uses for its turn-then-what picks.
+        Action::PluginNew {
+            name,
+            lang: None,
+            with,
+        } => {
+            state.pending_plugin_new = Some((name, with));
+            state.modal = Some(Modal::Picker(Picker::open(
+                Kind::PluginLang,
+                picker::PLUGIN_LANGS
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            )));
+        }
     }
     Vec::new()
 }
@@ -2368,6 +2442,41 @@ mod tests {
             "Esc restores the theme active before the picker opened"
         );
         assert!(state.modal.is_none());
+    }
+
+    /// T33.30's Done-when: `/plugin new <name>` with no `--lang` opens the
+    /// language picker, and choosing a row reaches `Cmd::PluginNew` with
+    /// that language — the one `Cmd` `crates/cox`'s executor turns into a
+    /// `plugin_new::scaffold`/`write` call, so there is no second
+    /// implementation of the mapping. `fake_executor` stands in for that
+    /// runtime executor (`cox-tui` cannot call `plugin_new::scaffold`
+    /// itself — it does not depend on `crates/cox`) and records what it
+    /// would have been called with.
+    #[test]
+    fn tui_plugin_new_calls_shared_scaffold() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        type_command(&mut state, "/plugin new demo");
+        assert!(
+            matches!(&state.modal, Some(Modal::Picker(p)) if p.kind == Kind::PluginLang),
+            "/plugin new with no --lang opens the language picker"
+        );
+
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+
+        let mut calls: Vec<(String, String, Vec<String>)> = Vec::new();
+        let fake_executor =
+            |req: &PluginNewRequest| (req.name.clone(), req.lang.clone(), req.with.clone());
+        for cmd in &cmds {
+            if let Cmd::PluginNew(req) = cmd {
+                calls.push(fake_executor(req));
+            }
+        }
+        assert_eq!(
+            calls,
+            vec![("demo".to_string(), "rust".to_string(), Vec::new())],
+            "exactly one call, with the picker's chosen language"
+        );
+        assert!(state.modal.is_none(), "the picker closes after a pick");
     }
 
     /// T25.1 step 1/3: `Enter` while a turn runs queues instead of

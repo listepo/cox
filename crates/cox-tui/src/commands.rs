@@ -68,6 +68,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("skills", "/skills", "list skills"),
     ("hooks", "/hooks", "list hooks"),
     ("mcp", "/mcp", "MCP servers and their tools"),
+    (
+        "plugin",
+        "/plugin new <name> [--lang <lang>] [--with <cap,...>]",
+        "scaffold a new plugin package (PL§13)",
+    ),
     ("doctor", "/doctor", "check the install"),
     ("clear", "/clear", "new session, same directory"),
     (
@@ -235,6 +240,18 @@ pub enum Action {
         name: String,
         args: String,
     },
+    /// `/plugin new <name> [--lang <lang>] [--with <cap,...>]` (T33.30,
+    /// PL§13): `lang` is `None` when `--lang` was not given, so `state.rs`
+    /// opens `Modal::Picker(Kind::PluginLang)` instead of guessing one.
+    /// `with` is `--with`'s comma list, forwarded raw — `crates/cox` is the
+    /// one place that maps both the language and each capability name back
+    /// to `plugin_new::Lang`/`Capability`, the same pair `cox plugin new`
+    /// uses, so there is only one implementation of that mapping.
+    PluginNew {
+        name: String,
+        lang: Option<String>,
+        with: Vec<String>,
+    },
 }
 
 /// `None` when `line` is neither a slash command nor a `!` shell line;
@@ -325,6 +342,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
             None => Action::Notice("/handoff needs an objective".into()),
         },
         "vim" => Action::Vim,
+        "plugin" => plugin_action(&args),
         "theme" => Action::Theme(joined()),
         "help" => Action::Help,
         "quit" => Action::Quit,
@@ -376,6 +394,52 @@ fn loop_start(args: &[String]) -> Option<Action> {
         prompt: words.join(" "),
         budget_usd,
     })
+}
+
+/// `/plugin <action> ...` (T33.30 adds `new`; T33.33 adds
+/// `update`/`remove`/`list`/`reload`).
+fn plugin_action(args: &[String]) -> Action {
+    match args.first().map(String::as_str) {
+        Some("new") => plugin_new_action(&args[1..]),
+        _ => Action::Notice(PLUGIN_NEW_USAGE.into()),
+    }
+}
+
+const PLUGIN_NEW_USAGE: &str = "/plugin new <name> [--lang <lang>] [--with <cap,...>]";
+
+/// `/plugin new <name> [--lang <lang>] [--with <cap[,cap...]>]` (T33.30,
+/// PL§13): `args` is everything after `new`. An unknown flag is ignored
+/// rather than rejected — `crates/cox`'s `plugin_new::scaffold` is the one
+/// place that validates the name, the language and each capability, and
+/// reports what it refused as a notice.
+fn plugin_new_action(args: &[String]) -> Action {
+    let Some(name) = args.first() else {
+        return Action::Notice(PLUGIN_NEW_USAGE.into());
+    };
+    let mut lang = None;
+    let mut with = Vec::new();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--lang" => {
+                lang = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--with" => {
+                with = args
+                    .get(i + 1)
+                    .map(|s| s.split(',').map(str::to_string).collect())
+                    .unwrap_or_default();
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+    Action::PluginNew {
+        name: name.clone(),
+        lang,
+        with,
+    }
 }
 
 /// `<n>s` / `<n>m` / `<n>h`, or a bare `<n>` as seconds; `0` is rejected so
@@ -510,6 +574,32 @@ mod tests {
         assert_eq!(p("/loop stop"), Some(Action::LoopStop));
         assert!(matches!(p("/loop 5m"), Some(Action::Notice(_))));
         assert!(matches!(p("/loop soon go"), Some(Action::Notice(_))));
+    }
+
+    /// T33.30: `/plugin new` takes a required name and an optional
+    /// `--lang`/`--with`, in either order after the name; a bare `/plugin`
+    /// or `/plugin new` with no name is a usage notice, not a panic.
+    #[test]
+    fn plugin_new_parses_name_lang_and_with() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(
+            p("/plugin new demo"),
+            Some(Action::PluginNew {
+                name: "demo".into(),
+                lang: None,
+                with: Vec::new(),
+            })
+        );
+        assert_eq!(
+            p("/plugin new demo --lang rust --with status,hook"),
+            Some(Action::PluginNew {
+                name: "demo".into(),
+                lang: Some("rust".into()),
+                with: vec!["status".into(), "hook".into()],
+            })
+        );
+        assert!(matches!(p("/plugin new"), Some(Action::Notice(_))));
+        assert!(matches!(p("/plugin"), Some(Action::Notice(_))));
     }
 
     /// T25.7: `/autocompact` names the project config layer, the same data

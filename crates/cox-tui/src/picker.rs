@@ -35,7 +35,21 @@ pub enum Kind {
     /// `.tmTheme` under a `syntax: ` row prefix; moving the cursor previews
     /// the row live, `Esc` reverts it.
     Themes,
+    /// `/plugin new <name>` (T33.30, PL§13), when `--lang` was not given:
+    /// picks the language to scaffold. Only languages PL§13 already has a
+    /// template for are offered (today just Rust) — `crates/cox`'s
+    /// `plugin_new::Lang` lists more (T33.34 Go, T33.36 Kotlin, T33.38
+    /// Dart), each still reachable only via an explicit `--lang <name>`,
+    /// which then reports its own "no template yet" notice instead of a
+    /// pick that always fails.
+    PluginLang,
 }
+
+/// `/plugin new`'s language picker candidates (T33.30): kept in lockstep
+/// with `crates/cox`'s `plugin_new::Lang` variants that actually scaffold
+/// something today — a language's template landing there (T33.34, ...)
+/// adds its name here too.
+pub const PLUGIN_LANGS: &[&str] = &["rust"];
 
 /// The `RewindWhat` rows; the first word is what `Submission::Rewind` gets.
 pub const REWIND_WHAT: [&str; 3] = [
@@ -133,6 +147,7 @@ impl Kind {
             Kind::Rewind => "rewind to: ",
             Kind::RewindWhat => "restore: ",
             Kind::Themes => "theme: ",
+            Kind::PluginLang => "lang: ",
         }
     }
 }
@@ -410,6 +425,21 @@ mod tests {
                 "nord".into(),
                 "syntax: Solarized (dark)".into(),
             ],
+        );
+        let lines = picker.lines(&Glyphs::default(), &Theme::dark());
+        let area = ratatui::layout::Rect::new(0, 0, 40, lines.len() as u16);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(ratatui::widgets::Paragraph::new(lines), area, &mut buf);
+        insta::assert_snapshot!(crate::view::buffer_to_string(&buf));
+    }
+
+    /// T33.30's Done-when: a picker snapshot exists for `/plugin new`'s
+    /// language pick.
+    #[test]
+    fn picker_plugin_lang_snapshot() {
+        let picker = Picker::open(
+            Kind::PluginLang,
+            PLUGIN_LANGS.iter().map(|s| (*s).to_string()).collect(),
         );
         let lines = picker.lines(&Glyphs::default(), &Theme::dark());
         let area = ratatui::layout::Rect::new(0, 0, 40, lines.len() as u16);

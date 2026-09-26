@@ -113,6 +113,7 @@ async fn main() {
     let (persist_tx, _persist_rx) = mpsc::channel::<(String, String)>(4);
     let (grant_tx, _grant_rx) = mpsc::channel::<cox_tui::state::GrantDecision>(4);
     let (plugin_tx, _plugin_rx) = mpsc::channel::<cox_tui::state::PluginRequest>(4);
+    let (plugin_new_tx, _plugin_new_rx) = mpsc::channel::<cox_tui::state::PluginNewRequest>(4);
 
     let scenario = std::env::var("COX_PROBE_SCENARIO").unwrap_or_default();
     tokio::spawn(async move {
@@ -213,6 +214,7 @@ async fn main() {
         persist_tx,
         grant_tx,
         plugin_tx,
+        plugin_new_tx,
     )
     .await;
 }
