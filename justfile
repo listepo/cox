@@ -14,6 +14,29 @@ test: && dunnage
 plugin-test:
     mise exec -- cargo test --manifest-path plugins/Cargo.toml --workspace
 
+# Build a guest-language example (PL§13) with its own toolchain (installed
+# from plugins/mise.toml) and run its ignored e2e test, e.g.
+# `just plugin-examples dart`. The `plugin-examples` CI job runs this for
+# every language; a missing toolchain there fails the job.
+plugin-examples lang:
+    #!/usr/bin/env sh
+    set -eu
+    case "{{lang}}" in
+      dart)
+        cd plugins && mise install dart@3.13.4
+        cd examples/dart
+        mise exec -- dart pub get
+        mkdir -p build
+        mise exec -- dart compile exe bin/server.dart -o build/example_dart
+        ;;
+      *)
+        echo "plugin-examples: no {{lang}} example yet" >&2
+        exit 1
+        ;;
+    esac
+    cd "{{justfile_directory()}}"
+    mise exec -- cargo nextest run -p cox --run-ignored only -E 'test(plugin_example_{{lang}})'
+
 # Lossless cleanup of ./target (compress + dedupe); never deletes. A no-op without dunnage.
 dunnage:
     #!/usr/bin/env sh

@@ -98,6 +98,36 @@ jobs:
       - name: plugin wasm32 build
         run: cargo build --manifest-path plugins/Cargo.toml --workspace --target wasm32-unknown-unknown
 
+  # Guest-language examples that need a toolchain of their own (PL§13):
+  # each is `#[ignore]`d in the main `test` job with a reason naming
+  # `just plugin-examples <lang>`, so a missing toolchain here is a CI
+  # failure rather than a silently skipped test. Dart (T33.38) today;
+  # go/kotlin join this job once T33.34/T33.36 land.
+  plugin-examples:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@nextest
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.13.4"
+
+      - name: build the Dart example
+        run: |
+          cd plugins/examples/dart
+          dart pub get
+          mkdir -p build
+          dart compile exe bin/server.dart -o build/example_dart
+
+      - name: dart plugin example e2e
+        run: cargo nextest run -p cox --run-ignored only -E 'test(plugin_example_dart)'
+
   deny:
     runs-on: ubuntu-24.04
     steps:
@@ -136,7 +166,8 @@ jobs:
 
   revert-on-failure:
     name: revert-on-failure
-    needs: [test, sandbox-landlock, plugins, deny, audit, footprint]
+    needs:
+      [test, sandbox-landlock, plugins, plugin-examples, deny, audit, footprint]
     if: >-
       always()
       && github.event_name == 'push'

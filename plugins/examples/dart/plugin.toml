@@ -1,0 +1,25 @@
+# The Dart variant of the shared example every guest language implements
+# (PL§13). Dart cannot emit a wasm module extism can load (T33.37,
+# research.md §4.3.5 P44), so unlike the other languages' status/hook/
+# command/event example, this one implements just the one thing Dart can
+# offer: an `[[mcp]]` stdio server with a single tool, `count`, which
+# returns how many times it has been called in this server process.
+#
+# KNOWN GAP as of this commit (cox plan.md T33.38): the host's loader
+# (`crates/cox/src/session.rs` `load_plugins`) always reads `wasm` and
+# only starts a plugin's `[[mcp]]` servers once that read succeeds; `wasm`
+# below is a required field with no wasm-less path yet. This package ships
+# no `plugin.wasm` by design, so `cox plugin install`/`enable` stage and
+# grant it, but the session does not start `bin/server.dart` until the
+# host adds a wasm-less load path. See the T33.38 report for the exact
+# failure text this causes today.
+api = 1
+id = "example-dart"
+version = "0.1.0"
+name = "Dart MCP example"
+description = "One MCP tool, count, served by a dart_mcp stdio server"
+wasm = "plugin.wasm"
+
+[[mcp]]
+name = "count"
+command = "build/example_dart"

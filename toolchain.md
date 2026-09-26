@@ -22,6 +22,7 @@ Programs the project uses and the direct packages from its manifests.
 | colima | global (mise) | Docker runtime for Terminal-Bench (the creator's choice) | https://github.com/abiosoft/colima |
 | LM Studio (`lms`) | desktop app | Local model server for the eval matrix (`cox-bench`, provider `lmstudio`): OpenAI Chat and Anthropic Messages endpoints on :1234 | https://lmstudio.ai/docs/developer |
 | docker-cli, docker-compose, docker-buildx | global (mise) | Harbor drives task containers through `docker compose` and `docker buildx build` | https://github.com/docker/cli , https://github.com/docker/compose , https://github.com/docker/buildx |
+| dart | mise (`plugins/mise.toml`) | Builds `plugins/templates/dart` and `plugins/examples/dart` (T33.38): Dart cannot emit a wasm module extism can load (research.md §4.3.5 P44), so its only plugin capability is an `[[mcp]]` stdio server, `dart compile exe` | https://github.com/dart-lang/sdk |
 
 ## ketch
 
@@ -113,6 +114,12 @@ Programs the project uses and the direct packages from its manifests.
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
+
+## pub (`plugins/templates/dart`, `plugins/examples/dart`)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| dart_mcp | local | https://pub.dev/packages/dart_mcp | T33.38: the official Dart MCP server/client SDK (`ToolsSupport`, `stdioChannel`) a Dart plugin's `[[mcp]]` server is built on, since Dart cannot emit a wasm module extism can load |
 
 ## uv (`evals/`)
 

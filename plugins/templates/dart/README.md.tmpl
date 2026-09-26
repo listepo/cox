@@ -1,0 +1,46 @@
+# {{id}}
+
+A cox plugin scaffolded by `cox plugin new {{id}} --lang dart`. `docs/design/plugins.md`
+(PL, especially §7c and §13) and `docs/plugins.md` in the [cox repository](https://github.com/listepo/cox)
+have the full contract; this file only covers this package.
+
+Dart cannot emit a wasm module extism can load (dart-lang/sdk#56366 is
+still open; `research.md` §4.3.5 P44), so this plugin's only capability is
+the `[[mcp]]` stdio server in `plugin.toml` — no wasm export, and
+`cox plugin new --lang dart --with` only accepts `tool`/`mcp`. Capabilities
+asked for at scaffold time: {{with_summary}}. Edit `bin/server.dart` for
+the tools this server exposes.
+
+## Known gap
+
+As of this scaffold, cox's loader (`crates/cox/src/session.rs`
+`load_plugins`) always reads `plugin.toml`'s `wasm` field and only starts a
+plugin's `[[mcp]]` servers once that read succeeds — and `wasm` is a
+required field with no wasm-less path yet. This package ships no
+`plugin.wasm` by design, so `cox plugin install`/`enable` stage and grant
+it, but the session does not start `bin/server.dart` until the host adds a
+wasm-less load path (tracked in this project's `plan.md`, task T33.38).
+
+## Build
+
+```
+dart pub get   # once, or after editing pubspec.yaml
+just build
+```
+
+## Try it
+
+```
+just smoke
+```
+
+builds the executable and runs `test/smoke_test.dart`, which installs the
+package into a scratch `COX_HOME` with `cox plugin install --yes` and
+checks that `cox plugin list --json` reports it granted. `cox` must be on
+`PATH`.
+
+## Install for real
+
+```
+cox plugin install . --yes
+```

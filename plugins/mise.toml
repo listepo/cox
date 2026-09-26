@@ -1,3 +1,9 @@
 # Toolchains for guest languages other than Rust (Go, Kotlin, Dart; PL§13).
 # mise reads this file only inside `plugins/`, so host-only contributors never
 # install them. Rust and its wasm32 target come from the root `mise.toml`.
+
+[tools]
+# T33.38: MCP-server-only (dart cannot emit a wasm module extism can load,
+# research.md §4.3.5 P44) — builds plugins/templates/dart and
+# plugins/examples/dart. Latest stable, the version R§4.3.5 P44 re-checked.
+dart = "3.13.4"
