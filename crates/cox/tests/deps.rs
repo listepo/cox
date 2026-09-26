@@ -185,6 +185,14 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-config"]
     );
 
+    // cox-telemetry (T32.9) is the otel stack: it takes plain values rather
+    // than cox_protocol::Config, so it has no workspace-crate dependencies.
+    assert!(
+        deps["cox-telemetry"].is_empty(),
+        "cox-telemetry must not depend on any other workspace crate, found {:?}",
+        deps["cox-telemetry"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in, and
     // on cox-permission, T32.8, re-exported at the old `permission` path).

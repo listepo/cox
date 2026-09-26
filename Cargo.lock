@@ -793,16 +793,13 @@ dependencies = [
  "cox-provider",
  "cox-sanitize",
  "cox-store",
+ "cox-telemetry",
  "cox-tools",
  "cox-tui",
  "crossterm",
  "dotenvy",
  "insta",
  "keyring",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "portable-pty",
  "predicates",
  "reqwest 0.12.28",
@@ -814,9 +811,6 @@ dependencies = [
  "tokio-util",
  "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "vt100",
 ]
 
@@ -1059,6 +1053,22 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
+]
+
+[[package]]
+name = "cox-telemetry"
+version = "0.1.2"
+dependencies = [
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tracing",
+ "tracing-appender",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -37,7 +37,12 @@ fn main() -> anyhow::Result<()> {
     }
     let loaded = config_load::load(&cwd, &cli)?;
     let telemetry_home = cli.home.clone().unwrap_or_else(config_load::cox_home);
-    let telemetry = telemetry::init(&loaded.config, &telemetry_home)?;
+    let telemetry = telemetry::init(
+        &loaded.config.core.log_level,
+        loaded.config.telemetry.otel,
+        &loaded.config.telemetry.endpoint,
+        &telemetry_home,
+    )?;
 
     match &cli.command {
         Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),

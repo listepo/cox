@@ -8,13 +8,9 @@ repository.workspace = true
 
 [features]
 default = ["otel"]
-otel = [
-    "dep:opentelemetry",
-    "dep:opentelemetry_sdk",
-    "dep:opentelemetry-otlp",
-    "dep:tracing-opentelemetry",
-    "dep:opentelemetry-appender-tracing",
-]
+# T32.9: the five otel crates moved to cox-telemetry; this forwards the
+# feature rather than gating a dependency declared here.
+otel = ["cox-telemetry/otel"]
 
 [dependencies]
 clap = { workspace = true }
@@ -30,6 +26,8 @@ cox-acp = { path = "../cox-acp", version = "0.1.2" }
 # T32.1: `plain.rs` calls `sanitize` directly instead of pulling in the
 # whole TUI crate for it.
 cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+# T32.9: process-wide logging and the OTLP stack.
+cox-telemetry = { path = "../cox-telemetry", version = "0.1.2" }
 # T30.25: `session.rs` resolves each provider's `Caps.max_context` from the
 # catalog before construction (the provider itself only takes `&Transport`).
 cox-models = { path = "../cox-models", version = "0.1.2" }
@@ -48,13 +46,6 @@ keyring = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-tracing-appender = { workspace = true }
-opentelemetry = { workspace = true, optional = true }
-opentelemetry_sdk = { workspace = true, optional = true }
-opentelemetry-otlp = { workspace = true, optional = true }
-tracing-opentelemetry = { workspace = true, optional = true }
-opentelemetry-appender-tracing = { workspace = true, optional = true }
 # T12.2: `cox self update` downloads releases (reqwest) and verifies their
 # sha256 checksums (sha2) before replacing the binary.
 reqwest = { workspace = true }
