@@ -87,6 +87,8 @@ pub(crate) struct Inner {
     pub(crate) overrides: Overrides,
     /// Running background tasks: label, tier and kind by id (T9.2, T27.1).
     pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
+    /// Subagents a follow-up can reach, running or finished (T34.5, SM§2).
+    pub(crate) children: HashMap<TaskId, crate::tasks::Child>,
     /// Running calls `Submission::Background` may detach (T27.1).
     pub(crate) detach: HashMap<CallId, CancellationToken>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
@@ -220,6 +222,9 @@ impl Session {
     /// A child session sharing this one's provider, store and archive
     /// (plan.md T3.9): its own rollout and budget, `parent_id` set. `cwd`
     /// is the parent's unless the child runs in a worktree (T27.3).
+    /// `resume` restores a finished child (T34.5, SM§2) with the same
+    /// job, tier and parent — the child-side twin of [`Session::resume`],
+    /// which stays top-level only.
     pub(crate) fn spawn_child(
         &self,
         config: cox_protocol::Config,
@@ -227,6 +232,7 @@ impl Session {
         job: Job,
         tier: Tier,
         cwd: Option<PathBuf>,
+        resume: Option<(SessionId, History)>,
     ) -> Result<Self, CoreError> {
         let mut child = Self::build(
             config,
@@ -235,7 +241,7 @@ impl Session {
             self.store.clone(),
             self.archive.clone(),
             cwd.unwrap_or_else(|| self.cwd.clone()),
-            None,
+            resume,
             Some(self.id),
             job,
             tier,
@@ -355,6 +361,7 @@ impl Session {
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
+                children: HashMap::new(),
                 detach: HashMap::new(),
                 extracted: Vec::new(),
                 last_context_tokens: 0,
@@ -637,10 +644,15 @@ impl Session {
                 let _ = hooks::fire(self, HookEvent::SessionEnd, serde_json::json!({})).await;
                 Ok(())
             }
-            // T34.5 gives this a router (resolve `task` to a running child
-            // handle or a finished session, then queue/resume it); until
-            // then it is a no-op rather than a silent match on `_`.
-            Submission::TaskMessage { .. } => Ok(()),
+            // T34.5: `hop` is the parent's own count (SM§5) — a surface's
+            // message starts at 0, a relayed sibling message arrives with
+            // the hop `subagent::relay` computed, never the child's.
+            Submission::TaskMessage {
+                task,
+                from,
+                hop,
+                text,
+            } => self.deliver(task, from, hop, text).await,
             _ => Ok(()),
         }
     }
@@ -1491,7 +1503,8 @@ fn provider_name(provider: ProviderId) -> &'static str {
 
 /// In-memory store for loop tests: no SQLite, same trait.
 pub struct MemoryStore {
-    events: StdMutex<Vec<Event>>,
+    /// Every session's rollout, tagged so a resumed child reads only its own.
+    events: StdMutex<Vec<(SessionId, Event)>>,
     usage: StdMutex<Vec<cox_protocol::UsageRow>>,
     archive: StdMutex<HashMap<cox_protocol::ArchiveId, Vec<u8>>>,
     /// `(project, name)` → `(path, body)` for `memory_*` (T10.1).
@@ -1539,17 +1552,21 @@ impl Store for MemoryStore {
     fn session_create(&self, _s: &cox_protocol::SessionRow) -> Result<(), StoreError> {
         Ok(())
     }
-    fn rollout_append(&self, _id: &SessionId, ev: &Event) -> Result<u64, StoreError> {
+    fn rollout_append(&self, id: &SessionId, ev: &Event) -> Result<u64, StoreError> {
         let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
-        events.push(ev.clone());
+        events.push((*id, ev.clone()));
         Ok(events.len() as u64)
     }
-    fn rollout_read(&self, _id: &SessionId) -> Result<Vec<Event>, StoreError> {
-        Ok(self
-            .events
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone())
+    /// One session's rollout; an id that never wrote reads the whole log,
+    /// which tests use to see every session at once.
+    fn rollout_read(&self, id: &SessionId) -> Result<Vec<Event>, StoreError> {
+        let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let any = events.iter().any(|(sid, _)| sid == id);
+        Ok(events
+            .iter()
+            .filter(|(sid, _)| !any || sid == id)
+            .map(|(_, ev)| ev.clone())
+            .collect())
     }
     fn usage_insert(&self, row: &cox_protocol::UsageRow) -> Result<(), StoreError> {
         self.usage

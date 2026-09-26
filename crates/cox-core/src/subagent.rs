@@ -13,27 +13,35 @@
 //! hands the result to `Session::set_agent_defs`, keeping this crate
 //! I/O-free. A custom preset's usage rows are tagged `Job::Agent`; its own
 //! `tier`/`model` decides the actual tier, not the job.
+//!
+//! T34.5: a subagent keeps answering follow-ups (SM§2, §3, §5). The parent
+//! routes every message — a child never holds a sibling's handle — and
+//! owns the causal hop count; delivery is always a whole new turn.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use cox_protocol::errors::{CoreError, ToolError};
-use cox_protocol::ids::{ItemId, TaskId};
+use cox_protocol::ids::{ItemId, SessionId, TaskId};
 use cox_protocol::traits::{Tool, ToolCx, Worktree};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Message,
+    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Level, Message,
     ModelId, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock, Tier, ToolCall,
     ToolOutput, ToolSpec, Why,
 };
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::budget;
 use crate::hooks;
+use crate::rollout::History;
 use crate::session::Session;
-use crate::tasks::cost_detail;
+use crate::tasks::{Queued, cost_detail, message_line};
 
 /// A subagent shape: which job it reports as, which tools it may use, how
 /// long it may run and how big its answer may be.
@@ -352,28 +360,26 @@ impl Tool for AgentTool {
                 });
             }
         };
-        let child = self
-            .parent
-            .spawn_child(
-                config,
-                tools,
-                preset.job,
-                tier,
-                worktree.as_ref().map(|wt| wt.path.clone()),
-            )
-            .map_err(core_error)?;
-        if let Some(wt) = &worktree {
-            child.set_writable_roots(vec![wt.path.clone()]);
-        }
+        let spec = Spec {
+            config,
+            tools,
+            job: preset.job,
+            tier,
+            worktree,
+            name: format!(
+                "{}-{}",
+                preset.name,
+                self.spawned.fetch_add(1, Ordering::Relaxed) + 1
+            ),
+            preset_name: preset.name.clone(),
+            result_cap_tokens: preset.result_cap_tokens,
+            label: format!("{}: {}", preset.name, first_line(&task_text)),
+        };
+        let child = spawn(&self.parent, &spec, None).map_err(core_error)?;
         let Some(events) = child.events() else {
             return Err(ToolError::Io);
         };
-        let label = format!("{}: {}", preset.name, first_line(&task_text));
-        let name = format!(
-            "{}-{}",
-            preset.name,
-            self.spawned.fetch_add(1, Ordering::Relaxed) + 1
-        );
+        let label = spec.label.clone();
         // SubagentStart gates both paths; a Block means the task never existed.
         if let HookOutcome::Block { reason } = hooks::fire(
             &self.parent,
@@ -397,55 +403,20 @@ impl Tool for AgentTool {
         self.parent
             .register_task(task, label.clone(), tier, crate::tasks::TaskKind::Agent)
             .await;
+        self.parent.track_child(task).await;
+        let mut io = RunIo {
+            task,
+            spec,
+            events,
+            cancel: cx.cancel.clone(),
+            progress: cx.output.clone(),
+        };
         if input
             .get("background")
             .and_then(Value::as_bool)
             .unwrap_or(false)
         {
-            let parent = self.parent.clone();
-            let (cancel, progress) = (cx.cancel.clone(), cx.output.clone());
-            let bg_label = label.clone();
-            // `preset` itself is not `Copy` (T34.1), so only what the child
-            // run needs is cloned into the `async move` closure; `preset`
-            // stays intact for the `structured` reply built after `spawn`.
-            let preset_name = preset.name.clone();
-            let result_cap_tokens = preset.result_cap_tokens;
-            tokio::spawn(async move {
-                let io = RunIo {
-                    name,
-                    preset_name,
-                    result_cap_tokens,
-                    tier,
-                    events,
-                    cancel,
-                    progress,
-                    worktree,
-                };
-                let outcome = run_task(&parent, child, task_text, io).await;
-                let (answer, cost_usd) = match outcome {
-                    Ok(o) => (o.answer, o.cost_usd),
-                    Err(e) => (format!("task failed: {e}"), 0.0),
-                };
-                parent.complete_task(task).await;
-                let _ = parent
-                    .emit(Event::TaskCompleted {
-                        task,
-                        result_item: ItemId::new(),
-                        cost_usd,
-                        exit_code: None,
-                        archive: None,
-                    })
-                    .await;
-                let _ = parent
-                    .publish_task_result(task, &bg_label, &answer, &cost_detail(cost_usd))
-                    .await;
-                let _ = hooks::fire(
-                    &parent,
-                    HookEvent::SubagentStop,
-                    json!({"task": task.to_string(), "label": bg_label}),
-                )
-                .await;
-            });
+            tokio::spawn(drive(self.parent.clone(), task, child, task_text, io));
             return Ok(ToolOutput {
                 text: format!(
                     "background task {task} started: {label}\n\
@@ -461,27 +432,14 @@ impl Tool for AgentTool {
             });
         }
 
-        let outcome = run_task(
-            &self.parent,
-            child,
-            task_text,
-            RunIo {
-                name,
-                preset_name: preset.name.clone(),
-                result_cap_tokens: preset.result_cap_tokens,
-                tier,
-                events,
-                cancel: cx.cancel.clone(),
-                progress: cx.output.clone(),
-                worktree,
-            },
-        )
-        .await;
+        let session = child.id();
+        let outcome = run_task(&self.parent, child, task_text, &mut io).await;
         // A failed task still finished: drop the registry entry and close
         // the Created/Completed pair so `/tasks` never shows a ghost.
         let cost_usd = outcome.as_ref().map(|o| o.cost_usd).unwrap_or(0.0);
         self.parent.complete_task(task).await;
-        self.parent
+        let completed = self
+            .parent
             .emit(Event::TaskCompleted {
                 task,
                 result_item: ItemId::new(),
@@ -489,14 +447,25 @@ impl Tool for AgentTool {
                 exit_code: None,
                 archive: None,
             })
-            .await
-            .map_err(core_error)?;
+            .await;
         let _ = hooks::fire(
             &self.parent,
             HookEvent::SubagentStop,
             json!({"task": task.to_string(), "label": label}),
         )
         .await;
+        io.spec.charge(cost_usd);
+        let parked = self.parent.park_child(
+            task,
+            Dormant {
+                session,
+                spec: io.spec,
+            },
+        );
+        if let Some((dormant, next)) = parked.await {
+            tokio::spawn(wake(self.parent.clone(), task, dormant, next));
+        }
+        completed.map_err(core_error)?;
         let outcome = outcome?;
         Ok(ToolOutput {
             text: outcome.answer,
@@ -523,8 +492,8 @@ async fn relay_approval(parent: &Session, child: &Session, call: ToolCall, why: 
     let decision = parent.relay_decision(id).await;
     let source = Source {
         session: child.id(),
-        agent: Some(io.name.clone()),
-        preset: Some(io.preset_name.clone()),
+        agent: Some(io.spec.name.clone()),
+        preset: Some(io.spec.preset_name.clone()),
     };
     let asked = parent.emit(Event::ApprovalRequired {
         call,
@@ -556,35 +525,203 @@ struct TaskOutcome {
     summarised: bool,
 }
 
-/// How one child run is driven and observed.
-struct RunIo {
+/// Everything a child needs to run again after it finished (SM§2): the
+/// same job, tier, tools, parent and what is left of its budget slice, and
+/// how its runs are labelled and capped.
+#[derive(Clone)]
+pub(crate) struct Spec {
+    config: cox_protocol::Config,
+    tools: Vec<Arc<dyn Tool>>,
+    job: Job,
+    tier: Tier,
+    /// The child's worktree, named in the answer so the parent can merge it.
+    worktree: Option<Worktree>,
     /// `<preset>-<n>`: how its approvals are labelled on the parent's surface.
     name: String,
-    /// The dispatched preset/def's own name (T34.1: `Resolved` is not
-    /// `Copy`, unlike the old `Preset`, so this is cloned out of it once
-    /// rather than moved, which would strand the caller's own copy).
     preset_name: String,
     result_cap_tokens: usize,
-    tier: Tier,
+    label: String,
+}
+
+impl Spec {
+    /// A resumed run gets what the finished ones left of the slice.
+    fn charge(&mut self, cost_usd: f64) {
+        let left = self.config.budget.session_usd - cost_usd;
+        self.config.budget.session_usd = left.max(0.0);
+    }
+}
+
+/// A finished child: its stored session, resumed from the rollout.
+pub(crate) struct Dormant {
+    session: SessionId,
+    spec: Spec,
+}
+
+/// The child session for `spec`, fresh or restored from `resume`.
+fn spawn(
+    parent: &Session,
+    spec: &Spec,
+    resume: Option<(SessionId, History)>,
+) -> Result<Session, CoreError> {
+    let cwd = spec.worktree.as_ref().map(|wt| wt.path.clone());
+    let (config, tools) = (spec.config.clone(), spec.tools.clone());
+    let child = parent.spawn_child(config, tools, spec.job, spec.tier, cwd, resume)?;
+    if let Some(wt) = &spec.worktree {
+        child.set_writable_roots(vec![wt.path.clone()]);
+    }
+    Ok(child)
+}
+
+/// Runs a background child until nothing is left for it to answer: each
+/// run reports like any background task, then a message that arrived
+/// meanwhile resumes it rather than waiting for another `wake` (SM§2).
+async fn drive(parent: Session, task: TaskId, mut child: Session, text: String, mut io: RunIo) {
+    let mut text = text;
+    loop {
+        let session = child.id();
+        let (answer, cost_usd) = match run_task(&parent, child, text, &mut io).await {
+            Ok(o) => (o.answer, o.cost_usd),
+            Err(e) => (format!("task failed: {e}"), 0.0),
+        };
+        let label = io.spec.label.clone();
+        parent.complete_task(task).await;
+        let _ = parent
+            .emit(Event::TaskCompleted {
+                task,
+                result_item: ItemId::new(),
+                cost_usd,
+                exit_code: None,
+                archive: None,
+            })
+            .await;
+        let _ = parent
+            .publish_task_result(task, &label, &answer, &cost_detail(cost_usd))
+            .await;
+        let stop = json!({"task": task.to_string(), "label": label});
+        let _ = hooks::fire(&parent, HookEvent::SubagentStop, stop).await;
+        io.spec.charge(cost_usd);
+        let spec = io.spec.clone();
+        let Some((dormant, next)) = parent.park_child(task, Dormant { session, spec }).await else {
+            return;
+        };
+        text = message_line(next.from, &next.text);
+        child = match restart(&parent, task, &dormant, &mut io).await {
+            Ok(child) => child,
+            Err(e) => return lost(&parent, task, e).await,
+        };
+    }
+}
+
+/// A message woke a finished child. Boxed so `Session::deliver`, which
+/// spawns it, does not need its own future's `Send` proof in a cycle.
+pub(crate) fn wake(
+    parent: Session,
+    task: TaskId,
+    dormant: Box<Dormant>,
+    next: Queued,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        let (progress, _) = mpsc::channel(1);
+        let (_, events) = mpsc::channel(1);
+        let cancel = parent.cancel_token();
+        let spec = dormant.spec.clone();
+        let mut io = RunIo {
+            task,
+            spec,
+            events,
+            cancel,
+            progress,
+        };
+        match restart(&parent, task, &dormant, &mut io).await {
+            Ok(child) => drive(parent, task, child, message_line(next.from, &next.text), io).await,
+            Err(e) => lost(&parent, task, e).await,
+        }
+    })
+}
+
+/// Restores a finished child from its rollout with its own job, tier,
+/// parent and budget slice, and announces it as running again.
+async fn restart(
+    parent: &Session,
+    task: TaskId,
+    dormant: &Dormant,
+    io: &mut RunIo,
+) -> Result<Session, CoreError> {
+    let events = parent
+        .store
+        .rollout_read(&dormant.session)
+        .map_err(|error| CoreError::Store { error })?;
+    let history = History::from_events(&events);
+    let child = spawn(parent, &dormant.spec, Some((dormant.session, history)))?;
+    io.events = child.events().unwrap_or_else(|| mpsc::channel(1).1);
+    io.cancel = parent.cancel_token();
+    let (label, tier) = (dormant.spec.label.clone(), dormant.spec.tier);
+    parent
+        .emit(Event::TaskCreated {
+            task,
+            label: label.clone(),
+            tier,
+        })
+        .await?;
+    parent
+        .register_task(task, label, tier, crate::tasks::TaskKind::Agent)
+        .await;
+    Ok(child)
+}
+
+/// A child that could not be restored stops being addressable, loudly.
+async fn lost(parent: &Session, task: TaskId, e: CoreError) {
+    parent.forget_child(task).await;
+    let text = format!("subagent task {task} could not resume: {e}");
+    let _ = parent.notice(Level::Warn, text).await;
+}
+
+/// SM§5: hops a message may travel before the parent drops it, so an
+/// A→B→A ping-pong stops. `MAX_MESSAGES_PER_TASK` is T34.6's, with the tool.
+pub(crate) const MAX_HOPS: u32 = 4;
+
+/// A child's `Event::TaskMessage`, routed by the parent only (SM§3): to its
+/// own task id means "to the parent", anything else is a sibling reached
+/// through the parent's own `Submission::TaskMessage`. `from` and `hop`
+/// are the parent's, never what the child claimed.
+pub(crate) async fn relay(
+    parent: &Session,
+    from: TaskId,
+    to: TaskId,
+    text: String,
+) -> Result<(), CoreError> {
+    let hop = parent.child_hop(from).await + 1;
+    if hop > MAX_HOPS {
+        let text = format!("message from task {from} to {to} dropped: hop limit {MAX_HOPS}");
+        return parent.notice(Level::Warn, text).await;
+    }
+    if to == from {
+        return parent.message_parent(from, hop, text).await;
+    }
+    let from = Some(from);
+    let sub = Submission::TaskMessage {
+        task: to,
+        from,
+        hop,
+        text,
+    };
+    parent.submit(sub).await
+}
+
+/// How one child run is driven and observed.
+struct RunIo {
+    /// The child's own task id: its queue and hop in the parent's registry.
+    task: TaskId,
+    spec: Spec,
     events: mpsc::Receiver<Event>,
     cancel: CancellationToken,
     progress: mpsc::Sender<String>,
-    /// The child's worktree, named in the answer so the parent can merge it.
-    worktree: Option<Worktree>,
 }
 
-/// Drives the child's turn and distills its answer (shared by the
-/// foreground call and the background task): accumulates cost, streams
-/// progress lines, charges the parent, caps the answer.
-async fn run_task(
-    parent: &Session,
-    child: Session,
-    task_text: String,
-    mut io: RunIo,
-) -> Result<TaskOutcome, ToolError> {
+/// The child's next turn, on its own task so the relay loop keeps running.
+fn submit_turn(child: &Session, text: String) -> JoinHandle<Result<(), CoreError>> {
     let runner = child.clone();
-    let text = task_text.clone();
-    let turn = tokio::spawn(async move {
+    tokio::spawn(async move {
         runner
             .submit(Submission::UserTurn {
                 text,
@@ -592,7 +729,20 @@ async fn run_task(
                 confirm_think: false,
             })
             .await
-    });
+    })
+}
+
+/// Drives the child's turns and distills its answer (shared by the
+/// foreground call and the background task): accumulates cost, streams
+/// progress lines, charges the parent, caps the answer. A message queued
+/// during a turn becomes the next turn once `TurnDone` closes this one.
+async fn run_task(
+    parent: &Session,
+    child: Session,
+    task_text: String,
+    io: &mut RunIo,
+) -> Result<TaskOutcome, ToolError> {
+    let mut turn = submit_turn(&child, task_text);
     let mut cost_usd = 0.0;
     let mut turns = 0u32;
     let mut interrupted = false;
@@ -611,22 +761,29 @@ async fn run_task(
                 Some(Event::ToolCallRequested { call }) => {
                     let _ = io
                         .progress
-                        .send(format!("[{}] {}\n", io.preset_name, call.name))
+                        .send(format!("[{}] {}\n", io.spec.preset_name, call.name))
                         .await;
                 }
-                Some(Event::TurnDone { .. }) => break Ok(()),
+                Some(Event::TurnDone { .. }) => {
+                    let Some(next) = parent.next_queued(io.task).await else {
+                        break Ok(());
+                    };
+                    if let Ok(Err(e)) = (&mut turn).await {
+                        break Err(core_error(e));
+                    }
+                    turn = submit_turn(&child, message_line(next.from, &next.text));
+                }
                 Some(Event::ApprovalRequired { call, why, .. }) => {
-                    relay_approval(parent, &child, call, why, &io).await;
+                    relay_approval(parent, &child, call, why, io).await;
                 }
                 // Closes the prompt the relay opened on the parent's surface;
                 // a rule's verdict never opened one.
                 Some(ev @ Event::ApprovalDecided { by: DecidedBy::User, .. }) => {
                     let _ = parent.emit(ev).await;
                 }
-                // T34.5 turns a child's own `TaskMessage` (`to: "parent"` or a
-                // sibling, SM§3) into the parent's `Submission::TaskMessage`
-                // instead of dropping it here.
-                Some(Event::TaskMessage { .. }) => {}
+                Some(Event::TaskMessage { task: to, text, .. }) => {
+                    let _ = relay(parent, io.task, to, text).await;
+                }
                 Some(_) => {}
                 None => break Err(ToolError::Io),
             },
@@ -636,7 +793,7 @@ async fn run_task(
         return Err(core_error(e));
     }
     outcome?;
-    if budget::counts(io.tier, parent.config.budget.cheap_counts) {
+    if budget::counts(io.spec.tier, parent.config.budget.cheap_counts) {
         parent.add_spend(cost_usd).await;
     }
 
@@ -654,17 +811,18 @@ async fn run_task(
         })
         .unwrap_or_else(|| "(the subagent produced no answer)".to_string());
     let mut summarised = false;
-    if result.len() / 4 > io.result_cap_tokens {
-        if let Some(short) = summarize(parent, &result, io.result_cap_tokens).await {
+    let cap = io.spec.result_cap_tokens;
+    if result.len() / 4 > cap {
+        if let Some(short) = summarize(parent, &result, cap).await {
             result = short;
             summarised = true;
         } else {
-            result.truncate(io.result_cap_tokens * 4);
+            result.truncate(cap * 4);
             result.push_str("\n[cut at the result cap]");
         }
     }
     // After the cap, so the trailer the parent merges from is never cut.
-    if let Some(wt) = &io.worktree {
+    if let Some(wt) = &io.spec.worktree {
         result.push_str(&format!(
             "\n[worktree {}, branch {}]",
             wt.path.display(),
@@ -844,5 +1002,360 @@ mod tests {
         for name in ["explore", "shell", "reviewer"] {
             assert!(why.contains(name), "{name:?} missing from {why:?}");
         }
+    }
+
+    use std::sync::{Mutex as StdMutex, OnceLock};
+    use std::time::Duration;
+
+    use cox_protocol::errors::ProviderError;
+    use cox_protocol::traits::Provider;
+    use cox_protocol::types::{Caps, ProviderId, Usage};
+    use cox_provider::scripted::Scripted;
+
+    use crate::tasks::Child;
+
+    /// The script, plus each request's tier and text parts, so a test can
+    /// see exactly what history a child turn was sent with.
+    struct Recording {
+        script: Scripted,
+        seen: StdMutex<Vec<(Tier, Vec<String>)>>,
+    }
+
+    #[async_trait]
+    impl Provider for Recording {
+        fn id(&self) -> ProviderId {
+            self.script.id()
+        }
+        fn capabilities(&self) -> Caps {
+            self.script.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: Request,
+            sink: mpsc::Sender<ProviderEvent>,
+            cancel: CancellationToken,
+        ) -> Result<Usage, ProviderError> {
+            let texts = req.messages.iter().flat_map(|m| &m.content);
+            let texts = texts.filter_map(|c| match c {
+                Content::Text { text } => Some(text.clone()),
+                _ => None,
+            });
+            let row = (req.tier, texts.collect());
+            self.seen.lock().expect("lock").push(row);
+            self.script.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+            self.script.count_tokens(req).await
+        }
+    }
+
+    impl Recording {
+        /// The child's requests: `explore` runs on the cheap tier, the
+        /// parent on `code`.
+        fn child(&self) -> Vec<Vec<String>> {
+            let seen = self.seen.lock().expect("lock");
+            let rows = seen.iter().filter(|(tier, _)| *tier == Tier::Cheap);
+            rows.map(|(_, texts)| texts.clone()).collect()
+        }
+    }
+
+    /// Mid-turn, submits a message to the parent's one child.
+    struct Poke(Arc<OnceLock<Session>>);
+
+    #[async_trait]
+    impl Tool for Poke {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec {
+                name: "poke".into(),
+                description: "messages the running child".into(),
+                input_schema: json!({"type": "object"}),
+                deferred: false,
+                risk: Risk::ReadOnly,
+                concurrency: Concurrency::Parallel,
+            }
+        }
+        fn subject(&self, _input: &Value) -> String {
+            "poke".into()
+        }
+        async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+            let parent = self.0.get().ok_or(ToolError::Io)?;
+            let task = *parent
+                .inner
+                .lock()
+                .await
+                .children
+                .keys()
+                .next()
+                .ok_or(ToolError::Io)?;
+            let sub = Submission::TaskMessage {
+                task,
+                from: None,
+                hop: 0,
+                text: "ping".into(),
+            };
+            parent.submit(sub).await.map_err(|_| ToolError::Io)?;
+            Ok(ToolOutput {
+                text: "poked".into(),
+                is_error: false,
+                diff: None,
+                structured: None,
+            })
+        }
+    }
+
+    fn parent_with(toml: &str) -> (Session, Arc<Recording>, mpsc::Receiver<Event>) {
+        let script = Scripted::from_toml(toml, "").expect("scenario");
+        let seen = StdMutex::new(Vec::new());
+        let provider = Arc::new(Recording { script, seen });
+        let store = Arc::new(crate::MemoryStore::new());
+        let slot = Arc::new(OnceLock::new());
+        let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Poke(slot.clone()))];
+        let cwd = PathBuf::from("/tmp/cox-subagent-unit");
+        let mut config = cox_protocol::Config::default();
+        config.core.workspace_roots = vec![cwd.clone()];
+        let session = Session::new(config, provider.clone(), tools, store.clone(), store, cwd)
+            .expect("session");
+        let _ = slot.set(session.clone());
+        let rx = session.events().expect("events");
+        (session, provider, rx)
+    }
+
+    async fn until(rx: &mut mpsc::Receiver<Event>, done: impl Fn(&Event) -> bool) -> Vec<Event> {
+        let mut out = Vec::new();
+        loop {
+            let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+            let ev = ev.expect("event timeout").expect("stream closed");
+            let stop = done(&ev);
+            out.push(ev);
+            if stop {
+                return out;
+            }
+        }
+    }
+
+    /// One parent turn over `parent`'s script, drained to its `TurnDone`.
+    async fn parent_turn(parent: &Session, rx: &mut mpsc::Receiver<Event>) -> Vec<Event> {
+        let runner = parent.clone();
+        let running = tokio::spawn(async move {
+            let text = "go".to_string();
+            let (attachments, confirm_think) = (vec![], false);
+            let sub = Submission::UserTurn {
+                text,
+                attachments,
+                confirm_think,
+            };
+            runner.submit(sub).await
+        });
+        let events = until(rx, |e| matches!(e, Event::TurnDone { .. })).await;
+        running.await.expect("join").expect("turn");
+        events
+    }
+
+    #[tokio::test]
+    async fn task_message_reaches_a_still_running_subagent_after_its_current_turn() {
+        let toml = r#"
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "work", tools = ["poke"] } }]
+[[turn]]
+text = "poking"
+tool_calls = [{ name = "poke", input = {} }]
+[[turn]]
+text = "first answer"
+[[turn]]
+text = "got ping"
+[[turn]]
+text = "done"
+"#;
+        let (parent, seen, mut rx) = parent_with(toml);
+        let events = parent_turn(&parent, &mut rx).await;
+
+        let results: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::ToolCallDone { result, .. } => Some(result.visible.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(results, ["got ping"], "the child answered the message");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::TaskMessage { from: None, hop: 0, text, .. } if text == "ping"
+        )));
+        let child = seen.child();
+        assert_eq!(child.len(), 3, "poke, first answer, then the message turn");
+        let ping = "[message from parent] ping";
+        assert!(!child[1].iter().any(|t| t == ping), "never mid-turn");
+        let last = &child[2];
+        let at = last.iter().position(|t| t == ping).expect("delivered");
+        assert_eq!(last[at - 1], "first answer", "after the whole turn");
+    }
+
+    /// Also the card's `resumed_subagent_keeps_its_parent_id_and_budget_slice`:
+    /// the resumed request runs on the child's own tier, and the parked
+    /// slice never grows.
+    #[tokio::test]
+    async fn task_message_to_a_finished_subagent_resumes_it_with_history_intact() {
+        let toml = r#"
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "remember 42" } }]
+[[turn]]
+text = "noted"
+[[turn]]
+text = "done"
+[[turn]]
+text = "it was 42"
+"#;
+        let (parent, seen, mut rx) = parent_with(toml);
+        let events = parent_turn(&parent, &mut rx).await;
+        let task = events
+            .iter()
+            .find_map(|e| match e {
+                Event::TaskCreated { task, .. } => Some(*task),
+                _ => None,
+            })
+            .expect("task");
+        let slice = match parent.inner.lock().await.children.get(&task) {
+            Some(Child::Finished(d)) => d.spec.config.budget.session_usd,
+            _ => panic!("a finished child is kept, not dropped"),
+        };
+
+        let sub = Submission::TaskMessage {
+            task,
+            from: None,
+            hop: 0,
+            text: "what number?".into(),
+        };
+        parent.submit(sub).await.expect("deliver");
+        let woke = until(
+            &mut rx,
+            |e| matches!(e, Event::Notice { text, .. } if text.contains("finished")),
+        )
+        .await;
+        assert!(woke.iter().any(|e| matches!(
+            e,
+            Event::TaskCreated { task: t, tier: Tier::Cheap, .. } if *t == task
+        )));
+
+        let child = seen.child();
+        assert_eq!(
+            child.len(),
+            2,
+            "the first run and the resumed one, both cheap"
+        );
+        assert_eq!(
+            child[1],
+            ["remember 42", "noted", "[message from parent] what number?"],
+            "the resumed turn sees its whole history"
+        );
+        let history = parent.history().await;
+        let pointer = history
+            .iter()
+            .flat_map(|m| &m.content)
+            .any(|c| matches!(c, Content::Text { text } if text.contains("it was 42")));
+        assert!(pointer, "the answer reaches the parent as a pointer line");
+        match parent.inner.lock().await.children.get(&task) {
+            Some(Child::Finished(d)) => {
+                assert!(d.spec.config.budget.session_usd <= slice, "the same slice");
+            }
+            _ => panic!("parked again after the resumed run"),
+        }
+    }
+
+    fn child_spec() -> Spec {
+        Spec {
+            config: cox_protocol::Config::default(),
+            tools: vec![],
+            job: Job::Explore,
+            tier: Tier::Cheap,
+            worktree: None,
+            name: "explore-1".into(),
+            preset_name: "explore".into(),
+            result_cap_tokens: 1000,
+            label: "explore: a".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn sibling_message_is_relayed_through_the_parent() {
+        let (parent, _, mut rx) = parent_with("[[turn]]\ntext = \"sent\"\n");
+        let (a, b) = (TaskId::new(), TaskId::new());
+        parent.track_child(a).await;
+        parent.track_child(b).await;
+        let spec = child_spec();
+        let child = spawn(&parent, &spec, None).expect("child");
+        let events = child.events().expect("events");
+        // The child claims a sender and a hop; the parent overrides both.
+        for (to, text) in [(b, "hi b"), (a, "hi parent")] {
+            let forged = Event::TaskMessage {
+                task: to,
+                from: None,
+                hop: 99,
+                text: text.into(),
+            };
+            child.emit(forged).await.expect("emit");
+        }
+        let (progress, _) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
+        let task = a;
+        let mut io = RunIo {
+            task,
+            spec,
+            events,
+            cancel,
+            progress,
+        };
+        let out = run_task(&parent, child, "a".into(), &mut io).await;
+        assert_eq!(out.map(|o| o.answer).ok().as_deref(), Some("sent"));
+
+        let relayed = Queued {
+            from: Some(a),
+            hop: 1,
+            text: "hi b".into(),
+        };
+        assert_eq!(parent.next_queued(b).await, Some(relayed));
+        let parent_line = format!("[message from task {a}] hi parent");
+        let history = parent.history().await;
+        let line = history
+            .iter()
+            .flat_map(|m| &m.content)
+            .any(|c| matches!(c, Content::Text { text } if *text == parent_line));
+        assert!(line, "to its own task id means to the parent");
+        let seen = until(
+            &mut rx,
+            |e| matches!(e, Event::TaskMessage { task, .. } if *task == a),
+        )
+        .await;
+        assert!(seen.iter().any(|e| matches!(
+            e,
+            Event::TaskMessage { task, from: Some(f), hop: 1, .. } if *task == b && *f == a
+        )));
+    }
+
+    #[tokio::test]
+    async fn hop_limit_stops_a_ping_pong() {
+        let (parent, _, _rx) = parent_with("");
+        let (a, b, c) = (TaskId::new(), TaskId::new(), TaskId::new());
+        for t in [a, b, c] {
+            parent.track_child(t).await;
+        }
+        let (mut from, mut to) = (a, b);
+        let mut delivered = 0;
+        for _ in 0..10 {
+            relay(&parent, from, to, "ping".into())
+                .await
+                .expect("relay");
+            let Some(next) = parent.next_queued(to).await else {
+                break;
+            };
+            delivered += 1;
+            assert_eq!(next.hop, delivered, "each relay is one hop further");
+            std::mem::swap(&mut from, &mut to);
+        }
+        assert_eq!(delivered, MAX_HOPS, "A→B→A stops after MAX_HOPS relays");
+        // An independent message, sent during a turn its task started, is hop 1.
+        relay(&parent, c, b, "hello".into()).await.expect("relay");
+        assert_eq!(parent.next_queued(b).await.map(|q| q.hop), Some(1));
     }
 }
