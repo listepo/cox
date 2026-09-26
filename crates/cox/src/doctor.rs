@@ -859,6 +859,7 @@ mod tests {
                 id: "claude-doctor-test-unpriced".into(),
                 context_window: 100_000,
                 efforts: vec![],
+                ..Default::default()
             });
         let result = check_catalog_prices(&config);
         assert_eq!(result.status, "warn", "{}", result.detail);

@@ -356,12 +356,17 @@
       "additionalProperties": false
     },
     "Effort": {
-      "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < High < Xhigh` so the router can clamp a tier's effort to\nthe greatest level a model supports (`docs/design/providers.md`).",
+      "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < Medium < High < Xhigh` so the router can clamp a tier's\neffort to the greatest level a model supports (`docs/design/providers.md`).\nThe four levels are models.dev's own, so a catalog row maps without loss\n(T30.26).",
       "oneOf": [
         {
           "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
           "type": "string",
           "const": "low"
+        },
+        {
+          "description": "Between `Low` and `High`: models.dev's and the wires' `medium`.",
+          "type": "string",
+          "const": "medium"
         },
         {
           "description": "Default for `code`/`think` tiers.",
@@ -577,7 +582,7 @@
       "additionalProperties": false
     },
     "ProviderModel": {
-      "description": "One model entry in a provider section's `models` list (the opencode\n`provider.<id>.models` shape, `docs/design/providers.md`): the model id\nas sent on the wire, its context window, and the efforts it understands\n(models.dev `reasoning_options.effort` mapped to [`Effort`]: `low`→`Low`,\n`medium`/`high`→`High`, `xhigh`/`max`→`Xhigh`). An empty `efforts` means\nunconstrained — any tier effort passes through unclamped.",
+      "description": "One model entry in a provider section's `models` list (the opencode\n`provider.<id>.models` shape, `docs/design/providers.md`): the model id\nas sent on the wire, its context window, and the efforts it understands\n(models.dev `reasoning_options.effort` mapped to [`Effort`]: `low`→`Low`,\n`medium`→`Medium`, `high`→`High`, `xhigh`/`max`→`Xhigh`). An empty\n`efforts` means unconstrained — any tier effort passes through unclamped.",
       "type": "object",
       "properties": {
         "id": {
@@ -599,6 +604,13 @@
             "$ref": "#/$defs/Effort"
           },
           "default": []
+        },
+        "reasoning_effort": {
+          "description": "Whether this model takes the Chat Completions `reasoning_effort`\nfield (T30.26). Unset means \"not declared\", and an `api = \"chat\"`\nsection then sends no effort at all: OpenAI documents the field,\nLM Studio's compatible endpoint does not list it (research.md\n§4.3.3), so it is opt-in per model rather than per wire.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "additionalProperties": false
