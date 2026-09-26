@@ -7,7 +7,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T33.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.10 | todo | P2 | 4 | 0% | |
+| T33.10 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.11 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.12 | todo | P2 | 4 | 0% | |
 | T33.13 | todo | P2 | 4 | 0% | |
