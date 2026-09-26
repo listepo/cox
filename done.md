@@ -991,3 +991,30 @@ Result: `cox-plugin-api::abi` holds every payload of PL§4:
 
 Fields that carry cox-protocol types are `serde_json::Value`, marked in the schema with `x-cox-protocol`. No payload denies unknown fields, so `InitIn.granted` is a `Value`. `CommandOut` is closed: prompt, compact, toggle_panel, open_overlay, notice or nothing, with no Submission variant. The two-phase decide types (`DecideOut`, `cox_decide_resume`) stay with T33.40.1. `docs/plugin-abi.schema.json` is generated and drift-tested.
 Check: `abi_schema_matches_committed_file`, `command_out_has_no_submission_variant` and `unknown_fields_are_ignored_both_ways` pass, and the crate still builds for wasm32. nextest ran 954 passed, 3 skipped in the worktree; on main `-p cox-plugin-api -p cox-protocol` ran 75 passed.
+
+#### T33.5 Grants and kv in `cox-store` — blocker
+
+Depends: T33.1 · Size: ~190 · Files: `crates/cox-store/migrations/00000000000004_plugins/{up,down}.sql`, `crates/cox-store/src/models.rs`, `crates/cox-store/src/lib.rs` (+ `schema.rs`, generated)
+Goal: the `plugin_grants` and `plugin_kv` tables per PL§3 through Diesel's typed DSL, and a `PluginStore` trait in `cox-protocol` implemented by `Store`. The kv quota is enforced in the store.
+Check: `grant_rows_are_per_digest`, `kv_quota_rejects_oversize_value`, `kv_delete_all_removes_only_that_plugin`; `deps.rs` still has diesel only in `cox-store`.
+Status: done 2026-09-26
+Result: migration `00000000000004_plugins` adds `plugin_grants`, keyed by `plugin_id`, `scope` and `digest`, and `plugin_kv`, keyed by `plugin_id` and `key` (PL§3). `PluginStore`, `PluginGrant` and `GrantScope` (`User | Project(root)`) sit in `cox-protocol` next to `Store`. Granted capabilities and source stay opaque JSON until T33.6. `cox-store` implements the trait with Diesel's typed DSL. The kv quota is 64 KiB per value and 1 MiB per plugin; going over it returns the new `StoreError::QuotaExceeded`. `schema.rs` is still hand-written, and the schema snapshot now includes the two tables.
+Deviation: the card's Files line did not list `cox-protocol`, but PL§3 puts the trait there.
+Check: `grant_rows_are_per_digest`, `kv_quota_rejects_oversize_value` and `kv_delete_all_removes_only_that_plugin` pass. nextest ran 954 passed, 3 skipped in the worktree.
+
+#### T30.15 LM Studio provider: the chat loop over `/v1/messages`
+
+Depends: T30.21–T30.23 (the section is one more `Transport` table; A46) · Size: ~150
+Goal: `--provider lmstudio` works with no hand-written config: cox talks to LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider, with LM Studio's optional auth. Evidence in R§4.3.2: the native `/api/v1/chat` takes no custom tool schemas, and cox's OpenAI Chat path drops tool calls, so Messages is the one working chat transport; T30.14 already ran a one-tool task over it at $0.
+Plan:
+1. `cox-protocol` config: a built-in `[providers.lmstudio]` (`base_url` default `http://localhost:1234`, `api_key_env` default `LM_API_TOKEN`, `model`, `context_window` where `0` means "ask the server" (T30.16), `timeout_s`, `max_retries`); regenerate the committed schema so the drift test passes.
+2. `cox-provider/src/anthropic/mod.rs`: a constructor taking an optional key — no key sends no auth header (LM Studio without "Require Authentication"); a key goes out as `x-api-key`, which LM Studio accepts on this path. Reuse the request, stream and retry code as is; no new wire types.
+3. `crates/cox/src/session.rs`: `"lmstudio"` in `backend_for`, reading the key from `api_key_env` when set, never from the Anthropic keyring.
+4. Tests: wiremock — no key means no `x-api-key`; `LM_API_TOKEN` set means it is sent; a tool-call stream captured from the live server (fixture in `cox-provider/tests/fixtures/`) parses into `ToolUseStart` … `ToolUseEnd`.
+Check: `COX_HOME=<scratch> cox run -p "<one-tool task>" --provider lmstudio --tier code=prism-ml/bonsai-27b` finishes with `exit_code` 0 and a `usage` ledger row at $0; the three standard commands clean.
+Done when: `--provider lmstudio` runs a tool loop against a live LM Studio with only `tiers.code.model` set.
+Out of scope: the native API (T30.16); fixing `openai/chat.rs` (ideas.md).
+Status: done 2026-09-26
+Result: new `[providers.lmstudio]` section (`LmStudioProviderConfig`: `base_url` `http://localhost:1234`, `api_key_env` `LM_API_TOKEN`, `model`, `context_window`, timeout and retries). Chat runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing `AnthropicProvider` (R§4.3.2: the native `/api/v1/chat` has no tool schemas). `AnthropicProvider.api_key` is now `Option<String>`, so a keyless section sends no `x-api-key`. The key resolves under `lmstudio`, never the Anthropic keyring entry. The router buckets `lmstudio` as `ProviderId::Anthropic`, which matches what the built provider reports to the ledger. An empty `model` falls through to `tiers.code.model`. `context_window` goes: configured value → catalog → 32,768 floor (the live query is T30.16). `cox doctor` treats the key as optional.
+Deviation: the live-server Check was not run, because no LM Studio instance was available. Replaced by `stream_sends_no_x_api_key_header_without_a_key`, `stream_sends_x_api_key_header_with_a_key` (wiremock), `backend_for_lmstudio_builds_keyed_and_keyless`, `router_lmstudio_maps_to_anthropic_and_pins_on_tier_model_alone` and `lmstudio_provider_defaults`, plus a scratch-`COX_HOME` run of the real binary: `cox doctor` warns about the missing optional key, and `cox run -p … --provider lmstudio` reaches the outbound request to `localhost:1234/v1/messages`.
+Check: nextest ran 945 passed, 3 skipped in the worktree. clippy and fmt are clean.

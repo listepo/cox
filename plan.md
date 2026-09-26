@@ -6,13 +6,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.15 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
 | T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
 | T32.2 | todo | P2 | 4 | 0% | |
 | T33.3 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
 | T33.4 | todo | P2 | 3 | 0% | |
-| T33.5 | in progress | P1 | 3 | 5% | Claude Code / sonnet-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
 | T33.7 | todo | P2 | 3 | 0% | |
 | T33.8 | todo | P2 | 3 | 0% | |
@@ -757,19 +755,6 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
-#### T30.15 LM Studio provider: the chat loop over `/v1/messages`
-
-Depends: T30.21–T30.23 (the section is one more `Transport` table; A46) · Size: ~150
-Goal: `--provider lmstudio` works with no hand-written config: cox talks to LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider, with LM Studio's optional auth. Evidence in R§4.3.2: the native `/api/v1/chat` takes no custom tool schemas, and cox's OpenAI Chat path drops tool calls, so Messages is the one working chat transport; T30.14 already ran a one-tool task over it at $0.
-Plan:
-1. `cox-protocol` config: a built-in `[providers.lmstudio]` (`base_url` default `http://localhost:1234`, `api_key_env` default `LM_API_TOKEN`, `model`, `context_window` where `0` means "ask the server" (T30.16), `timeout_s`, `max_retries`); regenerate the committed schema so the drift test passes.
-2. `cox-provider/src/anthropic/mod.rs`: a constructor taking an optional key — no key sends no auth header (LM Studio without "Require Authentication"); a key goes out as `x-api-key`, which LM Studio accepts on this path. Reuse the request, stream and retry code as is; no new wire types.
-3. `crates/cox/src/session.rs`: `"lmstudio"` in `backend_for`, reading the key from `api_key_env` when set, never from the Anthropic keyring.
-4. Tests: wiremock — no key means no `x-api-key`; `LM_API_TOKEN` set means it is sent; a tool-call stream captured from the live server (fixture in `cox-provider/tests/fixtures/`) parses into `ToolUseStart` … `ToolUseEnd`.
-Check: `COX_HOME=<scratch> cox run -p "<one-tool task>" --provider lmstudio --tier code=prism-ml/bonsai-27b` finishes with `exit_code` 0 and a `usage` ledger row at $0; the three standard commands clean.
-Done when: `--provider lmstudio` runs a tool loop against a live LM Studio with only `tiers.code.model` set.
-Out of scope: the native API (T30.16); fixing `openai/chat.rs` (ideas.md).
-
 #### T30.16 LM Studio native API: loaded context, capabilities, load on demand
 
 Depends: T30.15, T30.24–T30.25 (the loaded context is a catalog override; A46) · Size: ~180
@@ -856,12 +841,6 @@ Depends: T33.3 · Size: ~190 · Files: `crates/cox-plugin/src/discover.rs`, `cra
 Goal: find user plugins (`~/.cox/plugins/<id>/current`) and project plugins (`<git root>/.cox/plugins/<id>`). The user plugin wins a clash with a notice. Validate each manifest, compute the SHA-256 tree digest (PL§1), and list plugins with their state.
 Plan: `cox plugin list [--json]` loads each granted plugin, runs `cox_init` against a stub session and reports its contributions. The grant state reads "unknown" until T33.6. `cox ext list` gains a plugins section.
 Check: `digest_changes_when_any_file_changes`, `user_plugin_shadows_project_plugin_with_notice`, `malformed_manifest_is_listed_as_skipped`; the real binary against a scratch `COX_HOME` lists a WAT fixture plugin.
-
-#### T33.5 Grants and kv in `cox-store` — blocker
-
-Depends: T33.1 · Size: ~190 · Files: `crates/cox-store/migrations/00000000000004_plugins/{up,down}.sql`, `crates/cox-store/src/models.rs`, `crates/cox-store/src/lib.rs` (+ `schema.rs`, generated)
-Goal: the `plugin_grants` and `plugin_kv` tables per PL§3 through Diesel's typed DSL, and a `PluginStore` trait in `cox-protocol` implemented by `Store`. The kv quota is enforced in the store.
-Check: `grant_rows_are_per_digest`, `kv_quota_rejects_oversize_value`, `kv_delete_all_removes_only_that_plugin`; `deps.rs` still has diesel only in `cox-store`.
 
 #### T33.6 Grant check and granted-only loading — blocker
 
