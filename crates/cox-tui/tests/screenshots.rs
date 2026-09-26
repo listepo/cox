@@ -124,6 +124,7 @@ fn tool(state: &mut State, name: &str, subject: &str, risk: Risk, output: &str) 
                 input: serde_json::json!({ key: subject }),
                 risk,
                 subject: subject.into(),
+                segments: None,
             },
         },
     );
@@ -355,6 +356,7 @@ fn screen_bash_approval_modal() {
                 input: serde_json::json!({"command": "cargo test --workspace"}),
                 risk: Risk::Exec,
                 subject: "cargo test --workspace".into(),
+                segments: None,
             },
             why: Why::Risk { risk: Risk::Exec },
             source: None,
@@ -575,6 +577,7 @@ fn screen_tool_card_error() {
                 input: serde_json::json!({"command": "cargo build"}),
                 risk: Risk::Exec,
                 subject: "cargo build".into(),
+                segments: None,
             },
         },
     );

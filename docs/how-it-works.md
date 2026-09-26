@@ -105,6 +105,38 @@ ask   = ["Bash(git commit:*)"]   # this one always asks
 deny  = ["Read(~/.ssh/**)"]      # this one never runs — even with an allow rule
 ```
 
+Rule grammar (Claude Code's): `Tool` matches every call, `Tool(text)` the
+exact subject, `Tool(prefix:*)` a subject that is `prefix` alone or
+`prefix` followed by whitespace, `WebFetch(domain:host)` the host and its
+subdomains, and a path glob for file tools.
+
+A `bash` command line is matched **command by command** (T36.1). The
+tool splits it with its tree-sitter parse on `;`, `&&`, `||`, `|`, `&` and
+newlines, including commands nested in a subshell, a `$(…)` or a loop
+body, and hands the engine those strings next to the whole line:
+
+- a `deny` or `ask` rule that matches **any** command applies, so
+  `deny = ["Bash(rm:*)"]` denies `git status && rm -rf x`, and a leading
+  `VAR=value` does not hide the `rm`;
+- an `allow` prefix rule or a session grant allows the line only when
+  **every** command is covered, so `allow = ["Bash(git:*)"]` runs
+  `git status && git diff` without asking but asks for `git status; rm -rf x`.
+  Different rules may cover different commands;
+- a line the split cannot vouch for is never allowed by a prefix rule or a
+  grant, whatever its first word: `$(…)` or backticks, `<(…)`, `eval`,
+  `sh -c`/`bash -c`, a variable assignment or `export` (`PATH=…` changes
+  what `git` runs), an output redirect to a path (`2>&1` and `/dev/null`
+  are fine) or a parse error. It takes the normal ask path; `cox run -p`
+  turns that ask into a deny;
+- a bare `Bash` rule or an exact rule (`Bash(make && make install)`) still
+  matches the whole line as written, and the read-only auto-allow and
+  `bypass` mode are unchanged.
+
+"Always allow this session" on a compound line records one grant per
+command, so approving `git status && npm test` later covers `npm test` on
+its own and never `npm test; rm -rf ~`. An opaque line is granted only as
+the exact line approved.
+
 ```rust
 use std::path::Path;
 use cox_core::permission::{Engine, Outcome};
@@ -118,6 +150,7 @@ let ssh = ToolCall {
     id: CallId::new(), name: "read".into(),
     input: json!({"path": "/home/alice/.ssh/id_ed25519"}),
     risk: Risk::ReadOnly, subject: "/home/alice/.ssh/id_ed25519".into(),
+    segments: None, // only `bash` fills it (T36.1)
 };
 // The default config denies this, despite the ReadOnly risk:
 assert!(matches!(

@@ -990,6 +990,17 @@
           "subject": {
             "description": "What permission rules match on: the confined path, command line, URL, or MCP name.",
             "type": "string"
+          },
+          "segments": {
+            "description": "The simple commands a shell `subject` splits into (T36.1). `None`\nmeans the subject is one unit, as for every tool that is not a shell.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Segments"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1028,6 +1039,26 @@
             "type": "string",
             "const": "destructive"
           }
+        ]
+      },
+      "Segments": {
+        "description": "A compound command line as the permission engine judges it (T36.1): a\ndeny or ask rule matching any command denies or asks, an allow rule or a\nsession grant must cover every command. Plain strings, so the engine\nstays pure and the shell tool owns the parser.",
+        "type": "object",
+        "properties": {
+          "commands": {
+            "description": "Every simple command in source order, including those nested in a\nsubshell, a substitution or a loop body.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "opaque": {
+            "description": "The split cannot vouch for the whole line — a substitution, `eval`,\n`sh -c`, a variable assignment, an output redirect to a path, or a\nparse error — so no prefix rule or grant may allow it; deny and ask\nrules still match `commands`.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "commands"
         ]
       },
       "ToolResult": {

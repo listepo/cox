@@ -141,6 +141,7 @@ impl ServerHandler for ToolServer {
             name,
             risk: tool.risk(&input),
             subject: tool.subject(&input),
+            segments: tool.segments(&input),
             input,
         };
         Ok(self.run_call(tool.as_ref(), call).await.into())

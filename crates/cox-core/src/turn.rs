@@ -147,6 +147,7 @@ pub(crate) async fn run_tools(
             ToolCall {
                 id,
                 subject: tool.map(|t| t.subject(&input)).unwrap_or_default(),
+                segments: tool.and_then(|t| t.segments(&input)),
                 // Per call, not per tool: `apply_patch` escalates to
                 // `Destructive` on the patches that delete a lot of files.
                 risk: tool.map(|t| t.risk(&input)).unwrap_or(Risk::ReadOnly),
@@ -258,11 +259,7 @@ async fn gate(
         HookOutcome::Block { reason } => {
             return Ok(Err(failed_result(&format!("blocked by hook: {reason}"))));
         }
-        HookOutcome::Modify { input } => {
-            call.risk = tool.risk(&input);
-            call.subject = tool.subject(&input);
-            call.input = input;
-        }
+        HookOutcome::Modify { input } => rate(&mut call, tool, input),
         _ => {}
     }
     // T33.21: `risk` advice may only raise what the engine judges next.
@@ -287,19 +284,27 @@ async fn gate(
         match ask(session, &call, why).await? {
             Decision::Allow => return Ok(Ok(call)),
             Decision::AllowForSession => {
-                session.grant(call.name.clone(), call.subject.clone()).await;
+                for (tool, subject) in crate::permission::grants_for(&call) {
+                    session.grant(tool, subject).await;
+                }
                 return Ok(Ok(call));
             }
             Decision::Deny { reason } => return Ok(Err(denied(&reason))),
             // A rewritten input is a new call as far as the rules go: its
             // risk and subject change, so it goes back through `decide`.
-            Decision::Edit { input } => {
-                call.risk = tool.risk(&input);
-                call.subject = tool.subject(&input);
-                call.input = input;
-            }
+            Decision::Edit { input } => rate(&mut call, tool, input),
         }
     }
+}
+
+/// Re-rates `call` for a rewritten `input` (a hook's or the user's edit):
+/// risk, subject and segments change together, or the engine would judge
+/// the new command by the old one's pieces.
+fn rate(call: &mut ToolCall, tool: &dyn Tool, input: Value) {
+    call.risk = tool.risk(&input);
+    call.subject = tool.subject(&input);
+    call.segments = tool.segments(&input);
+    call.input = input;
 }
 
 /// Emits `ApprovalRequired`, parks until `Submission::Approve` answers it
@@ -481,6 +486,7 @@ async fn run_one(
             name: tool.spec().name,
             risk: tool.risk(&input),
             subject: tool.subject(&input),
+            segments: tool.segments(&input),
             input: input.clone(),
         };
         let decision = ask(session, &call, Why::SandboxDenied { detail }).await;

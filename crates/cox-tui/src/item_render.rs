@@ -181,6 +181,7 @@ mod tests {
             input: serde_json::json!({ "path": "src/lib.rs" }),
             risk: Risk::ReadOnly,
             subject: "src/lib.rs".into(),
+            segments: None,
         };
         let result = ToolResult {
             ok: true,

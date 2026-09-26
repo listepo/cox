@@ -92,6 +92,7 @@ impl Engine {
     ///     input: json!({"path": "/home/alice/.ssh/id_ed25519"}),
     ///     risk: Risk::ReadOnly,
     ///     subject: "/home/alice/.ssh/id_ed25519".into(),
+    ///     segments: None,
     /// };
     /// let outcome = engine.decide(
     ///     &ssh,
@@ -111,10 +112,17 @@ impl Engine {
         sandbox: SandboxMode,
         grants: &[(String, String)],
     ) -> Outcome {
+        // Deny and ask need one hit: the whole line or any of its commands.
         let first = |rules: &[Rule]| {
             rules
                 .iter()
-                .find(|r| r.matches(&call.name, &call.subject))
+                .find(|r| {
+                    r.matches(&call.name, &call.subject)
+                        || call
+                            .segments
+                            .as_ref()
+                            .is_some_and(|s| s.commands.iter().any(|c| r.matches(&call.name, c)))
+                })
                 .map(|r| r.raw.clone())
         };
         if let Some(rule) = first(&self.deny) {
@@ -141,17 +149,18 @@ impl Engine {
                 }
             };
         }
-        if first(&self.allow).is_some() {
+        if covered(
+            call,
+            |line| self.allow.iter().any(|r| r.matches_line(&call.name, line)),
+            |c| self.allow.iter().any(|r| r.matches(&call.name, c)),
+        ) {
             return Outcome::Allow {
                 by: DecidedBy::Rule,
             };
         }
         let why = if let Some(rule) = first(&self.ask) {
             Some(Why::RuleAsk { rule })
-        } else if grants.iter().any(|(tool, subject)| {
-            rules::tool_matches(&canonical_tool(tool), &call.name)
-                && call.subject.starts_with(subject.as_str())
-        }) {
+        } else if granted(call, grants) {
             return Outcome::Allow {
                 by: DecidedBy::Session,
             };
@@ -170,6 +179,55 @@ impl Engine {
             },
             Some(why) => Outcome::Ask(why),
         }
+    }
+}
+
+/// Whether allow-side matchers cover `call`. A call without segments is one
+/// unit, matched by `each`. A split command line is covered by `line` on its
+/// whole text (an exact or bare rule), or by `each` on every one of its
+/// commands — never when the split is opaque (T36.1).
+fn covered(call: &ToolCall, line: impl Fn(&str) -> bool, each: impl Fn(&str) -> bool) -> bool {
+    match &call.segments {
+        None => each(&call.subject),
+        Some(s) => {
+            line(&call.subject)
+                || (!s.opaque && !s.commands.is_empty() && s.commands.iter().all(|c| each(c)))
+        }
+    }
+}
+
+/// Step 6: an `AllowForSession` grant. Grants are recorded per command by
+/// [`grants_for`]; a grant covers a command it prefixes at a word boundary,
+/// and an opaque line only when the user approved that exact line.
+fn granted(call: &ToolCall, grants: &[(String, String)]) -> bool {
+    let mine = || {
+        grants
+            .iter()
+            .filter(|(tool, _)| rules::tool_matches(&canonical_tool(tool), &call.name))
+            .map(|(_, subject)| subject.as_str())
+    };
+    match call.segments {
+        None => mine().any(|g| call.subject.starts_with(g)),
+        Some(_) => covered(
+            call,
+            |line| mine().any(|g| g == line),
+            |c| mine().any(|g| rules::word_prefix(g, c)),
+        ),
+    }
+}
+
+/// The `(tool, subject)` grants an `AllowForSession` answer to `call`
+/// records: one per command of a split line, so approving `git status &&
+/// npm test` later covers `npm test` alone and never `npm test; rm -rf ~`.
+/// An opaque line or a call without segments records its whole subject.
+pub fn grants_for(call: &ToolCall) -> Vec<(String, String)> {
+    match &call.segments {
+        Some(s) if !s.opaque && !s.commands.is_empty() => s
+            .commands
+            .iter()
+            .map(|c| (call.name.clone(), c.clone()))
+            .collect(),
+        _ => vec![(call.name.clone(), call.subject.clone())],
     }
 }
 

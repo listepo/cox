@@ -228,7 +228,7 @@ async fn judge(shared: &Shared, call: &ToolCall) -> Decision {
     if matches!(decision, Decision::AllowForSession)
         && let Ok(mut g) = shared.grants.lock()
     {
-        g.push((call.name.clone(), call.subject.clone()));
+        g.extend(cox_core::permission::grants_for(call));
     }
     decision
 }
@@ -261,6 +261,7 @@ async fn create_terminal(
         name: "bash".into(),
         input: serde_json::json!({ "command": line }),
         risk: cox_tools::bash::classify(&line),
+        segments: Some(cox_tools::bash::segments(&subject)),
         subject,
     };
     match judge(shared, &call).await {
@@ -342,12 +343,15 @@ fn tool_call_for(host: &ClientHost, req: &RequestPermissionRequest) -> ToolCall 
     }
     .or_else(|| f.title.clone())
     .unwrap_or_default();
+    let subject = cox_sanitize::sanitize(&subject);
     ToolCall {
         id: CallId::new(),
         name: name.into(),
         input: f.raw_input.clone().unwrap_or_default(),
         risk,
-        subject: cox_sanitize::sanitize(&subject),
+        // Judged as `bash`, so matched command by command like cox's own.
+        segments: (name == "bash").then(|| cox_tools::bash::segments(&subject)),
+        subject,
     }
 }
 

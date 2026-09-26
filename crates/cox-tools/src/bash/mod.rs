@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use cox_protocol::{
-    ArchivePut, Concurrency, Risk, SandboxMode, SandboxPolicy, TaskId, Tool, ToolCx, ToolError,
-    ToolOutput, ToolSpec,
+    ArchivePut, Concurrency, Risk, SandboxMode, SandboxPolicy, Segments, TaskId, Tool, ToolCx,
+    ToolError, ToolOutput, ToolSpec,
 };
 use nix::libc;
 use nix::poll::{PollFd, PollFlags, poll};
@@ -33,7 +33,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-pub use classify::classify;
+pub use classify::{classify, segments};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a process gets between SIGTERM and SIGKILL.
@@ -161,6 +161,10 @@ impl Tool for BashTool {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string()
+    }
+
+    fn segments(&self, input: &Value) -> Option<Segments> {
+        Some(segments(&self.subject(input)))
     }
 
     fn risk(&self, input: &Value) -> Risk {

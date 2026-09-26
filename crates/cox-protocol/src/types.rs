@@ -535,6 +535,27 @@ pub struct ToolCall {
     pub risk: Risk,
     /// What permission rules match on: the confined path, command line, URL, or MCP name.
     pub subject: String,
+    /// The simple commands a shell `subject` splits into (T36.1). `None`
+    /// means the subject is one unit, as for every tool that is not a shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Segments>,
+}
+
+/// A compound command line as the permission engine judges it (T36.1): a
+/// deny or ask rule matching any command denies or asks, an allow rule or a
+/// session grant must cover every command. Plain strings, so the engine
+/// stays pure and the shell tool owns the parser.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Segments {
+    /// Every simple command in source order, including those nested in a
+    /// subshell, a substitution or a loop body.
+    pub commands: Vec<String>,
+    /// The split cannot vouch for the whole line — a substitution, `eval`,
+    /// `sh -c`, a variable assignment, an output redirect to a path, or a
+    /// parse error — so no prefix rule or grant may allow it; deny and ask
+    /// rules still match `commands`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub opaque: bool,
 }
 
 /// The outcome of a finished tool call, as it appears in history.
@@ -1453,8 +1474,8 @@ mod tests {
     #[case::item_started(Event::ItemStarted { item: ItemId::new(), kind: ItemKind::UserMessage { text: "hi".into(), attachments: vec![] } })]
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
-    #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into() } })]
-    #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into() }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
+    #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into(), segments: None } })]
+    #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None } })]

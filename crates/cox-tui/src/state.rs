@@ -2952,6 +2952,7 @@ mod tests {
                     input: serde_json::json!({"command": "sleep 5"}),
                     risk: Risk::Exec,
                     subject: "sleep 5".into(),
+                    segments: None,
                 },
             }),
         );
@@ -2994,6 +2995,7 @@ mod tests {
             input: serde_json::Value::Null,
             risk: cox_protocol::types::Risk::Exec,
             subject: "cargo test".into(),
+            segments: None,
         };
         let why = cox_protocol::types::Why::Risk {
             risk: cox_protocol::types::Risk::Exec,
@@ -3038,6 +3040,7 @@ mod tests {
                 input: serde_json::Value::Null,
                 risk: cox_protocol::types::Risk::Exec,
                 subject: "cargo test".into(),
+                segments: None,
             };
             let call_id = call.id;
             vec![
@@ -3175,6 +3178,7 @@ mod tests {
                     input: serde_json::json!({}),
                     risk: Risk::Exec,
                     subject: "seq 20".into(),
+                    segments: None,
                 },
             }),
         );

@@ -266,6 +266,7 @@ fn requested(state: &mut State, name: &str, subject: &str, risk: Risk) -> CallId
                 input: serde_json::json!({}),
                 risk,
                 subject: subject.into(),
+                segments: None,
             },
         }),
     );

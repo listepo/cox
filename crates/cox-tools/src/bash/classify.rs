@@ -1,13 +1,15 @@
-//! `classify(command) -> Risk` for `bash` (plan.md T3.7 step 3): a
-//! tree-sitter-bash walk that splits the line on `;`, `&&`, `||` and pipes
-//! and keeps the riskiest segment. Separate from the runner because the
+//! `classify(command) -> Risk` and `segments(command) -> Segments` for
+//! `bash` (plan.md T3.7 step 3, T36.1): one tree-sitter-bash walk that
+//! splits the line on `;`, `&&`, `||`, pipes, `&` and newlines, keeps the
+//! riskiest segment and lists every simple command for the permission
+//! engine to match one by one. Separate from the runner because the
 //! permission engine rates a command line before anything runs, and tests
 //! drive it without a PTY. Parser setup (`parse_bash`) lives in
 //! `cox-syntax` (T32.4: tree-sitter is the only reason that crate exists);
 //! this file keeps the risk walk itself, since it is domain logic, not
 //! parsing.
 
-use cox_protocol::Risk;
+use cox_protocol::{Risk, Segments};
 use cox_syntax::Node;
 
 /// Commands that cannot change anything cox does not already show the model.
@@ -77,21 +79,51 @@ const DOWNLOADERS: &[&str] = &["curl", "wget"];
 const INTERPRETERS: &[&str] = &[
     "sh", "bash", "zsh", "dash", "ksh", "python", "python3", "perl", "ruby", "node",
 ];
+/// Shells whose `-c` runs a string the split cannot see into.
+const SHELLS: &[&str] = &["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh"];
 /// Redirect targets under `/dev/` that discard or echo rather than overwrite a device.
 const HARMLESS_DEVICES: &[&str] = &["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"];
 
 /// The riskiest thing `command` can do, or `Exec` when it cannot be parsed.
 pub fn classify(command: &str) -> Risk {
+    scan(command).0
+}
+
+/// The simple commands `command` runs, for the permission engine (T36.1).
+/// Opaque when the parse cannot vouch for the whole line: a parse error, no
+/// command at all, a substitution, `eval`/`sh -c`, a variable assignment
+/// (`PATH=… git` runs a different `git`) or an output redirect to a path.
+pub fn segments(command: &str) -> Segments {
+    scan(command).1
+}
+
+fn scan(command: &str) -> (Risk, Segments) {
+    let opaque = Segments {
+        commands: Vec::new(),
+        opaque: true,
+    };
     let Some(tree) = cox_syntax::parse_bash(command) else {
-        return Risk::Exec;
+        return (Risk::Exec, opaque);
     };
-    let mut risk = if tree.root_node().has_error() || command.trim().is_empty() {
-        Risk::Exec
-    } else {
-        Risk::ReadOnly
+    let broken = tree.root_node().has_error() || command.trim().is_empty();
+    let mut scan = Scan {
+        risk: if broken { Risk::Exec } else { Risk::ReadOnly },
+        segments: Segments {
+            opaque: broken,
+            ..Segments::default()
+        },
     };
-    walk(tree.root_node(), command.as_bytes(), &mut risk);
-    risk
+    walk(tree.root_node(), command.as_bytes(), &mut scan);
+    if scan.segments.commands.is_empty() {
+        scan.segments.opaque = true;
+    }
+    (scan.risk, scan.segments)
+}
+
+/// What one walk collects: the call's risk and its permission segments.
+struct Scan {
+    risk: Risk,
+    segments: Segments,
 }
 
 fn rank(r: Risk) -> u8 {
@@ -109,22 +141,64 @@ fn bump(cur: &mut Risk, r: Risk) {
     }
 }
 
-fn walk(node: Node, src: &[u8], risk: &mut Risk) {
+fn walk(node: Node, src: &[u8], scan: &mut Scan) {
+    let risk = &mut scan.risk;
     match node.kind() {
-        "command" => bump(risk, command_risk(&words(node, src))),
+        "command" => {
+            let words = words(node, src);
+            bump(risk, command_risk(&words));
+            scan.segments.opaque |= runs_code_string(&words);
+            // From the name on: a deny rule matches past a leading
+            // assignment, which already makes the call opaque to allow rules.
+            let from = node.child_by_field_name("name").unwrap_or(node);
+            let line = src
+                .get(from.start_byte()..node.end_byte())
+                .unwrap_or_default();
+            let line = String::from_utf8_lossy(line).trim().to_owned();
+            // A `MISSING` name after a dangling `&&` has no text; the parse
+            // error has already made the call opaque.
+            if !line.is_empty() {
+                scan.segments.commands.push(line);
+            }
+        }
         "pipeline" if piped_into_interpreter(node, src) => bump(risk, Risk::Destructive),
-        "file_redirect" => bump(risk, redirect_risk(node, src)),
-        // Anything that forks a shell or feeds a command's output back in.
-        "subshell"
-        | "command_substitution"
-        | "process_substitution"
-        | "heredoc_redirect"
-        | "herestring_redirect" => bump(risk, Risk::Exec),
+        "file_redirect" => {
+            let r = redirect_risk(node, src);
+            bump(risk, r);
+            scan.segments.opaque |= r != Risk::ReadOnly;
+        }
+        // Output fed back in as words the split never sees as commands.
+        "command_substitution" | "process_substitution" => {
+            bump(risk, Risk::Exec);
+            scan.segments.opaque = true;
+        }
+        // Anything that forks a shell.
+        "subshell" | "heredoc_redirect" | "herestring_redirect" => bump(risk, Risk::Exec),
+        // Changes what a later command resolves to (`PATH=…; git status`).
+        "variable_assignment"
+        | "variable_assignments"
+        | "declaration_command"
+        | "unset_command" => scan.segments.opaque = true,
         _ => {}
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        walk(child, src, risk);
+        walk(child, src, scan);
+    }
+}
+
+/// `eval …` or `sh -c …`, possibly behind a wrapper: a string run as code.
+fn runs_code_string(words: &[String]) -> bool {
+    let Some((name, args)) = words.split_first() else {
+        return false;
+    };
+    match base(name) {
+        "eval" => true,
+        n if SHELLS.contains(&n) => args
+            .iter()
+            .any(|a| a.starts_with('-') && !a.starts_with("--") && a.contains('c')),
+        n if WRAPPERS.contains(&n) => runs_code_string(wrapped(args)),
+        _ => false,
     }
 }
 
@@ -177,20 +251,26 @@ fn command_risk(words: &[String]) -> Risk {
         "find" if has("-delete") || has("-exec") || has("-execdir") || has("-ok") => Risk::Exec,
         "find" => Risk::ReadOnly,
         n if WRAPPERS.contains(&n) => {
-            let inner: Vec<String> = args
-                .iter()
-                .skip_while(|a| a.starts_with('-') || a.contains('='))
-                .cloned()
-                .collect();
+            let inner = wrapped(args);
             match (inner.is_empty(), n) {
                 (true, "env") => Risk::ReadOnly,
                 (true, _) => Risk::Exec,
-                (false, _) => command_risk(&inner),
+                (false, _) => command_risk(inner),
             }
         }
         n if READ_ONLY.contains(&n) => Risk::ReadOnly,
         _ => Risk::Exec,
     }
+}
+
+/// A wrapper's arguments from the command it runs on: its own flags and
+/// `env`-style assignments come first.
+fn wrapped(args: &[String]) -> &[String] {
+    let own = args
+        .iter()
+        .take_while(|a| a.starts_with('-') || a.contains('='))
+        .count();
+    args.get(own..).unwrap_or_default()
 }
 
 fn git_risk(args: &[String]) -> Risk {

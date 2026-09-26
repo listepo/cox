@@ -233,6 +233,12 @@ pub trait Tool: Send + Sync {
     /// What permission rules match this call on: the confined path, command
     /// line, URL, or namespaced MCP name.
     fn subject(&self, input: &Value) -> String;
+    /// The commands a shell subject splits into, so a rule covers each one
+    /// rather than the line's first word (T36.1). `None` — every tool that
+    /// is not a shell — keeps the subject as one unit.
+    fn segments(&self, _input: &Value) -> Option<crate::types::Segments> {
+        None
+    }
     /// This *call's* risk, which is not always the tool's. `spec().risk` is
     /// a default: `apply_patch` is an ordinary write until the patch in
     /// front of it deletes more than five files, and only the input says

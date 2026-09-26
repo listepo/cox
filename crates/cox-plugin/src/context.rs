@@ -249,6 +249,7 @@ mod tests {
             input,
             risk: Risk::ReadOnly,
             subject: name.into(),
+            segments: None,
         }
     }
 

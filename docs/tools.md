@@ -3,7 +3,9 @@
 Every tool implements one contract (`Tool::spec` / `subject` / `call`):
 untruncated output goes to the archive first, the model sees the capped
 visible form plus an `expand` pointer. Permission rules match on
-`subject()` (path, command line, URL, or namespaced MCP name).
+`subject()` (path, command line, URL, or namespaced MCP name); `bash`
+also hands over `segments()`, the simple commands of its line, so a
+`Bash(prefix:*)` rule must cover each one (see how-it-works.md, Example 3).
 
 Core tools are always in context; deferred tools join through `tool_search`
 (D6d). `agent` is never available to itself.

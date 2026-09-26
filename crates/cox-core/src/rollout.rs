@@ -198,7 +198,7 @@ impl History {
                     ..
                 } => {
                     if let Some(call) = calls.get(call_id) {
-                        grants.push((call.name.clone(), call.subject.clone()));
+                        grants.extend(crate::permission::grants_for(call));
                     }
                 }
                 Event::TurnDone { stop, .. } => {
@@ -418,6 +418,7 @@ mod tests {
                     input: serde_json::json!({}),
                     risk: cox_protocol::types::Risk::ReadOnly,
                     subject: String::new(),
+                    segments: None,
                 },
             },
             Event::ToolCallDone {

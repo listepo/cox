@@ -167,6 +167,7 @@ fn command_todo_shows_the_panel_from_the_tool_output() {
                 input: serde_json::json!({}),
                 risk: Risk::ReadOnly,
                 subject: "3 items".into(),
+                segments: None,
             },
         }),
     );

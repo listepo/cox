@@ -97,6 +97,7 @@ fn frame_mono_theme_renders_notices_and_a_tool_card() {
             input: serde_json::json!({"command": "ls"}),
             risk: Risk::Exec,
             subject: "ls".into(),
+            segments: None,
         }),
         output: "README.md\n".into(),
         result: None,
@@ -126,6 +127,7 @@ fn frame_after_one_turn_replays_events() {
         input: serde_json::json!({"path": "src/main.rs"}),
         risk: Risk::ReadOnly,
         subject: "src/main.rs".into(),
+        segments: None,
     };
     let events = [
         Event::TurnStarted {
@@ -317,6 +319,7 @@ fn osc8_links_tool_paths_but_never_model_text() {
                 input: serde_json::json!({"path": "src/main.rs"}),
                 risk: Risk::ReadOnly,
                 subject: "src/main.rs".into(),
+                segments: None,
             },
         },
     ];
@@ -367,6 +370,7 @@ fn daltonized(name: &str) -> String {
             input: serde_json::json!({}),
             risk: Risk::Write,
             subject: subject.into(),
+            segments: None,
         }),
         output: String::new(),
         result: Some(ToolResult {

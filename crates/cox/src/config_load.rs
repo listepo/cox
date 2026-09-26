@@ -294,6 +294,7 @@ mod claude_settings_tests {
             input: serde_json::json!({ "command": "rm -rf build" }),
             risk: Risk::Exec,
             subject: "rm -rf build".into(),
+            segments: None,
         }
     }
 

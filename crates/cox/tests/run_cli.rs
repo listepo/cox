@@ -128,6 +128,35 @@ fn a_denied_write_exits_2_and_the_file_is_not_written() {
     assert!(!work.path().join("a.txt").exists());
 }
 
+const GIT_THEN_TOUCH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/scenarios/bash_git_then_touch.toml"
+);
+
+/// T36.1: `Bash(git:*)` covers the `git` command, not the `touch` chained
+/// after it, so the line asks, and headless turns the ask into a deny; with
+/// a rule for each command the same line runs without asking.
+#[test]
+fn a_prefix_rule_does_not_allow_a_command_chained_after_it() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let rules = |allow: &str| format!("[permissions]\nallow = [{allow}]\n");
+    std::fs::write(home.path().join("config.toml"), rules(r#""Bash(git:*)""#)).unwrap();
+    cox(work.path(), home.path(), GIT_THEN_TOUCH)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("\"denied\":1"));
+    assert!(!work.path().join("chained").exists());
+
+    let both = r#""Bash(git:*)", "Bash(touch:*)""#;
+    std::fs::write(home.path().join("config.toml"), rules(both)).unwrap();
+    cox(work.path(), home.path(), GIT_THEN_TOUCH)
+        .assert()
+        .success()
+        .stdout("done\n");
+    assert!(work.path().join("chained").exists());
+}
+
 #[test]
 fn auto_mode_writes_the_file_and_exits_0() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
