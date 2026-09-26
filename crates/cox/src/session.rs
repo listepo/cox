@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use cox_core::{History, Session};
 use cox_protocol::Config;
-use cox_protocol::config::Transport;
+use cox_protocol::config::{McpServerConfig, Transport};
 use cox_protocol::ids::{ItemId, SessionId};
 use cox_protocol::traits::{Hook, Provider, SessionRow, Store as _, Tool};
 use cox_protocol::types::{Event, ItemKind, Job, Level, Submission};
@@ -152,10 +152,18 @@ pub async fn open(
             _ => t,
         })
         .collect();
+    // T33.19: granted plugins load before MCP discovery, since their
+    // `[[mcp]]` servers join it; a worktree session's plugin server may
+    // write only the worktree, like its `bash` (`set_writable_roots` below).
+    let writable = match worktree_main {
+        Some(_) => vec![cwd.to_path_buf()],
+        None => config.core.workspace_roots.clone(),
+    };
+    let plugins = load_plugins(&config, &home, cwd, store.as_ref(), Some(&writable));
     if config.mcp.enabled {
-        all.extend(mcp_tools(&config, cwd, interactive).await);
+        all.extend(mcp_tools(&config, cwd, interactive, plugins.mcp).await);
     }
-    let plugin_warnings = plugin_notices(&config, &home, cwd, store.as_ref());
+    let plugin_warnings = plugins.notices;
     let session = match resume {
         Some((id, history)) => Session::resume(
             config,
@@ -213,28 +221,52 @@ pub async fn open(
     Ok((session, loaded))
 }
 
-/// T33.6 (PL§3): discovers plugins, checks each against its grant and
-/// loads only the `Granted` ones. Returns one warning per plugin that did
-/// not load, naming the command to run — headless and ACP never approve,
-/// matching headless approval with no approver (`run.rs`). Empty when
-/// `plugins.enabled` is off. A store read error counts as "no grant": it
-/// must never let an unapproved plugin load.
-#[cfg(feature = "plugins")]
+/// What the grant check let into a session (T33.6, T33.19).
+#[derive(Default)]
+pub(crate) struct Plugins {
+    /// One warning per plugin or plugin server that did not load.
+    pub notices: Vec<String>,
+    /// Each loaded plugin's `[[mcp]]` servers by plugin id, stdio commands
+    /// already sandboxed, for `cox_mcp::discovery::add_plugin`.
+    pub mcp: Vec<(String, Vec<(String, McpServerConfig)>)>,
+}
+
+/// The warnings of `load_plugins`, for a surface with no MCP servers (ACP).
 pub(crate) fn plugin_notices(
     config: &Config,
     home: &Path,
     cwd: &Path,
     store: &dyn cox_protocol::PluginStore,
 ) -> Vec<String> {
+    load_plugins(config, home, cwd, store, None).notices
+}
+
+/// T33.6 (PL§3): discovers plugins, checks each against its grant and
+/// loads only the `Granted` ones. Warns once per plugin that did not load,
+/// naming the command to run — headless and ACP never approve, matching
+/// headless approval with no approver (`run.rs`). Empty when
+/// `plugins.enabled` is off. A store read error counts as "no grant": it
+/// must never let an unapproved plugin load. With `writable` (the roots a
+/// server may write), a loaded plugin's `[[mcp]]` servers come back too.
+#[cfg(feature = "plugins")]
+pub(crate) fn load_plugins(
+    config: &Config,
+    home: &Path,
+    cwd: &Path,
+    store: &dyn cox_protocol::PluginStore,
+    writable: Option<&[PathBuf]>,
+) -> Plugins {
     use cox_plugin::discover::{self, State};
     use cox_plugin::grant::{self, Verdict};
 
+    let mut out = Plugins::default();
     if !config.plugins.enabled {
-        return Vec::new();
+        return out;
     }
     let root = config_load::find_git_root(cwd);
     let found = discover::discover(home, root.as_deref());
-    let mut notices = found.notices;
+    let notices = &mut out.notices;
+    notices.extend(found.notices);
     for p in &found.plugins {
         let id = &p.id;
         let (manifest, digest) = match &p.state {
@@ -258,8 +290,13 @@ pub(crate) fn plugin_notices(
                         cox_plugin::PluginHost::load(id, &wasm, &manifest.limits)
                             .map_err(|e| e.to_string())
                     });
-                if let Err(e) = loaded {
-                    notices.push(format!("plugin {id} failed to load: {e}"));
+                match (loaded, writable) {
+                    (Err(e), _) => notices.push(format!("plugin {id} failed to load: {e}")),
+                    (Ok(_), Some(writable)) if !manifest.mcp.is_empty() => {
+                        let servers = plugin_mcp(id, &p.dir, manifest, config, writable, notices);
+                        out.mcp.push((id.clone(), servers));
+                    }
+                    (Ok(_), _) => {}
                 }
             }
             Verdict::Disabled => {
@@ -279,19 +316,156 @@ pub(crate) fn plugin_notices(
             }
         }
     }
-    notices
+    out
 }
 
-/// The slim build has no plugin host, so there is never a plugin to warn
-/// about.
+/// The slim build has no plugin host, so there is never a plugin to load.
 #[cfg(not(feature = "plugins"))]
-pub(crate) fn plugin_notices(
+pub(crate) fn load_plugins(
     _config: &Config,
     _home: &Path,
     _cwd: &Path,
     _store: &dyn cox_protocol::PluginStore,
-) -> Vec<String> {
-    Vec::new()
+    _writable: Option<&[PathBuf]>,
+) -> Plugins {
+    Plugins::default()
+}
+
+/// PL§7c: one plugin's `[[mcp]]` entries as servers `cox-mcp` can start. A
+/// server that cannot be started safely is a warning and absent (D14).
+#[cfg(feature = "plugins")]
+fn plugin_mcp(
+    id: &str,
+    dir: &Path,
+    manifest: &cox_plugin_api::PluginManifest,
+    config: &Config,
+    writable: &[PathBuf],
+    notices: &mut Vec<String>,
+) -> Vec<(String, McpServerConfig)> {
+    let mut servers = Vec::new();
+    for decl in &manifest.mcp {
+        let server = match (&decl.command, &decl.url) {
+            (Some(command), _) => plugin_program(dir, command)
+                .and_then(|program| sandboxed_argv(&program, &decl.args, config, writable))
+                .map(|mut argv| McpServerConfig {
+                    command: Some(argv.remove(0)),
+                    args: argv,
+                    ..McpServerConfig::default()
+                }),
+            (None, Some(url)) => reqwest::Url::parse(url)
+                .map_err(|e| format!("url {url:?}: {e}"))
+                .and_then(|u| match u.host_str() {
+                    Some(host) if manifest.capabilities.net_allows(host) => Ok(()),
+                    host => Err(format!("url host {host:?} is not in capabilities.net")),
+                })
+                .map(|()| McpServerConfig {
+                    url: Some(url.clone()),
+                    ..McpServerConfig::default()
+                }),
+            (None, None) => Err(String::from("no command or url")),
+        };
+        match server {
+            Ok(cfg) => servers.push((decl.name.clone(), cfg)),
+            Err(why) => notices.push(format!(
+                "plugin {id}: mcp server {} skipped: {why}",
+                decl.name
+            )),
+        }
+    }
+    servers
+}
+
+/// A bare name is a PATH program, approved as shown. Anything else must be
+/// a regular file inside the package, reached through no symlink: the
+/// package digest hashes regular files only, so a symlink would run bytes
+/// the grant never covered.
+#[cfg(feature = "plugins")]
+fn plugin_program(dir: &Path, command: &str) -> Result<PathBuf, String> {
+    use std::path::Component;
+
+    let path = Path::new(command);
+    let mut parts = path.components();
+    if matches!(
+        (parts.next(), parts.next()),
+        (Some(Component::Normal(_)), None)
+    ) {
+        return Ok(path.to_path_buf());
+    }
+    if !path
+        .components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(format!(
+            "command {command:?} must be a PATH program or a path inside the package"
+        ));
+    }
+    let mut at = dir.to_path_buf();
+    for part in path.components() {
+        at.push(part);
+        let meta = std::fs::symlink_metadata(&at).map_err(|e| format!("{}: {e}", at.display()))?;
+        if meta.file_type().is_symlink() {
+            return Err(format!(
+                "{} is a symlink, which the package digest does not cover",
+                at.display()
+            ));
+        }
+    }
+    if !std::fs::metadata(&at).is_ok_and(|m| m.is_file()) {
+        return Err(format!("{} is not a file", at.display()));
+    }
+    Ok(at)
+}
+
+/// `program args` under `sandbox::command`, the guard `bash` runs under. The
+/// backend wraps a `<shell> -c <line>` triple last, so the line
+/// `exec "$0" "$@"` with the argv appended runs the program with no shell
+/// quoting to get wrong. Landlock confines in a pre-exec hook that no argv
+/// can carry, so it — like a host with no backend — refuses the server
+/// rather than run it bare; `danger-full-access` is the user's own choice.
+#[cfg(feature = "plugins")]
+fn sandboxed_argv(
+    program: &Path,
+    args: &[String],
+    config: &Config,
+    writable: &[PathBuf],
+) -> Result<Vec<String>, String> {
+    use cox_protocol::{SandboxMode, SandboxPolicy};
+    use cox_tools::sandbox::{self, Backend};
+
+    let policy = SandboxPolicy {
+        mode: config.sandbox.mode,
+        network: config.sandbox.network,
+        writable: config.sandbox.writable.clone(),
+        readonly_in_workspace: config.sandbox.readonly_in_workspace.clone(),
+        linux_backend: config.sandbox.linux_backend,
+    };
+    if policy.mode != SandboxMode::DangerFullAccess {
+        match sandbox::backend(policy.linux_backend) {
+            Some(Backend::Seatbelt | Backend::Bwrap) => {}
+            Some(Backend::Landlock) => {
+                return Err(String::from(
+                    "the landlock sandbox cannot wrap a server's argv",
+                ));
+            }
+            None => return Err(String::from("no sandbox backend on this host")),
+        }
+    }
+    let line = r#"exec "$0" "$@""#;
+    let cmd = sandbox::command(
+        &policy,
+        &config.core.workspace_roots,
+        writable,
+        Path::new("/bin/sh"),
+        line,
+    )
+    .map_err(|e| format!("sandbox: {e}"))?;
+    let mut argv: Vec<String> = std::iter::once(cmd.get_program())
+        .chain(cmd.get_args())
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    argv.push(program.to_string_lossy().into_owned());
+    argv.extend(args.iter().cloned());
+    Ok(argv)
 }
 
 /// The model id an `lmstudio` session sends: the section's pin, else
@@ -423,8 +597,17 @@ pub fn mcp_auth(interactive: bool) -> cox_mcp::client::Auth {
 /// T7.6: every discovered MCP server's tools, connected on the runtime the
 /// session will run on (the sessions live in the tools). A server that will
 /// not start is a warning and no tools (D14).
-async fn mcp_tools(config: &Config, cwd: &Path, interactive: bool) -> Vec<Arc<dyn Tool>> {
-    let found = mcp_servers(config, cwd);
+/// `plugins` (T33.19) join discovery as its lowest-precedence source.
+async fn mcp_tools(
+    config: &Config,
+    cwd: &Path,
+    interactive: bool,
+    plugins: Vec<(String, Vec<(String, McpServerConfig)>)>,
+) -> Vec<Arc<dyn Tool>> {
+    let mut found = mcp_servers(config, cwd);
+    for (id, servers) in plugins {
+        cox_mcp::discovery::add_plugin(&mut found, &id, servers);
+    }
     let timeout = std::time::Duration::from_secs(u64::from(config.mcp.timeout_s));
     let (_clients, tools, notices) = cox_mcp::client::connect_all(
         &found.servers,
@@ -1729,5 +1912,118 @@ mod tests {
             .expect("answered through the surface");
         assert_eq!(out.text, "b");
         surface.await.expect("surface task");
+    }
+
+    #[cfg(feature = "plugins")]
+    fn manifest_with_mcp(mcp: serde_json::Value, net: &[&str]) -> cox_plugin_api::PluginManifest {
+        serde_json::from_value(serde_json::json!({
+            "api": 1, "id": "gh", "version": "0.1.0", "name": "gh", "wasm": "plugin.wasm",
+            "capabilities": { "net": net },
+            "mcp": [mcp],
+        }))
+        .expect("manifest")
+    }
+
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn changing_bundled_server_binary_changes_digest() {
+        let pkg = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(pkg.path().join("bin")).expect("mkdir");
+        std::fs::write(pkg.path().join("plugin.wasm"), b"\0asm").expect("wasm");
+        std::fs::write(pkg.path().join("bin/server"), b"v1").expect("server");
+        let before = cox_plugin::package_digest(pkg.path()).expect("digest");
+        std::fs::write(pkg.path().join("bin/server"), b"v2").expect("server");
+        let after = cox_plugin::package_digest(pkg.path()).expect("digest");
+        assert_ne!(
+            before, after,
+            "a changed server binary must need a new grant"
+        );
+    }
+
+    #[cfg(all(feature = "plugins", unix))]
+    #[test]
+    fn symlinked_server_binary_is_refused() {
+        let pkg = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(pkg.path().join("bin")).expect("mkdir");
+        std::os::unix::fs::symlink("/bin/sh", pkg.path().join("bin/server")).expect("symlink");
+        let err = plugin_program(pkg.path(), "bin/server").expect_err("not covered by the digest");
+        assert!(err.contains("symlink"), "{err}");
+        assert!(plugin_program(pkg.path(), "../outside").is_err());
+        assert_eq!(plugin_program(pkg.path(), "npx"), Ok(PathBuf::from("npx")));
+    }
+
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn plugin_http_server_needs_its_host_in_net() {
+        let mcp = serde_json::json!({"name": "api", "url": "https://mcp.example.com/mcp"});
+        let config = Config::default();
+        let mut notices = Vec::new();
+        let denied = manifest_with_mcp(mcp.clone(), &["api.github.com"]);
+        assert!(plugin_mcp("gh", Path::new("."), &denied, &config, &[], &mut notices).is_empty());
+        assert!(
+            notices[0].contains("not in capabilities.net"),
+            "{notices:?}"
+        );
+        let allowed = manifest_with_mcp(mcp, &["*.example.com"]);
+        let servers = plugin_mcp("gh", Path::new("."), &allowed, &config, &[], &mut notices);
+        assert_eq!(
+            servers[0].1.url.as_deref(),
+            Some("https://mcp.example.com/mcp")
+        );
+    }
+
+    /// PL§7c, D7: a plugin's stdio server is spawned by `cox-mcp` from the
+    /// argv `plugin_mcp` built, so it runs under the same Seatbelt or bwrap
+    /// profile as `bash` (T4.1/T4.2): a write inside the workspace lands,
+    /// one under `$HOME` is denied.
+    #[cfg(all(feature = "plugins", unix))]
+    #[tokio::test]
+    async fn plugin_stdio_server_runs_under_sandbox() {
+        use cox_tools::sandbox::{Backend, backend};
+        use std::os::unix::fs::PermissionsExt as _;
+
+        match backend(cox_protocol::LinuxBackend::Auto) {
+            Some(Backend::Seatbelt | Backend::Bwrap) => {}
+            other => {
+                eprintln!("skipped: no argv sandbox backend here ({other:?})");
+                return;
+            }
+        }
+        let pkg = tempfile::tempdir().expect("tempdir");
+        let ws = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(pkg.path().join("bin")).expect("mkdir");
+        let server = pkg.path().join("bin/server");
+        std::fs::write(
+            &server,
+            "#!/bin/sh\necho in > \"$1/inside\"\necho x > \"$2\"\n",
+        )
+        .expect("server");
+        std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let home = std::env::var("HOME").expect("HOME");
+        let outside = format!("{home}/.cox-plugin-escape-{}", std::process::id());
+        let ws_arg = ws.path().display().to_string();
+        let mcp =
+            serde_json::json!({"name": "s", "command": "bin/server", "args": [ws_arg, outside]});
+        let mut config = Config::default();
+        config.core.workspace_roots = vec![ws.path().to_path_buf()];
+        let roots = config.core.workspace_roots.clone();
+        let mut notices = Vec::new();
+        let manifest = manifest_with_mcp(mcp, &[]);
+        let servers = plugin_mcp("gh", pkg.path(), &manifest, &config, &roots, &mut notices);
+        assert!(notices.is_empty(), "{notices:?}");
+        let mut found = cox_mcp::discovery::Discovered::default();
+        cox_mcp::discovery::add_plugin(&mut found, "gh", servers);
+
+        // Not an MCP server, so the handshake fails once the script exits,
+        // after both writes were tried.
+        let timeout = std::time::Duration::from_secs(10);
+        let auth = cox_mcp::client::Auth::none();
+        let _ = cox_mcp::client::McpClient::connect("gh-s", &found.servers["gh-s"], timeout, &auth)
+            .await;
+
+        let leaked = Path::new(&outside).exists();
+        let _ = std::fs::remove_file(&outside);
+        assert!(ws.path().join("inside").exists(), "the server never ran");
+        assert!(!leaked, "the sandbox let a plugin server write {outside}");
     }
 }

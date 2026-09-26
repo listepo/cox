@@ -1,7 +1,9 @@
 //! Where MCP servers are declared (plan.md T7.6 step 1): `[mcp.servers]`
 //! in config, the project's `.mcp.json`, and Claude Code's `~/.claude.json`
-//! (read-only, D4). Config wins over `.mcp.json` over `~/.claude.json`;
-//! `${VAR}` / `${VAR:-default}` expand from the environment.
+//! (read-only, D4), plus granted plugins' `[[mcp]]` entries (PL§7c).
+//! Config wins over `.mcp.json` over `~/.claude.json` over a plugin;
+//! `${VAR}` / `${VAR:-default}` expand from the environment, except in a
+//! plugin's entries (`add_plugin`).
 
 use std::collections::HashMap;
 use std::fs;
@@ -13,8 +15,9 @@ use serde_json::Value;
 #[derive(Debug, Default, PartialEq)]
 pub struct Discovered {
     pub servers: HashMap<String, McpServerConfig>,
-    /// Where each server came from: `config`, `.mcp.json`, `~/.claude.json`.
-    pub sources: HashMap<String, &'static str>,
+    /// Where each server came from: `config`, `.mcp.json`, `~/.claude.json`
+    /// or `plugin:<id>`.
+    pub sources: HashMap<String, String>,
     pub notices: Vec<String>,
 }
 
@@ -52,7 +55,28 @@ pub fn discover(
 
 fn add(found: &mut Discovered, entries: HashMap<String, McpServerConfig>, source: &'static str) {
     for (name, cfg) in entries {
-        found.sources.insert(name.clone(), source);
+        found.sources.insert(name.clone(), source.to_string());
+        found.servers.insert(name, cfg);
+    }
+}
+
+/// PL§7c: a granted plugin's servers join as the lowest-precedence source,
+/// named `<id>-<name>`: a server of that name from any other source wins,
+/// and the plugin's is dropped with a notice. Call it after `discover`.
+/// Nothing is `${VAR}`-expanded: the user approved the argv as shown, and
+/// expansion would hand the user's environment (keys included) to the
+/// plugin's process. The caller has already wrapped a stdio command in the
+/// sandbox, so this crate never needs to know about one.
+pub fn add_plugin(found: &mut Discovered, id: &str, servers: Vec<(String, McpServerConfig)>) {
+    for (name, cfg) in servers {
+        let name = format!("{id}-{name}");
+        if let Some(source) = found.sources.get(&name) {
+            found.notices.push(format!(
+                "mcp: plugin {id}'s server {name} is shadowed by {source}"
+            ));
+            continue;
+        }
+        found.sources.insert(name.clone(), format!("plugin:{id}"));
         found.servers.insert(name, cfg);
     }
 }
@@ -163,5 +187,39 @@ mod tests {
         assert_eq!(expand("${MISSING:-x}/${TOKEN}", &env), "x/t0k");
         assert_eq!(expand("${MISSING}", &env), "");
         assert_eq!(expand("${unterminated", &env), "${unterminated");
+    }
+
+    fn stdio(command: &str) -> McpServerConfig {
+        McpServerConfig {
+            command: Some(command.into()),
+            ..McpServerConfig::default()
+        }
+    }
+
+    #[test]
+    fn project_mcp_json_shadows_plugin_server() {
+        let project = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            project.path().join(".mcp.json"),
+            r#"{"mcpServers":{"gh-tools":{"command":"project-server"}}}"#,
+        )
+        .expect("write .mcp.json");
+        let mut found = discover(&HashMap::new(), Some(project.path()), None);
+        let plugin = vec![
+            ("tools".to_string(), stdio("plugin-server")),
+            ("other".to_string(), stdio("${HOME}/x")),
+        ];
+        add_plugin(&mut found, "gh", plugin);
+
+        assert_eq!(found.servers["gh-tools"], stdio("project-server"));
+        assert_eq!(found.sources["gh-tools"], ".mcp.json");
+        assert_eq!(found.sources["gh-other"], "plugin:gh");
+        // A plugin's argv reaches the spawn exactly as approved.
+        assert_eq!(found.servers["gh-other"], stdio("${HOME}/x"));
+        assert!(
+            found.notices.iter().any(|n| n.contains("gh-tools")),
+            "{:?}",
+            found.notices
+        );
     }
 }

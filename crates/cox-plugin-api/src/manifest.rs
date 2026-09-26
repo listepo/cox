@@ -114,6 +114,24 @@ pub enum ModelTier {
     Code,
 }
 
+impl Capabilities {
+    /// Whether `host` is in `net`: an exact name, or a strict subdomain of
+    /// a `*.` pattern (`*.github.com` does not cover `github.com`). The one
+    /// matcher for every `net` check — an `[[mcp]]` url (PL§7c) and `cox_http`.
+    pub fn net_allows(&self, host: &str) -> bool {
+        let host = host.to_ascii_lowercase();
+        self.net.iter().any(|pattern| {
+            let pattern = pattern.to_ascii_lowercase();
+            match pattern.strip_prefix("*.") {
+                Some(base) => host
+                    .strip_suffix(base)
+                    .is_some_and(|sub| sub.len() > 1 && sub.ends_with('.')),
+                None => host == pattern,
+            }
+        })
+    }
+}
+
 /// `capabilities.fs`: roots are `$WORKSPACE`, `$PLUGIN_DATA` or inside them.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -519,6 +537,18 @@ args = ["--stdio"]
         let mut m = example();
         m.capabilities.net = vec!["*.githubusercontent.com".into()];
         assert_eq!(m.validate(), Ok(()));
+    }
+
+    #[test]
+    fn net_allows_exact_hosts_and_strict_subdomains_of_a_wildcard() {
+        let mut m = example();
+        m.capabilities.net = vec!["api.github.com".into(), "*.example.com".into()];
+        let caps = &m.capabilities;
+        assert!(caps.net_allows("API.github.com"));
+        assert!(caps.net_allows("a.b.example.com"));
+        assert!(!caps.net_allows("example.com"));
+        assert!(!caps.net_allows("evilexample.com"));
+        assert!(!caps.net_allows("github.com"));
     }
 
     #[test]
