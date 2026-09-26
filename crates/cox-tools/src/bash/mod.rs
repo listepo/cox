@@ -453,6 +453,14 @@ async fn run(
     let slave = pty.slave;
 
     let phase = Arc::new(AtomicU8::new(RUNNING));
+    // A run dropped mid-way (its task aborted, the runtime shutting down)
+    // never reaches the end below: without this the reader would poll
+    // forever and the group would keep running, and either holds the
+    // runtime's shutdown open.
+    let mut abandoned = Abandoned {
+        phase: phase.clone(),
+        group: Some(pid),
+    };
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
     let reader_phase = phase.clone();
     tokio::task::spawn_blocking(move || {
@@ -548,8 +556,26 @@ async fn run(
     if !exited || run.ended.is_some() {
         signal(pid, Signal::SIGKILL);
     }
+    // Finished: the group may be reaped, and its id reused, from here on.
+    abandoned.group = None;
     run.elapsed = start.elapsed();
     Ok(run)
+}
+
+/// What `run` undoes if it is dropped before it finishes: the PTY reader
+/// goes to `STOP` and the process group, while `Some`, is SIGKILLed.
+struct Abandoned {
+    phase: Arc<AtomicU8>,
+    group: Option<u32>,
+}
+
+impl Drop for Abandoned {
+    fn drop(&mut self) {
+        self.phase.store(STOP, Ordering::Relaxed);
+        if let Some(pid) = self.group {
+            signal(pid, Signal::SIGKILL);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -650,6 +676,41 @@ mod tests {
         );
         assert_eq!(tool.risk(&serde_json::json!({})), Risk::Exec);
         assert_eq!(tool.subject(&serde_json::json!({"command": "ls"})), "ls");
+    }
+
+    /// Regression: a run dropped mid-way left its PTY reader polling forever
+    /// and its command running, so the runtime that ran it never finished
+    /// shutting down (the ACP `terminal/release` test hung on Linux this way).
+    #[test]
+    fn dropped_run_lets_the_runtime_shut_down() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy = SandboxPolicy {
+            mode: SandboxMode::DangerFullAccess,
+            network: true,
+            writable: vec![],
+            readonly_in_workspace: vec![],
+            linux_backend: Default::default(),
+        };
+        rt.block_on(async {
+            let (tx, _rx) = mpsc::channel(64);
+            let cancel = CancellationToken::new();
+            let long = Duration::from_secs(60);
+            let run = run_line("sleep 30", dir.path(), &[], &policy, &cancel, &tx, long);
+            let _ = tokio::time::timeout(Duration::from_millis(300), run).await;
+        });
+        let (done, ended) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(rt);
+            let _ = done.send(());
+        });
+        assert!(
+            ended.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "the reader or the command outlived its dropped run"
+        );
     }
 
     #[test]
