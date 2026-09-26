@@ -10,9 +10,19 @@ license.workspace = true
 [dependencies]
 cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2" }
 extism = { workspace = true }
+# T33.4: `plugin.toml` is parsed the way `config_load` parses cox's own
+# config (figment's `Toml` provider, already workspace-pinned); this is the
+# one module that owns plugin-manifest loading (PL§2, AGENTS "Config files").
+figment = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# T33.4: the PL§1 package digest (SHA-256 over the tree); already a
+# dependency of `cox`, `cox-store` and `cox-provider-testkit`.
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 # Only to switch on wasmtime's `anyhow` feature, which extism needs and does
 # not enable with its default features off (workspace Cargo.toml).
 wasmtime = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

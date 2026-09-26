@@ -15,12 +15,16 @@ otel = ["cox-telemetry/otel"]
 # wasmtime) to the release binary. On by default; a slim build drops it with
 # `--no-default-features --features otel`. Plugin code sits behind
 # `#[cfg(feature = "plugins")]`.
-plugins = ["dep:cox-plugin"]
+plugins = ["dep:cox-plugin", "dep:cox-plugin-api"]
 
 [dependencies]
 clap = { workspace = true }
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 cox-plugin = { path = "../cox-plugin", version = "0.1.2", optional = true }
+# T33.4: `plugin_cmd::list` reads a manifest's declared `Capabilities` to
+# summarise a plugin without running it; `cox-plugin` (the extism host)
+# does not re-export the manifest/ABI types.
+cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2", optional = true }
 cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 cox-tools = { path = "../cox-tools", version = "0.1.2" }

@@ -13,6 +13,8 @@ mod expand_cmd;
 mod ext_cmd;
 mod mcp_cmd;
 mod plain;
+#[cfg(feature = "plugins")]
+mod plugin_cmd;
 mod record;
 mod resume;
 mod run;
@@ -78,6 +80,15 @@ fn main() -> anyhow::Result<()> {
                 Ok(())
             }
         },
+        #[cfg(feature = "plugins")]
+        Some(Command::Plugin(args)) => {
+            let json = matches!(
+                &args.action,
+                Some(crate::cli::PluginAction::List { json: true })
+            );
+            print!("{}", plugin_cmd::list(&cli, &cwd, json));
+            Ok(())
+        }
         Some(Command::Run(args)) => {
             let code = run::run(&cli, args, &cwd)?;
             drop(telemetry);

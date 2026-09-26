@@ -106,6 +106,9 @@ pub enum Command {
     Init(InitArgs),
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
     Ext(ExtArgs),
+    /// Discovered plugins and their declared capabilities (T33.4).
+    #[cfg(feature = "plugins")]
+    Plugin(PluginArgs),
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate(SelfUpdateArgs),
@@ -317,6 +320,27 @@ pub struct ExtArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum ExtAction {
     /// List instruction-adjacent definitions in effect.
+    List {
+        /// Machine-readable JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// `cox plugin [list]` (plan.md T33.4): bare `plugin` lists too, since
+/// `list` is its only action so far.
+#[cfg(feature = "plugins")]
+#[derive(Args, Debug, Clone)]
+pub struct PluginArgs {
+    #[command(subcommand)]
+    pub action: Option<PluginAction>,
+}
+
+/// `cox plugin` subcommands.
+#[cfg(feature = "plugins")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum PluginAction {
+    /// Discovered plugins: source, version, digest, grant state, declared capabilities.
     List {
         /// Machine-readable JSON output.
         #[arg(long)]
