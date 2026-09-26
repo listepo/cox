@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
 | T32.2 | todo | P2 | 4 | 0% | |
-| T33.2 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
 | T33.3 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
 | T33.4 | todo | P2 | 3 | 0% | |
 | T33.5 | in progress | P1 | 3 | 5% | Claude Code / sonnet-5 |
@@ -816,13 +815,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
-
-#### T33.2 ABI v1 payload types — blocker
-
-Depends: T33.1 · Size: ~170 · Files: `crates/cox-plugin-api/src/abi.rs`, `src/lib.rs`
-Goal: every export and host-function payload in PL§4 (`InitIn/InitOut`, `EventBatch`, `Effects`, `HookCall`, `ToolCallIn`, `CommandIn/CommandOut`, `RenderIn`, `RenderItemIn`, `ProviderCall`, `ModelCall`, `HttpReq/HttpResp`, `Question/Advice`, `AbiError`) as `JsonSchema` types, with `docs/plugin-abi.schema.json` drift-tested.
-Plan: reuse the `cox-protocol` types that cross the ABI by referencing them in the schema, not copying them. Because `cox-plugin-api` must not depend on `cox-protocol` (T33.1 rule), those fields are `serde_json::Value` in the api crate, and `cox-plugin` converts them into the typed protocol values at the boundary. Say this in the module header. `CommandOut` is the closed enum from PL§4.
-Check: `abi_schema_matches_committed_file`; `command_out_has_no_submission_variant` (a serde round-trip of every variant); `unknown_fields_are_ignored_both_ways`.
 
 #### T33.3 `cox-plugin`: host crate, one worker per plugin — blocker
 

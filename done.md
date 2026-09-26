@@ -974,3 +974,20 @@ Check: `async-openai` appears only in this crate's `Cargo.toml`.
 Status: done 2026-09-26
 Result: `crates/cox-provider-openai` owns the OpenAI Responses and Chat wires (`chat`, `responses`, `wire`) and depends on `cox-protocol`, `cox-models` and `cox-provider-http`. `cox-provider` re-exports it as `openai`. The 11 insta snapshots moved with their tests byte-identical; only their file names follow the new module path.
 Check: `async-openai` appears only in `crates/cox-provider-openai/Cargo.toml` among crates; `cargo tree -i async-openai` shows the single path through it. nextest ran 940 passed, 3 skipped in the worktree, with no `.snap.new`.
+
+#### T33.2 ABI v1 payload types — blocker
+
+Depends: T33.1 · Size: ~170 · Files: `crates/cox-plugin-api/src/abi.rs`, `src/lib.rs`
+Goal: every export and host-function payload in PL§4 (`InitIn/InitOut`, `EventBatch`, `Effects`, `HookCall`, `ToolCallIn`, `CommandIn/CommandOut`, `RenderIn`, `RenderItemIn`, `ProviderCall`, `ModelCall`, `HttpReq/HttpResp`, `Question/Advice`, `AbiError`) as `JsonSchema` types, with `docs/plugin-abi.schema.json` drift-tested.
+Plan: reuse the `cox-protocol` types that cross the ABI by referencing them in the schema, not copying them. Because `cox-plugin-api` must not depend on `cox-protocol` (T33.1 rule), those fields are `serde_json::Value` in the api crate, and `cox-plugin` converts them into the typed protocol values at the boundary. Say this in the module header. `CommandOut` is the closed enum from PL§4.
+Check: `abi_schema_matches_committed_file`; `command_out_has_no_submission_variant` (a serde round-trip of every variant); `unknown_fields_are_ignored_both_ways`.
+Status: done 2026-09-26
+Result: `cox-plugin-api::abi` holds every payload of PL§4:
+- init: `InitIn`/`InitOut`, `SessionInfo`, `CommandDecl`, `KeyDecl`, `Slot`;
+- `EventBatch`, `Effects`;
+- calls: `HookCall`, `ToolCallIn`, `CommandIn`/`CommandOut`, `RenderIn`, `RenderItemIn`, `ProviderCall`, `ModelCall`, `HttpReq`/`HttpResp`;
+- advice: `Question`/`Advice`/`Answer`;
+- `AbiError`.
+
+Fields that carry cox-protocol types are `serde_json::Value`, marked in the schema with `x-cox-protocol`. No payload denies unknown fields, so `InitIn.granted` is a `Value`. `CommandOut` is closed: prompt, compact, toggle_panel, open_overlay, notice or nothing, with no Submission variant. The two-phase decide types (`DecideOut`, `cox_decide_resume`) stay with T33.40.1. `docs/plugin-abi.schema.json` is generated and drift-tested.
+Check: `abi_schema_matches_committed_file`, `command_out_has_no_submission_variant` and `unknown_fields_are_ignored_both_ways` pass, and the crate still builds for wasm32. nextest ran 954 passed, 3 skipped in the worktree; on main `-p cox-plugin-api -p cox-protocol` ran 75 passed.
