@@ -2,6 +2,8 @@
 
 A cox plugin is a WebAssembly module plus a `plugin.toml` manifest. cox loads it with extism, gives it only the capabilities the user approved, and calls the exports it finds. This guide covers the Rust side: the `cox-plugin-sdk` crate in `plugins/sdk`. The design, including why each rule exists, is `docs/design/plugins.md` (PL); the ABI is its §4.
 
+This page is for writing a plugin. To install and use one that already ships in this repository, see its own guide, e.g. `docs/plugins/cursor.md` for the Cursor external agent.
+
 ## Setup
 
 The Rust toolchain and its `wasm32-unknown-unknown` target come from the repository's `mise.toml`. `mise install` adds the target if it is missing.
