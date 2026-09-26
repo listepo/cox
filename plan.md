@@ -12,7 +12,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.29 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.30 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.33 | todo | P2 | 3 | 0% | |
-| T33.34 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
+| T33.34 | todo | P2 | 4 | 0% | |
 | T33.35 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.36 | todo | P2 | 4 | 0% | |
 | T33.37 | in progress | P3 | 1 | 5% | Claude Code / claude-sonnet-5 |
@@ -788,7 +788,7 @@ Check: insta snapshot of the remove confirmation; `removed_plugin_tool_is_denied
 
 #### T33.34 Go: SDK wrapper, template, example
 
-Depends: T33.29 · Size: ~200 · Files: `plugins/sdk-go/cox.go`, `plugins/examples/go/main.go`, `plugins/templates/go/*.tmpl`; `plugins/mise.toml` gets go and tinygo; CI job `plugin-examples`
+Depends: T33.29, T33.43 (go-pdk v1.1.3 needs `wasip1`, and the host keeps WASI off until then, A55) · Size: ~200 · Files: `plugins/sdk-go/cox.go`, `plugins/examples/go/main.go`, `plugins/templates/go/*.tmpl`; `plugins/mise.toml` gets go and tinygo; CI job `plugin-examples`
 Goal: a thin Go package over `github.com/extism/go-pdk` (v1.1.3) for the PL§4 exports and host functions (`//go:wasmimport` in `cox:host/v1`). The same example is built with TinyGo `-target wasip1 -buildmode=c-shared` (`wasi = true`). `cox plugin new --lang go`.
 Check: `plugin_example_go` is `#[ignore = "needs go and tinygo: run just plugin-examples go"]` locally and runs in the `plugin-examples` CI job, where a missing toolchain fails the job; it asserts the same rollout effect as T33.28.
 
