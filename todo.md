@@ -55,7 +55,6 @@
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
-- T34.6. The `send_message` tool
 - T34.9. e2e: two subagents messaging through the parent
 - T35.2. Host spawner, sandbox and grant
 - T35.3. ACP client adapter

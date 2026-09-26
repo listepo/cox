@@ -1367,3 +1367,37 @@ Check: passing tests:
 nextest: 1016 passed, 3 skipped in the worktree.
 
 nextest on main after landing: 1019 passed, 3 skipped. fmt, clippy and cargo deny clean.
+
+#### T34.6 The `send_message` tool
+
+Depends: T34.5, T34.2 · Size: ~170 · Files: `crates/cox-tools/src/send_message.rs` (new), `crates/cox-core/src/subagent.rs`
+Goal: `send_message { to, text }` for a subagent (`to: "parent"` or a sibling's name/`TaskId`, relayed through the parent per T34.0 §4) and for the parent (`to: <child name/id>`). T34.5 already routes and hop-limits (`MAX_HOPS`); this card adds the tool, `Session::self_task`, and the `MAX_MESSAGES_PER_TASK = 16` received-message cap (SM§5: a named constant, not a config key), so a flood is denied instead of spinning.
+Plan:
+1. `cox-tools/src/send_message.rs`: the `Tool` impl. It parses `{to, text}` and emits the child's `Event::TaskMessage` (or, in the parent, a `Submission::TaskMessage`) through a `ToolCx`/trait hook. It never touches the registry itself.
+2. `cox-core/src/subagent.rs`: `self_task` is set in `spawn`. The parent resolves `to` by name or `TaskId`. `MAX_MESSAGES_PER_TASK` counts deliveries per `TaskId`, and the 17th is `ToolError::Denied`, shaped like T34.2's denial.
+3. A message that wakes a *dormant* child (`wake`, from `deliver`/`park_child`) must hold a T34.2 slot for that run, reserved with `try_reserve_agent_slot`. At the cap, the sender gets `Denied` and the message is not queued. T34.2 left this gap: a woken child today runs outside the cap.
+4. No preset grants `send_message` yet, the same as `ask_user` (SM§4).
+Check: `sibling_message_is_relayed_through_the_parent_session`, `message_cap_denies_the_nth_plus_one_follow_up`, `waking_a_dormant_child_at_the_cap_is_denied` (T34.5 already has `hop_limit_stops_a_ping_pong`).
+Status: done 2026-09-26
+Result: agents can message each other through the parent with `send_message { to, text }` (SM§4, §5).
+- **Tool:** `cox-tools/src/send_message.rs` holds a stateless `SendMessageTool`. It reads `cx.relay`, a new `ToolCx.relay: Option<Arc<dyn Relay>>` with the `Relay` trait in `cox-protocol`. `turn.rs` fills that field with the session running the call, so a child's call is stamped and routed by the child's own session. With `None` (the MCP surface) the tool returns `Denied`.
+- **Child side:** `Session::self_task` is set in `spawn`. `to` is `"parent"` or a sibling's `TaskId`, and the child emits `Event::TaskMessage`, which T34.5's relay routes.
+- **Parent side:** `resolve_addressee` accepts a child's registry name (`explore-2`, indexed by `name_task`) or its `TaskId`, then calls `deliver`.
+- **Flood guard:** `MAX_MESSAGES_PER_TASK = 16` is a named constant. The 17th delivery to a task is `Denied`, and `CoreError::Denied` was added so `deliver` can report it (`docs/protocol.jsonschema` regenerated).
+- **Slots:** `deliver` decides under one lock (unknown, flooded, at the cap, queued, or wake) and acts after the lock drops. Waking a dormant child reserves a T34.2 slot, and at the cap the sender gets `Denied` and nothing is queued. A foreground `park_child` → `wake` continuation takes over the slot its `call` already holds. This closes the gap T34.2 left.
+- **Presets:** no built-in preset grants `send_message`. It is on the top-level session's tool list (`crates/cox/src/session.rs`, since `cox-core` cannot name `cox-tools`), and a custom agent definition can list it.
+Deviations:
+- About 330 lines of production code against a target of ~200. Most of it is the `Relay` plumbing across three crates and the `deliver` rework.
+- Review round: the first draft bound the relay to one shared tool instance through a `OnceLock`, which would have routed a child's call as the top-level session. It also ran a woken foreground continuation over the cap with a warning. Both were fixed.
+- A child addresses a sibling by `TaskId` only; the parent resolves names.
+Check: passing tests:
+- `sibling_message_is_relayed_through_the_parent_session`
+- `message_cap_denies_the_nth_plus_one_follow_up`
+- `waking_a_dormant_child_at_the_cap_is_denied`
+- `each_childs_tool_cx_relay_is_bound_to_its_own_session`
+- `the_same_tool_instance_reaches_each_calls_own_relay`
+- T34.5's `hop_limit_stops_a_ping_pong` still passes.
+
+nextest: 1022 passed, 3 skipped in the worktree.
+
+nextest on main after landing: 1027 passed, 3 skipped. fmt, clippy and the slim build are clean.
