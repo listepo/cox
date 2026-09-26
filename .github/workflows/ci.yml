@@ -37,21 +37,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap.
+      # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
+      # (sandbox-landlock) covers the Landlock fallback.
       - name: bubblewrap
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap
-          # Ubuntu 24.04 confines unprivileged user namespaces behind AppArmor
-          # and ships no profile for bwrap, so `bwrap --unshare-user` fails and
-          # `sandbox::backend` silently falls back to Landlock — which is what
-          # job B tests. Lift the restriction here, then run the exact probe
-          # cox runs so a refusal fails this step with bwrap's own message
-          # rather than a test three minutes later.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          bwrap --unshare-user --unshare-pid --die-with-parent --ro-bind / / --proc /proc --dev /dev /bin/true
-          echo "COX_EXPECT_SANDBOX=bwrap" >> "$GITHUB_ENV"
+        uses: ./.github/actions/bwrap
 
       - name: fmt
         run: cargo fmt --check
@@ -118,10 +108,19 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          # `cox`'s tests build cox-plugin-fixtures, whose build.rs compiles
+          # the guest workspace for wasm32 (T33.28).
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@nextest
+
+      # The example's `[[mcp]]` server runs under `sandboxed_argv`, which on
+      # Linux needs bwrap: Landlock cannot wrap an argv.
+      - name: bubblewrap
+        uses: ./.github/actions/bwrap
 
       - uses: dart-lang/setup-dart@v1
         with:
