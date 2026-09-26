@@ -626,6 +626,7 @@ fn screen_question_modal() {
             call: CallId::new(),
             question: "which environment?".into(),
             options: vec!["staging".into(), "production".into()],
+            agent: None,
         },
     );
     insta::assert_snapshot!(shot("question_modal", &mut state));

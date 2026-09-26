@@ -204,6 +204,13 @@ pub struct ToolCx {
     pub session: SessionId,
     /// This call's id.
     pub call: CallId,
+    /// The subagent name this session runs as (`explore-2`, T27.2), set
+    /// once by `Session::spawn_child`; `None` for the session the user is
+    /// talking to. `ask_user` (T34.3) turns this into the same `Source`
+    /// `relay_approval` already builds for a relayed approval.
+    pub agent: Option<String>,
+    /// The dispatched preset/def name (`explore`), alongside `agent`.
+    pub preset: Option<String>,
 }
 
 /// A built-in or MCP tool. Implemented by `cox-tools` (`read`, `edit`,

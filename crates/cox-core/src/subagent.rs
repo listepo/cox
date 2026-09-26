@@ -565,7 +565,16 @@ fn spawn(
 ) -> Result<Session, CoreError> {
     let cwd = spec.worktree.as_ref().map(|wt| wt.path.clone());
     let (config, tools) = (spec.config.clone(), spec.tools.clone());
-    let child = parent.spawn_child(config, tools, spec.job, spec.tier, cwd, resume)?;
+    let child = parent.spawn_child(
+        config,
+        tools,
+        spec.job,
+        spec.tier,
+        cwd,
+        resume,
+        spec.name.clone(),
+        spec.preset_name.clone(),
+    )?;
     if let Some(wt) = &spec.worktree {
         child.set_writable_roots(vec![wt.path.clone()]);
     }

@@ -800,6 +800,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                                 question: q.question,
                                 options: q.options,
                                 reply: q.reply,
+                                agent: q.source.and_then(|s| s.agent),
                             };
                             if surfaced.send(forwarded).await.is_err() {
                                 break;

@@ -381,6 +381,8 @@ pub enum Msg {
         call: CallId,
         question: String,
         options: Vec<String>,
+        /// The subagent asking (T34.3); `None` for the session itself.
+        agent: Option<String>,
     },
     /// The terminal gained (`true`) or lost focus (T23.5).
     Focus(bool),
@@ -694,9 +696,12 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             call,
             question,
             options,
+            agent,
         } => {
             let cmds = notify(state, format!("question: {question}"));
-            state.modal = Some(Modal::Question(Question::new(call, question, options)));
+            state.modal = Some(Modal::Question(
+                Question::new(call, question, options).from_agent(agent),
+            ));
             cmds
         }
         Msg::Focus(focused) => {
@@ -2267,6 +2272,7 @@ mod tests {
             call: CallId::new(),
             question: "which?".into(),
             options: Vec::new(),
+            agent: None,
         };
         assert!(rings(&update(&mut state, question)));
 

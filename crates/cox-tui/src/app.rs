@@ -68,6 +68,10 @@ pub struct Question {
     pub question: String,
     pub options: Vec<String>,
     pub reply: tokio::sync::oneshot::Sender<String>,
+    /// The subagent asking (T34.3), mirroring
+    /// `cox_tools::ask_user::Question::source`'s `agent`; `None` for the
+    /// top-level session.
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -171,6 +175,7 @@ pub async fn run(
                         call: q.call,
                         question: q.question,
                         options: q.options,
+                        agent: q.agent,
                     }
                 }
             };

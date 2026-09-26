@@ -78,6 +78,7 @@ fn status_line_shows_question_in_the_mode_slot_while_the_modal_is_open() {
             call: CallId::new(),
             question: "which environment?".into(),
             options: vec![],
+            agent: None,
         },
     );
     let line = cox_tui::status::line(&state).to_string();

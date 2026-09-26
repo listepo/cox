@@ -81,6 +81,10 @@ impl ToolServer {
             output,
             session: self.cx.session,
             call: call.id,
+            // The MCP surface has no subagent notion (T34.3): every call
+            // here is the top-level session.
+            agent: None,
+            preset: None,
         };
         match tool.call(call.input, &cx).await {
             Ok(out) if out.is_error => CallToolResult::error(vec![ContentBlock::text(out.text)]),

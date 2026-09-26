@@ -396,6 +396,11 @@ async fn run_one(
         output: out_tx,
         session: session.id,
         call: id,
+        // T34.3: `None` unless this session is a subagent (`spawn_child`
+        // set both), so `ask_user`'s `Question::source` carries the same
+        // label `relay_approval` already gives an approval.
+        agent: session.agent.clone(),
+        preset: session.preset.clone(),
     };
     let pump = session.clone_handle();
     let pump_id = id;

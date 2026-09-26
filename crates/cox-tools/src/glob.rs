@@ -176,6 +176,8 @@ mod tests {
             output: tx,
             session: SessionId::new(),
             call: cox_protocol::CallId::new(),
+            agent: None,
+            preset: None,
         }
     }
 

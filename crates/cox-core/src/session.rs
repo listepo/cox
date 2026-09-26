@@ -127,6 +127,14 @@ pub struct Session {
     pub(crate) job: Job,
     /// The tier every provider call in this session is routed to.
     pub(crate) tier: Tier,
+    /// The subagent name this session runs as (`explore-2`, T27.2), set by
+    /// `spawn_child`; `None` for the session the user is talking to. Read
+    /// by `turn::run_one` to label every `ToolCx` this session hands to a
+    /// tool call (T34.3), the same way `relay_approval` labels a relayed
+    /// approval.
+    pub(crate) agent: Option<String>,
+    /// The dispatched preset/def name (`explore`), alongside `agent`.
+    pub(crate) preset: Option<String>,
     /// Root of every turn/provider/tool span emitted by this session.
     pub(crate) telemetry_span: tracing::Span,
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
@@ -178,6 +186,8 @@ impl Session {
             None,
             Job::Main,
             Tier::Code,
+            None,
+            None,
         )?;
         let parent = session.clone();
         session
@@ -211,6 +221,8 @@ impl Session {
             None,
             Job::Main,
             Tier::Code,
+            None,
+            None,
         )?;
         let parent = session.clone();
         session
@@ -224,7 +236,11 @@ impl Session {
     /// is the parent's unless the child runs in a worktree (T27.3).
     /// `resume` restores a finished child (T34.5, SM§2) with the same
     /// job, tier and parent — the child-side twin of [`Session::resume`],
-    /// which stays top-level only.
+    /// which stays top-level only. `agent` and `preset` (T34.3) are the
+    /// same `name`/preset name `relay_approval` already labels a relayed
+    /// approval with, so every `ToolCx` this child hands its tools
+    /// (`ask_user` included) carries the same label.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn spawn_child(
         &self,
         config: cox_protocol::Config,
@@ -233,6 +249,8 @@ impl Session {
         tier: Tier,
         cwd: Option<PathBuf>,
         resume: Option<(SessionId, History)>,
+        agent: String,
+        preset: String,
     ) -> Result<Self, CoreError> {
         let mut child = Self::build(
             config,
@@ -245,6 +263,8 @@ impl Session {
             Some(self.id),
             job,
             tier,
+            Some(agent),
+            Some(preset),
         )?;
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
@@ -265,6 +285,8 @@ impl Session {
         parent_id: Option<SessionId>,
         job: Job,
         tier: Tier,
+        agent: Option<String>,
+        preset: Option<String>,
     ) -> Result<Self, CoreError> {
         let is_resume = resume.is_some();
         // Subagents announce themselves with `SubagentStart`, not `SessionStart`.
@@ -331,6 +353,8 @@ impl Session {
             cwd: cwd.clone(),
             job,
             tier,
+            agent,
+            preset,
             telemetry_span,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),

@@ -78,6 +78,11 @@ pub fn tool_cx(
         output,
         session,
         call,
+        // T34.3: callers that need a labelled child `ToolCx` build it with
+        // `..tool_cx(...)` struct-update syntax rather than a new
+        // constructor arg here — every existing caller stays unchanged.
+        agent: None,
+        preset: None,
     }
 }
 

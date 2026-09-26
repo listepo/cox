@@ -244,6 +244,9 @@ pub struct Question {
     options: Vec<String>,
     /// What the user has typed so far; sent verbatim on `Enter`.
     input: String,
+    /// The subagent asking (T34.3), same shape as `Approval::agent`;
+    /// `None` for the session itself.
+    agent: Option<String>,
 }
 
 impl Question {
@@ -253,7 +256,15 @@ impl Question {
             question,
             options,
             input: String::new(),
+            agent: None,
         }
+    }
+
+    /// Labels the prompt with the subagent it came from, mirroring
+    /// `Approval::from_agent`.
+    pub fn from_agent(mut self, agent: Option<String>) -> Self {
+        self.agent = agent;
+        self
     }
 
     /// `Some` once a key decided the answer; `None` keeps the modal open.
@@ -298,11 +309,19 @@ impl Question {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let mut header = Line::styled(
+            format!(" ask_user {}", sanitize(&self.question)),
+            bold.fg(theme.warn),
+        );
+        if let Some(agent) = &self.agent {
+            let asks = format!(" {} asks:", sanitize(agent));
+            header
+                .spans
+                .insert(0, Span::styled(asks, bold.fg(theme.agent)));
+        }
         vec![
-            Line::styled(
-                format!(" ask_user {}", sanitize(&self.question)),
-                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
-            ),
+            header,
             Line::styled(options, Style::default().add_modifier(Modifier::DIM)),
             Line::raw(format!(
                 " > {}{}   Enter sends {} Esc dismisses",

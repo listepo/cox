@@ -86,6 +86,8 @@ fn cx() -> ToolCx {
         output: tx,
         session: SessionId::new(),
         call: CallId::new(),
+        agent: None,
+        preset: None,
     }
 }
 
