@@ -1138,3 +1138,35 @@ Deviations:
 - The card asked for about 200 lines; this is about 264 lines of code plus tests.
 - `render` draws into a `Buffer`/`Rect` rather than converting to lines, because stacks, tables and blocks need layout that lines cannot express.
 Check: snapshots of every widget kind under the dark, light and NO_COLOR themes, plus `widget_text_is_sanitized`, `oversize_widget_renders_placeholder` and `widget_json_uses_snake_case_tags_and_span_defaults`. nextest: 974 passed, 3 skipped in the worktree. clippy and fmt are clean.
+
+#### T30.16 LM Studio native API: loaded context, capabilities, load on demand
+
+Depends: T30.15, T30.24–T30.25 (the loaded context is a catalog override; A46) · Size: ~180
+Goal: cox asks LM Studio what it is actually running instead of trusting config: the loaded context length (what compaction must fit — R§4.3.2 found `lms load --context-length 65536` left 251 648 loaded), whether the model was trained for tool use, and whether it is loaded at all; and loads it with the configured context length when it is not.
+Plan:
+1. `cox-provider/src/lmstudio.rs`: hand-written serde types (D3/A40 step 3: no Rust SDK, no published spec) for the subset of `GET /api/v1/models` cox reads (`key`, `max_context_length`, `loaded_instances[].config.context_length`, `capabilities.trained_for_tool_use`, `capabilities.reasoning.allowed_options`) and for `POST /api/v1/models/load` (`model`, `context_length`) with its response; unknown fields ignored. A fixture captured from the live server.
+2. Session open for `lmstudio` (in `crates/cox`, not the core): read the model list; the loaded instance's context length becomes the context window unless `context_window` is set; not loaded and `load = true` in config → `models/load` with `context_length`; a model without `trained_for_tool_use` gets one `Notice(Warn)`; an unreachable server fails as a transport error, not a panic.
+3. `cox doctor`: an LM Studio row — reachable, model loaded, loaded vs max context, tool-use capability.
+4. Tests: wiremock contract tests over the fixture (loaded, not loaded, load call body, server down); a doctor snapshot.
+Check: against the live server, `cox doctor` shows the loaded context 251 648 for `prism-ml/bonsai-27b`, and a session's compaction threshold follows it; the three standard commands clean.
+Done when: a `--provider lmstudio` session uses the server-reported context window and `cox doctor` reports the model's state.
+Out of scope: `/api/v1/chat` as a chat transport (no custom tools); per-response `stats` (tokens/s, time to first token) in the ledger — `/v1/messages` does not return them; MCP `integrations`.
+Status: done 2026-09-26
+Result: `crates/cox-provider/src/lmstudio.rs` talks to LM Studio's native `/api/v1` endpoints: `GET /api/v1/models` and `POST /api/v1/models/load`, with a bearer token when a key exists. The serde types ignore unknown fields.
+- `LmStudio::prepare` reads the model's state. Only with the new `[providers.lmstudio] load = true` (default false) does it load the model, passing `context_window` as `context_length`; it then reads the allocated context back.
+- `session::open` in `crates/cox` queries the server before it builds the provider and resolves the key once for both uses. The core only receives the number.
+- `Catalog::overlay_served` makes the server's report the last catalog layer (A46). Context lookup order: configured value → loaded context → catalog → 32,768.
+- A model without tool use gets a `Notice(Warn)` through the new `Session::notice`, and so does a model that is not loaded.
+- An unreachable server or a model the server does not list fails session open with a clear error.
+- `cox doctor` gets an LM Studio row when the code tier uses `lmstudio`. It has a 5 s timeout and never loads a model.
+- `fixtures/lmstudio/models.json` is a live capture; R§4.3.2 gets two rows.
+Deviations:
+- About 14 files instead of the 3-file limit, including a small `Session::notice` API in cox-core.
+- `cox acp` still uses the catalog fallback, because it builds its provider synchronously.
+- The warning for an unloaded model was not asked for by the card.
+Check:
+- Live, real binary, scratch `COX_HOME`: `cox doctor` → "LM Studio: ✓ http://localhost:1234 reachable; `prism-ml/bonsai-27b` loaded, context 251648 loaded / 262144 max; tool use: yes".
+- With `compact_at = 0.01`, the pre-call guard reported "over compact_at 0.01 × max_context 251648".
+- A "say hi" run exited with code 0: 5666 input tokens, $0 usage row.
+- Load on demand is tested only against wiremock; no model was loaded or unloaded on the live server.
+- nextest: 982 passed, 3 skipped in the worktree.

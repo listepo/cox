@@ -1,6 +1,5 @@
 # Todo
 
-- T30.16. LM Studio native API: loaded context, capabilities, load on demand
 - T30.13. cox vs Claude Code vs Terminus 2 on the same local model
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 - T33.4. Discovery, package digest and `cox plugin list`
