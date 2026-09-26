@@ -731,6 +731,30 @@ for other agents are out of scope here — their footprint threads move weekly:
 [Codex CLI memory leak #9345](https://github.com/openai/codex/issues/9345),
 [Codex 12GB on startup (forum)](https://community.openai.com/t/codex-consuming-12gb-memory-for-5-minutes-on-startup-macos/1376282).
 
+#### Plugin timings (filled by T33.28, 2026-09-26, `just bench`)
+
+PL§11's per-plugin latencies over the Rust reference plugin
+(`plugins/examples/rust`, 325 KiB release `wasm32-unknown-unknown` module),
+from `crates/cox/examples/plugin_bench.rs` in the release profile. Primary
+source: this run, on an Apple M3 Max (16 cores, 64 GiB), macOS 27.0,
+rustc 1.97.1, extism 1.30 over wasmtime 43; three runs, range shown.
+
+| Metric | Budget (PL§11) | Measured |
+|---|---|---|
+| session start per plugin: `LivePlugins::load` + `start` (compile, instantiate, `cox_init`), median of 20 | ≤ 50 ms warm (cache on); ≤ 500 ms cold for 1 MiB | 57–97 ms, cold (max 138–169 ms) |
+| `cox_on_event`, batch of 16 `turn_started`, p50 of 1 000 | ≤ 1 ms | 0.12–0.17 ms |
+| `cox_render` of the status segment, p95 of 1 000 | ≤ 5 ms | 0.09–0.51 ms |
+| hook round trip (`PluginHooks::run`, `PostToolUseFailure` with a kv write and a notice), p95 of 1 000 | ≤ 5 ms | 0.38–0.72 ms |
+
+Caveats: the host still builds with wasmtime's compilation cache off
+(`PluginHost::load_with`, `with_cache_disabled`), so every start is a cold
+compile and the warm-start row cannot be measured until the cache is wired
+to `~/.cox/cache/wasmtime`; PL§12 falsifier 2 is therefore not judged by
+these numbers. The module is 325 KiB, not the 1 MiB the cold-compile row
+names. The machine ran four other agents' builds (load average 19–25 on
+16 cores), and wasmtime compiles functions in parallel, so the start row is
+the noisiest; the call rows are within budget by an order of magnitude.
+
 ## 5. Testability patterns adopted
 1. `Provider` trait with `Scripted` and `Replay` (cassette) implementations; cassettes re-recorded on demand and redacted. Temperature 0 and seeds do not give bit-exact replay across providers; replaying the event log does. [high]
 2. Golden `Event` JSONL for loop scenarios (`insta`); the rollout file and the fixture are the same format. [design]

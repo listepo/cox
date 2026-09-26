@@ -92,3 +92,11 @@ vt100 = { workspace = true }
 # network — already a workspace dependency (`cox-provider-openai`'s own
 # wiremock tests).
 wiremock = { workspace = true }
+# T33.28: the Rust reference plugin built from `plugins/examples/rust` for
+# `tests/plugins.rs` and `examples/plugin_bench.rs` (PL§13); a workspace
+# crate with no dependencies of its own.
+cox-plugin-fixtures = { path = "../cox-plugin-fixtures" }
+
+[[example]]
+name = "plugin_bench"
+required-features = ["plugins"]

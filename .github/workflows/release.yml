@@ -110,6 +110,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
+          # `cox-plugin-fixtures` builds the example plugin for wasm32 (PL§13, T33.28).
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - name: Format

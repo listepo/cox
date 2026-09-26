@@ -60,6 +60,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-plugin-example"
+version = "0.1.2"
+dependencies = [
+ "cox-plugin-sdk",
+ "serde_json",
+]
+
+[[package]]
 name = "cox-plugin-jev"
 version = "0.1.2"
 dependencies = [

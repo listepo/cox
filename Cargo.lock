@@ -909,6 +909,7 @@ dependencies = [
  "cox-models",
  "cox-plugin",
  "cox-plugin-api",
+ "cox-plugin-fixtures",
  "cox-protocol",
  "cox-provider",
  "cox-sanitize",
@@ -1085,6 +1086,10 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
 ]
+
+[[package]]
+name = "cox-plugin-fixtures"
+version = "0.1.2"
 
 [[package]]
 name = "cox-protocol"

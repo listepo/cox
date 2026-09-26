@@ -58,6 +58,8 @@ fn command(_: CommandIn) -> Result<CommandOut, SdkError> {
 cox_plugin_sdk::register!(init => init, on_event => on_event, command => command);
 ```
 
+The complete version is `plugins/examples/rust`, the reference plugin PL§13 asks every language to implement: it adds a failure-counting hook and a status segment, and keeps its counters in memory as well as in kv, because `cox_render` may not call `kv_get`.
+
 A handler returns `Result<output, E>` for any error type that implements `Display`. An `Err` fails that one call: cox shows the message as a warning and carries on (extensions fail open).
 
 | `register!` key | Export | Input → output | Called |

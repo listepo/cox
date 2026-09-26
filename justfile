@@ -40,8 +40,12 @@ vendor *ARGS:
 vendor-test:
     uv run --project scripts/vendor pytest scripts/vendor/tests -q
 
+# Token economy (R§4.6), then the PL§11 plugin timings over the Rust
+# reference plugin (R§4.7; release, because they are latencies; needs the
+# wasm32 target from mise.toml).
 bench:
     mise exec -- cargo run -q -p cox --example bench
+    mise exec -- cargo run -q --release -p cox --example plugin_bench
 
 # Footprint benchmark (plan.md T30.2): cold start, first frame, replay RSS
 # peak and binary size. `--write` refreshes scripts/footprint.json (commit
