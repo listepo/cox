@@ -144,6 +144,9 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Ctrl+O", "transcript", Context::Idle),
     ("Ctrl+E", "expand", Context::Idle),
     ("Ctrl+G", "diff", Context::Idle),
+    // T33.25, PL§8: a plugin's `commands`/`keys` reach `state.commands`
+    // and `Keymap::declare_plugin_keys` only after this fires once.
+    ("Ctrl+K", "plugin.leader", Context::Idle),
     ("Ctrl+C", "quit", Context::Idle),
     ("Ctrl+D", "quit", Context::Idle),
     // T23.4: plain letters, so only an empty composer claims them (same
@@ -223,6 +226,14 @@ pub enum Action {
     Shell {
         cmd: String,
         share: bool,
+    },
+    /// `/<id>:<name>` (T33.25, PL§8): a plugin command, matched in
+    /// `state.rs`'s `plugin_command` rather than here — its table is
+    /// `State.commands`, filled at runtime, not the static `COMMANDS`.
+    PluginCommand {
+        plugin: String,
+        name: String,
+        args: String,
     },
 }
 

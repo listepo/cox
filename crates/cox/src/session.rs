@@ -500,9 +500,11 @@ fn start_plugins(
 }
 
 /// T33.23's render server over the live hosts, and each plugin's granted
-/// status slots declared on the feed, which renders them the first time.
-/// Returns the tap's `Redraw`. A server thread that fails to start only
-/// leaves plugin segments unrendered.
+/// status slots, commands and keys (T33.25) declared on the feed, which
+/// renders/registers them the first time. A plugin with commands or keys
+/// but no status slot still gets a `Declare`. Returns the tap's `Redraw`.
+/// A server thread that fails to start only leaves plugin segments
+/// unrendered.
 #[cfg(feature = "plugins")]
 fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::Redraw {
     use cox_tui::state::PluginUiMsg;
@@ -511,13 +513,27 @@ fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::
     let declares: Vec<_> = live
         .plugins()
         .iter()
-        .map(|p| (p.id().to_string(), p.granted_status()))
-        .filter(|(_, slots)| !slots.is_empty())
+        .map(|p| {
+            (
+                p.id().to_string(),
+                p.granted_status(),
+                p.granted_commands(),
+                p.granted_keys(),
+            )
+        })
+        .filter(|(_, slots, commands, keys)| {
+            !slots.is_empty() || !commands.is_empty() || !keys.is_empty()
+        })
         .collect();
     let feed = ui.feed.clone();
     tokio::spawn(async move {
-        for (plugin, slots) in declares {
-            let msg = Msg::Plugin(PluginUiMsg::Declare { plugin, slots });
+        for (plugin, slots, commands, keys) in declares {
+            let msg = Msg::Plugin(PluginUiMsg::Declare {
+                plugin,
+                slots,
+                commands,
+                keys,
+            });
             if feed.send(msg).await.is_err() {
                 break;
             }

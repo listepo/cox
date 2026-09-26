@@ -1197,8 +1197,11 @@ mode.cycle = \"shift+tab\"
 ```
 
 - Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, \
-`thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, \
-`Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. \
+`@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable \
+only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two \
+plugins goes to the lower plugin id and `cox doctor` reports it.
 - Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a \
 character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, \
 `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.

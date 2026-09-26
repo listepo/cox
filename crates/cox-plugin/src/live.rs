@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock, Weak};
 
 use async_trait::async_trait;
-use cox_plugin_api::{InitOut, PluginManifest, SessionInfo, Slot};
+use cox_plugin_api::{CommandDecl, InitOut, KeyDecl, PluginManifest, SessionInfo, Slot};
 use cox_protocol::PluginStore;
 use cox_protocol::config::PluginsConfig;
 use cox_protocol::errors::CoreError;
@@ -71,6 +71,26 @@ impl Live {
             .copied()
             .filter(|slot| self.granted.iter().any(|g| g == slot_capability(*slot)))
             .collect()
+    }
+
+    /// `InitOut.commands`, or empty when `ui.commands` was not granted
+    /// (PL§2, PL§4: anything not granted is dropped).
+    pub fn granted_commands(&self) -> Vec<CommandDecl> {
+        if !self.granted.iter().any(|g| g == "ui.commands") {
+            return Vec::new();
+        }
+        self.init
+            .as_ref()
+            .map_or(Vec::new(), |i| i.commands.clone())
+    }
+
+    /// `InitOut.keys`, or empty when `ui.keys` was not granted (PL§2, PL§4:
+    /// anything not granted is dropped).
+    pub fn granted_keys(&self) -> Vec<KeyDecl> {
+        if !self.granted.iter().any(|g| g == "ui.keys") {
+            return Vec::new();
+        }
+        self.init.as_ref().map_or(Vec::new(), |i| i.keys.clone())
     }
 
     /// Queued `cox_notify`/`Effects` notices, attributed to the plugin.
@@ -388,6 +408,31 @@ mod tests {
         });
         assert_eq!(live.plugins()[0].granted_status(), [Slot::StatusRight]);
         assert_eq!(live.hosts().len(), 1);
+    }
+
+    #[test]
+    fn commands_and_keys_are_dropped_without_their_capability() {
+        let caps = json!({ "ui": { "commands": true } });
+        let mut live = LivePlugins::default();
+        live.load(&manifest("cmd", caps), &module(""), store())
+            .expect("loads");
+        live.start(&PluginsConfig::default(), SessionId::new(), Path::new("/w"));
+        live.plugins[0].init = Some(InitOut {
+            commands: vec![CommandDecl {
+                name: "go".into(),
+                description: String::new(),
+            }],
+            keys: vec![KeyDecl {
+                key: "g".into(),
+                name: "go".into(),
+                description: String::new(),
+            }],
+            ..InitOut::default()
+        });
+        // `ui.commands` was granted, `ui.keys` was not: keys drop, commands
+        // don't (PL§2, PL§4).
+        assert_eq!(live.plugins()[0].granted_commands().len(), 1);
+        assert!(live.plugins()[0].granted_keys().is_empty());
     }
 
     #[tokio::test]

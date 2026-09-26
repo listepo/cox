@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
-use cox_protocol::plugin::{RenderIn, Slot, Widget};
+use cox_protocol::plugin::{CommandDecl, CommandOut, KeyDecl, NoticeLevel, RenderIn, Slot, Widget};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
@@ -334,6 +334,10 @@ pub struct State {
     /// declaration order, each with its last good render. `view` only ever
     /// reads these; `status::on_plugin` fills them from `Msg::Plugin`.
     pub plugin_status: Vec<crate::status::PluginSegment>,
+    /// `plugin.leader` was just pressed (T33.25, PL§8): the next key, match
+    /// or not, goes to `Keymap::resolve_plugin_key` instead of anywhere
+    /// else — `<leader> <key>` is the only way a plugin key fires.
+    pub plugin_leader_armed: bool,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -434,9 +438,17 @@ pub enum Msg {
 /// holds a plugin, so every render arrives here, cached in `State`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PluginUiMsg {
-    /// A plugin's granted slots after `cox_init`; each new one is rendered
-    /// once now, since it just became visible.
-    Declare { plugin: String, slots: Vec<Slot> },
+    /// A plugin's granted slots, commands and keys after `cox_init`
+    /// (T33.25 adds the latter two); each new slot is rendered once now,
+    /// since it just became visible. `crates/cox` re-sends this whenever a
+    /// session re-inits the plugin, so `update` treats it as the current,
+    /// full set, not an addition to the last one.
+    Declare {
+        plugin: String,
+        slots: Vec<Slot>,
+        commands: Vec<CommandDecl>,
+        keys: Vec<KeyDecl>,
+    },
     /// `Effects.redraw` or `cox_redraw()`: render this plugin's slots again.
     Redraw { plugin: String },
     /// A `cox_render` answer that came back inside its deadline.
@@ -448,14 +460,29 @@ pub enum PluginUiMsg {
     /// A `cox_render` that timed out, failed or does not exist; the last
     /// good render stays and the miss is counted.
     Missed { plugin: String, slot: Slot },
+    /// A `cox_command`/`cox_key` answer (T33.25, PL§8); `None` is a
+    /// timeout, an error or a missing export, the same fail-open `Missed`
+    /// already gives a render.
+    Command {
+        plugin: String,
+        out: Option<CommandOut>,
+    },
 }
 
 /// What the TUI asks of a plugin; `crates/cox` serves it and answers with
-/// `Msg::Plugin`. Later cards add commands and keys here (PL§8).
+/// `Msg::Plugin`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PluginRequest {
     /// Call `plugin`'s `cox_render` with `input`.
     Render { plugin: String, input: RenderIn },
+    /// `/<id>:<name>` (T33.25, PL§8): call `plugin`'s `cox_command`.
+    Command {
+        plugin: String,
+        name: String,
+        args: String,
+    },
+    /// `<leader> <key>` (T33.25, PL§8): call `plugin`'s `cox_key`.
+    Key { plugin: String, name: String },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -598,6 +625,7 @@ impl State {
             active_loop: None,
             pending_grants: VecDeque::new(),
             plugin_status: Vec::new(),
+            plugin_leader_armed: false,
         }
     }
 
@@ -765,7 +793,23 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
         }
         // PL§8: a resize is one of the three times a plugin renders.
         Msg::Resize(..) => crate::status::render_requests(state, None),
-        Msg::Plugin(msg) => crate::status::on_plugin(state, msg),
+        // T33.25, PL§8: a `Command` answer applies `CommandOut` here, not
+        // in `status`, which only ever folds slots; everything else
+        // (`Declare`'s slots included) still goes through `on_plugin`.
+        Msg::Plugin(PluginUiMsg::Command { out, .. }) => plugin_command_out(state, out),
+        Msg::Plugin(msg) => {
+            if let PluginUiMsg::Declare {
+                plugin,
+                commands,
+                keys,
+                ..
+            } = &msg
+            {
+                declare_plugin_commands(state, plugin, commands);
+                state.keymap.declare_plugin_keys(plugin, keys);
+            }
+            crate::status::on_plugin(state, msg)
+        }
         Msg::Agents(agents) => {
             state.agents = agents;
             Vec::new()
@@ -902,6 +946,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     // `app.rs`'s select loop, before a `Msg::Key` ever reaches here.
     if key.kind == KeyEventKind::Repeat && matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
         return Vec::new();
+    }
+    // T33.25, PL§8: the key right after `plugin.leader` never reaches the
+    // composer, a modal or another binding, matched or not — `<leader>
+    // <key>` is the only way a plugin key fires.
+    if state.plugin_leader_armed {
+        state.plugin_leader_armed = false;
+        return match state.keymap.resolve_plugin_key(key) {
+            Some((plugin, name)) => vec![Cmd::Plugin(PluginRequest::Key {
+                plugin: plugin.to_string(),
+                name: name.to_string(),
+            })],
+            None => Vec::new(),
+        };
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     // `Ctrl+C` interrupts a running turn; when idle it must be pressed twice.
@@ -1221,6 +1278,11 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
     let enter = |modifiers| KeyEvent::new(KeyCode::Enter, modifiers);
     Some(match action {
         A::Quit => vec![Cmd::Quit],
+        // T33.25, PL§8: arms `on_key`'s leader check for the very next key.
+        A::PluginLeader => {
+            state.plugin_leader_armed = true;
+            Vec::new()
+        }
         A::Thinking => toggle(&mut state.show_thinking),
         A::Transcript => toggle(&mut state.show_diffs),
         A::Expand => {
@@ -1340,7 +1402,11 @@ fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             // T22.2: a file command's name reaches the core as
             // `Submission::Command`; the T5.5 parser owns the
             // built-ins and would answer these with a notice.
-            match file_command(&state.commands, &text).or_else(|| commands::parse(&text, tier)) {
+            // T33.25, PL§8: a `/<id>:<name>` line calls the plugin instead.
+            match file_command(&state.commands, &text)
+                .or_else(|| plugin_command(&state.commands, &text))
+                .or_else(|| commands::parse(&text, tier))
+            {
                 Some(action) => act(state, action),
                 // A turn is running: queue instead of submitting
                 // (T25.1). A slash command still runs immediately
@@ -1524,11 +1590,13 @@ fn agents_rows(
 /// T22.2: a `/name args` line naming a file command — something
 /// `State.commands` carries beyond the built-in `COMMANDS`, which the T5.5
 /// parser owns — submits `Submission::Command` for the core, the same shape
-/// the parser already produces for built-ins without a dedicated arm.
+/// the parser already produces for built-ins without a dedicated arm. A
+/// colon-bearing name is a plugin command (T33.25) instead, never one of
+/// these: no built-in or file command name has ever contained one.
 fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Action> {
     let mut words = line.strip_prefix('/')?.split_whitespace();
     let name = words.next()?;
-    if COMMANDS.iter().any(|(n, ..)| *n == name) {
+    if COMMANDS.iter().any(|(n, ..)| *n == name) || name.contains(':') {
         return None;
     }
     commands.iter().any(|(n, ..)| n == name).then(|| {
@@ -1539,6 +1607,74 @@ fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Act
             },
         })
     })
+}
+
+/// T33.25, PL§8: a `/<id>:<name>` line naming a plugin command — the colon
+/// is what tells it apart from `file_command`'s names. Guarded the same
+/// way against `COMMANDS` so a built-in still wins even over a
+/// mis-registered plugin command that dropped its `<id>:` prefix.
+fn plugin_command(commands: &[(String, String, String)], line: &str) -> Option<Action> {
+    let mut words = line.strip_prefix('/')?.split_whitespace();
+    let full = words.next()?;
+    if COMMANDS.iter().any(|(n, ..)| *n == full) {
+        return None;
+    }
+    let (plugin, name) = full.split_once(':')?;
+    commands
+        .iter()
+        .any(|(n, ..)| n == full)
+        .then(|| Action::PluginCommand {
+            plugin: plugin.to_string(),
+            name: name.to_string(),
+            args: words.collect::<Vec<_>>().join(" "),
+        })
+}
+
+/// T33.25, PL§8: a plugin's declared commands join `State.commands` after
+/// the built-ins and any file commands, as `/<id>:<name>` — appended once,
+/// a re-`Declare` never duplicates a name it already added.
+fn declare_plugin_commands(state: &mut State, plugin: &str, commands: &[CommandDecl]) {
+    for c in commands {
+        let full = format!("{plugin}:{}", crate::text::sanitize(&c.name));
+        if state.commands.iter().any(|(n, ..)| *n == full) {
+            continue;
+        }
+        state.commands.push((
+            full.clone(),
+            format!("/{full}"),
+            crate::text::sanitize(&c.description),
+        ));
+    }
+}
+
+/// T33.25, PL§8: `CommandOut`'s closed effects for a `cox_command`/
+/// `cox_key` answer. `None` — a timeout, an error or a missing export —
+/// fails open like a missed render: nothing happens, nothing is shown.
+fn plugin_command_out(state: &mut State, out: Option<CommandOut>) -> Vec<Cmd> {
+    match out {
+        Some(CommandOut::Prompt { text }) => vec![Cmd::Submit(Submission::UserTurn {
+            text: crate::text::sanitize(&text),
+            attachments: Vec::new(),
+            confirm_think: false,
+        })],
+        Some(CommandOut::Compact { focus }) => vec![Cmd::Submit(Submission::Compact {
+            focus: focus.map(|f| crate::text::sanitize(&f)),
+        })],
+        // `panel`/`overlay` are already declared and rendered (T33.23);
+        // toggling one's visibility from a command is a later card's slot
+        // wiring, the same gap `Declare` leaves for these two slot kinds
+        // today.
+        Some(CommandOut::TogglePanel | CommandOut::OpenOverlay) => Vec::new(),
+        Some(CommandOut::Notice(n)) => {
+            let level = match n.level {
+                NoticeLevel::Warn => Level::Warn,
+                NoticeLevel::Info => Level::Info,
+            };
+            notice(state, level, crate::text::sanitize(&n.text));
+            Vec::new()
+        }
+        Some(CommandOut::Nothing) | None => Vec::new(),
+    }
 }
 
 /// A slash command's effect; anything the core owns becomes a `Submit`.
@@ -1712,6 +1848,12 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             Some(_) => notice(state, Level::Info, "loop stopped".into()),
             None => notice(state, Level::Warn, "no loop running".into()),
         },
+        // T33.25, PL§8: `crates/cox`'s `plugin_ui::answer` runs
+        // `cox_command` and the answer comes back as
+        // `Msg::Plugin(PluginUiMsg::Command)`, applied in `plugin_command_out`.
+        Action::PluginCommand { plugin, name, args } => {
+            return vec![Cmd::Plugin(PluginRequest::Command { plugin, name, args })];
+        }
     }
     Vec::new()
 }
@@ -2339,6 +2481,91 @@ mod tests {
                 },
             })]
         );
+    }
+
+    /// T33.25, PL§8: even a plugin command mis-registered without its
+    /// `<id>:` prefix (bypassing `declare_plugin_commands`'s own naming)
+    /// never shadows a built-in — the same guard `file_command` already
+    /// gives a markdown command — and the real built-in still dispatches
+    /// with plugin commands present in the table.
+    #[test]
+    fn builtin_command_wins_over_plugin() {
+        let commands = vec![("quit".to_string(), String::new(), String::new())];
+        assert_eq!(plugin_command(&commands, "/quit"), None);
+
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state
+            .commands
+            .push(("acme:quit".into(), "/acme:quit".into(), String::new()));
+        assert_eq!(type_command(&mut state, "/quit"), vec![Cmd::Quit]);
+    }
+
+    /// T33.25, PL§8: `/<id>:<name>` calls the plugin (`Cmd::Plugin`, not
+    /// the core), and its `CommandOut::Prompt` answer submits a `UserTurn`,
+    /// like a markdown command's own text would.
+    #[test]
+    fn plugin_command_prompt_submits_user_turn() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state
+            .commands
+            .push(("acme:go".into(), "/acme:go".into(), "go".into()));
+
+        let cmds = type_command(&mut state, "/acme:go do it");
+        assert_eq!(
+            cmds,
+            vec![Cmd::Plugin(PluginRequest::Command {
+                plugin: "acme".into(),
+                name: "go".into(),
+                args: "do it".into(),
+            })]
+        );
+
+        let cmds = update(
+            &mut state,
+            Msg::Plugin(PluginUiMsg::Command {
+                plugin: "acme".into(),
+                out: Some(CommandOut::Prompt {
+                    text: "go go go".into(),
+                }),
+            }),
+        );
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "go go go".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+    }
+
+    /// T33.25, PL§8: a plugin key fires only as `<leader> <key>` — the bare
+    /// key on an empty composer does nothing plugin-related, the same as
+    /// any other unbound letter.
+    #[test]
+    fn plugin_key_only_under_leader() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.keymap.declare_plugin_keys(
+            "acme",
+            &[KeyDecl {
+                key: "r".into(),
+                name: "reset".into(),
+                description: String::new(),
+            }],
+        );
+        let plugin_key = Cmd::Plugin(PluginRequest::Key {
+            plugin: "acme".into(),
+            name: "reset".into(),
+        });
+
+        let r = || Msg::Key(KeyEvent::from(KeyCode::Char('r')));
+        assert!(!update(&mut state, r()).contains(&plugin_key));
+
+        let leader = Msg::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert_eq!(update(&mut state, leader), Vec::new());
+        assert!(state.plugin_leader_armed);
+        assert_eq!(update(&mut state, r()), vec![plugin_key]);
+        assert!(!state.plugin_leader_armed, "one key disarms it");
     }
 
     /// T27.1: `Ctrl+B` backgrounds the newest pending `bash` card; with no

@@ -49,7 +49,9 @@ impl PluginSegment {
 /// renders. A stopped slot ignores even a late answer, so "slow" stays.
 pub fn on_plugin(state: &mut State, msg: PluginUiMsg) -> Vec<Cmd> {
     match msg {
-        PluginUiMsg::Declare { plugin, slots } => {
+        // `commands`/`keys` are folded in `state::update` before this runs
+        // (T33.25); only the slots are this module's concern.
+        PluginUiMsg::Declare { plugin, slots, .. } => {
             for slot in slots {
                 let status = matches!(slot, Slot::StatusLeft | Slot::StatusRight);
                 if status && segment(state, &plugin, slot).is_none() {
@@ -81,6 +83,10 @@ pub fn on_plugin(state: &mut State, msg: PluginUiMsg) -> Vec<Cmd> {
             }
             Vec::new()
         }
+        // `state::update` (T33.25) matches this variant first and never
+        // reaches `on_plugin` with it; kept here only so the match stays
+        // exhaustive over every `PluginUiMsg`.
+        PluginUiMsg::Command { .. } => Vec::new(),
     }
 }
 
@@ -474,6 +480,8 @@ mod tests {
             PluginUiMsg::Declare {
                 plugin: id.into(),
                 slots,
+                commands: Vec::new(),
+                keys: Vec::new(),
             },
         )
     }
