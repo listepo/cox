@@ -49,6 +49,19 @@ now_ns() { date +%s%N; }
 min_ms() { python3 -c 'import sys; print(round(min(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
 median_ms() { python3 -c 'import statistics,sys; print(round(statistics.median(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
 
+# Calibration: best of 11 `/usr/bin/true` spawns under the same env. Shared
+# CI runners differ from each other (best-of-11 cold start seen from 7.0 to
+# 12.0 ms on identical commits), so --check scales timing baselines that carry
+# a `calib_ms` by how much slower this machine spawns a process than the one
+# that wrote the baseline. It only ever loosens, never tightens, the gate.
+: > "$SCRATCH/calib"
+for _ in $(seq 1 11); do
+  s="$(now_ns)"
+  COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" /usr/bin/true
+  echo "$(( $(now_ns) - s ))" >> "$SCRATCH/calib"
+done
+CALIB_MS="$(min_ms "$SCRATCH/calib")"
+
 # Cold start: best of 11 `cox --version` runs (spawn + clap + config load).
 : > "$SCRATCH/startup"
 for _ in $(seq 1 11); do
@@ -142,12 +155,13 @@ RSS_MIB="$(python3 -c "print(round($PEAK/1048576,1))")"
 if [ "$(uname -s)" = "Darwin" ]; then BYTES="$(stat -f%z "$BIN")"; else BYTES="$(stat -c%s "$BIN")"; fi
 BIN_MIB="$(python3 -c "print(round($BYTES/1048576,1))")"
 
+echo "process spawn (/usr/bin/true, best of 11): ${CALIB_MS} ms"
 echo "cold start (cox --version, best of 11): ${STARTUP_MS} ms (median ${STARTUP_MED} ms)"
 echo "first frame (scripted stream-json, best of 7): ${FIRST_MS} ms (median ${FIRST_MED} ms)"
 echo "replay RSS peak ($NTURNS turns, $NCALLS provider calls, max): ${RSS_MIB} MiB"
 echo "binary ($BIN): ${BIN_MIB} MiB ($BYTES bytes)"
 
-RESULT="$(python3 -c 'import json,sys; print(json.dumps({"startup_ms":float(sys.argv[1]),"first_frame_ms":float(sys.argv[2]),"rss_mib":float(sys.argv[3]),"binary_bytes":int(sys.argv[4]),"turns":int(sys.argv[5]),"calls":int(sys.argv[6])}))' "$STARTUP_MS" "$FIRST_MS" "$RSS_MIB" "$BYTES" "$NTURNS" "$NCALLS")"
+RESULT="$(python3 -c 'import json,sys; print(json.dumps({"startup_ms":float(sys.argv[1]),"first_frame_ms":float(sys.argv[2]),"rss_mib":float(sys.argv[3]),"binary_bytes":int(sys.argv[4]),"turns":int(sys.argv[5]),"calls":int(sys.argv[6]),"calib_ms":float(sys.argv[7])}))' "$STARTUP_MS" "$FIRST_MS" "$RSS_MIB" "$BYTES" "$NTURNS" "$NCALLS" "$CALIB_MS")"
 
 if [ "$MODE" = "write" ]; then
   python3 - "$BASELINE" "$OS" "$RESULT" <<'EOF'
@@ -169,8 +183,14 @@ except (OSError, KeyError):
     print('no baseline for %s — run: bash scripts/footprint.sh --write' % oskey)
     sys.exit(0)
 keys = ('startup_ms', 'first_frame_ms', 'rss_mib', 'binary_bytes')
-for k in keys: print('  %s: baseline %s, now %s' % (k, base[k], result[k]))
-bad = [k for k in keys if result[k] > base[k] * 1.2]
+timing = ('startup_ms', 'first_frame_ms')
+scale = 1.0
+if base.get('calib_ms'):
+    scale = max(1.0, result['calib_ms'] / base['calib_ms'])
+    print('  calib_ms: baseline %s, now %s (timing baselines x%.2f)' % (base['calib_ms'], result['calib_ms'], scale))
+limit = {k: base[k] * (scale if k in timing else 1.0) for k in keys}
+for k in keys: print('  %s: baseline %s, now %s' % (k, round(limit[k], 1), result[k]))
+bad = [k for k in keys if result[k] > limit[k] * 1.2]
 if bad: print('footprint: REGRESSION >20%%: %s' % ', '.join(bad)); sys.exit(1)
 print('footprint: no metric regressed >20%')
 EOF
