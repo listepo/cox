@@ -61,7 +61,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.41 | todo | P3 | 2 | 0% | |
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T34.9 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T35.2 | todo | P1 | 4 | 0% | |
 | T35.3 | todo | P2 | 5 | 0% | |
 | T35.4 | todo | P2 | 4 | 0% | |
@@ -1338,16 +1337,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T34.0 (blocks T34.4–T34.9).
-
-#### T34.9 e2e: two subagents messaging through the parent
-
-Depends: T34.6 · Size: ~150 · Files: `tests/subagent_messaging.rs` (new)
-Goal: with the Scripted provider, a parent spawns two children; child A sends `send_message` to child B by name; the parent relays it; B replies; the parent's history carries both pointer lines; a scripted ping-pong hits T34.6's hop limit and stops instead of looping forever.
-Check: `parent_relays_a_message_between_two_children`, `hop_limit_stops_a_scripted_ping_pong` — both against the real event stream, no network, no API key (D12).
-Plan:
-1. Sibling by name. T34.6 lets a child address a sibling only by `TaskId`, which is random, so a scripted scenario cannot name it. The parent's name→`TaskId` index (`task_names`) becomes an `Arc` shared read-only with each child at `spawn`, so the child's `Relay` resolves `to: "<name>"` itself. Names are deterministic (`<preset>-<n>`). Unit test: `child_resolves_a_sibling_by_name`.
-2. The e2e runs the real binary headless (`cox run -p --output-format stream-json`) against a `COX_HOME` scratch tree. It uses a custom agent definition (T34.1) that lists `send_message`, plus a Scripted scenario: the parent spawns `talker-1` and `talker-2` in the background, `talker-1` messages `talker-2`, `talker-2` replies to `parent`, and the test asserts the `task_message` events and the parent's pointer lines. A second scenario ping-pongs and asserts it stops at `MAX_HOPS`.
-3. Amendment, found while building the e2e: headless `cox run -p` called `process::exit` while background subagents were still running, which killed their work and dropped their events from stream-json. The headless run now awaits the session's background tasks, using the task registry, before exiting; cancellation still ends it at once. This replaces a draft that relied on `sleep` in the scenario.
 
 ### P35 — External agents from plugins (Cursor first) (goal: a plugin can declare an external CLI agent that appears to the model as a subagent preset, driven over its own official headless protocol, sandboxed and grant-gated like every other plugin capability)
 

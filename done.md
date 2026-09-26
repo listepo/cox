@@ -1401,3 +1401,36 @@ Check: passing tests:
 nextest: 1022 passed, 3 skipped in the worktree.
 
 nextest on main after landing: 1027 passed, 3 skipped. fmt, clippy and the slim build are clean.
+
+#### T34.9 e2e: two subagents messaging through the parent
+
+Depends: T34.6 · Size: ~150 · Files: `tests/subagent_messaging.rs` (new)
+Goal: with the Scripted provider, a parent spawns two children; child A sends `send_message` to child B by name; the parent relays it; B replies; the parent's history carries both pointer lines; a scripted ping-pong hits T34.6's hop limit and stops instead of looping forever.
+Check: `parent_relays_a_message_between_two_children`, `hop_limit_stops_a_scripted_ping_pong` — both against the real event stream, no network, no API key (D12).
+Plan:
+1. Sibling by name. T34.6 lets a child address a sibling only by `TaskId`, which is random, so a scripted scenario cannot name it. The parent's name→`TaskId` index (`task_names`) becomes an `Arc` shared read-only with each child at `spawn`, so the child's `Relay` resolves `to: "<name>"` itself. Names are deterministic (`<preset>-<n>`). Unit test: `child_resolves_a_sibling_by_name`.
+2. The e2e runs the real binary headless (`cox run -p --output-format stream-json`) against a `COX_HOME` scratch tree. It uses a custom agent definition (T34.1) that lists `send_message`, plus a Scripted scenario: the parent spawns `talker-1` and `talker-2` in the background, `talker-1` messages `talker-2`, `talker-2` replies to `parent`, and the test asserts the `task_message` events and the parent's pointer lines. A second scenario ping-pongs and asserts it stops at `MAX_HOPS`.
+3. Amendment, found while building the e2e: headless `cox run -p` called `process::exit` while background subagents were still running, which killed their work and dropped their events from stream-json. The headless run now awaits the session's background tasks, using the task registry, before exiting; cancellation still ends it at once. This replaces a draft that relied on `sleep` in the scenario.
+Status: done 2026-09-26
+Result: two subagents message each other through the parent, end to end, from the real binary. Building this found and fixed two headless bugs.
+- **Siblings by name:** the parent's name→`TaskId` index (`task_names`) is an `Arc` shared read-only with each child, so `send_message {to: "talker-2"}` resolves in the child. One helper, `resolve_name_or_id`, serves both parent and child.
+- **Scripted provider:** a scenario turn can carry `when_contains`, which pins it to the request whose transcript text contains that marker (`Content::Text` only), with FIFO order for unmarked turns. It is needed because every child shares one `Scripted` instance.
+- **Headless wait:** `cox run -p` called `process::exit` while background subagents were still running, dropping their work and their stream-json events. `Session::wait_idle` now awaits the registry's `TaskKind::Agent` entries through a `Notify` bumped by `complete_task`, and cancellation ends the wait. `run.rs` keeps draining events until the turn has ended and the session is idle. Two races were closed along the way: a chain about to restart keeps its registry entry, and a woken child registers before it is spawned.
+- **Detached shells:** detached `bash` tasks do not hold the exit open. At exit they are cancelled through `session.interrupt()`, using the bash tool's existing SIGTERM→SIGKILL path, and the run waits up to 5 s for them (`wait_tasks_cleared`) before `shutdown_background`. Before this, every headless run orphaned its detached shells.
+Deviations:
+- The tests are in `crates/cox/tests/subagent_messaging.rs`, beside `run_cli.rs`, because there is no root `tests/`.
+- About 260 lines of tests plus four scenario TOMLs, against a target of ~150.
+- Review took three rounds: a `sleep` buffer in the scenarios was replaced by the real wait; the wait was narrowed to agent tasks so a background dev server cannot hang the exit; and the leak of orphaned shell processes was fixed.
+- Known gap: a detached shell from an earlier `--loop` turn is out of reach of `interrupt()`, because cancellation is turn-scoped. It is abandoned after the 5 s grace.
+- Not checked: whether quitting the TUI while a background shell still runs leaks the same way. `run_tui` has the same runtime-drop shape.
+Check: passing tests:
+- `parent_relays_a_message_between_two_children`
+- `hop_limit_stops_a_scripted_ping_pong`
+- `headless_run_waits_for_background_subagents`
+- `headless_run_does_not_wait_for_a_background_shell` (the run exits in under 10 s and no `sleep 4001` is left)
+- `child_resolves_a_sibling_by_name`
+- `scripted_parses_when_contains`
+
+Reverting the wait makes the headless tests fail. The `subagent_messaging` tests passed 5 runs in a row. nextest: 1035 passed, 3 skipped in the worktree.
+
+nextest on main after landing: 1035 passed, 3 skipped. fmt, clippy and the slim build are clean, and no `sleep 4001` was left running.
