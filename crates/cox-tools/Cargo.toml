@@ -7,6 +7,10 @@ license.workspace = true
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# T32.3: `path::confine` and `sandbox` moved to their own crate; re-exported
+# at the old paths (`crates/cox-tools/src/lib.rs`) so existing callers keep
+# working.
+cox-sandbox = { path = "../cox-sandbox", version = "0.1.2" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
@@ -35,9 +39,3 @@ reqwest = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
-
-# T4.2: Linux confinement without bwrap — Landlock for the filesystem,
-# seccomp for the network. Linux-only crates, so gated on the target.
-[target.'cfg(target_os = "linux")'.dependencies]
-landlock = { workspace = true }
-seccompiler = { workspace = true }

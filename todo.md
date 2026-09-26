@@ -6,7 +6,6 @@
 - T30.26. One effort map, with `Effort::Medium`
 - T30.27. `cox doctor`: catalog and price sync row
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
-- T32.3. `cox-sandbox`: `sandbox::Policy` and `path::confine`
 - T32.4. `cox-syntax`: tree-sitter and its grammars
 - T32.5. `cox-search`: grep and glob
 - T32.6. `cox-patch`: the V4A patch engine

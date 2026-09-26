@@ -702,3 +702,26 @@ Check:
 - `session::tests` prove a configured 1M-context Anthropic model reports 1M and an unlisted model falls back to 200k.
 - `cargo insta test -p cox-provider`: 133 passed, no snapshots to review.
 - `cargo nextest run --workspace`: 927 passed, 3 skipped. clippy and fmt clean. `cox doctor` against a scratch `COX_HOME`: no keychain prompt.
+
+#### T32.3 `cox-sandbox`: `sandbox::Policy` and `path::confine`
+
+Depends: — · Moves: `cox-tools/src/sandbox/*`, `cox-tools/src/path.rs` (~920).
+Why: dependencies (a) and guard (b).
+Plan: `cox-tools` re-exports `sandbox` and `path`. The AGENTS.md trust list names the new crate.
+Check: landlock and seccompiler appear only in `cox-sandbox/Cargo.toml`.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox-tools/src/path.rs` and `src/sandbox/{mod,bwrap,landlock,seatbelt}.rs` moved with `git mv` to `crates/cox-sandbox`, tests included, no logic change.
+- `cox-tools` re-exports them (`pub use cox_sandbox::path;`, `pub use cox_sandbox::sandbox;`), so `cox_tools::path::confine` and `cox_tools::sandbox::Policy` still resolve for every caller.
+- landlock and seccompiler left `cox-tools/Cargo.toml`; `nix` stays there too because `bash/mod.rs` uses it for the pty.
+- `deps.rs`: `cox-sandbox` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`.
+- Docs: AGENTS.md layout row and trust list, the SECURITY.md guard list, the plan.md §1.1 row and dependency sentence.
+
+Deviations:
+- Done in worktree `_worktrees/cox-t32.3`, then cherry-picked onto main after T30.25. The integration tests in `cox-tools/tests/` stay where they are and exercise the re-export path, as T32.1 did.
+
+Check:
+- landlock and seccompiler appear only in the root pin and `crates/cox-sandbox/Cargo.toml`.
+- `cargo check --target x86_64-unknown-linux-gnu -p cox-sandbox` is green (the Linux-gated code compiles).
+- The full suite after landing on main is in the commit below.

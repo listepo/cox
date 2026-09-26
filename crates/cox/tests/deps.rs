@@ -128,6 +128,18 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-sanitize"]
     );
 
+    // cox-sandbox (T32.3) is a trust guard that depends only on
+    // cox-protocol among workspace crates (SandboxPolicy, SandboxMode,
+    // LinuxBackend, ToolError).
+    let sandbox_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-sandbox"]
+            .iter()
+            .all(|d| sandbox_allowed.contains(d.as_str())),
+        "cox-sandbox may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-sandbox"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in).
     let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
@@ -167,10 +179,10 @@ fn no_crate_below_cox_depends_on_core() {
         "cox-provider may only depend on cox-protocol/cox-models among workspace crates, found {provider_deps:?}"
     );
 
-    // tools/mcp/store/ext depend only on cox-protocol: this is the rule the
-    // test is named for — none of them may reach cox-core.
+    // mcp/store/ext depend only on cox-protocol: this is the rule the test
+    // is named for — none of them may reach cox-core.
     let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
-    for crate_name in ["cox-tools", "cox-mcp", "cox-store", "cox-ext"] {
+    for crate_name in ["cox-mcp", "cox-store", "cox-ext"] {
         let d = &deps[crate_name];
         assert!(
             !d.contains("cox-core"),
@@ -181,4 +193,19 @@ fn no_crate_below_cox_depends_on_core() {
             "{crate_name} may only depend on cox-protocol among workspace crates, found {d:?}"
         );
     }
+
+    // cox-tools additionally depends on cox-sandbox (T32.3: path::confine
+    // and the sandbox backends).
+    let tools_allowed: HashSet<&str> = ["cox-protocol", "cox-sandbox"].into_iter().collect();
+    let tools_deps = &deps["cox-tools"];
+    assert!(
+        !tools_deps.contains("cox-core"),
+        "cox-tools must not depend on cox-core"
+    );
+    assert!(
+        tools_deps
+            .iter()
+            .all(|dep| tools_allowed.contains(dep.as_str())),
+        "cox-tools may only depend on cox-protocol/cox-sandbox among workspace crates, found {tools_deps:?}"
+    );
 }

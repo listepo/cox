@@ -12,7 +12,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.26 | todo | P1 | 3 | 0% | |
 | T30.27 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T32.2 | todo | P2 | 3 | 0% | |
-| T32.3 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.4 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.5 | todo | P2 | 2 | 0% | |
 | T32.6 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
@@ -83,7 +82,8 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12, typify 0.8 (build.rs: Anthropic wire types from the vendored spec, T30.10/T30.12), async-openai 0.42 (`response-types` only, T30.11) |
-| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
+| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, nix |
+| `cox-sandbox` | `path::confine`, `sandbox::{seatbelt,bwrap,landlock}` (T32.3; split out of `cox-tools`): path confinement to the workspace roots and the platform sandbox front door. `cox-tools` re-exports both as `path` and `sandbox` | landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
@@ -93,7 +93,7 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-models`, `cox-tools`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-provider` → `cox-protocol`, `cox-models`. No crate below `cox` depends on `cox-core`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-sandbox`, `cox-models`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`; `cox-provider` → `cox-protocol`, `cox-models`. No crate below `cox` depends on `cox-core`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -770,13 +770,6 @@ Plan:
 4. Apply the falsifier in `docs/design/crates.md`.
 
 Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
-
-#### T32.3 `cox-sandbox`: `sandbox::Policy` and `path::confine`
-
-Depends: — · Moves: `cox-tools/src/sandbox/*`, `cox-tools/src/path.rs` (~920).
-Why: dependencies (a) and guard (b).
-Plan: `cox-tools` re-exports `sandbox` and `path`. The AGENTS.md trust list names the new crate.
-Check: landlock and seccompiler appear only in `cox-sandbox/Cargo.toml`.
 
 #### T32.4 `cox-syntax`: tree-sitter and its grammars
 

@@ -950,6 +950,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-sandbox"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "landlock",
+ "nix 0.31.3",
+ "seccompiler",
+ "tempfile",
+]
+
+[[package]]
 name = "cox-sanitize"
 version = "0.1.2"
 dependencies = [
@@ -979,18 +990,17 @@ version = "0.1.2"
 dependencies = [
  "async-trait",
  "cox-protocol",
+ "cox-sandbox",
  "globset",
  "grep-regex",
  "grep-searcher",
  "ignore",
- "landlock",
  "nix 0.31.3",
  "nucleo",
  "proptest",
  "reqwest 0.12.28",
  "rstest",
  "schemars 1.2.2",
- "seccompiler",
  "serde",
  "serde_json",
  "similar 3.2.0",
