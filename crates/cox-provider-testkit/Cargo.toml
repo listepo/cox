@@ -1,0 +1,13 @@
+[package]
+name = "cox-provider-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+figment = { workspace = true }
+sha2 = { workspace = true }

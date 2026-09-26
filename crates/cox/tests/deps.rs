@@ -227,13 +227,17 @@ fn no_crate_below_cox_depends_on_core() {
 
     // cox-provider additionally depends on cox-models (`Priced` prices every
     // call through the catalog's `PriceTable`, T30.24), cox-tokens
-    // (re-exported at the old `tokens` path, T32.10) and cox-provider-http
-    // (re-exported at the old `http`/`retry`/`sse` paths, T32.12).
+    // (re-exported at the old `tokens` path, T32.10), cox-provider-http
+    // (re-exported at the old `http`/`retry`/`sse` paths, T32.12) and
+    // cox-provider-testkit (T32.11): `scripted`/`replay` are thin glue over
+    // the pure scenario/cassette helpers moved there, and `from_env` uses
+    // them in production (COX_PROVIDER=scripted|replay), not just in tests.
     let provider_allowed: HashSet<&str> = [
         "cox-protocol",
         "cox-models",
         "cox-tokens",
         "cox-provider-http",
+        "cox-provider-testkit",
     ]
     .into_iter()
     .collect();
@@ -246,7 +250,20 @@ fn no_crate_below_cox_depends_on_core() {
         provider_deps
             .iter()
             .all(|dep| provider_allowed.contains(dep.as_str())),
-        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http among workspace crates, found {provider_deps:?}"
+        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http/cox-provider-testkit among workspace crates, found {provider_deps:?}"
+    );
+
+    // cox-provider-testkit (T32.11) is a pure leaf, same shape as
+    // cox-patch/cox-sanitize/cox-syntax: no workspace-crate dependencies
+    // beyond cox-protocol, so it never depends back on cox-provider (which
+    // would cycle with cox-provider's `pub use` re-export of it).
+    let testkit_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-provider-testkit"]
+            .iter()
+            .all(|d| testkit_allowed.contains(d.as_str())),
+        "cox-provider-testkit may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-provider-testkit"]
     );
 
     // cox-patch (T32.6) is the V4A parse/match/stage engine: a pure leaf,

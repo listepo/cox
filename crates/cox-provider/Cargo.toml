@@ -17,18 +17,17 @@ cox-tokens = { path = "../cox-tokens", version = "0.1.2" }
 # T32.12: http.rs/retry.rs/sse.rs moved out; re-exported at their old paths
 # (`crate::http`, `crate::retry`, `crate::sse`) for every wire still here.
 cox-provider-http = { path = "../cox-provider-http", version = "0.1.2" }
+# T32.11: the pure scenario/cassette helpers behind `scripted`/`replay`,
+# reused (and re-exported) so their tests don't need the network wire.
+cox-provider-testkit = { path = "../cox-provider-testkit", version = "0.1.2" }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-# T1.7: the price table (`config/prices.toml`) is deserialised with the
-# workspace's existing TOML reader rather than a second toml crate.
 serde = { workspace = true }
 thiserror = { workspace = true }
-figment = { workspace = true }
-sha2 = { workspace = true }
 # T30.11: OpenAI Responses request/stream-event types (response-types
 # feature only — no HTTP client pulled in by this dependency).
 async-openai = { workspace = true }

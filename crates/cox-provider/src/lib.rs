@@ -20,6 +20,9 @@
 //! at these paths so `cox_provider::http::resolve_key_with` and every other
 //! `crate::http`/`crate::retry`/`crate::sse` call in this crate's own wires
 //! keep working unchanged.
+//!
+//! [`scripted`] and [`replay`] build on the pure scenario/cassette helpers
+//! in `cox-provider-testkit` (T32.11), re-exported at their old paths.
 
 #![warn(missing_docs)]
 
