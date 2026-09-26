@@ -64,7 +64,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | todo | P2 | 4 | 0% | |
-| T35.12 | todo | P2 | 2 | 0% | |
+| T35.12 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 
 ## Reference
 
@@ -1359,7 +1359,7 @@ Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the works
 
 #### T35.12 A dedicated error for a failed external agent
 
-Depends: T35.4 · Size: ~80 · Files: `crates/cox-protocol/src/types.rs` (`CoreError`), `crates/cox-core/src/external_agent.rs`, `docs/protocol.jsonschema` (generated)
+Depends: T35.4 · Size: ~80 · Files: `crates/cox-protocol/src/errors.rs` (`CoreError`), `crates/cox-core/src/external_agent.rs`, `docs/protocol.jsonschema` (generated)
 Goal: T35.4 reports an external agent's `result` with `is_error: true` as `CoreError::Provider(ProviderError::BadRequest { message })`, because `CoreError` has no better variant. That misnames the failure: the provider did not fail, and a surface or a retry rule cannot tell the two apart.
 - Add `CoreError::ExternalAgent { agent, message }`, with the message sanitized by the caller-supplied guard, as T35.4 already does.
 - Map the error `result` line onto it.
