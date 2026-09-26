@@ -6,12 +6,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T33.13 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.21 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T33.26 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T33.28 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.29 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.30 | todo | P2 | 2 | 0% | |
 | T33.33 | todo | P2 | 3 | 0% | |
@@ -39,7 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.41 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T35.7 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
@@ -742,12 +738,6 @@ Every card in this phase:
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
 
-#### T33.13 `cox_invoke_tool` through the engine
-
-Depends: T33.12 · Size: ~150 · Files: `crates/cox-plugin/src/hostfn.rs`, `crates/cox-core/src/turn.rs` (a plugin-origin entry point that reuses the `PreToolUse` → engine → sandbox → archive path)
-Goal: a plugin calls only the tools listed in `invoke`, and each call passes `PreToolUse`, `Engine::decide`, the sandbox and the archive. `Ask` shows "plugin <id> asks to run …". Headless mode denies it. Hook, decide, provider and render contexts get `NotInThisContext`.
-Check: `plugin_invoke_denied_by_rule`, `plugin_invoke_outside_grant_is_refused`, `invoke_from_hook_context_is_refused`.
-
 #### T33.14 `cox_http` and filesystem preopens
 
 Depends: T33.9, T33.43 (preopens stay off until wasmtime ≥ 48, A55) · Size: ~180 · Files: `crates/cox-plugin/src/net.rs`, `src/fs.rs`
@@ -773,18 +763,6 @@ Goal: the monotone rules from PL§4:
 - rank reorders or filters cox's own candidates.
 `salience` is wired only if it fits the size; otherwise it is a follow-up card noted here.
 Check: `risk_advice_cannot_lower_risk`, `risk_not_asked_when_outcome_would_not_change`, `approve_hint_cannot_say_looks_safe`, `compact_advice_cannot_skip_mandatory_compaction`, `rank_advice_cannot_add_tools`.
-
-#### T33.26 Custom rendering of tool results and messages
-
-Depends: T33.23 · Size: ~160 · Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`
-Goal: `cox_render_item` for `tool:<name>` and `item:assistant_message`, asked once when the cell completes and cached in the cell. `None`, a timeout or an error uses the built-in rendering. A target outside the plugin's own tools needs its explicit grant.
-Check: insta snapshots (plugin-rendered, and fallback after a timeout); `renderer_output_never_reaches_rollout_or_model` (the rollout and the next `Request` are byte-identical with and without the renderer).
-
-#### T33.28 Rust reference example and e2e
-
-Depends: T33.27, T33.11, T33.23, T33.25 · Size: ~190 · Files: `plugins/examples/rust/src/lib.rs`, `crates/cox-plugin-fixtures/build.rs`, `tests/plugins.rs`
-Goal: the shared example from PL§13 (a turn-count status segment, a `PostToolUse` failure counter, `/<id>:reset`, a `turn_started` subscription). `cox-plugin-fixtures` (`publish = false`) builds it to `OUT_DIR` for `wasm32-unknown-unknown`. With the target missing, the build fails and names `mise install`.
-Check: e2e with the real binary in a scratch `COX_HOME` and the Scripted provider: install → enable `--yes` → a two-turn `run -p` → the rollout shows the hook's effect and `cox plugin list --json` shows the contributions; `just bench` records the PL§11 timings in R§4.7.
 
 #### T33.29 `cox plugin new` and the Rust template
 
@@ -1148,12 +1126,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
-
-#### T35.7 e2e: a fake `agent` binary replaying recorded fixtures
-
-Depends: T35.5, T35.6, T35.13 · Size: ~190 · Files: `tests/external_agents_cursor.rs` (new), `tests/fixtures/cursor/*.json` (data), `scripts/vendor/src/cox_vendor/cursor_fixtures.py` (+ its tests)
-Goal: fixtures are the documented `stream-json` and ACP event shapes from research.md §4.3.8, recorded by a saved, tested script under `scripts/vendor` (AGENTS.md: a file no package manager fetches comes only from such a script, never hand-pasted) — no live Cursor call, no key. A test-only fake `agent` binary replays a fixture's lines over stdio in both modes; the e2e drives it through the real `cox-plugin`/`cox-acp`/`cox-core` path (D12: no network, no API key).
-Check: `fake_agent_stream_json_reaches_a_cox_event_stream_unchanged`, `fake_agent_acp_permission_request_is_decided_by_the_engine` — both against the real code path, no scripted-provider shortcut for this one (it is not a model call).
 
 #### T35.9 User guide: the Cursor plugin
 

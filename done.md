@@ -2318,3 +2318,164 @@ Check:
 - insta snapshots: `plugin_panel_open_and_closed`, `plugin_overlay_snapshot`
 - In the worktree: nextest 1168 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1187 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.26 Custom rendering of tool results and messages
+
+Depends: T33.23 · Size: ~160 · Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`
+Goal: `cox_render_item` for `tool:<name>` and `item:assistant_message`, asked once when the cell completes and cached in the cell. `None`, a timeout or an error uses the built-in rendering. A target outside the plugin's own tools needs its explicit grant.
+Check: insta snapshots (plugin-rendered, and fallback after a timeout); `renderer_output_never_reaches_rollout_or_model` (the rollout and the next `Request` are byte-identical with and without the renderer).
+Status: done 2026-09-26
+Result: a plugin can draw a finished tool result or assistant message in the TUI with `cox_render_item`.
+
+- **When it asks** (`crates/cox-tui/src/item_render.rs`): a tool cell asks its renderer on `ToolCallDone`, an assistant cell on `ItemDone`. Each cell asks once and caches the answer in the cell (`render: ItemRender` on `Cell::Tool` and `Cell::Assistant`).
+  - While a render is pending, `Cell::done()` is false, so the cell stays in the viewport.
+  - `None`, a timeout, an error or a missing export gives the built-in rendering.
+  - A TUI-side cap of 5 ticks covers a request `app.rs` dropped with `try_send`.
+- **What it replaces:**
+  - For a tool card, the widget replaces only the output body. The header, the diff and the footer (with `cox expand`) stay built-in, so a renderer cannot hide what ran or what changed.
+  - For an assistant message, it replaces the markdown.
+- **Drawing:** `plugin_ui::lines(widget, width, …)` draws through the existing `render`, the sanitize boundary. There is one `row_spans`, moved from `status.rs`. The width is `state.term.0` (T33.24).
+- **Host side:** `crates/cox/src/plugin_ui.rs` serves `PluginRequest::RenderItem` through `cox_render_item` with `RENDER_DEADLINE` on `Lane::Control`, and builds `RenderItemIn` (the serialized `ToolCall`/`ToolResult`, or `ItemKind::AssistantMessage`).
+- **Grants:** `Live::granted_renderers()` accepts a target with its own `ui.render:<target>` grant line. A `tool:wasm__<id>__<t>` target (`tool::qualified`) needs no line when `t` is one of the plugin's own granted tools. `PluginUiMsg::Declare` carries `renderers`.
+- **Rendering is display-only:** it never reaches the rollout or a model `Request`.
+Deviations:
+- Files beyond the card's two: the new `item_render.rs`, `plugin_ui.rs` (TUI and host), `live.rs`, `session.rs`, `status.rs` (the `row_spans` move), `tool.rs` (`GRANT_PREFIX` is `pub(crate)`) and `tests/frames.rs`.
+- The rollout is compared before and after the render within one session, because events carry random ids. The `Request`s are compared across runs with and without the renderer.
+Check:
+- insta snapshots `plugin_rendered`: an injected `\e[2J` is gone from the cell.
+- insta snapshots `fallback_after_timeout`: a `None` answer, no answer, and a late answer all match the built-in look.
+- `renderer_output_never_reaches_rollout_or_model`: a real scripted session with a granted WASM renderer over two turns. The cell draws `PAINTED`, and `PAINTED` is in neither the rollout nor any `Request`.
+- `render_item_answers_its_cell_or_none_at_the_deadline`, `renderers_outside_own_tools_need_their_grant`
+- In the worktree after the rebase onto T33.24: nextest 1192 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T33.26, T33.28, T33.13 and T35.7 together): nextest 1203 passed, 3 skipped; fmt, clippy, the slim build, the plugins workspace tests and the vendor pytest (44) clean.
+
+#### T33.28 Rust reference example and e2e
+
+Depends: T33.27, T33.11, T33.23, T33.25 · Size: ~190 · Files: `plugins/examples/rust/src/lib.rs`, `crates/cox-plugin-fixtures/build.rs`, `tests/plugins.rs`
+Goal: the shared example from PL§13 (a turn-count status segment, a `PostToolUse` failure counter, `/<id>:reset`, a `turn_started` subscription). `cox-plugin-fixtures` (`publish = false`) builds it to `OUT_DIR` for `wasm32-unknown-unknown`. With the target missing, the build fails and names `mise install`.
+Check: e2e with the real binary in a scratch `COX_HOME` and the Scripted provider: install → enable `--yes` → a two-turn `run -p` → the rollout shows the hook's effect and `cox plugin list --json` shows the contributions; `just bench` records the PL§11 timings in R§4.7.
+Status: done 2026-09-26
+Result: the PL§13 reference example lives in `plugins/examples/rust`, a member of the `plugins/` workspace; its plugin id is `example`.
+- **Capabilities:** `events=["turn_started"]`, `hooks=["PostToolUse","PostToolUseFailure"]`, `kv`, `ui.status`, `ui.commands`.
+- **Behaviour:**
+  - A `status.right` segment shows "turns N · failed tools M".
+  - The hook counts failed tool calls and sends the notice "failed tool calls: N".
+  - `/example:reset` zeroes both counters.
+  - Counters live in in-memory atomics written through to kv and reloaded in `cox_init`, because `cox_render` may not read kv (`outside_render`).
+- **`crates/cox-plugin-fixtures`** (`publish = false`, no dependencies) builds the example in `build.rs`:
+  - It checks the wasm32 target first; if the target is missing, `cargo::error` names `mise install`.
+  - It runs the plugins workspace's cargo with `build --release --locked --target wasm32-unknown-unknown`, its own `--target-dir` under OUT_DIR and `CARGO_INCREMENTAL=0`, clearing host rustflags and clippy wrappers.
+  - It copies the result to `OUT_DIR/example/{plugin.toml, example.wasm}` and deletes the nested target, so each OUT_DIR is about 332 KB.
+  - Exports: `EXAMPLE_DIR`, `EXAMPLE_WASM`, `EXAMPLE_MANIFEST`.
+- **Bench:** `crates/cox/examples/plugin_bench.rs` (feature `plugins`) is run by `just bench`.
+- **CI:** the release `verify` job gets the wasm32 target, which its nextest and clippy runs now need.
+- **Docs:** R§4.7 "Plugin timings", a row in the AGENTS.md layout table, the `toolchain.md` rust row, and one line in `docs/plugins.md`.
+Deviations:
+- The e2e is in `crates/cox/tests/plugins.rs`; there is no root `tests/`.
+- About 245 lines excluding the guest and tests, against ~190. The bench is the extra.
+- Warm start cannot be measured yet. `PluginHost::load_with` disables the wasmtime cache, so every start is a cold compile (57–97 ms), and PL§12 falsifier 2 cannot be judged. The module is 325 KiB, not the 1 MiB PL§11 names.
+- `cox plugin list --json` shows only declared capabilities, not `cox_init` contributions. PL§13's "list runs `cox_init` against a stub session" is not implemented, so the e2e asserts runtime contributions through the host API.
+- Every workspace build now does one nested guest build: about 15 s when the example, SDK or `cox-plugin-api` changes.
+Check:
+- `example_plugin_counts_failures_across_a_two_turn_headless_run`: the real binary in a scratch `COX_HOME` with the Scripted provider runs install → `enable --yes` → `run -p` → `run -p --resume`. The rollout shows "failed tool calls: 1", then "2" across both processes, and `plugin list --json` shows `loaded: true` with the declared events, hooks, kv, ui.status and ui.commands.
+- `example_plugin_counts_turns_in_its_status_and_resets_them`
+- `just bench`, release build on an Apple M3 Max at load average 19–25, range over 3 runs:
+  - start (cold) 57–97 ms;
+  - on_event (batch of 16) p50 0.12–0.17 ms;
+  - render p95 0.09–0.51 ms;
+  - hook round trip p95 0.38–0.72 ms.
+- The plugins workspace test, clippy (host and wasm32) and fmt are clean.
+- In the worktree: nextest 1166 passed, 3 skipped; `headless_run_does_not_wait_for_a_background_shell` flaked under load and passed on rerun. fmt, clippy and the slim build clean.
+- On main after landing (with T33.26, T33.28, T33.13 and T35.7 together): nextest 1203 passed, 3 skipped; fmt, clippy, the slim build, the plugins workspace tests and the vendor pytest (44) clean.
+
+#### T33.13 `cox_invoke_tool` through the engine
+
+Depends: T33.12 · Size: ~150 · Files: `crates/cox-plugin/src/hostfn.rs`, `crates/cox-core/src/turn.rs` (a plugin-origin entry point that reuses the `PreToolUse` → engine → sandbox → archive path)
+Goal: a plugin calls only the tools listed in `invoke`, and each call passes `PreToolUse`, `Engine::decide`, the sandbox and the archive. `Ask` shows "plugin <id> asks to run …". Headless mode denies it. Hook, decide, provider and render contexts get `NotInThisContext`.
+Check: `plugin_invoke_denied_by_rule`, `plugin_invoke_outside_grant_is_refused`, `invoke_from_hook_context_is_refused`.
+Status: done 2026-09-26
+Result: a plugin runs a cox tool through the same path a model call takes.
+
+**The call.**
+- `cox_protocol::traits::ToolInvoker` has the same shape as `ModelCaller`: `invoke(id, name, input) -> Result<ToolResult, CoreError>`. A denial or a hook block is `Ok` with `ok: false`.
+- `ToolInvoker for Session` (`cox-core/src/plugin_model.rs`) calls the existing `turn::run_tools` with one call and a fresh `TurnId`, as `user_shell` does. PreToolUse, `Engine::decide`, the sandbox, the tool events and the archive are therefore reused, with no second permission check.
+- Before the call it emits `Notice "plugin <id> runs <name>"`, which attributes the call in the transcript and the rollout.
+
+**Approval.**
+- `turn.rs` gains a task-local `ORIGIN` ("plugin <id>"). `ask` puts it in `Source.agent`, so the normal approval prompt reads "plugin <id> asks: approve …".
+- `ask` restores the session state it found, instead of forcing `RunningTools`, so a plugin can ask while no turn runs.
+- In headless mode the existing no-approver Deny applies.
+
+**Host function** (`hostfn.rs` `invoke_tool`):
+- It is allowed only from `cox_on_event`, `cox_command`, `cox_key` and `cox_tool_call`; every other export gets `NotInThisContext`.
+- It requires `invoke:<name>`.
+- It refuses the plugin's own `wasm__<id>__*` tools. It also refuses any plugin that holds a `hooks:` grant: the invoked call fires hooks, which would queue behind the plugin's blocked worker with no wait timeout.
+- It returns `ToolOutput { text: visible text, is_error: !ok, diff }`.
+
+**Binding.** `live.rs` generalizes `LateCaller` into `Late<T>`, adds `LivePlugins::bind_tool_invoker` and `HostEnv::with_tool_invoker`. The session binds one `Arc<Session>` to both traits, held weakly.
+
+Deviations:
+- About 180 lines of code across 6 files, against ~150 and 2.
+- The `hooks:` refusal is blunt. A later card could let a plugin's own invoked calls skip that plugin's hooks.
+
+Not done:
+- A cycle across two plugins' tools (A invokes B's tool, and B's tool invokes A's) is not refused. It ends at the per-call `call_ms` deadline of `WasmTool`.
+- The plugin sees only the visible, possibly truncated text; it cannot `expand`.
+- A plugin prompt and a model prompt at the same time share one session-state field.
+
+Check:
+- `plugin_invoke_denied_by_rule`
+- `plugin_invoke_outside_grant_is_refused`
+- `invoke_from_hook_context_is_refused`
+- `invoke_that_would_wait_on_its_own_worker_is_refused`
+- `plugin_invoke_ask_is_denied_headless` (asserts `source.agent == "plugin t"`)
+- `plugin_invoke_allowed_runs_and_is_archived`
+- In the worktree: nextest 1189 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T33.26, T33.28, T33.13 and T35.7 together): nextest 1203 passed, 3 skipped; fmt, clippy, the slim build, the plugins workspace tests and the vendor pytest (44) clean.
+
+#### T35.7 e2e: a fake `agent` binary replaying recorded fixtures
+
+Depends: T35.5, T35.6, T35.13 · Size: ~190 · Files: `tests/external_agents_cursor.rs` (new), `tests/fixtures/cursor/*.json` (data), `scripts/vendor/src/cox_vendor/cursor_fixtures.py` (+ its tests)
+Goal: fixtures are the documented `stream-json` and ACP event shapes from research.md §4.3.8, recorded by a saved, tested script under `scripts/vendor` (AGENTS.md: a file no package manager fetches comes only from such a script, never hand-pasted) — no live Cursor call, no key. A test-only fake `agent` binary replays a fixture's lines over stdio in both modes; the e2e drives it through the real `cox-plugin`/`cox-acp`/`cox-core` path (D12: no network, no API key).
+Check: `fake_agent_stream_json_reaches_a_cox_event_stream_unchanged`, `fake_agent_acp_permission_request_is_decided_by_the_engine` — both against the real code path, no scripted-provider shortcut for this one (it is not a model call).
+Status: done 2026-09-26
+Result: an end-to-end test drives a fake Cursor `agent` through the real external-agent path.
+
+**Fixtures.**
+- `crates/cox/tests/fixtures/cursor/{stream_json,acp}.json` are written only by `cox-vendor cursor-fixtures` (`scripts/vendor/src/cox_vendor/cursor_fixtures.py`, 7 tests). No Cursor API is called.
+- stream-json: the "Example sequence" block from https://cursor.com/docs/cli/reference/output-format.md, verbatim.
+- ACP:
+  - the message shapes come from the ACP spec pages (agentclientprotocol.com/protocol/{initialization,session-setup,prompt-turn,tool-calls}.md);
+  - the permission option ids are checked against https://cursor.com/docs/cli/acp.md.
+- Nothing is written if validation fails. `--check` is a dry run, and a re-run is byte-stable.
+- Run with `uv run --project scripts/vendor cox-vendor cursor-fixtures`.
+
+**Fake agent** (`crates/cox/tests/support/fake_agent.rs`):
+- It is `[[bin]] fake_agent` of `crates/cox`, with `test = false` and `doc = false`, so the tests get `CARGO_BIN_EXE_fake_agent`.
+- `default-run = "cox"`, and `[package.metadata.dist.binaries]` keeps it out of release archives.
+- It checks the mode args and `CURSOR_API_KEY`.
+- stream-json: it replays the documented lines.
+- ACP: it answers `initialize`, `session/new` and `session/prompt`, sends the chunk and the permission request, then echoes cox's chosen `optionId` in one more chunk.
+
+**e2e** (`crates/cox/tests/external_agents_cursor.rs`):
+- It runs the real binary: `plugin install --yes` of a plugin shaped like `plugins/cursor`, with `agent` on PATH pointing to the fake and a fake key, then `run -p --output-format stream-json`.
+- Only the parent model is scripted (`tests/scenarios/external_agent_cursor.toml`). The agent goes through the real grant, the sandbox wrap and the mapper or the ACP client.
+
+Deviations:
+- The paths are under `crates/cox/tests/`, since there is no root `tests/`.
+- The in-crate helpers in `external_agents.rs` are `pub(crate)` test code, so the e2e runs the binary instead.
+- About 395 lines of Rust plus 162 of Python, against ~190.
+- The fixtures carry their source URLs but no fetch date, to stay byte-stable.
+
+Not done:
+- `cargo install` of `crates/cox` would also install `fake_agent`; only the dist release excludes it.
+- The e2e needs a real sandbox backend (Seatbelt, or bwrap on Linux).
+- Found, not touched: `dist plan` ships cox-tui's test-only `kitty_probe` as its own release app.
+
+Check:
+- `fake_agent_stream_json_reaches_a_cox_event_stream_unchanged`: the child rollout matches every documented line in order. The init notice carries the model and mode, and the parent's `agent` result equals the last documented assistant text.
+- `fake_agent_acp_permission_request_is_decided_by_the_engine`: `allow = ["Agent"]` is an Ask and fails closed to `reject-once`; `allow = ["Agent","Bash"]` gives `allow-once`.
+- Both tests assert there were no warning notices.
+- pytest 44 passed.
+- In the worktree: nextest 1185 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T33.26, T33.28, T33.13 and T35.7 together): nextest 1203 passed, 3 skipped; fmt, clippy, the slim build, the plugins workspace tests and the vendor pytest (44) clean.
