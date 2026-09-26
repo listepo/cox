@@ -31,6 +31,10 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# A path `dev-dependency` (cox-plugin-fixtures, `publish = false`, T33.28)
+# needs no version: crates.io strips dev-dependencies on publish. Path or git
+# `dependencies` of a published crate still fail.
+allow-wildcard-paths = true
 
 [advisories]
 db-path = "~/.cargo/advisory-db"
