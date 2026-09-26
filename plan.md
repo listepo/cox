@@ -17,7 +17,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.15 | todo | P2 | 3 | 0% | |
 | T33.17 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.18 | todo | P2 | 5 | 0% | |
-| T33.19 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.20 | todo | P2 | 5 | 0% | |
 | T33.21 | todo | P2 | 4 | 0% | |
 | T33.23 | todo | P2 | 4 | 0% | |
@@ -842,12 +841,6 @@ Depends: T33.14, T33.17 · Size: ~190 · Files: `crates/cox-plugin/src/provider.
 Goal: with `api = "plugin"`, `stream()` calls `cox_provider_stream` and forwards `ProviderEvent`s. The guest's `cox_http` is limited to `base_url`'s host, and the host injects the `auth` header from `resolve_key`, so the key never enters wasm memory. Missing usage is estimated; usage below half of cox's estimate is replaced by the estimate with one warning.
 Plan (amended 2026-09-26 for the Jev use case, R§4.3.6 J§4.3): `Router::pick` and `backend_for_with` register ABI provider sections by name, so a tier — including a legacy `typesafe` tier — resolves to them, not only to `providers.custom`. The ledger gets a `ProviderId::Plugin` bucket whose provider string is the section name, the same shape `Local` uses for compatible providers; `provider_name` returns it. `COX_PROVIDER=scripted`/`replay`, which short-circuits provider construction for the main turn, still builds plugin providers, so a scripted-main e2e can reach a real (wiremocked) plugin provider.
 Check: `provider_key_never_reaches_guest` (the WAT guest echoes its request headers, and the test asserts the key is absent); `underreported_usage_is_replaced_by_estimate`; `every_request_has_a_usage_row` with a plugin provider; `plugin_provider_section_resolves_by_name`; `scripted_provider_mode_still_builds_plugin_providers`.
-
-#### T33.19 MCP servers from plugins
-
-Depends: T33.6, T32.3 · Size: ~160 · Files: `crates/cox-mcp/src/discovery.rs`, `crates/cox/src/session.rs`
-Goal: `[[mcp]]` entries become the lowest-precedence discovery source (`plugin:<id>`), named `<id>-<name>`. `crates/cox` wraps a stdio command with the sandbox policy before `cox-mcp` spawns it. An in-package command is covered by the digest; an HTTP `url` must be in `net`.
-Check: `project_mcp_json_shadows_plugin_server`, `plugin_stdio_server_runs_under_sandbox` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `changing_bundled_server_binary_changes_digest`.
 
 #### T33.20 Decision points: the `Advisor` trait and `route`
 

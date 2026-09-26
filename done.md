@@ -1680,3 +1680,19 @@ Check:
 - The guest workspace's fmt and clippy are clean on the host and on wasm32.
 - Root workspace in the worktree: fmt and clippy are clean; nextest 1037 passed, 3 skipped. Two PTY/MCP e2e tests failed under load and passed on the rerun.
 - On main after landing: nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean; the guest workspace tests and the jev wasm32 build pass.
+
+#### T33.19 MCP servers from plugins
+
+Depends: T33.6, T32.3 · Size: ~160 · Files: `crates/cox-mcp/src/discovery.rs`, `crates/cox/src/session.rs`
+Goal: `[[mcp]]` entries become the lowest-precedence discovery source (`plugin:<id>`), named `<id>-<name>`. `crates/cox` wraps a stdio command with the sandbox policy before `cox-mcp` spawns it. An in-package command is covered by the digest; an HTTP `url` must be in `net`.
+Check: `project_mcp_json_shadows_plugin_server`, `plugin_stdio_server_runs_under_sandbox` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `changing_bundled_server_binary_changes_digest`.
+Status: done 2026-09-26
+Result: a granted plugin's `[[mcp_servers]]` join MCP discovery.
+- `cox_mcp::discovery::add_plugin(found, id, servers)` adds them at the lowest precedence, named `<id>-<name>`, with source `plugin:<id>`, and without `${VAR}` expansion. `Discovered::sources` is now `HashMap<String, String>`.
+- `crates/cox/src/session.rs`: `load_plugins(..., writable) -> Plugins { notices, mcp }` walks granted plugins once. `plugin_program` refuses a symlinked server binary. `sandboxed_argv` wraps a stdio server with `cox_tools::sandbox::command` through `/bin/sh -c 'exec "$0" "$@"'`. On a host with only Landlock or no backend, a plugin server is refused with a warning.
+- An HTTP server's url host must pass the plugin's `net` capability: `Capabilities::net_allows(host)` in `cox-plugin-api` (exact hosts, strict subdomains of a wildcard).
+- A bundled server binary is part of the plugin digest, so changing it re-asks for the grant.
+Check:
+- `project_mcp_json_shadows_plugin_server`, `plugin_stdio_server_runs_under_sandbox`, `changing_bundled_server_binary_changes_digest` pass, plus `symlinked_server_binary_is_refused`, `plugin_http_server_needs_its_host_in_net`, `net_allows_exact_hosts_and_strict_subdomains_of_a_wildcard`.
+- A real-binary run against a scratch `COX_HOME` showed the Seatbelt denial for a plugin server writing outside its roots.
+- On main after landing: nextest 1061 passed, 3 skipped; fmt, clippy and the slim build clean.

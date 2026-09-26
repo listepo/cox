@@ -11,7 +11,6 @@
 - T33.15. `cox_model_call` and `Job::Plugin`
 - T33.17. Providers, declarative form
 - T33.18. Providers, ABI form (`PluginProvider`)
-- T33.19. MCP servers from plugins
 - T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
 - T33.23. TUI status segments
