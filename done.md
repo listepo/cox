@@ -1490,3 +1490,33 @@ Check output:
 - `tui_quit_kills_a_running_background_shell` failed before the change (`cox did not exit`, orphan `sleep 4002` with ppid 1) and passes after (2.9 s).
 - nextest: 1036 passed, 3 skipped. fmt and clippy clean. No `sleep 4002`/`4003` left running.
 - On main after landing (cherry-picked from the separate session's branch): nextest 1037 passed, 3 skipped. fmt, clippy and the slim build are clean. No `sleep 4002`/`4003` left running.
+
+#### T33.27 Guest workspace and the Rust SDK
+
+Depends: T33.2 · Size: ~190 · Files: `plugins/Cargo.toml`, `plugins/sdk/src/lib.rs`, `mise.toml` (+ `.github/workflows/ci.yml` `targets:`; `plugins/mise.toml` created empty for later languages)
+Goal: `cox-plugin-sdk` over extism-pdk 1.4.1 and `cox-plugin-api`: typed wrappers for every export and host function in PL§4, plus a `register!` macro. Add `rust = { version = "1.97.1", targets = ["wasm32-unknown-unknown"] }`; the target is not a version bump. `docs/plugins.md` gets the author guide.
+Check: `cargo build --manifest-path plugins/Cargo.toml -p cox-plugin-sdk --target wasm32-unknown-unknown`; the main-workspace `cargo nextest run --workspace` still never builds guest code; the extism-pdk row is in §1.1 and `toolchain.md`.
+Status: done 2026-09-26
+Result: `plugins/` is its own Cargo workspace (members `sdk`), outside the root one: the root `members = ["crates/*"]` never picks it up, the same way `fuzz/` stays out, and `cargo metadata` on the root lists no SDK package.
+- **`cox-plugin-sdk` (`plugins/sdk`)** builds on extism-pdk 1.4.1 (`default-features = false`: no extism `http` host function, no msgpack) and `cox-plugin-api`, which it re-exports.
+  - One typed wrapper per PL§4 host function: `log`, `notify`, `kv_get`/`kv_put`/`kv_delete`, `context`, `invoke_tool`, `model_call`, `http`, `output`, `cancelled`, `redraw`.
+  - Errors are `SdkError`: `Host(AbiError)` or `Wire`.
+  - `register!(init => f, key => g, …)` exports only the keys listed, because the host probes exports by name.
+- **Wire, which host cards from T33.9 on must match** (documented in the `lib.rs` header and `docs/plugins.md`):
+  - An export takes one JSON value (empty input is `null`) and returns one JSON value. A handler error sets the extism error text and returns code 1.
+  - Every host function is an import in `cox:host/v1` with the signature `(u64) -> u64`. It receives one JSON value, or an object keyed by argument names when there are several arguments.
+  - The host replies `{"Ok": T}` or `{"Err": AbiError}`, so a refusal reaches the plugin as a value and not as a trap.
+- `mise.toml` pins `rust = { version = "1.97.1", targets = ["wasm32-unknown-unknown"] }` (same version). The CI `test` job's toolchain step gets `targets: wasm32-unknown-unknown`.
+- `plugins/mise.toml` exists empty for later languages. `docs/plugins.md` is the author guide.
+- Rows added: extism-pdk in `plan.md` §1.1, `toolchain.md` and the workspace `rust.md`.
+Deviations:
+- `cox_decide` maps `Question → Advice`, as `cox-plugin-api` defines it today. `DecideOut::Call` and `cox_decide_resume` wait for T33.40.1, which adds those types.
+- `lib.rs` is about 280 lines without tests, above the ~190 estimate, mostly doc tables and the macro key table.
+- CI gets the wasm32 target only. No CI step builds the SDK yet: T33.28's fixture build will, and T33.40.2 adds the `plugins` job.
+Check:
+- `cargo build --manifest-path plugins/Cargo.toml -p cox-plugin-sdk --target wasm32-unknown-unknown` passes.
+- `cargo test --manifest-path plugins/Cargo.toml`: 8 passed. A compile-only module registers every key, so type drift against `cox-plugin-api` fails the build.
+- fmt and clippy (`-D warnings`) are clean for both workspaces; the guest one was checked on wasm32 and on the host target.
+- A guide-example cdylib built for wasm32 exports only `cox_init`, `cox_command` and `cox_on_event`. Besides extism's own env functions, it imports only `cox:host/v1` `cox_kv_*`.
+- In the worktree: nextest 1037 passed, 3 skipped. Two flaky PTY e2e tests failed on the first run under load; the `--no-fail-fast` rerun passed.
+- On main after landing: nextest 1037 passed, 3 skipped. fmt, clippy, the slim build, the wasm32 SDK build and the guest `cargo test` are clean.

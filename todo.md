@@ -20,7 +20,6 @@
 - T33.24. TUI panel and overlay
 - T33.25. Plugin commands and keys
 - T33.26. Custom rendering of tool results and messages
-- T33.27. Guest workspace and the Rust SDK
 - T33.28. Rust reference example and e2e
 - T33.29. `cox plugin new` and the Rust template
 - T33.30. `/plugin new` in the TUI

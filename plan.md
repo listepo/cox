@@ -26,7 +26,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.24 | todo | P2 | 3 | 0% | |
 | T33.25 | todo | P2 | 3 | 0% | |
 | T33.26 | todo | P2 | 4 | 0% | |
-| T33.27 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.28 | todo | P2 | 4 | 0% | |
 | T33.29 | todo | P2 | 3 | 0% | |
 | T33.30 | todo | P2 | 2 | 0% | |
@@ -903,12 +902,6 @@ Check: `builtin_command_wins_over_plugin`, `plugin_command_prompt_submits_user_t
 Depends: T33.23 · Size: ~160 · Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`
 Goal: `cox_render_item` for `tool:<name>` and `item:assistant_message`, asked once when the cell completes and cached in the cell. `None`, a timeout or an error uses the built-in rendering. A target outside the plugin's own tools needs its explicit grant.
 Check: insta snapshots (plugin-rendered, and fallback after a timeout); `renderer_output_never_reaches_rollout_or_model` (the rollout and the next `Request` are byte-identical with and without the renderer).
-
-#### T33.27 Guest workspace and the Rust SDK
-
-Depends: T33.2 · Size: ~190 · Files: `plugins/Cargo.toml`, `plugins/sdk/src/lib.rs`, `mise.toml` (+ `.github/workflows/ci.yml` `targets:`; `plugins/mise.toml` created empty for later languages)
-Goal: `cox-plugin-sdk` over extism-pdk 1.4.1 and `cox-plugin-api`: typed wrappers for every export and host function in PL§4, plus a `register!` macro. Add `rust = { version = "1.97.1", targets = ["wasm32-unknown-unknown"] }`; the target is not a version bump. `docs/plugins.md` gets the author guide.
-Check: `cargo build --manifest-path plugins/Cargo.toml -p cox-plugin-sdk --target wasm32-unknown-unknown`; the main-workspace `cargo nextest run --workspace` still never builds guest code; the extism-pdk row is in §1.1 and `toolchain.md`.
 
 #### T33.28 Rust reference example and e2e
 
