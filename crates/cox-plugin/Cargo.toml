@@ -39,4 +39,10 @@ tracing = { workspace = true }
 wasmtime = { workspace = true }
 
 [dev-dependencies]
+# T33.10: `tap_never_blocks_emit` runs a scripted session (`Session` over
+# `Scripted`) with a slow plugin tapped in; dev-only, so the runtime graph
+# keeps cox-plugin beside cox-core, not above it (crates/cox/tests/deps.rs).
+cox-core = { path = "../cox-core", version = "0.1.2" }
+cox-provider = { path = "../cox-provider", version = "0.1.2" }
 tempfile = { workspace = true }
+tokio = { workspace = true }

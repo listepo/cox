@@ -1056,8 +1056,10 @@ name = "cox-plugin"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "cox-core",
  "cox-plugin-api",
  "cox-protocol",
+ "cox-provider",
  "cox-sanitize",
  "extism",
  "figment",

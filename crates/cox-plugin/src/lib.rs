@@ -18,12 +18,15 @@
 //!   returns (PL§5, T33.9).
 //! - [`provider`] — merges a granted plugin's declarative `[[provider]]`
 //!   rows into `providers.custom` (PL§7a, T33.17).
+//! - [`events`] — the session's `EventTap`: per-plugin drop-oldest rings
+//!   delivered to `cox_on_event` in batches (PL§5, T33.10).
 
 #![warn(missing_docs)]
 
 pub mod context;
 pub mod discover;
 pub mod error;
+pub mod events;
 pub mod grant;
 pub mod hooks;
 pub mod host;
@@ -33,6 +36,7 @@ pub mod provider;
 pub use context::Context;
 pub use discover::{Discovered, Plugin, Source, State, package_digest};
 pub use error::PluginError;
+pub use events::{PluginTap, Redraw, subscriptions};
 pub use grant::Verdict;
 pub use hooks::PluginHooks;
 pub use host::{CONTROL_DEPTH, EVENT_DEPTH, Lane, PluginHost};

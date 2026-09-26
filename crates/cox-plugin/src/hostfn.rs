@@ -144,6 +144,21 @@ impl HostEnv {
         std::mem::take(&mut *lock(&self.notices))
     }
 
+    /// Queues one notice for `take_notices`, sanitized and redacted: from
+    /// `cox_notify` and from `Effects.notices` (T33.10) alike.
+    pub(crate) fn notify(&self, level: NoticeLevel, text: &str) -> Result<(), AbiError> {
+        let mut queue = lock(&self.notices);
+        if queue.len() >= PENDING_NOTICES {
+            return Err(failed("too many notices"));
+        }
+        let level = match level {
+            NoticeLevel::Info => Level::Info,
+            NoticeLevel::Warn => Level::Warn,
+        };
+        queue.push((level, clean(text)));
+        Ok(())
+    }
+
     /// Records the export the worker is about to call (`""` when idle).
     pub(crate) fn enter(&self, export: &str) {
         export.clone_into(&mut lock(&self.export));
@@ -197,15 +212,7 @@ impl HostEnv {
             "cox_notify" => {
                 self.outside_render()?;
                 let line: Line = parse(arg)?;
-                let mut queue = lock(&self.notices);
-                if queue.len() >= PENDING_NOTICES {
-                    return Err(failed("too many notices"));
-                }
-                let level = match cap(line.level) {
-                    NoticeLevel::Info => Level::Info,
-                    NoticeLevel::Warn => Level::Warn,
-                };
-                queue.push((level, clean(&line.text)));
+                self.notify(cap(line.level), &line.text)?;
                 Ok(Value::Null)
             }
             "cox_kv_get" => {

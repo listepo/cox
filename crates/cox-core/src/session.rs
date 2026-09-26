@@ -10,7 +10,8 @@ use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Archive, ArchivePut, Checkpointer, ExternalAgent, Hook, Provider, Store, Tool, Worktrees,
+    Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store, Tool,
+    Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
@@ -168,6 +169,10 @@ pub struct Session {
     /// EA§3), offered by the `agent` tool like `agent_defs`; not copied to
     /// children, for the same reason.
     external_agents: Arc<OnceLock<Vec<Arc<dyn ExternalAgent>>>>,
+    /// The plugin host's event rings (T33.10, PL§5), installed once by the
+    /// surface. Not copied to children: a child writes its own rollout, so
+    /// its sequence numbers would interleave with the parent's.
+    event_tap: Arc<OnceLock<Arc<dyn EventTap>>>,
     /// The driver this child's turns run on instead of the model, set once
     /// by `subagent::spawn` for an external-agent preset; unset otherwise.
     external: Arc<OnceLock<Arc<dyn ExternalAgent>>>,
@@ -406,6 +411,7 @@ impl Session {
             agent_defs: Arc::new(OnceLock::new()),
             self_task: Arc::new(OnceLock::new()),
             external_agents: Arc::new(OnceLock::new()),
+            event_tap: Arc::new(OnceLock::new()),
             external: Arc::new(OnceLock::new()),
             task_names: Arc::new(Mutex::new(HashMap::new())),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
@@ -523,9 +529,11 @@ impl Session {
         // keeps the original (redacting model input is out of scope).
         let scrubbed = crate::redact::scrub_event(&ev);
         let redacted = scrubbed.as_ref() != &ev && matches!(&ev, Event::ToolCallDone { .. });
-        self.store
+        let seq = self
+            .store
             .rollout_append(&self.id, scrubbed.as_ref())
             .map_err(|error| CoreError::Store { error })?;
+        self.tap(seq, scrubbed.as_ref());
         let _ = self.tx.send(ev).await;
         // T28.4: a tool result the scrub changed raises the notice right
         // behind it — PostToolUse's per-call signal, emitted where the
@@ -536,9 +544,11 @@ impl Session {
                 text: "tool output contained a secret-shaped string; redacted in the rollout"
                     .into(),
             };
-            self.store
+            let seq = self
+                .store
                 .rollout_append(&self.id, &notice)
                 .map_err(|error| CoreError::Store { error })?;
+            self.tap(seq, &notice);
             let _ = self.tx.send(notice).await;
         }
         Ok(())
@@ -623,6 +633,21 @@ impl Session {
 
     pub(crate) fn external_agents(&self) -> &[Arc<dyn ExternalAgent>] {
         self.external_agents.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Installs the plugin host's event tap (T33.10); a second call is
+    /// ignored like `set_external_agents`, so plugins see one ordered
+    /// stream for the whole session.
+    pub fn set_event_tap(&self, tap: Arc<dyn EventTap>) {
+        let _ = self.event_tap.set(tap);
+    }
+
+    /// Hands a recorded event to the tap, which queues it and returns
+    /// (PL§5 "never blocking").
+    fn tap(&self, seq: u64, ev: &Event) {
+        if let Some(tap) = self.event_tap.get() {
+            tap.offer(seq, ev);
+        }
     }
 
     /// `subagent::spawn` calls this once for an external-agent child.

@@ -482,6 +482,17 @@ pub trait Relay: Send + Sync {
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError>;
 }
 
+/// Where a session's events go besides its surface (PL§5, T33.10): the
+/// plugin host's per-plugin rings. `Session::emit` calls it right after the
+/// rollout append, with the scrubbed copy the rollout got and the sequence
+/// number `rollout_append` returned, so all four surfaces feed plugins from
+/// one place and in rollout order.
+pub trait EventTap: Send + Sync {
+    /// Takes one event. Must never wait on a plugin: a slow plugin loses
+    /// events, it never slows a turn.
+    fn offer(&self, seq: u64, ev: &crate::types::Event);
+}
+
 /// A granted `[[external_agents]]` entry's driver (EA§3, T35.5): another
 /// vendor's CLI agent that `agent(preset: <name>)` dispatches in place of a
 /// model. Implemented by the host, which spawns the CLI under the session's
@@ -523,5 +534,6 @@ mod tests {
         assert_object_safe::<dyn Checkpointer>();
         assert_object_safe::<dyn Relay>();
         assert_object_safe::<dyn ExternalAgent>();
+        assert_object_safe::<dyn EventTap>();
     }
 }
