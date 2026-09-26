@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T33.6 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.7 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.9 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
@@ -16,7 +15,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.13 | todo | P2 | 4 | 0% | |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.15 | todo | P2 | 3 | 0% | |
-| T33.16 | in progress | P2 | 3 | 5% | Claude Code / claude-opus-5-5 |
 | T33.17 | todo | P2 | 3 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.19 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
@@ -59,8 +57,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.2 | todo | P1 | 4 | 0% | |
-| T35.3 | in progress | P2 | 5 | 5% | Claude Code / claude-opus-5-5 |
-| T35.4 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T35.5 | todo | P1 | 4 | 0% | |
 | T35.6 | todo | P2 | 2 | 0% | |
 | T35.7 | todo | P2 | 4 | 0% | |
@@ -419,6 +415,9 @@ timeout_s = 30
 deferred = true
 servers = {}                        # [mcp.servers.<name>] command/args/url/env — same shape as .mcp.json
 
+[plugins]
+enabled = true                      # --no-plugins / COX_PLUGINS_ENABLED; project config may turn it off, never back on (T33.6)
+
 [memory]
 enabled = true
 extract = false                     # end-of-session extraction on cheap tier
@@ -763,12 +762,6 @@ Every card in this phase:
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
 
-#### T33.6 Grant check and granted-only loading — blocker
-
-Depends: T33.4, T33.5 · Size: ~170 · Files: `crates/cox-plugin/src/grant.rs`, `crates/cox/src/session.rs`
-Goal: the pure `grant::check(manifest, digest, stored) -> Verdict { Granted | NeedsApproval { added, removed } | Disabled }`. Session open loads only `Granted` plugins. Headless and ACP print one `Notice(Warn)` per ungranted plugin naming the command to run. `plugins.enabled` is a config key with an env var and `--no-plugins` (D13).
-Check: `narrower_request_needs_no_reapproval`, `new_digest_needs_approval`, `widened_capability_is_reported_in_added`, `headless_never_loads_ungranted_plugin` (e2e, scratch `COX_HOME`); `every_flag_has_a_config_key` still green.
-
 #### T33.7 `cox plugin install | enable | disable`
 
 Depends: T33.6 · Size: ~180 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
@@ -835,12 +828,6 @@ Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provid
 Depends: T33.9 · Size: ~170 · Files: `crates/cox-protocol/src/types.rs` (`Job::Plugin`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/hostfn.rs`
 Goal: a plugin's model call goes through the router at or below its granted tier (never `think`), passes the budget gate and writes one `usage` row with job `plugin:<id>`.
 Check: `plugin_model_call_writes_usage_row` (Scripted provider), `plugin_model_call_blocked_by_budget`, `plugin_cannot_reach_think_tier`; invariant 8 green.
-
-#### T33.16 Models: the plugin catalog layer
-
-Depends: T33.6, T30.24 · Size: ~150 · Files: `crates/cox-models/src/catalog.rs`, `crates/cox/src/session.rs`
-Goal: `Catalog::load` takes plugin rows. The layer order is built-in < plugin (fill-only for existing ids) < config < user prices. A price conflict is ignored with a notice. Two plugins defining the same new id: the lower id wins. `ModelRow.source` records where each row came from.
-Check: `plugin_cannot_override_builtin_price`, `plugin_fills_missing_context_window`, `config_overrides_plugin_row`, `duplicate_plugin_model_lower_id_wins`.
 
 #### T33.17 Providers, declarative form
 
@@ -1319,18 +1306,6 @@ Every card in this phase:
 Depends: T35.1, T33.6, T33.19, T33.42 · Size: ~190 · Files: `crates/cox-plugin/src/external_agent.rs` (new), `crates/cox/src/session.rs`
 Goal: resolve a granted `[[external_agents]]` entry to a `std::process::Command` (in-package path or PATH program), the same resolution shape T33.19 gives `[[mcp]]`; `crates/cox` wraps it with `sandbox::Policy` before spawning, exactly as it already does for a plugin's MCP stdio server (PL§7c) — no second sandbox path. The capability is one more line the grant dialog lists in words (PL§2's "the capability list is the unit of approval"); `grant::check` needs no change, since it already treats the manifest's capability set generically.
 Check: `external_agent_command_is_wrapped_by_sandbox_before_spawn`, `path_program_is_shown_verbatim_at_approval`, `ungranted_external_agent_is_not_spawned` (matches `headless_never_loads_ungranted_plugin`, T33.6).
-
-#### T35.3 ACP client adapter
-
-Depends: T35.2 · Size: ~190 · Files: `crates/cox-acp/src/client.rs` (new), `crates/cox-acp/src/lib.rs`
-Goal: cox as an ACP client over the spawned process's stdio, reusing the `agent-client-protocol` crate `crates/cox-acp` already depends on as a server (no new dependency, per EA§4). `session/request_permission` from the agent is decided by `cox_permission::Engine`, the same single guard every other tool call goes through; an `fs/*` or `terminal/*` request is served only through `path::confine` and the sandbox policy already governing the spawned process, or refused with the reason named.
-Check: `acp_client_relays_request_permission_through_the_engine`, `acp_client_fs_request_is_confined_to_the_workspace`, `acp_client_terminal_request_without_sandbox_grant_is_refused`.
-
-#### T35.4 stream-json adapter
-
-Depends: T35.2 · Size: ~170 · Files: `crates/cox-core/src/external_agent.rs` (new), `crates/cox-core/src/subagent.rs`
-Goal: a pure, host-side line mapper (EA§5) from Cursor CLI's `stream-json` event shapes (research.md §4.3.8: `system`/`user`/`assistant`/`tool_call{started,completed}`/`result`) onto `cox_protocol::Event`/`Item`; an unrecognised line becomes a sanitized `Notice`, never a hard error (D14), matching `broken_hook_is_skipped_not_fatal`'s fail-open shape.
-Check: `stream_json_assistant_line_maps_to_cox_event`, `stream_json_tool_call_started_and_completed_pair_map_to_one_item`, `unrecognised_stream_json_line_becomes_a_sanitized_notice`.
 
 #### T35.5 Wiring as a subagent preset
 

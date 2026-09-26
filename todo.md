@@ -1,6 +1,5 @@
 # Todo
 
-- T33.6. Grant check and granted-only loading
 - T33.7. `cox plugin install | enable | disable`
 - T33.8. TUI grant dialog
 - T33.9. Base host functions and the context snapshot
@@ -10,7 +9,6 @@
 - T33.13. `cox_invoke_tool` through the engine
 - T33.14. `cox_http` and filesystem preopens
 - T33.15. `cox_model_call` and `Job::Plugin`
-- T33.16. Models: the plugin catalog layer
 - T33.17. Providers, declarative form
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.19. MCP servers from plugins
@@ -53,8 +51,6 @@
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.2. Host spawner, sandbox and grant
-- T35.3. ACP client adapter
-- T35.4. stream-json adapter
 - T35.5. Wiring as a subagent preset
 - T35.6. The Cursor plugin package
 - T35.7. e2e: a fake `agent` binary replaying recorded fixtures

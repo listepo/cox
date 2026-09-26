@@ -1520,3 +1520,120 @@ Check:
 - A guide-example cdylib built for wasm32 exports only `cox_init`, `cox_command` and `cox_on_event`. Besides extism's own env functions, it imports only `cox:host/v1` `cox_kv_*`.
 - In the worktree: nextest 1037 passed, 3 skipped. Two flaky PTY e2e tests failed on the first run under load; the `--no-fail-fast` rerun passed.
 - On main after landing: nextest 1037 passed, 3 skipped. fmt, clippy, the slim build, the wasm32 SDK build and the guest `cargo test` are clean.
+
+#### T33.6 Grant check and granted-only loading — blocker
+
+Depends: T33.4, T33.5 · Size: ~170 · Files: `crates/cox-plugin/src/grant.rs`, `crates/cox/src/session.rs`
+Goal: the pure `grant::check(manifest, digest, stored) -> Verdict { Granted | NeedsApproval { added, removed } | Disabled }`. Session open loads only `Granted` plugins. Headless and ACP print one `Notice(Warn)` per ungranted plugin naming the command to run. `plugins.enabled` is a config key with an env var and `--no-plugins` (D13).
+Check: `narrower_request_needs_no_reapproval`, `new_digest_needs_approval`, `widened_capability_is_reported_in_added`, `headless_never_loads_ungranted_plugin` (e2e, scratch `COX_HOME`); `every_flag_has_a_config_key` still green.
+Status: done 2026-09-26
+Result:
+- **`crates/cox-plugin/src/grant.rs`:** the pure `check(manifest, digest, Option<&PluginGrant>) -> Verdict { Granted | NeedsApproval { added, removed } | Disabled }`.
+  - `capability_list` defines the stored grant format: a sorted JSON array of capability strings.
+  - Also `scope` and `enable_command`.
+  - `cox-plugin` now depends on `cox-protocol`, which `deps.rs` already allowed.
+- **Session open** (`plugin_notices` in `crates/cox/src/session.rs`, a no-op in the slim build):
+  - Discovers plugins and reads each grant through `PluginStore::grant_get`.
+  - Loads only `Granted` plugins.
+  - Emits one `Notice(Warn)` per other plugin naming `cox plugin enable <id> [--project]`. Headless, plain, TUI and ACP (`acp_cmd.rs`, into the rollout) all get these notices.
+- **Config:** `plugins.enabled` (`PluginsConfig`, `default.toml`, regenerated `docs/config.md` and `docs/config.jsonschema`), `COX_PLUGINS_ENABLED` and `--no-plugins`.
+- **Project config** may turn plugins off, but never back on once the user turned them off. This adds an eighth guarded key.
+- **Docs:** PL§3 (grant list format and rules), the `AGENTS.md` layout row and `plan.md` §1.6.
+Deviations:
+- A granted plugin is compiled and then dropped, and `cox_init` does not run. The session has no place to keep an instance until T33.9. A broken granted package is still reported as "failed to load".
+- The grant list also covers `wasi` and one line per `[[provider]]`, `[[mcp]]` and `[[external_agents]]` entry, because these reach the network or run programs. `[limits]` and `[[models]]` are not in it.
+- `model:code` covers a `model:cheap` request; every other capability must match its string exactly.
+- `Disabled` wins over a digest check. A corrupt row or a store error counts as no grant.
+- Disabled plugins, malformed manifests and discovery shadowing notices each get a warning too. The TUI shows the same warnings until T33.8 adds the grant modal.
+- About 290 lines across 15 files, including generated docs, against ~170.
+Not done:
+- `cox plugin list` still reports `grant: "unknown"`, because `plugin_cmd.rs` belongs to T33.7.
+- A new digest reports every capability in `added`. Diffing it against an older grant needs a list-grants store method (T33.7/T33.31).
+Check:
+- `narrower_request_needs_no_reapproval`, `new_digest_needs_approval`, `widened_capability_is_reported_in_added`, `headless_never_loads_ungranted_plugin` (e2e in `plugin_cli.rs`, scratch `COX_HOME`) and `every_flag_has_a_config_key` pass. `disabled_grant_never_loads_and_corrupt_row_grants_nothing` and `config_project_cannot_turn_plugins_on` are new and pass too.
+- The real binary against a scratch `COX_HOME`: an ungranted project plugin gives one warning, "plugin trap is not loaded: it asks for kv and needs approval; run `cox plugin enable trap --project`". `COX_PLUGINS_ENABLED=false` silences it.
+- In the worktree: nextest 1043 passed, 3 skipped; fmt, clippy and the slim build are clean.
+- On main after landing (with T33.6, T33.16, T35.4, T35.3): nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean.
+
+#### T33.16 Models: the plugin catalog layer
+
+Depends: T33.6, T30.24 · Size: ~150 · Files: `crates/cox-models/src/catalog.rs`, `crates/cox/src/session.rs`
+Goal: `Catalog::load` takes plugin rows. The layer order is built-in < plugin (fill-only for existing ids) < config < user prices. A price conflict is ignored with a notice. Two plugins defining the same new id: the lower id wins. `ModelRow.source` records where each row came from.
+Check: `plugin_cannot_override_builtin_price`, `plugin_fills_missing_context_window`, `config_overrides_plugin_row`, `duplicate_plugin_model_lower_id_wins`.
+Status: done 2026-09-26
+Result:
+- `Catalog::load(config, plugins: &[PluginModels], user_prices)` layers built-in < plugin < config < user prices. `PluginModels` borrows `cox_protocol::plugin::ModelDecl`, so `cox-models` still depends only on `cox-protocol`.
+- **Plugin layer:**
+  - Plugins are applied in plugin-id order, so the lower id wins.
+  - A new id is taken whole.
+  - On an existing row a plugin only fills `None` fields.
+  - A differing value, including a price, is ignored with a warning, and so is a second plugin defining the same new id.
+  - Missing cache rates default to the plugin's input rate, so cost is never under-counted.
+- **Warnings** stay on the catalog (`Catalog::warnings()`), and nothing is printed.
+- `ModelRow.source: RowSource` (`Builtin`, `Plugin(id)`, `Config`, `UserPrices`, `Served`) records the layer that created the row.
+- `session.rs` and `doctor.rs` pass `&[]` for now.
+Deviations:
+- Four files: `doctor.rs` needed the call-site change.
+- About 180 lines of code, above ~150.
+- `RowSource::Served` was added because `overlay_served` can create a row.
+- The tests use the made-up id `acme-coder`, because `jev-latest` is already a built-in row.
+Left: feed the granted plugins' `[[models]]` into `Catalog::load` in `backend_for_with`, and show `catalog.warnings()` as `Notice(Warn)`. That wiring needs a session that keeps loaded manifests (T33.9 or later).
+Check:
+- `plugin_cannot_override_builtin_price`, `plugin_fills_missing_context_window`, `config_overrides_plugin_row` and `duplicate_plugin_model_lower_id_wins` pass, plus `plugin_row_for_a_new_id_is_taken_whole`.
+- `cox doctor` against a scratch `COX_HOME` exits 0.
+- In the worktree: nextest 1042 passed, 3 skipped. fmt, clippy and the slim build are clean.
+- On main after landing (with T33.6, T33.16, T35.4, T35.3): nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean.
+
+#### T35.4 stream-json adapter
+
+Depends: T35.2 · Size: ~170 · Files: `crates/cox-core/src/external_agent.rs` (new), `crates/cox-core/src/subagent.rs`
+Goal: a pure, host-side line mapper (EA§5) from Cursor CLI's `stream-json` event shapes (research.md §4.3.8: `system`/`user`/`assistant`/`tool_call{started,completed}`/`result`) onto `cox_protocol::Event`/`Item`; an unrecognised line becomes a sanitized `Notice`, never a hard error (D14), matching `broken_hook_is_skipped_not_fatal`'s fail-open shape.
+Check: `stream_json_assistant_line_maps_to_cox_event`, `stream_json_tool_call_started_and_completed_pair_map_to_one_item`, `unrecognised_stream_json_line_becomes_a_sanitized_notice`.
+Status: done 2026-09-26
+Result: `cox_core::external_agent::StreamJsonMapper::new(turn_id, sanitize)` exposes `map_line(&mut self, &str) -> Vec<Event>`. It is pure and keeps state across lines. `lib.rs` gains the module declaration; `subagent.rs` is unchanged.
+- `system`/`init` becomes a `Notice(Info)` with the model and the permission mode.
+- `user` lines and blank lines are dropped.
+- `assistant` becomes `ItemStarted(AssistantMessage)` then `ItemDone`.
+- `tool_call` `started` becomes `ItemStarted(ToolCall)` plus `ToolCallRequested`. The name is the key without `ToolCall`, and the input is `args`.
+- `tool_call` `completed` becomes `ToolCallOutput` (sanitized; only when non-empty), `ToolCallDone`, then `ItemDone` on the item `started` opened, matched by `call_id`.
+- A `result` line becomes `TurnDone(EndTurn)`. With `is_error` it becomes `Error{fatal:false}` then `TurnDone(Error)`.
+- Anything else becomes a `Notice(Warn)` quoting the sanitized line, capped at 200 characters. It is never an error, and mapping goes on.
+Deviations:
+- `cox-core` may not depend on `cox-sanitize`, so the caller passes the guard in as `fn(&str) -> String`. T35.5 must pass `cox_sanitize::sanitize`. The tests use a stand-in.
+- `ToolCallRequested` is emitted beside `ItemStarted(ToolCall)`, because the surfaces draw calls from it. `TurnDone(Error)` follows `Error`, as in the native loop.
+- The agent's error travels as `CoreError::Provider(BadRequest)`. A dedicated `CoreError` variant would be a protocol and schema change, which is flagged for the creator.
+- The documented shapes leave some fields unset:
+  - a completed call is always `ok: true`;
+  - `risk` is `Exec`;
+  - `subject` is empty;
+  - `duration_ms` is 0.
+- The $0 `billed_externally` usage row is left to T35.5. `--stream-partial-output` lines are not merged.
+Check:
+- `stream_json_assistant_line_maps_to_cox_event`, `stream_json_tool_call_started_and_completed_pair_map_to_one_item` and `unrecognised_stream_json_line_becomes_a_sanitized_notice` pass, plus `result_line_ends_the_turn_and_an_error_result_reports_it_first`.
+- In the worktree: nextest 1041 passed, 3 skipped. PTY e2e tests timed out under load on the first run and passed on the rerun. fmt and clippy are clean.
+- On main after landing (with T33.6, T33.16, T35.4, T35.3): nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean.
+
+#### T35.3 ACP client adapter
+
+Depends: T35.2 · Size: ~190 · Files: `crates/cox-acp/src/client.rs` (new), `crates/cox-acp/src/lib.rs`
+Goal: cox as an ACP client over the spawned process's stdio, reusing the `agent-client-protocol` crate `crates/cox-acp` already depends on as a server (no new dependency, per EA§4). `session/request_permission` from the agent is decided by `cox_permission::Engine`, the same single guard every other tool call goes through; an `fs/*` or `terminal/*` request is served only through `path::confine` and the sandbox policy already governing the spawned process, or refused with the reason named.
+Check: `acp_client_relays_request_permission_through_the_engine`, `acp_client_fs_request_is_confined_to_the_workspace`, `acp_client_terminal_request_without_sandbox_grant_is_refused`.
+Status: done 2026-09-26
+Result: `cox_acp::client` makes cox an ACP client of an external agent over any `ConnectTo<Client>` transport. It reuses `agent-client-protocol`, so there is no new external crate.
+- **Permission requests (`session/request_permission`):**
+  - The agent's tool kind maps to the cox tool whose rules apply: Read→`read`, Search→`grep`, Fetch→`web_fetch`, Edit/Move→`edit`, Delete→`edit` (destructive). Anything else is judged as `bash`.
+  - The request is judged by `cox_permission::Engine`, reached through `cox_core::permission`. The subject is sanitized.
+  - The verdict maps onto the agent's options without granting more than the engine allowed. `Allow` picks allow-once only. `AllowForSession` picks allow-always and records the grant for this connection. `Deny` picks reject.
+  - An `ask` goes to the `Approver` trait off the dispatch loop.
+- **`fs/*` requests:**
+  - Every path goes through `cox_sandbox::path::confine`. Because of this, `cox-acp` now also depends on `cox-sandbox`; `deps.rs` and the `plan.md` §1.1 dependency sentence are updated.
+  - Writes follow the spawned process's sandbox policy: refused when it is read-only, and under `readonly_in_workspace` paths.
+- **`terminal/create`** is always refused, with the reason named. `initialize_request()` advertises `terminal = false`.
+- **Interface for T35.2/T35.5:** `connect(transport, ClientHost { roots, cwd, sandbox, engine, mode, approval, grants, approver }, main_fn)` and `initialize_request()`.
+Deviations:
+- Every terminal request is refused, not only those without a sandbox grant. Running a command with a grant (sandboxed spawn, output, wait/kill) would exceed the task size and add trust surface. It needs its own card if it is wanted.
+- T35.2 must adapt tokio pipes to futures-io, for example with `tokio-util`'s `compat` feature, which is not enabled in the workspace yet.
+Check:
+- `acp_client_relays_request_permission_through_the_engine`, `acp_client_fs_request_is_confined_to_the_workspace` and `acp_client_terminal_request_without_sandbox_grant_is_refused` pass. `cox-acp`: 7 passed.
+- fmt, clippy and the slim build are clean in the worktree. The full nextest run did not finish there because the disk filled up (ENOSPC); the full run is on main after landing.
+- On main after landing (with T33.6, T33.16, T35.4, T35.3): nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean.
