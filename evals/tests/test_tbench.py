@@ -138,6 +138,30 @@ def test_provider_config_points_cox_at_a_local_server():
                                 "context_window": 4096}}}
 
 
+def test_provider_config_prefers_the_dedicated_lmstudio_section():
+    # T30.13 (R§5.3): a local server on the Messages shape gets cox's own
+    # `[providers.lmstudio]` (T30.15/T30.16), which reads its loaded context
+    # back from `GET /api/v1/models` on its own — so, unlike `local`
+    # (OpenAI Chat), no `model`/`context_window` is written here even when
+    # the caller passes one; the section pin stays empty and falls back to
+    # `--tier code=<model>`.
+    cfg = tomllib.loads(tbench.provider_config("lmstudio/prism-ml/bonsai-27b",
+                                               "http://host.lima.internal:1234", 65536))
+    assert cfg == {"providers": {"lmstudio": {"base_url": "http://host.lima.internal:1234"}}}
+
+
+def test_run_with_an_lmstudio_model_never_asks_for_or_forwards_a_key(tmp_path, monkeypatch):
+    # LM Studio needs no auth by default; cox must not need one either, and
+    # a real key sitting in the host env (e.g. a developer's own
+    # ANTHROPIC_API_KEY) must never reach the container for this provider.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-real-should-never-leak")
+    env = FakeEnv(stdout=json.dumps(PAYLOAD))
+    a = tbench.CoxAgent(logs_dir=tmp_path, model_name="lmstudio/prism-ml/bonsai-27b",
+                        base_url="http://host.lima.internal:1234")
+    asyncio.run(a.run("x", env, AgentContext()))
+    assert all("sk-real-should-never-leak" not in json.dumps(e) for e in env.execs)
+
+
 def test_run_with_a_base_url_uploads_the_config_before_cox_runs(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "local")
     env = FakeEnv(stdout=json.dumps(PAYLOAD))

@@ -20,9 +20,15 @@ def flag(argv, name):
 
 
 def test_cox_reaches_a_local_server_through_messages_at_the_container_host():
+    # `[providers.lmstudio]` (T30.15/T30.16), not `[providers.anthropic]`
+    # with an overridden `base_url`: it is the section this provider ships,
+    # and it reads the loaded context back on its own (R§5.3), so no
+    # `context_window` `--ak` is needed either.
     run = matrix.plan_run("cox", LMSTUDIO, "m", OPTS)
-    assert run.argv[run.argv.index("-m") + 1] == "anthropic/m"
-    assert "base_url=http://host.lima.internal:1234" in flag(run.argv, "--ak")
+    assert run.argv[run.argv.index("-m") + 1] == "lmstudio/m"
+    ak = flag(run.argv, "--ak")
+    assert "base_url=http://host.lima.internal:1234" in ak
+    assert not any(a.startswith("context_window=") for a in ak)
     assert run.env == {"ANTHROPIC_API_KEY": "local"}
 
 

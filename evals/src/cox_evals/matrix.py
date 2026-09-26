@@ -69,14 +69,28 @@ class Run:
 
 
 def cox_run(provider, shape, model, opts):
-    cox_provider = "anthropic" if shape == MESSAGES else ("local" if provider.local else "openai")
+    # A local server on the Messages shape gets cox's dedicated
+    # `[providers.lmstudio]` section (T30.15/T30.16), not `[providers.
+    # anthropic]` with an overridden `base_url`: it is the section this
+    # provider actually ships, it reads the loaded context back from
+    # `GET /api/v1/models` on its own, and it is the fair like-for-like
+    # path for T30.13 (R§5.3). `[providers.local]` (OpenAI Chat) stays for
+    # a server that only speaks Chat: cox's Chat wire drops tool calls
+    # (ideas.md), so that path is a fallback, never preferred.
+    if shape == MESSAGES:
+        cox_provider = "lmstudio" if provider.local else "anthropic"
+    else:
+        cox_provider = "local" if provider.local else "openai"
     argv = ["-a", "cox_evals.tbench:CoxAgent", "-m", f"{cox_provider}/{model}",
             "--ak", f"budget_usd={opts['budget_usd']}", "--ak", f"max_turns={opts['max_turns']}"]
     if opts.get("cox_bin"):
         argv += ["--ak", f"cox_bin={opts['cox_bin']}"]
     if provider.local:
-        argv += ["--ak", f"base_url={provider.base(shape, in_container=True)}",
-                 "--ak", f"context_window={opts['context']}"]
+        argv += ["--ak", f"base_url={provider.base(shape, in_container=True)}"]
+        if cox_provider == "local":
+            # `[providers.lmstudio]` asks the server for its loaded context
+            # instead; only the generic Chat section needs it handed in.
+            argv += ["--ak", f"context_window={opts['context']}"]
     return argv, {}
 
 
@@ -112,7 +126,10 @@ PRESETS = {
     # card: plan.md at commit 855fe68) of TB 2.0 `medium` and `hard` tasks.
     "same-model": {
         "agents": ["cox", "claude-code", "terminus-2"],
-        "provider": "lmstudio", "model": "prism-ml/bonsai-27b", "context": 65536,
+        # `context` is `prism-ml/bonsai-27b`'s actual loaded context length
+        # (`GET /api/v1/models`, R§4.3.2/R§5.3), so terminus-2's `model_info`
+        # matches what the server really serves instead of guessing.
+        "provider": "lmstudio", "model": "prism-ml/bonsai-27b", "context": 251648,
         "tasks": ["build-cython-ext", "build-pmars", "compile-compcert", "mteb-leaderboard",
                   "query-optimize", "regex-log", "sanitize-git-repo", "tune-mjcf",
                   "dna-assembly", "password-recovery", "path-tracing-reverse", "regex-chess"],
