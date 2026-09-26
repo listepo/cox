@@ -4,7 +4,7 @@
 # --workspace` never builds guest code for the host.
 [workspace]
 resolver = "3"
-members = ["sdk", "jev"]
+members = ["sdk", "jev", "cursor"]
 
 [workspace.package]
 version = "0.1.2"
