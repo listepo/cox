@@ -1372,7 +1372,7 @@ Check: the doc's commands are checked against the real binary the way `doc_examp
 
 Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_live_fixtures.py` (+ its tests), `tests/fixtures/cursor/*.json` (data, recorded from one real run)
 Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
-Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required, same guard as T30.13's local-model comparison).
+Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required).
 
 **Order.** T35.0 → T35.1 → T35.2 is the critical path (it also waits on T33.6, T33.19, T33.42, T34.1, T34.5, whichever lands last). After T35.2: T35.3 and T35.4 run in parallel → T35.5 → (T35.6, T35.8 in parallel) → T35.7 → T35.9; T35.10 runs whenever the creator has a key. The top table gets rows T35.0–T35.10; P1 for the design doc and the critical path through the host spawner and the preset wiring (T35.0–T35.2, T35.5), P2 for the two drivers, the plugin package, the fixture e2e, doctor reporting and the user guide (T35.3, T35.4, T35.6–T35.9), P3 for the optional live check (T35.10).
 
