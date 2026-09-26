@@ -11,6 +11,7 @@ mod checkpoint;
 mod compact;
 mod context;
 mod dedup;
+pub mod external_agent;
 mod hooks;
 pub mod init;
 pub mod memory_extract;
