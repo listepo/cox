@@ -43,10 +43,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.41 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T33.44 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T35.6 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T35.7 | todo | P2 | 4 | 0% | |
-| T35.8 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | todo | P2 | 4 | 0% | |
@@ -1129,21 +1127,6 @@ Depends: T33.7 · Size: ~110 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/c
 Goal: use a built plugin in place without installing it. A linked plugin asks again only when its capabilities widen, never on byte changes. It is marked `dev` in `list`, `doctor` and the TUI grant dialog. `cox plugin build` and `cox plugin dev` are not planned (PL§13).
 Check: `linked_plugin_rebuild_does_not_reask`, `linked_plugin_widening_reasks`, `linked_plugin_marked_dev_everywhere`.
 
-#### T33.44 The session keeps one live instance per granted plugin — blocker
-
-Depends: T33.9, T33.10, T33.11, T33.16 · Size: ~190 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/live.rs` (new)
-Goal: split from T33.9, T33.10, T33.11 and T33.16. Each of them built its piece against a caller-supplied `PluginHost`, and the session still loads plugins through a grant-nothing environment and drops them. At session open, for each `Granted` plugin, `crates/cox`:
-- builds `HostEnv::new(id).with_grant(grant::capability_list(..), store).with_context(ctx)` with an `Arc<dyn PluginStore>`;
-- calls `PluginHost::load_with`, then `cox_init` with `init_input(..)`;
-- keeps one `Arc<PluginHost>` that hooks, the event tap and later tools all share;
-- installs `PresenceHook(HookChain::new(shell, plugins))`, with `shell` set to `None` under `--no-hooks`;
-- sets the T33.10 event tap, which feeds `Context::fold`;
-- drains `take_notices()` into `Event::Notice`;
-- passes each granted plugin's `[[models]]` to `Catalog::load` and shows `catalog.warnings()` as notices (the part T33.16 left).
-
-A plugin whose load or `cox_init` fails is warned about and skipped, never fatal.
-Check: `granted_plugin_runs_cox_init_once_per_session`, `plugin_notify_reaches_the_transcript`, `hooks_and_event_tap_share_one_plugin_instance`, `plugin_init_failure_is_skipped_with_a_warning`, `granted_plugin_models_join_the_catalog`.
-
 #### T33.43 Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 
 Depends: an extism release after v1.30.0 that pins wasmtime ≥ 48 (extism `main` already pins 48; checked 2026-09-26) · Size: ~30 · Files: `Cargo.toml`, `Cargo.lock`, `deny.toml`
@@ -1208,12 +1191,6 @@ Check: `cox plugin list` (e2e, scratch `COX_HOME`) reports the `cursor` plugin's
 Depends: T35.5, T35.6, T35.13 · Size: ~190 · Files: `tests/external_agents_cursor.rs` (new), `tests/fixtures/cursor/*.json` (data), `scripts/vendor/src/cox_vendor/cursor_fixtures.py` (+ its tests)
 Goal: fixtures are the documented `stream-json` and ACP event shapes from research.md §4.3.8, recorded by a saved, tested script under `scripts/vendor` (AGENTS.md: a file no package manager fetches comes only from such a script, never hand-pasted) — no live Cursor call, no key. A test-only fake `agent` binary replays a fixture's lines over stdio in both modes; the e2e drives it through the real `cox-plugin`/`cox-acp`/`cox-core` path (D12: no network, no API key).
 Check: `fake_agent_stream_json_reaches_a_cox_event_stream_unchanged`, `fake_agent_acp_permission_request_is_decided_by_the_engine` — both against the real code path, no scripted-provider shortcut for this one (it is not a model call).
-
-#### T35.8 `cox doctor` reporting
-
-Depends: T35.2 · Size: ~120 · Files: `crates/cox/src/doctor.rs`, `crates/cox-plugin/src/external_agent.rs`
-Goal: a doctor row per granted `[[external_agents]]` entry: CLI binary found on `PATH` (and its `--version`, best-effort), `key_env` set or missing, sandboxed or opted out (T33.42's per-server opt-out shape). A missing CLI or key is the fail-open warning EA§7 specifies, with the preset left out of `agent`'s names, not a hard failure.
-Check: `doctor_reports_missing_cli_as_a_warning_not_a_failure`, `doctor_reports_key_env_set_and_cli_version`.
 
 #### T35.9 User guide: the Cursor plugin
 

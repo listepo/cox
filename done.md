@@ -2012,3 +2012,74 @@ Check:
 - `plugin_model_call_writes_usage_row` (Scripted provider), `plugin_model_call_blocked_by_budget` and `plugin_cannot_reach_think_tier` pass, along with four `hostfn` tests and `job_tags_are_plain_strings_and_plugin_round_trips_by_id`. Invariant 8, `turn_every_request_has_a_usage_row`, is green.
 - In the worktree: nextest 1086 passed, 3 skipped; fmt and both clippy runs clean.
 - On main after landing: nextest 1143 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.44 The session keeps one live instance per granted plugin — blocker
+
+Depends: T33.9, T33.10, T33.11, T33.16 · Size: ~190 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/live.rs` (new)
+Goal: split from T33.9, T33.10, T33.11 and T33.16. Each of them built its piece against a caller-supplied `PluginHost`, and the session still loads plugins through a grant-nothing environment and drops them. At session open, for each `Granted` plugin, `crates/cox`:
+- builds `HostEnv::new(id).with_grant(grant::capability_list(..), store).with_context(ctx)` with an `Arc<dyn PluginStore>`;
+- calls `PluginHost::load_with`, then `cox_init` with `init_input(..)`;
+- keeps one `Arc<PluginHost>` that hooks, the event tap and later tools all share;
+- installs `PresenceHook(HookChain::new(shell, plugins))`, with `shell` set to `None` under `--no-hooks`;
+- sets the T33.10 event tap, which feeds `Context::fold`;
+- drains `take_notices()` into `Event::Notice`;
+- passes each granted plugin's `[[models]]` to `Catalog::load` and shows `catalog.warnings()` as notices (the part T33.16 left).
+
+A plugin whose load or `cox_init` fails is warned about and skipped, never fatal.
+Check: `granted_plugin_runs_cox_init_once_per_session`, `plugin_notify_reaches_the_transcript`, `hooks_and_event_tap_share_one_plugin_instance`, `plugin_init_failure_is_skipped_with_a_warning`, `granted_plugin_models_join_the_catalog`.
+Status: done 2026-09-26
+Result: `cox_plugin::live` (`crates/cox-plugin/src/live.rs`) is the per-session plugin bundle, and `crates/cox/src/session.rs` wires it in.
+- **`LivePlugins`** holds one shared `Arc<Context>`, a late-bound model caller and one `Live` per granted plugin: the manifest, one `Arc<PluginHost>`, its `Arc<HostEnv>` (granted capabilities, kv store, context), the granted lines and `InitOut`.
+  - `load` compiles each granted plugin once, in the same walk `load_plugins` already did.
+  - `start(&PluginsConfig, SessionId, cwd)` folds `SessionStarted` into the context and runs each `cox_init` once. A plugin whose init fails is dropped with "plugin X failed to start: …".
+  - `hooks()`, `hosts()`, `take_notices()` (each notice prefixed "plugin <id>: "), `Live::granted_status()` (status slots minus those whose `ui.*` capability is not granted), `into_tap(redraw, notices)`, `bind_model_caller`.
+- **One instance per plugin.** The `HookChain` (`PresenceHook(HookChain::new(shell, plugin_hooks))`; `shell` is `None` under `--no-hooks`, plugin hooks still run), the event tap and the T33.23 UI server (`plugin_ui::serve(live.hosts(), …)`) all share the same `Arc<PluginHost>`.
+- **Notices.** Init warnings and notices `cox_init` queued are emitted by `open` as `Event::Notice` after the load warnings. Later ones are drained by the tap after every event except a `Notice` (so a plugin answering notices with notices cannot loop) and forwarded by a tokio task to `session.notice`.
+- **Models.** Granted plugins' `[[models]]` join `Catalog::load` through `provider_for_served`/`backend_for_with`; `catalog.warnings()` join the open notices.
+- **Model caller.** Each `HostEnv` gets `with_model_caller(LateCaller, Handle::try_current())`; `LateCaller` holds a `Weak<dyn ModelCaller>`, and the strong `Arc` of the session belongs to the notice-forwarding task, so the plugin graph holds no strong reference back to the session.
+- **UI.** After `cox_init`, one `PluginUiMsg::Declare { plugin, slots: granted_status() }` per plugin with granted slots; the tap's redraw is `plugin_ui::redraw(feed)` on the TUI and a no-op elsewhere.
+Deviations:
+- `cox_init` runs after `Session::new`, because `SessionInfo` needs the session id. The declarative parts (`[[provider]]`, `[[models]]`, `[[mcp]]`, `[[external_agents]]`) join at load time, so a plugin whose init fails keeps them for that session; only its hooks, events and instance are dropped.
+- Files beyond the card's two: `hostfn.rs` (test module and `MemKv` are `pub(crate)`), `lib.rs`, and `acp_cmd.rs`, `run.rs`, `plain.rs`, `plugin_ui.rs` for the new `open` parameter, the store type and the T33.23 seam.
+Not done (left for later cards):
+- `doctor.rs` still passes `&[]` to `Catalog::load`.
+- ACP (`plugin_notices`) still compiles plugins and drops them; it has no live plugins.
+- No session-level test drives a real `cox_model_call`; the weak binding has a unit test only.
+- `cox_shutdown` is not called at session end.
+- T33.12 needs either late tool registration in cox-core or `start` before `Session::new`; the hook-in point is `start_plugins`, between `live.start` and `live.into_tap`.
+Check:
+- In `session.rs`, with real WAT fixtures installed and granted in a temp `COX_HOME`: `granted_plugin_runs_cox_init_once_per_session`, `plugin_notify_reaches_the_transcript`, `hooks_and_event_tap_share_one_plugin_instance` (a WAT global counts hook calls; the `cox_on_event` notice reports it, so two instances would report 0), `plugin_init_failure_is_skipped_with_a_warning`, `granted_plugin_models_join_the_catalog`.
+- In `live.rs`: `hooks_and_event_tap_share_one_plugin_instance`, `failed_init_drops_the_plugin_with_a_warning`, `only_granted_status_slots_are_declared`, `model_caller_is_held_weakly`.
+- Real binary against a scratch `COX_HOME`: `cox plugin install --yes`, then `cox run -p hi --output-format stream-json` printed `{"type":"notice","level":"info","text":"plugin hello: hello from cox_init"}`.
+- In the worktree: nextest 1152 passed, 3 skipped; fmt, clippy (`-D warnings`, all targets) and the slim build clean.
+- On main after landing (with T33.44 and T35.8 together): nextest 1156 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T35.8 `cox doctor` reporting
+
+Depends: T35.2 · Size: ~120 · Files: `crates/cox/src/doctor.rs`, `crates/cox-plugin/src/external_agent.rs`
+Goal: a doctor row per granted `[[external_agents]]` entry: CLI binary found on `PATH` (and its `--version`, best-effort), `key_env` set or missing, sandboxed or opted out (T33.42's per-server opt-out shape). A missing CLI or key is the fail-open warning EA§7 specifies, with the preset left out of `agent`'s names, not a hard failure.
+Check: `doctor_reports_missing_cli_as_a_warning_not_a_failure`, `doctor_reports_key_env_set_and_cli_version`.
+Status: done 2026-09-26
+Result: `cox doctor` has one row per granted `[[external_agents]]` entry (`crates/cox/src/doctor.rs`, feature `plugins`; the slim build adds none).
+- `check_external_agents` walks the same `discover::discover` + `grant::scope`/`grant::check` path `cox plugin list` uses; there is no second discovery.
+- Per entry, `check_external_agent_with` (injectable, like `check_api_keys_with`):
+  - resolves `command` with `cox_plugin::external_agent::package_program`;
+  - wraps `["--version"]` (never the mode args, so the real driver never starts) through `session::sandboxed_argv` (now `pub(crate)`), the same wrap a driver gets;
+  - runs it with a 3 s timeout and keeps the first stdout line best-effort;
+  - checks `key_env` for presence only, never printing its value.
+- Row text:
+  - success: "sandboxed; found, <version>; key_env <VAR> set|not set";
+  - sandbox refusal: "refused: cannot run under the sandbox on this host (<reason>); …";
+  - missing CLI: "<cmd> not found on PATH; …".
+- A missing CLI, a missing key, a sandbox refusal and a bad in-package command are all `warn`, never `fail` (EA§7 fail-open).
+- `doctor::run` takes `cwd` to find the project plugin root, the same way `session::mcp_servers` does.
+Deviations:
+- The row reports "sandboxed" or "refused" rather than EA§7's "sandboxed or opted out": external agents are wrap-or-refuse (T35.2) and have no `sandbox = false` opt-out.
+- `crates/cox-plugin/src/external_agent.rs` is untouched; everything fit in `doctor.rs`. `main.rs` passes `cwd`.
+Check:
+- `doctor_reports_missing_cli_as_a_warning_not_a_failure`
+- `doctor_reports_key_env_set_and_cli_version`, which also covers the same CLI with the key missing
+- `doctor_reports_sandbox_refusal_as_a_warning_not_a_failure`
+- `doctor_reports_a_bad_in_package_command_as_a_warning`
+- In the worktree: nextest 1139 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T33.44 and T35.8 together): nextest 1156 passed, 3 skipped; fmt, clippy and the slim build clean.
