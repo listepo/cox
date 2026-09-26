@@ -60,6 +60,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | todo | P2 | 4 | 0% | |
+| T35.13 | todo | P1 | 4 | 0% | |
 
 ## Reference
 
@@ -1273,7 +1274,7 @@ Check: `cox plugin list` (e2e, scratch `COX_HOME`) reports the `cursor` plugin's
 
 #### T35.7 e2e: a fake `agent` binary replaying recorded fixtures
 
-Depends: T35.5, T35.6 · Size: ~190 · Files: `tests/external_agents_cursor.rs` (new), `tests/fixtures/cursor/*.json` (data), `scripts/vendor/src/cox_vendor/cursor_fixtures.py` (+ its tests)
+Depends: T35.5, T35.6, T35.13 · Size: ~190 · Files: `tests/external_agents_cursor.rs` (new), `tests/fixtures/cursor/*.json` (data), `scripts/vendor/src/cox_vendor/cursor_fixtures.py` (+ its tests)
 Goal: fixtures are the documented `stream-json` and ACP event shapes from research.md §4.3.8, recorded by a saved, tested script under `scripts/vendor` (AGENTS.md: a file no package manager fetches comes only from such a script, never hand-pasted) — no live Cursor call, no key. A test-only fake `agent` binary replays a fixture's lines over stdio in both modes; the e2e drives it through the real `cox-plugin`/`cox-acp`/`cox-core` path (D12: no network, no API key).
 Check: `fake_agent_stream_json_reaches_a_cox_event_stream_unchanged`, `fake_agent_acp_permission_request_is_decided_by_the_engine` — both against the real code path, no scripted-provider shortcut for this one (it is not a model call).
 
@@ -1306,6 +1307,17 @@ Goal: EA§4 allows a `terminal/*` request "only under the same `sandbox::Policy`
 - `initialize_request()` advertises `terminal = true` only when the sandbox grant is present.
 Without a grant, the T35.3 refusal and its reason stay. Output shown to the user is sanitized, and output over the cap is archived before it is shortened.
 Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `acp_terminal_output_respects_byte_limit_and_reports_truncation`, `acp_terminal_release_kills_the_process_group`, `acp_terminal_command_is_judged_by_the_engine` and `acp_terminal_without_sandbox_grant_is_still_refused`.
+
+#### T35.13 Host drivers: install granted external agents in the session
+
+Depends: T35.2, T35.5, T35.12 · Size: ~180 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/external_agent.rs`, `crates/cox-acp/src/client.rs`
+Goal: split from T35.5, whose core side landed as the `ExternalAgent` trait and `Session::set_external_agents`. For each granted `[[external_agents]]` entry, `crates/cox` builds one driver behind `ExternalAgent` over T35.2's sandboxed `Command`:
+- `mode = "stream-json"` runs the CLI per turn and feeds stdout lines to `StreamJsonMapper::new(turn, name, cox_sanitize::sanitize)` (T35.4, T35.12).
+- `mode = "acp"` wraps T35.3's `connect` with a `ClientHost` built from the session's roots, sandbox, engine and grants.
+- The answer arrives as `ItemStarted { AssistantMessage }`. The driver never sends `Usage`, returns `Some(usage)` only when the CLI reported tokens, and honours `cancel`.
+- One driver per entry is kept for the session. An entry whose CLI or `key_env` is missing is left out with one Warn notice (EA§7).
+- `set_external_agents` is called next to `set_agent_defs`. `docs/design/external-agents.md` says that the agent's own tool calls are not judged per call by the Engine or PreToolUse hooks; the process sandbox is the guard (EA§2).
+Check: `stream_json_driver_answers_a_child_task` (fake CLI script under the sandbox), `missing_cli_leaves_the_preset_out_with_one_warning`, `cancel_kills_the_external_agent_process`.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
@@ -1430,6 +1442,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A56 §3 P34 (new T34.11) — the headless orphan fix from T34.9 has a TUI twin. Why: `run_tui` (`crates/cox/src/session.rs`) never calls `interrupt` + `wait_tasks_cleared` before its runtime drops, so quitting while a detached `bash` runs may orphan the process; the creator asked to check it and, if it leaks, reuse the headless helpers with a PTY regression test. Effect: one small card; no decision changes.
 - A57 §3 P35 (new T35.11) — ACP client terminals, by the creator. Why: T35.3 refuses every `terminal/*` request from an external agent, even under a sandbox grant, because serving them (sandboxed spawn, output buffer, wait, kill, release) did not fit that card; EA§4 allows them under the process's own `sandbox::Policy`. Effect: one card after T35.3; it reuses `bash`'s sandboxed spawn, `path::confine` and `cox_permission::Engine`, so no guard gains a second path. No decision changes.
 - A58 §3 P35 (new T35.12) — a dedicated `CoreError::ExternalAgent`, by the creator. Why: T35.4 had to send an external agent's failure as a provider `BadRequest`, which misnames it and could trigger provider retry or fallback. Effect: one protocol variant and a regenerated `docs/protocol.jsonschema`; no decision changes.
+- A59 §3 P35 (new T35.13) — T35.5 split. Why: cox-core does no I/O, so T35.5 landed the `ExternalAgent` trait, preset resolution and the usage row, and the host drivers (stream-json and ACP over T35.2's sandboxed spawn) need their own card. Effect: T35.7 also depends on T35.13; no decision changes.
 
 ## 7. Risk register
 
