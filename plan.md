@@ -68,7 +68,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T34.7 | todo | P2 | 2 | 0% | |
 | T34.8 | todo | P2 | 2 | 0% | |
 | T34.9 | todo | P1 | 3 | 0% | |
-| T34.10 | todo | P3 | 1 | 0% | |
+| T34.10 | in progress | P3 | 1 | 5% | Claude Code / claude-sonnet-5 |
 | T35.2 | todo | P1 | 4 | 0% | |
 | T35.3 | todo | P2 | 5 | 0% | |
 | T35.4 | todo | P2 | 4 | 0% | |
