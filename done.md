@@ -2801,3 +2801,31 @@ Check:
 - The real binary with a scratch `COX_HOME`: `cox plugin new demo` scaffolds, and `cox doctor` runs.
 - In the worktree: nextest 1250 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1250 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.21.1 Decision point: `salience`
+
+Depends: T33.21 · Size: ~120 · Files: `crates/cox-core/src/memory_extract.rs`, `crates/cox-core/src/monotone.rs`, `crates/cox-protocol/src/config.rs`
+Goal: PL§4 `salience`, split out of T33.21. Memory extraction asks the `[plugins.decide] salience` plugin (within `salience_ms`, default 300) for a `Score` per extracted item; items are scrubbed and one question carries every item of the extraction. The score only orders or drops items against the `[memory]` thresholds; it never adds or edits an item and never lowers a threshold. Silence, lateness or low confidence keeps every item. Every answer emits `Event::Advised { point: salience }`. Regenerate `docs/config.jsonschema`, `docs/config.md` and `default.toml` through their drift tests.
+Check: `salience_advice_cannot_add_memory_items`, `salience_thresholds_stay_in_config`, `late_salience_keeps_every_item`.
+Status: done 2026-09-26
+Result: the `salience` decision point, which can only drop memory items.
+- **Where it runs.** `extract_memory` passes the parsed facts through `Session::advise_salience` before dedup and save. It reuses T33.21's shared `ask_point`, `advised` and `confident` helpers in `monotone.rs`.
+- **Question and answer.** One question carries every item in `Question.state["items"]` (`{name, kind, body}`, scrubbed and clipped). The answer is the new additive `Answer::Scores { values }`, one score per item by index.
+- **Monotone rule** (`keep_salient`):
+  - An item is dropped only if its score is below `[memory].salience_min` (default 0.3). That value comes from config, and the plugin cannot change it.
+  - Scores are applied only when the batch confidence is at least `min_confidence` and there is exactly one value per item.
+  - A shape mismatch, low or absent confidence, silence or lateness (`salience_ms`, default 300) keeps every item.
+  - An empty extraction is never asked about.
+  - Every answer emits `Event::Advised { point: salience }`.
+- **Generated docs.** `docs/config.jsonschema`, `docs/config.md`, `default.toml`, `docs/protocol.jsonschema` and `docs/plugin-abi.schema.json` are regenerated through their drift tests.
+Deviations:
+- `cox-plugin-api/src/abi.rs` gains `Answer::Scores`. The change is additive and was needed because `Question` has no batch `items` yet (T33.40.1). The `state["items"]` shape is scoped to `salience` and is not the final batched ABI.
+- `router.rs` gets a one-line match arm for the new variant.
+- `[memory].salience_min` is one threshold, not a table.
+Check:
+- `salience_advice_cannot_add_memory_items`
+- `salience_thresholds_stay_in_config`
+- `late_salience_keeps_every_item`: covers lateness, no plugin configured, and low confidence.
+- The real binary with a scratch `COX_HOME`: `cox config get plugins.decide` shows `salience` and `salience_ms`, and `cox config get memory` shows `salience_min`.
+- In the worktree: nextest 1250 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing: nextest 1253 run, 1252 passed, 3 skipped; headless_run_does_not_wait_for_a_background_shell flaked under load and passed on rerun. fmt, clippy and the slim build clean.

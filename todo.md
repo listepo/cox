@@ -2,7 +2,6 @@
 
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
-- T33.21.1. Decision point: `salience`
 - T33.33. `/plugin update | remove | list | reload` in the TUI
 - T33.34. Go: SDK wrapper, template, example
 - T33.36. Kotlin: thin PDK, template, example
