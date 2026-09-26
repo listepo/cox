@@ -214,6 +214,10 @@ pub enum StoreError {
     /// The underlying SQLite call failed.
     #[error("sqlite error")]
     Sqlite,
+    /// A plugin kv write went over quota (PL§3: 64 KiB per value, 1 MiB per
+    /// plugin across all its keys).
+    #[error("plugin kv quota exceeded")]
+    QuotaExceeded,
 }
 
 /// Failures from `cox-ext` (instruction files, skills, hooks, commands).

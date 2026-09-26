@@ -2138,6 +2138,19 @@
             "required": [
               "type"
             ]
+          },
+          {
+            "description": "A plugin kv write went over quota (PL§3: 64 KiB per value, 1 MiB per\nplugin across all its keys).",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "quota_exceeded"
+              }
+            },
+            "required": [
+              "type"
+            ]
           }
         ]
       }

@@ -278,6 +278,80 @@ pub trait Store: Send + Sync {
     fn checkpoint_list(&self, session: &SessionId) -> Result<Vec<CheckpointRow>, StoreError>;
 }
 
+/// Where a plugin grant applies (PL§3): the whole user install, or one
+/// repository. A project plugin's grant is additionally keyed on the
+/// repository root, since a repository must not silently gain the
+/// capabilities the user already granted elsewhere (PL§1: "cloning a
+/// repository never runs its plugins").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GrantScope {
+    /// `~/.cox/plugins/<id>`: applies across every repository.
+    User,
+    /// `<git root>/.cox/plugins/<id>`: applies only to that repository.
+    Project(PathBuf),
+}
+
+/// One `plugin_grants` row (PL§3): what capabilities were approved for a
+/// plugin id at a package digest, in a scope. `capabilities` and `source`
+/// are opaque JSON here — the granted-capability shape and the install
+/// source (`{kind: "path", path, digest}`, PL§1a) are `cox-plugin`'s to
+/// define; `cox-store` only persists and returns them unchanged.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PluginGrant {
+    /// The plugin's manifest id.
+    pub plugin_id: String,
+    /// Where this grant applies.
+    pub scope: GrantScope,
+    /// The package digest this grant was decided against. Changed bytes
+    /// mean a different row, not an update of this one (PL§3).
+    pub digest: String,
+    /// The capabilities the user approved, as `cox-plugin` shapes them.
+    pub capabilities: Value,
+    /// Whether the plugin is currently enabled under this grant.
+    pub enabled: bool,
+    /// Where the plugin came from (`cox plugin install`'s source record).
+    pub source: Value,
+    /// RFC 3339 timestamp of the decision.
+    pub decided_at: String,
+}
+
+/// Plugin grants and per-plugin key-value storage (PL§3, A52). Kept apart
+/// from `Store` so approving or persisting plugin state does not grow the
+/// trait every other surface implements; `cox-store`'s `Store` implements
+/// this too. Sync for the same reason as `Store` (D9).
+pub trait PluginStore: Send + Sync {
+    /// The grant on file for this plugin id, scope and digest, if any
+    /// decision was ever recorded for that exact key.
+    fn grant_get(
+        &self,
+        plugin_id: &str,
+        scope: &GrantScope,
+        digest: &str,
+    ) -> Result<Option<PluginGrant>, StoreError>;
+    /// Inserts or replaces the grant at its `(plugin_id, scope, digest)` key.
+    fn grant_put(&self, grant: &PluginGrant) -> Result<(), StoreError>;
+    /// Flips `enabled` on an existing grant without touching its
+    /// capabilities or digest (`cox plugin disable`).
+    fn grant_set_enabled(
+        &self,
+        plugin_id: &str,
+        scope: &GrantScope,
+        digest: &str,
+        enabled: bool,
+    ) -> Result<(), StoreError>;
+    /// Deletes every grant for a plugin id, across every scope and digest
+    /// (`cox plugin remove`).
+    fn grants_delete(&self, plugin_id: &str) -> Result<(), StoreError>;
+    /// Reads one kv value.
+    fn kv_get(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, StoreError>;
+    /// Writes one kv value, rejecting it if the value or the plugin's total
+    /// stored bytes would go over quota (64 KiB per value, 1 MiB per
+    /// plugin, PL§3).
+    fn kv_put(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), StoreError>;
+    /// Deletes every kv row for a plugin id (`cox plugin remove`).
+    fn kv_delete_all(&self, plugin_id: &str) -> Result<(), StoreError>;
+}
+
 /// Where a tool's full, pre-truncation output is written before the model
 /// sees the shortened form (D6a: "the archive row exists before the model
 /// sees truncated text"). A narrower, async-friendly view of `Store`'s
