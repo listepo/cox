@@ -63,7 +63,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T34.2 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.3 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
-| T34.5 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T34.6 | todo | P1 | 3 | 0% | |
 | T34.7 | todo | P2 | 2 | 0% | |
 | T34.8 | todo | P2 | 2 | 0% | |
@@ -1363,12 +1362,6 @@ Plan:
 3. Wherever `Answers::Surface` renders a `Question`, it shows the label the same way `ask_permission` labels a relayed approval, when `source` is `Some`.
 4. No shipped preset (`explore`, `shell`) grants `ask_user` in this task — that is a content decision for whoever writes the first custom definition that needs it; this task only makes it possible and labelled.
 Check: `ask_user_from_subagent_carries_its_source`, `ask_user_surface_shows_which_agent_is_asking`; existing `ask_user.rs` tests unchanged.
-
-#### T34.5 Core routing in the parent
-
-Depends: T34.4 · Size: ~190 · Files: `crates/cox-core/src/tasks.rs` (registry keeps live child handles plus a finished-session lookup), `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs` (`Session::resume` today hardcodes `parent_id: None`, `Job::Main`, `Tier::Code`; it gains parameters so a child resumes with its own job, tier, parent and budget slice — SM§2)
-Goal: the parent resolves a `TaskId` to either a still-running child handle or a finished child's stored session id (`sessions.parent_id`, already a real link); delivery to a running child queues a `Submission::UserTurn` after its current turn; delivery to a finished child resumes it via `Session::resume` and re-registers it as running for any further messages.
-Check: `task_message_reaches_a_still_running_subagent_after_its_current_turn`, `task_message_to_a_finished_subagent_resumes_it_with_history_intact`, `resumed_subagent_keeps_its_parent_id_and_budget_slice`.
 
 #### T34.6 The `send_message` tool
 

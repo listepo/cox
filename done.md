@@ -1225,3 +1225,29 @@ Check:
 - Pass: `agent_dispatches_a_discovered_custom_preset_by_name`, `agent_unknown_preset_lists_builtin_and_discovered_names_in_error`, `agent_tier_override_is_honored_and_clamped`, `agent_def_restrict_keeps_only_named_tools_in_parent_order`. The existing subagent tests are unchanged.
 - Real binary with a scripted provider: `.cox/agents/reviewer.md` ran at the cheap tier.
 - nextest: 966 passed, 3 skipped in the worktree.
+
+#### T34.5 Core routing in the parent
+
+Depends: T34.4 · Size: ~190 · Files: `crates/cox-core/src/tasks.rs` (registry keeps live child handles plus a finished-session lookup), `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs` (`Session::resume` today hardcodes `parent_id: None`, `Job::Main`, `Tier::Code`; it gains parameters so a child resumes with its own job, tier, parent and budget slice — SM§2)
+Goal: the parent resolves a `TaskId` to either a still-running child handle or a finished child's stored session id (`sessions.parent_id`, already a real link); delivery to a running child queues a `Submission::UserTurn` after its current turn; delivery to a finished child resumes it via `Session::resume` and re-registers it as running for any further messages.
+Check: `task_message_reaches_a_still_running_subagent_after_its_current_turn`, `task_message_to_a_finished_subagent_resumes_it_with_history_intact`, `resumed_subagent_keeps_its_parent_id_and_budget_slice`.
+Status: done 2026-09-26
+Result: the parent now routes `TaskMessage` (SM§2, §3, §5).
+- **Registry:** `Inner.children` maps each `TaskId` to one of two states. A running child holds a message queue and the hop of the message that started its current turn. A finished child becomes `Dormant`: its `SessionId` plus a `Spec` (config with the budget slice left, tools, job, tier, worktree and labels).
+- **Delivery:** `deliver` either queues the message or wakes the child. `run_task` takes a queued message only on the child's `TurnDone` and runs it as a new `UserTurn`, so a message never arrives mid-turn. When a run ends, `park_child` either downgrades the child to `Dormant` or picks up a message that arrived during wind-down, all under one lock.
+- **Wake:** `wake` rebuilds `History` from the child's rollout and calls `spawn_child(.., Some((id, history)))`, which keeps the child's job, tier and `parent_id`.
+- **Relay:** the child's `Event::TaskMessage` goes to the parent. The parent stamps `from` and sets `hop` to the sender's current hop + 1. A message with hop > `MAX_HOPS` (4) is dropped with a warning.
+- **Message to the parent:** it becomes a history line, the same way `publish_task_result` works.
+- **Message cap:** `MAX_MESSAGES_PER_TASK` is left to T34.6.
+Deviations:
+- Resume goes through a `resume` parameter on `spawn_child`, not the top-level public `Session::resume`.
+- The test `MemoryStore` now keeps rollouts per session.
+- `resumed_subagent_keeps_its_parent_id_and_budget_slice` is folded into the resume test, and `parent_id` is not asserted directly there.
+- About 360 lines of production code plus about 370 lines of tests, against a target of ~200.
+Check: passing tests:
+- `task_message_reaches_a_still_running_subagent_after_its_current_turn`
+- `task_message_to_a_finished_subagent_resumes_it_with_history_intact`
+- `sibling_message_is_relayed_through_the_parent`
+- `hop_limit_stops_a_ping_pong`
+
+These use the scripted provider. nextest: 1005 passed, 3 skipped in the worktree.
