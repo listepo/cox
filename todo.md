@@ -7,7 +7,6 @@
 - T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
 - T33.24. TUI panel and overlay
-- T33.25. Plugin commands and keys
 - T33.26. Custom rendering of tool results and messages
 - T33.28. Rust reference example and e2e
 - T33.29. `cox plugin new` and the Rust template
@@ -37,7 +36,6 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
-- T35.6. The Cursor plugin package
 - T35.7. e2e: a fake `agent` binary replaying recorded fixtures
 - T35.9. User guide: the Cursor plugin
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)

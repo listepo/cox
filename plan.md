@@ -13,7 +13,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.20 | in progress | P2 | 5 | 5% | Claude Code / claude-opus-5-5 |
 | T33.21 | todo | P2 | 4 | 0% | |
 | T33.24 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.25 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.26 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.28 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.29 | todo | P2 | 3 | 0% | |
@@ -43,7 +42,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.41 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T35.6 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T35.7 | todo | P2 | 4 | 0% | |
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
@@ -799,12 +797,6 @@ Depends: T33.23 · Size: ~170 · Files: `crates/cox-tui/src/state.rs`, `crates/c
 Goal: a bottom `panel` (≤ 8 rows, above the composer, toggled by the plugin's command or key) and `Modal::Plugin { id }` as a full-screen overlay that Esc closes. Sizes are sent through `Cmd::Plugin`.
 Check: insta snapshots of the panel open and closed and of the overlay; `esc_closes_plugin_overlay`.
 
-#### T33.25 Plugin commands and keys
-
-Depends: T33.23 · Size: ~180 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/keymap.rs`, `crates/cox-tui/src/commands.rs`
-Goal: `/<id>:<name>` in the palette after the built-ins, and a `CommandOut` limited to PL§4's closed set. Keys work only as `<leader> <key>`; `plugin.leader` can be rebound in `keybindings.toml`. Built-ins and user bindings win. A clash between plugins goes to the lower id and is reported by `Keymap::conflicts()`.
-Check: `builtin_command_wins_over_plugin`, `plugin_command_prompt_submits_user_turn`, `plugin_key_only_under_leader`, `plugin_key_conflict_is_reported`.
-
 #### T33.26 Custom rendering of tool results and messages
 
 Depends: T33.23 · Size: ~160 · Files: `crates/cox-tui/src/cells.rs`, `crates/cox-tui/src/state.rs`
@@ -1179,12 +1171,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
-
-#### T35.6 The Cursor plugin package
-
-Depends: T35.1, T35.5 · Size: ~120 · Files: `plugins/cursor/plugin.toml`, `plugins/cursor/src/lib.rs`, `plugins/Cargo.toml` (member)
-Goal: the first real user of `[[external_agents]]`, the same role Jev played for the ABI provider form (T33.40): `plugin.toml` declares one entry (`name = "cursor"`, `command = "agent"` resolved on `PATH`, `mode = "acp"` by default with `stream-json` as the manifest's documented alternative, `key_env = "CURSOR_API_KEY"`); the guest exports only `cox_init` (no other capability), since spawning and driving the process is entirely the host's job (EA§2) — the smallest possible plugin, unlike Jev's `api = "plugin"` provider guest.
-Check: `cox plugin list` (e2e, scratch `COX_HOME`) reports the `cursor` plugin's `external_agents` capability; `cursor_plugin_toml_matches_the_manifest_schema`.
 
 #### T35.7 e2e: a fake `agent` binary replaying recorded fixtures
 

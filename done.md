@@ -2083,3 +2083,72 @@ Check:
 - `doctor_reports_a_bad_in_package_command_as_a_warning`
 - In the worktree: nextest 1139 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing (with T33.44 and T35.8 together): nextest 1156 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.25 Plugin commands and keys
+
+Depends: T33.23 · Size: ~180 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/keymap.rs`, `crates/cox-tui/src/commands.rs`
+Goal: `/<id>:<name>` in the palette after the built-ins, and a `CommandOut` limited to PL§4's closed set. Keys work only as `<leader> <key>`; `plugin.leader` can be rebound in `keybindings.toml`. Built-ins and user bindings win. A clash between plugins goes to the lower id and is reported by `Keymap::conflicts()`.
+Check: `builtin_command_wins_over_plugin`, `plugin_command_prompt_submits_user_turn`, `plugin_key_only_under_leader`, `plugin_key_conflict_is_reported`.
+Status: done 2026-09-26
+Result: plugins add `/` commands and leader keys to the TUI.
+
+**Commands.**
+- A plugin's commands appear in the palette as `/<id>:<name>`, after the built-ins. `compose()` dispatches `file_command → plugin_command → commands::parse`, so a built-in always wins, and no built-in name contains `:`.
+- `Action::PluginCommand` becomes `Cmd::Plugin(PluginRequest::Command{..})`.
+- `crates/cox/src/plugin_ui.rs` calls `cox_command` (and `cox_key`) on `Lane::Control` with `COMMAND_DEADLINE` = 5 s. A timeout, an error, a missing export or an unknown plugin becomes `out: None` (fail-open, like render).
+- `CommandOut` is PL§4's closed set:
+  - `Prompt` submits a user turn;
+  - `Compact` becomes `Cmd::Compact{focus}`;
+  - `Notice` becomes a sanitized transcript notice;
+  - `TogglePanel` and `OpenOverlay` are accepted but have no effect until panels and overlays exist (T33.24).
+
+**Keys.**
+- `plugin.leader` (default Ctrl+K, idle) arms the next key, which is always consumed. `Keymap::resolve_plugin_key` resolves it.
+- `declare_plugin_keys` sorts by plugin id, so on a clash the lower id wins. `Keymap::conflicts()` reports the clash as "<leader> K: plugin a and plugin b".
+
+**Declare.** `PluginUiMsg::Declare` carries `commands` and `keys` as well as `slots`.
+- `Live::granted_commands()` and `granted_keys()` filter by `ui.commands` and `ui.keys`.
+- `serve_plugin_ui` declares a plugin that has any of the three, so a plugin with commands only and no status slot is still declared.
+- Every string from a plugin passes `cox_sanitize::sanitize` inside `state.rs`.
+
+**Docs.** `plugin.leader` is in `docs/config.md`, `docs/getting-started.md` and `KEYBINDINGS_DOCS` in `cox-protocol/src/config.rs`, the literal the config-docs drift test compares. The help-overlay snapshots gain the new row.
+
+Deviations: 12 files instead of the card's three.
+- `plugin_ui.rs` has the T33.23 seam.
+- `status.rs` needed the match to stay exhaustive.
+- `config.rs` and the two docs pages are required by the doc-drift tests.
+- `live.rs` and `session.rs` wire the Declare fields.
+- The two snapshots change on purpose.
+
+Check:
+- `builtin_command_wins_over_plugin`
+- `plugin_command_prompt_submits_user_turn`
+- `plugin_key_only_under_leader`
+- `plugin_key_conflict_is_reported`
+- `declare_plugin_keys_replaces_the_previous_set`
+- `command_answer_carries_command_out`
+- `key_request_calls_cox_key_not_cox_command`
+- `commands_and_keys_are_dropped_without_their_capability`
+
+In the worktree after the rebase onto T33.44: nextest 1164 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T35.6): nextest 1164 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T35.6 The Cursor plugin package
+
+Depends: T35.1, T35.5 · Size: ~120 · Files: `plugins/cursor/plugin.toml`, `plugins/cursor/src/lib.rs`, `plugins/Cargo.toml` (member)
+Goal: the first real user of `[[external_agents]]`, the same role Jev played for the ABI provider form (T33.40): `plugin.toml` declares one entry (`name = "cursor"`, `command = "agent"` resolved on `PATH`, `mode = "acp"` by default with `stream-json` as the manifest's documented alternative, `key_env = "CURSOR_API_KEY"`); the guest exports only `cox_init` (no other capability), since spawning and driving the process is entirely the host's job (EA§2) — the smallest possible plugin, unlike Jev's `api = "plugin"` provider guest.
+Check: `cox plugin list` (e2e, scratch `COX_HOME`) reports the `cursor` plugin's `external_agents` capability; `cursor_plugin_toml_matches_the_manifest_schema`.
+Status: done 2026-09-26
+Result: `plugins/cursor` (`cox-plugin-cursor`, a member of the `plugins/` workspace) is the smallest possible plugin.
+- `plugin.toml` declares one `[[external_agents]]` entry: `name = "cursor"`, `command = "agent"`, `mode = "acp"` (with `stream-json` documented as the alternative) and `key_env = "CURSOR_API_KEY"`. It has no `[capabilities]`, `[[provider]]` or `[[mcp]]`.
+- The guest exports only `cox_init` (`register!(init => init)`). Spawning and driving the CLI is the host's job (EA§2).
+- No new dependency. `figment` is a dev-dependency, shared with jev's manifest test.
+Check:
+- `cursor_plugin_toml_matches_the_manifest_schema` passes. It uses the same Figment + `PluginManifest` + `validate()` path as jev's `manifest_validates`.
+- The wasm32 build of `cox-plugin-cursor` is clean, and so are fmt and clippy for the `plugins/` workspace (host and wasm32 targets).
+- e2e against a scratch `COX_HOME`:
+  - Before the grant, `cox plugin list` (text and `--json`) shows the capability `agent:cursor agent key=CURSOR_API_KEY`.
+  - `cox plugin install --yes` prints the same line in its prompt and reports "grant granted, loaded".
+  - After the grant, the `declared` summary covers only `[capabilities]`. This predates the card: the same gap noted under T33.7 for jev's `[[provider]]`.
+- In the worktree: nextest 1143 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (with T33.25): nextest 1164 passed, 3 skipped; fmt, clippy, the slim build, the wasm32 build and the cursor test clean. T35.13 later sets `args = ["acp"]` in `plugin.toml`.
