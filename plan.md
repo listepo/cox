@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
 | T32.2 | todo | P2 | 4 | 0% | |
-| T33.3 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
 | T33.4 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
 | T33.7 | todo | P2 | 3 | 0% | |
@@ -821,18 +820,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
-
-#### T33.3 `cox-plugin`: host crate, one worker per plugin — blocker
-
-Depends: T33.2 · Size: ~200 · Files: `crates/cox-plugin/src/lib.rs`, `src/host.rs`, `src/error.rs`
-Goal: load a module from bytes with extism (`default-features = false`) and call `cox_init` on a worker thread that owns the `Plugin`. Memory cap, per-call deadline via `CancelHandle`, and `PluginError` (thiserror) mapped from `extism::Error`.
-Plan:
-1. Add the `§1.1` row and the commit reason from A52.
-2. `deps.rs` rule: only `cox-plugin` depends on `extism`.
-3. Two queues: control first, then events (PL§4).
-4. Tests with inline WAT: an echo `cox_init`, an infinite loop, a `memory.grow` past the cap, a missing export.
-5. Before and after: record the release size with `scripts/footprint.sh` and a clean build with `cargo build --timings` in R§4.3.5 P25, then apply falsifier 1 of PL§12.
-Check: `wat_plugin_init_round_trips_json`, `runaway_call_is_cancelled_at_deadline`, `memory_cap_traps_not_panics`, `missing_optional_export_is_absent_not_error`, `http_request_is_compiled_out` (a WAT guest calling extism's `http_request` gets an error); R§4.3.5 P25 filled.
 
 #### T33.4 Discovery, package digest and `cox plugin list`
 

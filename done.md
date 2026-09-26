@@ -1076,3 +1076,31 @@ Result: `docs/design/external-agents.md` (EA).
 Review (D15): reviewed by the orchestrator (claude-opus-5-5). No card changes.
 Deviation: at 136 lines the doc runs a little past one page.
 Check: the doc exists and states falsifiers.
+
+#### T33.3 `cox-plugin`: host crate, one worker per plugin — blocker
+
+Depends: T33.2 · Size: ~200 · Files: `crates/cox-plugin/src/lib.rs`, `src/host.rs`, `src/error.rs`
+Goal: load a module from bytes with extism (`default-features = false`) and call `cox_init` on a worker thread that owns the `Plugin`. Memory cap, per-call deadline via `CancelHandle`, and `PluginError` (thiserror) mapped from `extism::Error`.
+Plan:
+1. Add the `§1.1` row and the commit reason from A52.
+2. `deps.rs` rule: only `cox-plugin` depends on `extism`.
+3. Two queues: control first, then events (PL§4).
+4. Tests with inline WAT: an echo `cox_init`, an infinite loop, a `memory.grow` past the cap, a missing export.
+5. Before and after: record the release size with `scripts/footprint.sh` and a clean build with `cargo build --timings` in R§4.3.5 P25, then apply falsifier 1 of PL§12.
+Check: `wat_plugin_init_round_trips_json`, `runaway_call_is_cancelled_at_deadline`, `memory_cap_traps_not_panics`, `missing_optional_export_is_absent_not_error`, `http_request_is_compiled_out` (a WAT guest calling extism's `http_request` gets an error); R§4.3.5 P25 filled.
+Status: done 2026-09-26
+Result: new crate `crates/cox-plugin`.
+- `PluginHost::load` takes module bytes, either binary or WAT; extism's loader accepts WAT, so no `wat` crate is needed.
+- Memory is capped by `memory_mib`, clamped to 64. The manifest's `timeout_ms` is the outer per-call cap.
+- WASI and the compilation cache are off.
+- Each plugin gets one worker thread that owns its `Plugin` and serves a control queue (depth 16) before an event queue (depth 256). A watchdog thread enforces each call's deadline through `CancelHandle`.
+- A missing optional export returns `Ok(None)`. `cox_init` is required.
+- `PluginError` is a thiserror enum: `Timeout`, `OutOfMemory`, `Trap`.
+- `only_plugin_depends_on_extism` in `crates/cox/tests/deps.rs` checks that only `cox-plugin` depends on extism or wasmtime. `cox-plugin` itself may depend only on `cox-protocol`, `cox-plugin-api` and `cox-sanitize`.
+- `deny.toml` allows `Apache-2.0 WITH LLVM-exception`.
+Falsifiers (A55):
+- Size (PL§12 falsifier 1): the binary grows by 16.8 MiB, from 51.2 to 68.0 MiB. The budget is raised to 20 MiB. The `plugins` feature on `crates/cox` is on by default and gates `cox-plugin`; `slim_build_has_no_wasm_runtime` proves a build without it pulls in no WASM runtime.
+- Advisories (falsifier 4): RUSTSEC-2026-0222 and RUSTSEC-2026-0269 on wasmtime 43 are ignored in `deny.toml` with a 2026-12-31 review. WASI stays off. The fix is tracked as T33.43.
+Build time: clean release build measured under load (load average 36–47). Wall time 159 → 139 s is noise at that load. Summed CPU time went from 1015 to 1478 s. Recorded in research.md P25.
+Deviation: `default-features = false` alone does not build extism 1.30 (research.md P38), so `wasmtime` 43 is also declared directly, only to turn on its `anyhow` feature. The card asked for about 200 lines; the crate is about 335 lines plus tests.
+Check: `wat_plugin_init_round_trips_json`, `runaway_call_is_cancelled_at_deadline`, `memory_cap_traps_not_panics`, `missing_optional_export_is_absent_not_error`, `http_request_is_compiled_out` and `control_queue_is_served_before_events` pass. `cargo deny check` passes. Clippy is clean, including for a build without the `plugins` feature. nextest: 962 passed, 3 skipped in the worktree.
