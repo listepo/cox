@@ -33,12 +33,12 @@ cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 # T30.25: `session.rs` resolves each provider's `Caps.max_context` from the
 # catalog before construction (the provider itself only takes `&Transport`).
 cox-models = { path = "../cox-models", version = "0.1.2" }
-# T0.3: config loading (figment layers default/user/project/env/flag),
-# `cox config set` (toml_edit, preserves comments), anyhow at the cox-crate
-# boundary (AGENTS.md: "anyhow only in crates/cox"), serde_json to build
-# the CLI-flag override layer and `--json` output.
-figment = { workspace = true }
-toml_edit = { workspace = true }
+# T32.16: config loading, guards, provenance and `cox config set` live in
+# cox-config (figment and toml_edit with them); this crate keeps the flag
+# layer built from `Cli` and the printing.
+cox-config = { path = "../cox-config", version = "0.1.2" }
+# anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
+# serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }
 # T0.7: the CLI boundary loads .env/.env.local before parsing flags.
 dotenvy = { workspace = true }
@@ -64,6 +64,11 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# T32.16: the shared env-var lock (`temp_env`) for env-mutating tests.
+cox-config = { path = "../cox-config", version = "0.1.2", features = ["test-util"] }
+# T12.3: `tests/docs.rs` walks `default.toml`'s keys (was a normal
+# dependency until T32.16 moved `cox config set` to cox-config).
+toml_edit = { workspace = true }
 # T6.1: `cox run -p` per output format against the real binary.
 assert_cmd = { workspace = true }
 predicates = { workspace = true }

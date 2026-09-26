@@ -784,6 +784,7 @@ dependencies = [
  "async-trait",
  "clap",
  "cox-acp",
+ "cox-config",
  "cox-core",
  "cox-ext",
  "cox-mcp",
@@ -796,7 +797,6 @@ dependencies = [
  "cox-tui",
  "crossterm",
  "dotenvy",
- "figment",
  "insta",
  "keyring",
  "opentelemetry",
@@ -833,6 +833,19 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "cox-config"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "figment",
+ "schemars 1.2.2",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "toml_edit 0.25.15+spec-1.1.0",
 ]
 
 [[package]]

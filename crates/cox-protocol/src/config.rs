@@ -1,8 +1,8 @@
 //! The `Config` struct tree that mirrors `config/default.toml` (plan.md
 //! §1.6) key for key. This crate has no logic beyond serde (see `lib.rs`),
 //! so all the figment layering, precedence, provenance tracking and the
-//! `cox config` subcommand live in `crates/cox/src/config_load.rs` and
-//! `crates/cox/src/config_cmd.rs`; what lives here is only the shape every
+//! `cox config` subcommand live in `crates/cox-config` (`load.rs` and
+//! `cmd.rs`, T32.16); what lives here is only the shape every
 //! layer deserializes into, plus the embedded default file those layers
 //! start from.
 //!
@@ -24,7 +24,7 @@ use crate::types::{
 };
 
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
-/// `crates/cox/src/config_load.rs` merges this beneath the user, project,
+/// `crates/cox-config/src/load.rs` merges this beneath the user, project,
 /// env and flag layers via `figment::providers::Toml::string`.
 pub const DEFAULT_CONFIG_TOML: &str = include_str!("../default.toml");
 

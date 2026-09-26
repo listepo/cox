@@ -24,6 +24,7 @@ COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against you
 | Crate | Owns |
 | --- | --- |
 | `crates/cox` | clap surface and dispatch — nothing else |
+| `crates/cox-config` | the one config owner: layering (default/user/project/Claude settings/env/flag via `figment`), the project-config guard list, provenance, `cox config set` (`toml_edit`) and the config-schema drift test (`docs/config.jsonschema`) — moved out of `crates/cox` (T32.16); depends only on `cox-protocol`. `crates/cox` keeps the clap flag layer, the Claude-settings reader and the printing, and re-exports the rest at the old `config_load`/`config_cmd` paths |
 | `crates/cox-protocol` | `Submission`, `Event`, `Item`, config and tool-schema types; every type that crosses a crate boundary |
 | `crates/cox-core` | the agent loop as a state machine: turns, context assembly, compaction, permission engine, hooks, model routing, budget. No I/O except through traits |
 | `crates/cox-permission` | the permission engine (`Engine`, `Outcome`, the rule grammar) — stripped out of `cox-core` (T32.8) because it is a pure trust guard; `cox-core` re-exports it at the old `permission` path |

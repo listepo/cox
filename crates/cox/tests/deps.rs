@@ -172,6 +172,19 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-permission"]
     );
 
+    // cox-config (T32.16), the one config owner, depends only on
+    // cox-protocol among workspace crates (`Config`, `CoreError`): the CLI
+    // flag layer and the `.claude/settings.json` import (cox-ext) are passed
+    // in by `crates/cox`.
+    let config_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-config"]
+            .iter()
+            .all(|d| config_allowed.contains(d.as_str())),
+        "cox-config may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-config"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in, and
     // on cox-permission, T32.8, re-exported at the old `permission` path).

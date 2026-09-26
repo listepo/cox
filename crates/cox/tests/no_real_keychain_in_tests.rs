@@ -123,7 +123,7 @@ fn matching_brace(masked: &str, open: usize) -> Option<usize> {
 /// code), otherwise the span of every `#[cfg(test)] mod <name> { .. }`
 /// block — the shape every test in this workspace follows (`AGENTS.md`
 /// Conventions). A `#[cfg(test)]` item that is not a `mod` (a rare env-lock
-/// helper, e.g. `config_load::ENV_LOCK`) is skipped rather than guessed at.
+/// helper, e.g. the `config_load::temp_env` re-export) is skipped rather than guessed at.
 fn test_regions(masked: &str, whole_file: bool) -> Vec<(usize, usize)> {
     if whole_file {
         return vec![(0, masked.len())];
