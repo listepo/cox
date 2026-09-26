@@ -70,6 +70,14 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `timeout_s` = `600` — higher than a remote section's 120: local prefill is slow (T30.23)
 - `max_retries` = `4`
 - `models` = `[{id="qwen3-coder", context_window=32768, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.lmstudio]`
+
+- `base_url` = `"http://localhost:1234"`
+- `api_key_env` = `"LM_API_TOKEN"` — else keyring entry "cox/lmstudio"; neither = no x-api-key header
+- `model` = `""` — usually left unset; pin via tiers.code.model / --tier code=<model>
+- `context_window` = `0` — 0 = ask the server (T30.16); until then falls back to the model catalog
+- `timeout_s` = `600` — local prefill is slow, same rationale as `local`
+- `max_retries` = `4`
 ## `[providers.typesafe]`
 
 - `base_url` = `"https://api.typesafe.ai"` — client appends /v1/systemone

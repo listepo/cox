@@ -360,6 +360,9 @@ pub struct ProvidersConfig {
     pub openai: OpenAiProviderConfig,
     /// `[providers.local]`
     pub local: LocalProviderConfig,
+    /// `[providers.lmstudio]` (T30.15): LM Studio's Anthropic-compatible
+    /// `/v1/messages`, through the Anthropic wire client.
+    pub lmstudio: LmStudioProviderConfig,
     /// `[providers.typesafe]` (Jev System One, type-1 native)
     pub typesafe: JevProviderConfig,
     /// Every other `[providers.<name>]` table: an OpenAI-compatible
@@ -378,6 +381,10 @@ impl ProvidersConfig {
             "anthropic" => &self.anthropic.models,
             "openai" => &self.openai.models,
             "local" => &self.local.models,
+            // LM Studio has no `models` list (T30.15): the running server
+            // names its own single model, so efforts pass through
+            // unclamped (empty means "any", `ProviderModel`'s doc).
+            "lmstudio" => &[],
             // Jev has one model family; the section default names it, and
             // the router pins it the same way it pins `local`'s.
             "typesafe" => &self.typesafe.models,
@@ -524,8 +531,7 @@ pub struct LocalProviderConfig {
     /// API base URL.
     pub base_url: String,
     /// Env var holding the API key; empty (the default) means no key —
-    /// most local servers need none. LM Studio's `LM_API_TOKEN` (T30.15)
-    /// is the first thing to set this to something non-empty.
+    /// most local servers need none.
     pub api_key_env: String,
     /// API shape; local servers are typically `"chat"`.
     pub api: String,
@@ -565,6 +571,54 @@ impl Default for LocalProviderConfig {
 }
 
 impl_transport!(LocalProviderConfig);
+
+/// `[providers.lmstudio]` (T30.15). A dedicated section rather than
+/// pointing `[providers.local]` at LM Studio: its native `/api/v1/chat`
+/// takes no custom tool schemas, and cox's OpenAI Chat path drops tool
+/// calls (`ideas.md`), so the chat loop instead runs over LM Studio's
+/// Anthropic-compatible `/v1/messages` through [`crate`]'s Anthropic wire
+/// client (R§4.3.2) — hence `api_key_env` and the header it feeds are
+/// Anthropic's `x-api-key`, not a bearer token.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct LmStudioProviderConfig {
+    /// API base URL; the client appends `/v1/messages`.
+    pub base_url: String,
+    /// Env var holding the API key; falls back to keyring entry
+    /// `cox/lmstudio` (never the Anthropic keyring entry, since this
+    /// resolves under its own section name). Neither present builds a
+    /// keyless client (no `x-api-key` header) — what LM Studio needs
+    /// unless "Require Authentication" is turned on.
+    pub api_key_env: String,
+    /// The model id LM Studio is serving. Usually left unset and pinned
+    /// instead through `tiers.code.model` / `--tier code=<model>`.
+    pub model: String,
+    /// Context window in tokens; `0` means "ask the server" (T30.16, not
+    /// yet implemented) — until then a `0` here falls back to the model
+    /// catalog, then a literal floor.
+    pub context_window: u32,
+    /// Request timeout, in seconds; higher than a remote section's
+    /// default for the same reason as `local` (slow on-device prefill).
+    pub timeout_s: u32,
+    /// Max retries for retryable errors.
+    pub max_retries: u32,
+}
+
+impl Default for LmStudioProviderConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "http://localhost:1234".to_string(),
+            api_key_env: "LM_API_TOKEN".to_string(),
+            model: String::new(),
+            context_window: 0,
+            // Same rationale as `LocalProviderConfig::default`.
+            timeout_s: 600,
+            max_retries: 4,
+        }
+    }
+}
+
+impl_transport!(LmStudioProviderConfig);
 
 /// `[providers.typesafe]` (TypeSafe Jev System One, type-1 native, T21.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -1226,6 +1280,15 @@ mod tests {
             }
         );
         assert_eq!(
+            cfg.providers.lmstudio.transport(),
+            Transport {
+                base_url: "http://localhost:1234".to_string(),
+                api_key_env: "LM_API_TOKEN".to_string(),
+                timeout_s: 600,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
             cfg.providers.typesafe.transport(),
             Transport {
                 base_url: "https://api.typesafe.ai".to_string(),
@@ -1257,9 +1320,23 @@ mod tests {
 
     #[test]
     fn local_provider_api_key_env_defaults_to_empty() {
-        // Empty means "no key" (most local servers need none); LM Studio's
-        // `LM_API_TOKEN` (T30.15) is the first thing to set it.
+        // Empty means "no key" — most local servers need none.
         assert_eq!(Config::default().providers.local.api_key_env, "");
+    }
+
+    /// T30.15: LM Studio's own section, unlike `local`, defaults its key
+    /// env var to something non-empty — the vendor's documented one —
+    /// since LM Studio does support turning "Require Authentication" on.
+    #[test]
+    fn lmstudio_provider_defaults() {
+        let l = Config::default().providers.lmstudio;
+        assert_eq!(l.base_url, "http://localhost:1234");
+        assert_eq!(l.api_key_env, "LM_API_TOKEN");
+        assert_eq!(l.context_window, 0, "0 means \"ask the server\" (T30.16)");
+        assert!(
+            l.model.is_empty(),
+            "pinned through tiers.code.model instead"
+        );
     }
 
     #[test]

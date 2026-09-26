@@ -93,6 +93,14 @@
           "max_retries": 4,
           "models": []
         },
+        "lmstudio": {
+          "base_url": "http://localhost:1234",
+          "api_key_env": "LM_API_TOKEN",
+          "model": "",
+          "context_window": 0,
+          "timeout_s": 600,
+          "max_retries": 4
+        },
         "typesafe": {
           "base_url": "https://api.typesafe.ai",
           "api_key_env": "TYPESAFE_API_KEY",
@@ -515,6 +523,18 @@
             "models": []
           }
         },
+        "lmstudio": {
+          "description": "`[providers.lmstudio]` (T30.15): LM Studio's Anthropic-compatible\n`/v1/messages`, through the Anthropic wire client.",
+          "$ref": "#/$defs/LmStudioProviderConfig",
+          "default": {
+            "base_url": "http://localhost:1234",
+            "api_key_env": "LM_API_TOKEN",
+            "model": "",
+            "context_window": 0,
+            "timeout_s": 600,
+            "max_retries": 4
+          }
+        },
         "typesafe": {
           "description": "`[providers.typesafe]` (Jev System One, type-1 native)",
           "$ref": "#/$defs/JevProviderConfig",
@@ -669,7 +689,7 @@
           "default": "http://localhost:11434/v1"
         },
         "api_key_env": {
-          "description": "Env var holding the API key; empty (the default) means no key —\nmost local servers need none. LM Studio's `LM_API_TOKEN` (T30.15)\nis the first thing to set this to something non-empty.",
+          "description": "Env var holding the API key; empty (the default) means no key —\nmost local servers need none.",
           "type": "string",
           "default": ""
         },
@@ -711,6 +731,49 @@
             "$ref": "#/$defs/ProviderModel"
           },
           "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "LmStudioProviderConfig": {
+      "description": "`[providers.lmstudio]` (T30.15). A dedicated section rather than\npointing `[providers.local]` at LM Studio: its native `/api/v1/chat`\ntakes no custom tool schemas, and cox's OpenAI Chat path drops tool\ncalls (`ideas.md`), so the chat loop instead runs over LM Studio's\nAnthropic-compatible `/v1/messages` through [`crate`]'s Anthropic wire\nclient (R§4.3.2) — hence `api_key_env` and the header it feeds are\nAnthropic's `x-api-key`, not a bearer token.",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL; the client appends `/v1/messages`.",
+          "type": "string",
+          "default": "http://localhost:1234"
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key; falls back to keyring entry\n`cox/lmstudio` (never the Anthropic keyring entry, since this\nresolves under its own section name). Neither present builds a\nkeyless client (no `x-api-key` header) — what LM Studio needs\nunless \"Require Authentication\" is turned on.",
+          "type": "string",
+          "default": "LM_API_TOKEN"
+        },
+        "model": {
+          "description": "The model id LM Studio is serving. Usually left unset and pinned\ninstead through `tiers.code.model` / `--tier code=<model>`.",
+          "type": "string",
+          "default": ""
+        },
+        "context_window": {
+          "description": "Context window in tokens; `0` means \"ask the server\" (T30.16, not\nyet implemented) — until then a `0` here falls back to the model\ncatalog, then a literal floor.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds; higher than a remote section's\ndefault for the same reason as `local` (slow on-device prefill).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 600
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
         }
       },
       "additionalProperties": false

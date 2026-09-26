@@ -67,8 +67,12 @@ impl CacheTtl {
 pub struct AnthropicProvider {
     /// `providers.anthropic.base_url`, without a trailing slash.
     pub base_url: String,
-    /// The resolved credential (see [`crate::http::resolve_key`]).
-    pub api_key: String,
+    /// The resolved credential (see [`crate::http::resolve_key`]), or
+    /// `None` for a keyless client (T30.15: LM Studio's `/v1/messages`
+    /// without "Require Authentication" needs no `x-api-key` at all — the
+    /// real Anthropic API always fails `Auth` before a `None` reaches
+    /// here, since [`Self::new`] requires a resolved key).
+    pub api_key: Option<String>,
     /// Sent as `anthropic-workspace-id` (see [`resolve_workspace_id`]).
     pub workspace_id: Option<String>,
     /// TTL written into every `cache_control` block.
@@ -93,14 +97,17 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     /// Builds a provider from `&Transport` (`providers.anthropic`, T30.23)
-    /// with an already-resolved credential. Prefer [`Self::new`] at session
-    /// startup; this stays for tests and any caller that already has a key
+    /// with an already-resolved credential, or `None` for a keyless client
+    /// (T30.15: LM Studio's `/v1/messages` without "Require
+    /// Authentication"). Prefer [`Self::new`] at session startup for the
+    /// real Anthropic API, which always needs a key; this stays for tests
+    /// and any caller that already resolved (or deliberately skipped) one
     /// (mirrors `JevProvider::with_key`) — `backend_for_with` in
     /// `crates/cox/src/session.rs` builds through this so a test can inject
     /// the lookup instead of ever reaching the real keyring (A49, T30.28).
     pub fn with_key(
         transport: &cox_protocol::config::Transport,
-        api_key: String,
+        api_key: Option<String>,
         ttl: CacheTtl,
         fallbacks: bool,
         max_context: u32,
@@ -136,7 +143,7 @@ impl AnthropicProvider {
         max_context: u32,
     ) -> Result<Self, ProviderError> {
         let api_key = crate::http::resolve_key(&transport.api_key_env, "anthropic")?;
-        Self::with_key(transport, api_key, ttl, fallbacks, max_context)
+        Self::with_key(transport, Some(api_key), ttl, fallbacks, max_context)
     }
 
     /// The headers every call carries. `anthropic-beta` is assembled from
@@ -150,8 +157,12 @@ impl AnthropicProvider {
             HeaderValue::from_static(ANTHROPIC_VERSION),
         );
         // An api key with non-ASCII bytes is a misconfigured credential, not
-        // a transport failure: report it as an auth problem.
-        h.insert("x-api-key", crate::http::api_key(&self.api_key)?);
+        // a transport failure: report it as an auth problem. `None` (T30.15:
+        // LM Studio without "Require Authentication") sends no header at
+        // all, rather than an empty one.
+        if let Some(key) = &self.api_key {
+            h.insert("x-api-key", crate::http::api_key(key)?);
+        }
         if let Some(id) = &self.workspace_id {
             // Same reasoning as the key: a bad id is a credential problem.
             let value = HeaderValue::from_str(id).map_err(|_| ProviderError::Auth)?;
@@ -325,7 +336,7 @@ mod tests {
     fn provider(fallbacks: bool) -> AnthropicProvider {
         AnthropicProvider {
             base_url: "https://api.anthropic.com".into(),
-            api_key: "sk-test".into(),
+            api_key: Some("sk-test".into()),
             workspace_id: None,
             ttl: CacheTtl::FiveMinutes,
             fallbacks,
@@ -433,7 +444,7 @@ mod tests {
         };
         let p = AnthropicProvider::new(&transport, CacheTtl::FiveMinutes, true, 200_000)
             .expect("builds with the renamed env var");
-        assert_eq!(p.api_key, "sk-renamed");
+        assert_eq!(p.api_key.as_deref(), Some("sk-renamed"));
         unsafe { std::env::remove_var("MY_RENAMED_ANTHROPIC_KEY") };
     }
 
@@ -561,6 +572,107 @@ mod tests {
         assert_eq!(got_usage.cache_read_tokens, 50);
         assert_eq!(got_usage.cache_write_tokens, 100);
         assert_eq!(got_usage.output_tokens, 24);
+    }
+
+    /// T30.15: `with_key(None, …)` — the LM Studio path when "Require
+    /// Authentication" is off — sends no `x-api-key` header at all. The
+    /// later-mounted mock only matches when `x-api-key` *is* sent and
+    /// answers 401, so the client wrongly sending it fails the test (same
+    /// shape as `openai::chat`'s `chat_over_http_ollama_shaped`). The
+    /// stream still parses the tool-call fixture end to end, proving the
+    /// wire and parsing are unchanged (no new wire types, plan.md T30.15).
+    #[tokio::test]
+    async fn stream_sends_no_x_api_key_header_without_a_key() {
+        let fixture = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/anthropic/one_tool_call.sse"),
+        )
+        .expect("fixture reads");
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/v1/messages"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_raw(fixture.clone(), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/v1/messages"))
+            .and(wiremock::matchers::header_exists("x-api-key"))
+            .respond_with(wiremock::ResponseTemplate::new(401).set_body_string("no auth wanted"))
+            .mount(&server)
+            .await;
+
+        let transport = cox_protocol::config::Transport {
+            base_url: server.uri(),
+            api_key_env: String::new(),
+            timeout_s: 30,
+            max_retries: 0,
+        };
+        let client =
+            AnthropicProvider::with_key(&transport, None, CacheTtl::FiveMinutes, false, 32_768)
+                .expect("builds keyless");
+
+        let (tx, mut rx) = mpsc::channel(64);
+        client
+            .stream(minimal_request(), tx, CancellationToken::new())
+            .await
+            .expect("keyless stream succeeds");
+        let events = drain_events(&mut rx).await;
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::ToolUseStart { .. }))
+        );
+    }
+
+    /// T30.15: a resolved key (LM Studio's `LM_API_TOKEN`, or Anthropic's
+    /// own) is sent as `x-api-key` — the same header LM Studio's
+    /// Anthropic-compatible path accepts (R§4.3.2).
+    #[tokio::test]
+    async fn stream_sends_x_api_key_header_with_a_key() {
+        let fixture = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/anthropic/one_tool_call.sse"),
+        )
+        .expect("fixture reads");
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/v1/messages"))
+            .and(wiremock::matchers::header("x-api-key", "lm-test-token"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_raw(fixture, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let transport = cox_protocol::config::Transport {
+            base_url: server.uri(),
+            api_key_env: String::new(),
+            timeout_s: 30,
+            max_retries: 0,
+        };
+        let client = AnthropicProvider::with_key(
+            &transport,
+            Some("lm-test-token".to_string()),
+            CacheTtl::FiveMinutes,
+            false,
+            32_768,
+        )
+        .expect("builds with a key");
+
+        let (tx, mut rx) = mpsc::channel(64);
+        client
+            .stream(minimal_request(), tx, CancellationToken::new())
+            .await
+            .expect("keyed stream succeeds");
+        let events = drain_events(&mut rx).await;
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::ToolUseStart { .. }))
+        );
     }
 
     /// T1.6: two 429s before any byte, then a 200 — the caller sees two

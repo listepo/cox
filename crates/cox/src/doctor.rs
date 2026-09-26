@@ -220,6 +220,9 @@ fn key_requirement(config: &cox_protocol::Config) -> KeyRequirement<'_> {
         "typesafe" => KeyRequirement::Key(section, p.typesafe.api_key_env.as_str(), true),
         "openai" => KeyRequirement::Key(section, p.openai.api_key_env.as_str(), false),
         "local" => KeyRequirement::None,
+        // T30.15: same optional-key shape as `openai` — LM Studio runs
+        // keyless unless "Require Authentication" is on.
+        "lmstudio" => KeyRequirement::Key(section, p.lmstudio.api_key_env.as_str(), false),
         _ => match p.custom.get(section) {
             Some(c) => KeyRequirement::Key(section, c.api_key_env.as_str(), false),
             None => KeyRequirement::UnknownProvider(section),
@@ -696,6 +699,12 @@ mod tests {
         );
         config.tiers.code.provider = "local".into();
         assert_eq!(key_requirement(&config), KeyRequirement::None);
+        config.tiers.code.provider = "lmstudio".into();
+        config.providers.lmstudio.api_key_env = "LM_API_TOKEN".into();
+        assert_eq!(
+            key_requirement(&config),
+            KeyRequirement::Key("lmstudio", "LM_API_TOKEN", false)
+        );
         config.tiers.code.provider = "deepseek".into();
         config.providers.custom.insert(
             "deepseek".into(),

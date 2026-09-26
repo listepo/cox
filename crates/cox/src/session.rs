@@ -887,9 +887,44 @@ fn backend_for_with(
                 .unwrap_or(200_000);
             Ok(Arc::new(AnthropicProvider::with_key(
                 &transport,
-                api_key,
+                Some(api_key),
                 ttl,
                 a.fallbacks,
+                max_context,
+            )?))
+        }
+        // T30.15: LM Studio's Anthropic-compatible `/v1/messages` goes
+        // through the same Anthropic wire client as the "anthropic" arm
+        // above — its native `/api/v1/chat` takes no custom tool schemas
+        // and cox's OpenAI Chat path drops tool calls (R§4.3.2), so
+        // Messages is the one working chat transport. The key resolves
+        // under this section's own name ("lmstudio"), so it never falls
+        // back to the Anthropic keyring entry; missing it builds keyless
+        // (T30.21 shape), which is what LM Studio needs unless "Require
+        // Authentication" is on.
+        "lmstudio" => {
+            let l = &config.providers.lmstudio;
+            let transport = l.transport();
+            let api_key = resolve(&transport.api_key_env, "lmstudio").ok();
+            // `context_window = 0` means "ask the server" (T30.16, not yet
+            // implemented); until then, the catalog, then the same literal
+            // floor `local` falls back to.
+            let max_context = if l.context_window > 0 {
+                l.context_window
+            } else {
+                catalog
+                    .get(&config.tiers.code.model)
+                    .and_then(|row| row.context_window)
+                    .unwrap_or(32_768)
+            };
+            Ok(Arc::new(AnthropicProvider::with_key(
+                &transport,
+                api_key,
+                CacheTtl::FiveMinutes,
+                // The `fallbacks: "default"` beta is Anthropic's own
+                // server-side model fallback; meaningless against LM
+                // Studio, so this arm never sends it.
+                false,
                 max_context,
             )?))
         }
@@ -1219,6 +1254,39 @@ mod tests {
         let p = provider_for_with(&local, fake_key)
             .expect("local goes through the same openai_shaped path as any compatible section");
         assert_eq!(p.id(), ProviderId::Local);
+    }
+
+    /// T30.15: `--provider lmstudio` builds through the Anthropic wire
+    /// client (R§4.3.2), keyed or keyless alike — the "no key" leg is what
+    /// `openai_shaped` already proves for the other families; this proves
+    /// the same `.ok()`-turns-missing-into-None shape holds for the
+    /// Anthropic-wire arm too. `AnthropicProvider::id()` always reports
+    /// `ProviderId::Anthropic` regardless of section (same "wire family,
+    /// not vendor" bucketing `local`/compatible sections already use for
+    /// `ProviderId::Local` — the model string disambiguates the ledger row).
+    #[test]
+    fn backend_for_lmstudio_builds_keyed_and_keyless() {
+        let mut cfg = Config::default();
+        cfg.tiers.code.provider = "lmstudio".into();
+        // A model id no built-in catalog row lists, unlike the Anthropic
+        // default `Config::default()` otherwise carries — realistic LM
+        // Studio usage (`--tier code=<local model>`), and it exercises the
+        // literal floor below rather than an accidental catalog hit.
+        cfg.tiers.code.model = "prism-ml/bonsai-27b".into();
+
+        let p = provider_for_with(&cfg, no_key).expect("builds keyless (no auth header)");
+        assert_eq!(p.id(), ProviderId::Anthropic);
+
+        fn fake_key(_: &str, _: &str) -> Result<String, cox_protocol::errors::ProviderError> {
+            Ok("lm-test-token".to_string())
+        }
+        let p = provider_for_with(&cfg, fake_key).expect("builds with a resolved key");
+        assert_eq!(p.id(), ProviderId::Anthropic);
+        assert_eq!(
+            p.capabilities().max_context,
+            32_768,
+            "the literal floor when context_window is 0 (T30.16 asks the server instead) and the catalog has no row for the configured model"
+        );
     }
 
     /// T30.25 check: a model configured with a 1M context window is

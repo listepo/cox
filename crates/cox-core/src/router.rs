@@ -107,6 +107,12 @@ impl Router {
             "anthropic" => ProviderId::Anthropic,
             "openai" => ProviderId::OpenAi,
             "local" => ProviderId::Local,
+            // T30.15: LM Studio's `/v1/messages` goes through the
+            // Anthropic wire client (`session::backend_for`), whose
+            // `Provider::id()` always reports `Anthropic` — matching that
+            // here keeps this route label and the live provider's id (the
+            // ledger row's `provider` field) in agreement.
+            "lmstudio" => ProviderId::Anthropic,
             // Jev is type-1 native (System One wire, T21.1): its own id so
             // the ledger row reads as a decision call, not an LLM turn.
             "typesafe" => ProviderId::Jev,
@@ -131,6 +137,11 @@ impl Router {
         // tier model rather than sending an empty id.
         let pinned = match tc.provider.as_str() {
             "local" => Some(config.providers.local.model.clone()),
+            // Same pin rule as `local`, but `lmstudio.model` is normally
+            // left empty (T30.15: pin through `tiers.code.model` /
+            // `--tier code=<model>` instead) — an empty pin falls through
+            // to `tc.model` below, same as an unset `local`/`typesafe` one.
+            "lmstudio" => Some(config.providers.lmstudio.model.clone()),
             // Same pin rule as `local`: a bare `tiers.<t>.provider =
             // "typesafe"` flip works without editing every tier model.
             "typesafe" => Some(config.providers.typesafe.model.clone()),
@@ -281,6 +292,28 @@ mod tests {
         let route = Router::pick(&cfg, Job::Compact, Tier::Code, &xhigh, true).expect("routes");
         let tier = cfg.jobs.tier_for(Job::Compact);
         assert_eq!(route.effort, cfg.tiers.get(tier).effort);
+    }
+
+    /// T30.15: a bare `tiers.code.provider = "lmstudio"` flip (no
+    /// `providers.lmstudio.model` set) routes on `tiers.code.model` alone
+    /// — the card's "Done when" — and reads as an Anthropic-wire call
+    /// (`session::backend_for`'s `lmstudio` arm builds an
+    /// `AnthropicProvider`), matching `Provider::id()`.
+    #[test]
+    fn router_lmstudio_maps_to_anthropic_and_pins_on_tier_model_alone() {
+        let mut cfg = Config::default();
+        cfg.tiers.code.provider = "lmstudio".into();
+        cfg.tiers.code.model = "prism-ml/bonsai-27b".into();
+        let route = Router::pick(&cfg, Job::Main, Tier::Code, &Overrides::default(), true)
+            .expect("lmstudio routes");
+        assert_eq!(route.provider, ProviderId::Anthropic);
+        assert_eq!(route.model.0, "prism-ml/bonsai-27b");
+
+        // A configured section model pins the same way `local`'s does.
+        cfg.providers.lmstudio.model = "qwen3-coder-local".into();
+        let route = Router::pick(&cfg, Job::Main, Tier::Code, &Overrides::default(), true)
+            .expect("lmstudio routes");
+        assert_eq!(route.model.0, "qwen3-coder-local");
     }
 
     #[test]
