@@ -11,6 +11,10 @@ cox-core = { path = "../cox-core", version = "0.1.2" }
 # Every rendered `Event::Task*` string goes through the shared sanitize guard
 # before it reaches the ACP client (T34.8); a pure leaf, no new external dep.
 cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+# The ACP client (T35.3) serves an external agent's `fs/*` requests through
+# the same `path::confine` guard and sandbox policy as every other path
+# (EA§4); a guard crate, no new external dep.
+cox-sandbox = { path = "../cox-sandbox", version = "0.1.2" }
 agent-client-protocol = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }

@@ -943,6 +943,7 @@ dependencies = [
  "cox-core",
  "cox-protocol",
  "cox-provider",
+ "cox-sandbox",
  "cox-sanitize",
  "serde_json",
  "tempfile",
