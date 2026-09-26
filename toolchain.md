@@ -72,7 +72,7 @@ Programs the project uses and the direct packages from its manifests.
 | predicates | local | https://crates.io/crates/predicates | Rust dependency |
 | pretty_assertions | local | https://crates.io/crates/pretty_assertions | Rust dependency |
 | proptest | local | https://crates.io/crates/proptest | Rust dependency |
-| pulldown-cmark | local | https://crates.io/crates/pulldown-cmark | T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine). |
+| pulldown-cmark | local | https://crates.io/crates/pulldown-cmark | T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine). Lives in `cox-render` (T32.2). |
 | ratatui | local | https://crates.io/crates/ratatui | cox-tui |
 | reqwest | local | https://crates.io/crates/reqwest | cox-provider |
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
@@ -86,9 +86,9 @@ Programs the project uses and the direct packages from its manifests.
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | shlex | local | https://crates.io/crates/shlex | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |
-| syntect | local | https://crates.io/crates/syntect | Rust dependency |
-| two-face | local | https://crates.io/crates/two-face | T24.3: extended syntax definitions |
-| terminal-colorsaurus | local | https://crates.io/crates/terminal-colorsaurus | T22.6: OSC 11 background colour query for `tui.theme = "auto"` |
+| syntect | local | https://crates.io/crates/syntect | Rust dependency Lives in `cox-render` (T32.2). |
+| two-face | local | https://crates.io/crates/two-face | T24.3: extended syntax definitions Lives in `cox-render` (T32.2). |
+| terminal-colorsaurus | local | https://crates.io/crates/terminal-colorsaurus | T22.6: OSC 11 background colour query for `tui.theme = "auto"` Lives in `cox-render` (T32.2). |
 | tempfile | local | https://crates.io/crates/tempfile | Rust dependency |
 | thiserror | local | https://crates.io/crates/thiserror | Error enums |
 | tiktoken-rs | local | https://crates.io/crates/tiktoken-rs | Rust dependency |

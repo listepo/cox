@@ -1182,6 +1182,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-render"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "cox-sanitize",
+ "pulldown-cmark",
+ "ratatui",
+ "similar 3.2.0",
+ "syntect",
+ "tempfile",
+ "terminal-colorsaurus",
+ "thiserror 2.0.20",
+ "toml_edit 0.25.15+spec-1.1.0",
+ "two-face",
+ "unicode-width",
+]
+
+[[package]]
 name = "cox-sandbox"
 version = "0.1.2"
 dependencies = [
@@ -1298,25 +1316,21 @@ dependencies = [
  "async-trait",
  "cox-core",
  "cox-protocol",
+ "cox-render",
  "cox-sanitize",
  "crossterm",
  "insta",
  "nucleo",
  "portable-pty",
- "pulldown-cmark",
  "ratatui",
  "rstest",
  "serde_json",
  "similar 3.2.0",
- "syntect",
- "tempfile",
- "terminal-colorsaurus",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "toml_edit 0.25.15+spec-1.1.0",
  "tui-textarea-2",
- "two-face",
  "unicode-width",
  "vt100",
 ]

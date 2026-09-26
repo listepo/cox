@@ -332,7 +332,7 @@ Raw `cox_http` to a paid API would bypass the ledger and the budget, and would n
 
 - `Widget = Text(Vec<Line>) | List { items, selected } | Table { header, rows, widths } | KeyValue(Vec<(Span, Vec<Span>)>) | Gauge { ratio, label } | Stack { vertical, children, sizes } | Block { title, child }`
 - `Span { text, style: StyleToken, bold, italic }`
-- `StyleToken` names the `Theme` fields (`crates/cox-tui/src/theme.rs:29-46`: `text`, `dim`, `accent`, `ok`, `warn`, `error`, `diff_add`, `diff_del`, `border`, `selection`, …). Plugins get no raw colours, so themes, `NO_COLOR` and colour downgrade keep working.
+- `StyleToken` names the `Theme` fields (`crates/cox-render/src/theme.rs:29-46`: `text`, `dim`, `accent`, `ok`, `warn`, `error`, `diff_add`, `diff_del`, `border`, `selection`, …). Plugins get no raw colours, so themes, `NO_COLOR` and colour downgrade keep working.
 - Limits: at most 512 nodes, depth 8 and 16 KiB of text per render. Anything over the limit becomes a one-line "plugin output too large".
 - The conversion to ratatui lives in `cox-tui` and runs every string through `cox_sanitize::sanitize_with` (`crates/cox-sanitize/src/lib.rs:27`), the same boundary as `cells::cell_lines` (`cells.rs:100-101`).
 

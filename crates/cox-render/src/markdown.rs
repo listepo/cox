@@ -13,7 +13,7 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use unicode_width::UnicodeWidthStr;
 
-use crate::cells::Look;
+use crate::Look;
 use crate::glyph::Glyphs;
 
 static SYNTAXES: LazyLock<syntect::parsing::SyntaxSet> =

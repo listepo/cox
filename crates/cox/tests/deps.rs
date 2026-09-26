@@ -98,6 +98,30 @@ fn only_store_depends_on_diesel() {
     }
 }
 
+/// T32.2 / `docs/design/crates.md` C2: the highlighting and markdown stack
+/// lives in `cox-render` alone, so an edit to the TUI's state machine never
+/// recompiles against it and no other crate grows a second renderer.
+#[test]
+fn only_render_depends_on_the_highlighters() {
+    let deps = all_deps();
+    for (crate_name, crate_deps) in &deps {
+        if crate_name == "cox-render" {
+            continue;
+        }
+        for heavy in [
+            "syntect",
+            "two-face",
+            "pulldown-cmark",
+            "terminal-colorsaurus",
+        ] {
+            assert!(
+                !crate_deps.contains(heavy),
+                "{crate_name} must not depend on {heavy}; only cox-render renders markdown and colour"
+            );
+        }
+    }
+}
+
 /// A52/plan.md §1.1: "only `cox-plugin` depends on extism", so no other
 /// crate links wasmtime. `wasmtime` itself is declared only to switch on its
 /// `anyhow` feature for extism (workspace `Cargo.toml`).
@@ -302,17 +326,30 @@ fn no_crate_below_cox_depends_on_core() {
     );
 
     // cox-tui and cox-acp may depend on cox-core, cox-protocol and
-    // cox-sanitize (T32.1's guard), nothing else.
+    // cox-sanitize (T32.1's guard), nothing else; cox-tui also on its
+    // renderers, cox-render (T32.2).
     let surface_allowed: HashSet<&str> = ["cox-core", "cox-protocol", "cox-sanitize"]
         .into_iter()
         .collect();
     for crate_name in ["cox-tui", "cox-acp"] {
         let d = &deps[crate_name];
         assert!(
-            d.iter().all(|dep| surface_allowed.contains(dep.as_str())),
-            "{crate_name} may only depend on cox-core/cox-protocol/cox-sanitize among workspace crates, found {d:?}"
+            d.iter().all(|dep| surface_allowed.contains(dep.as_str())
+                || (crate_name == "cox-tui" && dep == "cox-render")),
+            "{crate_name} may only depend on cox-core/cox-protocol/cox-sanitize (and cox-tui on cox-render) among workspace crates, found {d:?}"
         );
     }
+
+    // cox-render (T32.2) is pure rendering: the protocol's config types and
+    // the terminal-text guard, never the agent loop.
+    let render_allowed: HashSet<&str> = ["cox-protocol", "cox-sanitize"].into_iter().collect();
+    assert!(
+        deps["cox-render"]
+            .iter()
+            .all(|dep| render_allowed.contains(dep.as_str())),
+        "cox-render may only depend on cox-protocol/cox-sanitize among workspace crates, found {:?}",
+        deps["cox-render"]
+    );
 
     // cox-provider-http (T32.12) is a pure leaf shared by every wire
     // (http.rs/retry.rs/sse.rs): connection setup, credential resolution,

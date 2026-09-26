@@ -260,7 +260,14 @@ Findings:
 
   Any new crate needs a rule there. D1 (`plan.md:25`) fixes "ten in-tree crates".
 - **Shared packages.** `packages/`: only `packages/crates/file-backup` exists, and cox has no matching code to replace with it.
-- **Build time.** Not measured yet. The gain from moving heavy dependencies behind their own crates is expected, not shown. The first extraction card records `cargo build --timings` before and after.
+- **Build time (T32.2, C2 `cox-render`, measured 2026-09-26).** Setup: macOS arm64, 16 cores, `dev` profile, Rust 1.97.1, worktree on `main` at `855fe68`, default `-j`. Command: `cargo build -p cox-tui --timings`, run 5 times per row. "Clean" means `cargo clean -p cox-tui [-p cox-render]` first, with every other dependency already built. "Incremental" means `touch crates/cox-tui/src/state.rs` first. "Before" and "after" ran back to back on the same tree (the move stashed, then restored), at load average 12–15. Unit times come from the `--timings` report; figures are medians.
+
+  | Build | Before: `cox-tui` unit | After: `cox-tui` unit | After: `cox-render` unit | Wall before → after |
+  | --- | --- | --- | --- | --- |
+  | clean | 1.25 s | 0.98 s | 0.50 s | 2.19 s → 2.20 s |
+  | incremental, `state.rs` touched | 0.42 s (0.40–0.43) | 0.39 s (0.37–0.39) | 0 (not rebuilt) | 1.40 s → 1.34 s |
+
+  **Result.** The split gains about 0.03 s of `cox-tui` compile time per `state.rs` edit (about −7 % of the unit, about −4 % of wall time). The ranges do not overlap, so the gain is real, but it is negligible. Explanation: dependency rule (a) moves heavy *dependencies*, and cargo never rebuilds those on an edit either way. Incremental compilation already skipped most of the moved 2.6k lines. The clean total grows by about 0.2 CPU-s (1.25 s → 0.98 s + 0.50 s), with no wall-time change because the two units overlap. So rule (a) buys almost nothing for edit-compile time. What remains is the dependency guard (`deps.rs` `only_render_depends_on_the_highlighters`) and letting a surface render without the TUI. A first unloaded run on the same day (load 28–36) gave the same picture: 0.41–0.47 s before, 0.35–0.39 s after.
 
 ### 4.3.5 WASM plugin host: extism and the precedents (A52, `docs/design/plugins.md`, checked 2026-09-26)
 

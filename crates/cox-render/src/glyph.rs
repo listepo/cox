@@ -9,7 +9,7 @@ use cox_protocol::config::TuiConfig;
 use cox_protocol::types::PermissionMode;
 use unicode_width::UnicodeWidthStr;
 
-use crate::text;
+use cox_sanitize as text;
 
 /// One set. `Copy` because `Look` carries it into every cell render; an
 /// override leaks its string, which is what a process-lifetime config value

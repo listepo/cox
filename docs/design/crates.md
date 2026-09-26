@@ -84,3 +84,5 @@ Order:
 ## Falsifier
 
 If C2's `--timings` shows no incremental-build gain on a `state.rs` edit, rule (a) is weaker than assumed. Re-rank the remaining (a)-only cards (C5, C7, C9, C10) before doing them.
+
+**Outcome (T32.2, 2026-09-26; numbers in `research.md` §4.3.4).** The gain on a `state.rs` edit is real but negligible: the `cox-tui` unit goes from 0.42 s to 0.39 s, and wall time from 1.40 s to 1.34 s. The falsifier fires in substance: rule (a) is weaker than assumed, because the heavy dependencies were never rebuilt on an edit anyway. The re-rank it asks for is moot, since C5, C7, C9 and C10 had already landed before C2 ran. Keep rule (a) only where a split also serves (b), a guard, or (d), reuse by a crate that must not pull in the rest, as C2 does: a surface can render without the TUI, and `deps.rs` pins the highlighters to one crate.

@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use similar::{ChangeTag, TextDiff};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::cells::Look;
+use crate::Look;
 use crate::markdown;
 
 /// Below this many columns a pane is too narrow to read a line of code, so
