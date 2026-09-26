@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use cox_protocol::errors::{CoreError, ProviderError};
+use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, ItemId, TurnId};
 use cox_protocol::types::{Event, ItemKind, Level, Risk, StopReason, ToolCall, ToolResult};
 use serde_json::Value;
@@ -28,6 +28,9 @@ const QUOTE_CHARS: usize = 200;
 /// Maps one external agent run's stream-json lines onto cox events.
 pub struct StreamJsonMapper {
     turn: TurnId,
+    /// The external agent's name (its plugin/preset id), reported on
+    /// `CoreError::ExternalAgent` (A58, T35.12).
+    agent: String,
     sanitize: fn(&str) -> String,
     /// Open calls by the CLI's `call_id`, so `completed` closes the item
     /// `started` opened.
@@ -35,11 +38,13 @@ pub struct StreamJsonMapper {
 }
 
 impl StreamJsonMapper {
-    /// A mapper for the run behind `turn`; `sanitize` is the terminal-text
-    /// guard (`cox_sanitize::sanitize`).
-    pub fn new(turn: TurnId, sanitize: fn(&str) -> String) -> Self {
+    /// A mapper for the run behind `turn`, driven by the named external
+    /// `agent`; `sanitize` is the terminal-text guard
+    /// (`cox_sanitize::sanitize`).
+    pub fn new(turn: TurnId, agent: impl Into<String>, sanitize: fn(&str) -> String) -> Self {
         Self {
             turn,
+            agent: agent.into(),
             sanitize,
             open: HashMap::new(),
         }
@@ -154,12 +159,14 @@ impl StreamJsonMapper {
             }]);
         }
         let message = (self.sanitize)(v["result"].as_str().unwrap_or("no detail"));
-        // The external agent stands where the child's provider would, so its
-        // failure is shaped as one; the native loop ends the turn after it.
+        // A dedicated variant (A58): the external agent stands for a whole
+        // child session, not cox's own provider call, so its failure must
+        // never be classified or retried as one.
         Some(vec![
             Event::Error {
-                error: CoreError::Provider {
-                    error: ProviderError::BadRequest { message },
+                error: CoreError::ExternalAgent {
+                    agent: self.agent.clone(),
+                    message,
                 },
                 fatal: false,
             },
@@ -227,7 +234,7 @@ mod tests {
     }
 
     fn mapper() -> StreamJsonMapper {
-        StreamJsonMapper::new(TurnId::new(), strip_controls)
+        StreamJsonMapper::new(TurnId::new(), "cursor", strip_controls)
     }
 
     #[test]
@@ -306,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn result_line_ends_the_turn_and_an_error_result_reports_it_first() {
+    fn stream_json_error_result_is_an_external_agent_error() {
         let mut m = mapper();
         let turn = m.turn;
         assert!(m.map_line(r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hi"}]},"session_id":"s1"}"#).is_empty());
@@ -319,15 +326,46 @@ mod tests {
             }]
         );
         let failed = m.map_line(r#"{"type":"result","subtype":"success","duration_ms":5,"duration_api_ms":4,"is_error":true,"result":"quota","session_id":"s1"}"#);
-        assert!(matches!(
-            &failed[..],
+        // A58: a dedicated variant, not `CoreError::Provider(BadRequest)` —
+        // the external agent's failure must be named as its own, not the
+        // model provider's.
+        assert_eq!(
+            failed,
             [
-                Event::Error { fatal: false, .. },
+                Event::Error {
+                    error: CoreError::ExternalAgent {
+                        agent: "cursor".into(),
+                        message: "quota".into(),
+                    },
+                    fatal: false,
+                },
                 Event::TurnDone {
+                    turn,
                     stop: StopReason::Error,
-                    ..
                 }
             ]
-        ));
+        );
+    }
+
+    #[test]
+    fn external_agent_error_is_not_retried_as_a_provider_error() {
+        // `cox_provider::retry::retryable` (re-exported from
+        // `cox-provider-http`) is the one classifier every provider backend
+        // consults before another attempt (plan.md §1.14); its parameter
+        // type is `&ProviderError`. No call site converts a `CoreError` to a
+        // `ProviderError`, so an external agent's failure cannot reach that
+        // classifier at all — the guard is the type system, not a runtime
+        // check. This test pins the concrete half of that guarantee: the
+        // mapped error is `CoreError::ExternalAgent`, never
+        // `CoreError::Provider`, so it can never be unwrapped into the
+        // `ProviderError` `retryable` needs.
+        let _: fn(&cox_protocol::errors::ProviderError) -> bool = cox_provider::retry::retryable;
+        let mut m = mapper();
+        let failed = m.map_line(r#"{"type":"result","subtype":"success","duration_ms":5,"duration_api_ms":4,"is_error":true,"result":"quota","session_id":"s1"}"#);
+        let Event::Error { error, .. } = &failed[0] else {
+            panic!("{failed:?}");
+        };
+        assert!(matches!(error, CoreError::ExternalAgent { .. }));
+        assert!(!matches!(error, CoreError::Provider { .. }));
     }
 }

@@ -1730,6 +1730,29 @@
               "type",
               "why"
             ]
+          },
+          {
+            "description": "An external agent process (EA§5, e.g. a plugin-driven CLI like\nCursor's) reported its own run as failed. Distinct from `Provider`\n(A58): the external agent stands in for a whole child session, not\ncox's own model call, so its failure must never be classified or\nretried as one — `cox-provider-http::retry::retryable` only ever\ntakes a `ProviderError`, which this variant never becomes.",
+            "type": "object",
+            "properties": {
+              "agent": {
+                "description": "The external agent's name (its plugin/preset id).",
+                "type": "string"
+              },
+              "message": {
+                "description": "The agent's own error text, already sanitized by the caller.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "external_agent"
+              }
+            },
+            "required": [
+              "type",
+              "agent",
+              "message"
+            ]
           }
         ]
       },

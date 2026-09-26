@@ -191,6 +191,19 @@ pub enum CoreError {
         /// Human-readable reason.
         why: String,
     },
+    /// An external agent process (EA§5, e.g. a plugin-driven CLI like
+    /// Cursor's) reported its own run as failed. Distinct from `Provider`
+    /// (A58): the external agent stands in for a whole child session, not
+    /// cox's own model call, so its failure must never be classified or
+    /// retried as one — `cox-provider-http::retry::retryable` only ever
+    /// takes a `ProviderError`, which this variant never becomes.
+    #[error("external agent {agent} failed: {message}")]
+    ExternalAgent {
+        /// The external agent's name (its plugin/preset id).
+        agent: String,
+        /// The agent's own error text, already sanitized by the caller.
+        message: String,
+    },
 }
 
 /// Failures from `cox-store`.
