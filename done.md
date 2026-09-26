@@ -1637,3 +1637,46 @@ Check:
 - `acp_client_relays_request_permission_through_the_engine`, `acp_client_fs_request_is_confined_to_the_workspace` and `acp_client_terminal_request_without_sandbox_grant_is_refused` pass. `cox-acp`: 7 passed.
 - fmt, clippy and the slim build are clean in the worktree. The full nextest run did not finish there because the disk filled up (ENOSPC); the full run is on main after landing.
 - On main after landing (with T33.6, T33.16, T35.4, T35.3): nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean.
+
+#### T33.40.2 Jev guest crate: the System One wire
+
+Depends: T33.27 · Size: ~190 · Files: `plugins/jev/src/lib.rs`, `plugins/jev/src/wire.rs`, `plugins/Cargo.toml` (member; `plugins/jev/Cargo.toml` and `plugins/jev/plugin.toml` are manifests)
+Goal: the typed wire, pure and tested on the host target:
+- `SystemOneRequest { state: Value, model, questions: BTreeMap<String, Question> }`, where `Question` is `Choice { instructions, criteria }`, `Score { instructions, levels }` or `Noul { instructions, criteria? }`;
+- `Answer`, and `parse` returning a typed error with no default guessed.
+
+It is ported from `crates/cox-provider/src/jev.rs` with two fixes:
+- a Noul's certainty is `|2p − 1|`, not `p`, because the API returns no Noul confidence (J11);
+- state plus the longest question is capped at 32k estimated tokens (J6).
+
+The manifest declares `id = "jev"` and `[[provider]] name = "typesafe", api = "plugin"`. `decide`, `context` and `[[models]]` (`jev-1.13.0`, `jev-latest`, `context_window = 64000`, price 0.042/0.0) are added by later cards.
+Plan: the extism-pdk glue sits behind `cfg(target_arch = "wasm32")`, so the pure modules test on the host. Port the six `jev.rs` tests with the documented bodies (J1, J2). A `just plugin-test` recipe runs the crate's tests, and the `plugins` CI job runs it.
+Check: `cargo test --manifest-path plugins/Cargo.toml -p cox-plugin-jev`, with these tests:
+- `choice_answer_parses_with_probabilities`;
+- `score_answer_parses_with_legend`;
+- `noul_certainty_is_distance_from_half`;
+- `missing_answers_is_an_error_not_a_guess`;
+- `unknown_answer_kind_is_an_error`;
+- `state_over_32k_tokens_is_truncated_with_marker`;
+- `manifest_validates` (through `cox-plugin-api`'s parser).
+
+`cargo build … --target wasm32-unknown-unknown` succeeds.
+Status: done 2026-09-26
+Result: `plugins/jev` (`cox-plugin-jev`, cdylib + rlib) is a member of the guest workspace.
+- **`src/wire.rs`** is the pure System One wire, ported from `crates/cox-provider/src/jev.rs`: `SystemOneRequest`, `Question` (`Choice`, `Score`, `Noul`), `Answer`, and `parse(body) -> Result<BTreeMap<String, Answer>, WireError>`.
+  - A Noul's certainty is `|2p − 1|` (J11).
+  - `SystemOneRequest::new` keeps state plus the longest question within 32k estimated tokens (J6). It truncates only the state, at a char boundary, and adds a marker; a question is never cut.
+  - Missing or empty `answers` is an error, never an empty map.
+- **`src/lib.rs`:** the extism glue sits behind `cfg(target_arch = "wasm32")`, so the pure module tests on the host.
+- **`plugin.toml`:** `id = "jev"` and `[[provider]] name = "typesafe", api = "plugin"`.
+- **`just plugin-test`** runs the guest workspace tests.
+- **CI:** a new `plugins` job runs the guest tests and the wasm32 build, and is added to `revert-on-failure`'s `needs`.
+Deviations:
+- figment is a dev-dependency here, only for `manifest_validates`. It is already in `toolchain.md`, used by cox-config.
+- One extra test: `state_under_cap_is_untouched`.
+Check:
+- `cargo test --manifest-path plugins/Cargo.toml -p cox-plugin-jev`: 8 passed. That covers the card's seven tests: `choice_answer_parses_with_probabilities`, `score_answer_parses_with_legend`, `noul_certainty_is_distance_from_half`, `missing_answers_is_an_error_not_a_guess`, `unknown_answer_kind_is_an_error`, `state_over_32k_tokens_is_truncated_with_marker` and `manifest_validates`.
+- The wasm32 build succeeds.
+- The guest workspace's fmt and clippy are clean on the host and on wasm32.
+- Root workspace in the worktree: fmt and clippy are clean; nextest 1037 passed, 3 skipped. Two PTY/MCP e2e tests failed under load and passed on the rerun.
+- On main after landing: nextest 1055 passed, 3 skipped. fmt, clippy and the slim build are clean; the guest workspace tests and the jev wasm32 build pass.

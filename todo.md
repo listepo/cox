@@ -31,7 +31,6 @@
 - T33.38. Dart: MCP-server plugin template and example
 - T33.39. `cox doctor` and `cox ext` plugin reporting
 - T33.40.1. ABI: two-phase decide, own-provider call-out, batched questions
-- T33.40.2. Jev guest crate: the System One wire
 - T33.40.3. Jev provider export
 - T33.40.4. Jev plugin as a provider, end to end and offline
 - T33.40.5. Parity: the `typesafe` table configures the plugin's section

@@ -37,7 +37,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.38 | todo | P2 | 3 | 0% | |
 | T33.39 | todo | P2 | 3 | 0% | |
 | T33.40.1 | todo | P1 | 5 | 0% | |
-| T33.40.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.40.3 | todo | P2 | 4 | 0% | |
 | T33.40.4 | todo | P2 | 4 | 0% | |
 | T33.40.5 | todo | P2 | 3 | 0% | |
@@ -1003,30 +1002,6 @@ Check:
 - `batched_question_answers_each_item`;
 - `abi_schema_matches_committed_file`;
 - invariant 8 `every_request_has_a_usage_row` still green.
-
-#### T33.40.2 Jev guest crate: the System One wire
-
-Depends: T33.27 · Size: ~190 · Files: `plugins/jev/src/lib.rs`, `plugins/jev/src/wire.rs`, `plugins/Cargo.toml` (member; `plugins/jev/Cargo.toml` and `plugins/jev/plugin.toml` are manifests)
-Goal: the typed wire, pure and tested on the host target:
-- `SystemOneRequest { state: Value, model, questions: BTreeMap<String, Question> }`, where `Question` is `Choice { instructions, criteria }`, `Score { instructions, levels }` or `Noul { instructions, criteria? }`;
-- `Answer`, and `parse` returning a typed error with no default guessed.
-
-It is ported from `crates/cox-provider/src/jev.rs` with two fixes:
-- a Noul's certainty is `|2p − 1|`, not `p`, because the API returns no Noul confidence (J11);
-- state plus the longest question is capped at 32k estimated tokens (J6).
-
-The manifest declares `id = "jev"` and `[[provider]] name = "typesafe", api = "plugin"`. `decide`, `context` and `[[models]]` (`jev-1.13.0`, `jev-latest`, `context_window = 64000`, price 0.042/0.0) are added by later cards.
-Plan: the extism-pdk glue sits behind `cfg(target_arch = "wasm32")`, so the pure modules test on the host. Port the six `jev.rs` tests with the documented bodies (J1, J2). A `just plugin-test` recipe runs the crate's tests, and the `plugins` CI job runs it.
-Check: `cargo test --manifest-path plugins/Cargo.toml -p cox-plugin-jev`, with these tests:
-- `choice_answer_parses_with_probabilities`;
-- `score_answer_parses_with_legend`;
-- `noul_certainty_is_distance_from_half`;
-- `missing_answers_is_an_error_not_a_guess`;
-- `unknown_answer_kind_is_an_error`;
-- `state_over_32k_tokens_is_truncated_with_marker`;
-- `manifest_validates` (through `cox-plugin-api`'s parser).
-
-`cargo build … --target wasm32-unknown-unknown` succeeds.
 
 #### T33.40.3 Jev provider export
 
