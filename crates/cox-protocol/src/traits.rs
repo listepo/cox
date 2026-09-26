@@ -538,6 +538,23 @@ pub trait ModelCaller: Send + Sync {
     ) -> Result<Vec<crate::types::ProviderEvent>, crate::errors::CoreError>;
 }
 
+/// A plugin's `cox_invoke_tool` (PL§4, T33.13): one tool call run the way a
+/// model's is — `PreToolUse`, `Engine::decide`, the sandbox, the archive —
+/// with its approval prompt naming the plugin. A trait for the same reason
+/// as `ModelCaller`: `cox-plugin` may not depend on `cox-core`.
+#[async_trait]
+pub trait ToolInvoker: Send + Sync {
+    /// Runs tool `name` with `input` for plugin `id`. A denial, a hook's
+    /// block or an unknown tool is an `Ok` result with `ok: false`, as the
+    /// model would see it; `Err` means the session itself failed.
+    async fn invoke(
+        &self,
+        id: &str,
+        name: &str,
+        input: Value,
+    ) -> Result<crate::types::ToolResult, crate::errors::CoreError>;
+}
+
 /// A decision plugin's answers to the core's typed questions (PL§4
 /// "Decision points", T33.20): `cox-plugin`'s `PluginAdvisor` calls the
 /// guest's `cox_decide`. Not a `Hook`, on purpose — a hook's `Modify` has no
@@ -577,5 +594,6 @@ mod tests {
         assert_object_safe::<dyn ExternalAgent>();
         assert_object_safe::<dyn EventTap>();
         assert_object_safe::<dyn ModelCaller>();
+        assert_object_safe::<dyn ToolInvoker>();
     }
 }

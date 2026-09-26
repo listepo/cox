@@ -14,8 +14,9 @@ use cox_protocol::PluginStore;
 use cox_protocol::config::PluginsConfig;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{Advisor, EventTap, Hook, ModelCaller, Tool};
-use cox_protocol::types::{Event, Level, ProviderEvent, Request, Tier};
+use cox_protocol::traits::{Advisor, EventTap, Hook, ModelCaller, Tool, ToolInvoker};
+use cox_protocol::types::{Event, Level, ProviderEvent, Request, Tier, ToolResult};
+use serde_json::Value;
 
 use crate::PluginError;
 use crate::advisor::PluginAdvisor;
@@ -144,12 +145,31 @@ fn slot_capability(slot: Slot) -> &'static str {
     }
 }
 
-/// The session as `cox_model_call`'s `ModelCaller` (T33.15), bound after
-/// load: a plugin's `HostEnv` is built when it is compiled, before the
-/// session exists. Only a `Weak` is kept, so no strong edge runs from a
-/// plugin back to the session that owns it (session → tap → host → env).
-#[derive(Default)]
-struct LateCaller(OnceLock<Weak<dyn ModelCaller>>);
+/// The session as `cox_model_call`'s `ModelCaller` (T33.15) or
+/// `cox_invoke_tool`'s `ToolInvoker` (T33.13), bound after load: a
+/// plugin's `HostEnv` is built when it is compiled, before the session
+/// exists. Only a `Weak` is kept, so no strong edge runs from a plugin back
+/// to the session that owns it (session → tap → host → env).
+struct Late<T: ?Sized>(OnceLock<Weak<T>>);
+
+type LateCaller = Late<dyn ModelCaller>;
+
+impl<T: ?Sized> Default for Late<T> {
+    fn default() -> Self {
+        Self(OnceLock::new())
+    }
+}
+
+impl<T: ?Sized> Late<T> {
+    fn session(&self, what: &str) -> Result<Arc<T>, CoreError> {
+        self.0
+            .get()
+            .and_then(Weak::upgrade)
+            .ok_or_else(|| CoreError::Denied {
+                why: format!("no session is serving {what}"),
+            })
+    }
+}
 
 #[async_trait]
 impl ModelCaller for LateCaller {
@@ -159,12 +179,14 @@ impl ModelCaller for LateCaller {
         tier: Tier,
         request: Request,
     ) -> Result<Vec<ProviderEvent>, CoreError> {
-        match self.0.get().and_then(Weak::upgrade) {
-            Some(session) => session.call(id, tier, request).await,
-            None => Err(CoreError::Denied {
-                why: "no session is serving model calls".into(),
-            }),
-        }
+        self.session("model calls")?.call(id, tier, request).await
+    }
+}
+
+#[async_trait]
+impl ToolInvoker for Late<dyn ToolInvoker> {
+    async fn invoke(&self, id: &str, name: &str, input: Value) -> Result<ToolResult, CoreError> {
+        self.session("tool calls")?.invoke(id, name, input).await
     }
 }
 
@@ -173,6 +195,7 @@ impl ModelCaller for LateCaller {
 pub struct LivePlugins {
     context: Arc<Context>,
     caller: Arc<LateCaller>,
+    invoker: Arc<Late<dyn ToolInvoker>>,
     plugins: Vec<Live>,
 }
 
@@ -194,9 +217,15 @@ impl LivePlugins {
         let _ = self.caller.0.set(Arc::downgrade(caller));
     }
 
+    /// Makes `invoker` (the session) the one `cox_invoke_tool` reaches,
+    /// held weakly like the model caller. A second bind is ignored.
+    pub fn bind_tool_invoker(&self, invoker: &Arc<dyn ToolInvoker>) {
+        let _ = self.invoker.0.set(Arc::downgrade(invoker));
+    }
+
     /// Compiles a plugin `grant::check` found `Granted`, with its host
     /// functions bound to that grant, the kv store, the shared context and,
-    /// inside a tokio runtime, the late-bound model caller.
+    /// inside a tokio runtime, the late-bound model caller and tool invoker.
     pub fn load(
         &mut self,
         manifest: &PluginManifest,
@@ -210,7 +239,9 @@ impl LivePlugins {
         // The plugin's worker blocks on this handle to run the call, since
         // it is not a runtime thread itself (`hostfn`).
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            env = env.with_model_caller(self.caller.clone(), runtime);
+            env = env
+                .with_model_caller(self.caller.clone(), runtime.clone())
+                .with_tool_invoker(self.invoker.clone(), runtime);
         }
         let env = Arc::new(env);
         let host = PluginHost::load_with(wasm, &manifest.limits, env.clone())?;

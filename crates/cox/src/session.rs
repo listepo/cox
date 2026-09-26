@@ -473,10 +473,14 @@ fn start_plugins(
     ui: Option<PluginUi>,
 ) -> Started {
     let mut notices = Vec::new();
-    // T33.15: plugins reach the session's router only through a `Weak`;
-    // the notice task below holds the one strong handle.
-    let caller: Arc<dyn cox_protocol::traits::ModelCaller> = Arc::new(session.clone());
+    // T33.15, T33.13: plugins reach the session's router and tool path only
+    // through a `Weak`; the notice task below holds the one strong handle,
+    // which both coerce from, so both stay reachable while it lives.
+    let strong = Arc::new(session.clone());
+    let caller: Arc<dyn cox_protocol::traits::ModelCaller> = strong.clone();
+    let invoker: Arc<dyn cox_protocol::traits::ToolInvoker> = strong;
     live.bind_model_caller(&caller);
+    live.bind_tool_invoker(&invoker);
     if !live.plugins().is_empty() {
         let started = live.start(config, session.id(), cwd);
         notices.extend(started.into_iter().map(|w| (Level::Warn, w)));

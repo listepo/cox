@@ -15,12 +15,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use cox_plugin_api::{
-    AbiError, InitIn, ModelCall, ModelTier, NoticeLevel, PluginManifest, SessionInfo,
+    AbiError, InitIn, ModelCall, ModelTier, NoticeLevel, PluginManifest, SessionInfo, ToolCallIn,
 };
 use cox_protocol::config::PluginsConfig;
 use cox_protocol::errors::CoreError;
-use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT, ModelCaller};
-use cox_protocol::types::{Level, Request, Tier};
+use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT, ModelCaller, ToolInvoker};
+use cox_protocol::types::{Level, Request, Tier, ToolOutput};
 use cox_protocol::{PluginStore, StoreError};
 use cox_sanitize::redact::scrub;
 use cox_sanitize::sanitize;
@@ -112,6 +112,9 @@ pub struct HostEnv {
     model_caller: Option<Arc<dyn ModelCaller>>,
     runtime: Option<tokio::runtime::Handle>,
     tool: Mutex<Option<ToolSlot>>,
+    // T33.13: `cox_invoke_tool`'s route to the session's tool path, run on
+    // `runtime` like `model_caller`.
+    tool_invoker: Option<Arc<dyn ToolInvoker>>,
 }
 
 /// The running `cox_tool_call`'s end of its `ToolCx` (T33.12): where
@@ -137,6 +140,7 @@ impl HostEnv {
             model_caller: None,
             runtime: None,
             tool: Mutex::new(None),
+            tool_invoker: None,
         }
     }
 
@@ -163,6 +167,18 @@ impl HostEnv {
         runtime: tokio::runtime::Handle,
     ) -> Self {
         self.model_caller = Some(caller);
+        self.runtime = Some(runtime);
+        self
+    }
+
+    /// The seam `cox_invoke_tool` routes through (T33.13), on the same
+    /// runtime `cox_model_call` blocks on; without it, `Failed`.
+    pub fn with_tool_invoker(
+        mut self,
+        invoker: Arc<dyn ToolInvoker>,
+        runtime: tokio::runtime::Handle,
+    ) -> Self {
+        self.tool_invoker = Some(invoker);
         self.runtime = Some(runtime);
         self
     }
@@ -291,6 +307,7 @@ impl HostEnv {
                 Ok(self.context.snapshot())
             }
             "cox_model_call" => self.model_call(arg),
+            "cox_invoke_tool" => self.invoke_tool(arg),
             "cox_output" => {
                 self.in_tool_call()?;
                 let line: String = parse(arg)?;
@@ -397,6 +414,42 @@ impl HostEnv {
             .block_on(caller.call(&self.id, tier, request))
             .map_err(model_call_error)?;
         serde_json::to_value(events).map_err(|e| failed(&e.to_string()))
+    }
+
+    /// `cox_invoke_tool` (PL§4, T33.13): a granted tool, run by the session
+    /// on the model's own path (`PreToolUse`, `Engine::decide`, sandbox,
+    /// archive) while this plugin's one worker blocks on it. So nothing on
+    /// that path may need this plugin again: the loop waits on `cox_hook`,
+    /// `cox_decide` and `cox_provider_stream`, `cox_render` may only read,
+    /// and the plugin's own tools and hooks would queue behind this call.
+    fn invoke_tool(&self, arg: Value) -> Result<Value, AbiError> {
+        match lock(&self.export).as_str() {
+            "cox_on_event" | "cox_command" | "cox_key" | crate::tool::EXPORT => {}
+            _ => return Err(AbiError::NotInThisContext),
+        }
+        let ToolCallIn { name, input } = parse(arg)?;
+        self.require(&format!("invoke:{name}"))?;
+        if name.starts_with(&crate::tool::qualified(&self.id, "")) {
+            return Err(failed("a plugin cannot invoke its own tool"));
+        }
+        // Which hooks a call fires depends on the tool (`agent` runs a
+        // whole turn), so any hook grant could wait on this worker.
+        if self.granted.iter().any(|g| g.starts_with("hooks:")) {
+            return Err(failed("a plugin that holds hooks cannot invoke tools"));
+        }
+        let (Some(invoker), Some(runtime)) = (&self.tool_invoker, &self.runtime) else {
+            return Err(failed("tool calls are not available in this cox"));
+        };
+        let result = runtime
+            .block_on(invoker.invoke(&self.id, &name, input))
+            .map_err(|e| failed(&e.to_string()))?;
+        let output = ToolOutput {
+            text: result.visible,
+            is_error: !result.ok,
+            diff: result.diff,
+            structured: None,
+        };
+        serde_json::to_value(output).map_err(|e| failed(&e.to_string()))
     }
 }
 
@@ -539,8 +592,8 @@ pub(crate) mod tests {
         }
     }
 
-    /// A guest whose `cox_command` and `cox_render` both pass their input
-    /// to the `cox:host/v1` import `import` and return its reply block.
+    /// A guest whose every export but `cox_init` passes its input to the
+    /// `cox:host/v1` import `import` and returns its reply block.
     fn relay(import: &str) -> Vec<u8> {
         format!(
             r#"(module
@@ -564,6 +617,9 @@ pub(crate) mod tests {
                 (i32.const 0))
               (func (export "cox_init") (result i32) (i32.const 0))
               (export "cox_command" (func $relay))
+              (export "cox_hook" (func $relay))
+              (export "cox_key" (func $relay))
+              (export "cox_on_event" (func $relay))
               (export "cox_tool_call" (func $relay))
               (export "cox_render" (func $relay)))"#
         )
@@ -866,5 +922,247 @@ pub(crate) mod tests {
             json!({ "Ok": [{ "type": "text_delta", "text": "ok" }] })
         );
         assert_eq!(*lock(&caller.seen_tier), Some(Tier::Code));
+    }
+
+    /// Records every `invoke` so a refusal can prove nothing reached it.
+    #[derive(Default)]
+    struct FakeInvoker(Mutex<Vec<String>>);
+
+    #[async_trait::async_trait]
+    impl ToolInvoker for FakeInvoker {
+        async fn invoke(
+            &self,
+            _id: &str,
+            name: &str,
+            _input: Value,
+        ) -> Result<cox_protocol::types::ToolResult, CoreError> {
+            lock(&self.0).push(name.into());
+            Err(CoreError::Interrupted)
+        }
+    }
+
+    fn env_with_invoker(
+        granted: &[&str],
+    ) -> (Arc<HostEnv>, Arc<FakeInvoker>, tokio::runtime::Runtime) {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let invoker = Arc::new(FakeInvoker::default());
+        let granted = granted.iter().map(|g| g.to_string()).collect();
+        let env = HostEnv::new("t")
+            .with_grant(granted, Arc::new(MemKv::default()))
+            .with_tool_invoker(invoker.clone(), rt.handle().clone());
+        (Arc::new(env), invoker, rt)
+    }
+
+    fn probe_call() -> Value {
+        json!({ "name": "probe", "input": {} })
+    }
+
+    #[test]
+    fn invoke_from_hook_context_is_refused() {
+        let (env, invoker, _rt) = env_with_invoker(&["invoke:probe"]);
+        let refused = json!({ "Err": { "kind": "not_in_this_context" } });
+        // The loop waits on `cox_hook`; `cox_render` may only read.
+        for export in ["cox_hook", "cox_render"] {
+            let reply = call(&env, "cox_invoke_tool", export, probe_call());
+            assert_eq!(reply, refused, "{export}");
+        }
+        assert!(lock(&invoker.0).is_empty());
+    }
+
+    #[test]
+    fn plugin_invoke_outside_grant_is_refused() {
+        let (env, invoker, _rt) = env_with_invoker(&["invoke:probe"]);
+        let reply = call(
+            &env,
+            "cox_invoke_tool",
+            "cox_command",
+            json!({ "name": "bash", "input": { "command": "true" } }),
+        );
+        assert_eq!(
+            reply,
+            json!({ "Err": { "kind": "not_granted", "capability": "invoke:bash" } })
+        );
+        assert!(lock(&invoker.0).is_empty());
+    }
+
+    #[test]
+    fn invoke_that_would_wait_on_its_own_worker_is_refused() {
+        // Its own tool runs on the worker this call is blocking.
+        let (env, invoker, _rt) = env_with_invoker(&["invoke:wasm__t__echo"]);
+        let own = json!({ "name": "wasm__t__echo", "input": {} });
+        let reply = call(&env, "cox_invoke_tool", "cox_tool_call", own);
+        assert_eq!(reply["Err"]["kind"], "failed", "{reply}");
+        // So does its own hook on the invoked call's path.
+        let (hooked, hooked_invoker, _rt2) =
+            env_with_invoker(&["hooks:PreToolUse", "invoke:probe"]);
+        let reply = call(&hooked, "cox_invoke_tool", "cox_command", probe_call());
+        assert_eq!(reply["Err"]["kind"], "failed", "{reply}");
+        assert!(lock(&invoker.0).is_empty() && lock(&hooked_invoker.0).is_empty());
+    }
+
+    /// A read-only tool that counts its runs, named so a rule can match it.
+    struct Probe(Arc<std::sync::atomic::AtomicUsize>);
+
+    #[async_trait::async_trait]
+    impl cox_protocol::traits::Tool for Probe {
+        fn spec(&self) -> cox_protocol::types::ToolSpec {
+            cox_protocol::types::ToolSpec {
+                name: "probe".into(),
+                description: String::new(),
+                input_schema: json!({ "type": "object" }),
+                deferred: false,
+                risk: cox_protocol::types::Risk::ReadOnly,
+                concurrency: cox_protocol::types::Concurrency::Parallel,
+            }
+        }
+        fn subject(&self, _input: &Value) -> String {
+            String::new()
+        }
+        async fn call(
+            &self,
+            _input: Value,
+            _cx: &cox_protocol::traits::ToolCx,
+        ) -> Result<ToolOutput, cox_protocol::errors::ToolError> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(ToolOutput {
+                text: "probed".into(),
+                is_error: false,
+                diff: None,
+                structured: None,
+            })
+        }
+    }
+
+    /// A real session whose permissions `rules` shapes, a plugin `t`
+    /// granted `invoke:probe` bound to it, and a surface that answers every
+    /// approval the way headless mode does (`run.rs`: no approver, deny).
+    struct Wired {
+        env: Arc<HostEnv>,
+        events: Arc<Mutex<Vec<cox_protocol::types::Event>>>,
+        runs: Arc<std::sync::atomic::AtomicUsize>,
+        _rt: tokio::runtime::Runtime,
+    }
+
+    fn wired(rules: impl FnOnce(&mut cox_protocol::config::PermissionsConfig)) -> Wired {
+        use cox_protocol::types::{Decision, Event, Submission};
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let _in_rt = rt.enter();
+        let mut config = cox_protocol::Config::default();
+        rules(&mut config.permissions);
+        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let store = Arc::new(cox_core::MemoryStore::new());
+        let session = cox_core::Session::new(
+            config,
+            Arc::new(cox_provider::scripted::Scripted::from_toml("", "").expect("scenario")),
+            vec![Arc::new(Probe(runs.clone()))],
+            store.clone(),
+            store,
+            std::path::PathBuf::from("/tmp"),
+        )
+        .expect("session");
+        let mut rx = session.events().expect("events once");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let (seen, surface) = (events.clone(), session.clone());
+        rt.spawn(async move {
+            while let Some(ev) = rx.recv().await {
+                if let Event::ApprovalRequired { call, .. } = &ev {
+                    let reason = "no approver in headless mode".into();
+                    let deny = Submission::Approve {
+                        call_id: call.id,
+                        decision: Decision::Deny { reason },
+                    };
+                    let _ = surface.submit(deny).await;
+                }
+                lock(&seen).push(ev);
+            }
+        });
+        let env = HostEnv::new("t")
+            .with_grant(vec!["invoke:probe".into()], Arc::new(MemKv::default()))
+            .with_tool_invoker(Arc::new(session), rt.handle().clone());
+        drop(_in_rt);
+        Wired {
+            env: Arc::new(env),
+            events,
+            runs,
+            _rt: rt,
+        }
+    }
+
+    impl Wired {
+        /// The events up to the invoked call's `ToolCallDone`, once the
+        /// surface has read that far.
+        fn events(&self) -> Vec<cox_protocol::types::Event> {
+            for _ in 0..500 {
+                let events = lock(&self.events).clone();
+                if events
+                    .iter()
+                    .any(|e| matches!(e, cox_protocol::types::Event::ToolCallDone { .. }))
+                {
+                    return events;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            panic!("no ToolCallDone: {:?}", lock(&self.events));
+        }
+
+        fn runs(&self) -> usize {
+            self.runs.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[test]
+    fn plugin_invoke_denied_by_rule() {
+        use cox_protocol::types::{DecidedBy, Decision, Event};
+        let w = wired(|p| p.deny.push("probe".into()));
+        let reply = call(&w.env, "cox_invoke_tool", "cox_command", probe_call());
+        assert_eq!(reply["Ok"]["is_error"], true, "{reply}");
+        let text = reply["Ok"]["text"].as_str().unwrap_or_default();
+        assert!(text.contains("denied by rule probe"), "{reply}");
+        assert_eq!(w.runs(), 0);
+        let events = w.events();
+        // Visible like a model call, and attributed to the plugin.
+        assert!(events.iter().any(|e| matches!(e,
+            Event::Notice { text, .. } if text == "plugin t runs probe")));
+        assert!(events.iter().any(|e| matches!(e,
+            Event::ToolCallRequested { call } if call.name == "probe")));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::ApprovalDecided {
+                decision: Decision::Deny { .. },
+                by: DecidedBy::Rule,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn plugin_invoke_ask_is_denied_headless() {
+        use cox_protocol::types::Event;
+        let w = wired(|p| p.ask.push("probe".into()));
+        let reply = call(&w.env, "cox_invoke_tool", "cox_on_event", probe_call());
+        assert_eq!(
+            reply["Ok"]["text"], "permission denied: no approver in headless mode",
+            "{reply}"
+        );
+        assert_eq!(w.runs(), 0);
+        let asked = w.events().into_iter().find_map(|e| match e {
+            Event::ApprovalRequired { source, .. } => source.and_then(|s| s.agent),
+            _ => None,
+        });
+        assert_eq!(asked.as_deref(), Some("plugin t"));
+    }
+
+    #[test]
+    fn plugin_invoke_allowed_runs_and_is_archived() {
+        use cox_protocol::types::Event;
+        let w = wired(|p| p.allow.push("probe".into()));
+        let reply = call(&w.env, "cox_invoke_tool", "cox_key", probe_call());
+        assert_eq!(reply["Ok"]["text"], "probed", "{reply}");
+        assert_eq!(w.runs(), 1);
+        let archived = w
+            .events()
+            .into_iter()
+            .any(|e| matches!(e, Event::ToolCallDone { result, .. } if result.archive.is_some()));
+        assert!(archived);
     }
 }

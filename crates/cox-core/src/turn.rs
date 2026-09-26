@@ -23,7 +23,17 @@ use crate::checkpoint;
 use crate::hooks;
 use crate::permission::Outcome;
 use crate::permission::policy::{ExecPath, exec_path};
-use crate::session::{Session, State};
+use crate::session::Session;
+
+tokio::task_local! {
+    /// Who a call runs for when it is not the model: `plugin <id>` for a
+    /// plugin's `cox_invoke_tool` (T33.13). Task-local so the one tool path
+    /// (`run_tools` → `gate` → `ask`) needs no second entry point; `ask`
+    /// shows it as `Source.agent` ("plugin <id> asks"). A call `run_tools`
+    /// spawns in parallel is read-only and never asks, so losing it there
+    /// is harmless.
+    pub(crate) static ORIGIN: String;
+}
 
 #[derive(Default)]
 pub(crate) struct Streamed {
@@ -294,6 +304,9 @@ async fn gate(
 /// (a cancelled turn answers `Deny`), and emits `ApprovalDecided`.
 async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, CoreError> {
     let id = call.id;
+    // A plugin's call (T33.13) may ask while no turn runs, so the session
+    // goes back to the state it was in rather than always `RunningTools`.
+    let before = session.inner.lock().await.state;
     let rx = session.await_decision(id).await;
     // Informational like `Stop`: a hook may record that we are waiting, it
     // cannot answer for the user (§1.8).
@@ -311,7 +324,7 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
             // on its way to the parent's surface.
             source: Some(Source {
                 session: session.id(),
-                agent: None,
+                agent: ORIGIN.try_with(Clone::clone).ok(),
                 preset: None,
             }),
         })
@@ -322,7 +335,7 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
         _ = cancel.cancelled() => Decision::Deny { reason: "interrupted".into() },
         d = rx => d.unwrap_or(Decision::Deny { reason: "session closed".into() }),
     };
-    session.set_state(State::RunningTools).await;
+    session.set_state(before).await;
     session
         .emit(Event::ApprovalDecided {
             call_id: id,

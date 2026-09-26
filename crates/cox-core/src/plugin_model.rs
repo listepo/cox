@@ -11,16 +11,27 @@
 //! (`Job::Plugin(id)`), and that its tier is already resolved by the
 //! caller (grant-clamped, never `think`) instead of looked up in `[jobs]`
 //! (`router.rs`'s `Job::Plugin` arm passes it straight through).
+//!
+//! `ToolInvoker for Session` (T33.13, PL§4) is here for the same reason:
+//! a plugin's `cox_invoke_tool` reaches the session's tool path over a
+//! trait. It adds no check of its own; `turn::run_tools` is the model's
+//! path, so the engine stays the one place a call is allowed.
+
+use std::sync::PoisonError;
 
 use async_trait::async_trait;
 use cox_protocol::errors::CoreError;
-use cox_protocol::traits::ModelCaller;
-use cox_protocol::types::{Job, ProviderEvent, Request, Tier};
+use cox_protocol::ids::{CallId, TurnId};
+use cox_protocol::traits::{ModelCaller, ToolInvoker};
+use cox_protocol::types::{Event, Job, Level, ProviderEvent, Request, Tier, ToolResult};
+use serde_json::Value;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::budget;
 use crate::router::{Overrides, Router};
-use crate::session::Session;
+use crate::session::{Session, State};
+use crate::turn::{ORIGIN, run_tools};
 
 #[async_trait]
 impl ModelCaller for Session {
@@ -96,6 +107,31 @@ impl ModelCaller for Session {
             self.add_spend(usage.cost_usd).await;
         }
         Ok(events)
+    }
+}
+
+#[async_trait]
+impl ToolInvoker for Session {
+    async fn invoke(&self, id: &str, name: &str, input: Value) -> Result<ToolResult, CoreError> {
+        // As for `!` (`user_shell`): with no turn running, an earlier `Esc`
+        // may have left the token cancelled, which would deny as interrupted.
+        if self.inner.lock().await.state == State::Idle {
+            *self.cancel.lock().unwrap_or_else(PoisonError::into_inner) = CancellationToken::new();
+        }
+        // `ToolCallRequested` carries no origin, so the transcript and the
+        // rollout say whose call follows. `name` passed the grant check,
+        // which only holds manifest-validated tool names.
+        let origin = format!("plugin {id}");
+        self.emit(Event::Notice {
+            level: Level::Info,
+            text: format!("{origin} runs {name}"),
+        })
+        .await?;
+        let call = vec![(CallId::new(), name.to_string(), input)];
+        let mut results = ORIGIN
+            .scope(origin, run_tools(self, TurnId::new(), call))
+            .await?;
+        results.pop().map(|(_, r)| r).ok_or(CoreError::Interrupted)
     }
 }
 
