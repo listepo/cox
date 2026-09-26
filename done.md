@@ -1274,3 +1274,48 @@ Check: passing tests:
 - `ask_user_surface_shows_which_agent_is_asking` (insta snapshot)
 
 nextest on main after the merge: 1007 passed, 3 skipped. The merged `spawn_child` needed `#[allow(clippy::too_many_arguments)]`, the same as `build`.
+
+#### T34.2 A subagent concurrency cap
+
+Depends: — · Size: ~140 · Files: `crates/cox-protocol/src/config.rs` (new `core.max_concurrent_subagents`), `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/tasks.rs`
+Goal: cap how many subagent tasks (foreground and background) may run at once per session, so a loop of `background: true` calls cannot silently multiply cost or exhaust the parent's budget slice faster than the user can notice. Matches the shape of Codex's `agents.max_concurrent_threads_per_session` and Claude Code's `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as a `cox-config` key (D13: one config file, every flag is a key), not an env var.
+Plan: `core.max_concurrent_subagents` (default generous, e.g. 8), read from `self.parent.config.core` in `AgentTool::call()`; counted against the parent's currently-registered `TaskKind::Agent` tasks (`register_task`/`complete_task`, already tracked in `Session::inner.tasks`) before spawning; over the cap is `ToolError::Denied` naming the cap and how many are running, the same shape as T34.1's "unknown preset" denial.
+Check: `agent_call_denied_when_concurrent_cap_reached`, `agent_call_allowed_after_a_running_task_completes`, `config_jsonschema_matches_committed_file` stays green with the new key.
+Status: done 2026-09-26
+Result: `core.max_concurrent_subagents` caps how many `agent` tasks run at once.
+- **Reservation:** `Session.agent_slots` is an `Arc<AtomicU32>`. `try_reserve_agent_slot` checks the cap and takes a slot in one CAS step. `AgentSlotGuard` frees the slot on drop, so every exit path releases it exactly once.
+- **Where:** `AgentTool::call` reserves before `resolve`. A foreground child holds the guard until `call` returns. A background child moves it into its `drive` task, so it holds the slot until it finishes. Over the cap the call gets `ToolError::Denied`, naming the running count and the cap.
+- **Config guard:** the project layer cannot raise `core.max_concurrent_subagents`. The value is reverted and the key is added to `GUARDED_KEYS`, the same treatment as the budget keys. `docs/config.jsonschema` and `docs/config.md` were regenerated.
+Deviations:
+- Review round: the first draft counted and then registered across an `await`, which races, and it had no project guard. Both were fixed.
+- Merging onto main: T34.5 turned the background path into `tokio::spawn(drive(..))`, so the guard now moves into a wrapper future around `drive`.
+- Known gap, handed to T34.6 step 3: a dormant child woken by a message (`wake`) runs without a slot.
+Check: passing tests:
+- `agent_call_denied_when_concurrent_cap_reached`
+- `agent_call_allowed_after_a_running_task_completes`
+- `agent_calls_reserve_exactly_cap_slots_under_a_parallel_burst` (10 parallel calls over cap 3: exactly 3 spawn and 7 are denied; stable over 15 repeats)
+- `config_project_cannot_raise_max_concurrent_subagents`
+
+nextest on main after both landed: 1014 passed, 3 skipped. fmt and clippy clean.
+
+#### T34.10 Optional: per-subagent visibility gate
+
+Depends: T34.1 · Size: ~80 · Files: `crates/cox-ext/src/agents.rs` (an optional frontmatter field, e.g. `disabled: true`), `crates/cox-core/src/subagent.rs` (the tool's own description lists only enabled defs)
+Goal: match OpenCode's "a subagent's `permission: deny` removes it from the Task tool's description entirely" (research.md §4.3.7) — lets a project ship a `.cox/agents/*.md` definition that exists on disk (e.g. only for `cox ext list`) without the model being told it can dispatch it. Low priority: T34.1 already gives every discovered definition a working dispatch path; this is a visibility nicety, not a functional gap.
+Check: `disabled_agent_def_is_discovered_but_not_offered_to_the_model`.
+
+**Order.** T34.0 blocks T34.4 → T34.5 → T34.6 → (T34.7, T34.8, T34.9), the last three running in parallel once the tool and its caps land. T34.1, T34.2 and T34.3 have no dependency on the messaging design and can run any time; T34.10 waits only on T34.1. The top table gets rows T34.0–T34.10; P0 for the highest-value wiring gap (T34.1), P1 for the messaging design and its critical path plus the `ask_user` labelling (T34.0, T34.3–T34.6, T34.9), P2 for the concurrency cap and the surfaces off the critical path (T34.2, T34.7, T34.8), P3 for the optional visibility gate (T34.10).
+Status: done 2026-09-26
+Result: an agent definition can be discovered but not offered to the model (SM§6).
+- **Frontmatter:** `disabled: true` sets `AgentDef.disabled`. A missing key means `false`.
+- **Agent tool:** `custom_names` skips disabled definitions, so the `agent` tool's description and the "unknown preset" error both omit them. `resolve` treats a disabled name as unknown.
+- **`cox ext list`:** still shows the definition, with ` (disabled)` in text output and `"disabled": true` in JSON.
+- **Field name:** research.md M1 has no Claude Code field for this, so the card's `disabled` is used. It is the same split OpenCode's `permission: deny` gives.
+Check: passing tests:
+- `disabled_agent_def_is_discovered_but_not_offered_to_the_model`
+- `ext_list_marks_a_disabled_agent_but_still_shows_it`
+- the frontmatter parse test in `cox-ext`
+
+nextest: 1008 passed, 3 skipped in the worktree. fmt and clippy clean.
+
+nextest on main after both landed: 1014 passed, 3 skipped. fmt and clippy clean.

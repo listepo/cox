@@ -61,12 +61,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.41 | todo | P3 | 2 | 0% | |
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T34.2 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.6 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T34.7 | todo | P2 | 2 | 0% | |
 | T34.8 | todo | P2 | 2 | 0% | |
 | T34.9 | todo | P1 | 3 | 0% | |
-| T34.10 | in progress | P3 | 1 | 5% | Claude Code / claude-sonnet-5 |
 | T35.2 | todo | P1 | 4 | 0% | |
 | T35.3 | todo | P2 | 5 | 0% | |
 | T35.4 | todo | P2 | 4 | 0% | |
@@ -1344,13 +1342,6 @@ Every card in this phase:
 
 **Blockers** (everything after them depends on them): T34.0 (blocks T34.4–T34.9).
 
-#### T34.2 A subagent concurrency cap
-
-Depends: — · Size: ~140 · Files: `crates/cox-protocol/src/config.rs` (new `core.max_concurrent_subagents`), `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/tasks.rs`
-Goal: cap how many subagent tasks (foreground and background) may run at once per session, so a loop of `background: true` calls cannot silently multiply cost or exhaust the parent's budget slice faster than the user can notice. Matches the shape of Codex's `agents.max_concurrent_threads_per_session` and Claude Code's `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as a `cox-config` key (D13: one config file, every flag is a key), not an env var.
-Plan: `core.max_concurrent_subagents` (default generous, e.g. 8), read from `self.parent.config.core` in `AgentTool::call()`; counted against the parent's currently-registered `TaskKind::Agent` tasks (`register_task`/`complete_task`, already tracked in `Session::inner.tasks`) before spawning; over the cap is `ToolError::Denied` naming the cap and how many are running, the same shape as T34.1's "unknown preset" denial.
-Check: `agent_call_denied_when_concurrent_cap_reached`, `agent_call_allowed_after_a_running_task_completes`, `config_jsonschema_matches_committed_file` stays green with the new key.
-
 #### T34.6 The `send_message` tool
 
 Depends: T34.5, T34.2 · Size: ~170 · Files: `crates/cox-tools/src/send_message.rs` (new), `crates/cox-core/src/subagent.rs`
@@ -1379,14 +1370,6 @@ Check: `acp_reports_task_created_and_completed`, `acp_reports_a_delivered_task_m
 Depends: T34.6 · Size: ~150 · Files: `tests/subagent_messaging.rs` (new)
 Goal: with the Scripted provider, a parent spawns two children; child A sends `send_message` to child B by name; the parent relays it; B replies; the parent's history carries both pointer lines; a scripted ping-pong hits T34.6's hop limit and stops instead of looping forever.
 Check: `parent_relays_a_message_between_two_children`, `hop_limit_stops_a_scripted_ping_pong` — both against the real event stream, no network, no API key (D12).
-
-#### T34.10 Optional: per-subagent visibility gate
-
-Depends: T34.1 · Size: ~80 · Files: `crates/cox-ext/src/agents.rs` (an optional frontmatter field, e.g. `disabled: true`), `crates/cox-core/src/subagent.rs` (the tool's own description lists only enabled defs)
-Goal: match OpenCode's "a subagent's `permission: deny` removes it from the Task tool's description entirely" (research.md §4.3.7) — lets a project ship a `.cox/agents/*.md` definition that exists on disk (e.g. only for `cox ext list`) without the model being told it can dispatch it. Low priority: T34.1 already gives every discovered definition a working dispatch path; this is a visibility nicety, not a functional gap.
-Check: `disabled_agent_def_is_discovered_but_not_offered_to_the_model`.
-
-**Order.** T34.0 blocks T34.4 → T34.5 → T34.6 → (T34.7, T34.8, T34.9), the last three running in parallel once the tool and its caps land. T34.1, T34.2 and T34.3 have no dependency on the messaging design and can run any time; T34.10 waits only on T34.1. The top table gets rows T34.0–T34.10; P0 for the highest-value wiring gap (T34.1), P1 for the messaging design and its critical path plus the `ask_user` labelling (T34.0, T34.3–T34.6, T34.9), P2 for the concurrency cap and the surfaces off the critical path (T34.2, T34.7, T34.8), P3 for the optional visibility gate (T34.10).
 
 ### P35 — External agents from plugins (Cursor first) (goal: a plugin can declare an external CLI agent that appears to the model as a subagent preset, driven over its own official headless protocol, sandboxed and grant-gated like every other plugin capability)
 
