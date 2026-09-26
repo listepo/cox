@@ -165,6 +165,13 @@ pub enum Modal {
         cells: Vec<Cell>,
         scroll: usize,
     },
+    /// `OpenOverlay` (T33.24, PL§8): `id`'s `overlay` slot, full screen like
+    /// `Diff`/`Transcript` above; `Esc` closes it. The widget itself is not
+    /// carried here — it stays cached in `plugin_status` like every other
+    /// slot's last good render, so a redraw never needs to touch `modal`.
+    Plugin {
+        id: String,
+    },
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -338,6 +345,14 @@ pub struct State {
     /// or not, goes to `Keymap::resolve_plugin_key` instead of anywhere
     /// else — `<leader> <key>` is the only way a plugin key fires.
     pub plugin_leader_armed: bool,
+    /// `TogglePanel`'s open plugin, if any (T33.24, PL§8): at most one
+    /// panel is shown at a time, the same one-band budget `todo_area`
+    /// already spends above the composer.
+    pub plugin_panel_open: Option<String>,
+    /// The last `Msg::Resize` (columns, rows), defaulted so a `panel`/
+    /// `overlay` render has an area before the terminal ever resizes
+    /// (T33.24, PL§8: "the render request carries the area size").
+    pub term: (u16, u16),
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -439,10 +454,12 @@ pub enum Msg {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PluginUiMsg {
     /// A plugin's granted slots, commands and keys after `cox_init`
-    /// (T33.25 adds the latter two); each new slot is rendered once now,
-    /// since it just became visible. `crates/cox` re-sends this whenever a
-    /// session re-inits the plugin, so `update` treats it as the current,
-    /// full set, not an addition to the last one.
+    /// (T33.25 adds the latter two). `status.left`/`status.right` render
+    /// once now, since they are always visible; `panel`/`overlay` (T33.24)
+    /// only register here and render later, when `TogglePanel`/
+    /// `OpenOverlay` actually shows them. `crates/cox` re-sends this
+    /// whenever a session re-inits the plugin, so `update` treats it as the
+    /// current, full set, not an addition to the last one.
     Declare {
         plugin: String,
         slots: Vec<Slot>,
@@ -626,6 +643,8 @@ impl State {
             pending_grants: VecDeque::new(),
             plugin_status: Vec::new(),
             plugin_leader_armed: false,
+            plugin_panel_open: None,
+            term: (80, 24),
         }
     }
 
@@ -711,7 +730,11 @@ impl State {
     pub fn context(&self) -> Context {
         match &self.modal {
             Some(
-                Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+                Modal::Diff { .. }
+                | Modal::Help
+                | Modal::Agents { .. }
+                | Modal::Transcript { .. }
+                | Modal::Plugin { .. },
             ) => Context::Overlay,
             Some(_) => Context::Modal,
             None if self.status.busy => Context::Running,
@@ -791,12 +814,19 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.tick += 1;
             loop_tick(state)
         }
-        // PL§8: a resize is one of the three times a plugin renders.
-        Msg::Resize(..) => crate::status::render_requests(state, None),
+        // PL§8: a resize is one of the three times a plugin renders; T33.24
+        // keeps the new size so a later `panel`/`overlay` render (opened by
+        // a command, not this resize) still asks for the right area.
+        Msg::Resize(w, h) => {
+            state.term = (w, h);
+            crate::status::render_requests(state, None)
+        }
         // T33.25, PL§8: a `Command` answer applies `CommandOut` here, not
         // in `status`, which only ever folds slots; everything else
         // (`Declare`'s slots included) still goes through `on_plugin`.
-        Msg::Plugin(PluginUiMsg::Command { out, .. }) => plugin_command_out(state, out),
+        Msg::Plugin(PluginUiMsg::Command { plugin, out }) => {
+            plugin_command_out(state, &plugin, out)
+        }
         Msg::Plugin(msg) => {
             if let PluginUiMsg::Declare {
                 plugin,
@@ -911,7 +941,8 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
             | Modal::PluginGrant(_)
             | Modal::Help
             | Modal::Agents { .. }
-            | Modal::Transcript { .. },
+            | Modal::Transcript { .. }
+            | Modal::Plugin { .. },
         ) => {}
         None => {
             state.scroll = if up {
@@ -1229,6 +1260,14 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 _ => scroll,
             };
             state.modal = Some(Modal::Transcript { cells, scroll });
+            Vec::new()
+        }
+        // T33.24, PL§8: `overlay`'s only key — full screen, no scroll of
+        // its own, so anything but `Esc` just keeps it open.
+        Some(Modal::Plugin { id }) => {
+            if key.code != KeyCode::Esc {
+                state.modal = Some(Modal::Plugin { id });
+            }
             Vec::new()
         }
         None => {
@@ -1650,7 +1689,7 @@ fn declare_plugin_commands(state: &mut State, plugin: &str, commands: &[CommandD
 /// T33.25, PL§8: `CommandOut`'s closed effects for a `cox_command`/
 /// `cox_key` answer. `None` — a timeout, an error or a missing export —
 /// fails open like a missed render: nothing happens, nothing is shown.
-fn plugin_command_out(state: &mut State, out: Option<CommandOut>) -> Vec<Cmd> {
+fn plugin_command_out(state: &mut State, plugin: &str, out: Option<CommandOut>) -> Vec<Cmd> {
     match out {
         Some(CommandOut::Prompt { text }) => vec![Cmd::Submit(Submission::UserTurn {
             text: crate::text::sanitize(&text),
@@ -1660,11 +1699,23 @@ fn plugin_command_out(state: &mut State, out: Option<CommandOut>) -> Vec<Cmd> {
         Some(CommandOut::Compact { focus }) => vec![Cmd::Submit(Submission::Compact {
             focus: focus.map(|f| crate::text::sanitize(&f)),
         })],
-        // `panel`/`overlay` are already declared and rendered (T33.23);
-        // toggling one's visibility from a command is a later card's slot
-        // wiring, the same gap `Declare` leaves for these two slot kinds
-        // today.
-        Some(CommandOut::TogglePanel | CommandOut::OpenOverlay) => Vec::new(),
+        // T33.24, PL§8: opening either slot is a "slot became visible"
+        // moment, one of the three times a plugin renders — `render_requests`
+        // itself decides whether `plugin` actually has that slot to render.
+        Some(CommandOut::TogglePanel) => {
+            state.plugin_panel_open = if state.plugin_panel_open.as_deref() == Some(plugin) {
+                None
+            } else {
+                Some(plugin.to_string())
+            };
+            crate::status::render_requests(state, Some(plugin))
+        }
+        Some(CommandOut::OpenOverlay) => {
+            state.modal = Some(Modal::Plugin {
+                id: plugin.to_string(),
+            });
+            crate::status::render_requests(state, Some(plugin))
+        }
         Some(CommandOut::Notice(n)) => {
             let level = match n.level {
                 NoticeLevel::Warn => Level::Warn,
@@ -2569,6 +2620,48 @@ mod tests {
         assert!(state.plugin_leader_armed);
         assert_eq!(update(&mut state, r()), vec![plugin_key]);
         assert!(!state.plugin_leader_armed, "one key disarms it");
+    }
+
+    /// T33.24, PL§8: `TogglePanel` flips `plugin_panel_open` for the
+    /// plugin that sent it (twice returns to closed); `OpenOverlay` opens
+    /// `Modal::Plugin`. Neither needs a declared slot to be safe — with
+    /// none, `render_requests` just has nothing to ask for.
+    #[test]
+    fn plugin_command_toggles_panel_and_opens_overlay() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let toggle = |state: &mut State| {
+            update(
+                state,
+                Msg::Plugin(PluginUiMsg::Command {
+                    plugin: "acme".into(),
+                    out: Some(CommandOut::TogglePanel),
+                }),
+            )
+        };
+        assert!(toggle(&mut state).is_empty());
+        assert_eq!(state.plugin_panel_open.as_deref(), Some("acme"));
+        assert!(toggle(&mut state).is_empty());
+        assert_eq!(state.plugin_panel_open, None);
+
+        update(
+            &mut state,
+            Msg::Plugin(PluginUiMsg::Command {
+                plugin: "acme".into(),
+                out: Some(CommandOut::OpenOverlay),
+            }),
+        );
+        assert_eq!(state.modal, Some(Modal::Plugin { id: "acme".into() }));
+    }
+
+    /// T33.24, PL§8: `overlay`'s only key is `Esc`; it closes with no other
+    /// side effect, the same close `Diff`/`Transcript` already have.
+    #[test]
+    fn esc_closes_plugin_overlay() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.modal = Some(Modal::Plugin { id: "acme".into() });
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert_eq!(cmds, Vec::new());
+        assert_eq!(state.modal, None);
     }
 
     /// T27.1: `Ctrl+B` backgrounds the newest pending `bash` card; with no

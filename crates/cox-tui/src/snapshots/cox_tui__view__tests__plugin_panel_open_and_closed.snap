@@ -1,0 +1,25 @@
+---
+source: crates/cox-tui/src/view.rs
+expression: "format!(\"{closed}\\n---\\n{open}\")"
+---
+
+
+
+
+
+
+
+
+> Enter send · Shift+Tab mode cycle · @
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]
+---
+
+panel text
+
+
+
+
+
+
+> Enter send · Shift+Tab mode cycle · @
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]

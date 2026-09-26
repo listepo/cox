@@ -146,6 +146,11 @@ pub async fn run(
     }));
     let mut terminal = inline_terminal(crossterm::terminal::size()?.1)?;
     let mut built_for = terminal.size()?;
+    // T33.24, PL§8: seed `state.term` with the real startup size, the same
+    // one the first draw is built for — otherwise a `panel`/`overlay`
+    // opened before the first `Msg::Resize` would ask a plugin to render
+    // into `State::new`'s placeholder area instead of the real one.
+    state.term = (built_for.width, built_for.height);
     // The last size read while a resize settles, and when it was taken.
     let mut settling: Option<(Size, Instant)> = None;
     // The cursor's row inside the viewport after the last draw: after a

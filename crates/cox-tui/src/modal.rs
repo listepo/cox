@@ -334,6 +334,16 @@ pub fn help_lines(g: &Glyphs, theme: &Theme, keymap: &Keymap, width: u16) -> Vec
     out
 }
 
+/// `Modal::Plugin`'s overlay before its first render lands, or once the
+/// slot has stopped (T33.24, PL§8): fail open like a missed status
+/// segment — a line, never a crash or a stuck blank screen.
+pub fn plugin_overlay_placeholder(id: &str, theme: &Theme) -> Line<'static> {
+    Line::styled(
+        format!(" {} …", sanitize(id)),
+        Style::default().fg(theme.dim),
+    )
+}
+
 /// `ask_user`'s answer, once a key decides it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuestionAnswer {

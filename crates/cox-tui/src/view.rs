@@ -13,6 +13,8 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
+use cox_protocol::plugin::Slot;
+
 use crate::cells::cell_lines;
 use crate::commands;
 use crate::state::{Cell, Modal, State};
@@ -115,10 +117,15 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
         Some(Modal::PluginGrant(_)) => u16::try_from(grant.len()).unwrap_or(u16::MAX),
-        // The diff view, the agents list and the rollout overlay all take
-        // the transcript's rows (`Context::Overlay`), not a band of their own.
+        // The diff view, the agents list, the rollout overlay and a
+        // plugin's overlay (T33.24) all take the transcript's rows
+        // (`Context::Overlay`), not a band of their own.
         Some(
-            Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+            Modal::Diff { .. }
+            | Modal::Help
+            | Modal::Agents { .. }
+            | Modal::Transcript { .. }
+            | Modal::Plugin { .. },
         )
         | None => 0,
     };
@@ -128,12 +135,20 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     } else {
         0
     };
+    // T33.24, PL§8: a bottom `panel`, like the todo panel above — one band,
+    // capped at `PANEL_ROWS`, present only while `TogglePanel` has it open.
+    let panel_rows = if state.plugin_panel_open.is_some() {
+        status::PANEL_ROWS
+    } else {
+        0
+    };
     let queue = queue_lines(state);
     let queue_rows = u16::try_from(queue.len()).unwrap_or(u16::MAX);
     let [
         banner_area,
         transcript,
         todo_area,
+        panel_area,
         modal_area,
         queue_area,
         composer,
@@ -142,6 +157,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Constraint::Length(banner),
         Constraint::Min(1),
         Constraint::Length(todo_rows),
+        Constraint::Length(panel_rows),
         Constraint::Length(modal),
         Constraint::Length(queue_rows),
         Constraint::Length(composer_rows),
@@ -201,6 +217,10 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             let offset = (*scroll).min(lines.len().saturating_sub(rows));
             (lines, offset)
         }
+        // T33.24, PL§8: drawn straight into `transcript` below with
+        // `plugin_ui::render`, a widget tree rather than `Line`s — this
+        // match only needs to leave the band empty here.
+        Some(Modal::Plugin { .. }) => (Vec::new(), 0),
         _ => {
             // `Ctrl+E` (T24.4) reaches only the last tool cell, still
             // `Some(bool)` so a folded one keeps its `Ctrl+E` hint; a click
@@ -233,9 +253,27 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     Paragraph::new(lines)
         .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
         .render(transcript, buf);
+    // T33.24, PL§8: the overlay draws over the transcript, like `Diff`;
+    // a missing or late render (not yet answered, or the slot stopped)
+    // leaves a placeholder rather than nothing crashing or blanking.
+    if let Some(Modal::Plugin { id }) = &state.modal {
+        match status::widget(state, id, Slot::Overlay) {
+            Some(w) => crate::plugin_ui::render(w, transcript, buf, &state.theme, state.marks),
+            None => {
+                crate::modal::plugin_overlay_placeholder(id, &state.theme).render(transcript, buf)
+            }
+        }
+    }
 
     if state.show_todo {
         Paragraph::new(status::todo_lines(state)).render(todo_area, buf);
+    }
+    // T33.24, PL§8: the panel band; a not-yet-rendered widget just leaves
+    // the band blank rather than blocking on the plugin.
+    if let Some(id) = &state.plugin_panel_open
+        && let Some(w) = status::widget(state, id, Slot::Panel)
+    {
+        crate::plugin_ui::render(w, panel_area, buf, &state.theme, state.marks);
     }
     match &state.modal {
         Some(Modal::Approval(_)) => Paragraph::new(approval).render(modal_area, buf),
@@ -246,9 +284,15 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
         }
         Some(Modal::PluginGrant(_)) => Paragraph::new(grant).render(modal_area, buf),
-        // Drawn over the transcript above, like `Diff`/`Help`; no band here.
+        // Drawn over the transcript above, like `Diff`/`Help`; no band
+        // here. `Plugin`'s overlay is drawn there too, right after the
+        // transcript `Paragraph` above.
         Some(
-            Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+            Modal::Diff { .. }
+            | Modal::Help
+            | Modal::Agents { .. }
+            | Modal::Transcript { .. }
+            | Modal::Plugin { .. },
         )
         | None => {}
     }
@@ -310,7 +354,17 @@ pub fn buffer_to_string(buf: &Buffer) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::status::PluginSegment;
+    use cox_protocol::plugin::{Widget, ui};
     use cox_protocol::types::{PermissionMode, SandboxMode};
+
+    /// A one-line `Widget::Text` a plugin might render (T33.24).
+    fn text_widget(t: &str) -> Widget {
+        Widget::Text(vec![vec![ui::Span {
+            text: t.into(),
+            ..ui::Span::default()
+        }]])
+    }
 
     /// T25.1 step 2/"Done when": two queued messages render above the
     /// composer, dim and prefixed `⏸`, oldest first.
@@ -358,5 +412,48 @@ mod tests {
             (state.modal.clone(), state.composer.text()),
             (None, "a?".into())
         );
+    }
+
+    /// T33.24, PL§8: the `panel` band is empty until `TogglePanel` opens
+    /// it, then draws the plugin's cached render above the composer.
+    #[test]
+    fn plugin_panel_open_and_closed() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.plugin_status.push(PluginSegment {
+            plugin: "acme".into(),
+            slot: Slot::Panel,
+            widget: Some(text_widget("panel text")),
+            misses: 0,
+        });
+        let closed = buffer_to_string(&render(&state, 40, 10));
+        assert!(!closed.contains("panel text"), "{closed}");
+
+        state.plugin_panel_open = Some("acme".into());
+        let open = buffer_to_string(&render(&state, 40, 10));
+        assert!(open.contains("panel text"), "{open}");
+
+        insta::assert_snapshot!(format!("{closed}\n---\n{open}"));
+    }
+
+    /// T33.24, PL§8: `Modal::Plugin` draws full screen over the
+    /// transcript, like `Diff`/`Transcript`; before the first render lands
+    /// it shows a placeholder rather than a blank screen or a crash.
+    #[test]
+    fn plugin_overlay_snapshot() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.modal = Some(Modal::Plugin { id: "acme".into() });
+        let waiting = buffer_to_string(&render(&state, 40, 10));
+        assert!(waiting.contains("acme"), "{waiting}");
+
+        state.plugin_status.push(PluginSegment {
+            plugin: "acme".into(),
+            slot: Slot::Overlay,
+            widget: Some(text_widget("overlay text")),
+            misses: 0,
+        });
+        let rendered = buffer_to_string(&render(&state, 40, 10));
+        assert!(rendered.contains("overlay text"), "{rendered}");
+
+        insta::assert_snapshot!(format!("{waiting}\n---\n{rendered}"));
     }
 }

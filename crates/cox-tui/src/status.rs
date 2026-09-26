@@ -27,6 +27,8 @@ use crate::vim::Mode;
 pub const SEGMENT_COLS: u16 = 24;
 /// `cox_render` misses in a row that stop a slot for the session (PL§8).
 pub const MAX_MISSES: u8 = 3;
+/// Rows the `panel` slot may fill, above the composer (T33.24, PL§8).
+pub const PANEL_ROWS: u16 = 8;
 
 /// One plugin status slot and its last good render.
 #[derive(Debug, Clone, PartialEq)]
@@ -50,11 +52,13 @@ impl PluginSegment {
 pub fn on_plugin(state: &mut State, msg: PluginUiMsg) -> Vec<Cmd> {
     match msg {
         // `commands`/`keys` are folded in `state::update` before this runs
-        // (T33.25); only the slots are this module's concern.
+        // (T33.25); only the slots are this module's concern. Every
+        // granted slot is registered here, `panel` and `overlay` (T33.24)
+        // included — `render_requests`'s `slot_visible` is what actually
+        // decides which of them render right now.
         PluginUiMsg::Declare { plugin, slots, .. } => {
             for slot in slots {
-                let status = matches!(slot, Slot::StatusLeft | Slot::StatusRight);
-                if status && segment(state, &plugin, slot).is_none() {
+                if segment(state, &plugin, slot).is_none() {
                     state.plugin_status.push(PluginSegment {
                         plugin: plugin.clone(),
                         slot,
@@ -97,19 +101,60 @@ fn segment<'a>(state: &'a mut State, plugin: &str, slot: Slot) -> Option<&'a mut
         .find(|s| s.plugin == plugin && s.slot == slot)
 }
 
-/// A `cox_render` request for every live segment, or only `plugin`'s.
+/// `plugin`'s last good render for `slot` (T33.24, PL§8): `view` reads this
+/// for `panel`/`overlay` the same way `plugin_seg` already does for the
+/// status row — a stopped or not-yet-rendered slot gives nothing, never a
+/// crash.
+pub fn widget<'a>(state: &'a State, plugin: &str, slot: Slot) -> Option<&'a Widget> {
+    state
+        .plugin_status
+        .iter()
+        .find(|s| s.plugin == plugin && s.slot == slot && !s.stopped())
+        .and_then(|s| s.widget.as_ref())
+}
+
+/// Whether `slot` is on screen right now: the status segments always are;
+/// `panel`/`overlay` (T33.24) only once `TogglePanel`/`OpenOverlay` shows
+/// them. This is the redraw model's "a slot became visible" (PL§8) — a
+/// slot renders only when this turns true, never at `Declare` time.
+fn slot_visible(state: &State, plugin: &str, slot: Slot) -> bool {
+    match slot {
+        Slot::StatusLeft | Slot::StatusRight => true,
+        Slot::Panel => state.plugin_panel_open.as_deref() == Some(plugin),
+        Slot::Overlay => matches!(&state.modal, Some(Modal::Plugin { id }) if id == plugin),
+    }
+}
+
+/// The area a `cox_render` request offers a slot, so a plugin can lay out
+/// its own tree for the space it will actually get (T33.24: "the render
+/// request carries the area size").
+fn area_for(state: &State, slot: Slot) -> (u16, u16) {
+    match slot {
+        Slot::StatusLeft | Slot::StatusRight => (SEGMENT_COLS, 1),
+        Slot::Panel => (state.term.0, PANEL_ROWS),
+        Slot::Overlay => state.term,
+    }
+}
+
+/// A `cox_render` request for every live, visible segment, or only
+/// `plugin`'s.
 pub fn render_requests(state: &State, plugin: Option<&str>) -> Vec<Cmd> {
     state
         .plugin_status
         .iter()
-        .filter(|s| !s.stopped() && plugin.is_none_or(|p| p == s.plugin))
+        .filter(|s| {
+            !s.stopped()
+                && plugin.is_none_or(|p| p == s.plugin)
+                && slot_visible(state, &s.plugin, s.slot)
+        })
         .map(|s| {
+            let (width, height) = area_for(state, s.slot);
             Cmd::Plugin(PluginRequest::Render {
                 plugin: s.plugin.clone(),
                 input: RenderIn {
                     slot: s.slot,
-                    width: SEGMENT_COLS,
-                    height: 1,
+                    width,
+                    height,
                 },
             })
         })
