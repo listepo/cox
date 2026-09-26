@@ -279,6 +279,17 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-patch"]
     );
 
+    // cox-search (T32.5) is the pure grep/glob walk, match and fuzzy-rank
+    // engine: a pure leaf, same shape as cox-patch/cox-syntax. `GrepTool`/
+    // `GlobTool` — the `Tool` impls that call `path::confine` and, for
+    // `grep`, archive over-cap results — stay in cox-tools so `confine`
+    // keeps its single call site.
+    assert!(
+        deps["cox-search"].is_empty(),
+        "cox-search must not depend on any other workspace crate, found {:?}",
+        deps["cox-search"]
+    );
+
     // mcp/store/ext depend only on cox-protocol: this is the rule the test
     // is named for — none of them may reach cox-core.
     let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
@@ -295,11 +306,18 @@ fn no_crate_below_cox_depends_on_core() {
     }
 
     // cox-tools additionally depends on cox-sandbox (T32.3: path::confine
-    // and the sandbox backends), cox-patch (T32.6: the V4A engine) and
-    // cox-syntax (T32.4: outline and parse_bash).
-    let tools_allowed: HashSet<&str> = ["cox-protocol", "cox-sandbox", "cox-patch", "cox-syntax"]
-        .into_iter()
-        .collect();
+    // and the sandbox backends), cox-patch (T32.6: the V4A engine),
+    // cox-syntax (T32.4: outline and parse_bash) and cox-search (T32.5: the
+    // grep/glob walk and match engine).
+    let tools_allowed: HashSet<&str> = [
+        "cox-protocol",
+        "cox-sandbox",
+        "cox-patch",
+        "cox-syntax",
+        "cox-search",
+    ]
+    .into_iter()
+    .collect();
     let tools_deps = &deps["cox-tools"];
     assert!(
         !tools_deps.contains("cox-core"),
@@ -309,6 +327,6 @@ fn no_crate_below_cox_depends_on_core() {
         tools_deps
             .iter()
             .all(|dep| tools_allowed.contains(dep.as_str())),
-        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax among workspace crates, found {tools_deps:?}"
+        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax/cox-search among workspace crates, found {tools_deps:?}"
     );
 }

@@ -6,7 +6,9 @@
 //! `path::confine` live in `cox-sandbox` (T32.3), re-exported here at their
 //! old paths. Tree-sitter and its grammars live in `cox-syntax` (T32.4);
 //! `outline` is re-exported the same way, and `bash/classify.rs` calls into
-//! it for parsing while keeping its own risk walk here.
+//! it for parsing while keeping its own risk walk here. The pure `grep`/
+//! `glob` walk and match engine lives in `cox-search` (T32.5); the `Tool`
+//! impls (`path::confine`, archiving) stay here.
 
 pub mod ask_user;
 pub mod bash;

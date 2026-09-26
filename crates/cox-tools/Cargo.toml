@@ -18,17 +18,15 @@ cox-patch = { path = "../cox-patch", version = "0.1.2" }
 # (`parse_bash`) moved to their own crate; `outline` is re-exported at its
 # old path (`crates/cox-tools/src/lib.rs`) so existing callers keep working.
 cox-syntax = { path = "../cox-syntax", version = "0.1.2" }
+# T32.5: the pure grep/glob walk, match and fuzzy-rank engine; this crate
+# keeps the grep/glob Tool impls (path::confine, archiving).
+cox-search = { path = "../cox-search", version = "0.1.2" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
-ignore = { workspace = true }
-grep-searcher = { workspace = true }
-grep-regex = { workspace = true }
-globset = { workspace = true }
-nucleo = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
 nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
