@@ -419,6 +419,31 @@ fn every_segment_allowed_runs_without_asking(#[case] command: &str) {
     );
 }
 
+#[rstest]
+#[case::nohup("nohup rm -rf x")]
+#[case::timeout_with_duration("timeout 5 rm x")]
+#[case::wrappers_stack("timeout 5 nohup rm -rf x")]
+fn deny_sees_through_wrappers(#[case] command: &str) {
+    // T36.2: `Bash(rm:*)` in `deny` used to match only the line as
+    // written, so a wrapper Claude Code itself strips before matching hid
+    // the command it runs (research.md row 38).
+    let e = engine(&[], &[], &["Bash(rm:*)"]);
+    assert_eq!(judge(&e, command, &[]), Want::Deny, "{command}");
+}
+
+#[rstest]
+#[case::sh_c("sh -c 'rm -rf x'")]
+#[case::bash_c_compound("bash -c 'echo hi; rm -rf x'")]
+#[case::sh_c_behind_a_wrapper("timeout 5 sh -c 'rm -rf x'")]
+fn deny_looks_inside_sh_c(#[case] command: &str) {
+    // T36.2: a deny rule now sees the commands a `sh -c`/`bash -c` string
+    // runs by re-parsing it with the same walk, stricter than Claude Code
+    // itself here (research.md row 38: its own `Bash(rm *)` does not stop
+    // `bash -c 'rm -rf build/'`).
+    let e = engine(&[], &[], &["Bash(rm:*)"]);
+    assert_eq!(judge(&e, command, &[]), Want::Deny, "{command}");
+}
+
 #[test]
 fn exact_rule_still_matches_whole_command() {
     let e = engine(&["Bash(git log $(git rev-parse HEAD))"], &[], &[]);

@@ -117,17 +117,31 @@ body, and hands the engine those strings next to the whole line:
 
 - a `deny` or `ask` rule that matches **any** command applies, so
   `deny = ["Bash(rm:*)"]` denies `git status && rm -rf x`, and a leading
-  `VAR=value` does not hide the `rm`;
+  `VAR=value` does not hide the `rm`. It also sees past a wrapper Claude
+  Code itself strips before matching (`nohup`, `timeout 5`, `time`,
+  `nice`, `stdbuf`, the builtins `command`/`builtin`, zsh's `noglob`, bare
+  `xargs`), so `deny = ["Bash(rm:*)"]` denies `nohup rm -rf x` too
+  (T36.2), and it re-parses an `eval …`/`sh -c '…'`/`bash -c "…"` string
+  with the same walk, so it denies `sh -c 'rm -rf x'` — stricter than
+  Claude Code here, whose own rules do not look inside such a string
+  (research.md row 38);
 - an `allow` prefix rule or a session grant allows the line only when
   **every** command is covered, so `allow = ["Bash(git:*)"]` runs
   `git status && git diff` without asking but asks for `git status; rm -rf x`.
   Different rules may cover different commands;
 - a line the split cannot vouch for is never allowed by a prefix rule or a
   grant, whatever its first word: `$(…)` or backticks, `<(…)`, `eval`,
-  `sh -c`/`bash -c`, a variable assignment or `export` (`PATH=…` changes
-  what `git` runs), an output redirect to a path (`2>&1` and `/dev/null`
+  `sh -c`/`bash -c`, an output redirect to a path (`2>&1` and `/dev/null`
   are fine) or a parse error. It takes the normal ask path; `cox run -p`
   turns that ask into a deny;
+- `export`/`declare`/`unset` and a variable assignment (`PATH=… git`
+  changes what `git` runs) work the same way, and are never rated
+  `ReadOnly` either (T36.2 closed a gap where `classify` dropped the
+  assignment as if it did not change what runs) — except a leading
+  assignment of a pure locale/display variable (`LC_ALL`, `LANG`, `TZ`,
+  `NO_COLOR`), which cannot change what a later command resolves to or
+  does, so it stays `ReadOnly` and eligible for an allow rule or grant,
+  same as if it were not there;
 - a bare `Bash` rule or an exact rule (`Bash(make && make install)`) still
   matches the whole line as written, and the read-only auto-allow and
   `bypass` mode are unchanged.

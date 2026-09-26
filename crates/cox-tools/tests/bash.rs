@@ -179,6 +179,33 @@ fn bash_segments_split_every_operator_and_keep_nested_commands() {
     }
 }
 
+#[test]
+fn assignment_prefix_is_not_read_only() {
+    // T36.2: `classify` used to drop a leading assignment as if it did not
+    // change what runs, so these stayed `ReadOnly` and ran without asking.
+    for command in [
+        "GIT_PAGER='rm x' git log",
+        "PAGER=/tmp/evil man ls",
+        "export PATH=/tmp/evil; git status",
+    ] {
+        assert_ne!(classify(command), Risk::ReadOnly, "{command:?}");
+    }
+}
+
+#[test]
+fn safe_locale_assignment_stays_read_only() {
+    // A leading assignment of a pure locale/display variable cannot change
+    // what a later command resolves to, so it keeps today's behaviour.
+    for command in [
+        "LC_ALL=C git status",
+        "LANG=en_US.UTF-8 git log",
+        "TZ=UTC date",
+        "NO_COLOR=1 git diff",
+    ] {
+        assert_eq!(classify(command), Risk::ReadOnly, "{command:?}");
+    }
+}
+
 fn alive(pid: i32) -> bool {
     kill(Pid::from_raw(pid), None).is_ok()
 }

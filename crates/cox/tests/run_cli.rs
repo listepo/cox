@@ -132,6 +132,10 @@ const GIT_THEN_TOUCH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/scenarios/bash_git_then_touch.toml"
 );
+const ASSIGNMENT_PREFIX: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/scenarios/bash_assignment_prefix.toml"
+);
 
 /// T36.1: `Bash(git:*)` covers the `git` command, not the `touch` chained
 /// after it, so the line asks, and headless turns the ask into a deny; with
@@ -155,6 +159,20 @@ fn a_prefix_rule_does_not_allow_a_command_chained_after_it() {
         .success()
         .stdout("done\n");
     assert!(work.path().join("chained").exists());
+}
+
+/// T36.2: an assignment prefix in front of a read-only command (`GIT_PAGER='touch
+/// x' git log`) no longer auto-allows under the default config; headless
+/// turns the ask into a deny, and the pager it names never runs.
+#[test]
+fn an_assignment_prefix_asks_instead_of_auto_allowing() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    cox(work.path(), home.path(), ASSIGNMENT_PREFIX)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("\"denied\":1"));
+    assert!(!work.path().join("x").exists());
 }
 
 #[test]
