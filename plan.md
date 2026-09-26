@@ -12,11 +12,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T32.2 | todo | P2 | 4 | 0% | |
 | T32.13 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
 | T32.14 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
-| T33.1 | in progress | P1 | 4 | 5% | Claude Code / opus-5.5 |
-| T33.2 | todo | P1 | 5 | 0% | |
+| T33.2 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
 | T33.3 | todo | P1 | 5 | 0% | |
 | T33.4 | todo | P2 | 3 | 0% | |
-| T33.5 | todo | P1 | 3 | 0% | |
+| T33.5 | in progress | P1 | 3 | 5% | Claude Code / sonnet-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
 | T33.7 | todo | P2 | 3 | 0% | |
 | T33.8 | todo | P2 | 3 | 0% | |
@@ -831,17 +830,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
-
-#### T33.1 `cox-plugin-api`: the manifest and its schema — blocker
-
-Depends: — · Size: ~180 · Files: `crates/cox-plugin-api/src/lib.rs`, `src/manifest.rs`, `crates/cox-protocol/src/lib.rs` (re-export)
-Goal: `plugin.toml` parses into typed `PluginManifest`/`Capabilities`/`Limits`/`ProviderDecl`/`ModelDecl`/`McpDecl` with `deny_unknown_fields`. `docs/plugin.schema.json` is generated and drift-tested.
-Plan:
-1. New pure crate (serde, serde_json, schemars). Add a `deps.rs` rule: no workspace dependency.
-2. Types and validation per PL§2: id regex, name lengths after prefixing, `net` is hosts not URLs, `fs` roots.
-3. `cox_protocol::plugin` re-export.
-4. Drift test modelled on `protocol_jsonschema_matches_committed_file`.
-Check: `manifest_rejects_unknown_keys`, `manifest_rejects_net_url`, `manifest_rejects_id_with_double_underscore`, `plugin_schema_matches_committed_file`; `cargo build -p cox-plugin-api --target wasm32-unknown-unknown` succeeds.
 
 #### T33.2 ABI v1 payload types — blocker
 

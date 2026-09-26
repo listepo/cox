@@ -933,3 +933,24 @@ Check: there is no `reqwest` in `cox-tools/Cargo.toml`.
 Status: done 2026-09-26
 Result: `crates/cox-web` owns the fetch and HTML-to-text engine: `client`, a streaming `fetch` with cancellation and a byte cap, and `extract`. It depends only on `cox-protocol`. `WebFetchTool` stays in `cox-tools` (it uses `ToolCx` and `write::str_field`), and its output is unchanged.
 Check: `reqwest` no longer appears in `cox-tools/Cargo.toml`. The `web_fetch` integration tests pass unchanged. nextest ran 930 passed, 3 skipped in the worktree.
+
+#### T33.1 `cox-plugin-api`: the manifest and its schema — blocker
+
+Depends: — · Size: ~180 · Files: `crates/cox-plugin-api/src/lib.rs`, `src/manifest.rs`, `crates/cox-protocol/src/lib.rs` (re-export)
+Goal: `plugin.toml` parses into typed `PluginManifest`/`Capabilities`/`Limits`/`ProviderDecl`/`ModelDecl`/`McpDecl` with `deny_unknown_fields`. `docs/plugin.schema.json` is generated and drift-tested.
+Plan:
+1. New pure crate (serde, serde_json, schemars). Add a `deps.rs` rule: no workspace dependency.
+2. Types and validation per PL§2: id regex, name lengths after prefixing, `net` is hosts not URLs, `fs` roots.
+3. `cox_protocol::plugin` re-export.
+4. Drift test modelled on `protocol_jsonschema_matches_committed_file`.
+Check: `manifest_rejects_unknown_keys`, `manifest_rejects_net_url`, `manifest_rejects_id_with_double_underscore`, `plugin_schema_matches_committed_file`; `cargo build -p cox-plugin-api --target wasm32-unknown-unknown` succeeds.
+Status: done 2026-09-26
+Result: `crates/cox-plugin-api` parses `plugin.toml` into `PluginManifest`, `Capabilities`, `Limits`, `ProviderDecl`, `ModelDecl`, `PriceDecl` and `McpDecl`, all with `deny_unknown_fields`. `ModelTier` allows only `cheap` and `code`, so a manifest cannot request `think`. `validate()` applies PL§2:
+- `api` major is 1;
+- the id matches `^[a-z][a-z0-9-]{1,23}$`, so it can never contain `__`;
+- prefixed tool and MCP names fit in 64 characters;
+- `net` entries are host patterns only;
+- `fs` roots stay inside `$WORKSPACE` or `$PLUGIN_DATA`;
+- only the allowed render targets are accepted.
+The id-matches-directory check is left to the loader (T33.4). `docs/plugin.schema.json` is generated and drift-tested. `cox-protocol` re-exports the crate as `plugin`; `deps.rs` lets `cox-protocol` depend on `cox-plugin-api` only, and `cox-plugin-api` on no workspace crate. It builds for `wasm32-unknown-unknown`.
+Check: `manifest_rejects_unknown_keys`, `manifest_rejects_net_url`, `manifest_rejects_id_with_double_underscore` and `plugin_schema_matches_committed_file` pass. nextest ran 951 passed, 3 skipped in the worktree.
