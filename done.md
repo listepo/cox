@@ -2829,3 +2829,63 @@ Check:
 - The real binary with a scratch `COX_HOME`: `cox config get plugins.decide` shows `salience` and `salience_ms`, and `cox config get memory` shows `salience_min`.
 - In the worktree: nextest 1250 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1253 run, 1252 passed, 3 skipped; headless_run_does_not_wait_for_a_background_shell flaked under load and passed on rerun. fmt, clippy and the slim build clean.
+
+#### T33.33 `/plugin update | remove | list | reload` in the TUI
+
+Depends: T33.30, T33.32 · Size: ~140 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
+Goal: the palette entries reach the same `plugin_cmd` functions through `Cmd`. Remove asks through a modal. `/plugin reload` means `/clear` with a notice that the cache prefix restarts. In-session remove stops the instance; its frozen tools answer `Denied { why: "plugin removed" }`.
+Check: insta snapshot of the remove confirmation; `removed_plugin_tool_is_denied_until_next_session`.
+Status: done 2026-09-26
+Result: `/plugin update | remove | list | reload` in the TUI.
+- **One channel.** T33.30's channel now carries `PluginMgmtRequest` (`New`, `Update`, `Remove`, `List`) through `Cmd::PluginMgmt` and `Msg::PluginMgmt`, and `session::run_plugin_mgmt` dispatches it to the same `plugin_cmd` code the CLI uses.
+- **`plugin_cmd` refactor.** `update` and `remove` (and `install`/`link`/`enable`, which shared the pattern) have a stdin-free core that collects lines and takes a `confirm` callback. The CLI wrappers print the same lines in the same order, so CLI output is unchanged. `update_for_tui` and `remove_for_tui` return one string.
+- **Remove.** It asks through the new `RemoveConfirm` modal (`Modal::PluginRemove`, y/n/Esc). On success `PluginRequest::Stop` goes through the existing plugin UI channel and sets `PluginHost::stop()`, a liveness flag only; the worker thread ends at session end as before. `WasmTool::call` then answers `ToolError::Denied { why: "plugin removed" }` until the next session. This is a liveness answer; the Engine still decides every call first.
+- **Reload.** `/plugin reload` is `/clear` plus a notice that the cache prefix restarts.
+Deviations:
+- 13 files, beyond the card's three: `modal.rs` and `view.rs` (the new modal), `app.rs` and `kitty_probe.rs` (the renamed channel), `plugin_cmd.rs` (the refactor), `plugin_ui.rs` (routing `Stop`), and `cox-plugin` `host.rs`/`tool.rs` (the liveness flag).
+- While landing, `Stop` was routed through `answer()` and replies with a plain `Redraw`, replacing an `unreachable!()` arm (no panics outside tests).
+- Mid-session remove does not reclaim the plugin's thread or memory; they are released at session end.
+Check:
+- insta `plugin_remove_confirm_snapshot`
+- `plugin_remove_confirm_shows_keep_data`
+- `removed_plugin_tool_is_denied_until_next_session`
+- `stop_flags_is_stopped_without_closing_the_worker`
+- 4 parse tests; the `screen_help_overlay` snapshot is updated for the widened `/plugin` row.
+- The real binary with a scratch `COX_HOME`: `cox plugin list --json`, `cox plugin --help` and `cox doctor` run.
+- In the worktree: nextest 1257 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.33 and T33.38 together): nextest 1268 passed, 4 skipped; fmt, clippy and the slim build clean.
+
+#### T33.38 Dart: MCP-server plugin template and example
+
+Depends: T33.19, T33.29, T33.37 · Size: ~170 · Files: `plugins/examples/dart/bin/server.dart`, `plugins/templates/dart/*.tmpl`, `crates/cox/src/plugin_new.rs`; `plugins/mise.toml` gets dart
+Goal: `--lang dart` scaffolds a package whose only capability is an `[[mcp]]` stdio server (`dart compile exe`, `dart_mcp` 0.5.2), with no `plugin.wasm`. `--with` accepts only `tool` and `mcp` for Dart and says why for anything else. The example serves one `count` tool.
+Check: `plugin_example_dart` is ignored with its reason locally and runs in the CI job (the tool is callable through `mcp__<id>-count__count` and runs under the sandbox); `new_dart_rejects_status_with_reason`.
+Status: done 2026-09-26
+Result: `cox plugin new --lang dart` and the Dart example.
+- **Scaffold.** The package's only capability is an `[[mcp]]` stdio server built with `dart compile exe` on `dart_mcp` 0.5.2, and it has no `plugin.wasm`.
+  - `plugin_new.rs` extends T33.29's `Lang`, `Capability` and renderer with `scaffold_dart`.
+  - `--with` accepts only `tool` and `mcp`; both scaffold the same server. Anything else is rejected with an error naming PL§13/§14 and R§4.3.5 P44.
+  - Templates are in `plugins/templates/dart/*.tmpl`.
+- **Example.** `plugins/examples/dart` serves one `count` tool.
+- **Wasm-less packages.** `PluginManifest.wasm` is now `Option<String>`. `validate()` requires it unless the package is `[[mcp]]`-only; otherwise it returns `ManifestError::MissingWasm`. `docs/plugin.schema.json` is regenerated.
+  - `load_plugins` creates no extism instance for such a package, and its granted `[[mcp]]` servers register through the same grant check and sandbox path as a wasm plugin's.
+  - `discover`, doctor and the fixtures handle `None`.
+- **Toolchain and CI.**
+  - `plugins/mise.toml` pins Dart 3.13.4, with `toolchain.md` rows for dart and dart_mcp.
+  - `just plugin-examples <lang>` runs the examples.
+  - A new CI job `plugin-examples` installs Dart through `dart-lang/setup-dart@v1` and fails when the toolchain is missing. It is part of `revert-on-failure`'s `needs`, like `audit` and `deny`.
+- **Picker.** `dart` is added to the TUI picker's `PLUGIN_LANGS` while landing.
+Deviations:
+- The card assumed a wasm-less package already loads; it did not, so the host support is part of this task (second commit).
+- `dart compile exe -o build/X` does not create `build/`, so every call site does `mkdir -p build` first.
+- The e2e grants `mcp__example-dart-count__*` in the scratch config, because a headless run has no approver. It calls `count` twice in one turn, since each `cox run` starts a fresh server.
+- About 1000 lines in total, mostly templates and the example, against ~170.
+- **Incident.** During a manual repro, one `cox plugin install` ran without a scratch `COX_HOME` and wrote to the real `~/.cox`. The installed files were removed, but a `plugin_grants` row for `example-dart` is left in the real `~/.cox/cox.db` for the creator to delete.
+Check:
+- `plugin_example_dart` (ignored locally, runs in the `plugin-examples` CI job) passed locally with Dart 3.13.4: the tool is callable as `mcp__example-dart-count__count` under the sandbox.
+- `new_dart_rejects_status_with_reason`
+- `wasm_less_mcp_only_plugin_installs_grants_and_registers_its_server`
+- `doctor_reports_a_wasm_less_mcp_only_plugin_as_loaded`
+- 3 manifest validation tests.
+- In the worktree: nextest 1255 passed, 4 skipped; fmt, clippy and the slim build clean.
+- On main after landing (T33.33 and T33.38 together): nextest 1268 passed, 4 skipped; fmt, clippy and the slim build clean.

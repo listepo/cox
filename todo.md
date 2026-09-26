@@ -2,10 +2,8 @@
 
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
-- T33.33. `/plugin update | remove | list | reload` in the TUI
 - T33.34. Go: SDK wrapper, template, example
 - T33.36. Kotlin: thin PDK, template, example
-- T33.38. Dart: MCP-server plugin template and example
 - T33.40.1. ABI: two-phase decide, own-provider call-out, batched questions
 - T33.40.3. Jev provider export
 - T33.40.4. Jev plugin as a provider, end to end and offline
