@@ -13,6 +13,11 @@
 //! that only needs the guard do not pull in the whole TUI. `cox-tui`
 //! re-exports this crate at its old `text` path, so `cox_tui::text::sanitize`
 //! keeps working for existing callers.
+//!
+//! [`redact`] is the sibling output guard for secrets rather than escapes
+//! (T28.4, moved here by T33.9).
+
+pub mod redact;
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 

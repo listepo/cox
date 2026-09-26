@@ -1025,18 +1025,27 @@ impl Default for McpConfig {
 
 /// `[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even
 /// when on, only a plugin granted for its exact digest loads (PL§3). Not
-/// `deny_unknown_fields`: T33.9 flattens the per-plugin `[plugins.<id>]`
-/// tables in here, the `HooksConfig`/`McpConfig` pattern.
+/// `deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in
+/// here (T33.9), the `HooksConfig` pattern, since the plugin id is the TOML
+/// key rather than a fixed field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct PluginsConfig {
     /// Whether any plugin loads at all; `--no-plugins` sets it to `false`.
     pub enabled: bool,
+    /// Every `[plugins.<id>]` table, keyed by plugin id, handed unchanged to
+    /// that plugin's `cox_init` as `InitIn.config` (PL§4). Opaque JSON: the
+    /// plugin validates its own table, so cox never needs its shape.
+    #[serde(flatten)]
+    pub entries: HashMap<String, serde_json::Value>,
 }
 
 impl Default for PluginsConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            entries: HashMap::new(),
+        }
     }
 }
 

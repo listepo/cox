@@ -971,6 +971,7 @@ dependencies = [
  "cox-permission",
  "cox-protocol",
  "cox-provider",
+ "cox-sanitize",
  "cox-tools",
  "insta",
  "opentelemetry",
@@ -1055,6 +1056,7 @@ version = "0.1.2"
 dependencies = [
  "cox-plugin-api",
  "cox-protocol",
+ "cox-sanitize",
  "extism",
  "figment",
  "serde",
@@ -1062,6 +1064,7 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.20",
+ "tracing",
  "wasmtime",
 ]
 

@@ -546,6 +546,32 @@ mod tests {
         });
     }
 
+    /// T33.9: a `[plugins.<id>]` table flattens into `plugins.entries`
+    /// beside the fixed `enabled` key, the `HooksConfig` pattern.
+    #[test]
+    fn plugin_table_flattens_into_entries() {
+        let home = tempdir().expect("tempdir");
+        let cwd = tempdir().expect("tempdir");
+        fs::write(
+            home.path().join("config.toml"),
+            "[plugins]\nenabled = true\n\n[plugins.jev]\nroute = \"cheap\"\nlimit = 3\n",
+        )
+        .expect("write user config");
+
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let plugins = load_plain(cwd.path())
+                .expect("load succeeds")
+                .config
+                .plugins;
+            assert!(plugins.enabled);
+            assert_eq!(
+                plugins.entries.get("jev"),
+                Some(&serde_json::json!({ "route": "cheap", "limit": 3 }))
+            );
+            assert!(!plugins.entries.contains_key("enabled"));
+        });
+    }
+
     #[test]
     fn config_ignores_test_only_cox_env_vars() {
         // `COX_EXPECT_SANDBOX` (set globally in CI) and the provider

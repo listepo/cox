@@ -28,6 +28,9 @@ use cox_protocol::{
     PluginGrant, PluginStore as PluginStoreTrait, SessionId, SessionRow, Store as StoreTrait,
     StoreError, Usage, UsageRow,
 };
+// The `plugin_kv` quotas (PL§3) live beside `PluginStore` so the plugin
+// host names the same limit in its refusal (T33.9).
+use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT};
 
 use models::{
     CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow, UsageDbRow,
@@ -39,12 +42,6 @@ const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 /// Inline archive payloads up to this size live in `archive.inline`; larger
 /// ones spill to `archive/<id>` under `home` (plan.md §1.7).
 const INLINE_ARCHIVE_LIMIT: usize = 16 * 1024;
-
-/// `plugin_kv` per-value quota (PL§3).
-const KV_VALUE_LIMIT: usize = 64 * 1024;
-
-/// `plugin_kv` per-plugin quota, summed across all its keys (PL§3).
-const KV_PLUGIN_LIMIT: usize = 1024 * 1024;
 
 /// Fsync a rollout file at least this often (plan.md T0.4 step 3): a crash
 /// loses at most this many buffered lines.
@@ -686,6 +683,18 @@ impl PluginStoreTrait for Store {
         Ok(())
     }
 
+    fn kv_delete(&self, plugin_id: &str, key: &str) -> Result<(), StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::delete(
+            schema::plugin_kv::table
+                .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+                .filter(schema::plugin_kv::key.eq(key)),
+        )
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
     fn kv_delete_all(&self, plugin_id: &str) -> Result<(), StoreError> {
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
         diesel::delete(schema::plugin_kv::table.filter(schema::plugin_kv::plugin_id.eq(plugin_id)))
@@ -1221,5 +1230,21 @@ mod tests {
             store.kv_get("other-plugin", "a").expect("get"),
             Some(b"2".to_vec())
         );
+    }
+
+    #[test]
+    fn kv_delete_removes_only_that_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        store.kv_put("jev", "a", b"1").expect("put a");
+        store.kv_put("jev", "b", b"2").expect("put b");
+
+        store.kv_delete("jev", "a").expect("delete a");
+        store
+            .kv_delete("jev", "missing")
+            .expect("absent key is fine");
+
+        assert_eq!(store.kv_get("jev", "a").expect("get"), None);
+        assert_eq!(store.kv_get("jev", "b").expect("get"), Some(b"2".to_vec()));
     }
 }

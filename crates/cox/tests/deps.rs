@@ -313,15 +313,22 @@ fn no_crate_below_cox_depends_on_core() {
     // T34.1's `agent` tool matches a custom preset by `AgentDef`, but that
     // type lives in `cox_protocol::agent` precisely so this crate never
     // needs `cox-ext`, which does the filesystem read (`agents::discover`)
-    // the surface (`crates/cox/src/session.rs`) runs instead.
-    let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models", "cox-permission"]
-        .into_iter()
-        .collect();
+    // the surface (`crates/cox/src/session.rs`) runs instead. cox-sanitize
+    // (T33.9) holds the secret-redaction table `redact::scrub` re-exports,
+    // shared with the plugin host; it is a pure leaf.
+    let core_allowed: HashSet<&str> = [
+        "cox-protocol",
+        "cox-models",
+        "cox-permission",
+        "cox-sanitize",
+    ]
+    .into_iter()
+    .collect();
     assert!(
         deps["cox-core"]
             .iter()
             .all(|d| core_allowed.contains(d.as_str())),
-        "cox-core may only depend on cox-protocol/cox-models/cox-permission among workspace crates, found {:?}",
+        "cox-core may only depend on cox-protocol/cox-models/cox-permission/cox-sanitize among workspace crates, found {:?}",
         deps["cox-core"]
     );
 

@@ -1425,7 +1425,7 @@
       "additionalProperties": false
     },
     "PluginsConfig": {
-      "description": "`[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even\nwhen on, only a plugin granted for its exact digest loads (PL§3). Not\n`deny_unknown_fields`: T33.9 flattens the per-plugin `[plugins.<id>]`\ntables in here, the `HooksConfig`/`McpConfig` pattern.",
+      "description": "`[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even\nwhen on, only a plugin granted for its exact digest loads (PL§3). Not\n`deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in\nhere (T33.9), the `HooksConfig` pattern, since the plugin id is the TOML\nkey rather than a fixed field.",
       "type": "object",
       "properties": {
         "enabled": {
@@ -1433,7 +1433,8 @@
           "type": "boolean",
           "default": true
         }
-      }
+      },
+      "additionalProperties": true
     },
     "MemoryConfig": {
       "description": "`[memory]` (plan.md §1.6).",

@@ -11,6 +11,9 @@ cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 # `permission` path (`crates/cox-core/src/lib.rs`) so existing callers keep
 # working.
 cox-permission = { path = "../cox-permission", version = "0.1.2" }
+# T33.9: `redact::scrub`'s pattern table moved to this pure leaf so the
+# plugin host redacts with the same one; re-exported at the old path.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

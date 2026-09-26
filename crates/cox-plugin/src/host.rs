@@ -17,6 +17,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::PluginError;
+use crate::hostfn::HostEnv;
 
 /// Control lane depth: hooks, decide, tools, provider, render, commands.
 pub const CONTROL_DEPTH: usize = 16;
@@ -89,8 +90,16 @@ pub struct PluginHost {
 }
 
 impl PluginHost {
-    /// Compiles `wasm` (binary or WAT text, P15) with no WASI, no host
-    /// functions and no compilation cache yet, under the clamped `limits`.
+    /// Compiles `wasm` under an environment that grants nothing: every
+    /// `cox:host/v1` import links, and only `cox_log`/`cox_notify` do
+    /// anything. Enough to prove a package compiles (T33.6's session check).
+    pub fn load(id: &str, wasm: &[u8], limits: &Limits) -> Result<Self, PluginError> {
+        Self::load_with(wasm, limits, Arc::new(HostEnv::new(id)))
+    }
+
+    /// Compiles `wasm` (binary or WAT text, P15) with no WASI and no
+    /// compilation cache yet, under the clamped `limits`, with the
+    /// `cox:host/v1` functions bound to `env` (T33.9).
     ///
     /// WASI stays off, and filesystem preopens (T33.14) stay blocked, until
     /// extism ships wasmtime >= 48: wasmtime 43's WASI filesystem has a
@@ -99,7 +108,7 @@ impl PluginHost {
     /// `CompiledPlugin::new` and offers no way to pass a shared one; that is
     /// safe from RUSTSEC-2026-0222 only while nothing here moves a wasmtime
     /// object from one plugin to another.
-    pub fn load(id: &str, wasm: &[u8], limits: &Limits) -> Result<Self, PluginError> {
+    pub fn load_with(wasm: &[u8], limits: &Limits, env: Arc<HostEnv>) -> Result<Self, PluginError> {
         let mib = limits
             .memory_mib
             .unwrap_or(DEFAULT_MEMORY_MIB)
@@ -113,6 +122,7 @@ impl PluginHost {
         let plugin = PluginBuilder::new(manifest)
             .with_wasi(false)
             .with_cache_disabled()
+            .with_functions(env.functions())
             .build()
             .map_err(|e| PluginError::Load(format!("{e:#}")))?;
         if !plugin.function_exists(INIT) {
@@ -127,10 +137,13 @@ impl PluginHost {
             threads: Vec::new(),
         };
         let dog = shared.clone();
+        let id = env.id().to_string();
         host.spawn(format!("cox-plugin-{id}-deadline"), move || {
             watch(&dog, &cancel)
         })?;
-        host.spawn(format!("cox-plugin-{id}"), move || serve(plugin, &shared))?;
+        host.spawn(format!("cox-plugin-{id}"), move || {
+            serve(plugin, &shared, &env)
+        })?;
         Ok(host)
     }
 
@@ -204,7 +217,7 @@ impl Drop for PluginHost {
     }
 }
 
-fn serve(mut plugin: Plugin, shared: &Shared) {
+fn serve(mut plugin: Plugin, shared: &Shared, env: &HostEnv) {
     loop {
         let job = {
             let mut q = lock(&shared.queues);
@@ -219,9 +232,12 @@ fn serve(mut plugin: Plugin, shared: &Shared) {
             }
         };
         let reply = if plugin.function_exists(&job.export) {
+            // Host functions read it to refuse what this export may not do.
+            env.enter(&job.export);
             set_deadline(shared, Some(Instant::now() + job.deadline));
             let out = plugin.call::<&[u8], Vec<u8>>(&job.export, &job.input);
             set_deadline(shared, None);
+            env.enter("");
             out.map(Some)
                 .map_err(|e| PluginError::from_call(&job.export, &e))
         } else {

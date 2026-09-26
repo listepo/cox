@@ -62,7 +62,7 @@ A handler returns `Result<output, E>` for any error type that implements `Displa
 
 | `register!` key | Export | Input → output | Called |
 | --- | --- | --- | --- |
-| `init` | `cox_init` | `InitIn` → `InitOut` | once per session; contributions you were not granted are dropped with a notice |
+| `init` | `cox_init` | `InitIn` → `InitOut` | once per session; `InitIn.config` is your `[plugins.<id>]` table from cox's config (`{}` when absent), which you validate yourself; contributions you were not granted are dropped with a notice |
 | `on_event` | `cox_on_event` | `EventBatch` → `Effects` | for the events in `InitOut.subscribe` (PL§5) |
 | `hook` | `cox_hook` | `HookCall` → `HookOutcome` as `Value` | for the hooks in `capabilities.hooks` (PL§6) |
 | `decide` | `cox_decide` | `Question` → `Advice` | at the decision points in `capabilities.decide` (PL§6b) |
@@ -83,8 +83,8 @@ Each wrapper returns `SdkResult<T>`. `SdkError::Host(AbiError)` means cox refuse
 | --- | --- | --- | --- |
 | `log(level, text)` | — | — | `()`; goes to cox's log, rate-limited |
 | `notify(level, text)` | — | `render` | `()`; a transcript notice, level at most `Warn`, sanitized |
-| `kv_get(key)`, `kv_put(key, value)`, `kv_delete(key)` | `kv` | `render` | `Option<Value>` / `()`; within the store quota |
-| `context()` | `context` | — | the event-folded session snapshot |
+| `kv_get(key)`, `kv_put(key, value)`, `kv_delete(key)` | `kv` | `render` | `Option<Value>` / `()`; within the store quota (64 KiB per value, 1 MiB per plugin, keys up to 256 bytes) |
+| `context()` | `context` | — | the event-folded session snapshot: session id, cwd, tier and model, usage totals, the last 50 items with their text, the todo list, compactions; secret-shaped text redacted |
 | `invoke_tool(name, input)` | `invoke` lists `name` | everything but `on_event`, `command`, `key`, `tool_call` | a `ToolOutput`; the call passes hooks, the permission engine and the sandbox like a model's call |
 | `model_call(&ModelCall)` | `model` | `render` | `Vec<ProviderEvent>`; at or below the granted tier, budget-gated, recorded in the cost ledger |
 | `http(&HttpReq)` | `net` lists the host | `render` | `HttpResp`; a `[[provider]]` host only from `provider_stream`, with cox adding the auth header |

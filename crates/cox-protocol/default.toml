@@ -190,7 +190,7 @@ deferred = true
 servers = {}                        # [mcp.servers.<name>] command/args/url/env — same shape as .mcp.json
 
 [plugins]
-enabled = true                      # WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins
+enabled = true                      # WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins. A [plugins.<id>] table is that plugin's own config, passed unchanged to its cox_init as InitIn.config; the plugin validates it
 
 [memory]
 enabled = true

@@ -12,6 +12,9 @@ cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2" }
 # T33.6: `grant::check` reads the `PluginGrant` row `PluginStore` returns;
 # PL§3 puts that trait and its types in the protocol crate.
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# T33.9: `cox_notify`/`cox_log` text is sanitized and the context snapshot
+# redacted with the one guard each (`sanitize`, `redact::scrub`).
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 extism = { workspace = true }
 # T33.4: `plugin.toml` is parsed the way `config_load` parses cox's own
 # config (figment's `Toml` provider, already workspace-pinned); this is the
@@ -23,6 +26,8 @@ serde_json = { workspace = true }
 # dependency of `cox`, `cox-store` and `cox-provider-testkit`.
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+# T33.9: `cox_log` writes to cox's log (PL§4); already workspace-pinned.
+tracing = { workspace = true }
 # Only to switch on wasmtime's `anyhow` feature, which extism needs and does
 # not enable with its default features off (workspace Cargo.toml).
 wasmtime = { workspace = true }

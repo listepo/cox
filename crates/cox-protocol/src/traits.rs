@@ -331,6 +331,13 @@ pub struct PluginGrant {
     pub decided_at: String,
 }
 
+/// `plugin_kv` per-value quota (PL§3); a `PluginStore::kv_put` over it is
+/// `StoreError::QuotaExceeded`.
+pub const KV_VALUE_LIMIT: usize = 64 * 1024;
+
+/// `plugin_kv` per-plugin quota, summed across all its keys (PL§3).
+pub const KV_PLUGIN_LIMIT: usize = 1024 * 1024;
+
 /// Plugin grants and per-plugin key-value storage (PL§3, A52). Kept apart
 /// from `Store` so approving or persisting plugin state does not grow the
 /// trait every other surface implements; `cox-store`'s `Store` implements
@@ -364,6 +371,9 @@ pub trait PluginStore: Send + Sync {
     /// stored bytes would go over quota (64 KiB per value, 1 MiB per
     /// plugin, PL§3).
     fn kv_put(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), StoreError>;
+    /// Deletes one kv value; deleting an absent key is not an error
+    /// (`cox_kv_delete`, T33.9).
+    fn kv_delete(&self, plugin_id: &str, key: &str) -> Result<(), StoreError>;
     /// Deletes every kv row for a plugin id (`cox plugin remove`).
     fn kv_delete_all(&self, plugin_id: &str) -> Result<(), StoreError>;
 }
