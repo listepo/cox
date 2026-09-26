@@ -1434,3 +1434,41 @@ Check: passing tests:
 Reverting the wait makes the headless tests fail. The `subagent_messaging` tests passed 5 runs in a row. nextest: 1035 passed, 3 skipped in the worktree.
 
 nextest on main after landing: 1035 passed, 3 skipped. fmt, clippy and the slim build are clean, and no `sleep 4001` was left running.
+
+#### T32.2 `cox-render`: themes, colour, markdown, diff, SVG and glyphs
+
+Depends: T32.1 · Moves: `theme.rs`, `color.rs`, `svg.rs`, `markdown.rs`, `diff.rs`, `glyph.rs` from `cox-tui` (~2.6k).
+Why: dependencies (a), namely syntect, two-face, pulldown-cmark and terminal-colorsaurus.
+Plan:
+1. Before the move, record `cargo build --timings` for two builds: a clean `cox-tui`, and an incremental build after touching `state.rs`.
+2. Move the modules.
+3. Record the same timings again, both in R§4.3.4.
+4. Apply the falsifier in `docs/design/crates.md`.
+
+Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
+Status: done 2026-09-26
+Result: `crates/cox-render` holds `theme`, `color`, `svg`, `markdown`, `diff`, `glyph` and `link` (about 2.76k lines), the five built-in theme files (`assets/themes`), and `Look`.
+- **Dependencies:** syntect, two-face, pulldown-cmark and terminal-colorsaurus moved from `cox-tui/Cargo.toml` to `cox-render/Cargo.toml`, versions unchanged. `cox-tui` also dropped its unused `tempfile` dev-dependency.
+- **Old paths still work:** `cox-tui` re-exports every module (`cox_tui::{theme, diff, ..}`, `crate::theme` inside `cox-tui`, `cells::Look`), so callers in `crates/cox`, `cox-tools` and the TUI tests did not change.
+- **`deps.rs`:**
+  - `only_render_depends_on_the_highlighters` is new.
+  - `cox-tui` may also depend on `cox-render`.
+  - `cox-render` may depend only on `cox-protocol` and `cox-sanitize`.
+- **Docs updated:** `plan.md` §1.1 (crate row and dependency direction), `AGENTS.md` Layout, `toolchain.md` rows, and a stale path in `docs/design/plugins.md`.
+Timings, recorded in R§4.3.4. Each row is 5 runs of `cargo build -p cox-tui --timings`; figures are medians. Before and after ran back to back at load average 12–15.
+
+| Build | `cox-tui` unit before | `cox-tui` unit after | `cox-render` unit | Wall before → after |
+| --- | --- | --- | --- | --- |
+| clean | 1.25 s | 0.98 s | 0.50 s | 2.19 → 2.20 s |
+| incremental after touching `state.rs` | 0.42 s | 0.39 s | not rebuilt | 1.40 → 1.34 s |
+
+Falsifier (`docs/design/crates.md`): it fires in substance. The gain is real but negligible, about 0.03 s per edit, because cargo never rebuilt the heavy dependencies on an edit anyway. The re-rank it asks for is moot: C5, C7, C9 and C10 had already landed. The outcome is recorded under "Falsifier" in `crates.md`.
+Deviations:
+- `link.rs` and the `Look` struct moved as well. `markdown`/`diff` need `Look`, and `link::mark` only needs ratatui, so they could not stay behind without a cycle.
+- `cox-render` also carries `similar` (for `diff`) and `toml_edit` (theme files).
+- Taken by the creator's instruction to do it directly rather than through a subagent.
+Check:
+- syntect, two-face, pulldown-cmark and terminal-colorsaurus appear only in `cox-render/Cargo.toml`, and `deps.rs` enforces it.
+- No `.snap` file changed and no `.snap.new` was written.
+- In the worktree: nextest 1036 passed, 3 skipped. fmt, clippy, the slim build and `cargo deny` are clean.
+- On main after landing: nextest 1036 passed, 3 skipped. fmt, clippy and the slim build are clean.

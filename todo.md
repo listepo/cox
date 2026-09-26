@@ -1,6 +1,5 @@
 # Todo
 
-- T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 - T33.6. Grant check and granted-only loading
 - T33.7. `cox plugin install | enable | disable`
 - T33.8. TUI grant dialog

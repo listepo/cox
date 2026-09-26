@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T32.2 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
 | T33.7 | todo | P2 | 3 | 0% | |
 | T33.8 | todo | P2 | 3 | 0% | |
@@ -750,18 +749,6 @@ Every card in this phase:
 
 No logic changes. At most three crates are touched. Moved lines do not count toward the 200-LOC limit; edited lines do.
 Common check: the three commands in AGENTS.md are green, `deps.rs` has the crate's rule, and the card's own line holds.
-
-#### T32.2 `cox-render`: themes, colour, markdown, diff, SVG and glyphs
-
-Depends: T32.1 · Moves: `theme.rs`, `color.rs`, `svg.rs`, `markdown.rs`, `diff.rs`, `glyph.rs` from `cox-tui` (~2.6k).
-Why: dependencies (a), namely syntect, two-face, pulldown-cmark and terminal-colorsaurus.
-Plan:
-1. Before the move, record `cargo build --timings` for two builds: a clean `cox-tui`, and an incremental build after touching `state.rs`.
-2. Move the modules.
-3. Record the same timings again, both in R§4.3.4.
-4. Apply the falsifier in `docs/design/crates.md`.
-
-Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
 
 ### P33 — WASM plugins (goal: one package adds a status segment, a hook, a deferred tool and a provider without a cox release; §1.15 invariants 1, 8, 10 and 15–17 green; ≤ 50 ms warm start per plugin)
 
