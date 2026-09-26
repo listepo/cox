@@ -77,6 +77,17 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T34.8 | todo | P2 | 2 | 0% | |
 | T34.9 | todo | P1 | 3 | 0% | |
 | T34.10 | todo | P3 | 1 | 0% | |
+| T35.0 | todo | P1 | 3 | 0% | |
+| T35.1 | todo | P1 | 3 | 0% | |
+| T35.2 | todo | P1 | 4 | 0% | |
+| T35.3 | todo | P2 | 5 | 0% | |
+| T35.4 | todo | P2 | 4 | 0% | |
+| T35.5 | todo | P1 | 4 | 0% | |
+| T35.6 | todo | P2 | 2 | 0% | |
+| T35.7 | todo | P2 | 4 | 0% | |
+| T35.8 | todo | P2 | 2 | 0% | |
+| T35.9 | todo | P2 | 2 | 0% | |
+| T35.10 | todo | P3 | 2 | 0% | |
 
 ## Reference
 
@@ -1487,6 +1498,97 @@ Check: `disabled_agent_def_is_discovered_but_not_offered_to_the_model`.
 
 **Order.** T34.0 blocks T34.4 → T34.5 → T34.6 → (T34.7, T34.8, T34.9), the last three running in parallel once the tool and its caps land. T34.1, T34.2 and T34.3 have no dependency on the messaging design and can run any time; T34.10 waits only on T34.1. The top table gets rows T34.0–T34.10; P0 for the highest-value wiring gap (T34.1), P1 for the messaging design and its critical path plus the `ask_user` labelling (T34.0, T34.3–T34.6, T34.9), P2 for the concurrency cap and the surfaces off the critical path (T34.2, T34.7, T34.8), P3 for the optional visibility gate (T34.10).
 
+### P35 — External agents from plugins (Cursor first) (goal: a plugin can declare an external CLI agent that appears to the model as a subagent preset, driven over its own official headless protocol, sandboxed and grant-gated like every other plugin capability)
+
+Rationale in §6 A54; the design is `docs/design/external-agents.md` (T35.0, cited below as EA§n). Evidence `research.md` §4.3.8 (Cursor, checked 2026-09-26).
+
+Every card in this phase:
+
+- stays within 200 LOC and 3 source files (manifests, generated schemas, snapshots and fixtures do not count);
+- leaves a test that fails without it;
+- documents what it adds (`docs/design/external-agents.md` if the design moves, `docs/plugin.schema.json` through its drift test for the new manifest capability, `docs/plugins.md` user docs from T35.9);
+- runs the three standard commands.
+
+**Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
+
+#### T35.0 Design doc: external agents from plugins
+
+Depends: — · Size: design only (≤ 1-page doc + falsifiers) · Files: `docs/design/external-agents.md`
+Goal (D15): before any protocol or manifest change, the ≤ 1-page doc the creator's own rule requires, covering Cursor as the first case (research.md §4.3.8) without over-fitting the design to it. Written by the `code` tier, reviewed by `think` (D15).
+Plan — the doc must answer, concretely enough for T35.1–T35.9 to implement without re-deciding:
+1. **The manifest capability.** A new `[[external_agents]]` table in `plugin.toml` (PL§2): `name`, `command`, `args`, `mode = "acp" | "stream-json"`, `key_env`. Validated the same way `[[mcp]]` is (PL§2's validation list): name fits the tool-name rule after prefixing, an in-package command is covered by the digest, a PATH program is shown verbatim at approval.
+2. **Who spawns it.** The host, never a WASM guest (a guest cannot open a process) — the same split T33.19/T33.42 already made for plugin-shipped MCP stdio servers: `crates/cox-plugin` resolves and validates the command, `crates/cox` wraps it with `sandbox::Policy` before it is spawned, and the capability is one more line in the grant dialog (T33.6's `Verdict`), never auto-granted.
+3. **How it reaches the model.** Through P34's own path: a granted `external_agents` entry registers as a discovered `AgentDef` (T34.1's `cox_ext::agents::discover` mechanism, or a sibling of it) so `agent(preset: "cursor")` dispatches it exactly like a `.cox/agents/*.md` definition; a follow-up or a sibling message reaches it through T34.5's existing parent-routing, not a second messaging path.
+4. **ACP mode.** cox is the ACP **client** for once, not the server: reuse the workspace `agent-client-protocol` crate `crates/cox-acp` already depends on. `session/request_permission` from the external agent is decided by `cox_permission::Engine` — the one guard, never a second permission path. An `fs/*` or `terminal/*` request from the agent is served only through `path::confine` and the sandbox policy, or refused.
+5. **stream-json mode.** Cursor CLI's `agent -p --output-format stream-json` line shapes (`system`/`user`/`assistant`/`tool_call{started,completed}`/`result`, research.md §4.3.8) map onto cox's own `Event`/`Item` enum. **Recommendation: host-side, keyed by the manifest's declared `mode`, not a WASM guest export.** The shape is a fixed, documented, largely stable dialect (D4: adopt existing formats verbatim) that more than one external agent is likely to share; parsing JSON lines into `cox_protocol::Event` is boilerplate, not plugin-specific logic, and doing it in wasm would need a new `cox_emit`-shaped host function only for this one capability (PL§7a already defers streaming ABI providers for the same reason). A host-side mapper also lets T35.7's fake-binary e2e test the mapping without a wasm toolchain. An unrecognised line becomes a sanitized `Notice`, never a hard error (D14).
+6. **Cost.** `cox_model_call`'s rule ("every request has a usage row") still holds, but Cursor's CLI event shapes captured in research.md §4.3.8 carry no token counts in `assistant`/`result`, and ACP's `session/update` has none either. **Recommendation: write the usage row at $0 with a `billed_externally: true` marker by default**, and use reported tokens only if a future event ever carries them — never skip the row, and never estimate a token count for spend that lands on the user's own Cursor plan, not cox's ledger.
+7. **Trust.** Every rendered line goes through `cox_sanitize::sanitize` (D14) — an external agent's output is exactly as untrusted as an MCP tool result. Fail-open (D14): a missing CLI binary or an unset `key_env` is one `Notice(Warn)` at session open, and the preset is left out of the `agent` tool's names, the same shape T35.8's `cox doctor` row reports.
+8. **Hard rule, not a preference (creator decision, A54).** Only the dashboard-issued API key, resolved with `resolve_key(key_env, <section>)` like any other provider key (never read from a test's real keychain, D12/A49), and only the official CLI/ACP surfaces. Never the desktop app's session, never a reverse-engineered proxy (research.md §4.3.8 catalogs several; none is used).
+9. **Falsifiers.** What would prove this design wrong — e.g., a Cursor CLI release that removes `--output-format stream-json` or `acp` from `agent`'s documented surface, or an ACP `session/update` that turns out to need a richer permission shape than `cox_permission::Engine` already offers.
+Check: the doc exists, is ≤ 1 page, and states falsifiers; reviewed (not written) by `think` per D15.
+
+#### T35.1 Manifest capability types and schema drift
+
+Depends: T35.0 · Size: ~150 · Files: `crates/cox-plugin-api/src/manifest.rs`, `docs/plugin.schema.json` (regenerated by its own drift test)
+Goal: `[[external_agents]]` as its own struct (`name`, `command`, `args`, `mode: AcpOrStreamJson`, `key_env`) in `cox-plugin-api::manifest` (PL§2), validated alongside the existing `[[mcp]]` rules (name fits the tool-name rule after prefixing, `command` inside the package is covered by the digest, a PATH program is flagged for verbatim display at approval); `deny_unknown_fields` applies as it already does for the rest of the manifest.
+Check: `external_agent_entry_round_trips_through_toml`, `unknown_mode_value_is_a_validation_error`, `plugin_schema_json_matches_committed_file` stays green with the new table.
+
+#### T35.2 Host spawner, sandbox and grant — blocker
+
+Depends: T35.1, T33.6, T33.19, T33.42 · Size: ~190 · Files: `crates/cox-plugin/src/external_agent.rs` (new), `crates/cox/src/session.rs`
+Goal: resolve a granted `[[external_agents]]` entry to a `std::process::Command` (in-package path or PATH program), the same resolution shape T33.19 gives `[[mcp]]`; `crates/cox` wraps it with `sandbox::Policy` before spawning, exactly as it already does for a plugin's MCP stdio server (PL§7c) — no second sandbox path. The capability is one more line the grant dialog lists in words (PL§2's "the capability list is the unit of approval"); `grant::check` needs no change, since it already treats the manifest's capability set generically.
+Check: `external_agent_command_is_wrapped_by_sandbox_before_spawn`, `path_program_is_shown_verbatim_at_approval`, `ungranted_external_agent_is_not_spawned` (matches `headless_never_loads_ungranted_plugin`, T33.6).
+
+#### T35.3 ACP client adapter
+
+Depends: T35.2 · Size: ~190 · Files: `crates/cox-acp/src/client.rs` (new), `crates/cox-acp/src/lib.rs`
+Goal: cox as an ACP client over the spawned process's stdio, reusing the `agent-client-protocol` crate `crates/cox-acp` already depends on as a server (no new dependency, per EA§4). `session/request_permission` from the agent is decided by `cox_permission::Engine`, the same single guard every other tool call goes through; an `fs/*` or `terminal/*` request is served only through `path::confine` and the sandbox policy already governing the spawned process, or refused with the reason named.
+Check: `acp_client_relays_request_permission_through_the_engine`, `acp_client_fs_request_is_confined_to_the_workspace`, `acp_client_terminal_request_without_sandbox_grant_is_refused`.
+
+#### T35.4 stream-json adapter
+
+Depends: T35.2 · Size: ~170 · Files: `crates/cox-core/src/external_agent.rs` (new), `crates/cox-core/src/subagent.rs`
+Goal: a pure, host-side line mapper (EA§5) from Cursor CLI's `stream-json` event shapes (research.md §4.3.8: `system`/`user`/`assistant`/`tool_call{started,completed}`/`result`) onto `cox_protocol::Event`/`Item`; an unrecognised line becomes a sanitized `Notice`, never a hard error (D14), matching `broken_hook_is_skipped_not_fatal`'s fail-open shape.
+Check: `stream_json_assistant_line_maps_to_cox_event`, `stream_json_tool_call_started_and_completed_pair_map_to_one_item`, `unrecognised_stream_json_line_becomes_a_sanitized_notice`.
+
+#### T35.5 Wiring as a subagent preset
+
+Depends: T35.3, T35.4, T34.1, T34.5 · Size: ~190 · Files: `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/src/tasks.rs`
+Goal: a granted `[[external_agents]]` entry registers as one more name `AgentTool::preset()` resolves (T34.1's path), so `agent(preset: "cursor")` dispatches it exactly like a discovered `.cox/agents/*.md` definition, picking its ACP (T35.3) or stream-json (T35.4) driver from the manifest's `mode`; a follow-up to a running or finished external-agent task, and a sibling message addressed to it, are routed the same way T34.5 already routes to any other child task — no second messaging path. Usage is recorded per EA§6 (a `$0`/`billed_externally: true` row unless the driver ever reports tokens).
+Check: `agent_dispatches_a_granted_external_agent_preset_by_name`, `task_message_reaches_a_running_external_agent_task` (reusing T34.5's fixture shape), `external_agent_turn_writes_a_billed_externally_usage_row`.
+
+#### T35.6 The Cursor plugin package
+
+Depends: T35.1, T35.5 · Size: ~120 · Files: `plugins/cursor/plugin.toml`, `plugins/cursor/src/lib.rs`, `plugins/Cargo.toml` (member)
+Goal: the first real user of `[[external_agents]]`, the same role Jev played for the ABI provider form (T33.40): `plugin.toml` declares one entry (`name = "cursor"`, `command = "agent"` resolved on `PATH`, `mode = "acp"` by default with `stream-json` as the manifest's documented alternative, `key_env = "CURSOR_API_KEY"`); the guest exports only `cox_init` (no other capability), since spawning and driving the process is entirely the host's job (EA§2) — the smallest possible plugin, unlike Jev's `api = "plugin"` provider guest.
+Check: `cox plugin list` (e2e, scratch `COX_HOME`) reports the `cursor` plugin's `external_agents` capability; `cursor_plugin_toml_matches_the_manifest_schema`.
+
+#### T35.7 e2e: a fake `agent` binary replaying recorded fixtures
+
+Depends: T35.5, T35.6 · Size: ~190 · Files: `tests/external_agents_cursor.rs` (new), `tests/fixtures/cursor/*.json` (data), `scripts/vendor/src/cox_vendor/cursor_fixtures.py` (+ its tests)
+Goal: fixtures are the documented `stream-json` and ACP event shapes from research.md §4.3.8, recorded by a saved, tested script under `scripts/vendor` (AGENTS.md: a file no package manager fetches comes only from such a script, never hand-pasted) — no live Cursor call, no key. A test-only fake `agent` binary replays a fixture's lines over stdio in both modes; the e2e drives it through the real `cox-plugin`/`cox-acp`/`cox-core` path (D12: no network, no API key).
+Check: `fake_agent_stream_json_reaches_a_cox_event_stream_unchanged`, `fake_agent_acp_permission_request_is_decided_by_the_engine` — both against the real code path, no scripted-provider shortcut for this one (it is not a model call).
+
+#### T35.8 `cox doctor` reporting
+
+Depends: T35.2 · Size: ~120 · Files: `crates/cox/src/doctor.rs`, `crates/cox-plugin/src/external_agent.rs`
+Goal: a doctor row per granted `[[external_agents]]` entry: CLI binary found on `PATH` (and its `--version`, best-effort), `key_env` set or missing, sandboxed or opted out (T33.42's per-server opt-out shape). A missing CLI or key is the fail-open warning EA§7 specifies, with the preset left out of `agent`'s names, not a hard failure.
+Check: `doctor_reports_missing_cli_as_a_warning_not_a_failure`, `doctor_reports_key_env_set_and_cli_version`.
+
+#### T35.9 User guide: the Cursor plugin
+
+Depends: T35.7 · Size: ~130 · Files: `docs/plugins/cursor.md`, `docs/plugins.md` (link), `crates/cox/tests/doc_examples.rs`
+Goal: install and grant the plugin, set `CURSOR_API_KEY`, dispatch it with `agent(preset: "cursor")`, read `cox doctor`'s row when something is missing — the same shape `docs/plugins/jev.md` (T33.40.11) already gives Jev.
+Check: the doc's commands are checked against the real binary the way `doc_examples.rs` already checks other pages.
+
+#### T35.10 Optional: live check against a real Cursor account (needs the creator's key)
+
+Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_live_fixtures.py` (+ its tests), `tests/fixtures/cursor/*.json` (data, recorded from one real run)
+Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
+Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required, same guard as T30.13's local-model comparison).
+
+**Order.** T35.0 → T35.1 → T35.2 is the critical path (it also waits on T33.6, T33.19, T33.42, T34.1, T34.5, whichever lands last). After T35.2: T35.3 and T35.4 run in parallel → T35.5 → (T35.6, T35.8 in parallel) → T35.7 → T35.9; T35.10 runs whenever the creator has a key. The top table gets rows T35.0–T35.10; P1 for the design doc and the critical path through the host spawner and the preset wiring (T35.0–T35.2, T35.5), P2 for the two drivers, the plugin package, the fixture e2e, doctor reporting and the user guide (T35.3, T35.4, T35.6–T35.9), P3 for the optional live check (T35.10).
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -1605,6 +1707,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
     13. The Jev research's ABI fix (T33.40.1): `cox_decide` returns either an `Advice` or a `ModelCall`, which the host runs against the plugin's own provider through the budget gate and ledger before calling `cox_decide_resume`; `cox_http` to a provider host is allowed only inside `cox_provider_stream`; `Question` is batched. `docs/design/plugins.md` §4 and its manifest example (§2) are updated, and the example provider is named `typesafe`, not `jev` (the plugin id stays `jev`).
     14. The release ships no prebuilt Jev plugin archive; users build it from `plugins/jev` (`just plugin jev`) and `cox plugin install <dir>`.
   - **Not decided further:** anything not listed above and not in `docs/design/plugins.md` §14 stays open for a later amendment.
+
+- A54 §3 new P35 — External agents from plugins (Cursor first), `todo.md`, `ideas.md`, `docs/design/plugins.md` §10 — Cursor as a plugin, researched at the creator's request (`research.md` §4.3.8, inserted after P34's §4.3.7). The research found Cursor has no chat/completions endpoint (the Cloud Agents API only creates and drives durable, autonomous "Cloud Agent" runs, R§4.3.8), so it cannot be a `Provider` the way T30.15 wired LM Studio; the creator resolved the resulting question — "is Cursor still wanted as a provider?" — by deciding it is not: **"Cursor has no chat or completions API, so it is not a model provider. Add Cursor as a plugin that drives the Cursor CLI `agent` in its two official headless modes: `agent -p --output-format stream-json` and `agent acp` (ACP server over stdio, JSON-RPC 2.0)."** The creator further ruled, as a hard requirement rather than a preference: **"Only official paths: the dashboard-issued API key (env var such as `CURSOR_API_KEY`, resolved like other keys, never read from tests' real keychain) and the official CLI/ACP. Never the desktop session, and never the reverse-engineered proxies."** Why: an unauthenticated survey of Cursor's eight documented programmatic surfaces (`cursor.com/docs/api`) found the CLI's `agent -p --output-format stream-json` and `agent acp` are the only ones that are (a) officially documented, (b) driven by an issued API key rather than the desktop session, and (c) shaped like something cox already knows how to consume — an external agent process, the same relationship D4 already gives Claude Code and Codex, not a model completions wire. Effect: eleven new cards (T35.0–T35.10) in a new phase P35, gated on P33's plugin-loading/grant/sandbox path (T33.6, T33.19, T33.42) and P34's custom-preset and messaging path (T34.1, T34.5) — a new plugin manifest capability `[[external_agents]]` (T35.1), a host-only spawner under the same sandbox and grant machinery as a plugin's MCP stdio server (T35.2), an ACP client adapter reusing `crates/cox-acp`'s existing `agent-client-protocol` dependency (T35.3), a host-side `stream-json` line mapper (T35.4, chosen over a WASM guest export — EA§5), wiring the granted entry into the `agent` tool's preset resolution and P34's message routing (T35.5), the Cursor plugin package itself (T35.6), an offline e2e against a fake `agent` binary replaying fixtures recorded by a `scripts/vendor` script from the documented event shapes (T35.7, no live Cursor, no key), `cox doctor` reporting (T35.8), a user guide (T35.9), and an optional live check gated on the creator's own key (T35.10, same shape as T33.40.17). `docs/design/plugins.md` §10's "No bypass" line is updated to name external-agent CLI processes alongside MCP stdio servers as the only two kinds of process a plugin brings, both sandboxed the same way, with a forward pointer to `docs/design/external-agents.md` (T35.0). No `§0` decision changes; D1's plugin sentence already covers "an in-process WASM host … reaches the core only through traits" and this phase adds no exception to it, since the process itself is always host-spawned, never guest-spawned. `ideas.md` gains one new, still-unapproved line: the Cloud Agents API (`api.cursor.com`) as a possible background-task backend, kept separate from this phase because it would be a different shape entirely (durable server-side runs, not a local subprocess) and was not part of the creator's decision above.
 
 ## 7. Risk register
 

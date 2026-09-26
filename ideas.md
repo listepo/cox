@@ -13,3 +13,4 @@ Not approved yet. Move nothing from here into `plan.md` or `roadmap.md` without 
 - A per-`AgentDef` permission-mode override, matching Claude Code's frontmatter `permissionMode` (P34/research.md §4.3.7) — cox's permission engine is a single global trust guard by design; a per-subagent override needs its own design pass.
 - Plugin-provided agent definitions (P34/research.md §4.3.7) — not mentioned anywhere in `docs/design/plugins.md`; P33's v0.1 extension-point list does not promise it.
 - Manual `@mention` subagent invocation, OpenCode-style (P34/research.md §4.3.7) — a UX nicety, not something the creator asked for.
+- Cursor's Cloud Agents API (`api.cursor.com`, OpenAPI at `cursor.com/docs-static/cloud-agents-openapi.yaml`, research.md §4.3.8) as a possible background-task backend — durable, server-side agent runs billed to the caller's Cursor plan, a different shape from P35's local CLI subprocess. Not approved.

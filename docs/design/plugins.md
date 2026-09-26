@@ -387,7 +387,7 @@ Headless and ACP do not call UI exports.
   - No fuel metering: epoch interruption (P13) is cheaper and enough.
 - **Filesystem.** Only WASI preopens from `fs`. Each root passes `cox_tools::path::confine` at load. `.git` and `.cox` are never writable (D7), and read grants mount `ro:` (P11). WASI is on only when `wasi = true` or `fs` is set. The `WasiCtx` has no environment and no arguments (P16).
 - **Network.** Only `cox_http`, only to allow-listed hosts, capped by `max_http_response_bytes`. extism's own `http_request` is compiled out (P5), and a test proves it refuses.
-- **No bypass.** No host function spawns a process, opens a file, writes the terminal, reads the keyring or decides a permission. MCP stdio servers are the only processes a plugin brings, and they run under the sandbox (§7c).
+- **No bypass.** No host function spawns a process, opens a file, writes the terminal, reads the keyring or decides a permission. MCP stdio servers (§7c) and external-agent CLI processes (`[[external_agents]]`, P35, `docs/design/external-agents.md`) are the only processes a plugin brings, and both run under the same sandbox wrap, spawned by the host, never by a WASM guest.
 - **Untrusted output.** Everything a plugin returns is untrusted like MCP output: tool descriptions and results go to the model through the normal archive and truncate path, and everything shown in the terminal is sanitized.
 - **Fail open (D14).**
   - A load failure, a trap, a timeout or invalid JSON is `Notice(Warn)` plus absence.

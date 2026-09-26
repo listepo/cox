@@ -71,3 +71,14 @@
 - T34.8. ACP rendering, and the dropped task-lifecycle events
 - T34.9. e2e: two subagents messaging through the parent
 - T34.10. Optional: per-subagent visibility gate
+- T35.0. Design doc: external agents from plugins
+- T35.1. Manifest capability types and schema drift
+- T35.2. Host spawner, sandbox and grant
+- T35.3. ACP client adapter
+- T35.4. stream-json adapter
+- T35.5. Wiring as a subagent preset
+- T35.6. The Cursor plugin package
+- T35.7. e2e: a fake `agent` binary replaying recorded fixtures
+- T35.8. `cox doctor` reporting
+- T35.9. User guide: the Cursor plugin
+- T35.10. Optional: live check against a real Cursor account (needs the creator's key)
