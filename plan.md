@@ -65,7 +65,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.41 | todo | P3 | 2 | 0% | |
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T34.0 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.1 | in progress | P0 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T34.2 | todo | P2 | 2 | 0% | |
 | T34.3 | todo | P1 | 2 | 0% | |
@@ -76,7 +75,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T34.8 | todo | P2 | 2 | 0% | |
 | T34.9 | todo | P1 | 3 | 0% | |
 | T34.10 | todo | P3 | 1 | 0% | |
-| T35.0 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T35.1 | todo | P1 | 3 | 0% | |
 | T35.2 | todo | P1 | 4 | 0% | |
 | T35.3 | todo | P2 | 5 | 0% | |
@@ -1423,23 +1421,6 @@ Plan:
 4. No shipped preset (`explore`, `shell`) grants `ask_user` in this task — that is a content decision for whoever writes the first custom definition that needs it; this task only makes it possible and labelled.
 Check: `ask_user_from_subagent_carries_its_source`, `ask_user_surface_shows_which_agent_is_asking`; existing `ask_user.rs` tests unchanged.
 
-#### T34.0 Design doc: subagent messaging
-
-Depends: — · Size: design only (≤ 1-page doc + falsifiers) · Files: `docs/design/subagent-messaging.md`
-Goal (D15): before any protocol change, the ≤ 1-page doc the creator's own rule requires — the problem in one measurable number (e.g. "0 of N running or finished subagents can receive a follow-up today"), what Claude Code (`SendMessage`, gated behind agent teams and off by default), Codex CLI (one-shot result only, no messaging) and OpenCode (undocumented) do (research.md §4.3.7), what cox will do and why it is at least as good without becoming "agent teams" (`ideas.md`, still creator-unapproved), and what would falsify the design. Written by the `code` tier, reviewed by `think` (D15).
-Plan — the doc must answer, concretely enough for T34.4–T34.9 to implement without re-deciding:
-1. **Shape of the message.** A new `Submission` variant addressed by `TaskId` (the model only ever sees a `TaskId`, per the existing `TaskCreated`/`TaskCompleted` events) — e.g. `Submission::TaskMessage { task: TaskId, from: Option<TaskId>, text: String }` — and its matching delivery `Event`.
-2. **Running vs. finished.** A follow-up to a *running* child queues as a second `Submission::UserTurn` after its current turn finishes — never mid-turn (D2: one `Submission` stream per session, in order). A follow-up to a *finished* child resumes it through the existing `Session::resume`, preserving its `parent_id`/budget-slice relationship — not a new resume mechanism.
-3. **Child → parent.** Progress and questions reach the parent the same way `TaskCompleted` already does: a pointer line entered into the *parent's* history after the last cache breakpoint (D6e), never mid-turn context surgery; `ask_user` (T34.3) stays the channel for a question that must block the child.
-4. **Sibling routing always through the parent.** A sibling never gets a direct channel to another sibling; it addresses one by name/`TaskId` and the parent session relays it, exactly like `relay_approval` already relays approvals — every session stays a pure `Submission`-in/`Event`-out state machine (D2), no exceptions.
-5. **The model-facing tool.** `send_message { to: "parent" | <task name/id>, text }`, available to a subagent (to reach its parent or a named sibling) and to the parent (to reach a named child).
-6. **How the recipient sees it.** A pointer line after the last cache breakpoint (D6e / cache-stable prefix) — the same shape as today's `TaskCompleted` notice, never spliced into the middle of an in-flight turn's context.
-7. **Flood and loop guards.** A per-task message cap and a hop limit, so an A→B→A ping-pong stops on its own — reusing T34.2's concurrency cap rather than inventing a second one.
-8. **Trust.** The permission engine (`cox_permission::Engine`) stays the single guard on every tool call a message might provoke — a message itself never grants a tool; `cox_sanitize::sanitize` runs on every rendered line, the same as any other tool output (D14).
-9. **Surfaces.** How the TUI transcript and `/agents` overlay, `stream-json` and ACP each render a delivered message (A29 still applies: no new richer live-progress event beyond the narrow `/agents` card).
-10. **Out of scope.** Persistent teammates that outlive their task, split-pane processes, a shared task board, and a sibling roster injected into every subagent's system prompt (it would break the cache-stable prefix). A child addresses a sibling by the name or `TaskId` its parent gave it in the task text. This doc's protocol scope is the one new `Submission` variant and its matching `Event`, nothing wider.
-Check: the doc exists, is ≤ 1 page, and states falsifiers; reviewed (not written) by `think` per D15.
-
 #### T34.4 Protocol types for task messaging
 
 Depends: T34.0 · Size: ~120 · Files: `crates/cox-protocol/src/types.rs` (`Submission::TaskMessage`, a matching `Event`), `docs/protocol.jsonschema` (regenerated by its own drift test)
@@ -1448,7 +1429,7 @@ Check: `task_message_round_trips_through_serde`, `protocol_jsonschema_matches_co
 
 #### T34.5 Core routing in the parent
 
-Depends: T34.4 · Size: ~190 · Files: `crates/cox-core/src/tasks.rs` (registry keeps live child handles plus a finished-session lookup), `crates/cox-core/src/subagent.rs`
+Depends: T34.4 · Size: ~190 · Files: `crates/cox-core/src/tasks.rs` (registry keeps live child handles plus a finished-session lookup), `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs` (`Session::resume` today hardcodes `parent_id: None`, `Job::Main`, `Tier::Code`; it gains parameters so a child resumes with its own job, tier, parent and budget slice — SM§2)
 Goal: the parent resolves a `TaskId` to either a still-running child handle or a finished child's stored session id (`sessions.parent_id`, already a real link); delivery to a running child queues a `Submission::UserTurn` after its current turn; delivery to a finished child resumes it via `Session::resume` and re-registers it as running for any further messages.
 Check: `task_message_reaches_a_still_running_subagent_after_its_current_turn`, `task_message_to_a_finished_subagent_resumes_it_with_history_intact`, `resumed_subagent_keeps_its_parent_id_and_budget_slice`.
 
@@ -1496,22 +1477,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
-
-#### T35.0 Design doc: external agents from plugins
-
-Depends: — · Size: design only (≤ 1-page doc + falsifiers) · Files: `docs/design/external-agents.md`
-Goal (D15): before any protocol or manifest change, the ≤ 1-page doc the creator's own rule requires, covering Cursor as the first case (research.md §4.3.8) without over-fitting the design to it. Written by the `code` tier, reviewed by `think` (D15).
-Plan — the doc must answer, concretely enough for T35.1–T35.9 to implement without re-deciding:
-1. **The manifest capability.** A new `[[external_agents]]` table in `plugin.toml` (PL§2): `name`, `command`, `args`, `mode = "acp" | "stream-json"`, `key_env`. Validated the same way `[[mcp]]` is (PL§2's validation list): name fits the tool-name rule after prefixing, an in-package command is covered by the digest, a PATH program is shown verbatim at approval.
-2. **Who spawns it.** The host, never a WASM guest (a guest cannot open a process) — the same split T33.19/T33.42 already made for plugin-shipped MCP stdio servers: `crates/cox-plugin` resolves and validates the command, `crates/cox` wraps it with `sandbox::Policy` before it is spawned, and the capability is one more line in the grant dialog (T33.6's `Verdict`), never auto-granted.
-3. **How it reaches the model.** Through P34's own path: a granted `external_agents` entry registers as a discovered `AgentDef` (T34.1's `cox_ext::agents::discover` mechanism, or a sibling of it) so `agent(preset: "cursor")` dispatches it exactly like a `.cox/agents/*.md` definition; a follow-up or a sibling message reaches it through T34.5's existing parent-routing, not a second messaging path.
-4. **ACP mode.** cox is the ACP **client** for once, not the server: reuse the workspace `agent-client-protocol` crate `crates/cox-acp` already depends on. `session/request_permission` from the external agent is decided by `cox_permission::Engine` — the one guard, never a second permission path. An `fs/*` or `terminal/*` request from the agent is served only through `path::confine` and the sandbox policy, or refused.
-5. **stream-json mode.** Cursor CLI's `agent -p --output-format stream-json` line shapes (`system`/`user`/`assistant`/`tool_call{started,completed}`/`result`, research.md §4.3.8) map onto cox's own `Event`/`Item` enum. **Recommendation: host-side, keyed by the manifest's declared `mode`, not a WASM guest export.** The shape is a fixed, documented, largely stable dialect (D4: adopt existing formats verbatim) that more than one external agent is likely to share; parsing JSON lines into `cox_protocol::Event` is boilerplate, not plugin-specific logic, and doing it in wasm would need a new `cox_emit`-shaped host function only for this one capability (PL§7a already defers streaming ABI providers for the same reason). A host-side mapper also lets T35.7's fake-binary e2e test the mapping without a wasm toolchain. An unrecognised line becomes a sanitized `Notice`, never a hard error (D14).
-6. **Cost.** `cox_model_call`'s rule ("every request has a usage row") still holds, but Cursor's CLI event shapes captured in research.md §4.3.8 carry no token counts in `assistant`/`result`, and ACP's `session/update` has none either. **Recommendation: write the usage row at $0 with a `billed_externally: true` marker by default**, and use reported tokens only if a future event ever carries them — never skip the row, and never estimate a token count for spend that lands on the user's own Cursor plan, not cox's ledger.
-7. **Trust.** Every rendered line goes through `cox_sanitize::sanitize` (D14) — an external agent's output is exactly as untrusted as an MCP tool result. Fail-open (D14): a missing CLI binary or an unset `key_env` is one `Notice(Warn)` at session open, and the preset is left out of the `agent` tool's names, the same shape T35.8's `cox doctor` row reports.
-8. **Hard rule, not a preference (creator decision, A54).** Only the dashboard-issued API key, resolved with `resolve_key(key_env, <section>)` like any other provider key (never read from a test's real keychain, D12/A49), and only the official CLI/ACP surfaces. Never the desktop app's session, never a reverse-engineered proxy (research.md §4.3.8 catalogs several; none is used).
-9. **Falsifiers.** What would prove this design wrong — e.g., a Cursor CLI release that removes `--output-format stream-json` or `acp` from `agent`'s documented surface, or an ACP `session/update` that turns out to need a richer permission shape than `cox_permission::Engine` already offers.
-Check: the doc exists, is ≤ 1 page, and states falsifiers; reviewed (not written) by `think` per D15.
 
 #### T35.1 Manifest capability types and schema drift
 

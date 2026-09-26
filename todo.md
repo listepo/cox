@@ -59,7 +59,6 @@
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
-- T34.0. Design doc: subagent messaging
 - T34.1. Wire custom agent definitions into the `agent` tool
 - T34.2. A subagent concurrency cap
 - T34.3. `ask_user` from a subagent, labelled with `Source`
@@ -70,7 +69,6 @@
 - T34.8. ACP rendering, and the dropped task-lifecycle events
 - T34.9. e2e: two subagents messaging through the parent
 - T34.10. Optional: per-subagent visibility gate
-- T35.0. Design doc: external agents from plugins
 - T35.1. Manifest capability types and schema drift
 - T35.2. Host spawner, sandbox and grant
 - T35.3. ACP client adapter
