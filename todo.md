@@ -58,3 +58,4 @@
 - T35.9. User guide: the Cursor plugin
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.11. ACP client terminals under the sandbox
+- T35.12. A dedicated error for a failed external agent

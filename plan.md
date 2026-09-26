@@ -64,6 +64,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.9 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.11 | todo | P2 | 4 | 0% | |
+| T35.12 | todo | P2 | 2 | 0% | |
 
 ## Reference
 
@@ -1356,6 +1357,16 @@ Goal: EA§4 allows a `terminal/*` request "only under the same `sandbox::Policy`
 Without a grant, the T35.3 refusal and its reason stay. Output shown to the user is sanitized, and output over the cap is archived before it is shortened.
 Check: `acp_terminal_runs_under_the_sandbox_policy` (it writes outside the workspace and is denied; macOS and Linux paths as in T4.1/T4.2), `acp_terminal_output_respects_byte_limit_and_reports_truncation`, `acp_terminal_release_kills_the_process_group`, `acp_terminal_command_is_judged_by_the_engine` and `acp_terminal_without_sandbox_grant_is_still_refused`.
 
+#### T35.12 A dedicated error for a failed external agent
+
+Depends: T35.4 · Size: ~80 · Files: `crates/cox-protocol/src/types.rs` (`CoreError`), `crates/cox-core/src/external_agent.rs`, `docs/protocol.jsonschema` (generated)
+Goal: T35.4 reports an external agent's `result` with `is_error: true` as `CoreError::Provider(ProviderError::BadRequest { message })`, because `CoreError` has no better variant. That misnames the failure: the provider did not fail, and a surface or a retry rule cannot tell the two apart.
+- Add `CoreError::ExternalAgent { agent, message }`, with the message sanitized by the caller-supplied guard, as T35.4 already does.
+- Map the error `result` line onto it.
+- Regenerate `docs/protocol.jsonschema` with its drift test.
+- Every surface that matches on `CoreError` (TUI, stream-json, ACP) shows it as the external agent's error. It must not trigger provider retry or fallback.
+Check: `stream_json_error_result_is_an_external_agent_error` (it replaces the `BadRequest` expectation in `result_line_ends_the_turn_and_an_error_result_reports_it_first`), `external_agent_error_is_not_retried_as_a_provider_error`; the protocol schema drift test is green.
+
 **Order.** T35.0 → T35.1 → T35.2 is the critical path (it also waits on T33.6, T33.19, T33.42, T34.1, T34.5, whichever lands last). After T35.2: T35.3 and T35.4 run in parallel → T35.5 → (T35.6, T35.8 in parallel) → T35.7 → T35.9; T35.10 runs whenever the creator has a key. The top table gets rows T35.0–T35.10; P1 for the design doc and the critical path through the host spawner and the preset wiring (T35.0–T35.2, T35.5), P2 for the two drivers, the plugin package, the fixture e2e, doctor reporting and the user guide (T35.3, T35.4, T35.6–T35.9), P3 for the optional live check (T35.10).
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
@@ -1480,6 +1491,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A55 §1.1 `cox-plugin` row, §3 P33 (new T33.43; T33.14 depends on it), `docs/design/plugins.md` PL§11–12, `deny.toml` — T33.3 fired two PL§12 falsifiers; the creator decided both on 2026-09-26. (1) Size: linking extism grows `cox` by 16.8 MiB (51.2 → 68.0 MiB), over the 10 MiB budget, and almost all of it is cranelift and wasmtime. The budget becomes 20 MiB, and a `plugins` cargo feature on `crates/cox` (on by default) gives a slim build with no WASM runtime, enforced by `slim_build_has_no_wasm_runtime`. (2) Advisories: extism 1.30.0 pins wasmtime 43, which has RUSTSEC-2026-0222 and RUSTSEC-2026-0269 with no fix on the 43 line. The creator chose "ignore with a deadline, WASI off". Both are in `deny.toml` with reasons and a 2026-12-31 review date; WASI stays off, so the preopens in T33.14 wait for T33.43. extism cannot share one engine across plugins (`CompiledPlugin::new` builds its own), and 0222 needs the embedder to move objects between engines, which cox never does (research.md P39). Also: extism 1.30 does not build with `default-features = false` alone, which is why `wasmtime` is declared directly (research.md P38).
 - A56 §3 P34 (new T34.11) — the headless orphan fix from T34.9 has a TUI twin. Why: `run_tui` (`crates/cox/src/session.rs`) never calls `interrupt` + `wait_tasks_cleared` before its runtime drops, so quitting while a detached `bash` runs may orphan the process; the creator asked to check it and, if it leaks, reuse the headless helpers with a PTY regression test. Effect: one small card; no decision changes.
 - A57 §3 P35 (new T35.11) — ACP client terminals, by the creator. Why: T35.3 refuses every `terminal/*` request from an external agent, even under a sandbox grant, because serving them (sandboxed spawn, output buffer, wait, kill, release) did not fit that card; EA§4 allows them under the process's own `sandbox::Policy`. Effect: one card after T35.3; it reuses `bash`'s sandboxed spawn, `path::confine` and `cox_permission::Engine`, so no guard gains a second path. No decision changes.
+- A58 §3 P35 (new T35.12) — a dedicated `CoreError::ExternalAgent`, by the creator. Why: T35.4 had to send an external agent's failure as a provider `BadRequest`, which misnames it and could trigger provider retry or fallback. Effect: one protocol variant and a regenerated `docs/protocol.jsonschema`; no decision changes.
 
 ## 7. Risk register
 
