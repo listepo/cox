@@ -17,6 +17,9 @@ mod catalog;
 mod effort;
 mod price;
 
-pub use catalog::{Capabilities, Catalog, CatalogError, ModelRow, supports_adaptive_thinking};
+pub use catalog::{
+    Capabilities, Catalog, CatalogError, ModelRow, PluginModels, RowSource,
+    supports_adaptive_thinking,
+};
 pub use effort::{Api, WireEffort, effort_for};
 pub use price::{Price, PriceError, PriceTable};

@@ -569,7 +569,7 @@ fn catalog_prices_status(catalog: &cox_models::Catalog, ids: &[String]) -> Check
 /// never sees.
 fn check_catalog_prices(config: &cox_protocol::Config) -> CheckResult {
     let ids = config.configured_model_ids();
-    match cox_models::Catalog::load(config, None) {
+    match cox_models::Catalog::load(config, &[], None) {
         Ok(catalog) => catalog_prices_status(&catalog, &ids),
         Err(e) => CheckResult::fail(
             "catalog prices",

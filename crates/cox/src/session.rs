@@ -1053,7 +1053,8 @@ fn backend_for_with(
     // is empty on a bare `Config::default()`); a bad/unparseable catalog
     // falls back to the empty default, which is exactly "no row found" —
     // every lookup below already has its own literal fallback for that.
-    let mut catalog = cox_models::Catalog::load(config, None).unwrap_or_default();
+    // Empty until T33.6's granted plugins feed their `[[models]]` rows here.
+    let mut catalog = cox_models::Catalog::load(config, &[], None).unwrap_or_default();
     // T30.16 (A46): a server's own report is the last override layer.
     if let Some(m) = served {
         catalog.overlay_served(&m.key, m.loaded_context(), m.tool_use());
