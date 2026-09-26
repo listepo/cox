@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
 use cox_protocol::types::{Caps, ProviderEvent, ProviderId, Request, Usage};
-pub use cox_provider_testkit::replay::{cassette_hash, redact_secrets, write_cassette};
 use cox_provider_testkit::replay::nearest_hint;
+pub use cox_provider_testkit::replay::{cassette_hash, redact_secrets, write_cassette};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
