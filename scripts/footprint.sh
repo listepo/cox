@@ -42,21 +42,27 @@ if [ -z "$BIN" ]; then
 fi
 
 now_ns() { date +%s%N; }
+# Timings report the best (minimum) of N runs, which is what --check gates on:
+# scheduler and I/O noise on a shared runner only ever adds time, so the
+# minimum is stable where the median of a few runs swings 2-3x between runs
+# of the same commit (T30.4 follow-up). The median is printed for context.
+min_ms() { python3 -c 'import sys; print(round(min(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
 median_ms() { python3 -c 'import statistics,sys; print(round(statistics.median(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
 
-# Cold start: median of 5 `cox --version` runs (spawn + clap + config load).
+# Cold start: best of 11 `cox --version` runs (spawn + clap + config load).
 : > "$SCRATCH/startup"
-for _ in 1 2 3 4 5; do
+for _ in $(seq 1 11); do
   s="$(now_ns)"
   COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" "$BIN" --version >/dev/null
   echo "$(( $(now_ns) - s ))" >> "$SCRATCH/startup"
 done
-STARTUP_MS="$(median_ms "$SCRATCH/startup")"
+STARTUP_MS="$(min_ms "$SCRATCH/startup")"
+STARTUP_MED="$(median_ms "$SCRATCH/startup")"
 
 # First frame: spawn to first stream-json event with the scripted provider.
 printf '[[turn]]\ntext = "hello"\n' > "$SCRATCH/first.toml"
 : > "$SCRATCH/first"
-for _ in 1 2 3; do
+for _ in $(seq 1 7); do
   s="$(now_ns)"
   (cd "$ROOT" && COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" COX_PROVIDER=scripted \
     COX_SCENARIO="$SCRATCH/first.toml" "$BIN" run -p "hi" --output-format stream-json \
@@ -72,7 +78,8 @@ for _ in 1 2 3; do
   wait "$pid" || { echo "first-frame run failed:" >&2; cat "$SCRATCH/first.err" >&2; exit 1; }
   [ -s "$SCRATCH/first.jsonl" ] || { echo "first-frame run printed nothing" >&2; exit 1; }
 done
-FIRST_MS="$(median_ms "$SCRATCH/first")"
+FIRST_MS="$(min_ms "$SCRATCH/first")"
+FIRST_MED="$(median_ms "$SCRATCH/first")"
 
 # Replay: every evals/token transcript becomes one Scripted scenario per user
 # turn; turns run back to back through --resume so context grows like a live
@@ -135,8 +142,8 @@ RSS_MIB="$(python3 -c "print(round($PEAK/1048576,1))")"
 if [ "$(uname -s)" = "Darwin" ]; then BYTES="$(stat -f%z "$BIN")"; else BYTES="$(stat -c%s "$BIN")"; fi
 BIN_MIB="$(python3 -c "print(round($BYTES/1048576,1))")"
 
-echo "cold start (cox --version, median of 5): ${STARTUP_MS} ms"
-echo "first frame (scripted stream-json, median of 3): ${FIRST_MS} ms"
+echo "cold start (cox --version, best of 11): ${STARTUP_MS} ms (median ${STARTUP_MED} ms)"
+echo "first frame (scripted stream-json, best of 7): ${FIRST_MS} ms (median ${FIRST_MED} ms)"
 echo "replay RSS peak ($NTURNS turns, $NCALLS provider calls, max): ${RSS_MIB} MiB"
 echo "binary ($BIN): ${BIN_MIB} MiB ($BYTES bytes)"
 
