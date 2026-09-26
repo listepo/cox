@@ -196,6 +196,10 @@ enabled = true                      # WASM plugins (docs/design/plugins.md); onl
 min_confidence = 0.6                # advice with lower or no confidence is ignored and the static pick stands
 route_ms = 300                      # route's latency budget; a later answer is ignored
 route_margin = 0.15                 # route offers cheap only when its predicted turn cost (catalog prices, last prefix size, cache write vs read) is at most (1 - route_margin) x the code tier's
+risk_ms = 200                       # risk = "<plugin id>" may raise a tool call to destructive, never lower it; asked only when that changes the permission outcome
+approve_hint_ms = 200               # approve_hint = "<plugin id>" may add a caution note to an approval prompt, never say a call looks safe
+compact_ms = 500                    # compact = "<plugin id>" may compact before the threshold, never skip a due compaction
+rank_ms = 300                       # rank = "<plugin id>" may reorder or drop tool_search hits, never add one
 
 [memory]
 enabled = true

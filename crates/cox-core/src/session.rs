@@ -1109,7 +1109,8 @@ impl Session {
             self.inner.lock().await.last_context_tokens,
             self.provider.capabilities().max_context,
         );
-        if compact::needs_compaction(last, max_context, self.config.context.compact_at) {
+        let due = compact::needs_compaction(last, max_context, self.config.context.compact_at);
+        if self.compact_now(due, last, max_context).await? {
             self.compact(compact::Trigger::Auto, None).await?;
         }
         let seq = {

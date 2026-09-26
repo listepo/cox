@@ -265,6 +265,8 @@ async fn gate(
         }
         _ => {}
     }
+    // T33.21: `risk` advice may only raise what the engine judges next.
+    call = session.advise_risk(call).await?;
     loop {
         let why = match session.decide(&call).await {
             Outcome::Allow { .. } => return Ok(Ok(call)),
@@ -316,6 +318,7 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
         serde_json::json!({ "tool_name": call.name, "tool_input": call.input }),
     )
     .await;
+    session.advise_approval(call, &why).await?;
     session
         .emit(Event::ApprovalRequired {
             call: call.clone(),
@@ -524,6 +527,7 @@ async fn run_one(
         })
         .unwrap_or_default();
     if !found.is_empty() {
+        let found = session.advise_rank(&tool.subject(&hook_input), found).await;
         let added = session.discover(found).await;
         if !added.is_empty() {
             let _ = session

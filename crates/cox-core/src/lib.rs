@@ -16,6 +16,7 @@ pub mod external_agent;
 mod hooks;
 pub mod init;
 pub mod memory_extract;
+mod monotone;
 mod plugin_model;
 pub mod redact;
 mod rewind;

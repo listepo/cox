@@ -222,7 +222,15 @@
           "route": null,
           "min_confidence": 0.6,
           "route_ms": 300,
-          "route_margin": 0.15
+          "route_margin": 0.15,
+          "risk": null,
+          "risk_ms": 200,
+          "approve_hint": null,
+          "approve_hint_ms": 200,
+          "compact": null,
+          "compact_ms": 500,
+          "rank": null,
+          "rank_ms": 300
         }
       }
     },
@@ -1451,7 +1459,15 @@
             "route": null,
             "min_confidence": 0.6,
             "route_ms": 300,
-            "route_margin": 0.15
+            "route_margin": 0.15,
+            "risk": null,
+            "risk_ms": 200,
+            "approve_hint": null,
+            "approve_hint_ms": 200,
+            "compact": null,
+            "compact_ms": 500,
+            "rank": null,
+            "rank_ms": 300
           }
         }
       },
@@ -1487,6 +1503,66 @@
           "type": "number",
           "format": "double",
           "default": 0.15
+        },
+        "risk": {
+          "description": "The plugin id that answers `risk` (a tool call's risk, only up).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "risk_ms": {
+          "description": "`risk`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 200
+        },
+        "approve_hint": {
+          "description": "The plugin id that answers `approve_hint` (a caution note, never\n\"looks safe\").",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "approve_hint_ms": {
+          "description": "`approve_hint`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 200
+        },
+        "compact": {
+          "description": "The plugin id that answers `compact` (compact now, only earlier).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "compact_ms": {
+          "description": "`compact`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 500
+        },
+        "rank": {
+          "description": "The plugin id that answers `rank` (reorder or filter `tool_search`\nhits, never add).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "rank_ms": {
+          "description": "`rank`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 300
         }
       },
       "additionalProperties": false

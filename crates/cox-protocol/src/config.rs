@@ -1093,6 +1093,24 @@ pub struct DecideConfig {
     /// `1 − route_margin` of the `code` cost (J5.2, T33.40.8): a switch
     /// forfeits the code tier's warm cache.
     pub route_margin: f64,
+    /// The plugin id that answers `risk` (a tool call's risk, only up).
+    pub risk: Option<String>,
+    /// `risk`'s latency budget in milliseconds.
+    pub risk_ms: u64,
+    /// The plugin id that answers `approve_hint` (a caution note, never
+    /// "looks safe").
+    pub approve_hint: Option<String>,
+    /// `approve_hint`'s latency budget in milliseconds.
+    pub approve_hint_ms: u64,
+    /// The plugin id that answers `compact` (compact now, only earlier).
+    pub compact: Option<String>,
+    /// `compact`'s latency budget in milliseconds.
+    pub compact_ms: u64,
+    /// The plugin id that answers `rank` (reorder or filter `tool_search`
+    /// hits, never add).
+    pub rank: Option<String>,
+    /// `rank`'s latency budget in milliseconds.
+    pub rank_ms: u64,
 }
 
 impl Default for DecideConfig {
@@ -1103,6 +1121,14 @@ impl Default for DecideConfig {
             min_confidence: 0.6,
             route_ms: 300,
             route_margin: 0.15,
+            risk: None,
+            risk_ms: 200,
+            approve_hint: None,
+            approve_hint_ms: 200,
+            compact: None,
+            compact_ms: 500,
+            rank: None,
+            rank_ms: 300,
         }
     }
 }
