@@ -52,6 +52,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.41 | todo | P3 | 2 | 0% | |
 | T33.42 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
+| T33.44 | todo | P1 | 4 | 0% | |
 | T35.2 | todo | P1 | 4 | 0% | |
 | T35.5 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T35.6 | todo | P2 | 2 | 0% | |
@@ -788,7 +789,7 @@ Check: `plugin_hook_fires_without_hooks_config`, `shell_block_wins_over_plugin`,
 
 #### T33.12 Tools from plugins
 
-Depends: T33.9 · Size: ~170 · Files: `crates/cox-plugin/src/tool.rs`, `crates/cox/src/session.rs`
+Depends: T33.9, T33.44 · Size: ~170 · Files: `crates/cox-plugin/src/tool.rs`, `crates/cox/src/session.rs`
 Goal: `WasmTool` implements `Tool` as `wasm__<id>__<tool>`. It is always deferred, its specs are frozen at `cox_init`, and tools are sorted by (id, tool) and appended after MCP. `Concurrency::Exclusive` per plugin. `cox_output` and `cox_cancelled` inside `cox_tool_call`.
 Check: `plugin_tool_specs_frozen_within_session` (new invariant 15); `prefix_bytes_identical_between_turns` with a plugin tool discovered mid-session; `plugin_tool_output_is_archived_before_truncation`.
 
@@ -1201,6 +1202,21 @@ Depends: T33.19 · Size: ~140 · Files: `crates/cox-mcp/src/client.rs`, `crates/
 Goal: extend the sandbox wrap from T33.19 to every MCP stdio server, not only plugin-shipped ones (`docs/design/plugins.md` §7c, resolved 2026-09-26, §14 decision 4). `crates/cox` wraps every stdio command with `sandbox::Policy` before `cox-mcp` spawns it, including today's user-configured `.mcp.json`/config servers. A per-server `sandbox = false` key opts a named server out, for setups that need it, and `cox doctor` gains a row naming any server that opted out.
 Check: `every_stdio_server_runs_under_sandbox_by_default`, `sandbox_false_opts_a_named_server_out`, `doctor_lists_unsandboxed_servers`; existing `.mcp.json`/config MCP e2e tests still pass with the wrap applied.
 
+#### T33.44 The session keeps one live instance per granted plugin — blocker
+
+Depends: T33.9, T33.10, T33.11, T33.16 · Size: ~190 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/live.rs` (new)
+Goal: split from T33.9, T33.10, T33.11 and T33.16. Each of them built its piece against a caller-supplied `PluginHost`, and the session still loads plugins through a grant-nothing environment and drops them. At session open, for each `Granted` plugin, `crates/cox`:
+- builds `HostEnv::new(id).with_grant(grant::capability_list(..), store).with_context(ctx)` with an `Arc<dyn PluginStore>`;
+- calls `PluginHost::load_with`, then `cox_init` with `init_input(..)`;
+- keeps one `Arc<PluginHost>` that hooks, the event tap and later tools all share;
+- installs `PresenceHook(HookChain::new(shell, plugins))`, with `shell` set to `None` under `--no-hooks`;
+- sets the T33.10 event tap, which feeds `Context::fold`;
+- drains `take_notices()` into `Event::Notice`;
+- passes each granted plugin's `[[models]]` to `Catalog::load` and shows `catalog.warnings()` as notices (the part T33.16 left).
+
+A plugin whose load or `cox_init` fails is warned about and skipped, never fatal.
+Check: `granted_plugin_runs_cox_init_once_per_session`, `plugin_notify_reaches_the_transcript`, `hooks_and_event_tap_share_one_plugin_instance`, `plugin_init_failure_is_skipped_with_a_warning`, `granted_plugin_models_join_the_catalog`.
+
 #### T33.43 Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 
 Depends: an extism release after v1.30.0 that pins wasmtime ≥ 48 (extism `main` already pins 48; checked 2026-09-26) · Size: ~30 · Files: `Cargo.toml`, `Cargo.lock`, `deny.toml`
@@ -1443,6 +1459,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A57 §3 P35 (new T35.11) — ACP client terminals, by the creator. Why: T35.3 refuses every `terminal/*` request from an external agent, even under a sandbox grant, because serving them (sandboxed spawn, output buffer, wait, kill, release) did not fit that card; EA§4 allows them under the process's own `sandbox::Policy`. Effect: one card after T35.3; it reuses `bash`'s sandboxed spawn, `path::confine` and `cox_permission::Engine`, so no guard gains a second path. No decision changes.
 - A58 §3 P35 (new T35.12) — a dedicated `CoreError::ExternalAgent`, by the creator. Why: T35.4 had to send an external agent's failure as a provider `BadRequest`, which misnames it and could trigger provider retry or fallback. Effect: one protocol variant and a regenerated `docs/protocol.jsonschema`; no decision changes.
 - A59 §3 P35 (new T35.13) — T35.5 split. Why: cox-core does no I/O, so T35.5 landed the `ExternalAgent` trait, preset resolution and the usage row, and the host drivers (stream-json and ACP over T35.2's sandboxed spawn) need their own card. Effect: T35.7 also depends on T35.13; no decision changes.
+- A60 §3 P33 (new T33.44) — split the session wiring out of T33.9, T33.10, T33.11 and T33.16. Why: each built its piece against a caller-supplied `PluginHost`, and the session still drops the plugins it loads, so one card must keep a live instance and install hooks, the event tap, notices and plugin models. Effect: T33.12 also depends on T33.44; no decision changes.
 
 ## 7. Risk register
 

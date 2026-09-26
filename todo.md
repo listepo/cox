@@ -46,6 +46,7 @@
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
+- T33.44. The session keeps one live instance per granted plugin
 - T35.2. Host spawner, sandbox and grant
 - T35.5. Wiring as a subagent preset
 - T35.6. The Cursor plugin package
