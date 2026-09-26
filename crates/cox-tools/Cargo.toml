@@ -21,6 +21,9 @@ cox-syntax = { path = "../cox-syntax", version = "0.1.2" }
 # T32.5: the pure grep/glob walk, match and fuzzy-rank engine; this crate
 # keeps the grep/glob Tool impls (path::confine, archiving).
 cox-search = { path = "../cox-search", version = "0.1.2" }
+# T32.7: the pure web-fetch engine (HTTP GET + HTML→text); this crate keeps
+# the web_fetch Tool impl (ToolCx, input parsing, output framing).
+cox-web = { path = "../cox-web", version = "0.1.2" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
@@ -30,8 +33,6 @@ schemars = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
 nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
-# T3.8 (`web_fetch`): HTTP client with a hard timeout; shares the workspace rustls pin with cox-provider.
-reqwest = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

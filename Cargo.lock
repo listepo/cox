@@ -1093,9 +1093,9 @@ dependencies = [
  "cox-sandbox",
  "cox-search",
  "cox-syntax",
+ "cox-web",
  "nix 0.31.3",
  "proptest",
- "reqwest 0.12.28",
  "rstest",
  "schemars 1.2.2",
  "serde",
@@ -1134,6 +1134,16 @@ dependencies = [
  "two-face",
  "unicode-width",
  "vt100",
+]
+
+[[package]]
+name = "cox-web"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "reqwest 0.12.28",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

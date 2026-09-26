@@ -8,7 +8,9 @@
 //! `outline` is re-exported the same way, and `bash/classify.rs` calls into
 //! it for parsing while keeping its own risk walk here. The pure `grep`/
 //! `glob` walk and match engine lives in `cox-search` (T32.5); the `Tool`
-//! impls (`path::confine`, archiving) stay here.
+//! impls (`path::confine`, archiving) stay here. `web_fetch`'s HTTP
+//! GET and HTML→text engine live in `cox-web` (T32.7); `web_fetch.rs` keeps
+//! only the `Tool` glue (`ToolCx`, input parsing, output framing).
 
 pub mod ask_user;
 pub mod bash;

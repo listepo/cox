@@ -298,6 +298,18 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-search"]
     );
 
+    // cox-web (T32.7) is the fetch/extract engine behind `web_fetch`: a
+    // pure leaf, same shape as cox-patch. `WebFetchTool` — the `Tool` impl
+    // that owns `ToolCx` and input parsing — stays in cox-tools.
+    let web_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-web"]
+            .iter()
+            .all(|d| web_allowed.contains(d.as_str())),
+        "cox-web may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-web"]
+    );
+
     // mcp/store/ext depend only on cox-protocol: this is the rule the test
     // is named for — none of them may reach cox-core.
     let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
@@ -315,14 +327,16 @@ fn no_crate_below_cox_depends_on_core() {
 
     // cox-tools additionally depends on cox-sandbox (T32.3: path::confine
     // and the sandbox backends), cox-patch (T32.6: the V4A engine),
-    // cox-syntax (T32.4: outline and parse_bash) and cox-search (T32.5: the
-    // grep/glob walk and match engine).
+    // cox-syntax (T32.4: outline and parse_bash), cox-search (T32.5: the
+    // grep/glob walk and match engine) and cox-web (T32.7: the web_fetch
+    // engine).
     let tools_allowed: HashSet<&str> = [
         "cox-protocol",
         "cox-sandbox",
         "cox-patch",
         "cox-syntax",
         "cox-search",
+        "cox-web",
     ]
     .into_iter()
     .collect();
@@ -335,6 +349,6 @@ fn no_crate_below_cox_depends_on_core() {
         tools_deps
             .iter()
             .all(|dep| tools_allowed.contains(dep.as_str())),
-        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax/cox-search among workspace crates, found {tools_deps:?}"
+        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax/cox-search/cox-web among workspace crates, found {tools_deps:?}"
     );
 }
