@@ -1927,3 +1927,24 @@ Check:
 - `update_check_regrant_then_rollback_restores_old_digest` (install → changed bytes → `--check` diff → re-grant → `--rollback` without asking) and `update_in_headless_keeps_current_and_warns` pass, plus three `install.rs` unit tests.
 - In the worktree: nextest 1080 passed, 3 skipped; fmt and both clippy runs clean.
 - On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.23 TUI status segments
+
+Depends: T33.10, T33.22 · Size: ~160 · Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
+Goal: `Msg::Plugin(PluginUiMsg)` and `Cmd::Plugin(PluginRequest)`. `status.left`/`status.right` segments are cached in `State`. `cox_render` runs only on redraw requests, resize or visibility, never from `view`. Plugin segments drop first on a narrow terminal. A render has 20 ms, and three misses show "⚠ <id> slow".
+Check: insta snapshots (wide and narrow); `view_never_calls_plugin` (a counting fake bus); `slow_render_keeps_last_good_segment`.
+Status: done 2026-09-26
+Result: plugins can put segments in the TUI status line.
+- `Msg::Plugin(PluginUiMsg { Declare, Redraw, Rendered, Missed })` and `Cmd::Plugin(PluginRequest::Render { plugin, input })`; `State.plugin_status` caches each segment's last good widget and its miss count.
+- `status::on_plugin` and `status::render_requests` are the only places a render is requested: on `Declare`, a redraw or a resize, never from `view`. `status.left` segments sit before the model segment and `status.right` after the mode segment. On a narrow terminal plugin segments drop first, rightmost first.
+- A segment is 24 columns (`SEGMENT_COLS`), drawn through the existing `plugin_ui::render`, so sanitizing and theme tokens share one path. After three misses in a row (`MAX_MISSES`) the slot shows `⚠ <id> slow` in the warn colour and is not asked again that session.
+- `crates/cox/src/plugin_ui.rs` (`plugins` feature): `serve(hosts, rx, feed)` answers one request at a time with a 20 ms deadline (`RENDER_DEADLINE`) and skips duplicates queued behind a slow render. `app::run` takes the request sender, and `Cmd::Plugin` is sent with `try_send`.
+Deviations:
+- About 330 lines over 7 files plus 2 snapshots. The render seam is its own module, so `session.rs` changes only 9 lines.
+- A segment coming back after a narrow-terminal drop does not trigger a render of its own. Row width still counts bytes, as before.
+Not done (T33.44): `session.rs` passes `serve` an empty host list, `plugin_ui::redraw` is unused, and nothing sends `Declare` after `cox_init`.
+Check:
+- The snapshots `plugin_segments_wide` and `plugin_segments_drop_first_when_narrow` pass, as do `view_never_calls_plugin` (a counting fake bus: 40 view renders and 10 ticks make no call) and `slow_render_keeps_last_good_segment`.
+- Also added: `plugin_segment_text_is_sanitized_and_capped`, plus `render_answer_carries_the_widget` and `slow_render_is_missed_at_its_deadline` (WAT fixture).
+- In the worktree: nextest 1117 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing: nextest 1116 passed, 3 skipped, 1 load failure (`bash_cancel_stops_the_command`) passed three reruns on its own; fmt, clippy and the slim build clean.

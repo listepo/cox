@@ -7,7 +7,6 @@
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
-- T33.23. TUI status segments
 - T33.24. TUI panel and overlay
 - T33.25. Plugin commands and keys
 - T33.26. Custom rendering of tool results and messages

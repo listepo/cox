@@ -13,7 +13,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.20 | todo | P2 | 5 | 0% | |
 | T33.21 | todo | P2 | 4 | 0% | |
-| T33.23 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.24 | todo | P2 | 3 | 0% | |
 | T33.25 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.26 | todo | P2 | 4 | 0% | |
@@ -804,12 +803,6 @@ Goal: the monotone rules from PL§4:
 - rank reorders or filters cox's own candidates.
 `salience` is wired only if it fits the size; otherwise it is a follow-up card noted here.
 Check: `risk_advice_cannot_lower_risk`, `risk_not_asked_when_outcome_would_not_change`, `approve_hint_cannot_say_looks_safe`, `compact_advice_cannot_skip_mandatory_compaction`, `rank_advice_cannot_add_tools`.
-
-#### T33.23 TUI status segments
-
-Depends: T33.10, T33.22 · Size: ~160 · Files: `crates/cox-tui/src/status.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
-Goal: `Msg::Plugin(PluginUiMsg)` and `Cmd::Plugin(PluginRequest)`. `status.left`/`status.right` segments are cached in `State`. `cox_render` runs only on redraw requests, resize or visibility, never from `view`. Plugin segments drop first on a narrow terminal. A render has 20 ms, and three misses show "⚠ <id> slow".
-Check: insta snapshots (wide and narrow); `view_never_calls_plugin` (a counting fake bus); `slow_render_keeps_last_good_segment`.
 
 #### T33.24 TUI panel and overlay
 
