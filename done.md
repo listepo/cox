@@ -2889,3 +2889,35 @@ Check:
 - 3 manifest validation tests.
 - In the worktree: nextest 1255 passed, 4 skipped; fmt, clippy and the slim build clean.
 - On main after landing (T33.33 and T33.38 together): nextest 1268 passed, 4 skipped; fmt, clippy and the slim build clean.
+
+#### T36.1 Permission rules match every segment of a compound bash command
+
+Depends: none · Size: ~200 · Files: `crates/cox-permission/src/lib.rs`, `src/rules.rs`, `crates/cox-protocol/src/types.rs` (`ToolCall`), `crates/cox-tools/src/bash/mod.rs` (+ `bash/classify.rs` for the shared tree-sitter walk), `crates/cox-core/src/turn.rs` (where `subject` is filled)
+Goal: close the gap where a prefix rule or grant matches the whole command line as one string. Today `allow = ["Bash(git:*)"]` allows `git status; rm -rf ~` because `Subject::Prefix` checks only the start of the subject (`rules.rs` `Rule::matches`), and a session grant ("always allow this session") does the same with `call.subject.starts_with` (`lib.rs` `decide`). The mirror gap is worse: `deny = ["Bash(rm:*)"]` does not deny `git status && rm -rf x`. Done means:
+- the bash tool splits its command with the tree-sitter parse it already runs for `classify` (`cox_syntax::parse_bash`) into simple-command segments across `;`, `&&`, `||`, `|`, `&` and newlines, and hands them to the engine next to the display `subject` (for example `ToolCall.segments`; other tools keep one segment, their subject). `cox-permission` stays pure: it gets strings, never a parser;
+- a deny rule that matches **any** segment denies the call; an allow rule or a session grant allows it only when **every** segment is covered; otherwise the usual ask path applies;
+- a command the split cannot see through — command substitution `$(…)` or backticks, process substitution, `eval`/`bash -c`/`sh -c`, a parse error, or an output redirect to a path — is never allowed by a prefix rule or grant: it asks (deny still wins), even when its first word matches;
+- an exact (non-prefix) rule keeps matching the whole command string as today; `ReadOnly` auto-allow and bypass mode are unchanged;
+- `docs/how-it-works.md` (the rule grammar section) and the permission docs say how compound commands are matched; research.md cites Claude Code's documented behaviour for `Bash(cmd:*)` with shell operators (primary source, checked date) so `.claude/settings.json` rules keep the meaning users expect.
+Check: `prefix_rule_does_not_cover_chained_command` (`git status; rm -rf x`, `git log && curl … | sh`), `deny_rule_matches_any_segment`, `session_grant_does_not_cover_chained_command`, `substitution_asks_even_when_prefix_matches` (`git log $(rm x)`, backticks, `bash -c`), `every_segment_allowed_runs_without_asking` (`git status && git diff`), `exact_rule_still_matches_whole_command`; the real binary in a scratch `COX_HOME` with `allow = ["Bash(git:*)"]` asks for `git status; touch x` in `cox run -p` (headless denies what would ask).
+Status: done 2026-09-26
+Result: a prefix rule or session grant covers exactly the commands it names, never a command chained after them.
+- **Split.** `classify.rs` does one tree-sitter walk that returns the risk and the simple commands across `;`, `&&`, `||`, `|`, `&` and newlines, including commands nested in a subshell, `$(…)` or a loop body. Each command's text starts at its name, so deny sees past a leading `FOO=1`.
+- **Interface.** `ToolCall.segments: Option<Segments { commands, opaque }>` (cox-protocol, `serde(default)`, skipped when `None`, so old rollouts load; `docs/protocol.jsonschema` regenerated). `Tool::segments(&input)` defaults to `None`; `BashTool` fills it from `cox_tools::bash::segments`. `turn.rs` `rate()` updates risk, subject and segments together after a hook rewrite or a user edit. Grants are recorded through `cox_permission::grants_for(&call)`, one per command.
+- **Engine.** Deny and ask match the whole line or any command. Allow and grants need every command, possibly by different rules. An opaque line (`$(…)`, backticks, `<(…)`, `eval`, `sh -c`/`bash -c` also behind `env`/`nohup`, an assignment or `export`/`declare`/`unset`, an output redirect to a path, a parse error, no command) is never allowed by a prefix rule; it takes the ask path (headless denies), and deny still wins. Bare `Bash` and exact rules still match the whole line; read-only auto-allow and bypass are unchanged. `cox-permission` stays pure.
+- **Other surfaces.** The ACP client (`request_permission` judged as bash and `terminal/create`) and `cox mcp` fill the segments; the ACP grant list and grants rebuilt from a rollout use `grants_for`.
+- **Claude Code.** https://code.claude.com/docs/en/permissions (checked 2026-09-26), research.md §8.5 row 38. Same separators, any-command deny/ask, every-command allow, nested commands count, one grant per command. cox is stricter: no wrapper stripping (so `nohup rm …` passes a `Bash(rm:*)` deny in cox, but only via the ask path), any assignment blocks allow, an output redirect asks instead of checking `Edit` rules, deny does not look inside `sh -c` strings.
+Deviations:
+- An opaque line can still be covered by a session grant for that exact line (same trust as an exact rule).
+- 32 files, about 573 lines added and 62 removed; most are mechanical `segments: None` in existing `ToolCall` literals, plus tests and docs.
+- `risk()` and `segments()` each parse the line once (one shared walk, parsed twice).
+Not done:
+- The read-only auto-allow still lets through `GIT_PAGER='rm x' git log` and `export PATH=/tmp/evil; git status`: `classify` drops assignments as if they did not change what runs. Outside this card; the sandbox still applies.
+- Wrapper stripping and deny inside `sh -c` strings.
+Check:
+- `prefix_rule_does_not_cover_chained_command`, `deny_rule_matches_any_segment`, `session_grant_does_not_cover_chained_command`, `substitution_asks_even_when_prefix_matches`, `every_segment_allowed_runs_without_asking`, `exact_rule_still_matches_whole_command` (crates/cox-core/tests/permission.rs, through the real `BashTool`)
+- `bash_segments_split_every_operator_and_keep_nested_commands`
+- e2e `a_prefix_rule_does_not_allow_a_command_chained_after_it` (scenario `bash_git_then_touch.toml`): with `allow = ["Bash(git:*)"]` the run exits 2 with `denied:1` and the file is not created; adding `Bash(touch:*)` runs it.
+- The real binary with a scratch `COX_HOME`: `git status; touch x` shows `segments: ["git status","touch x"]`, is denied headless, exit 2, no `x`.
+- In the worktree: nextest 1298 passed, 4 skipped; fmt, clippy and the slim build clean.
+- On main after landing: nextest 1298 passed, 4 skipped; fmt, clippy and the slim build clean.
