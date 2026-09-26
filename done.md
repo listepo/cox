@@ -886,3 +886,50 @@ Result: `cox_models::effort_for(api, Effort, &Capabilities)` in `crates/cox-mode
 Sources (checked 2026-09-26): the OpenAI Chat reference (https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) lists `reasoning_effort` as optional and model-dependent. LM Studio's Chat Completions page (https://lmstudio.ai/docs/developer/openai-compat/chat-completions) does not list it. Both are recorded in R§4.3.3.
 Check: nextest 934 passed, 3 skipped; clippy and fmt clean; `just vendor-test` 36 passed. Only the help-overlay snapshot changed (the `/effort` line); no request snapshot changed.
 Not done: `default.toml` still has three-level effort sets. A live `cox-vendor models` run would add `medium` and also move one unrelated price (deepseek-v4-pro), so it stays a separate vendor refresh. `clamp_effort` still reads the section's `models` list, not `Catalog`.
+
+#### T32.12 `cox-provider-http`: HTTP, retry, SSE and key resolution
+
+Depends: — · Moves: `cox-provider/src/http.rs`, `retry.rs`, `sse.rs` (~500).
+Why: reuse (d), shared by every wire.
+Check: the retry and SSE tests pass unchanged.
+Status: done 2026-09-26
+Result: `crates/cox-provider-http` owns `http` (client, `resolve_key`, `resolve_key_with`), `retry` and `sse`, and depends only on `cox-protocol` among workspace crates (`deps.rs` rule). `cox-provider` re-exports all three at their old paths. `keyring`, `eventsource-stream` and `bytes` left `cox-provider`. `resolve_key_with` became `pub`, because `cox-provider`'s tests call it across the new crate boundary.
+Check: the 14 moved `http`/`retry`/`sse` tests pass unchanged under the new crate. clippy and fmt are clean, and nextest ran 930 passed, 3 skipped in the worktree.
+
+#### T32.11 `cox-provider-testkit`: scripted and replay providers
+
+Depends: — · Moves: `cox-provider/src/scripted.rs`, `replay.rs` (~750).
+Why: reuse (d). Every crate's tests use them without needing the real wires.
+Check: each crate takes the testkit as a dev-dependency, or as a normal dependency where a production path uses it today (the card lists which).
+Status: done 2026-09-26
+Result: `crates/cox-provider-testkit` owns the pure scenario and cassette helpers: `parse_scenario`, `events_for`, `redact_secrets`, `cassette_hash`, `write_cassette` and `nearest_hint`. It depends only on `cox-protocol`. The `Scripted` and `Replay` structs and their `Provider` impls stay in `cox-provider` as thin glue, because they need `tokens::estimate`, `AnthropicStream` and `sse::parse_sse_str`. Every caller keeps its `cox_provider::scripted` or `cox_provider::replay` path.
+Users: `cox-provider` depends on the testkit normally, because `from_env()` builds Scripted/Replay from `COX_PROVIDER` at runtime. `cox record` uses `write_cassette` through `cox-provider`. Every other caller uses it only from tests.
+Check: nextest ran 932 passed, 3 skipped in the worktree, including two new tests for the functions that became `pub`.
+
+#### T32.5 `cox-search`: grep and glob
+
+Depends: T32.3 · Moves: `cox-tools/src/grep.rs`, `glob.rs` (~870).
+Why: dependencies (a), namely ignore, grep-searcher, grep-regex and nucleo.
+Check: those four crates appear only in `cox-search/Cargo.toml`. If another tool still uses one of them, the card says so and leaves that dependency shared.
+Status: done 2026-09-26
+Result: `crates/cox-search` owns the pure grep and glob engines: `grep::search` and `glob::find`, plus `rank_by_query` and `workspace_files`, with a small `thiserror` enum per engine. It is a pure leaf with no workspace dependency. `GrepTool` and `GlobTool` stay in `cox-tools`, because they run `path::confine` and the archive. `ignore`, `grep-searcher`, `grep-regex`, `globset` and `nucleo` left `cox-tools`; `nucleo` is still also used by `cox-tui`'s picker.
+Check: the grep golden tests and the glob tests pass unchanged; clippy and fmt are clean; nextest ran 930 passed, 3 skipped in the worktree.
+
+#### T32.9 `cox-telemetry`: tracing setup and the OpenTelemetry stack
+
+Depends: — · Moves: `crates/cox/src/telemetry.rs`.
+Why: dependencies (a), five opentelemetry crates.
+Plan: the `otel` feature moves with it; `cox`'s `otel` forwards to it. Errors become a `thiserror` enum, because `anyhow` stays in `crates/cox` only.
+Check: builds with `--no-default-features` and with defaults are both green.
+Status: done 2026-09-26
+Result: `crates/cox-telemetry` owns tracing setup and the OpenTelemetry stack behind its `otel` feature; `cox`'s `otel` forwards to it. Errors are `TelemetryError` (`thiserror`). `init` takes the log level, the otel switch and the endpoint instead of `&Config`, so the crate depends on no workspace crate. `crates/cox/src/telemetry.rs` re-exports it.
+Check: `cargo build -p cox --no-default-features` and the default build are both green. nextest ran 930 passed, 3 skipped in the worktree.
+
+#### T32.7 `cox-web`: `web_fetch`
+
+Depends: — · Moves: `cox-tools/src/web_fetch.rs`.
+Why: dependencies (a), so reqwest leaves `cox-tools`.
+Check: there is no `reqwest` in `cox-tools/Cargo.toml`.
+Status: done 2026-09-26
+Result: `crates/cox-web` owns the fetch and HTML-to-text engine: `client`, a streaming `fetch` with cancellation and a byte cap, and `extract`. It depends only on `cox-protocol`. `WebFetchTool` stays in `cox-tools` (it uses `ToolCx` and `write::str_field`), and its output is unchanged.
+Check: `reqwest` no longer appears in `cox-tools/Cargo.toml`. The `web_fetch` integration tests pass unchanged. nextest ran 930 passed, 3 skipped in the worktree.
