@@ -5,7 +5,10 @@
 //! TOML (figment's `Toml` provider), and computes the digest. A user plugin
 //! wins an id clash with a notice: a repository must not shadow code the
 //! user installed (§1). The grant state itself is T33.6; this module only
-//! answers `Loaded` or `Skipped`, never fatal (invariant 17).
+//! answers `Loaded` or `Skipped`, never fatal (invariant 17). `load_manifest`
+//! is `pub` so `cox plugin install` (T33.7) parses, validates and digests a
+//! not-yet-placed package through the same path `discover` uses, rather
+//! than computing a second digest of its own.
 
 use std::fmt;
 use std::fs;
@@ -145,7 +148,7 @@ fn current_version_dir(plugin_dir: &Path) -> Result<PathBuf, String> {
 }
 
 fn load_one(id: String, source: Source, dir: &Path, manifest_path: &Path) -> Plugin {
-    let state = load_manifest(&id, dir, manifest_path)
+    let state = load_manifest(dir, manifest_path, Some(&id))
         .map(|(manifest, digest)| State::Loaded {
             manifest: Box::new(manifest),
             digest,
@@ -162,16 +165,22 @@ fn load_one(id: String, source: Source, dir: &Path, manifest_path: &Path) -> Plu
 /// Parses and validates one `plugin.toml`, the way `config_load` parses
 /// cox's own config (figment's `Toml` provider); this is the one module in
 /// `cox-plugin` that owns loading and validation (PL§2, AGENTS "Config
-/// files").
-fn load_manifest(
-    id: &str,
+/// files"). `expect_id` checks the manifest against a directory name for a
+/// discovered plugin (`Some`); `cox plugin install <dir>` has no directory
+/// name to check against yet — the id comes from the manifest itself — so
+/// it passes `None` and reuses this same parse, validate and digest path
+/// (T33.7: one digest computation, never a second one).
+pub fn load_manifest(
     dir: &Path,
     manifest_path: &Path,
+    expect_id: Option<&str>,
 ) -> Result<(PluginManifest, String), String> {
     let manifest: PluginManifest = Figment::from(Toml::file(manifest_path))
         .extract()
         .map_err(|e| format!("{}: {e}", manifest_path.display()))?;
-    if manifest.id != id {
+    if let Some(id) = expect_id
+        && manifest.id != id
+    {
         return Err(format!(
             "plugin.toml id {:?} does not match directory {id:?}",
             manifest.id

@@ -81,14 +81,25 @@ fn main() -> anyhow::Result<()> {
             }
         },
         #[cfg(feature = "plugins")]
-        Some(Command::Plugin(args)) => {
-            let json = matches!(
-                &args.action,
-                Some(crate::cli::PluginAction::List { json: true })
-            );
-            print!("{}", plugin_cmd::list(&cli, &cwd, json));
-            Ok(())
-        }
+        Some(Command::Plugin(args)) => match &args.action {
+            None => {
+                print!("{}", plugin_cmd::list(&cli, &cwd, false));
+                Ok(())
+            }
+            Some(crate::cli::PluginAction::List { json }) => {
+                print!("{}", plugin_cmd::list(&cli, &cwd, *json));
+                Ok(())
+            }
+            Some(crate::cli::PluginAction::Install { dir, yes }) => {
+                plugin_cmd::install(&cli, dir, *yes)
+            }
+            Some(crate::cli::PluginAction::Enable { id, project, yes }) => {
+                plugin_cmd::enable(&cli, &cwd, id, *project, *yes)
+            }
+            Some(crate::cli::PluginAction::Disable { id, project }) => {
+                plugin_cmd::disable(&cli, &cwd, id, *project)
+            }
+        },
         Some(Command::Run(args)) => {
             let code = run::run(&cli, args, &cwd)?;
             drop(telemetry);

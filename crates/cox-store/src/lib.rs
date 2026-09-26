@@ -78,8 +78,11 @@ impl Store {
 /// Formats the current time as RFC 3339 UTC with millisecond precision
 /// (`"2026-09-02T10:11:12.345Z"`), matching the rollout line format
 /// (plan.md §1.7). No date/time crate for this: the calendar math is
-/// Howard Hinnant's public-domain `civil_from_days` algorithm.
-fn now_rfc3339() -> String {
+/// Howard Hinnant's public-domain `civil_from_days` algorithm. `pub` so
+/// `cox plugin enable`/`install` (T33.7, `crates/cox/src/plugin_cmd.rs`)
+/// stamp a grant's `decided_at` the same way every other row's timestamp
+/// is stamped, instead of a second formatter.
+pub fn now_rfc3339() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

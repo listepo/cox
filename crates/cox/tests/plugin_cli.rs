@@ -5,6 +5,9 @@
 //! whose `cox_init` would trap is still listed, unharmed, as `discovered`.
 //! T33.6 Check: a headless run loads only granted plugins and warns once per
 //! ungranted one, naming the command to run.
+//! T33.7 Check: `install` → `enable --yes` → `list` reports `loaded`;
+//! `disable` → `list` reports `not loaded`; a project plugin needs
+//! `--project` to be granted at all (`project_plugin_needs_project_grant`).
 
 #![cfg(feature = "plugins")]
 
@@ -20,6 +23,49 @@ fn cox(home: &Path, cwd: &Path) -> Command {
         .env("HOME", home)
         .args(["--cwd", cwd.to_str().unwrap(), "plugin", "list", "--json"]);
     cmd
+}
+
+/// `cox plugin <args...>` against a scratch `COX_HOME`/`cwd`. The test
+/// process's own stdin is not a terminal (`cargo nextest run` redirects
+/// it), so a prompt-less run (no `--yes`) reads EOF on `read_line` and
+/// declines deterministically, same as `assert_cmd`'s other users of
+/// `std::io::stdin()` in this workspace.
+fn cox_plugin(home: &Path, cwd: &Path, args: &[&str]) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_cox"));
+    cmd.current_dir(cwd)
+        .env("COX_HOME", home)
+        .env("HOME", home)
+        .args(["--cwd", cwd.to_str().unwrap(), "plugin"])
+        .args(args);
+    cmd
+}
+
+fn list_json(home: &Path, cwd: &Path) -> Value {
+    let out = cox(home, cwd)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).expect("json output")
+}
+
+/// The human-readable `cox plugin list` (no `--json`), for the literal
+/// `loaded`/`not loaded` words the T33.7 Check names.
+fn list_text(home: &Path, cwd: &Path) -> String {
+    let out = cox_plugin(home, cwd, &["list"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(out).unwrap()
+}
+
+fn write_plugin(dir: &Path, id: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join("plugin.toml"), manifest(id)).unwrap();
+    std::fs::write(dir.join("plugin.wasm"), "dummy wasm bytes").unwrap();
 }
 
 fn manifest(id: &str) -> String {
@@ -84,7 +130,10 @@ fn cox_plugin_list_reports_a_wat_fixture_plugin() {
     assert_eq!(plugins[0]["id"], "demo");
     assert_eq!(plugins[0]["source"], "user");
     assert_eq!(plugins[0]["state"], "discovered", "{v}");
-    assert_eq!(plugins[0]["grant"], "unknown");
+    // T33.7: no grant on file, so `grant::check` reports `NeedsApproval`,
+    // not the old `"unknown"` placeholder.
+    assert_eq!(plugins[0]["grant"], "needs_approval", "{v}");
+    assert_eq!(plugins[0]["loaded"], false, "{v}");
 }
 
 #[test]
@@ -112,7 +161,8 @@ fn cox_plugin_list_never_runs_a_project_plugins_module() {
     assert_eq!(plugins[0]["id"], "trap");
     assert_eq!(plugins[0]["source"], "project");
     assert_eq!(plugins[0]["state"], "discovered", "{v}");
-    assert_eq!(plugins[0]["grant"], "unknown");
+    assert_eq!(plugins[0]["grant"], "needs_approval", "{v}");
+    assert_eq!(plugins[0]["loaded"], false, "{v}");
 }
 
 /// The package bytes are not wasm, so loading one is a visible "failed to
@@ -190,5 +240,113 @@ fn headless_never_loads_ungranted_plugin() {
     assert!(
         !off.contains("plugin good") && !off.contains("plugin trap"),
         "{off}"
+    );
+}
+
+/// T33.7 Check: `install` (declined by default: stdin is closed, so the
+/// prompt reads EOF and the grant is not written) → `enable --yes` grants
+/// it → `list` reports `loaded` → `disable` → `list` reports `not loaded`.
+#[test]
+fn install_then_enable_yes_then_list_shows_loaded_then_disable_shows_not_loaded() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let src = tempfile::tempdir().unwrap();
+    write_plugin(src.path(), "demo");
+
+    // `install` alone: no `--yes` and no stdin, so the approval prompt
+    // declines and no grant is written — only the files and `current` land.
+    cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["install", src.path().to_str().unwrap()],
+    )
+    .assert()
+    .success();
+    assert!(
+        home.path().join("plugins/demo/current").exists(),
+        "install must write `current` even when the grant is declined"
+    );
+
+    let before = list_json(home.path(), cwd.path());
+    assert_eq!(before["plugins"][0]["grant"], "needs_approval", "{before}");
+    assert_eq!(before["plugins"][0]["loaded"], false, "{before}");
+
+    // A separate `enable --yes` grants it.
+    cox_plugin(home.path(), cwd.path(), &["enable", "demo", "--yes"])
+        .assert()
+        .success();
+
+    let enabled = list_json(home.path(), cwd.path());
+    assert_eq!(enabled["plugins"][0]["grant"], "granted", "{enabled}");
+    assert_eq!(enabled["plugins"][0]["loaded"], true, "{enabled}");
+
+    let text = list_text(home.path(), cwd.path());
+    assert!(text.contains("loaded"), "{text}");
+    assert!(!text.contains("not loaded"), "{text}");
+
+    // `disable` clears `enabled`; the files and grant row stay.
+    cox_plugin(home.path(), cwd.path(), &["disable", "demo"])
+        .assert()
+        .success();
+
+    let disabled = list_json(home.path(), cwd.path());
+    assert_eq!(disabled["plugins"][0]["grant"], "disabled", "{disabled}");
+    assert_eq!(disabled["plugins"][0]["loaded"], false, "{disabled}");
+
+    let text_after = list_text(home.path(), cwd.path());
+    assert!(text_after.contains("not loaded"), "{text_after}");
+}
+
+/// T33.7 Check `project_plugin_needs_project_grant`: a project plugin is
+/// repository content (PL§1), so `cox plugin enable <id>` without
+/// `--project` must not find it — discovery never looks under
+/// `.cox/plugins/` unless `--project` says so — and the grant is scoped to
+/// that repository root, not to every repository.
+#[test]
+fn project_plugin_needs_project_grant() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    write_plugin(&repo.path().join(".cox/plugins/proj"), "proj");
+
+    // Without `--project`, discovery never looks at the repository, so
+    // there is nothing to grant.
+    let out = cox_plugin(home.path(), repo.path(), &["enable", "proj", "--yes"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("not found"), "{out}");
+    assert!(out.contains("--project"), "{out}");
+
+    let still_ungranted = list_json(home.path(), repo.path());
+    assert_eq!(
+        still_ungranted["plugins"][0]["grant"], "needs_approval",
+        "{still_ungranted}"
+    );
+
+    // With `--project`, it is found, shown in words and granted.
+    cox_plugin(
+        home.path(),
+        repo.path(),
+        &["enable", "proj", "--project", "--yes"],
+    )
+    .assert()
+    .success();
+
+    let granted = list_json(home.path(), repo.path());
+    assert_eq!(granted["plugins"][0]["grant"], "granted", "{granted}");
+    assert_eq!(granted["plugins"][0]["loaded"], true, "{granted}");
+
+    // The grant is scoped to this repository root, not to every one.
+    let other_repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(other_repo.path().join(".git")).unwrap();
+    write_plugin(&other_repo.path().join(".cox/plugins/proj"), "proj");
+    let elsewhere = list_json(home.path(), other_repo.path());
+    assert_eq!(
+        elsewhere["plugins"][0]["grant"], "needs_approval",
+        "a project grant must not cover a different repository: {elsewhere}"
     );
 }

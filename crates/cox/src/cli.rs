@@ -339,7 +339,7 @@ pub struct PluginArgs {
     pub action: Option<PluginAction>,
 }
 
-/// `cox plugin` subcommands.
+/// `cox plugin` subcommands (T33.4, T33.7).
 #[cfg(feature = "plugins")]
 #[derive(Subcommand, Debug, Clone)]
 pub enum PluginAction {
@@ -348,6 +348,36 @@ pub enum PluginAction {
         /// Machine-readable JSON output.
         #[arg(long)]
         json: bool,
+    },
+    /// Validate `<dir>`, copy it into `versions/<digest12>/`, write
+    /// `current`, then ask for its capabilities (PL§1).
+    Install {
+        /// A local plugin package directory (the only v1 source).
+        dir: PathBuf,
+        /// Skip the stdin prompt and grant what the manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Show a discovered plugin's capabilities in words and, on approval,
+    /// grant it (PL§3).
+    Enable {
+        /// The plugin id, as its directory is named.
+        id: String,
+        /// Look for a project plugin in this repository instead of a user
+        /// one; the grant is scoped to the repository root.
+        #[arg(long)]
+        project: bool,
+        /// Skip the stdin prompt and grant what the manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Clear `enabled` on the grant; files and stored data stay.
+    Disable {
+        /// The plugin id, as its directory is named.
+        id: String,
+        /// The grant to clear is the project one, not the user one.
+        #[arg(long)]
+        project: bool,
     },
 }
 
