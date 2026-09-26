@@ -66,6 +66,17 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.41 | todo | P3 | 2 | 0% | |
 | T33.42 | todo | P2 | 3 | 0% | |
+| T34.0 | todo | P1 | 2 | 0% | |
+| T34.1 | todo | P0 | 3 | 0% | |
+| T34.2 | todo | P2 | 2 | 0% | |
+| T34.3 | todo | P1 | 2 | 0% | |
+| T34.4 | todo | P1 | 2 | 0% | |
+| T34.5 | todo | P1 | 4 | 0% | |
+| T34.6 | todo | P1 | 3 | 0% | |
+| T34.7 | todo | P2 | 2 | 0% | |
+| T34.8 | todo | P2 | 2 | 0% | |
+| T34.9 | todo | P1 | 3 | 0% | |
+| T34.10 | todo | P3 | 1 | 0% | |
 
 ## Reference
 
@@ -94,7 +105,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D15 | **Each component is designed against the field before it is built.** Every P-phase's first task is a ≤ 1-page `docs/design/<component>.md`: the problem in one measurable number, what Claude Code / Codex / Pi / OpenCode / aider do, what cox does and why it is at least as good, and what would falsify it. Written by the `code` tier; reviewed, not written, by `think`. | rtok D15. Copying a competitor caps cox at that competitor. |
 | D16 | **Observability is `tracing` with an optional OpenTelemetry GenAI exporter.** Spans carry `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`. Off by default; `cox stats` reads the ledger locally. | Codex ships opentelemetry 0.31 (R§1.3); the GenAI semconv is still experimental, so it stays behind a feature flag. |
 
-Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; git worktree isolation for subagents; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
+Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
 
 ## 1. Architecture
 
@@ -1372,6 +1383,110 @@ TUI: T33.22 → T33.23 → (T33.24, T33.25, T33.26). SDK and languages: T33.27 �
 
 The paid runs are T33.40.7 (≤ $0.10, approved) and T33.40.10 (≤ $3, needs the creator's go-ahead each time).
 
+### P34 — Subagents (goal: a subagent can be a custom named definition, capped in number, able to ask the user, and able to exchange follow-up messages with its parent and its siblings — all through the parent's own `Submission`/`Event` stream)
+
+Rationale in §6 A53. The design doc for the messaging cards is `docs/design/subagent-messaging.md` (T34.0, cited below as SM§n).
+
+Every card in this phase:
+
+- stays within 200 LOC and 3 source files (generated schemas and fixtures do not count);
+- leaves a test that fails without it;
+- documents what it adds (`docs/design/subagent-messaging.md` if the design moves, `docs/protocol.jsonschema`/`docs/config.jsonschema` through their drift tests for new variants or keys);
+- runs the three standard commands.
+
+**Blockers** (everything after them depends on them): T34.0 (blocks T34.4–T34.9).
+
+#### T34.1 Wire custom agent definitions into the `agent` tool
+
+Depends: — · Size: ~190 · Files: `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/Cargo.toml` (new path dependency on `cox-ext`)
+Goal: `agent(preset: "<name>")` dispatches an `AgentDef` discovered by `cox_ext::agents::discover` (`.cox/agents/*.md`, `.claude/agents/*.md`, home variants) exactly as the built-in `explore`/`shell` presets already do, and the `agent` schema gains a `tier` field — closing the gap between §1.11's documented `agent` row and the code, which today only ever resolves the two hardcoded presets (`AgentTool::preset`, `PRESETS.iter().copied().find(...)`; `cox-ext::agents::discover` is otherwise called only by `cox ext list`).
+Plan:
+1. `Session::new`/`resume` discover `AgentDef`s once per session build (the same roots `cox ext list` already reads) and hand them to `AgentTool::new`.
+2. `AgentTool::preset()` tries the built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`), then a discovered `AgentDef` by exact name; a miss lists both the built-in and the discovered names in the `ToolError::Denied`.
+3. `tools_for()` uses `AgentDef::restrict` when the resolved preset came from a definition, the existing `Preset.tools` path otherwise.
+4. `call()` reads an optional `tier` input; when present it overrides `tier_for(def.model)` (or the built-in preset's job tier), but only downward — clamped the same way the router already clamps a decision-point's tier offer (D5 "never up").
+5. The `preset` input schema drops its fixed two-value enum for a free-form string; the tool's own description keeps naming `explore`/`shell` and says custom names come from `.claude/agents`/`.cox/agents`.
+Check: `agent_dispatches_a_discovered_custom_preset_by_name`, `agent_unknown_preset_lists_builtin_and_discovered_names_in_error`, `agent_tier_override_is_honored_and_clamped_never_above_config`; the existing `subagent_presets_are_explore_and_shell` and `subagent_budget_is_a_slice_of_parent` stay green unchanged.
+
+#### T34.2 A subagent concurrency cap
+
+Depends: — · Size: ~140 · Files: `crates/cox-protocol/src/config.rs` (new `core.max_concurrent_subagents`), `crates/cox-core/src/subagent.rs`, `crates/cox-core/src/tasks.rs`
+Goal: cap how many subagent tasks (foreground and background) may run at once per session, so a loop of `background: true` calls cannot silently multiply cost or exhaust the parent's budget slice faster than the user can notice. Matches the shape of Codex's `agents.max_concurrent_threads_per_session` and Claude Code's `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as a `cox-config` key (D13: one config file, every flag is a key), not an env var.
+Plan: `core.max_concurrent_subagents` (default generous, e.g. 8), read from `self.parent.config.core` in `AgentTool::call()`; counted against the parent's currently-registered `TaskKind::Agent` tasks (`register_task`/`complete_task`, already tracked in `Session::inner.tasks`) before spawning; over the cap is `ToolError::Denied` naming the cap and how many are running, the same shape as T34.1's "unknown preset" denial.
+Check: `agent_call_denied_when_concurrent_cap_reached`, `agent_call_allowed_after_a_running_task_completes`, `config_jsonschema_matches_committed_file` stays green with the new key.
+
+#### T34.3 `ask_user` from a subagent, labelled with `Source`
+
+Depends: — · Size: ~150 · Files: `crates/cox-tools/src/ask_user.rs`, `crates/cox-protocol/src/traits.rs` (`ToolCx` gains the agent label), `crates/cox-core/src/subagent.rs`
+Goal: a subagent whose preset/definition grants `ask_user` can pause and ask the user a question exactly like the parent does, and every surface that renders it can say which subagent is asking — reusing the `Source` type `ApprovalRequired` already carries instead of inventing a new one.
+Plan:
+1. `ask_user::Question` gains an optional `source: Option<Source>` — `None` for the top-level session, `Some` for a subagent.
+2. `ToolCx` carries the agent name/preset alongside its existing `session: SessionId`, set once in `spawn_child`/`AgentTool::call`, the same way `relay_approval` builds its `Source` today.
+3. Wherever `Answers::Surface` renders a `Question`, it shows the label the same way `ask_permission` labels a relayed approval, when `source` is `Some`.
+4. No shipped preset (`explore`, `shell`) grants `ask_user` in this task — that is a content decision for whoever writes the first custom definition that needs it; this task only makes it possible and labelled.
+Check: `ask_user_from_subagent_carries_its_source`, `ask_user_surface_shows_which_agent_is_asking`; existing `ask_user.rs` tests unchanged.
+
+#### T34.0 Design doc: subagent messaging
+
+Depends: — · Size: design only (≤ 1-page doc + falsifiers) · Files: `docs/design/subagent-messaging.md`
+Goal (D15): before any protocol change, the ≤ 1-page doc the creator's own rule requires — the problem in one measurable number (e.g. "0 of N running or finished subagents can receive a follow-up today"), what Claude Code (`SendMessage`, gated behind agent teams and off by default), Codex CLI (one-shot result only, no messaging) and OpenCode (undocumented) do (research.md §4.3.7), what cox will do and why it is at least as good without becoming "agent teams" (`ideas.md`, still creator-unapproved), and what would falsify the design. Written by the `code` tier, reviewed by `think` (D15).
+Plan — the doc must answer, concretely enough for T34.4–T34.9 to implement without re-deciding:
+1. **Shape of the message.** A new `Submission` variant addressed by `TaskId` (the model only ever sees a `TaskId`, per the existing `TaskCreated`/`TaskCompleted` events) — e.g. `Submission::TaskMessage { task: TaskId, from: Option<TaskId>, text: String }` — and its matching delivery `Event`.
+2. **Running vs. finished.** A follow-up to a *running* child queues as a second `Submission::UserTurn` after its current turn finishes — never mid-turn (D2: one `Submission` stream per session, in order). A follow-up to a *finished* child resumes it through the existing `Session::resume`, preserving its `parent_id`/budget-slice relationship — not a new resume mechanism.
+3. **Child → parent.** Progress and questions reach the parent the same way `TaskCompleted` already does: a pointer line entered into the *parent's* history after the last cache breakpoint (D6e), never mid-turn context surgery; `ask_user` (T34.3) stays the channel for a question that must block the child.
+4. **Sibling routing always through the parent.** A sibling never gets a direct channel to another sibling; it addresses one by name/`TaskId` and the parent session relays it, exactly like `relay_approval` already relays approvals — every session stays a pure `Submission`-in/`Event`-out state machine (D2), no exceptions.
+5. **The model-facing tool.** `send_message { to: "parent" | <task name/id>, text }`, available to a subagent (to reach its parent or a named sibling) and to the parent (to reach a named child).
+6. **How the recipient sees it.** A pointer line after the last cache breakpoint (D6e / cache-stable prefix) — the same shape as today's `TaskCompleted` notice, never spliced into the middle of an in-flight turn's context.
+7. **Flood and loop guards.** A per-task message cap and a hop limit, so an A→B→A ping-pong stops on its own — reusing T34.2's concurrency cap rather than inventing a second one.
+8. **Trust.** The permission engine (`cox_permission::Engine`) stays the single guard on every tool call a message might provoke — a message itself never grants a tool; `cox_sanitize::sanitize` runs on every rendered line, the same as any other tool output (D14).
+9. **Surfaces.** How the TUI transcript and `/agents` overlay, `stream-json` and ACP each render a delivered message (A29 still applies: no new richer live-progress event beyond the narrow `/agents` card).
+10. **Out of scope.** Persistent teammates that outlive their task, split-pane processes, a shared task board, and a sibling roster injected into every subagent's system prompt (it would break the cache-stable prefix). A child addresses a sibling by the name or `TaskId` its parent gave it in the task text. This doc's protocol scope is the one new `Submission` variant and its matching `Event`, nothing wider.
+Check: the doc exists, is ≤ 1 page, and states falsifiers; reviewed (not written) by `think` per D15.
+
+#### T34.4 Protocol types for task messaging
+
+Depends: T34.0 · Size: ~120 · Files: `crates/cox-protocol/src/types.rs` (`Submission::TaskMessage`, a matching `Event`), `docs/protocol.jsonschema` (regenerated by its own drift test)
+Goal: exactly the `Submission`/`Event` shape T34.0 specifies — a message addressed by `TaskId`, carrying who it is from (the parent, or a named sibling `TaskId`) and its text — with round-trip serde tests, so T34.5 has a stable wire shape to route.
+Check: `task_message_round_trips_through_serde`, `protocol_jsonschema_matches_committed_file` stays green with the new variants.
+
+#### T34.5 Core routing in the parent
+
+Depends: T34.4 · Size: ~190 · Files: `crates/cox-core/src/tasks.rs` (registry keeps live child handles plus a finished-session lookup), `crates/cox-core/src/subagent.rs`
+Goal: the parent resolves a `TaskId` to either a still-running child handle or a finished child's stored session id (`sessions.parent_id`, already a real link); delivery to a running child queues a `Submission::UserTurn` after its current turn; delivery to a finished child resumes it via `Session::resume` and re-registers it as running for any further messages.
+Check: `task_message_reaches_a_still_running_subagent_after_its_current_turn`, `task_message_to_a_finished_subagent_resumes_it_with_history_intact`, `resumed_subagent_keeps_its_parent_id_and_budget_slice`.
+
+#### T34.6 The `send_message` tool
+
+Depends: T34.5, T34.2 · Size: ~170 · Files: `crates/cox-tools/src/send_message.rs` (new), `crates/cox-core/src/subagent.rs`
+Goal: `send_message { to, text }` for a subagent (`to: "parent"` or a sibling's name/`TaskId`, relayed through the parent per T34.0 §4) and for the parent (`to: <child name/id>`), enforcing a per-task message cap and a hop limit (reusing T34.2's `max_concurrent_subagents` accounting rather than a second cap, per T34.0 §7) so an A→B→A loop is denied instead of spinning.
+Check: `sibling_message_is_relayed_through_the_parent_session`, `message_cap_denies_the_nth_plus_one_follow_up`, `hop_limit_stops_a_ping_pong_loop`.
+
+#### T34.7 TUI and stream-json rendering
+
+Depends: T34.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs` (the transcript line and the `/agents` overlay)
+Goal: a delivered `TaskMessage` shows as a transcript line (sanitized through `cox_sanitize::sanitize`, D14) and updates the `/agents` card for that task (A29's narrow card, not a new progress event stream); `stream-json` needs no special case since `Event` already passes through generically (D2) — this card adds the test that proves it.
+Check: `insta` snapshot of a task-message transcript line and an updated `/agents` card; `stream_json_passes_task_message_through_unchanged` (headless e2e).
+
+#### T34.8 ACP rendering, and the dropped task-lifecycle events
+
+Depends: T34.6 · Size: ~120 · Files: `crates/cox-acp/src/server.rs`
+Goal: `drive_prompt`'s event loop today falls into `Ok(_) => {}` for everything except `TurnDone` and `ApprovalRequired` (server.rs:344), so an ACP client (Zed, JetBrains) never sees `TaskCreated`/`TaskCompleted`/a delivered `TaskMessage`. This card gives those three their own arms: `TaskCreated`/`TaskCompleted` become a plan/task update the same way `ask_permission` already labels a relayed approval, and a `TaskMessage` renders with the same label.
+Check: `acp_reports_task_created_and_completed`, `acp_reports_a_delivered_task_message`.
+
+#### T34.9 e2e: two subagents messaging through the parent
+
+Depends: T34.6 · Size: ~150 · Files: `tests/subagent_messaging.rs` (new)
+Goal: with the Scripted provider, a parent spawns two children; child A sends `send_message` to child B by name; the parent relays it; B replies; the parent's history carries both pointer lines; a scripted ping-pong hits T34.6's hop limit and stops instead of looping forever.
+Check: `parent_relays_a_message_between_two_children`, `hop_limit_stops_a_scripted_ping_pong` — both against the real event stream, no network, no API key (D12).
+
+#### T34.10 Optional: per-subagent visibility gate
+
+Depends: T34.1 · Size: ~80 · Files: `crates/cox-ext/src/agents.rs` (an optional frontmatter field, e.g. `disabled: true`), `crates/cox-core/src/subagent.rs` (the tool's own description lists only enabled defs)
+Goal: match OpenCode's "a subagent's `permission: deny` removes it from the Task tool's description entirely" (research.md §4.3.7) — lets a project ship a `.cox/agents/*.md` definition that exists on disk (e.g. only for `cox ext list`) without the model being told it can dispatch it. Low priority: T34.1 already gives every discovered definition a working dispatch path; this is a visibility nicety, not a functional gap.
+Check: `disabled_agent_def_is_discovered_but_not_offered_to_the_model`.
+
+**Order.** T34.0 blocks T34.4 → T34.5 → T34.6 → (T34.7, T34.8, T34.9), the last three running in parallel once the tool and its caps land. T34.1, T34.2 and T34.3 have no dependency on the messaging design and can run any time; T34.10 waits only on T34.1. The top table gets rows T34.0–T34.10; P0 for the highest-value wiring gap (T34.1), P1 for the messaging design and its critical path plus the `ask_user` labelling (T34.0, T34.3–T34.6, T34.9), P2 for the concurrency cap and the surfaces off the critical path (T34.2, T34.7, T34.8), P3 for the optional visibility gate (T34.10).
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -1458,6 +1573,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A51 §3 P30, AGENTS.md — new card T30.29, by the creator ("fix every keychain place so fakes are used"): `COX_KEYRING=off` switches the OS keyring off in the binary, and `.cargo/config.toml` sets it for every cargo-run process. Why: the T30.28 seams covered tests, but smoke runs of the rebuilt binary (`cargo run -- doctor`) still raised keychain prompts. Effect: A49's rule now covers dev runs too; T30.13's real runs set the key's env var. (A50 is taken by the T31 landing.)
 
 - A52 §0 D1 and the "Deferred to v0.2+" line, §1.1, §1.15, §3 P33, `roadmap.md` — WASM plugin host, approved by the creator. It implements `docs/design/plugins.md`.
+- A53 §0 "Deferred to v0.2+" line, §3 new P34 — Subagents, `todo.md`, `ideas.md` — subagent support, researched at the creator's request ("add subagent support: research it, add to the plan if it is not there"), and inter-agent communication, approved by the creator ("add support for communication between subagents, and between subagents and the main agent"). That second request is explicit approval for messaging including sibling ↔ sibling, so P34 is not gated behind `ideas.md`'s "agent teams / orchestration DSL" line the way a fuller orchestration feature would be. Why: `crates/cox-core/src/subagent.rs`/`tasks.rs`, `crates/cox-ext/src/agents.rs` and the `/agents` TUI overlay already implement a one-shot, structurally depth-1 `agent` tool with two hardcoded presets and a one-shot approval relay (`relay_approval`), but §1.11's own `agent` row already documents a named custom preset (`preset: "<name>"`) and a `tier` override that the code never got, no subagent-specific concurrency cap exists (only the generic `core.parallel_tools`), `ask_user` from a subagent carries no `Source` label, and nothing lets a parent follow up with a running or finished child or lets siblings exchange messages. Separately, the "Deferred to v0.2+" line still named "git worktree isolation for subagents" as undelivered even though it shipped as T27.3 (`subagent.rs`'s `isolation: "worktree"`, tested) — fixed in this same edit, no card for it. Effect: eleven new cards (T34.0–T34.10): a ≤ 1-page design doc for parent↔child and sibling messaging (T34.0, D15), reviewed by `think`, followed by its narrow implementation split across protocol types, core routing, the `send_message` tool and three surfaces (T34.4–T34.9, each ≤ 200 LOC / 3 files); three cards independent of the messaging design (T34.1 the custom-preset/`tier` wiring, T34.2 the concurrency cap, T34.3 the `Source`-labelled `ask_user` channel); and one optional visibility gate (T34.10). Every message is routed through the parent session as a `Submission`/`Event` (D2 pure state machine) — no side channel, no direct sibling socket. `ideas.md`'s "agent teams / orchestration DSL" line is removed as its own, still-unapproved idea: P34 is deliberately narrower than it — no `SendMessage`-as-a-tool with an injected sibling roster, no teammates, no split-pane processes, no plugin-provided agent definitions, no per-`AgentDef` permission-mode override, no `@mention` invocation; the last three are added to `ideas.md` instead, one line each. No decision in §0 changes beyond dropping the stale deferred-list line.
   - **The host.** An extism 1.30.0 host in the new crate `cox-plugin`, a pure ABI and manifest crate `cox-plugin-api` (re-exported as `cox_protocol::plugin`), and a separate guest cargo workspace `plugins/` (`cox-plugin-sdk` over extism-pdk 1.4.1, examples and templates).
   - **What a plugin can contribute**, each as a manifest capability the user approves per package digest: hooks, called methods, a context snapshot, event subscription, TUI status segments, a bottom panel or overlay, slash commands and keys under a leader, custom rendering of tool results and messages, model providers (declarative `chat`/`responses` sections, or the ABI `Provider`), catalog rows (a fill-only layer between built-in and config), MCP server declarations (stdio servers run under `sandbox::Policy`), and answers at the core's decision points (the `Advisor` trait; Jev is the first user).
   - **Why.** The creator decided it: runtime extism, the full contribution set above, capabilities approved on install and enable and re-asked on changed bytes or wider capabilities, and design and plan before code. This overrides the evidence gate in `extensions.md` and `v0.2-wasm.md` (falsifier 1: three requests MCP cannot serve), which is recorded as superseded, not refuted.

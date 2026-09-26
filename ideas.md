@@ -2,10 +2,14 @@
 
 Not approved yet. Move nothing from here into `plan.md` or `roadmap.md` without creator approval.
 
-- Later gates from the 2026 field survey (`research.md` §8): voice input, remote control (drive a session from a phone or a second machine), Windows sandbox, agent teams / orchestration DSL, MCP Apps and MCP elicitation (the elicitation would map onto the T22.1 question modal)
+- Later gates from the 2026 field survey (`research.md` §8): voice input, remote control (drive a session from a phone or a second machine), Windows sandbox, MCP Apps and MCP elicitation (the elicitation would map onto the T22.1 question modal)
 - A user-scripted status line (Claude Code `statusLine` command) on top of the T28.1 segments
 - A theme editor in the TUI (Crush `Ctrl+E` style) on top of T24.2 theme files
 - OpenAI Chat tool calls never reach the core: `openai/chat.rs` emits `ToolUseStart` and input deltas but never `ToolUseEnd`, and `turn::consume_provider` commits a call only on `ToolUseEnd` (same bug T30.6 fixed for Anthropic). Chat interleaves parallel calls by index, so the fix is to emit each call's start/deltas/end in order once `finish_reason` arrives, plus a live fixture test. Found by reading while fixing T30.6; not yet reproduced live
 - Sign in with ChatGPT (Codex-style subscription login) for the OpenAI Responses backend — only once OpenAI publishes an OAuth client flow for third-party apps; today the only flow is Codex's own client id (R§4.3.1, ledger #37)
 
 - Fill `Capabilities.adaptive_thinking` per catalog row from models.dev `reasoning_options` via `scripts/vendor`, replacing the name rule `cox_models::supports_adaptive_thinking` (follow-up to T30.25).
+
+- A per-`AgentDef` permission-mode override, matching Claude Code's frontmatter `permissionMode` (P34/research.md §4.3.7) — cox's permission engine is a single global trust guard by design; a per-subagent override needs its own design pass.
+- Plugin-provided agent definitions (P34/research.md §4.3.7) — not mentioned anywhere in `docs/design/plugins.md`; P33's v0.1 extension-point list does not promise it.
+- Manual `@mention` subagent invocation, OpenCode-style (P34/research.md §4.3.7) — a UX nicety, not something the creator asked for.
