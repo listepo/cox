@@ -69,7 +69,7 @@ def test_harbor_argv_selects_every_task_and_names_the_job(tmp_path):
 
 def test_dry_run_prints_one_command_per_agent_and_runs_nothing(monkeypatch, capsys):
     monkeypatch.setattr(matrix.subprocess, "run", lambda *a, **k: pytest.fail("ran"))
-    assert matrix.main(["--preset", "t30.13", "--dry-run"]) == 0
+    assert matrix.main(["--preset", "same-model", "--dry-run"]) == 0
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 3
     assert all(line.count(" -i ") == 12 for line in lines)

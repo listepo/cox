@@ -4,8 +4,8 @@ One `harbor run` job per agent × model over the same task list, then one
 per-task table from the jobs' `result.json`. Agents, providers and presets
 are registries in code, so a new comparison is a new entry, not a script:
 
-    uv run --project evals --extra tbench cox-bench --preset t30.13 --dry-run
-    uv run --project evals --extra tbench cox-bench --preset t30.13 --prepare
+    uv run --project evals --extra tbench cox-bench --preset same-model --dry-run
+    uv run --project evals --extra tbench cox-bench --preset same-model --prepare
     uv run --project evals --extra tbench cox-bench --agents cox terminus-2 \\
         --provider anthropic --model claude-sonnet-5 --tasks fix-git
 
@@ -107,9 +107,10 @@ AGENTS = {
 }
 
 PRESETS = {
-    # T30.13: same local model for all three agents; tasks are a seeded
-    # sample (see plan.md T30.13) of TB 2.0 `medium` and `hard` tasks.
-    "t30.13": {
+    # The cox vs Claude Code vs Terminus 2 comparison (ideas.md): same
+    # local model for all three agents; tasks are a seeded sample (the full
+    # card: plan.md at commit 855fe68) of TB 2.0 `medium` and `hard` tasks.
+    "same-model": {
         "agents": ["cox", "claude-code", "terminus-2"],
         "provider": "lmstudio", "model": "prism-ml/bonsai-27b", "context": 65536,
         "tasks": ["build-cython-ext", "build-pmars", "compile-compcert", "mteb-leaderboard",
