@@ -1,8 +1,10 @@
 //! End-of-session memory extraction (T10.2): with `memory.extract`, a
-//! `Shutdown` runs one cheap `memory`-job call over the transcript, dedups
-//! the candidate facts against the store's FTS rows (trigram similarity over
-//! 0.8 means "already known") and upserts the survivors. Failures warn,
-//! never fail the shutdown; the `SessionEnd` hook fires after, either way.
+//! `Shutdown` runs one cheap `memory`-job call over the transcript, asks the
+//! `salience` decision point (T33.21.1, `monotone.rs`) to drop candidates
+//! scoring below `[memory].salience_min`, dedups what is left against the
+//! store's FTS rows (trigram similarity over 0.8 means "already known") and
+//! upserts the survivors. Failures warn, never fail the shutdown; the
+//! `SessionEnd` hook fires after, either way.
 //!
 //! The survivors land in the store (searchable at once) and in
 //! `drain_extracted` for surfaces, which own the `.md` files the core must
@@ -168,7 +170,10 @@ impl Session {
         }
         let mut saved = Vec::new();
         let project = slug_for(&self.cwd);
-        for fact in parse_facts(&out) {
+        // `salience` (T33.21.1) may drop a low-scoring candidate before it
+        // ever reaches the store; it cannot add or edit one.
+        let facts = self.advise_salience(parse_facts(&out)).await;
+        for fact in facts {
             if self.already_known(&fact).await {
                 continue;
             }

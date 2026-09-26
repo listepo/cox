@@ -230,7 +230,9 @@
           "compact": null,
           "compact_ms": 500,
           "rank": null,
-          "rank_ms": 300
+          "rank_ms": 300,
+          "salience": null,
+          "salience_ms": 300
         }
       }
     },
@@ -240,7 +242,8 @@
       "default": {
         "enabled": true,
         "extract": false,
-        "dir": ""
+        "dir": "",
+        "salience_min": 0.3
       }
     },
     "telemetry": {
@@ -1467,7 +1470,9 @@
             "compact": null,
             "compact_ms": 500,
             "rank": null,
-            "rank_ms": 300
+            "rank_ms": 300,
+            "salience": null,
+            "salience_ms": 300
           }
         }
       },
@@ -1563,6 +1568,21 @@
           "format": "uint64",
           "minimum": 0,
           "default": 300
+        },
+        "salience": {
+          "description": "The plugin id that answers `salience` (a score per extracted memory\nitem, only ordering or dropping against `[memory]`'s threshold).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "salience_ms": {
+          "description": "`salience`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 300
         }
       },
       "additionalProperties": false
@@ -1585,6 +1605,12 @@
           "description": "Override for `~/.cox/projects/<slug>/memory`; empty means default.",
           "type": "string",
           "default": ""
+        },
+        "salience_min": {
+          "description": "The bar a `salience` `Score` must clear to keep an extracted item\n(T33.21.1); fixed here, never moved by the plugin's answer.",
+          "type": "number",
+          "format": "double",
+          "default": 0.3
         }
       },
       "additionalProperties": false

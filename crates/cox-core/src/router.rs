@@ -233,7 +233,7 @@ pub fn apply_route(
             .first()
             .and_then(|i| offer.get(usize::try_from(*i).ok()?))
             .copied(),
-        Answer::Score { .. } | Answer::Noul { .. } => None,
+        Answer::Score { .. } | Answer::Noul { .. } | Answer::Scores { .. } => None,
     };
     match choice {
         Some(tier) if confident && tier <= static_tier && tier != Tier::Think => (tier, true),

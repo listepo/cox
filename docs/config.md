@@ -202,11 +202,13 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `approve_hint_ms` = `200` — approve_hint = "<plugin id>" may add a caution note to an approval prompt, never say a call looks safe
 - `compact_ms` = `500` — compact = "<plugin id>" may compact before the threshold, never skip a due compaction
 - `rank_ms` = `300` — rank = "<plugin id>" may reorder or drop tool_search hits, never add one
+- `salience_ms` = `300` — salience = "<plugin id>" scores each extracted memory item; may drop against memory.salience_min, never add or edit one
 ## `[memory]`
 
 - `enabled` = `true`
 - `extract` = `false` — end-of-session extraction on cheap tier
 - `dir` = `""` — default ~/.cox/projects/<slug>/memory
+- `salience_min` = `0.3` — an extracted item scoring below this against salience's Score is dropped; the plugin cannot move this bar
 ## `[telemetry]`
 
 - `otel` = `false`

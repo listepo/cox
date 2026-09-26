@@ -1,11 +1,12 @@
-//! The decision points after `route` (PL§4 "Decision points", T33.21):
-//! `risk`, `approve_hint`, `compact` and `rank`. Each asks the advisor
-//! `[plugins.decide]` names and applies the point's monotone rule here, in
-//! the core, so no answer moves a decision the unsafe way: risk only up, a
-//! caution only, compaction only earlier, rank only over cox's own
-//! candidates. The permission engine still makes every tool decision; `risk`
-//! only changes the call it judges. Separate from `advise.rs` so these
-//! guards and routing change independently.
+//! The decision points after `route` (PL§4 "Decision points", T33.21,
+//! T33.21.1): `risk`, `approve_hint`, `compact`, `rank` and `salience`. Each
+//! asks the advisor `[plugins.decide]` names and applies the point's
+//! monotone rule here, in the core, so no answer moves a decision the unsafe
+//! way: risk only up, a caution only, compaction only earlier, rank only
+//! over cox's own candidates, salience only orders or drops memory items
+//! already extracted. The permission engine still makes every tool
+//! decision; `risk` only changes the call it judges. Separate from
+//! `advise.rs` so these guards and routing change independently.
 
 use std::time::Duration;
 
@@ -16,6 +17,7 @@ use cox_sanitize::redact::scrub;
 use cox_sanitize::sanitize;
 use serde_json::json;
 
+use crate::memory_extract::Fact;
 use crate::permission::Outcome;
 use crate::session::Session;
 
@@ -215,6 +217,51 @@ impl Session {
             .await;
         ranked
     }
+
+    /// `facts` (what memory extraction parsed) after `salience` advice:
+    /// items below `[memory].salience_min` dropped, never added to or
+    /// edited. One question carries every item, scrubbed like any other
+    /// question text (`Question` has no batch `items` field yet, T33.40.1,
+    /// so they travel in `state["items"]`).
+    pub(crate) async fn advise_salience(&self, facts: Vec<Fact>) -> Vec<Fact> {
+        let decide = &self.config.plugins.decide;
+        if facts.is_empty() {
+            return facts;
+        }
+        let items: Vec<_> = facts
+            .iter()
+            .map(|f| {
+                json!({
+                    "name": f.name,
+                    "kind": f.kind,
+                    "body": clip(&f.body, INPUT_CHARS),
+                })
+            })
+            .collect();
+        let question = Question {
+            point: DecidePoint::Salience,
+            state: json!({ "items": items }),
+            options: vec![],
+        };
+        let Some((plugin, advice)) = self
+            .ask_point(decide.salience.as_deref(), decide.salience_ms, question)
+            .await
+        else {
+            return facts;
+        };
+        let (kept, applied) = keep_salient(
+            &facts,
+            &advice,
+            decide.min_confidence,
+            self.config.memory.salience_min,
+        );
+        // A rollout write failure is the emitter's to report; extraction
+        // stands either way.
+        let _ = self
+            .advised(DecidePoint::Salience, plugin, advice, applied)
+            .await;
+        kept
+    }
 }
 
 /// The same redaction the rollout gets, clipped to a question's size.
@@ -283,6 +330,32 @@ fn rank(candidates: &[String], advice: &Advice, min_confidence: f64) -> (Vec<Str
     (out, true)
 }
 
+/// `facts` after a confident `Scores` answer: items whose score clears
+/// `threshold` (a `[memory]` config value the advice never moves), in their
+/// original order. Anything else — a different answer shape, low or missing
+/// confidence, or a `values` length that does not match `facts` — keeps
+/// every fact.
+fn keep_salient(
+    facts: &[Fact],
+    advice: &Advice,
+    min_confidence: f64,
+    threshold: f64,
+) -> (Vec<Fact>, bool) {
+    let Answer::Scores { values } = &advice.answer else {
+        return (facts.to_vec(), false);
+    };
+    if !confident(advice, min_confidence) || values.len() != facts.len() {
+        return (facts.to_vec(), false);
+    }
+    let kept = facts
+        .iter()
+        .zip(values)
+        .filter(|(_, score)| score.is_finite() && **score >= threshold)
+        .map(|(fact, _)| fact.clone())
+        .collect();
+    (kept, true)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -301,6 +374,9 @@ mod tests {
 
     struct Fake {
         advice: Advice,
+        /// How long `advise` takes before answering; `ZERO` for every test
+        /// but the ones proving a late answer is no answer.
+        delay: Duration,
         asked: Mutex<Vec<Question>>,
     }
 
@@ -315,6 +391,9 @@ mod tests {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .push(question);
+            if self.delay > Duration::ZERO {
+                tokio::time::sleep(self.delay).await;
+            }
             Some(self.advice.clone())
         }
     }
@@ -335,6 +414,15 @@ mod tests {
 
     /// A session whose every decision point is answered by one `Fake`.
     fn open(mode: PermissionMode, advice: Advice) -> (Session, Arc<Fake>, mpsc::Receiver<Event>) {
+        open_delayed(mode, advice, Duration::ZERO)
+    }
+
+    /// `open`, but the `Fake` takes `delay` before answering.
+    fn open_delayed(
+        mode: PermissionMode,
+        advice: Advice,
+        delay: Duration,
+    ) -> (Session, Arc<Fake>, mpsc::Receiver<Event>) {
         let mut config = cox_protocol::Config::default();
         config.permissions.mode = mode;
         let decide = &mut config.plugins.decide;
@@ -343,6 +431,7 @@ mod tests {
             &mut decide.approve_hint,
             &mut decide.compact,
             &mut decide.rank,
+            &mut decide.salience,
         ] {
             *point = Some("fake".into());
         }
@@ -359,6 +448,7 @@ mod tests {
         .expect("session");
         let fake = Arc::new(Fake {
             advice,
+            delay,
             asked: Mutex::new(Vec::new()),
         });
         session.set_advisors(vec![fake.clone()]);
@@ -554,5 +644,138 @@ mod tests {
         let asked = fake.asked.lock().unwrap_or_else(|e| e.into_inner()).clone();
         assert_eq!(asked[0].options, found);
         assert_eq!(advised(&drain(&mut rx)), vec![(true, None)]);
+    }
+
+    fn fact(name: &str) -> Fact {
+        Fact {
+            name: name.into(),
+            kind: "fact".into(),
+            body: format!("body of {name}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn salience_advice_cannot_add_memory_items() {
+        let facts = vec![fact("a"), fact("b"), fact("c")];
+        let scores =
+            |values: Vec<f64>, confidence| advice(Answer::Scores { values }, Some(confidence), "");
+
+        // Pure rule: the survivors are a subset of what was sent, never a
+        // new name, and never more of them.
+        assert_eq!(
+            keep_salient(&facts, &scores(vec![1.0, 0.0, 1.0], 0.9), 0.6, 0.3),
+            (vec![facts[0].clone(), facts[2].clone()], true)
+        );
+        // A `values` list that does not match the items sent — as if the
+        // plugin answered about a different batch — is out of shape and
+        // changes nothing, so it cannot smuggle an extra item in either.
+        assert_eq!(
+            keep_salient(&facts, &scores(vec![1.0, 1.0, 1.0, 1.0], 0.9), 0.6, 0.3),
+            (facts.clone(), false)
+        );
+
+        let (session, fake, mut rx) =
+            open(PermissionMode::Default, scores(vec![1.0, 0.0, 1.0], 0.9));
+        let kept = session.advise_salience(facts.clone()).await;
+        assert_eq!(kept, vec![facts[0].clone(), facts[2].clone()]);
+        assert_eq!(fake.asked(), 1);
+        let asked = fake.asked.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(asked[0].point, DecidePoint::Salience);
+        assert_eq!(asked[0].state["items"].as_array().expect("items").len(), 3);
+        assert_eq!(advised(&drain(&mut rx)), vec![(true, None)]);
+
+        // An empty extraction is never asked about and never grows one.
+        let (session, fake, _rx) = open(PermissionMode::Default, scores(vec![], 0.9));
+        assert_eq!(session.advise_salience(vec![]).await, vec![]);
+        assert_eq!(fake.asked(), 0);
+    }
+
+    #[tokio::test]
+    async fn salience_thresholds_stay_in_config() {
+        let facts = vec![fact("a"), fact("b")];
+        let scores = advice(
+            Answer::Scores {
+                values: vec![0.5, 0.99],
+            },
+            Some(0.9),
+            "",
+        );
+
+        // Pure rule: the same advice, a different `[memory]` bar, a
+        // different outcome — the threshold argument, not the advice,
+        // decides.
+        assert_eq!(keep_salient(&facts, &scores, 0.6, 0.3).0, facts.clone());
+        assert_eq!(
+            keep_salient(&facts, &scores, 0.6, 0.6).0,
+            vec![facts[1].clone()]
+        );
+        assert_eq!(keep_salient(&facts, &scores, 0.6, 1.0).0, vec![]);
+
+        // Through the session: `config.memory.salience_min` is the only
+        // knob, the plugin's answer carries no threshold of its own.
+        let (mut session, fake, _rx) = open(PermissionMode::Default, scores.clone());
+        session.config.memory.salience_min = 0.9;
+        let kept = session.advise_salience(facts.clone()).await;
+        assert_eq!(
+            kept,
+            vec![facts[1].clone()],
+            "only b clears the configured bar"
+        );
+        assert_eq!(fake.asked(), 1);
+
+        let (mut session, _fake, _rx) = open(PermissionMode::Default, scores);
+        session.config.memory.salience_min = 0.3;
+        let kept = session.advise_salience(facts.clone()).await;
+        assert_eq!(kept, facts, "the same low bar keeps both");
+    }
+
+    #[tokio::test]
+    async fn late_salience_keeps_every_item() {
+        let facts = vec![fact("a"), fact("b")];
+        let drop_all = advice(
+            Answer::Scores {
+                values: vec![0.0, 0.0],
+            },
+            Some(0.9),
+            "",
+        );
+
+        // Later than `salience_ms` (300 by default): the answer is no
+        // answer, every item survives.
+        let (session, fake, mut rx) = open_delayed(
+            PermissionMode::Default,
+            drop_all.clone(),
+            Duration::from_millis(500),
+        );
+        assert_eq!(session.advise_salience(facts.clone()).await, facts);
+        assert_eq!(fake.asked(), 1, "the point was asked");
+        assert!(
+            advised(&drain(&mut rx)).is_empty(),
+            "a late answer is no answer"
+        );
+
+        // No plugin configured for the point: never asked, every item kept.
+        let (mut session, fake, _rx) = open(PermissionMode::Default, drop_all.clone());
+        session.config.plugins.decide.salience = None;
+        assert_eq!(session.advise_salience(facts.clone()).await, facts);
+        assert_eq!(fake.asked(), 0);
+
+        // Confidence below `min_confidence`: the drop is not trusted, every
+        // item is kept.
+        let unsure = advice(
+            Answer::Scores {
+                values: vec![0.0, 0.0],
+            },
+            Some(0.1),
+            "",
+        );
+        let (session, fake, mut rx) = open(PermissionMode::Default, unsure);
+        assert_eq!(session.advise_salience(facts.clone()).await, facts);
+        assert_eq!(
+            advised(&drain(&mut rx)),
+            vec![(false, None)],
+            "recorded, but not applied"
+        );
+        assert_eq!(fake.asked(), 1);
     }
 }

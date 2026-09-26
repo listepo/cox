@@ -1111,6 +1111,11 @@ pub struct DecideConfig {
     pub rank: Option<String>,
     /// `rank`'s latency budget in milliseconds.
     pub rank_ms: u64,
+    /// The plugin id that answers `salience` (a score per extracted memory
+    /// item, only ordering or dropping against `[memory]`'s threshold).
+    pub salience: Option<String>,
+    /// `salience`'s latency budget in milliseconds.
+    pub salience_ms: u64,
 }
 
 impl Default for DecideConfig {
@@ -1129,6 +1134,8 @@ impl Default for DecideConfig {
             compact_ms: 500,
             rank: None,
             rank_ms: 300,
+            salience: None,
+            salience_ms: 300,
         }
     }
 }
@@ -1143,6 +1150,9 @@ pub struct MemoryConfig {
     pub extract: bool,
     /// Override for `~/.cox/projects/<slug>/memory`; empty means default.
     pub dir: String,
+    /// The bar a `salience` `Score` must clear to keep an extracted item
+    /// (T33.21.1); fixed here, never moved by the plugin's answer.
+    pub salience_min: f64,
 }
 
 impl Default for MemoryConfig {
@@ -1151,6 +1161,7 @@ impl Default for MemoryConfig {
             enabled: true,
             extract: false,
             dir: String::new(),
+            salience_min: 0.3,
         }
     }
 }

@@ -348,6 +348,14 @@ pub enum Answer {
         /// P(yes) in `[0, 1]`.
         p_yes: f64,
     },
+    /// One score per item of a batched question (`salience`, T33.21.1):
+    /// `Question` has no `items` field yet (that is T33.40.1's batched-ABI
+    /// card), so the items travel in `Question.state["items"]` and the
+    /// answer carries one value per item, aligned by index.
+    Scores {
+        /// One score per item, same length and order as the items sent.
+        values: Vec<f64>,
+    },
 }
 
 /// Why a host function refused or failed.

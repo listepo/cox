@@ -1632,6 +1632,28 @@
               "kind",
               "p_yes"
             ]
+          },
+          {
+            "description": "One score per item of a batched question (`salience`, T33.21.1):\n`Question` has no `items` field yet (that is T33.40.1's batched-ABI\ncard), so the items travel in `Question.state[\"items\"]` and the\nanswer carries one value per item, aligned by index.",
+            "type": "object",
+            "properties": {
+              "values": {
+                "description": "One score per item, same length and order as the items sent.",
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "scores"
+              }
+            },
+            "required": [
+              "kind",
+              "values"
+            ]
           }
         ]
       },
