@@ -422,6 +422,23 @@ pub enum PluginAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Scaffold a fresh plugin package from the PL§13 templates: `plugin.toml`
+    /// with `[capabilities]` matching `--with`, stub exports for those
+    /// capabilities only, a `justfile`, a `README.md` and a smoke test.
+    /// Never overwrites an existing directory.
+    New {
+        /// The plugin id; also the scaffolded directory's default name.
+        name: String,
+        /// Only `rust` has a template today (PL§13); headless defaults to it.
+        #[arg(long, default_value = "rust")]
+        lang: crate::plugin_new::Lang,
+        /// Where to write the package; defaults to `./<name>`.
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Capabilities to scaffold stubs for, comma-separated (PL§13).
+        #[arg(long, value_delimiter = ',')]
+        with: Vec<crate::plugin_new::Capability>,
+    },
 }
 
 #[cfg(test)]

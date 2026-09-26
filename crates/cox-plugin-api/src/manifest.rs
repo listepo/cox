@@ -379,8 +379,10 @@ impl PluginManifest {
 }
 
 /// `^[a-z][a-z0-9-]{1,23}$`. The charset has no `_`, which is what keeps the
-/// `__` separator in `wasm__<id>__<tool>` unambiguous (PL§1).
-fn is_plugin_id(s: &str) -> bool {
+/// `__` separator in `wasm__<id>__<tool>` unambiguous (PL§1). `pub` so
+/// `cox plugin new` (PL§13) validates a candidate name with this exact rule
+/// instead of a second regex.
+pub fn is_plugin_id(s: &str) -> bool {
     (2..=24).contains(&s.len())
         && s.starts_with(|c: char| c.is_ascii_lowercase())
         && s.bytes()

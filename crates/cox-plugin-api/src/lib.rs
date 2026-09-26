@@ -26,7 +26,7 @@ pub use abi::{
 pub use manifest::{
     API_MAJOR, AgentMode, Capabilities, ExternalAgentDecl, FsCaps, Limits, ManifestError, McpDecl,
     ModelDecl, ModelTier, PluginManifest, PriceDecl, ProviderApi, ProviderAuth, ProviderDecl,
-    UiCaps,
+    UiCaps, is_plugin_id,
 };
 
 pub use ui::{StyleToken, Widget};

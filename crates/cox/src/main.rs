@@ -18,6 +18,8 @@ mod plain;
 #[cfg(feature = "plugins")]
 mod plugin_cmd;
 #[cfg(feature = "plugins")]
+mod plugin_new;
+#[cfg(feature = "plugins")]
 mod plugin_ui;
 mod record;
 mod resume;
@@ -115,6 +117,18 @@ fn main() -> anyhow::Result<()> {
                 plugin_cmd::remove(&cli, &cwd, id, *keep_data, *yes)
             }
             Some(crate::cli::PluginAction::Link { dir, yes }) => plugin_cmd::link(&cli, dir, *yes),
+            Some(crate::cli::PluginAction::New {
+                name,
+                lang,
+                dir,
+                with,
+            }) => {
+                let dir = dir.clone().unwrap_or_else(|| cwd.join(name));
+                let files = plugin_new::scaffold(name, *lang, with)?;
+                plugin_new::write(&dir, &files)?;
+                println!("scaffolded {name} in {}", dir.display());
+                Ok(())
+            }
         },
         Some(Command::Run(args)) => {
             let code = run::run(&cli, args, &cwd)?;

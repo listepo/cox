@@ -70,6 +70,9 @@ cox-config = { path = "../cox-config", version = "0.1.2" }
 # anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
 # serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }
+# T33.29: `plugin_new::PluginNewError`, so the TUI's future `/plugin new`
+# (T33.30) gets a typed error to match on instead of anyhow's text.
+thiserror = { workspace = true }
 # T0.7: the CLI boundary loads .env/.env.local before parsing flags.
 dotenvy = { workspace = true }
 serde_json = { workspace = true }
