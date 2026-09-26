@@ -8,6 +8,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `workspace_roots` = `[]` — empty = git root of cwd, else cwd; extra roots via --add-dir
 - `max_turns` = `200` — per UserTurn, counts provider calls
 - `parallel_tools` = `4`
+- `max_concurrent_subagents` = `8` — cap on running TaskKind::Agent tasks, foreground + background (T34.2)
 - `log_level` = `"info"` — tracing filter; file log at ~/.cox/logs/cox.log
 - `profile` = `""` — "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
 ## `[tiers.cheap]`
@@ -42,6 +43,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `memory` = `"cheap"`
 - `explore` = `"cheap"`
 - `shell` = `"cheap"`
+- `agent` = `"cheap"`
 - `hook` = `"cheap"`
 ## `[providers.anthropic]`
 
@@ -51,20 +53,34 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `fallbacks` = `true` — fallbacks: "default" + beta header
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="claude-haiku-4-5", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", context_window=1000000, efforts=["low", "high"]}, {id="claude-opus-5", context_window=1000000, efforts=["high", "xhigh"]}, {id="claude-fable-5-1", context_window=1000000, efforts=["high"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="claude-haiku-4-5", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-fable-5-1", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openai]`
 
 - `base_url` = `"https://api.openai.com/v1"`
-- `api_key_env` = `"OPENAI_API_KEY"`
+- `api_key_env` = `"OPENAI_API_KEY"` — else keyring entry "cox/openai"
 - `api` = `"responses"` — "responses" | "chat"
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="gpt-5.1", context_window=400000, efforts=["low", "high"]}, {id="gpt-5.5", context_window=1050000, efforts=["low", "high", "xhigh"]}, {id="gpt-5.6-sol", context_window=1050000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.local]`
 
 - `base_url` = `"http://localhost:11434/v1"`
+- `api_key_env` = `""` — empty = no key; most local servers need none
 - `api` = `"chat"`
 - `model` = `"qwen3-coder"`
 - `context_window` = `32768` — local servers do not report it
+- `timeout_s` = `600` — higher than a remote section's 120: local prefill is slow (T30.23)
+- `max_retries` = `4`
 - `models` = `[{id="qwen3-coder", context_window=32768, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.lmstudio]`
+
+- `base_url` = `"http://localhost:1234"`
+- `api_key_env` = `"LM_API_TOKEN"` — else keyring entry "cox/lmstudio"; neither = no x-api-key header
+- `model` = `""` — usually left unset; pin via tiers.code.model / --tier code=<model>
+- `context_window` = `0` — 0 = ask the server (GET /api/v1/models), then the model catalog
+- `load` = `false` — true = load the model at session start if it is not loaded (with context_window)
+- `timeout_s` = `600` — local prefill is slow, same rationale as `local`
+- `max_retries` = `4`
 ## `[providers.typesafe]`
 
 - `base_url` = `"https://api.typesafe.ai"` — client appends /v1/systemone
@@ -76,35 +92,43 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[providers.deepseek]`
 
 - `base_url` = `"https://api.deepseek.com"` — client appends /chat/completions
-- `api_key_env` = `"DEEPSEEK_API_KEY"`
+- `api_key_env` = `"DEEPSEEK_API_KEY"` — else keyring entry "cox/deepseek"
 - `api` = `"chat"`
 - `model` = `"deepseek-v4-pro"`
 - `context_window` = `1000000`
-- `models` = `[{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `timeout_s` = `120`
+- `max_retries` = `4`
+- `models` = `[{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openrouter]`
 
 - `base_url` = `"https://openrouter.ai/api/v1"`
-- `api_key_env` = `"OPENROUTER_API_KEY"`
+- `api_key_env` = `"OPENROUTER_API_KEY"` — else keyring entry "cox/openrouter"
 - `api` = `"chat"`
 - `model` = `"anthropic/claude-sonnet-5"`
 - `context_window` = `1000000`
-- `models` = `[{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["low", "high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — curated coding subset; the full 359-model list lives in models.dev
+- `timeout_s` = `120`
+- `max_retries` = `4`
+- `models` = `[{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high"]}]` — curated coding subset; the full 359-model list lives in models.dev
 ## `[providers.moonshot]`
 
 - `base_url` = `"https://api.moonshot.ai/v1"`
-- `api_key_env` = `"MOONSHOT_API_KEY"`
+- `api_key_env` = `"MOONSHOT_API_KEY"` — else keyring entry "cox/moonshot"
 - `api` = `"chat"`
 - `model` = `"kimi-k2.6"`
 - `context_window` = `262144`
+- `timeout_s` = `120`
+- `max_retries` = `4`
 - `models` = `[{id="kimi-k2.6", context_window=262144, efforts=["low", "high", "xhigh"]}, {id="kimi-k2.7-code", context_window=262144, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[providers.z-ai]`
 
 - `base_url` = `"https://api.z.ai/api/paas/v4"`
-- `api_key_env` = `"ZHIPU_API_KEY"`
+- `api_key_env` = `"ZHIPU_API_KEY"` — else keyring entry "cox/z-ai"
 - `api` = `"chat"`
 - `model` = `"glm-5.2"`
 - `context_window` = `1000000`
-- `models` = `[{id="glm-5.2", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+- `timeout_s` = `120`
+- `max_retries` = `4`
+- `models` = `[{id="glm-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
@@ -165,12 +189,26 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 
 - `timeout_s` = `30`
 - `deferred` = `true`
-- `servers` = `{}` — [mcp.servers.<name>] command/args/url/env — same shape as .mcp.json
+- `servers` = `{}` — [mcp.servers.<name>] command/args/url/env/sandbox — same shape as .mcp.json, plus sandbox=false to opt a named stdio server out of the sandbox wrap (default true, T33.42)
+## `[plugins]`
+
+- `enabled` = `true` — WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins. A [plugins.<id>] table is that plugin's own config, passed unchanged to its cox_init as InitIn.config; the plugin validates it
+## `[plugins.decide]`
+
+- `min_confidence` = `0.6` — advice with lower or no confidence is ignored and the static pick stands
+- `route_ms` = `300` — route's latency budget; a later answer is ignored
+- `route_margin` = `0.15` — route offers cheap only when its predicted turn cost (catalog prices, last prefix size, cache write vs read) is at most (1 - route_margin) x the code tier's
+- `risk_ms` = `200` — risk = "<plugin id>" may raise a tool call to destructive, never lower it; asked only when that changes the permission outcome
+- `approve_hint_ms` = `200` — approve_hint = "<plugin id>" may add a caution note to an approval prompt, never say a call looks safe
+- `compact_ms` = `500` — compact = "<plugin id>" may compact before the threshold, never skip a due compaction
+- `rank_ms` = `300` — rank = "<plugin id>" may reorder or drop tool_search hits, never add one
+- `salience_ms` = `300` — salience = "<plugin id>" scores each extracted memory item; may drop against memory.salience_min, never add or edit one
 ## `[memory]`
 
 - `enabled` = `true`
 - `extract` = `false` — end-of-session extraction on cheap tier
 - `dir` = `""` — default ~/.cox/projects/<slug>/memory
+- `salience_min` = `0.3` — an extracted item scoring below this against salience's Score is dropped; the plugin cannot move this bar
 ## `[telemetry]`
 
 - `otel` = `false`
@@ -188,7 +226,8 @@ newline = ["enter", "shift+enter"]
 mode.cycle = "shift+tab"
 ```
 
-- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two plugins goes to the lower plugin id and `cox doctor` reports it.
 - Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
 - A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a terminal that reports it (kitty keyboard protocol, see `cox doctor`).
 - `~/.claude/keybindings.json` is read first, for the actions both tools have: `chat:submit` → `send`, `chat:newline` → `newline`, `chat:sendNow` → `send.now`, `chat:cancel` → `interrupt`, `chat:cycleMode` → `mode.cycle`, `app:toggleTranscript` → `transcript`, `task:background` → `background`, `app:exit` → `quit`. Its keys are added beside the defaults; this file still wins. Other Claude actions and chords are skipped.

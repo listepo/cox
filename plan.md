@@ -6,7 +6,27 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T30.3 | todo | P2 | 2 | 50% | |
+| T33.14 | todo | P2 | 4 | 0% | |
+| T33.18 | todo | P2 | 5 | 0% | |
+| T33.34 | todo | P2 | 4 | 0% | |
+| T33.36 | todo | P2 | 4 | 0% | |
+| T33.40.1 | todo | P1 | 5 | 0% | |
+| T33.40.3 | todo | P2 | 4 | 0% | |
+| T33.40.4 | todo | P2 | 4 | 0% | |
+| T33.40.5 | todo | P2 | 3 | 0% | |
+| T33.40.6 | todo | P2 | 4 | 0% | |
+| T33.40.7 | todo | P2 | 3 | 0% | |
+| T33.40.9 | todo | P2 | 4 | 0% | |
+| T33.40.10 | todo | P3 | 3 | 0% | |
+| T33.40.11 | todo | P2 | 2 | 0% | |
+| T33.40.12 | todo | P2 | 3 | 0% | |
+| T33.40.13 | todo | P2 | 3 | 0% | |
+| T33.40.14 | todo | P2 | 3 | 0% | |
+| T33.40.15 | todo | P2 | 3 | 0% | |
+| T33.40.16 | todo | P2 | 2 | 0% | |
+| T33.40.17 | todo | P3 | 2 | 0% | |
+| T33.43 | todo | P1 | 2 | 0% | |
+| T35.10 | todo | P3 | 2 | 0% | |
 
 ## Reference
 
@@ -18,9 +38,9 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 
 | # | Decision | Why (evidence in research.md) |
 |---|----------|-------------------------------|
-| D1 | **One Cargo workspace, one static binary, ten in-tree crates (§1). No WASM or dylib plugin host in v0.1.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
+| D1 | **One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`, A47); `crates/cox/tests/deps.rs` holds the graph. No dylib plugin host. One WASM plugin host (extism) from v0.2: `docs/design/plugins.md`; it reaches the core only through traits in `cox-protocol`.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
 | D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP and the JSONL rollout are four consumers of one event stream. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
-| D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
+| D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. **Where wire types come from (A40):** (1) a maintained Rust SDK's *types* when one exists (OpenAI: `async-openai` types only), else (2) types generated with typify from the vendor's published spec, vendored in the repo (Anthropic), else (3) hand-written. Transport, retry, SSE state machine, `ProviderEvent` mapping and the ledger stay ours in every case; SDK code is a `wire` module inside the provider, extracted to a crate only when a second consumer appears. Login: API keys only — Claude subscription OAuth is forbidden to third parties (R§4.3.1); ChatGPT login waits for an OpenAI document permitting it. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
 | D4 | **Adopt existing formats verbatim instead of inventing ones.** `AGENTS.md` (and `CLAUDE.md`) hierarchy; Agent Skills `SKILL.md`; Claude Code hook JSON protocol and `.claude/settings.json` permission-rule syntax (`Bash(npm run test:*)`), `.claude/commands/*.md`, `.claude/agents/*.md`; `.mcp.json`; Codex `apply_patch` (V4A) grammar; `--output-format stream-json`. cox-native equivalents live under `.cox/` with the same schemas. | A user with a Claude Code or Codex setup gets cox for free, and the rtok hook stack works unchanged (R§3). Every one of these is documented and already read by ≥ 2 agents. |
 | D5 | **Route by job tier, never by guesswork, never up.** Three tiers in config: `cheap` (default `claude-haiku-4-5`; any local model), `code` (default `claude-sonnet-5`; `claude-opus-5` when the user picks it or the task is flagged large), `think` (`claude-fable-5-1`, only via `/think` or `--deep`, always confirmed). Jobs pinned to `cheap`: session title, compaction summary, tool-result summarisation, commit message, memory extraction, explore/search subagents, background shell and HTTP subagents, hook-driven LLM calls. Every request carries a `job` tag into the ledger. | User constraint. Claude Code's silent Haiku delegation is its most-cited complaint (R§2.1); Copilot's auto-routing is praised because it is explicit and discounted. Anthropic's own guidance: measure the capable model at lower `effort` before building a cascade, because caches are model-scoped (R§4.4). |
 | D6 | **Token economy is core, not a plugin.** (a) every tool output is archived before the model sees it; the model sees head/tail + `expand <id>`; (b) identical read/grep within N turns returns "unchanged, see #id"; (c) `read` has `lines=` and `mode=outline` (tree-sitter); (d) tool schemas beyond the core eight are deferred and found through a `tool_search` tool; (e) prefix is byte-stable: tools → system → instruction files → last cache breakpoint → volatile; (f) compaction is append-only, keeps the last two turns verbatim, runs on `cheap`; (g) one per-request `usage` row with cache read/write; (h) session and monthly budget caps. Metric: *context-token-turns*. | rtok measured 3–40 % real savings from external hooks against 60–95 % vendor claims; the difference is that hooks cannot touch what the model sees. A native agent can (R§4.1–4.2). Minimum cacheable prefix is 512 tokens on the Claude 5 family and 4 096 on Haiku 4.5, so one volatile byte in the system prompt costs the whole cache (R§6 ledger #21). |
@@ -35,7 +55,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D15 | **Each component is designed against the field before it is built.** Every P-phase's first task is a ≤ 1-page `docs/design/<component>.md`: the problem in one measurable number, what Claude Code / Codex / Pi / OpenCode / aider do, what cox does and why it is at least as good, and what would falsify it. Written by the `code` tier; reviewed, not written, by `think`. | rtok D15. Copying a competitor caps cox at that competitor. |
 | D16 | **Observability is `tracing` with an optional OpenTelemetry GenAI exporter.** Spans carry `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`. Off by default; `cox stats` reads the ledger locally. | Codex ships opentelemetry 0.31 (R§1.3); the GenAI semconv is still experimental, so it stays behind a feature flag. |
 
-Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; git worktree isolation for subagents; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
+Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
 
 ## 1. Architecture
 
@@ -59,20 +79,39 @@ Deferred to **v0.2+** (not rejected): WASM plugin host (extism 1.30); LSP client
 
 | Crate | Owns | Key deps (pinned in T0.1; versions verified in R§4.5) |
 |-------|------|------|
-| `cox` | clap surface, dispatch, `doctor`, `config`, `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, figment, toml_edit 0.25, anyhow, dotenvy 0.15 |
+| `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
+| `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
-| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, permission `Engine`, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, globset (permission path rules, T2.2) |
-| `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12 |
-| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; `path::confine`; `sandbox::{seatbelt,bwrap,landlock}` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, landlock 0.4.7, seccompiler 0.5, nix |
+| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
+| `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
+| `cox-provider` | the provider registry and `from_env`; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction; re-exports the wires at the old `anthropic` and `openai` paths | reqwest 0.12 (rustls) |
+| `cox-provider-anthropic` | the Anthropic Messages wire (T32.13; split out of `cox-provider`): request building, stream parsing, wire types from the vendored spec, `schema/` | reqwest 0.12, typify 0.8 (build.rs, T30.10/T30.12) |
+| `cox-provider-openai` | the OpenAI Responses and Chat wires (T32.14; split out of `cox-provider`) | reqwest 0.12, async-openai 0.42 (`response-types` only, T30.11) |
+| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | similar 3.2, nix |
+| `cox-sandbox` | `path::confine`, `sandbox::{seatbelt,bwrap,landlock}` (T32.3; split out of `cox-tools`): path confinement to the workspace roots and the platform sandbox front door. `cox-tools` re-exports both as `path` and `sandbox` | landlock 0.4.7, seccompiler 0.5, nix |
+| `cox-patch` | the V4A patch engine (T32.6; split out of `cox-tools`): `parse` text ↔ AST, `stage` progressive hunk matching. Pure: no filesystem, no `ToolCx`; the `apply_patch` `Tool` impl stays in `cox-tools` (`v4a::tool`) so `path::confine` keeps one call site. `cox-tools` re-exports it as `v4a` | proptest 1.11 (dev) |
+| `cox-syntax` | tree-sitter and its grammars (T32.4; split out of `cox-tools`): `outline` (signature extraction for `read`'s outline mode) and `parse_bash` (the parser behind `bash`'s risk classifier). `cox-tools` re-exports `outline` at its old path | tree-sitter 0.27 + bash/rust/typescript/python/go grammars |
+| `cox-tokens` | token counting (T32.10; split out of `cox-provider`): `estimate`, `count_openai` (tiktoken), `count_anthropic` (the count-tokens endpoint). `cox-provider` re-exports it at the old `tokens` path | tiktoken-rs 0.12, reqwest 0.12 |
+| `cox-permission` | the permission `Engine` (T32.8; split out of `cox-core`): `Outcome`, the rule grammar, path rules. Pure; `cox-core` re-exports it at the old `permission` path | globset (path rules, T2.2) |
+| `cox-search` | the grep and glob engines (T32.5; split out of `cox-tools`): `grep::search`, `glob::find`, `rank_by_query`, `workspace_files`. Pure; the `GrepTool`/`GlobTool` impls stay in `cox-tools` so `path::confine` keeps one call site | ignore 0.4.33, grep-searcher 0.1.17, grep-regex 0.1.14, globset, nucleo 0.5 |
+| `cox-web` | the `web_fetch` engine (T32.7; split out of `cox-tools`): client, streaming GET with cancellation and a byte cap, HTML → text. `WebFetchTool` stays in `cox-tools` | reqwest 0.12 |
+| `cox-telemetry` | tracing setup and the OpenTelemetry stack behind the `otel` feature (T32.9; split out of `cox`); `init` takes plain values, not `Config` | tracing-subscriber, tracing-appender 0.2, opentelemetry 0.32 (+ sdk, otlp, tracing bridge, appender), thiserror |
+| `cox-provider-http` | HTTP plumbing shared by every wire (T32.12; split out of `cox-provider`): `http` (client, `resolve_key`, `resolve_key_with`, error mapping), `retry`, `sse`. `cox-provider` re-exports all three at their old paths | reqwest 0.12, keyring 4, eventsource-stream 0.2.3 |
+| `cox-provider-testkit` | the pure scenario and cassette helpers behind `Scripted`/`Replay` (T32.11; split out of `cox-provider`): scenario parsing, event building, cassette hashing, secret redaction, cassette writing | figment, sha2 |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
+| `cox-sanitize` | `sanitize`, `sanitize_with`, `truncate` (T5.6; split out of `cox-tui` by T32.1): strips escape sequences, C0 controls, bidi overrides and zero-width runs from untrusted text before it reaches the terminal; width-aware truncation. `cox-tui` re-exports it as `text` | unicode-width 0.2 |
+| `cox-render` | themes and colour tokens, colour-depth mapping, markdown with syntax highlighting, diffs, SVG export, glyph sets, OSC 8 link marking and `Look` (split out of `cox-tui` by T32.2): pure rendering, text and settings in, ratatui spans and buffers out. `cox-tui` re-exports every module at its old path | syntect, two-face, pulldown-cmark, terminal-colorsaurus, similar, toml_edit |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), two-face 0.3 (`syntect-fancy`; ~250 syntaxes, +0.33 MiB — T24.3), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
+| `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1, thiserror |
+| `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading; `wasmtime-exceptions` on, A61), wasmtime 43 (declared only for the `anyhow` feature extism needs without its defaults), sha2 (package digest), figment (`plugin.toml`); linked into `crates/cox` behind the default-on `plugins` feature (A55) |
+| `cox-plugin-sdk` (`plugins/sdk`, the separate guest workspace, never a `crates/*` member) | the Rust guest SDK (T33.27): typed wrappers for every PL§4 export and `cox:host/v1` host function, the `register!` macro, and the wire (`{"Ok"\|"Err"}` host replies) that other-language guests copy; builds for `wasm32-unknown-unknown` | extism-pdk 1.4.1 (`default-features = false`: no extism `http`, no msgpack), cox-plugin-api (path) |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`; `cox-core` → `cox-protocol` only; `cox-provider`, `cox-tools`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only. No crate below `cox` depends on `cox-core`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize` (and `cox-tui` → `cox-render`, `cox-acp` → `cox-sandbox` for the ACP client's `path::confine`, T35.3); `cox-render` → `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol`, `cox-permission` (and may use `cox-models`); `cox-sandbox`, `cox-config`, `cox-models`, `cox-permission`, `cox-tokens`, `cox-patch`, `cox-web`, `cox-provider-http`, `cox-provider-testkit`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-provider-anthropic`, `cox-provider-openai` → `cox-protocol`, `cox-models`, `cox-provider-http`; `cox-protocol` → `cox-plugin-api` only (the `plugin` re-export, T33.1); `cox-syntax`, `cox-search`, `cox-telemetry` → no workspace crate; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`, `cox-syntax`, `cox-search`, `cox-web`; `cox-provider` → `cox-protocol`, `cox-models`, `cox-tokens`, `cox-provider-http`, `cox-provider-testkit`, `cox-provider-anthropic`, `cox-provider-openai`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -338,7 +377,10 @@ fail_open = true
 [mcp]
 timeout_s = 30
 deferred = true
-servers = {}                        # [mcp.servers.<name>] command/args/url/env — same shape as .mcp.json
+servers = {}                        # [mcp.servers.<name>] command/args/url/env/sandbox — same shape as .mcp.json, plus sandbox=false to opt a named stdio server out of the sandbox wrap (default true, T33.42)
+
+[plugins]
+enabled = true                      # --no-plugins / COX_PLUGINS_ENABLED; project config may turn it off, never back on (T33.6)
 
 [memory]
 enabled = true
@@ -523,7 +565,7 @@ Status line (one row): `sonnet-5 · ctx 41% · $0.83 · workspace-write · 2 tas
 |-------|------|----------|
 | `cox-provider` | `ProviderError` | `Auth`, `RateLimited { retry_after }`, `Overloaded`, `BadRequest { message }`, `ContextTooLong { max, got }`, `Refusal { detail }`, `Network`, `Timeout`, `Cancelled`, `Parse { line }`, `Unsupported { feature }` |
 | `cox-tools` | `ToolError` | `Denied { why }`, `Confined { path, root }`, `SandboxDenied { detail }`, `Timeout`, `NotFound`, `Ambiguous { matches }`, `TooLarge { bytes, cap }`, `Binary`, `Io`, `Cancelled` |
-| `cox-core` | `CoreError` | `Budget { spent, cap }`, `Interrupted`, `Provider(ProviderError)`, `Tool { call, error }`, `Compaction`, `Config { key, message }`, `Store(StoreError)`, `Hook { id, error }` |
+| `cox-core` | `CoreError` | `Budget { spent, cap }`, `Interrupted`, `Provider(ProviderError)`, `ExternalAgent { agent, message }`, `Tool { call, error }`, `Compaction`, `Config { key, message }`, `Store(StoreError)`, `Hook { id, error }` |
 | `cox-store` | `StoreError` | `Open`, `Migrate { from, to }`, `Corrupt { path }`, `NotFound`, `Io`, `Sqlite` |
 | `cox-ext` | `ExtError` | `Frontmatter { path, line }`, `HookTimeout`, `HookCrashed { status }`, `TooLarge { path, budget }`, `Cycle { path }` |
 | `cox-mcp` | `McpError` | `Spawn`, `Handshake`, `Auth`, `Timeout`, `Transport`, `ToolFailed { server, tool }` |
@@ -532,7 +574,7 @@ Retryable: `RateLimited`, `Overloaded`, `Network`, `Timeout` (provider) — expo
 
 ### 1.15 Cross-cutting invariants (each is a named test somewhere in §3)
 
-1. `prefix_bytes_identical_between_turns` (T2.3) · 2. `truncate_is_lossless_via_archive` (T2.5) · 3. `all_tool_results_return_in_one_message` (T2.1) · 4. `deny_beats_allow` (T2.2) · 5. `compaction_keeps_last_two_turns_verbatim` (T8.1) · 6. `resume_builds_identical_request` (T2.4) · 7. `no_event_after_turn_done` (T2.1) · 8. `every_request_has_a_usage_row` (T1.7) · 9. `think_requires_confirmation` (T9.1) · 10. `broken_hook_is_skipped_not_fatal` (T7.4) · 11. `sandbox_denies_write_outside_workspace` (T4.1/T4.2) · 12. `every_flag_has_a_config_key` (T0.3) · 13. `no_crate_below_cox_depends_on_core` (T0.1) · 14. `sanitize_strips_escapes` (T5.6).
+1. `prefix_bytes_identical_between_turns` (T2.3) · 2. `truncate_is_lossless_via_archive` (T2.5) · 3. `all_tool_results_return_in_one_message` (T2.1) · 4. `deny_beats_allow` (T2.2) · 5. `compaction_keeps_last_two_turns_verbatim` (T8.1) · 6. `resume_builds_identical_request` (T2.4) · 7. `no_event_after_turn_done` (T2.1) · 8. `every_request_has_a_usage_row` (T1.7) · 9. `think_requires_confirmation` (T9.1) · 10. `broken_hook_is_skipped_not_fatal` (T7.4) · 11. `sandbox_denies_write_outside_workspace` (T4.1/T4.2) · 12. `every_flag_has_a_config_key` (T0.3) · 13. `no_crate_below_cox_depends_on_core` (T0.1) · 14. `sanitize_strips_escapes` (T5.6) · 15. `plugin_tool_specs_frozen_within_session` (T33.12) · 16. `plugin_grant_reasked_on_digest_or_widening` (T33.6) · 17. `plugin_failure_is_skipped_not_fatal` (T33.3).
 
 ## 2. Working agreement for agents
 
@@ -607,7 +649,7 @@ Rationale in §6 A11. What already exists and is *not* redone here: syntect high
 
 ### P15 — Git in the surfaces (goal: the branch, what changed and the diff are visible without leaving cox)
 
-Rationale in §6 A13. Not redone here: unified-diff rendering (`cox-tui/src/diff.rs`, T5.4), the nucleo picker (T5.2), running git (the `bash` tool, A12).
+Rationale in §6 A13. Not redone here: unified-diff rendering (`cox-render/src/diff.rs`, T5.4; in `cox-tui` until T32.2), the nucleo picker (T5.2), running git (the `bash` tool, A12).
 
 ### P16 — Concurrent sessions on one workspace (goal: every cox process on a workspace knows what the others are doing, and the TUI shows it)
 
@@ -659,19 +701,346 @@ Out of scope: language auto-detection beyond file extension and first-line sheba
 
 ### P30 — Lean profile and footprint (goal: numbers cox can publish that no vendor does)
 
-#### T30.3 Eval run with a verification step
+### P32 — Crate split (goal: every crate exists for a reason in `docs/design/crates.md`; D1 as amended by A47)
 
-Model: sonnet · Status: open · Depends: a funded API key · Size: ~100 · Priority: P2 · Complexity: 2
-Goal: the T12.1 harness gains a "verify before done" instruction and a `PostToolUse` test-runner hook preset; one Terminal-Bench 2.x run is recorded with its ledger cost.
-Files: `evals/run.py`, `evals/hooks/verify.sh` (new), `research.md`.
-Steps: (1) Harness system addendum: "before reporting done, run the task's tests and show the output"; (2) hook preset: after `edit`/`apply_patch`/`write` run the project's test command when one is detected (`just test`, `cargo nextest`, `npm test`, `pytest`) with a 120 s cap and feed failures back as `additionalContext`; (3) run the 10 in-repo tasks with and without the preset, then one TB 2.x run; record pass rate, cost, and tokens in `research.md` §5.3.
+Every card in this phase:
+
+1. `git mv`s the named files into `crates/<crate>/`. The new `lib.rs` opens with a `//!` header, and `Cargo.toml` takes only the dependencies those files use.
+2. Leaves a `pub use` at the old path, so callers and the guard names keep working.
+3. Adds the crate's rule to `crates/cox/tests/deps.rs`.
+4. Updates the AGENTS.md layout table (and the trust list for a guard) and the plan.md §1 crate list.
+
+No logic changes. At most three crates are touched. Moved lines do not count toward the 200-LOC limit; edited lines do.
+Common check: the three commands in AGENTS.md are green, `deps.rs` has the crate's rule, and the card's own line holds.
+
+### P33 — WASM plugins (goal: one package adds a status segment, a hook, a deferred tool and a provider without a cox release; §1.15 invariants 1, 8, 10 and 15–17 green; ≤ 50 ms warm start per plugin)
+
+Rationale in §6 A52; the design is `docs/design/plugins.md` (cited below as PL§n).
+
+Every card in this phase:
+
+- stays within 200 LOC and 3 source files (manifests, generated schemas, snapshots and fixtures do not count);
+- leaves a test that fails without it;
+- documents what it adds (`docs/design/plugins.md` if the design moves, `docs/config.md` through the drift test for new keys, `docs/plugins.md` user docs from T33.27 on);
+- runs the three standard commands.
+
+Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
+
+#### T33.14 `cox_http` and filesystem preopens
+
+Depends: T33.9, T33.43 (preopens stay off until wasmtime ≥ 48, A55) · Size: ~180 · Files: `crates/cox-plugin/src/net.rs`, `src/fs.rs`
+Goal:
+- `cox_http` over reqwest: the host must match the allow-list, the body is capped, and a `net` entry equal to a configured provider host is refused at validation (PL§7d).
+- WASI preopens come only from `fs` and pass `confine`; reads mount `ro:`; `.git` and `.cox` are never writable. WASI is on only when `wasi = true` or `fs` is set.
+Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provider_host_is_rejected`, `fs_write_to_dot_git_is_refused`, `wasi_ctx_has_no_env`.
+
+#### T33.18 Providers, ABI form (`PluginProvider`)
+
+Depends: T33.14, T33.17 · Size: ~190 · Files: `crates/cox-plugin/src/provider.rs`, `src/net.rs`, `crates/cox-core/src/router.rs`, `crates/cox-protocol/src/types.rs`, `crates/cox/src/session.rs`
+Goal: with `api = "plugin"`, `stream()` calls `cox_provider_stream` and forwards `ProviderEvent`s. The guest's `cox_http` is limited to `base_url`'s host, and the host injects the `auth` header from `resolve_key`, so the key never enters wasm memory. Missing usage is estimated; usage below half of cox's estimate is replaced by the estimate with one warning.
+Plan (amended 2026-09-26 for the Jev use case, R§4.3.6 J§4.3): `Router::pick` and `backend_for_with` register ABI provider sections by name, so a tier — including a legacy `typesafe` tier — resolves to them, not only to `providers.custom`. The ledger gets a `ProviderId::Plugin` bucket whose provider string is the section name, the same shape `Local` uses for compatible providers; `provider_name` returns it. `COX_PROVIDER=scripted`/`replay`, which short-circuits provider construction for the main turn, still builds plugin providers, so a scripted-main e2e can reach a real (wiremocked) plugin provider.
+Check: `provider_key_never_reaches_guest` (the WAT guest echoes its request headers, and the test asserts the key is absent); `underreported_usage_is_replaced_by_estimate`; `every_request_has_a_usage_row` with a plugin provider; `plugin_provider_section_resolves_by_name`; `scripted_provider_mode_still_builds_plugin_providers`.
+
+#### T33.34 Go: SDK wrapper, template, example
+
+Depends: T33.29, T33.43 (go-pdk v1.1.3 needs `wasip1`, and the host keeps WASI off until then, A55) · Size: ~200 · Files: `plugins/sdk-go/cox.go`, `plugins/examples/go/main.go`, `plugins/templates/go/*.tmpl`; `plugins/mise.toml` gets go and tinygo; CI job `plugin-examples`
+Goal: a thin Go package over `github.com/extism/go-pdk` (v1.1.3) for the PL§4 exports and host functions (`//go:wasmimport` in `cox:host/v1`). The same example is built with TinyGo `-target wasip1 -buildmode=c-shared` (`wasi = true`). `cox plugin new --lang go`.
+Check: `plugin_example_go` is `#[ignore = "needs go and tinygo: run just plugin-examples go"]` locally and runs in the `plugin-examples` CI job, where a missing toolchain fails the job; it asserts the same rollout effect as T33.28.
+
+#### T33.36 Kotlin: thin PDK, template, example
+
+Depends: T33.35, A61 (extism `wasmtime-exceptions` is on; `exception_handling_module_loads`), T33.43 (Kotlin's stdlib imports `wasi_snapshot_preview1::random_get`, and the host keeps WASI off until then, A55, A63) · Size: ~200 · Files: `plugins/sdk-kotlin/src/…/Cox.kt`, `plugins/examples/kotlin/src/…/Main.kt`, `plugins/templates/kotlin/*.tmpl`; `plugins/mise.toml` gets java, gradle and kotlin
+Goal: a cox-owned minimal Kotlin PDK over the raw extism imports (there is no maintained one, R§4.3.5 P30), the same example, and `--lang kotlin`.
+Draft: the PDK (`plugins/sdk-kotlin`, ~150 lines over the raw extism imports and `cox:host/v1`) and the example (`plugins/examples/kotlin`, id `example-kotlin`, same behaviour as the Rust example, `gradle pluginPackage`) build with Kotlin 2.4.20, Gradle 9.8.0 and OpenJDK 27.0.0 and are kept on branch `wip/t33.36-kotlin`. Left to do once WASI is on: templates, `Lang::Kotlin`, `PLUGIN_LANGS`, `just plugin-examples kotlin`, the CI step, the e2e, docs and `toolchain.md` rows.
+Check: `plugin_example_kotlin` is ignored with its reason locally and runs in the CI job.
+
+#### T33.40 Jev as the first plugin
+
+Rationale: A25/P21, evidence `research.md` §4.3.6 (cited below as J§n/Jn). These seventeen cards test the ABI-form provider, the models, and the decision-point capabilities end to end against a real (wiremocked) use case, prove or refute PL§12 falsifier 3, and carry out `docs/design/plugins.md` §14 decision 8 (C1): the built-in `typesafe` client leaves the core once the plugin reaches parity. T33.18, T33.20 and T33.21 above already carry the amendments this use case needed.
+
+#### T33.40.1 ABI: two-phase decide, own-provider call-out, batched questions — blocker
+
+Depends: T33.2, T33.14, T33.15, T33.18, T33.20 · Size: ~180 · Files: `crates/cox-plugin-api/src/abi.rs`, `crates/cox-plugin/src/advisor.rs`, `crates/cox-plugin/src/net.rs`
+Goal: close the gap that PL§12 falsifier 3 predicts (J§4.1–4.3). Today a decision plugin can reach its own provider only through a deadlock (`cox_model_call` into its own `cox_provider_stream`) or a ledger bypass (`cox_http` from `cox_decide`). This card adds a path with neither.
+Plan:
+1. ABI changes:
+   - `DecideOut = Advice(Option<Advice>) | Call(ModelCall)`;
+   - the new optional export `cox_decide_resume(DecideResume { question, events }) -> Option<Advice>`;
+   - `ModelCall.target = Tier(t) | OwnProvider { name, model }`;
+   - `Question.items: Vec<QuestionItem>` (one answer per item).
+   
+   These are minor additions: `api` stays 1. Regenerate `docs/plugin-abi.schema.json`.
+2. `PluginAdvisor`: on `Call`, check that the target is a `[[provider]]` of the same plugin. Then run it through the budget gate → the provider registry (`PluginProvider`) → `Priced`, which writes one `usage` row with `job = plugin:<id>`. Then call `cox_decide_resume` with the events. The point's latency budget covers all three steps. Any failure along the way is `None`, and the local default applies.
+3. `net.rs`: `cox_http` to a provider section's host is allowed only inside `cox_provider_stream`. Everywhere else it returns `NotInThisContext`.
+4. PL§4: add the exports and state the context rule.
 Check:
-```bash
-python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verify
-```
-Done when: §5.3 has the table with both configurations and the run's cost from `cox stats`.
-Out of scope: leaderboard submission.
-Progress: steps (1)–(2) landed in `defba68` (`--preset verify` in `evals/run.py`, `evals/hooks/verify.sh`), verified offline only. Step (3), the paid run and the `research.md` §5.3 table, waits for the creator: `python3 evals/run.py --provider anthropic --model claude-sonnet-5 --preset verify`.
+- `decide_call_out_writes_one_usage_row`: a WAT guest returns `Call`, and its own `cox_provider_stream` returns fixed events;
+- `decide_call_out_over_budget_falls_back`;
+- `decide_cannot_target_another_plugins_provider`;
+- `http_to_provider_host_outside_provider_stream_is_refused`;
+- `batched_question_answers_each_item`;
+- `abi_schema_matches_committed_file`;
+- invariant 8 `every_request_has_a_usage_row` still green.
+
+#### T33.40.3 Jev provider export
+
+Depends: T33.40.2, T33.16, T33.18 · Size: ~170 · Files: `plugins/jev/src/provider.rs`, `plugins/jev/src/lib.rs`, `crates/cox-plugin-fixtures/build.rs`
+Goal: `cox_provider_stream` speaks System One over `cox_http` (PL§7a ABI form). The host injects the key.
+- A decision call (`Job::Plugin("jev")` with the JSON body in its one user message) is sent verbatim.
+- A request from a tier that names `typesafe` gets the old lossy mapping and one `Notice(Warn)`: "typesafe is a decision model; no tier should route to it" (J13).
+- Map the status codes from J4 to the ABI error kinds, so the host's retry treats 429 and 529 as transient.
+- Pass usage through unchanged; the host applies the estimate floor (T33.18).
+- Add the `[[models]]` rows.
+- `cox-plugin-fixtures` also builds `jev.wasm`.
+Check:
+- guest tests `decision_call_body_is_sent_verbatim`, `tier_request_uses_lossy_mapping_and_warns` and `status_529_maps_to_transient`;
+- `cargo build -p cox-plugin-fixtures` produces both fixtures, and with the wasm target missing it fails naming `mise install`.
+
+#### T33.40.4 Jev plugin as a provider, end to end and offline
+
+Depends: T33.40.3, T33.7 · Size: ~180 · Files: `tests/plugins_jev.rs` (+ `tests/fixtures/jev/*.json`, fixtures)
+Goal: prove the provider path through the real binary with no network and no keychain (J§8).
+Plan:
+1. A scratch `COX_HOME`. Install and enable the built fixture package from its local folder (C3) with `--yes`.
+2. Main turns come from `COX_PROVIDER=scripted`.
+3. Jev is wiremock on 127.0.0.1, reached through `[providers.typesafe] base_url` in the scratch config, with `TYPESAFE_API_KEY=test-key` in the env.
+4. A test-only scripted command makes one decision call. It reuses T33.40.1's WAT harness pattern.
+Check:
+- `jev_request_carries_host_injected_bearer` and `jev_key_never_reaches_guest`;
+- `jev_call_writes_usage_row_with_plugin_job` (provider `typesafe`, model `jev-1.13.0`, cost from the plugin catalog row);
+- `jev_call_blocked_by_budget_falls_back`;
+- `jev_401_is_one_notice_and_fail_open`;
+- `jev_529_retries_max_retries_times`;
+- `three_failures_disable_decide_export`;
+- `cox plugin list --json` shows the provider and model contributions.
+
+#### T33.40.5 Parity: the `typesafe` table configures the plugin's section
+
+Depends: T33.40.4 · Size: ~120 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/provider.rs`, `crates/cox/src/doctor.rs`
+Goal: while both exist, one name serves one client.
+- When the `jev` plugin is loaded, the provider `typesafe` is its `PluginProvider`. The `[providers.typesafe]` table (the built-in default, or the user's) supplies `base_url`, `api_key_env`, `timeout_s`, `max_retries` and `model`, and the user wins, as for declarative sections.
+- Without the plugin, the built-in `JevProvider` runs as today.
+- `cox doctor` says which client serves `typesafe`.
+Check: `typesafe_table_overrides_plugin_transport`, `builtin_jev_used_when_plugin_absent`, and a doctor snapshot for each case (in a scratch `COX_HOME`).
+
+#### T33.40.6 `risk` advisor: raise only
+
+Depends: T33.21 (as amended: ask only when the outcome could change), T33.40.1, T33.40.4 · Size: ~190 · Files: `plugins/jev/src/risk.rs`, `plugins/jev/src/lib.rs`, `tests/plugins_jev.rs`
+Goal: J§5.1. There is one request per tool batch. The state is the task, the cwd, the sandbox mode and, for each call, `tool`, `subject`, `input` and `classifier_risk`, never tool output. The questions are the `severity` Score and the `irreversible`, `external_effect` and `exfiltration` Nouls. The thresholds sit in `[plugins.jev.risk]` with the J§5.1 defaults. The advice is "raise to Destructive" or none, and the core keeps `max(builtin, advised)`. `capabilities.decide` gains `risk`.
+Check:
+- guest tests:
+  - `risk_state_never_contains_tool_output`;
+  - `risk_thresholds_raise_on_any_hazard`;
+  - `risk_low_answers_give_no_advice`;
+  - `risk_config_overrides_thresholds`;
+- e2e in `Auto` mode with a confining sandbox, where a scripted `git push --force origin main` is auto-allowed without the plugin:
+  - a high fixture gives `Ask`, headless denies, and `Advised { point: risk, applied: true }` is in the rollout;
+  - a low fixture leaves the call allowed;
+  - a wiremock delay past 200 ms leaves it allowed with `Advised { applied: false }`;
+  - `one_jev_request_per_tool_batch` (the wiremock count for a batch of 3);
+- `risk_advice_cannot_lower_risk` still green.
+
+#### T33.40.7 Eval E1: risk escalation against the classifier alone
+
+Depends: T33.40.6 · Size: ~200 · Files: `evals/src/cox_evals/jev_risk.py`, `evals/tests/test_jev_risk.py`, `evals/risk/commands.yaml` (data)
+Goal: measure J§5.1 against the no-Jev baseline at a hard budget cap.
+- The corpus has about 300 labelled commands: must-ask (force push, publish, deploy, remote delete, pipe-to-shell, credential exfiltration) and benign (build, test, grep, formatting, local git). The labels and a one-line reason are in the file.
+- Each command is one scripted bash call in `Auto` mode with the sandbox on. The scripted provider costs $0, and Jev is live.
+- The run is repeated without the plugin as the baseline.
+Plan:
+1. A `cox_evals` module with a registry entry, not a script (eval-tooling rule).
+2. Read the ledger total for `job = plugin:jev` after each batch, and stop at `--max-usd 0.10`.
+3. Metrics:
+   - the recall gain on must-ask commands the baseline auto-allows;
+   - the false-raise rate on benign commands;
+   - the late-fallback rate at 200 ms and at 500 ms;
+   - p50 and p95 latency;
+   - $.
+4. The live run needs `TYPESAFE_API_KEY` from the creator. `--dry-run` runs the baseline only.
+5. Record the table in R§5 with the Jev model version (`jev-1.13.0`, pinned), the date and the reproduce command.
+Falsifier: if the false-raise rate exceeds 10 %, or the p95 late-fallback rate exceeds 20 %, `risk` is not recommended by default, and the user guide says so.
+Check: `just test-evals` is green offline (corpus schema, metric maths, budget stop, command line). R§5 has the E1 table.
+
+#### T33.40.9 `route` advisor: downgrade only
+
+Depends: T33.40.8, T33.40.1, T33.40.4 · Size: ~170 · Files: `plugins/jev/src/route.rs`, `plugins/jev/src/lib.rs`, `tests/plugins_jev.rs`
+Goal: J§5.2, plugin side.
+- The state is the prompt, the todo list, a summary of the last turn and the number of files touched.
+- The questions are the `tier` Choice over the offered tiers (with the plugin's descriptions and `other` → `code`) and the `wants_depth` Noul.
+- The advice is `cheap` only when:
+  - the choice is `cheap`;
+  - confidence ≥ 0.8;
+  - `wants_depth` < 0.3;
+  - the last turn did not error.
+- `capabilities.decide` gains `route`.
+Check:
+- guest tests `route_needs_high_confidence`, `route_keeps_code_after_error_turn` and `route_other_means_code`;
+- e2e over two scripted turns:
+  - a fixture choosing `cheap` at 0.9 gives a main-turn `usage` row on tier `cheap` and `Advised { applied: true }`;
+  - at 0.7 the turn runs on `code`;
+  - a fixture naming `think` is ignored, and the static pick runs.
+
+#### T33.40.10 Eval E2: route downgrade against the static pick
+
+Depends: T33.40.9 · Size: ~180 · Files: `evals/src/cox_evals/harness.py` (the `jev-route` preset), `evals/tests/test_harness.py`, `evals/tasks/11-…14-*.yaml` (data: four tasks that need the code tier, such as a multi-file rename with a failing test)
+Goal: measure J§5.2 with money on the line and a hard cap. Every task runs twice, as the baseline and with `[plugins.decide] route = "jev"`, on real Anthropic tiers with live Jev.
+Plan:
+1. The preset is a registry entry.
+2. Caps: `--budget` per run, and a total cap of `--max-usd 3.00` read from the ledger, after which the run stops.
+3. Metrics:
+   - pass rate;
+   - $ per task by (tier, job);
+   - the downgrade rate;
+   - cache read/write tokens;
+   - Jev p95 latency.
+4. Keys (`ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`) come from the creator's env. They are never read from the keychain.
+5. R§5 gets the table with the model versions and the date.
+Falsifier: if any task that passes in the baseline fails with the plugin, or the median saving per task is below 15 %, `route` stays off by default, and the guide says so.
+Check: `just test-evals` is green offline (preset expansion, cap stop, the paired table). R§5 has the E2 table.
+
+#### T33.40.11 User guide: the Jev plugin
+
+Depends: T33.40.6, T33.40.9 · Size: ~150 · Files: `docs/plugins/jev.md`, `docs/plugins.md` (link), `crates/cox/tests/doc_examples.rs`
+Goal: one page for users. It covers:
+- what Jev is and is not (J13);
+- building it from `plugins/jev` (`just plugin jev`) and `cox plugin install <dir>` (C3);
+- the key through `TYPESAFE_API_KEY` or the keyring entry `cox/typesafe`;
+- enabling points in `[plugins.decide]`;
+- per point, the exact state sent to TypeSafe (J17);
+- costs in `cox stats` as `plugin:jev`;
+- fail-open behaviour and `cox doctor` rows;
+- the E1/E2 results and the defaults they justify;
+- the migration from `[providers.typesafe]` (J§7).
+Check: `doc_examples` parses every `toml` block on the page against `Config` or the plugin manifest schema and fails on drift.
+
+#### T33.40.12 Remove the built-in Jev client
+
+Depends: T33.40.5, T33.40.6 (parity: the provider and one advisor are served by the plugin) · Size: ~120 edited (the deleted `jev.rs` does not count) · Files: `crates/cox-provider/src/jev.rs` (deleted), `crates/cox-provider/src/lib.rs`, `crates/cox/src/session.rs`
+Goal: C1, step 1.
+- The `typesafe` arm of `backend_for_with` returns the plugin's `PluginProvider` when the plugin is loaded.
+- Otherwise it returns a typed "provided by plugin jev, not loaded" error, which the router step (T33.40.13) turns into fail-open.
+- `jev.rs`'s tests now live in `plugins/jev` (T33.40.2).
+Check: `rg -n 'jev' crates/cox-provider/src` is empty; `typesafe_backend_without_plugin_is_typed_error`; the three standard commands green.
+
+#### T33.40.13 Router and `ProviderId` without Jev
+
+Depends: T33.40.12 · Size: ~120 · Files: `crates/cox-protocol/src/types.rs`, `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
+Goal: C1, step 2.
+- `ProviderId::Jev` goes, replaced by T33.18's plugin bucket; it is never serialized in events (J§7).
+- The `typesafe` pin in `Router::pick` goes; plugin sections resolve generically.
+- A tier naming a legacy plugin provider (the table `("typesafe", "jev")`) with the plugin absent fails open (D14): one `Notice(Warn)` "Jev moved to a plugin: build `plugins/jev` and run `cox plugin install <dir>`", and that tier uses its `default.toml` provider and model for the session.
+Check: `legacy_typesafe_tier_without_plugin_uses_default_tier_with_notice`, `typesafe_tier_with_plugin_routes_to_plugin_section`, `unknown_provider_still_errors`; `docs/protocol.jsonschema` regenerated.
+
+#### T33.40.14 Config tombstone, `default.toml`, schema and doctor
+
+Depends: T33.40.13 · Size: ~150 · Files: `crates/cox-protocol/src/config.rs`, `crates/cox/src/doctor.rs`, `crates/cox-protocol/default.toml` (config data; `docs/config.md` and the config schema are generated)
+Goal: C1, step 3. An old config loads.
+- `JevProviderConfig` becomes `LegacyTypesafe`: the same keys, still `deny_unknown_fields`, an `Option` with no default section.
+- It stays a named field, so the table can never fall into the flattened `custom` map as a chat-shaped `CompatibleProviderConfig` (J§7).
+- Its knobs feed the plugin's `typesafe` section. Its `models` rows join the config catalog layer.
+- The `[providers.typesafe]` block leaves `default.toml`.
+- The doctor's key check covers plugin provider sections generically. A leftover table without the plugin is a doctor warning with the install pointer.
+Check:
+- `old_typesafe_table_loads_with_notice` (a config file from before this change);
+- `typesafe_table_never_becomes_compatible_section`;
+- `unknown_key_in_typesafe_table_still_rejected`;
+- a doctor snapshot;
+- the config drift test and `every_flag_has_a_config_key` green.
+
+#### T33.40.15 Catalog, prices and vendor script without Jev
+
+Depends: T33.40.14, T33.16 · Size: ~110 · Files: `crates/cox-models/src/catalog.rs`, `crates/cox-models/src/price.rs`, `scripts/vendor/src/cox_vendor/models.py` (+ its tests; `prices.toml` is regenerated by the script, A48)
+Goal: C1, step 4.
+- The `typesafe` special cases in `Catalog::load` and `price.rs` go.
+- `cox-vendor models` stops keeping `jev-latest` as a known exception, and its re-run drops the row from `prices.toml`.
+- Jev's price and window now come only from the plugin row. `cox doctor` shows `source = plugin:jev`, and T30.27's price-sync row stays green.
+Check: `jev_price_comes_from_plugin_row`, `catalog_without_plugin_has_no_jev_row`, the vendor pytest suite, `just vendor models --check` clean.
+
+#### T33.40.16 Docs and plan sweep after the removal
+
+Depends: T33.40.15 · Size: ~80 · Files: `docs/design/providers.md`, `docs/design/crates.md`, `docs/design/v0.2-jev.md` (+ `plan.md`)
+Goal: no doc describes a built-in Jev.
+- `providers.md` loses the Jev family.
+- `crates.md` loses the `cox-provider-jev` row.
+- `v0.2-jev.md` gets a closing note that the integration shipped as the `jev` plugin (A52, T33.40), with the eval verdicts.
+- In `plan.md`, T32.15 is dropped with a reason, and the PL§2 example uses `name = "typesafe"`.
+Check: `rg -n -i 'jev|typesafe' crates docs` matches only the plugin, the tombstone, the migration notice and the history. All docs drift tests are green.
+
+#### T33.40.17 Optional: record live fixtures (needs the creator's key)
+
+Depends: T33.40.6, T33.40.9 · Size: ~150 · Files: `scripts/vendor/src/cox_vendor/jev_fixtures.py`, `scripts/vendor/tests/test_jev_fixtures.py`, `tests/fixtures/jev/*.json` (data)
+Goal: replace the hand-built fixtures, which follow the documented shapes, with recorded ones.
+- The script sends the plugin's own `risk` and `route` question sets for a handful of fixed states.
+- It redacts with the rollout scrubber, writes the bodies and records the model version and the date.
+- It runs only with `TYPESAFE_API_KEY` set by the creator. It never reads the keychain.
+Check: the offline pytest (body construction, redaction, no key means a clear exit) is green. With recorded fixtures, T33.40.4 and T33.40.6 stay green unchanged.
+
+#### T33.43 Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
+
+Depends: an extism release after v1.30.0 that pins wasmtime ≥ 48 (extism `main` already pins 48; checked 2026-09-26) · Size: ~30 · Files: `Cargo.toml`, `Cargo.lock`, `deny.toml`
+Goal: move the workspace `extism` and the direct `wasmtime` (declared only for its `anyhow` feature) to that release, then remove the `RUSTSEC-2026-0222` and `RUSTSEC-2026-0269` entries from `deny.toml` `ignore` (A55, research.md P39). Also check whether the direct `wasmtime` declaration is still needed. The bump was approved in advance by the creator (A55), but only onto a published crates.io release, never a git dependency. It unblocks the WASI preopens in T33.14. If no such release exists by 2026-12-31, bring it back to the creator.
+Check: `cargo deny check advisories` passes with no wasmtime ignores; the `cox-plugin` tests and `slim_build_has_no_wasm_runtime` pass; `scripts/footprint.sh` stays within the 20 MiB budget (PL§12).
+
+**Order.** T33.1 → T33.2 → T33.3 → T33.4 → T33.5 → T33.6 is the critical path. After it these can run in parallel:
+
+- T33.7–T33.8;
+- T33.9 → (T33.10, T33.11, T33.12, T33.14, T33.15);
+- T33.16 → T33.17 → T33.18;
+- T33.19 (after T32.3) → T33.42;
+- T33.20 → T33.21.
+
+TUI: T33.22 → T33.23 → (T33.24, T33.25, T33.26). SDK and languages: T33.27 → T33.28 → T33.29 → T33.30, then T33.31 → T33.32 → T33.33; T33.34; T33.35 → T33.36; T33.37 → T33.38. Then T33.39; T33.40.1–T33.40.17 (own order below); T33.41 and T33.42 whenever they are wanted. The top table gets rows T33.1–T33.39, T33.41–T33.42 and T33.40.1–T33.40.17; P2 by default, P1 for the blockers T33.1–T33.6 and T33.40.1, P3 for the optional cards (T33.41, T33.40.17), the paid eval E2 (T33.40.10) and the Kotlin/Dart feasibility spikes (T33.35, T33.37).
+
+**T33.40 order.**
+
+- Main line: T33.40.1 and T33.40.2 (in parallel) → T33.40.3 → T33.40.4 → T33.40.5.
+- Risk: T33.40.6 → T33.40.7.
+- Route: T33.40.8, which can start after T33.20 → T33.40.9 → T33.40.10.
+- Docs: T33.40.11 after T33.40.6 and T33.40.9. Its results section is filled by T33.40.7 and T33.40.10.
+- Removal (C1): T33.40.12 → T33.40.13 → T33.40.14 → T33.40.15 → T33.40.16, starting once T33.40.5 and T33.40.6 are done. It does not wait for the evals.
+- T33.40.17 runs whenever the creator has a key.
+
+The paid runs are T33.40.7 (≤ $0.10, approved) and T33.40.10 (≤ $3, needs the creator's go-ahead each time).
+
+### P34 — Subagents (goal: a subagent can be a custom named definition, capped in number, able to ask the user, and able to exchange follow-up messages with its parent and its siblings — all through the parent's own `Submission`/`Event` stream)
+
+Rationale in §6 A53. The design doc for the messaging cards is `docs/design/subagent-messaging.md` (T34.0, cited below as SM§n).
+
+Every card in this phase:
+
+- stays within 200 LOC and 3 source files (generated schemas and fixtures do not count);
+- leaves a test that fails without it;
+- documents what it adds (`docs/design/subagent-messaging.md` if the design moves, `docs/protocol.jsonschema`/`docs/config.jsonschema` through their drift tests for new variants or keys);
+- runs the three standard commands.
+
+**Blockers** (everything after them depends on them): T34.0 (blocks T34.4–T34.9).
+
+### P35 — External agents from plugins (Cursor first) (goal: a plugin can declare an external CLI agent that appears to the model as a subagent preset, driven over its own official headless protocol, sandboxed and grant-gated like every other plugin capability)
+
+Rationale in §6 A54; the design is `docs/design/external-agents.md` (T35.0, cited below as EA§n). Evidence `research.md` §4.3.8 (Cursor, checked 2026-09-26).
+
+Every card in this phase:
+
+- stays within 200 LOC and 3 source files (manifests, generated schemas, snapshots and fixtures do not count);
+- leaves a test that fails without it;
+- documents what it adds (`docs/design/external-agents.md` if the design moves, `docs/plugin.schema.json` through its drift test for the new manifest capability, `docs/plugins.md` user docs from T35.9);
+- runs the three standard commands.
+
+**Blockers** (everything after them depends on them): T35.0, T35.1, T35.2, and the P33/P34 work this phase builds on — T33.6 (grants and granted-only loading, which implies T33.1–T33.5), T33.19 and T33.42 (sandboxed stdio spawn for a plugin-brought process), T34.1 (custom preset dispatch) and T34.5 (parent-routed follow-up messages).
+
+#### T35.10 Optional: live check against a real Cursor account (needs the creator's key)
+
+Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_live_fixtures.py` (+ its tests), `tests/fixtures/cursor/*.json` (data, recorded from one real run)
+Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
+Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required).
+
+### P36 — Compound shell commands (goal: a `Bash(<prefix>:*)` rule or a session grant covers exactly the commands it names, never a command chained after them)
+
+Rationale in §6 A62.
+
+### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
+
+Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
 
 ## 4. Definition of done for v0.1
 
@@ -681,7 +1050,7 @@ Progress: steps (1)–(2) landed in `defba68` (`--preset verify` in `evals/run.p
 4. `cox stats` shows cost by tier and job; the `just bench` table in `research.md` §4.6 shows measured savings for each D6 mechanism; cache-read ratio on turn ≥ 3 of a typical session is ≥ 80 %.
 5. `cox run -p` and `cox acp` pass their conformance tests; `cox mcp` serves `read`/`grep`/`glob` to Claude Code.
 6. No `unwrap`/`panic!` outside tests; `cargo deny` clean; fuzz jobs green.
-7. The fourteen invariants in §1.15 each have a passing, named test.
+7. The seventeen invariants in §1.15 each have a passing, named test.
 
 ## 5. Roadmap
 
@@ -736,6 +1105,67 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A32 `crates/cox-protocol/default.toml`, T22.4 — `tui.mouse` defaults to `true` again, which reverses A30. Why: the creator's later decision. Effect: `default.toml`, `TuiConfig::default`, `State::new` and `docs/config.md` say `true`; the terminal's own selection needs Shift/Option while cox runs, and `tui.mouse = false` gives it back.
 - A33 §3 P22, P27, T22.9, T27.7 — the two parts of approved cards that did not fit their size limits become cards of their own: T22.9 (T22.4's click on a folded tool card unfolds it) and T27.7 (T27.4's `↻ <time>` status-line segment for an active `/loop`). Why: the creator asked for every remaining task that needs no creator input; both halves were already approved as part of T22.4 and T27.4. Effect: two rows in the top table and `todo.md`; no new dependency.
 - A34 §3 P27, T27.5 — T27.5's card listed `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox/src/resume.rs`, but the actual touch is `state.rs` + `view.rs` + `crates/cox-tui/tests/agents.rs` (the T27.2 snapshot test reads `/agents`'s old `Notice` cell and has to change now that it opens a modal) + `crates/cox/src/session.rs` (not `resume.rs`, which builds a turn-oriented `History` this overlay does not need — the poll loop wants the raw `Vec<Event>` `Store::rollout_read` already returns). A 3-files-only split was drafted (§6's earlier text) to land the `cox-tui` half and leave `session.rs` to a follow-up, but `session.rs`'s `match ask { Some(Ask::GitDiff) => …, None => break }` is exhaustive over `Option<Ask>`, so the compiler requires a `session.rs` edit the moment `Ask` grows `Rollout` — a stub costs the same one match arm as the real `Store::rollout_read` call, so the split would not have saved a file. Why: discovered mid-implementation, not planned; plan.md §2's split guidance assumed avoiding the file cost was possible, and it was not. Effect: T27.5 lands whole, 4 files instead of the usual 3 (state.rs, view.rs, tests/agents.rs, session.rs); no follow-up card.
+- A35 §3 P30, T30.4, T30.3 — new card T30.4 (send `anthropic-workspace-id` from `ANTHROPIC_WORKSPACE_ID`) ahead of T30.3. Why: the creator's key is not scoped to a workspace, so every Anthropic call 400s; the creator chose teaching cox the header over issuing a workspace-scoped key. Effect: T30.3 step (3) runs after T30.4.
+- A36 §3 P30, T30.5, T30.3 — new card T30.5 (price every provider call through a `Priced` decorator) ahead of T30.3. Why: T1.7's `ledger_row` was never wired into a production path, so every ledger row costs $0 and budgets never fire; found during T30.4's live check; the creator chose fixing it before the paid eval run. Effect: T30.3 step (3) runs after T30.5; costs recorded before this fix are $0 and stay so (history is append-only).
+- A37 §3 P30, T30.6, T30.3 — new card T30.6 (the Anthropic stream emits `ToolUseEnd` on a tool block's `content_block_stop`) ahead of T30.3. Why: without it every Anthropic tool call is dropped; found by T30.3's first live task; the creator chose fixing it first. Effect: T30.3 step (3) runs after T30.6. `openai/chat.rs` never emits `ToolUseEnd` either; that is a separate, larger fix (interleaved calls by index) proposed to the creator, not part of T30.6.
+- A38 §3 P30, T30.7–T30.9 — the eval scripts become a uv-managed Python package with tests (T30.7, T30.8), and the Terminal-Bench part of T30.3 becomes T30.9 (Harbor agent, colima, $1 budget). Why: the creator asked for the scripts to be a proper package with tests before TB; the old adapter could not run for real. Effect: T30.3 closes after T30.9; `just eval` runs through uv.
+- A39 §3 P30, T30.10 — the Anthropic stream wire types are generated with typify from a curated JSON Schema subset of Anthropic's OpenAPI spec; the SSE → `ProviderEvent` mapping stays hand-written. Why: the creator chose typify-generated types over a hand-written `Value` walk or a full generated SDK (none exists for Rust that handles SSE). Effect: one build-time proc-macro dependency; D3 unchanged.
+- A40 §0 D3, §3 P30, T30.11–T30.12 — D3 gains an order for where provider wire types come from: a maintained SDK's types, else typify over the vendor's vendored spec, else hand-written; transport, SSE mapping and the ledger stay ours; SDK code is a `wire` module inside the provider. Login stays API-key only: Anthropic forbids third-party Claude subscription login in writing, OpenAI documents nothing for ChatGPT login (R§4.3.1). Why: the creator asked providers to check for an SDK or a generatable spec before hand-writing, starting with the Claude Code and Codex replacements. Effect: `async-openai` (types only) and a vendored Anthropic spec enter the provider crate.
+- A42 §3 P30, T30.14 — new card: the comparison runner becomes a tested `evals` module with registries of agents, providers and models (`cox-bench`). Why: the creator asked for a package/module supporting different providers, models and agents rather than a one-off script.
+- A43 §3 P30, T30.15–T30.16 — new cards: a built-in `lmstudio` provider whose chat loop runs over LM Studio's Anthropic-compatible `/v1/messages` through the existing Anthropic provider (T30.15), and LM Studio's native `/api/v1/models` and `models/load` for the loaded context length, capabilities and load on demand (T30.16), with hand-written types (D3/A40 step 3). Why: the creator asked for LM Studio's own API as a local provider; R§4.3.2 shows the native chat endpoint takes no custom tool schemas, so the native API serves model state and the chat stays on Messages.
+- A44 §3 P30, T30.17 — new card: one model of providers, models, prices and effort; design first (D15), code only through cards the creator approves. Why: the creator's rule that provider, model, price and effort handling be as unified as possible, and the LM Studio provider (T30.15) should land in that shape.
+- A45 §0 D1, §3 P30, T30.18 — new card: design a finer crate split (D1's ten crates are a floor, not a target). Why: the creator's rule that the project be split into crates as far as possible. Effect: D1 changes only through the amendment T30.18 proposes.
+- A46 §3 P30, T30.15, T30.16 — approved by the creator: T30.17's result. Seven implementation cards U1–U7 (table in `docs/design/providers.md` § Target shape; evidence R§4.3.3): one key resolver, one `Transport` descriptor in every provider section, constructors over it, a pure `cox-models` catalog (context, max output, efforts, capabilities, price) replacing the `Caps` literals and `ADAPTIVE_THINKING_PREFIXES`, one per-wire effort map with `Effort::Medium`, and a `cox doctor` catalog/price row. Why: the creator's rule that provider, model, price and effort handling be as unified as possible. Effect: U1–U7 are cards T30.21–T30.27; T30.15 depends on T30.21–T30.23, T30.16 on T30.24–T30.25, T32.13–T32.15 on T30.21–T30.26.
+- A47 §0 D1, §3 P32 — approved by the creator ("create the tasks for crates.md"): T30.18's result. D1 becomes: "One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`); `crates/cox/tests/deps.rs` holds the graph. No WASM or dylib plugin host in v0.1." Seventeen new crates (27 in total), extracted by cards C1–C16 in the order in `docs/design/crates.md` (`cox-models` comes from T30.24, A46 U4); every card is a `git mv` plus a re-export at the old path, a `deps.rs` rule and the AGENTS.md layout row, with no logic change; moved lines do not count toward the 200-LOC limit. Why: the creator's rule that the project be split into crates as far as possible; evidence R§4.3.4. Effect: D1 reworded as above; the phase is P32, not P31, because the unmerged branch `t31-beta-mvp` already uses P31/T31.1–T31.5; C1–C16 are cards T32.1–T32.16 in the new phase P32; the provider wires (T32.13–T32.15) move after T30.21–T30.26 (A46 U1–U6).
+- A48 §3 P30, AGENTS.md — new cards T30.19–T30.20 and a convention: a file no package manager fetches (a vendored API spec, a price or model table, any JSON/YAML data) is produced only by a saved, tested Python script that is re-run to update it; no hand download, no pasted rows. Why: the creator's rule. Effect: the Anthropic spec (T30.19) and the models.dev-derived `prices.toml` rows and `default.toml` model lists (T30.20) get their scripts; A46 U4's embedded catalog rows come from T30.20's script.
+- A49 §3 P30, AGENTS.md — new card T30.28 and a convention, by the creator: tests never read the real OS keychain; they inject the lookup. Why: test runs prompted for the macOS login password and read the developer's real key. Effect: T30.28 runs after T30.23.
+- A50 (renumbered from `t31-beta-mvp`'s own A35 — that branch's numbering was against a different, older `main`) §3 P31, §4 — beta readiness: an audit of the v0.1 definition of done found five gaps the code can close, and each became a task (T31.1–T31.5). Criterion 6 had eight `expect` calls on production paths (the three request-body builders, the Jev client, the CLI override tree, `cox config show`); criterion 5 had no test of the shipped `cox mcp` binary, and writing one showed the default selection advertised an `outline` tool that does not exist (an outline is `read` with `mode = "outline"`); the README quick start used a top-level `cox -p` that clap rejects; the `Command` doc still said most subcommands print `not implemented`. Why: user request — determine what the beta needs and do it in one branch. Effect: `cox mcp` serves `read`, `grep`, `glob` by default; the README and `Command` doc no longer lie about the CLI shape; the work landed on branch `t31-beta-mvp` rather than `main` because the user asked for one branch, and was cherry-picked onto `main` on 2026-09-26 after `main` had moved through T30.19–T30.28 in the meantime. Landing found two of the five tasks already overtaken: T30.23 (A46 U1) had independently made `JevProvider::with_key`/`new` take `&Transport` and return `Result<Self, ProviderError>`, with `session::provider_for` already propagating it — T31.2 is dropped as fully superseded, no code changed; T30.11–T30.12's typed `wire::CreateMessageParams`/`wire::CreateResponse` rewrite had already removed the `expect` this branch targeted from the Anthropic and OpenAI Responses builders, so T31.1 keeps only its `openai/chat.rs` hunk. T31.3–T31.5 landed unchanged. Not done here: the paid eval and cache-ratio measurement (T30.3) and the macOS signing secrets — the release workflow refuses an unsigned build by design, and that stays the creator's call.
+- A51 §3 P30, AGENTS.md — new card T30.29, by the creator ("fix every keychain place so fakes are used"): `COX_KEYRING=off` switches the OS keyring off in the binary, and `.cargo/config.toml` sets it for every cargo-run process. Why: the T30.28 seams covered tests, but smoke runs of the rebuilt binary (`cargo run -- doctor`) still raised keychain prompts. Effect: A49's rule now covers dev runs too. (A50 is taken by the T31 landing.)
+
+- A52 §0 D1 and the "Deferred to v0.2+" line, §1.1, §1.15, §3 P33, `roadmap.md` — WASM plugin host, approved by the creator. It implements `docs/design/plugins.md`.
+- A53 §0 "Deferred to v0.2+" line, §3 new P34 — Subagents, `todo.md`, `ideas.md` — subagent support, researched at the creator's request ("add subagent support: research it, add to the plan if it is not there"), and inter-agent communication, approved by the creator ("add support for communication between subagents, and between subagents and the main agent"). That second request is explicit approval for messaging including sibling ↔ sibling, so P34 is not gated behind `ideas.md`'s "agent teams / orchestration DSL" line the way a fuller orchestration feature would be. Why: `crates/cox-core/src/subagent.rs`/`tasks.rs`, `crates/cox-ext/src/agents.rs` and the `/agents` TUI overlay already implement a one-shot, structurally depth-1 `agent` tool with two hardcoded presets and a one-shot approval relay (`relay_approval`), but §1.11's own `agent` row already documents a named custom preset (`preset: "<name>"`) and a `tier` override that the code never got, no subagent-specific concurrency cap exists (only the generic `core.parallel_tools`), `ask_user` from a subagent carries no `Source` label, and nothing lets a parent follow up with a running or finished child or lets siblings exchange messages. Separately, the "Deferred to v0.2+" line still named "git worktree isolation for subagents" as undelivered even though it shipped as T27.3 (`subagent.rs`'s `isolation: "worktree"`, tested) — fixed in this same edit, no card for it. Effect: eleven new cards (T34.0–T34.10): a ≤ 1-page design doc for parent↔child and sibling messaging (T34.0, D15), reviewed by `think`, followed by its narrow implementation split across protocol types, core routing, the `send_message` tool and three surfaces (T34.4–T34.9, each ≤ 200 LOC / 3 files); three cards independent of the messaging design (T34.1 the custom-preset/`tier` wiring, T34.2 the concurrency cap, T34.3 the `Source`-labelled `ask_user` channel); and one optional visibility gate (T34.10). Every message is routed through the parent session as a `Submission`/`Event` (D2 pure state machine) — no side channel, no direct sibling socket. `ideas.md`'s "agent teams / orchestration DSL" line is removed as its own, still-unapproved idea: P34 is deliberately narrower than it — no `SendMessage`-as-a-tool with an injected sibling roster, no teammates, no split-pane processes, no plugin-provided agent definitions, no per-`AgentDef` permission-mode override, no `@mention` invocation; the last three are added to `ideas.md` instead, one line each. No decision in §0 changes beyond dropping the stale deferred-list line.
+  - **The host.** An extism 1.30.0 host in the new crate `cox-plugin`, a pure ABI and manifest crate `cox-plugin-api` (re-exported as `cox_protocol::plugin`), and a separate guest cargo workspace `plugins/` (`cox-plugin-sdk` over extism-pdk 1.4.1, examples and templates).
+  - **What a plugin can contribute**, each as a manifest capability the user approves per package digest: hooks, called methods, a context snapshot, event subscription, TUI status segments, a bottom panel or overlay, slash commands and keys under a leader, custom rendering of tool results and messages, model providers (declarative `chat`/`responses` sections, or the ABI `Provider`), catalog rows (a fill-only layer between built-in and config), MCP server declarations (stdio servers run under `sandbox::Policy`), and answers at the core's decision points (the `Advisor` trait; Jev is the first user).
+  - **Why.** The creator decided it: runtime extism, the full contribution set above, capabilities approved on install and enable and re-asked on changed bytes or wider capabilities, and design and plan before code. This overrides the evidence gate in `extensions.md` and `v0.2-wasm.md` (falsifier 1: three requests MCP cannot serve), which is recorded as superseded, not refuted.
+  - **Effect on §0.**
+    - D1's last sentence "No WASM or dylib plugin host in v0.1." becomes "No dylib plugin host. One WASM plugin host (extism) from v0.2: `docs/design/plugins.md`; it reaches the core only through traits in `cox-protocol`."
+    - "WASM plugin host (extism 1.30)" leaves the Deferred-to-v0.2+ line.
+    - D2, D6(e), D9 and D14 are unchanged; the design keeps each (plugins.md §§4–7, 10).
+  - **Effect on §1.1.** Two crate rows (`cox-plugin-api`, `cox-plugin`) and the dependency-direction line.
+  - **Effect on §1.15.** Three invariants: 15 `plugin_tool_specs_frozen_within_session`, 16 `plugin_grant_reasked_on_digest_or_widening`, 17 `plugin_failure_is_skipped_not_fatal`; §4's definition of done now names seventeen invariants, not fourteen.
+  - **Effect on `roadmap.md`.** The v0.2 line "WASM plugins (extism)" moves into P33 and is deleted from the roadmap; two new roadmap lines take its place (publishing the SDK once the ABI is stable, and installing from git/URL).
+  - **Effect on AGENTS.md.** Layout rows for the two crates and `plugins/`. The trust list says a plugin host function never replaces one of the four guards.
+  - **Effect on other tasks.**
+    - T33.19 wraps plugin-shipped MCP stdio servers with the sandbox after T32.3 (`cox-sandbox`).
+    - T33.16 extends `Catalog::load` from T30.24.
+    - T33.18 reuses `resolve_key` from T30.21.
+  - **Creator decisions, 2026-09-26** (resolving this amendment's open questions and the ones the Jev use case raised, T33.40; recorded in full in `docs/design/plugins.md` §14):
+    1. SDK/API publishing (`cox-plugin-api`, `cox-plugin-sdk`) waits for a stable ABI; it is a `roadmap.md` item, not a P33 card.
+    2. Dart stays the documented MCP-stdio-server exception (PL§13); the re-check spike (T33.37) stays in the plan.
+    3. Kotlin: T33.35 spikes first; if it passes, cox keeps its own thin PDK (T33.36) and turns on extism's `wasmtime-exceptions` feature only if the spike needs it.
+    4. Every MCP stdio server, not only a plugin's, runs under `sandbox::Policy`, with a per-server opt-out in config — its own card, T33.42, not folded into T33.19.
+    5. `route`: a plugin may only downgrade the tier (D5 holds); the core offers a downgrade only when its own cost estimate predicts a saving (T33.40.8, from the Jev research R§4.3.6 J§5.2).
+    6. Install sources in v1 stay local-folder-only (PL§1); git/URL sources move to `roadmap.md`.
+    7. CI gets a separate `plugin-examples` job (go, tinygo, java, gradle, kotlin, dart), as PL§13 already specified.
+    8. The built-in `[providers.typesafe]` client (`crates/cox-provider/src/jev.rs`) leaves the core once the Jev plugin reaches parity — the tombstone config type, fail-open notice and removal cards are T33.40.12–T33.40.16.
+    9. Jev evals: only E1 (`risk`, Jev only, capped at $0.10, T33.40.7) is approved to run now. E2 (`route`, real Anthropic plus Jev, capped at $3, T33.40.10) stays in the plan but needs the creator's explicit go-ahead before each run.
+    10. `approve_hint` becomes warning-only: a plugin may add a caution note, never say a call "looks safe" (monotone like `risk`, T33.21).
+    11. The `risk` advisor is enabled only by an explicit line in `[plugins.decide]`, never automatically on install; the grant dialog states exactly what data leaves the machine.
+    12. T32.15 (`cox-provider-jev`) is dropped: its table row and card move to `done.md` as "Status: dropped 2026-09-26" with the reason, and it leaves `todo.md`. After parity, `jev.rs` is deleted outright (T33.40.12), not extracted into a crate.
+    13. The Jev research's ABI fix (T33.40.1): `cox_decide` returns either an `Advice` or a `ModelCall`, which the host runs against the plugin's own provider through the budget gate and ledger before calling `cox_decide_resume`; `cox_http` to a provider host is allowed only inside `cox_provider_stream`; `Question` is batched. `docs/design/plugins.md` §4 and its manifest example (§2) are updated, and the example provider is named `typesafe`, not `jev` (the plugin id stays `jev`).
+    14. The release ships no prebuilt Jev plugin archive; users build it from `plugins/jev` (`just plugin jev`) and `cox plugin install <dir>`.
+  - **Not decided further:** anything not listed above and not in `docs/design/plugins.md` §14 stays open for a later amendment.
+
+- A54 §3 new P35 — External agents from plugins (Cursor first), `todo.md`, `ideas.md`, `docs/design/plugins.md` §10 — Cursor as a plugin, researched at the creator's request (`research.md` §4.3.8, inserted after P34's §4.3.7). The research found Cursor has no chat/completions endpoint (the Cloud Agents API only creates and drives durable, autonomous "Cloud Agent" runs, R§4.3.8), so it cannot be a `Provider` the way T30.15 wired LM Studio; the creator resolved the resulting question — "is Cursor still wanted as a provider?" — by deciding it is not: **"Cursor has no chat or completions API, so it is not a model provider. Add Cursor as a plugin that drives the Cursor CLI `agent` in its two official headless modes: `agent -p --output-format stream-json` and `agent acp` (ACP server over stdio, JSON-RPC 2.0)."** The creator further ruled, as a hard requirement rather than a preference: **"Only official paths: the dashboard-issued API key (env var such as `CURSOR_API_KEY`, resolved like other keys, never read from tests' real keychain) and the official CLI/ACP. Never the desktop session, and never the reverse-engineered proxies."** Why: an unauthenticated survey of Cursor's eight documented programmatic surfaces (`cursor.com/docs/api`) found the CLI's `agent -p --output-format stream-json` and `agent acp` are the only ones that are (a) officially documented, (b) driven by an issued API key rather than the desktop session, and (c) shaped like something cox already knows how to consume — an external agent process, the same relationship D4 already gives Claude Code and Codex, not a model completions wire. Effect: eleven new cards (T35.0–T35.10) in a new phase P35, gated on P33's plugin-loading/grant/sandbox path (T33.6, T33.19, T33.42) and P34's custom-preset and messaging path (T34.1, T34.5) — a new plugin manifest capability `[[external_agents]]` (T35.1), a host-only spawner under the same sandbox and grant machinery as a plugin's MCP stdio server (T35.2), an ACP client adapter reusing `crates/cox-acp`'s existing `agent-client-protocol` dependency (T35.3), a host-side `stream-json` line mapper (T35.4, chosen over a WASM guest export — EA§5), wiring the granted entry into the `agent` tool's preset resolution and P34's message routing (T35.5), the Cursor plugin package itself (T35.6), an offline e2e against a fake `agent` binary replaying fixtures recorded by a `scripts/vendor` script from the documented event shapes (T35.7, no live Cursor, no key), `cox doctor` reporting (T35.8), a user guide (T35.9), and an optional live check gated on the creator's own key (T35.10, same shape as T33.40.17). `docs/design/plugins.md` §10's "No bypass" line is updated to name external-agent CLI processes alongside MCP stdio servers as the only two kinds of process a plugin brings, both sandboxed the same way, with a forward pointer to `docs/design/external-agents.md` (T35.0). No `§0` decision changes; D1's plugin sentence already covers "an in-process WASM host … reaches the core only through traits" and this phase adds no exception to it, since the process itself is always host-spawned, never guest-spawned. `ideas.md` gains one new, still-unapproved line: the Cloud Agents API (`api.cursor.com`) as a possible background-task backend, kept separate from this phase because it would be a different shape entirely (durable server-side runs, not a local subprocess) and was not part of the creator's decision above.
+- A55 §1.1 `cox-plugin` row, §3 P33 (new T33.43; T33.14 depends on it), `docs/design/plugins.md` PL§11–12, `deny.toml` — T33.3 fired two PL§12 falsifiers; the creator decided both on 2026-09-26. (1) Size: linking extism grows `cox` by 16.8 MiB (51.2 → 68.0 MiB), over the 10 MiB budget, and almost all of it is cranelift and wasmtime. The budget becomes 20 MiB, and a `plugins` cargo feature on `crates/cox` (on by default) gives a slim build with no WASM runtime, enforced by `slim_build_has_no_wasm_runtime`. (2) Advisories: extism 1.30.0 pins wasmtime 43, which has RUSTSEC-2026-0222 and RUSTSEC-2026-0269 with no fix on the 43 line. The creator chose "ignore with a deadline, WASI off". Both are in `deny.toml` with reasons and a 2026-12-31 review date; WASI stays off, so the preopens in T33.14 wait for T33.43. extism cannot share one engine across plugins (`CompiledPlugin::new` builds its own), and 0222 needs the embedder to move objects between engines, which cox never does (research.md P39). Also: extism 1.30 does not build with `default-features = false` alone, which is why `wasmtime` is declared directly (research.md P38).
+- A56 §3 P34 (new T34.11) — the headless orphan fix from T34.9 has a TUI twin. Why: `run_tui` (`crates/cox/src/session.rs`) never calls `interrupt` + `wait_tasks_cleared` before its runtime drops, so quitting while a detached `bash` runs may orphan the process; the creator asked to check it and, if it leaks, reuse the headless helpers with a PTY regression test. Effect: one small card; no decision changes.
+- A57 §3 P35 (new T35.11) — ACP client terminals, by the creator. Why: T35.3 refuses every `terminal/*` request from an external agent, even under a sandbox grant, because serving them (sandboxed spawn, output buffer, wait, kill, release) did not fit that card; EA§4 allows them under the process's own `sandbox::Policy`. Effect: one card after T35.3; it reuses `bash`'s sandboxed spawn, `path::confine` and `cox_permission::Engine`, so no guard gains a second path. No decision changes.
+- A58 §3 P35 (new T35.12) — a dedicated `CoreError::ExternalAgent`, by the creator. Why: T35.4 had to send an external agent's failure as a provider `BadRequest`, which misnames it and could trigger provider retry or fallback. Effect: one protocol variant and a regenerated `docs/protocol.jsonschema`; no decision changes.
+- A59 §3 P35 (new T35.13) — T35.5 split. Why: cox-core does no I/O, so T35.5 landed the `ExternalAgent` trait, preset resolution and the usage row, and the host drivers (stream-json and ACP over T35.2's sandboxed spawn) need their own card. Effect: T35.7 also depends on T35.13; no decision changes.
+- A60 §3 P33 (new T33.44) — split the session wiring out of T33.9, T33.10, T33.11 and T33.16. Why: each built its piece against a caller-supplied `PluginHost`, and the session still drops the plugins it loads, so one card must keep a live instance and install hooks, the event tap, notices and plugin models. Effect: T33.12 also depends on T33.44; no decision changes.
+- A61 §1.1 `cox-plugin` row, §3 T33.36, `docs/plugins.md` "Engine features", `docs/design/plugins.md` §15 decision 3 — the creator approved extism's `wasmtime-exceptions` for the whole workspace on 2026-09-26. Why: T33.35 showed Kotlin/Wasm output does not parse without the exception-handling proposal (research.md P42–P43). Effect: every plugin's engine enables `wasm_exceptions`; `exception_handling_module_loads` holds it; T33.36 is unblocked. Its security on wasmtime 43 is not reviewed beyond RUSTSEC-2026-0222 (not guest-triggerable); revisit with T33.43. No decision changes.
+- A62 §3 new P36 (T36.1), by the creator. Why: a `Bash(<prefix>:*)` allow rule and a session grant match the command line as one string, so `Bash(git:*)` allows `git status; rm -rf …` and `Bash(rm:*)` in `deny` misses `git status && rm …`. Effect: the bash tool hands the engine its command segments; deny matches any segment, allow and grants need every segment, and substitution, `eval`/`-c` and redirects ask. `cox_permission::Engine` stays the single guard and stays pure. No decision changes.
+- A63 §3 T33.36 — Kotlin waits for WASI, by the creator. Why: the T33.36 draft showed that any real Kotlin/Wasm module imports `wasi_snapshot_preview1::random_get` from Kotlin's own stdlib (`Any.hashCode` → `Random.Default`), and cox loads plugins with WASI off (A55), so the host refuses the module (research.md P45); the T33.35 spike module had no WASI imports only because it did nothing (P41). The creator chose to wait rather than define `random_get` alone in the host or stub it at build time. Effect: T33.36 depends on T33.43, like T33.34 (Go); `wasmtime-exceptions` stays on (A61). No decision changes.
 
 ## 7. Risk register
 

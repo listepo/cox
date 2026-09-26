@@ -1,0 +1,43 @@
+// {{id}}: a cox plugin scaffolded by `cox plugin new --lang dart` (PL§13).
+// Dart's only v1 capability is this MCP stdio server — see
+// docs/design/plugins.md PL§7c in the cox repository for what a
+// cox-hosted `[[mcp]]` server can and cannot do. `plugin.toml`'s
+// `[[mcp]] command` points at the executable `dart compile exe` builds
+// from this file (`just build`).
+
+import 'dart:async';
+import 'dart:io' as io;
+
+import 'package:dart_mcp/server.dart';
+import 'package:dart_mcp/stdio.dart';
+
+void main() {
+  {{class_name}}Server(stdioChannel(input: io.stdin, output: io.stdout));
+}
+
+/// Exposes this plugin's tools over MCP. The stub tool below is a
+/// placeholder — replace it with real work, and `plugin.toml`'s `[[mcp]]
+/// name` stays `{{id}}` so `mcp__{{id}}-{{id}}__<tool>` is the name cox's
+/// tool dispatch sees.
+base class {{class_name}}Server extends MCPServer with ToolsSupport {
+  {{class_name}}Server(super.channel)
+    : super.fromStreamChannel(
+        implementation: Implementation(name: '{{id}}', version: '0.1.0'),
+        instructions: 'TODO: describe what this server does',
+      ) {
+    registerTool(helloTool, _hello);
+  }
+
+  /// A stub tool; capabilities asked for at scaffold time: {{with_summary}}.
+  final helloTool = Tool(
+    name: 'hello',
+    description: 'TODO: describe what this tool does',
+    inputSchema: Schema.object(properties: {}),
+  );
+
+  FutureOr<CallToolResult> _hello(CallToolRequest request) async {
+    return CallToolResult(
+      content: [TextContent(text: 'TODO: implement this tool')],
+    );
+  }
+}

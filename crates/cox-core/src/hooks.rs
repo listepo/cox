@@ -10,16 +10,20 @@ use serde_json::{Value, json};
 
 use crate::session::Session;
 
-/// Dispatches `event` only when `hooks.events` configures it (T22.3).
-/// `SessionStart`/`Notification` are observe-only trigger points nothing
-/// else listens for, so an unconfigured dispatch would be pure noise to an
-/// installed runner — and every configured hook runs exactly as documented.
+/// Dispatches `event` only when the installed runner is interested in it
+/// (T22.3, T33.11). `SessionStart`/`Notification` are observe-only trigger
+/// points nothing else listens for, so an unwanted dispatch would be pure
+/// noise to a runner. The runner answers rather than `[hooks]` because a
+/// plugin's hooks are granted, not configured (PL§6).
 pub(crate) async fn fire_configured(
     session: &Session,
     event: HookEvent,
     extra: Value,
 ) -> HookOutcome {
-    if !session.config.hooks.events.contains_key(event.name()) {
+    let wanted = session
+        .hook()
+        .is_some_and(|hook| hook.interested(event, &session.config.hooks));
+    if !wanted {
         return HookOutcome::Continue;
     }
     // `Box::pin`: `fire` can emit a `Notice` back through `Session::emit`,

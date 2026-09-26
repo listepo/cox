@@ -26,6 +26,7 @@ fn edit_done(state: &mut State, path: &str, unified: &str) {
         input: serde_json::json!({"path": path}),
         risk: Risk::Write,
         subject: path.into(),
+        segments: None,
     };
     update(state, Msg::Event(Event::ToolCallRequested { call }));
     update(
@@ -92,6 +93,7 @@ fn bash_approval_from(source: Option<Source>) -> (State, CallId) {
         input: serde_json::json!({"command": "git push --force"}),
         risk: Risk::Exec,
         subject: "git push --force".into(),
+        segments: None,
     };
     update(
         &mut state,
@@ -201,6 +203,7 @@ fn modal_edit_approval_shows_the_proposed_diff() {
         }),
         risk: Risk::Write,
         subject: "src/lib.rs".into(),
+        segments: None,
     };
     update(
         &mut state,

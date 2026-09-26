@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 
 use assert_cmd::Command;
+use cox_protocol::ids::TaskId;
+use cox_protocol::types::Event;
 use serde_json::Value;
 
 fn cox(work: &Path, home: &Path, scenario: &str) -> Command {
@@ -84,6 +86,37 @@ fn stream_json_lists_every_event_and_the_claude_aliases() {
     assert_eq!(&types[done + 1..], ["result"]);
 }
 
+/// T34.7/SM§6: `stream-json`'s writer (`run.rs`) is
+/// `serde_json::to_string(&cox_core::redact::scrub_event(&ev))` for every
+/// `Event`, generically (D2) — `scrub_event` special-cases only
+/// `TextDelta`/`ToolCallOutput`/`ToolCallDone`. `send_message` has since
+/// landed (T34.6) and `subagent_messaging.rs` now proves a real
+/// `TaskMessage` reaching stream-json end to end through the binary; this
+/// test stays alongside it as the narrower, no-binary-spawn check of the
+/// two functions the writer calls at the serializer level: the event
+/// survives `scrub_event` untouched and round-trips through JSON with
+/// every field intact.
+#[test]
+fn stream_json_passes_task_message_through_unchanged() {
+    let ev = Event::TaskMessage {
+        task: TaskId::new(),
+        from: Some(TaskId::new()),
+        hop: 2,
+        text: "hi from a sibling".into(),
+    };
+    let scrubbed = cox_core::redact::scrub_event(&ev);
+    assert_eq!(*scrubbed, ev, "scrub_event touched a TaskMessage");
+    let line = serde_json::to_string(&scrubbed).unwrap();
+    let v: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(v["type"], "task_message");
+    assert_eq!(v["hop"], 2);
+    assert_eq!(v["text"], "hi from a sibling");
+    assert!(v["from"].is_string());
+    // Round-trips to the same event: nothing dropped, renamed or reordered.
+    let back: Event = serde_json::from_str(&line).unwrap();
+    assert_eq!(back, ev);
+}
+
 #[test]
 fn a_denied_write_exits_2_and_the_file_is_not_written() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -93,6 +126,35 @@ fn a_denied_write_exits_2_and_the_file_is_not_written() {
         .code(2)
         .stdout(predicates_str_contains("\"denied\":1"));
     assert!(!work.path().join("a.txt").exists());
+}
+
+const GIT_THEN_TOUCH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/scenarios/bash_git_then_touch.toml"
+);
+
+/// T36.1: `Bash(git:*)` covers the `git` command, not the `touch` chained
+/// after it, so the line asks, and headless turns the ask into a deny; with
+/// a rule for each command the same line runs without asking.
+#[test]
+fn a_prefix_rule_does_not_allow_a_command_chained_after_it() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let rules = |allow: &str| format!("[permissions]\nallow = [{allow}]\n");
+    std::fs::write(home.path().join("config.toml"), rules(r#""Bash(git:*)""#)).unwrap();
+    cox(work.path(), home.path(), GIT_THEN_TOUCH)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("\"denied\":1"));
+    assert!(!work.path().join("chained").exists());
+
+    let both = r#""Bash(git:*)", "Bash(touch:*)""#;
+    std::fs::write(home.path().join("config.toml"), rules(both)).unwrap();
+    cox(work.path(), home.path(), GIT_THEN_TOUCH)
+        .assert()
+        .success()
+        .stdout("done\n");
+    assert!(work.path().join("chained").exists());
 }
 
 #[test]
@@ -255,6 +317,33 @@ fn ext_lists_commands_and_agents_from_the_project_tree() {
         "{text}"
     );
     assert!(text.contains("notices: none"), "{text}");
+}
+
+#[test]
+fn ext_list_marks_a_disabled_agent_but_still_shows_it() {
+    // T34.10: `disabled: true` hides a def from the `agent` tool's own
+    // description (crates/cox-core/src/subagent.rs), but `cox ext list`
+    // still reports it, marked, since it exists on disk either way.
+    let work = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(work.path().join(".cox/agents")).unwrap();
+    std::fs::write(
+        work.path().join(".cox/agents/blocked.md"),
+        "---\nname: blocked\ndescription: not for the model\ndisabled: true\n---\nbody",
+    )
+    .unwrap();
+    let out = assert_cmd::Command::cargo_bin("cox")
+        .unwrap()
+        .args(["--cwd", work.path().to_str().unwrap(), "ext", "list"])
+        .env("COX_HOME", home.path())
+        .env("HOME", home.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("blocked (disabled)"), "{text}");
 }
 
 /// `cox stats` reads the store under `COX_HOME`, not one it creates in the

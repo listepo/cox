@@ -1,0 +1,8 @@
+# T33.28: one failed tool call (the file does not exist), then an answer,
+# so a post-tool plugin hook sees exactly one failure per user turn.
+[[turn]]
+text = "reading"
+tool_calls = [{ name = "read", input = { path = "missing.txt" } }]
+
+[[turn]]
+text = "done"

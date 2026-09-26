@@ -182,6 +182,28 @@ pub enum CoreError {
         /// The hook's error text.
         error: String,
     },
+    /// A subagent action was refused by a named guard — T34.2's
+    /// concurrency cap or T34.6's message-flood cap — shaped like
+    /// `ToolError::Denied` so `Relay::send_message` can hand the same text
+    /// back to whoever called it.
+    #[error("denied: {why}")]
+    Denied {
+        /// Human-readable reason.
+        why: String,
+    },
+    /// An external agent process (EA§5, e.g. a plugin-driven CLI like
+    /// Cursor's) reported its own run as failed. Distinct from `Provider`
+    /// (A58): the external agent stands in for a whole child session, not
+    /// cox's own model call, so its failure must never be classified or
+    /// retried as one — `cox-provider-http::retry::retryable` only ever
+    /// takes a `ProviderError`, which this variant never becomes.
+    #[error("external agent {agent} failed: {message}")]
+    ExternalAgent {
+        /// The external agent's name (its plugin/preset id).
+        agent: String,
+        /// The agent's own error text, already sanitized by the caller.
+        message: String,
+    },
 }
 
 /// Failures from `cox-store`.
@@ -214,6 +236,10 @@ pub enum StoreError {
     /// The underlying SQLite call failed.
     #[error("sqlite error")]
     Sqlite,
+    /// A plugin kv write went over quota (PL§3: 64 KiB per value, 1 MiB per
+    /// plugin across all its keys).
+    #[error("plugin kv quota exceeded")]
+    QuotaExceeded,
 }
 
 /// Failures from `cox-ext` (instruction files, skills, hooks, commands).

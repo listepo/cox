@@ -1,0 +1,50 @@
+// Smoke test for the {{id}} plugin (`cox plugin new` scaffold): installs
+// the package into a scratch COX_HOME with `cox plugin install --yes`,
+// then checks that `cox plugin list --json` reports it granted. Run
+// `just build` first (or `dart compile exe bin/server.dart -o
+// build/{{crate_name}}`); this test only stages/installs the package, it
+// never compiles Dart itself, and shells out to whatever `cox` is on
+// `PATH`.
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:test/test.dart';
+
+const String id = '{{id}}';
+
+void main() {
+  test('installs and is granted in a scratch COX_HOME', () async {
+    final packageDir = Directory.current.path;
+
+    final home = await Directory.systemTemp.createTemp('cox-home-');
+    addTearDown(() => home.delete(recursive: true));
+
+    final install = await Process.run('cox', [
+      'plugin',
+      'install',
+      packageDir,
+      '--yes',
+    ], environment: {'COX_HOME': home.path, 'HOME': home.path});
+    expect(
+      install.exitCode,
+      0,
+      reason: 'cox plugin install failed (is cox on PATH?): ${install.stderr}',
+    );
+
+    final list = await Process.run('cox', [
+      'plugin',
+      'list',
+      '--json',
+    ], environment: {'COX_HOME': home.path, 'HOME': home.path});
+    expect(list.exitCode, 0, reason: 'cox plugin list failed: ${list.stderr}');
+
+    final json = jsonDecode(list.stdout as String) as Map<String, dynamic>;
+    final plugins = json['plugins'] as List<dynamic>;
+    final plugin = plugins.cast<Map<String, dynamic>>().firstWhere(
+      (p) => p['id'] == id,
+      orElse: () => throw StateError('$id not in `cox plugin list --json`: $json'),
+    );
+    expect(plugin['loaded'], isTrue, reason: '$plugin');
+  });
+}

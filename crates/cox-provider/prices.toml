@@ -1,13 +1,17 @@
 # Model pricing table (plan.md §1.4/T1.7).
 # Prices in USD per million tokens (MTok).
-# Cache pricing: cache_write is 1.25× input_price, cache_read is multiplier × input_price.
+# Cache pricing: cache_write happens to be 1.25x input_price for
+# Anthropic's own SKUs; cache_read is an absolute USD/MTok rate, not a
+# multiplier — see usage.rs PriceTable::cost.
 # Verified on 2026-09-02 from https://platform.claude.com/docs/pricing
-# Type-2 provider rows verified on 2026-09-04 from https://models.dev
-# (registry cache ~/.cache/opencode/models.json, opencode 1.18.27) against
-# each vendor's pricing page; ids match default.toml [providers.*].models
-# exactly so every catalogued model prices its ledger row. OpenAI-compatible
-# vendors bill no cache-write surcharge (cache_write = 0); tiered
-# context-overage pricing (gpt-5.5/5.6-sol, grok) is recorded at the base tier.
+# Type-2 provider rows regenerated on 2026-09-25 from https://models.dev/api.json by
+# `uv run --project scripts/vendor cox-vendor models` (scripts/vendor/src/
+# cox_vendor/models.py) — re-run that command to refresh instead of
+# hand-editing. ids match default.toml [providers.*].models exactly so
+# every catalogued model prices its ledger row. OpenAI-compatible vendors
+# bill no cache-write surcharge unless models.dev's `cost.cache_write` says
+# otherwise; tiered context-overage pricing (gpt-5.5/5.6-sol, grok) is
+# recorded at the base tier.
 
 [[model]]
 id = "claude-fable-5-1"
@@ -67,18 +71,18 @@ source_url = "https://models.dev"
 id = "gpt-5.6-sol"
 input = 4.0
 output = 20.0
-cache_write = 0.0
-cache_read = 0.40
-verified_on = "2026-09-04"
+cache_write = 5.0
+cache_read = 0.4
+verified_on = "2026-09-25"
 source_url = "https://models.dev"
 
 [[model]]
 id = "deepseek-v4-flash"
-input = 0.14
-output = 0.28
+input = 0.15
+output = 0.6
 cache_write = 0.0
-cache_read = 0.0028
-verified_on = "2026-09-04"
+cache_read = 0.003
+verified_on = "2026-09-25"
 source_url = "https://models.dev"
 
 [[model]]
@@ -92,11 +96,11 @@ source_url = "https://models.dev"
 
 [[model]]
 id = "deepseek-v4-flash-vision-exp"
-input = 0.14
-output = 0.28
+input = 0.15
+output = 0.6
 cache_write = 0.0
-cache_read = 0.0028
-verified_on = "2026-09-04"
+cache_read = 0.003
+verified_on = "2026-09-25"
 source_url = "https://models.dev"
 
 [[model]]
@@ -155,11 +159,11 @@ source_url = "https://models.dev"
 
 [[model]]
 id = "deepseek/deepseek-v4-pro"
-input = 1.04226
-output = 2.08452
+input = 0.591252
+output = 1.182504
 cache_write = 0.0
-cache_read = 0.086855
-verified_on = "2026-09-04"
+cache_read = 0.049271
+verified_on = "2026-09-25"
 source_url = "https://models.dev"
 
 [[model]]

@@ -9,46 +9,15 @@ use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::diff;
-use crate::glyph::Glyphs;
+use crate::item_render::ItemRender;
 use crate::link;
 use crate::markdown;
 use crate::state::Cell;
 use crate::text;
-use crate::theme::Theme;
 
-/// What rendering needs from the state besides the cell itself.
-#[derive(Debug, Clone, Copy)]
-pub struct Look {
-    pub width: u16,
-    /// The syntect theme every highlighted span uses, already resolved from
-    /// `tui.syntax_theme` and `tui.theme`.
-    pub theme: &'static str,
-    /// What the terminal can print; `glyph::resolve` decided it.
-    pub glyphs: Glyphs,
-    /// `Ctrl+T`: thinking expanded rather than a one-line count.
-    pub show_thinking: bool,
-    /// `Ctrl+O`: diffs in full rather than their `+n −m` header.
-    pub show_diffs: bool,
-    /// `tui.diff` (T24.5): whether a wide viewport splits a diff in two.
-    pub diff: diff::Mode,
-    /// Ticks (100 ms) since start; drives the spinner and elapsed time.
-    pub tick: u64,
-    /// `tui.motion = reduced` (T24.7): nothing on screen moves by itself.
-    pub still: bool,
-    /// Leave `text::sanitize` markers where something was removed.
-    pub marks: bool,
-    /// The semantic colour tokens (T24.1) every styled span picks from,
-    /// resolved from `tui.theme`/`NO_COLOR`; never a bare colour literal.
-    pub colors: Theme,
-    /// `Ctrl+E` (T24.4): whether *this* tool cell is the one still in the
-    /// viewport that the key can reach. `None` — not that cell, `Ctrl+E`
-    /// cannot open it, the fold line points at `/expand <id>` instead.
-    /// `Some(open)` — it is; the fold line reads `Ctrl+E` and folding is
-    /// skipped once `open` is true. Per-cell, so it is not part of the one
-    /// `Look` a whole render pass shares; the caller (`view.rs`) sets it for
-    /// the single index it applies to.
-    pub expand_last: Option<bool>,
-}
+/// T32.2: `Look` moved to `cox-render` with the renderers that take it;
+/// re-exported here so `cells::Look` keeps working.
+pub use cox_render::Look;
 
 /// Output longer than head + tail + 1 lines is folded in the middle; the
 /// archive keeps the rest (`cox expand <id>`).
@@ -113,6 +82,12 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             );
             lines
         }
+        // T33.26: a plugin's rendering stands in for the markdown; the
+        // text the model wrote is untouched in the cell and the rollout.
+        Cell::Assistant {
+            render: ItemRender::Plugin(w),
+            ..
+        } => crate::plugin_ui::lines(w, look.width, &look.colors, look.marks),
         Cell::Assistant { text, .. } => markdown::render(&clean(text), look),
         Cell::Thinking { text, done, .. } if !look.show_thinking => {
             // No tokenizer here; four bytes a token is the usual estimate.
@@ -151,6 +126,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             result,
             started,
             user,
+            render,
         } => {
             let sep = g.sep;
             // The card's phase: no result yet, a result that succeeded, or
@@ -218,7 +194,17 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             // An error shows its output whole rather than hide the reason it
             // failed; otherwise `Ctrl+E` on the one eligible cell does.
             let force_open = phase_ok == Some(false) || look.expand_last == Some(true);
-            if !force_open && out.len() > HEAD + TAIL + 1 {
+            // T33.26: a plugin's rendering replaces the output body only;
+            // the header, the diff and the footer (with its `cox expand`)
+            // stay built-in, so a renderer cannot hide what ran or changed.
+            if let ItemRender::Plugin(w) = render {
+                let inner = look.width.saturating_sub(2);
+                lines.extend(
+                    crate::plugin_ui::lines(w, inner, &look.colors, look.marks)
+                        .into_iter()
+                        .map(|l| rail(l, rail_glyph, rail_style)),
+                );
+            } else if !force_open && out.len() > HEAD + TAIL + 1 {
                 lines.extend(body(&out[..HEAD]));
                 let hidden = out.len() - HEAD - TAIL;
                 let hint = if look.expand_last == Some(false) {
@@ -316,6 +302,36 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             ))];
             lines.extend(clean(text).lines().map(|l| dim(format!("  {l}"))));
             lines
+        }
+        // T34.7/SM§6: `label`/`text` are already sanitized in `update`
+        // (state.rs), like `Modal::Diff`'s text — no second `clean()` pass
+        // here. Styled like `Approval::from_agent`'s "X asks:" prefix
+        // (`modal.rs`): bold, `theme.agent`, inserted before the body.
+        Cell::TaskMessage {
+            label,
+            text,
+            from_task,
+        } => {
+            let bold = Style::default().add_modifier(Modifier::BOLD);
+            let prefix = if *from_task {
+                format!("{label} says: ")
+            } else {
+                format!("→ {label}: ")
+            };
+            let pad = " ".repeat(prefix.width());
+            text.lines()
+                .enumerate()
+                .map(|(i, l)| {
+                    if i == 0 {
+                        Line::from(vec![
+                            Span::styled(prefix.clone(), bold.fg(look.colors.agent)),
+                            Span::raw(l.to_string()),
+                        ])
+                    } else {
+                        Line::raw(format!("{pad}{l}"))
+                    }
+                })
+                .collect()
         }
     };
     wrap(lines, look.width)

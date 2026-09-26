@@ -7,24 +7,33 @@ license.workspace = true
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# T30.24: the model/price catalog moved out of usage.rs into its own pure
+# crate; Priced/ledger_row still price every call through it.
+cox-models = { path = "../cox-models", version = "0.1.2" }
+# T32.10: token estimation/counting (tiktoken-rs and its BPE data) moved to
+# its own crate; re-exported at the old `tokens` path
+# (crates/cox-provider/src/lib.rs) so existing callers keep working.
+cox-tokens = { path = "../cox-tokens", version = "0.1.2" }
+# T32.12: http.rs/retry.rs/sse.rs moved out; re-exported at their old paths
+# (`crate::http`, `crate::retry`, `crate::sse`) for every wire still here.
+cox-provider-http = { path = "../cox-provider-http", version = "0.1.2" }
+# T32.11: the pure scenario/cassette helpers behind `scripted`/`replay`,
+# reused (and re-exported) so their tests don't need the network wire.
+cox-provider-testkit = { path = "../cox-provider-testkit", version = "0.1.2" }
+# T32.14: the OpenAI Responses/Chat wires and their SDK types moved out;
+# re-exported at the old `openai` path (crates/cox-provider/src/lib.rs).
+cox-provider-openai = { path = "../cox-provider-openai", version = "0.1.2" }
+# T32.13: the Anthropic Messages wire and its typify build step moved out;
+# re-exported at the old `anthropic` path (crates/cox-provider/src/lib.rs).
+cox-provider-anthropic = { path = "../cox-provider-anthropic", version = "0.1.2" }
 async-trait = { workspace = true }
-keyring = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-# OpenAI-side token counting for T1.8 (no Anthropic-tokenizer equivalent is public).
-tiktoken-rs = { workspace = true }
-# T1.2: SSE parsing (sse.rs) over a reqwest byte stream.
-eventsource-stream = { workspace = true }
-bytes = { workspace = true }
 futures = { workspace = true }
-# T1.7: the price table (`config/prices.toml`) is deserialised with the
-# workspace's existing TOML reader rather than a second toml crate.
 serde = { workspace = true }
 thiserror = { workspace = true }
-figment = { workspace = true }
-sha2 = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }

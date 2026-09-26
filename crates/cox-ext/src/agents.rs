@@ -1,12 +1,16 @@
 //! Subagent definitions from `.claude/agents/*.md` and `.cox/agents/*.md`
 //! (T7.3): `name`, `description`, `tools`, `model`. A definition narrows
-//! what the `agent` tool may hand a child; the tier mapping from Claude's
-//! aliases lives here so every surface agrees on it.
+//! what the `agent` tool may hand a child.
+//!
+//! T34.1: `AgentDef` and `tier_for` moved to `cox_protocol::agent` (they
+//! cross into `cox-core`, which may not depend on `cox-ext`'s filesystem
+//! I/O) and are re-exported here at their old path, so this module keeps
+//! owning only `discover` and its parsing — the actual filesystem read.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cox_protocol::types::Tier;
+pub use cox_protocol::agent::{AgentDef, tier_for};
 use serde::Deserialize;
 
 use crate::frontmatter;
@@ -16,18 +20,6 @@ use crate::frontmatter;
 /// shows them with no config files present.
 const EXPLORE_MD: &str = include_str!("../agents/explore.md");
 const SHELL_MD: &str = include_str!("../agents/shell.md");
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AgentDef {
-    pub name: String,
-    pub description: String,
-    /// Tool names the child may use; empty means everything the parent has.
-    pub tools: Vec<String>,
-    pub model: Option<String>,
-    pub path: PathBuf,
-    /// The system prompt for the child.
-    pub body: String,
-}
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Discovered {
@@ -41,6 +33,9 @@ struct Header {
     description: Option<String>,
     tools: Option<serde_yaml::Value>,
     model: Option<String>,
+    /// T34.10: `disabled: true` hides the def from the model without
+    /// removing it from disk or from `cox ext list`.
+    disabled: Option<bool>,
 }
 
 /// `~/.cox/agents`, `~/.claude/agents`, `.cox/agents`, `.claude/agents`.
@@ -116,56 +111,13 @@ fn parse_agent_text(path: &Path, text: &str) -> Result<AgentDef, String> {
         model: header.model,
         path: path.to_path_buf(),
         body: body.trim().to_string(),
+        disabled: header.disabled.unwrap_or(false),
     })
-}
-
-/// How a `model:` value picks a tier: tier names, Claude's aliases
-/// (`haiku` → cheap, `sonnet` → code, `opus` → think), a model id by its
-/// family, `inherit`/absent → the parent's tier.
-pub fn tier_for(model: Option<&str>) -> Option<Tier> {
-    let m = model?.trim().to_ascii_lowercase();
-    if m == "inherit" || m.is_empty() {
-        return None;
-    }
-    let pick = |t| Some(t);
-    match m.as_str() {
-        "cheap" | "haiku" => pick(Tier::Cheap),
-        "code" | "sonnet" => pick(Tier::Code),
-        "think" | "opus" | "fable" => pick(Tier::Think),
-        id if id.contains("haiku") => pick(Tier::Cheap),
-        id if id.contains("opus") || id.contains("fable") => pick(Tier::Think),
-        _ => pick(Tier::Code),
-    }
-}
-
-impl AgentDef {
-    /// The parent's tools the child may keep, in the parent's order. A
-    /// listed tool the parent lacks is silently absent — a child can never
-    /// gain a tool by naming it.
-    pub fn restrict<T: Clone>(&self, tools: &[(String, T)]) -> Vec<T> {
-        tools
-            .iter()
-            .filter(|(name, _)| self.tools.is_empty() || self.tools.contains(name))
-            .map(|(_, t)| t.clone())
-            .collect()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn agents_model_aliases_map_to_tiers() {
-        assert_eq!(tier_for(Some("haiku")), Some(Tier::Cheap));
-        assert_eq!(tier_for(Some("sonnet")), Some(Tier::Code));
-        assert_eq!(tier_for(Some("opus")), Some(Tier::Think));
-        assert_eq!(tier_for(Some("think")), Some(Tier::Think));
-        assert_eq!(tier_for(Some("claude-haiku-4-5")), Some(Tier::Cheap));
-        assert_eq!(tier_for(Some("gpt-5")), Some(Tier::Code));
-        assert_eq!(tier_for(Some("inherit")), None);
-        assert_eq!(tier_for(None), None);
-    }
 
     #[test]
     fn agents_embedded_defaults_include_explore_and_shell() {
@@ -182,5 +134,21 @@ mod tests {
         let shell = &found.agents[1];
         assert_eq!(shell.tools, ["bash", "web_fetch"]);
         assert_eq!(shell.model.as_deref(), Some("haiku"));
+    }
+
+    #[test]
+    fn agents_disabled_frontmatter_field_is_parsed() {
+        let def = parse_agent_text(
+            &PathBuf::from("<test>/blocked.md"),
+            "---\nname: blocked\ndescription: not for the model\ndisabled: true\n---\nbody",
+        )
+        .unwrap();
+        assert!(def.disabled);
+        let enabled = parse_agent_text(
+            &PathBuf::from("<test>/scout.md"),
+            "---\nname: scout\ndescription: looks around\n---\nbody",
+        )
+        .unwrap();
+        assert!(!enabled.disabled);
     }
 }

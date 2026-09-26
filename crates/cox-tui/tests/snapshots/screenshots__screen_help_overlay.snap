@@ -6,7 +6,8 @@ expression: "shot(\"help_overlay\", &mut state)"
 Every key, grouped by context.
 [info] idle     Enter send · Shift+Tab mode cycle · @ file · / command · ? help · Shift+Enter
 newline · Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history · Ctrl+T thinking · Ctrl+O
-transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit · y copy · Shift+Y copy all
+transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+K plugin leader · Ctrl+C quit · Ctrl+D quit · y copy
+ · Shift+Y copy all
        running  Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter
         send now · Ctrl+Enter send now · Ctrl+U unqueue
        modal    Enter choose · Esc close · Up previous · Down next
@@ -14,7 +15,7 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit · y co
        /model [cheap|code|think] [model]                        switch a tier's model
        /think <prompt>                                          one turn on the think tier, price
        confirmed first
-       /effort [low|high|xhigh]                                 effort for the rest of the session;
+       /effort [low|medium|high|xhigh]                          effort for the rest of the session;
        bare restores the tier default
        /compact [focus]                                         compact the context now
        /rewind                                                  go back to an earlier turn: code,
@@ -36,6 +37,7 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit · y co
        /skills                                                  list skills
        /hooks                                                   list hooks
        /mcp                                                     MCP servers and their tools
+       /plugin <new|update|remove|list|reload> ...              manage plugins (PL§13)
        /doctor                                                  check the install
        /clear                                                   new session, same directory
        /fork [turn]                                             new child session with the history

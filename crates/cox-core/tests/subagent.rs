@@ -11,9 +11,25 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use common::{drain, open, run_with, scenario, spawn_turn, tool_results};
+use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::WorktreeError;
 use cox_protocol::traits::{Worktree, Worktrees};
 use cox_protocol::types::{Content, Decision, Event, Job, Source, Submission, Tier};
+
+/// A discovered `.cox/agents/reviewer.md`-shaped definition (T34.1): its
+/// `tools` narrows the child to `echo`, and its `model` picks the tier the
+/// same way a real file's `model: haiku` would (`cox_protocol::agent::tier_for`).
+fn reviewer_def(model: Option<&str>) -> AgentDef {
+    AgentDef {
+        name: "reviewer".into(),
+        description: "reviews a diff".into(),
+        tools: vec!["echo".into()],
+        model: model.map(str::to_string),
+        path: PathBuf::from("<test>/.cox/agents/reviewer.md"),
+        body: "You review changes for correctness.".into(),
+        disabled: false,
+    }
+}
 
 /// A `Worktrees` that records what the loop asked for and answers with a
 /// fixed path, so no git runs in this test.
@@ -298,4 +314,110 @@ async fn subagent_approval_carries_source() {
             .any(|e| matches!(e, Event::ApprovalDecided { call_id: id, .. } if *id == call_id))
     );
     assert_eq!(tool_results(&events), [(true, "tests ran".to_string())]);
+}
+
+/// T34.1: a name that is not `explore`/`shell` still dispatches when a
+/// `.cox/agents`/`.claude/agents` definition discovered it — the child
+/// gets exactly the def's own tool allowlist and tier.
+#[tokio::test]
+async fn agent_dispatches_a_discovered_custom_preset_by_name() {
+    let toml = r#"
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "look at diff", preset = "reviewer" } }]
+
+# child: the def's own tool
+[[turn]]
+text = "checking"
+tool_calls = [{ name = "echo", input = { text = "diff" } }]
+
+# child: answer
+[[turn]]
+text = "looks good"
+
+# parent
+[[turn]]
+text = "done"
+"#;
+    let (session, store, mut rx) = open(toml, cox_protocol::Config::default());
+    session.set_agent_defs(vec![reviewer_def(Some("haiku"))]);
+    let running = spawn_turn(&session, "go");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+
+    let created = events.iter().find_map(|e| match e {
+        Event::TaskCreated { tier, label, .. } => Some((*tier, label.clone())),
+        _ => None,
+    });
+    assert_eq!(
+        created,
+        Some((Tier::Cheap, "reviewer: look at diff".to_string())),
+        "the def's model: haiku picks the cheap tier"
+    );
+    assert_eq!(tool_results(&events), [(true, "looks good".to_string())]);
+    // T34.1: a custom preset's ledger rows are tagged `Job::Agent`; its
+    // own `tier`/`model` decides the tier, not this job (D5).
+    assert!(store.usage_rows().iter().any(|r| r.job == Job::Agent));
+}
+
+// T34.1: `agent_unknown_preset_lists_builtin_and_discovered_names_in_error`
+// lives in `crates/cox-core/src/subagent.rs`'s own unit tests instead of
+// here. A failed `resolve` makes `risk()` fall back to `Exec` (pre-existing
+// behaviour, unchanged by this task: an unresolvable call could be
+// anything), which needs an approval answer before a full turn ever reaches
+// `call()`'s own error text — the same claim is exact and deterministic one
+// level down, over `resolve()` directly, like `subagent_presets_are_explore_and_shell`.
+
+/// T34.1: `tier` may only lower a dispatch's tier, never raise it (D5
+/// "never up"). The def's `model` is absent (`inherit`), so its natural
+/// tier is the parent's own — `Code` for the top-level session.
+#[tokio::test]
+async fn agent_tier_override_is_honored_and_clamped() {
+    let lower = r#"
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "a", preset = "reviewer", tier = "cheap" } }]
+
+[[turn]]
+text = "answer a"
+
+[[turn]]
+text = "done"
+"#;
+    let (session, _store, mut rx) = open(lower, cox_protocol::Config::default());
+    session.set_agent_defs(vec![reviewer_def(None)]);
+    let running = spawn_turn(&session, "go");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let tier = events.iter().find_map(|e| match e {
+        Event::TaskCreated { tier, .. } => Some(*tier),
+        _ => None,
+    });
+    assert_eq!(tier, Some(Tier::Cheap), "a lower request is honoured");
+
+    let higher = r#"
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "b", preset = "reviewer", tier = "think" } }]
+
+[[turn]]
+text = "answer b"
+
+[[turn]]
+text = "done"
+"#;
+    let (session, _store, mut rx) = open(higher, cox_protocol::Config::default());
+    session.set_agent_defs(vec![reviewer_def(None)]);
+    let running = spawn_turn(&session, "go");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let tier = events.iter().find_map(|e| match e {
+        Event::TaskCreated { tier, .. } => Some(*tier),
+        _ => None,
+    });
+    assert_eq!(
+        tier,
+        Some(Tier::Code),
+        "a higher request is clamped to the parent's own tier (D5: never up)"
+    );
 }

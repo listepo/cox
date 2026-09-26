@@ -14,19 +14,44 @@
 //! - [`http`] — credential lookup, auth headers and error mapping shared by every network backend.
 //! - [`sse`] — generic Server-Sent-Events framing shared by every SSE-based provider.
 //! - [`retry`] — backoff before the first byte, shared by every network backend.
+//! - [`lmstudio`] — LM Studio's native `/api/v1` model list and load call (T30.16); not a chat wire.
+//!
+//! `http`, `retry` and `sse` are re-exports of `cox-provider-http` (T32.12:
+//! reuse (d) — every wire needs them without the rest of this crate), kept
+//! at these paths so `cox_provider::http::resolve_key_with` and every other
+//! `crate::http`/`crate::retry`/`crate::sse` call in this crate's own wires
+//! keep working unchanged.
+//!
+//! [`scripted`] and [`replay`] build on the pure scenario/cassette helpers
+//! in `cox-provider-testkit` (T32.11), re-exported at their old paths.
+//!
+//! [`anthropic`] is a re-export of `cox-provider-anthropic` (T32.13:
+//! dependencies (a), the typify build step, and size (c)), kept at this path
+//! so `cox_provider::anthropic::*` keeps working.
 
 #![warn(missing_docs)]
 
-pub mod anthropic;
-pub mod http;
+pub use cox_provider_anthropic as anthropic;
+pub use cox_provider_http::http;
 pub mod jev;
-pub mod openai;
+pub mod lmstudio;
 pub mod replay;
-pub mod retry;
+pub use cox_provider_http::retry;
 pub mod scripted;
-pub mod sse;
-pub mod tokens;
+pub use cox_provider_http::sse;
 pub mod usage;
+
+/// T32.10: token estimation/counting moved to its own crate (dependency
+/// (a): `tiktoken-rs` and its BPE data — `docs/design/crates.md`);
+/// re-exported here at the old path so `cox_provider::tokens::*` keeps
+/// working for existing callers.
+pub use cox_tokens as tokens;
+
+/// T32.14: the OpenAI Responses/Chat wires moved to their own crate
+/// (dependency (a): `async-openai`, and size (c) — `docs/design/crates.md`);
+/// re-exported here at the old path so `cox_provider::openai::*` keeps
+/// working for existing callers.
+pub use cox_provider_openai as openai;
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;

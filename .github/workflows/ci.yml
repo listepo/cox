@@ -32,6 +32,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
+          # The guest workspace `plugins/` builds for wasm32 (PL§13, T33.27).
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
 
@@ -85,6 +87,56 @@ jobs:
       - name: sandbox tests without bwrap
         run: cargo nextest run -p cox-tools sandbox_ bash_
 
+  # The guest workspace (plugins/, PL§9, T33.40.2): its own `cargo test`
+  # target (a separate workspace, so the root `test` job above never builds
+  # it) plus the wasm32-unknown-unknown build every plugin ships as.
+  plugins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: plugin tests
+        run: cargo test --manifest-path plugins/Cargo.toml --workspace
+
+      - name: plugin wasm32 build
+        run: cargo build --manifest-path plugins/Cargo.toml --workspace --target wasm32-unknown-unknown
+
+  # Guest-language examples that need a toolchain of their own (PL§13):
+  # each is `#[ignore]`d in the main `test` job with a reason naming
+  # `just plugin-examples <lang>`, so a missing toolchain here is a CI
+  # failure rather than a silently skipped test. Dart (T33.38) today;
+  # go/kotlin join this job once T33.34/T33.36 land.
+  plugin-examples:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@nextest
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.13.4"
+
+      - name: build the Dart example
+        run: |
+          cd plugins/examples/dart
+          dart pub get
+          mkdir -p build
+          dart compile exe bin/server.dart -o build/example_dart
+
+      - name: dart plugin example e2e
+        run: cargo nextest run -p cox --run-ignored only -E 'test(plugin_example_dart)'
+
   deny:
     runs-on: ubuntu-24.04
     steps:
@@ -123,7 +175,8 @@ jobs:
 
   revert-on-failure:
     name: revert-on-failure
-    needs: [test, sandbox-landlock, deny, audit, footprint]
+    needs:
+      [test, sandbox-landlock, plugins, plugin-examples, deny, audit, footprint]
     if: >-
       always()
       && github.event_name == 'push'

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use cox_protocol::{Risk, SandboxMode, Tool, ToolOutput};
-use cox_tools::bash::{BashTool, classify};
+use cox_tools::bash::{BashTool, classify, segments};
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
 use serde_json::{Value, json};
@@ -141,6 +141,41 @@ fn bash_cd_and_rm_rf_are_classified_destructive() {
     ];
     for (command, want) in cases {
         assert_eq!(classify(command), want, "{command:?}");
+    }
+}
+
+#[test]
+fn bash_segments_split_every_operator_and_keep_nested_commands() {
+    let split = |c: &str| {
+        let s = segments(c);
+        (s.commands, s.opaque)
+    };
+    let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        split("a 1; b && c || d | e & f\ng"),
+        (v(&["a 1", "b", "c", "d", "e", "f", "g"]), false)
+    );
+    assert_eq!(
+        split("for x in 1 2; do rm $x; done"),
+        (v(&["rm $x"]), false)
+    );
+    assert_eq!(
+        split("(cd x && ls) 2>&1 > /dev/null"),
+        (v(&["cd x", "ls"]), false)
+    );
+    // The name starts the segment, so a deny rule sees past the assignment.
+    assert_eq!(split("FOO=1 rm -rf x"), (v(&["rm -rf x"]), true));
+    assert_eq!(split("echo $(rm x)"), (v(&["echo $(rm x)", "rm x"]), true));
+    for opaque in [
+        "",
+        "x=1",
+        "git status &&",
+        "nohup bash -lc 'ls'",
+        "eval ls",
+        "ls > out",
+        "ls <(true)",
+    ] {
+        assert!(segments(opaque).opaque, "{opaque:?}");
     }
 }
 

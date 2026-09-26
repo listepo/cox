@@ -5,20 +5,48 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+# T35.7: `fake_agent` below makes this a two-binary package; `cargo run`
+# must keep meaning `cox`.
+default-run = "cox"
+
+# T35.7: the test-only stand-in for Cursor's `agent` CLI that
+# `tests/external_agents_cursor.rs` spawns. A `[[bin]]` because an
+# integration test can only find a binary of its own package
+# (`CARGO_BIN_EXE_fake_agent`); its only dependency is `serde_json`.
+[[bin]]
+name = "fake_agent"
+path = "tests/support/fake_agent.rs"
+test = false
+doc = false
+
+# T35.7: without this, dist puts `fake_agent` in every release archive next
+# to `cox` (checked with `dist plan`). One row per `targets` entry in
+# dist-workspace.toml; a new target needs its row here too.
+[package.metadata.dist.binaries]
+aarch64-apple-darwin = ["cox"]
+x86_64-apple-darwin = ["cox"]
+x86_64-unknown-linux-gnu = ["cox"]
+aarch64-unknown-linux-gnu = ["cox"]
 
 [features]
-default = ["otel"]
-otel = [
-    "dep:opentelemetry",
-    "dep:opentelemetry_sdk",
-    "dep:opentelemetry-otlp",
-    "dep:tracing-opentelemetry",
-    "dep:opentelemetry-appender-tracing",
-]
+default = ["otel", "plugins"]
+# T32.9: the five otel crates moved to cox-telemetry; this forwards the
+# feature rather than gating a dependency declared here.
+otel = ["cox-telemetry/otel"]
+# T33.3 (PL§12 falsifier 1): the WASM plugin host adds +16.8 MiB (extism and
+# wasmtime) to the release binary. On by default; a slim build drops it with
+# `--no-default-features --features otel`. Plugin code sits behind
+# `#[cfg(feature = "plugins")]`.
+plugins = ["dep:cox-plugin", "dep:cox-plugin-api"]
 
 [dependencies]
 clap = { workspace = true }
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+cox-plugin = { path = "../cox-plugin", version = "0.1.2", optional = true }
+# T33.4: `plugin_cmd::list` reads a manifest's declared `Capabilities` to
+# summarise a plugin without running it; `cox-plugin` (the extism host)
+# does not re-export the manifest/ABI types.
+cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2", optional = true }
 cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 cox-tools = { path = "../cox-tools", version = "0.1.2" }
@@ -27,13 +55,24 @@ cox-store = { path = "../cox-store", version = "0.1.2" }
 cox-ext = { path = "../cox-ext", version = "0.1.2" }
 cox-tui = { path = "../cox-tui", version = "0.1.2" }
 cox-acp = { path = "../cox-acp", version = "0.1.2" }
-# T0.3: config loading (figment layers default/user/project/env/flag),
-# `cox config set` (toml_edit, preserves comments), anyhow at the cox-crate
-# boundary (AGENTS.md: "anyhow only in crates/cox"), serde_json to build
-# the CLI-flag override layer and `--json` output.
-figment = { workspace = true }
-toml_edit = { workspace = true }
+# T32.1: `plain.rs` calls `sanitize` directly instead of pulling in the
+# whole TUI crate for it.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+# T32.9: process-wide logging and the OTLP stack.
+cox-telemetry = { path = "../cox-telemetry", version = "0.1.2" }
+# T30.25: `session.rs` resolves each provider's `Caps.max_context` from the
+# catalog before construction (the provider itself only takes `&Transport`).
+cox-models = { path = "../cox-models", version = "0.1.2" }
+# T32.16: config loading, guards, provenance and `cox config set` live in
+# cox-config (figment and toml_edit with them); this crate keeps the flag
+# layer built from `Cli` and the printing.
+cox-config = { path = "../cox-config", version = "0.1.2" }
+# anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
+# serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }
+# T33.29: `plugin_new::PluginNewError`, so the TUI's future `/plugin new`
+# (T33.30) gets a typed error to match on instead of anyhow's text.
+thiserror = { workspace = true }
 # T0.7: the CLI boundary loads .env/.env.local before parsing flags.
 dotenvy = { workspace = true }
 serde_json = { workspace = true }
@@ -42,22 +81,29 @@ keyring = { workspace = true }
 crossterm = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-tracing-appender = { workspace = true }
-opentelemetry = { workspace = true, optional = true }
-opentelemetry_sdk = { workspace = true, optional = true }
-opentelemetry-otlp = { workspace = true, optional = true }
-tracing-opentelemetry = { workspace = true, optional = true }
-opentelemetry-appender-tracing = { workspace = true, optional = true }
 # T12.2: `cox self update` downloads releases (reqwest) and verifies their
 # sha256 checksums (sha2) before replacing the binary.
 reqwest = { workspace = true }
 sha2 = { workspace = true }
 # T5.8: the binary owns the async runtime the TUI and core loop run on.
 tokio = { workspace = true }
+# T35.13: the external-agent drivers implement `ExternalAgent`
+# (`#[async_trait]`, its `CancellationToken`) and hand the spawned CLI's
+# tokio stdio to the ACP client, which reads `futures` I/O (`compat`).
+# Both were already dev-dependencies here and ship in the workspace.
+async-trait = { workspace = true }
+tokio-util = { workspace = true, features = ["compat"] }
+# T35.13: the ACP driver sends `session/new`/`session/prompt` and frames
+# the CLI's stdio (`ByteStreams`); already `cox-acp`'s dependency.
+agent-client-protocol = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# T32.16: the shared env-var lock (`temp_env`) for env-mutating tests.
+cox-config = { path = "../cox-config", version = "0.1.2", features = ["test-util"] }
+# T12.3: `tests/docs.rs` walks `default.toml`'s keys (was a normal
+# dependency until T32.16 moved `cox config set` to cox-config).
+toml_edit = { workspace = true }
 # T6.1: `cox run -p` per output format against the real binary.
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
@@ -65,8 +111,17 @@ insta = { workspace = true }
 # T5.8: PTY end-to-end of the real binary (plan D10).
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
-# T22.1: the `ask_user` surface-wiring test builds a `ToolCx` by hand,
-# which needs a stub `Archive` (`#[async_trait]`, like cox-tools' own) and
-# a `CancellationToken`; both already ship in the workspace.
-async-trait = { workspace = true }
-tokio-util = { workspace = true }
+# T33.17: `plugin_chat_section_builds_openai_shaped_client` and
+# `plugin_provider_request_has_usage_row` drive a merged `[[provider]]`
+# section's real OpenAI-shaped client against a mock server, no real
+# network — already a workspace dependency (`cox-provider-openai`'s own
+# wiremock tests).
+wiremock = { workspace = true }
+# T33.28: the Rust reference plugin built from `plugins/examples/rust` for
+# `tests/plugins.rs` and `examples/plugin_bench.rs` (PL§13); a workspace
+# crate with no dependencies of its own.
+cox-plugin-fixtures = { path = "../cox-plugin-fixtures" }
+
+[[example]]
+name = "plugin_bench"
+required-features = ["plugins"]

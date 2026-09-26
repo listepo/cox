@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # T30.3 PostToolUse hook (matcher: edit|apply_patch|write), wired by
-# `evals/run.py --preset verify` through the task's COX_HOME/config.toml.
+# `cox-evals --preset verify` through the task's COX_HOME/config.toml.
 #
 # Detects the project's test command (in order: `just test`, `cargo
 # nextest run`, `npm test`, `pytest`), runs it under `sh -c` with a 120s

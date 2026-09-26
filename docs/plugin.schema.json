@@ -1,0 +1,569 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PluginManifest",
+  "description": "A whole `plugin.toml`. Unknown keys are an error at every level: the\nmanifest is ours, and a misspelt capability must not silently grant less\n(or be read later as more) than the author meant.",
+  "type": "object",
+  "properties": {
+    "api": {
+      "description": "ABI major the package was built against.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "id": {
+      "description": "Package id, `^[a-z][a-z0-9-]{1,23}$`.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Package version as the author writes it.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human-readable name shown at approval.",
+      "type": "string"
+    },
+    "description": {
+      "description": "One-line description shown at approval.",
+      "type": "string",
+      "default": ""
+    },
+    "wasm": {
+      "description": "The module to load, relative to the package directory. Absent only\nwhen the package's sole capability is an `[[mcp]]` stdio/HTTP server\n(PL§13/§14, T33.38): `validate` then requires `capabilities` to be\nits default and `provider`/`models`/`external_agents` to be empty,\nsince every other capability class needs a wasm export to back it.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "wasi": {
+      "description": "True for wasip1 guests; no preopens unless `capabilities.fs` grants them.",
+      "type": "boolean",
+      "default": false
+    },
+    "limits": {
+      "description": "Resource requests; the host clamps them to its maxima.",
+      "$ref": "#/$defs/Limits",
+      "default": {
+        "memory_mib": null,
+        "call_ms": null
+      }
+    },
+    "capabilities": {
+      "description": "Everything the plugin asks for; each entry is one approval line.",
+      "$ref": "#/$defs/Capabilities",
+      "default": {
+        "events": [],
+        "hooks": [],
+        "tools": [],
+        "invoke": [],
+        "context": false,
+        "kv": false,
+        "model": null,
+        "net": [],
+        "fs": {
+          "read": [],
+          "write": []
+        },
+        "decide": [],
+        "ui": {
+          "status": false,
+          "panel": false,
+          "overlay": false,
+          "commands": false,
+          "keys": false,
+          "render": []
+        }
+      }
+    },
+    "provider": {
+      "description": "`[[provider]]` sections (PL§7a).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderDecl"
+      },
+      "default": []
+    },
+    "models": {
+      "description": "`[[models]]` catalog rows (PL§7b).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ModelDecl"
+      },
+      "default": []
+    },
+    "mcp": {
+      "description": "`[[mcp]]` server declarations (PL§7c).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/McpDecl"
+      },
+      "default": []
+    },
+    "external_agents": {
+      "description": "`[[external_agents]]` entries: a plugin-brought external agent CLI\ndriven over ACP or `stream-json` (P35, EA§1 in\n`docs/design/external-agents.md`).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ExternalAgentDecl"
+      },
+      "default": []
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "api",
+    "id",
+    "version",
+    "name"
+  ],
+  "$defs": {
+    "Limits": {
+      "description": "`[limits]`. Absent means \"the host default\".",
+      "type": "object",
+      "properties": {
+        "memory_mib": {
+          "description": "Linear memory in MiB.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "call_ms": {
+          "description": "Default per-call budget in milliseconds.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Capabilities": {
+      "description": "`[capabilities]`: the unit of approval.",
+      "type": "object",
+      "properties": {
+        "events": {
+          "description": "`Event` serde tags the plugin subscribes to.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "hooks": {
+          "description": "`HookEvent` names the plugin handles.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "tools": {
+          "description": "Tools it exports; each becomes `wasm__<id>__<tool>`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "invoke": {
+          "description": "Tools it may call; each call still passes the permission engine.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "context": {
+          "description": "The event-folded context snapshot.",
+          "type": "boolean",
+          "default": false
+        },
+        "kv": {
+          "description": "The per-plugin key-value store.",
+          "type": "boolean",
+          "default": false
+        },
+        "model": {
+          "description": "Tier ceiling for `cox_model_call`; absent means no model access.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelTier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "net": {
+          "description": "Host patterns `cox_http` may reach.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "fs": {
+          "description": "WASI preopens.",
+          "$ref": "#/$defs/FsCaps",
+          "default": {
+            "read": [],
+            "write": []
+          }
+        },
+        "decide": {
+          "description": "Decision points (PL§6b) the plugin can answer.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "ui": {
+          "description": "TUI contributions (PL§8).",
+          "$ref": "#/$defs/UiCaps",
+          "default": {
+            "status": false,
+            "panel": false,
+            "overlay": false,
+            "commands": false,
+            "keys": false,
+            "render": []
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ModelTier": {
+      "description": "The highest tier a plugin may ask the router for. `think` is not a\nvariant, so no manifest can request it (D5).",
+      "oneOf": [
+        {
+          "description": "The low-cost tier.",
+          "type": "string",
+          "const": "cheap"
+        },
+        {
+          "description": "The coding tier; must be named explicitly.",
+          "type": "string",
+          "const": "code"
+        }
+      ]
+    },
+    "FsCaps": {
+      "description": "`capabilities.fs`: roots are `$WORKSPACE`, `$PLUGIN_DATA` or inside them.",
+      "type": "object",
+      "properties": {
+        "read": {
+          "description": "Read-only preopens.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "write": {
+          "description": "Read-write preopens.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "UiCaps": {
+      "description": "`capabilities.ui`.",
+      "type": "object",
+      "properties": {
+        "status": {
+          "description": "Status-line segments.",
+          "type": "boolean",
+          "default": false
+        },
+        "panel": {
+          "description": "A bottom panel.",
+          "type": "boolean",
+          "default": false
+        },
+        "overlay": {
+          "description": "An overlay.",
+          "type": "boolean",
+          "default": false
+        },
+        "commands": {
+          "description": "Slash commands.",
+          "type": "boolean",
+          "default": false
+        },
+        "keys": {
+          "description": "Keys under the plugin leader.",
+          "type": "boolean",
+          "default": false
+        },
+        "render": {
+          "description": "Render targets: `tool:<name>` or `item:assistant_message`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderDecl": {
+      "description": "A `[[provider]]` section (PL§7a).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Section name, as a tier's `provider` refers to it.",
+          "type": "string"
+        },
+        "api": {
+          "description": "Which wire drives it.",
+          "$ref": "#/$defs/ProviderApi"
+        },
+        "base_url": {
+          "description": "Endpoint; for `plugin`, the only host its `cox_http` may reach.",
+          "type": "string"
+        },
+        "api_key_env": {
+          "description": "Env var the host resolves the key from; the key never enters wasm.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "auth": {
+          "description": "How the host attaches the key.",
+          "$ref": "#/$defs/ProviderAuth",
+          "default": "bearer"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "api",
+        "base_url"
+      ]
+    },
+    "ProviderApi": {
+      "description": "The wire a provider section speaks.",
+      "oneOf": [
+        {
+          "description": "OpenAI Chat Completions, driven by cox's own client.",
+          "type": "string",
+          "const": "chat"
+        },
+        {
+          "description": "OpenAI Responses, driven by cox's own client.",
+          "type": "string",
+          "const": "responses"
+        },
+        {
+          "description": "The plugin's `cox_provider_stream` export.",
+          "type": "string",
+          "const": "plugin"
+        }
+      ]
+    },
+    "ProviderAuth": {
+      "description": "The auth header the host adds.",
+      "oneOf": [
+        {
+          "description": "`Authorization: Bearer <key>`.",
+          "type": "string",
+          "const": "bearer"
+        },
+        {
+          "description": "`x-api-key: <key>`.",
+          "type": "string",
+          "const": "x-api-key"
+        },
+        {
+          "description": "No key.",
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
+    "ModelDecl": {
+      "description": "A `[[models]]` row: a fill-only catalog layer (PL§7b).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Model id as sent on the wire.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "The provider section serving it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context_window": {
+          "description": "Context window in tokens.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "max_output": {
+          "description": "Max output tokens.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "price": {
+          "description": "USD per million tokens.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PriceDecl"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    },
+    "PriceDecl": {
+      "description": "A `[[models]]` price, USD per million tokens.",
+      "type": "object",
+      "properties": {
+        "input": {
+          "description": "Input tokens.",
+          "type": "number",
+          "format": "double"
+        },
+        "output": {
+          "description": "Output tokens.",
+          "type": "number",
+          "format": "double"
+        },
+        "cache_read": {
+          "description": "Cache-read tokens.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "cache_write": {
+          "description": "Cache-write tokens.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "output"
+      ]
+    },
+    "McpDecl": {
+      "description": "A `[[mcp]]` server (PL§7c): a stdio `command` or an HTTP `url`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Server name; tools appear as `mcp__<id>-<name>__<tool>`.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Program inside the package or on PATH.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "args": {
+          "description": "Arguments for `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "url": {
+          "description": "Streamable-HTTP endpoint.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "ExternalAgentDecl": {
+      "description": "A `[[external_agents]]` entry (EA§1): a host-spawned external agent CLI,\nnever a WASM export — a guest cannot open a process (EA§2).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The `agent(preset: \"<name>\")` dispatch name (EA§1, EA§3).",
+          "type": "string"
+        },
+        "command": {
+          "description": "Program inside the package or on PATH.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Arguments for `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "mode": {
+          "description": "Which headless protocol the process speaks.",
+          "$ref": "#/$defs/AgentMode"
+        },
+        "key_env": {
+          "description": "Env var the host resolves the key from with `resolve_key` (D12/A49);\na name, never a value — the key never enters wasm and is never\nhand-typed into the manifest.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "command",
+        "mode",
+        "key_env"
+      ]
+    },
+    "AgentMode": {
+      "description": "The headless protocol an `[[external_agents]]` entry speaks.",
+      "oneOf": [
+        {
+          "description": "Agent Client Protocol over stdio (EA§4): cox is the client.",
+          "type": "string",
+          "const": "acp"
+        },
+        {
+          "description": "The line-oriented `stream-json` protocol (EA§5): a pure host-side\nline mapper onto `cox_protocol::Event`/`Item`.",
+          "type": "string",
+          "const": "stream-json"
+        }
+      ]
+    }
+  }
+}

@@ -78,6 +78,7 @@ fn status_line_shows_question_in_the_mode_slot_while_the_modal_is_open() {
             call: CallId::new(),
             question: "which environment?".into(),
             options: vec![],
+            agent: None,
         },
     );
     let line = cox_tui::status::line(&state).to_string();
@@ -166,6 +167,7 @@ fn command_todo_shows_the_panel_from_the_tool_output() {
                 input: serde_json::json!({}),
                 risk: Risk::ReadOnly,
                 subject: "3 items".into(),
+                segments: None,
             },
         }),
     );
@@ -196,12 +198,18 @@ fn command_slash_effort_sets_or_clears_the_session_effort() {
         }))
     );
     assert_eq!(
+        commands::parse("/effort medium", Tier::Code),
+        Some(Action::Submit(Submission::SetEffort {
+            effort: Some(Effort::Medium)
+        }))
+    );
+    assert_eq!(
         commands::parse("/effort", Tier::Code),
         Some(Action::Submit(Submission::SetEffort { effort: None }))
     );
     assert!(matches!(
         commands::parse("/effort max", Tier::Code),
-        Some(Action::Notice(text)) if text.contains("xhigh")
+        Some(Action::Notice(text)) if text.contains("medium") && text.contains("xhigh")
     ));
 }
 

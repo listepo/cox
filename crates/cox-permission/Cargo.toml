@@ -1,0 +1,15 @@
+[package]
+name = "cox-permission"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# T2.2: permission rules compile path globs (`Read(~/.ssh/**)`) once.
+globset = { workspace = true }
+
+[dev-dependencies]
+# `Engine::decide`'s doctest builds a `ToolCall` input.
+serde_json = { workspace = true }

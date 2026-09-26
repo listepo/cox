@@ -95,6 +95,41 @@ fn agents_overlay_lists_one_row_per_card() {
     insta::assert_snapshot!(rows.join("\n"));
 }
 
+/// T34.7/SM§6: a delivered `Event::TaskMessage` updates that task's narrow
+/// `/agents` card with a `last:` line instead of a new progress event
+/// stream — the row keeps its `preset`/`tier`/`cost`/`elapsed`/`running`
+/// shape and grows one more `·` segment.
+#[test]
+fn task_message_adds_a_last_message_line_to_the_agents_card() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let task = TaskId::new();
+    update(
+        &mut state,
+        Msg::Event(Event::TaskCreated {
+            task,
+            label: "explore: find the flaky test".into(),
+            tier: Tier::Cheap,
+        }),
+    );
+    update(
+        &mut state,
+        Msg::Event(Event::TaskMessage {
+            task,
+            from: Some(task),
+            hop: 1,
+            text: "found it: flaky_sleep in tests/shell.rs".into(),
+        }),
+    );
+    for _ in 0..7 {
+        update(&mut state, Msg::Tick);
+    }
+    common::type_line(&mut state, "/agents");
+    let Some(Modal::Agents { rows, .. }) = &state.modal else {
+        panic!("no agents overlay");
+    };
+    insta::assert_snapshot!(rows.join("\n"));
+}
+
 #[test]
 fn agents_command_says_so_when_alone() {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);

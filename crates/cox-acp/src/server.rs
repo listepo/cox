@@ -3,7 +3,10 @@
 //! handlers over one `Event` stream per session. Request handlers never
 //! block the dispatch loop: `session/prompt` spawns its turn driver and
 //! answers late through the moved `Responder`, so `session/cancel` and
-//! permission replies keep flowing mid-turn.
+//! permission replies keep flowing mid-turn. `drive_prompt`'s loop also
+//! gives a background task's lifecycle and any delivered follow-up
+//! (`Event::TaskCreated`/`TaskCompleted`/`TaskMessage`, T34.8) their own
+//! `session/update` notifications instead of dropping them.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,6 +20,7 @@ use agent_client_protocol::schema::v1::{
     RequestPermissionOutcome, RequestPermissionRequest, SessionId, SessionNotification,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo};
+use cox_protocol::ids::TaskId;
 use cox_protocol::types::{Decision, Event, Submission, ToolCall, Why};
 use tokio::sync::{broadcast, mpsc};
 
@@ -321,6 +325,9 @@ async fn drive_prompt(
     let _guard = live.prompt_lock.lock().await;
     let mut bcast = live.bcast.subscribe();
     let text = prompt_text(&req.prompt);
+    // Labels of tasks created during this prompt, so a `TaskMessage` from a
+    // sibling can be shown by name instead of its bare `TaskId` (SM§6).
+    let mut task_labels: HashMap<TaskId, String> = HashMap::new();
     let turn = tokio::spawn({
         let live = live.clone();
         async move {
@@ -347,6 +354,31 @@ async fn drive_prompt(
                     })
                     .await;
             }
+            // A background task (subagent or detached `bash`) started: shown
+            // as a tool call so the client's task list picks it up, labelled
+            // like `ask_permission` labels a relayed approval (T34.8).
+            Ok(Event::TaskCreated { task, label, .. }) => {
+                let update = task_created_update(&mut task_labels, task, &label);
+                let _ = conn.send_notification(SessionNotification::new(acp_id.clone(), update));
+            }
+            // The matching completion: same `ToolCallId`, moved to `Completed`.
+            Ok(Event::TaskCompleted {
+                task,
+                cost_usd,
+                exit_code,
+                ..
+            }) => {
+                let update = task_completed_update(task, cost_usd, exit_code);
+                let _ = conn.send_notification(SessionNotification::new(acp_id.clone(), update));
+            }
+            // A delivered/relayed follow-up (SM§3): rendered as an agent
+            // message chunk, prefixed with the sender's label the same way
+            // `ask_permission` prefixes a relayed approval's title; `from:
+            // None` (the parent/user) gets no prefix, matching its fallback.
+            Ok(Event::TaskMessage { from, text, .. }) => {
+                let update = task_message_update(&task_labels, from, &text);
+                let _ = conn.send_notification(SessionNotification::new(acp_id.clone(), update));
+            }
             Ok(_) => {}
             Err(_) => {
                 let _ = turn.await;
@@ -366,6 +398,80 @@ async fn drive_prompt(
         ));
     }
     Ok(PromptResponse::new(map::map_stop(&stop)))
+}
+
+/// `Event::TaskCreated` → a `ToolCall` update (T34.8): the client's task/tool
+/// list picks up the background task the same way it does a normal tool
+/// call. Remembers the sanitized label so a later `TaskMessage` from this
+/// task can be shown by name.
+fn task_created_update(
+    task_labels: &mut HashMap<TaskId, String>,
+    task: TaskId,
+    label: &str,
+) -> agent_client_protocol::schema::v1::SessionUpdate {
+    let title = cox_sanitize::sanitize(label);
+    task_labels.insert(task, title.clone());
+    let call = agent_client_protocol::schema::v1::ToolCall::new(
+        agent_client_protocol::schema::v1::ToolCallId::new(task.to_string()),
+        format!("task: {title}"),
+    )
+    .kind(agent_client_protocol::schema::v1::ToolKind::Other)
+    .status(agent_client_protocol::schema::v1::ToolCallStatus::InProgress);
+    agent_client_protocol::schema::v1::SessionUpdate::ToolCall(call)
+}
+
+/// `Event::TaskCompleted` → the matching `ToolCallUpdate`, same `ToolCallId`
+/// as `task_created_update` built, moved to `Completed` (T34.8).
+fn task_completed_update(
+    task: TaskId,
+    cost_usd: f64,
+    exit_code: Option<i32>,
+) -> agent_client_protocol::schema::v1::SessionUpdate {
+    let summary = match exit_code {
+        Some(code) => format!("finished (${cost_usd:.4}), exit {code}"),
+        None => format!("finished (${cost_usd:.4})"),
+    };
+    let fields = agent_client_protocol::schema::v1::ToolCallUpdateFields::new()
+        .status(Some(
+            agent_client_protocol::schema::v1::ToolCallStatus::Completed,
+        ))
+        .content(Some(vec![
+            agent_client_protocol::schema::v1::ToolCallContent::from(ContentBlock::Text(
+                agent_client_protocol::schema::v1::TextContent::new(summary),
+            )),
+        ]));
+    let update = agent_client_protocol::schema::v1::ToolCallUpdate::new(
+        agent_client_protocol::schema::v1::ToolCallId::new(task.to_string()),
+        fields,
+    );
+    agent_client_protocol::schema::v1::SessionUpdate::ToolCallUpdate(update)
+}
+
+/// `Event::TaskMessage` → an agent-message chunk (T34.8), prefixed with the
+/// sender's label the same way `ask_permission` prefixes a relayed
+/// approval's title; `from: None` (the parent/user) gets no prefix, matching
+/// its fallback. An unknown sender (a task this connection never saw
+/// `TaskCreated` for) falls back to its bare `TaskId`.
+fn task_message_update(
+    task_labels: &HashMap<TaskId, String>,
+    from: Option<TaskId>,
+    text: &str,
+) -> agent_client_protocol::schema::v1::SessionUpdate {
+    let text = cox_sanitize::sanitize(text);
+    let rendered = match from {
+        None => text,
+        Some(f) => {
+            let label = task_labels
+                .get(&f)
+                .cloned()
+                .unwrap_or_else(|| f.to_string());
+            format!("{label}: {text}")
+        }
+    };
+    let chunk = agent_client_protocol::schema::v1::ContentChunk::new(ContentBlock::Text(
+        agent_client_protocol::schema::v1::TextContent::new(rendered),
+    ));
+    agent_client_protocol::schema::v1::SessionUpdate::AgentMessageChunk(chunk)
 }
 
 /// `ApprovalRequired` → `session/request_permission` with allow,
@@ -429,4 +535,78 @@ fn handle_cancel(
         live.cox.interrupt();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T34.8 Check: `TaskCreated` becomes a `ToolCall` labelled with the
+    /// task's own sanitized label, and the matching `TaskCompleted` moves
+    /// the same `ToolCallId` to `Completed`. Drives `drive_prompt`'s two
+    /// arms directly through the pure functions they delegate to (sending
+    /// the built `SessionUpdate` over a live `ConnectionTo<Client>` is
+    /// already exercised by `tests/conformance.rs`).
+    #[test]
+    fn acp_reports_task_created_and_completed() {
+        let mut labels = HashMap::new();
+        let task = TaskId::new();
+        let created = task_created_update(&mut labels, task, "explore\u{1b}[31m: find x");
+        let json = serde_json::to_value(&created).expect("serialize");
+        assert_eq!(json["sessionUpdate"], "tool_call");
+        assert_eq!(json["toolCallId"], task.to_string());
+        assert_eq!(json["status"], "in_progress");
+        let title = json["title"].as_str().expect("title");
+        assert!(title.starts_with("task: explore"), "{title}");
+        assert!(
+            !title.contains('\u{1b}'),
+            "escape sequence not stripped: {title}"
+        );
+        assert_eq!(
+            labels.get(&task).map(String::as_str),
+            Some("explore: find x")
+        );
+
+        let completed = task_completed_update(task, 0.0042, Some(1));
+        let json = serde_json::to_value(&completed).expect("serialize");
+        assert_eq!(json["sessionUpdate"], "tool_call_update");
+        assert_eq!(json["toolCallId"], task.to_string());
+        assert_eq!(json["status"], "completed");
+        let content = json["content"][0]["content"]["text"]
+            .as_str()
+            .expect("content text");
+        assert!(content.contains("0.0042"), "{content}");
+        assert!(content.contains("exit 1"), "{content}");
+    }
+
+    /// T34.8 Check: a delivered `TaskMessage` renders as an agent-message
+    /// chunk prefixed with the sender's label, the same way `ask_permission`
+    /// prefixes a relayed approval's title; the parent/user (`from: None`)
+    /// gets no prefix, and a sender this connection never saw `TaskCreated`
+    /// for falls back to its bare `TaskId`.
+    #[test]
+    fn acp_reports_a_delivered_task_message() {
+        let mut labels = HashMap::new();
+        let sibling = TaskId::new();
+        labels.insert(sibling, "explore-2".to_string());
+
+        let update = task_message_update(&labels, Some(sibling), "ping\u{202e}evil");
+        let json = serde_json::to_value(&update).expect("serialize");
+        assert_eq!(json["sessionUpdate"], "agent_message_chunk");
+        let text = json["content"]["text"].as_str().expect("text");
+        assert!(text.starts_with("explore-2: ping"), "{text}");
+        assert!(
+            !text.contains('\u{202e}'),
+            "bidi override not stripped: {text}"
+        );
+
+        let update = task_message_update(&labels, None, "follow up");
+        let json = serde_json::to_value(&update).expect("serialize");
+        assert_eq!(json["content"]["text"], "follow up");
+
+        let unknown = TaskId::new();
+        let update = task_message_update(&labels, Some(unknown), "hi");
+        let json = serde_json::to_value(&update).expect("serialize");
+        assert_eq!(json["content"]["text"], format!("{unknown}: hi"));
+    }
 }

@@ -6,17 +6,24 @@ Everything the model, a tool, an MCP server, a hook, a skill file or a
 repository writes is untrusted input. Four guards hold the line; simplicity
 never removes one of them:
 
-- `cox_core::permission::Engine` — the single place a tool call is allowed,
-  denied or escalated. A tool never checks its own permission.
-- `cox_tools::path::confine` — every path from the model passes through it;
-  rejects escapes from the workspace roots.
-- `cox_tools::sandbox::Policy` — a shell command runs under the platform
+- `cox_permission::Engine` — the single place a tool call is allowed,
+  denied or escalated. A tool never checks its own permission. `cox-core`
+  re-exports it at the old `cox_core::permission::Engine` path, so either
+  name reaches the same guard.
+- `cox_sandbox::path::confine` — every path from the model passes through
+  it; rejects escapes from the workspace roots. `cox-tools` re-exports it
+  at the old `cox_tools::path::confine` path, so either name reaches the
+  same guard.
+- `cox_sandbox::sandbox::Policy` — a shell command runs under the platform
   sandbox (Seatbelt on macOS, bubblewrap else Landlock + seccomp on Linux)
   unless the user chose `danger-full-access` for that session. Windows has
-  no sandbox: loud warning, `on-request` forced.
-- `cox_tui::text::sanitize` — strips escape sequences and bidi overrides
+  no sandbox: loud warning, `on-request` forced. `cox-tools` re-exports it
+  at the old `cox_tools::sandbox::Policy` path, so either name reaches the
+  same guard.
+- `cox_sanitize::sanitize` — strips escape sequences and bidi overrides
   from anything the model or a tool prints. A tool result is the one place
-  cox shows a whole file someone else wrote.
+  cox shows a whole file someone else wrote. `cox-tui` re-exports it at the
+  old `cox_tui::text::sanitize` path, so either name reaches the same guard.
 
 Broken hooks, skills, MCP servers and plugins are warned about and skipped,
 never fatal (fail open on extensions). `cargo deny` + `cargo audit` run on

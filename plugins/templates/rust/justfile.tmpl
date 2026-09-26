@@ -1,0 +1,13 @@
+# {{id}} — build recipe. Needs the wasm32-unknown-unknown target:
+# `rustup target add wasm32-unknown-unknown`.
+
+# Build the guest module.
+build:
+    cargo build --release --target wasm32-unknown-unknown
+
+# Build, then run the smoke test (tests/smoke.rs): it stages the module
+# next to plugin.toml, installs it into a scratch COX_HOME with
+# `cox plugin install --yes`, and checks `cox plugin list --json` reports
+# it loaded. Needs `cox` on PATH.
+smoke: build
+    cargo test --release

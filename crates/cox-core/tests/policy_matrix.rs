@@ -111,6 +111,7 @@ fn exec_call() -> ToolCall {
         risk: Risk::Exec,
         subject: "make build".into(),
         input: json!({"command": "make build"}),
+        segments: None,
     }
 }
 

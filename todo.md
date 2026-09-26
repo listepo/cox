@@ -1,3 +1,23 @@
 # Todo
 
-- T30.3. Eval run with a verification step
+- T33.14. `cox_http` and filesystem preopens
+- T33.18. Providers, ABI form (`PluginProvider`)
+- T33.34. Go: SDK wrapper, template, example
+- T33.36. Kotlin: thin PDK, template, example
+- T33.40.1. ABI: two-phase decide, own-provider call-out, batched questions
+- T33.40.3. Jev provider export
+- T33.40.4. Jev plugin as a provider, end to end and offline
+- T33.40.5. Parity: the `typesafe` table configures the plugin's section
+- T33.40.6. `risk` advisor: raise only
+- T33.40.7. Eval E1: risk escalation against the classifier alone
+- T33.40.9. `route` advisor: downgrade only
+- T33.40.10. Eval E2: route downgrade against the static pick
+- T33.40.11. User guide: the Jev plugin
+- T33.40.12. Remove the built-in Jev client
+- T33.40.13. Router and `ProviderId` without Jev
+- T33.40.14. Config tombstone, `default.toml`, schema and doctor
+- T33.40.15. Catalog, prices and vendor script without Jev
+- T33.40.16. Docs and plan sweep after the removal
+- T33.40.17. Optional: record live fixtures (needs the creator's key)
+- T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
+- T35.10. Optional: live check against a real Cursor account (needs the creator's key)

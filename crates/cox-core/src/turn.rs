@@ -8,7 +8,7 @@ use std::time::Instant;
 use cox_protocol::ArchivePut;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, TurnId};
-use cox_protocol::traits::{Tool, ToolCx};
+use cox_protocol::traits::{Relay, Tool, ToolCx};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
     ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall, ToolOutput,
@@ -23,7 +23,17 @@ use crate::checkpoint;
 use crate::hooks;
 use crate::permission::Outcome;
 use crate::permission::policy::{ExecPath, exec_path};
-use crate::session::{Session, State};
+use crate::session::Session;
+
+tokio::task_local! {
+    /// Who a call runs for when it is not the model: `plugin <id>` for a
+    /// plugin's `cox_invoke_tool` (T33.13). Task-local so the one tool path
+    /// (`run_tools` → `gate` → `ask`) needs no second entry point; `ask`
+    /// shows it as `Source.agent` ("plugin <id> asks"). A call `run_tools`
+    /// spawns in parallel is read-only and never asks, so losing it there
+    /// is harmless.
+    pub(crate) static ORIGIN: String;
+}
 
 #[derive(Default)]
 pub(crate) struct Streamed {
@@ -137,6 +147,7 @@ pub(crate) async fn run_tools(
             ToolCall {
                 id,
                 subject: tool.map(|t| t.subject(&input)).unwrap_or_default(),
+                segments: tool.and_then(|t| t.segments(&input)),
                 // Per call, not per tool: `apply_patch` escalates to
                 // `Destructive` on the patches that delete a lot of files.
                 risk: tool.map(|t| t.risk(&input)).unwrap_or(Risk::ReadOnly),
@@ -248,13 +259,11 @@ async fn gate(
         HookOutcome::Block { reason } => {
             return Ok(Err(failed_result(&format!("blocked by hook: {reason}"))));
         }
-        HookOutcome::Modify { input } => {
-            call.risk = tool.risk(&input);
-            call.subject = tool.subject(&input);
-            call.input = input;
-        }
+        HookOutcome::Modify { input } => rate(&mut call, tool, input),
         _ => {}
     }
+    // T33.21: `risk` advice may only raise what the engine judges next.
+    call = session.advise_risk(call).await?;
     loop {
         let why = match session.decide(&call).await {
             Outcome::Allow { .. } => return Ok(Ok(call)),
@@ -275,25 +284,36 @@ async fn gate(
         match ask(session, &call, why).await? {
             Decision::Allow => return Ok(Ok(call)),
             Decision::AllowForSession => {
-                session.grant(call.name.clone(), call.subject.clone()).await;
+                for (tool, subject) in crate::permission::grants_for(&call) {
+                    session.grant(tool, subject).await;
+                }
                 return Ok(Ok(call));
             }
             Decision::Deny { reason } => return Ok(Err(denied(&reason))),
             // A rewritten input is a new call as far as the rules go: its
             // risk and subject change, so it goes back through `decide`.
-            Decision::Edit { input } => {
-                call.risk = tool.risk(&input);
-                call.subject = tool.subject(&input);
-                call.input = input;
-            }
+            Decision::Edit { input } => rate(&mut call, tool, input),
         }
     }
+}
+
+/// Re-rates `call` for a rewritten `input` (a hook's or the user's edit):
+/// risk, subject and segments change together, or the engine would judge
+/// the new command by the old one's pieces.
+fn rate(call: &mut ToolCall, tool: &dyn Tool, input: Value) {
+    call.risk = tool.risk(&input);
+    call.subject = tool.subject(&input);
+    call.segments = tool.segments(&input);
+    call.input = input;
 }
 
 /// Emits `ApprovalRequired`, parks until `Submission::Approve` answers it
 /// (a cancelled turn answers `Deny`), and emits `ApprovalDecided`.
 async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, CoreError> {
     let id = call.id;
+    // A plugin's call (T33.13) may ask while no turn runs, so the session
+    // goes back to the state it was in rather than always `RunningTools`.
+    let before = session.inner.lock().await.state;
     let rx = session.await_decision(id).await;
     // Informational like `Stop`: a hook may record that we are waiting, it
     // cannot answer for the user (§1.8).
@@ -303,6 +323,7 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
         serde_json::json!({ "tool_name": call.name, "tool_input": call.input }),
     )
     .await;
+    session.advise_approval(call, &why).await?;
     session
         .emit(Event::ApprovalRequired {
             call: call.clone(),
@@ -311,7 +332,7 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
             // on its way to the parent's surface.
             source: Some(Source {
                 session: session.id(),
-                agent: None,
+                agent: ORIGIN.try_with(Clone::clone).ok(),
                 preset: None,
             }),
         })
@@ -322,7 +343,7 @@ async fn ask(session: &Session, call: &ToolCall, why: Why) -> Result<Decision, C
         _ = cancel.cancelled() => Decision::Deny { reason: "interrupted".into() },
         d = rx => d.unwrap_or(Decision::Deny { reason: "session closed".into() }),
     };
-    session.set_state(State::RunningTools).await;
+    session.set_state(before).await;
     session
         .emit(Event::ApprovalDecided {
             call_id: id,
@@ -396,6 +417,16 @@ async fn run_one(
         output: out_tx,
         session: session.id,
         call: id,
+        // T34.3: `None` unless this session is a subagent (`spawn_child`
+        // set both), so `ask_user`'s `Question::source` carries the same
+        // label `relay_approval` already gives an approval.
+        agent: session.agent.clone(),
+        preset: session.preset.clone(),
+        // T34.6 review: bound per call, to *this* session, never a handle
+        // fixed once at tool-construction time — a child's call must reach
+        // its own `Relay` impl (`self_task` + emit), not the top-level
+        // session's, and this is the one place that distinction is made.
+        relay: Some(Arc::new(session.clone()) as Arc<dyn Relay>),
     };
     let pump = session.clone_handle();
     let pump_id = id;
@@ -455,6 +486,7 @@ async fn run_one(
             name: tool.spec().name,
             risk: tool.risk(&input),
             subject: tool.subject(&input),
+            segments: tool.segments(&input),
             input: input.clone(),
         };
         let decision = ask(session, &call, Why::SandboxDenied { detail }).await;
@@ -501,6 +533,7 @@ async fn run_one(
         })
         .unwrap_or_default();
     if !found.is_empty() {
+        let found = session.advise_rank(&tool.subject(&hook_input), found).await;
         let added = session.discover(found).await;
         if !added.is_empty() {
             let _ = session

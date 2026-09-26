@@ -47,6 +47,20 @@ CREATE TABLE 'memory_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHO
 -- migrations
 CREATE TABLE migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 
+-- plugin_grants
+CREATE TABLE plugin_grants (
+  plugin_id TEXT NOT NULL, scope TEXT NOT NULL, digest TEXT NOT NULL,
+  capabilities TEXT NOT NULL, enabled INTEGER NOT NULL, source TEXT NOT NULL,
+  decided_at TEXT NOT NULL,
+  PRIMARY KEY (plugin_id, scope, digest)
+);
+
+-- plugin_kv
+CREATE TABLE plugin_kv (
+  plugin_id TEXT NOT NULL, key TEXT NOT NULL, value BLOB NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY (plugin_id, key)
+);
+
 -- rollout_fts
 CREATE VIRTUAL TABLE rollout_fts USING fts5(session_id UNINDEXED, turn UNINDEXED, text);
 

@@ -8,16 +8,20 @@ license.workspace = true
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 cox-core = { path = "../cox-core", version = "0.1.2" }
+# T32.1: `text::sanitize` moved out; re-exported at the old `cox_tui::text`
+# path so existing callers (`crates/cox/src/plain.rs`, `cox-tui/tests/`)
+# keep working.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+# T32.2: themes, colour, markdown, diff, SVG, glyphs and links moved out
+# with syntect, two-face, pulldown-cmark and terminal-colorsaurus;
+# re-exported at the old `cox_tui::{theme, color, ..}` paths.
+cox-render = { path = "../cox-render", version = "0.1.2" }
 ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 tokio = { workspace = true }
 nucleo = { workspace = true }
-pulldown-cmark = { workspace = true }
-syntect = { workspace = true }
-two-face = { version = "0.3", features = ["syntect-fancy"] }
 similar = { workspace = true }
 unicode-width = { workspace = true }
-terminal-colorsaurus = { workspace = true }
 thiserror = { workspace = true }
 tui-textarea-2 = { version = "0.13", default-features = false, features = ["crossterm"] }
 # T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
@@ -30,7 +34,7 @@ toml_edit = { workspace = true }
 # ever gets `[dependencies]`, never `[dev-dependencies]`, so a dev-only
 # `cox-provider` would not resolve for it, and a regular one would break
 # `crates/cox/tests/deps.rs`'s `cox-tui may only depend on
-# cox-core/cox-protocol among workspace crates`.
+# cox-core/cox-protocol/cox-sanitize among workspace crates`.
 async-trait = { workspace = true }
 tokio-util = { workspace = true }
 
@@ -40,7 +44,6 @@ insta = { workspace = true }
 # dependency of cox-core, cox-protocol and cox-tools.
 rstest = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
 # T23.1: the PTY e2e in `tests/shell.rs` spawns `kitty_probe` and answers its
 # `CSI 6n` cursor query, the same way `crates/cox/tests/tui_e2e.rs` already
 # does for the real binary.

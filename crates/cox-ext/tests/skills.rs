@@ -46,6 +46,9 @@ fn cx() -> ToolCx {
         output: tokio::sync::mpsc::channel(1).0,
         session: SessionId::new(),
         call: CallId::new(),
+        agent: None,
+        preset: None,
+        relay: None,
     }
 }
 

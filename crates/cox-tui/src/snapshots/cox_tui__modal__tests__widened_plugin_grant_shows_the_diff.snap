@@ -1,0 +1,9 @@
+---
+source: crates/cox-tui/src/modal.rs
+expression: "render_grant(&plugin_grant(&[\"model:code\"], &[\"model:cheap\"], None))"
+---
+ plugin Git Glance (git-glance) wants to load · digest aaaaaaaaaaaa
+ Shows a one-line git summary in the status bar
+ wants: model:code
+ no longer asks for: model:cheap
+ [y]es  [n]o

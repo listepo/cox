@@ -252,6 +252,39 @@ fn tui_ctrl_b_backgrounds_sleep_and_composer_accepts_input() {
     tui.quit();
 }
 
+/// Quitting the TUI while a detached `bash` still runs kills its process
+/// instead of leaving it orphaned (ppid 1): `run_tui` does what headless
+/// `run` does (`interrupt` + `wait_tasks_cleared`, then
+/// `shutdown_background`). `pgrep -f` exits 0 if it finds a match.
+#[test]
+#[cfg(unix)]
+fn tui_quit_kills_a_running_background_shell() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let scenario = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/scenarios/tui_background_shell.toml"
+    ));
+    let tui = Tui::spawn(
+        home.path(),
+        work.path(),
+        scenario,
+        &["--permission-mode", "bypass"],
+    );
+    tui.wait_until("status line", |t| t.contains("$0.00"));
+    tui.send(b"go\r");
+    tui.wait_until("turn done, task listed", |t| {
+        t.contains("detached it") && !t.contains("working") && t.contains("1 tasks")
+    });
+    tui.quit();
+    let leaked = std::process::Command::new("pgrep")
+        .args(["-f", "sleep 4002"])
+        .status()
+        .unwrap()
+        .success();
+    assert!(!leaked, "a `sleep 4002` process outlived the TUI");
+}
+
 /// T25.5: `send = "ctrl+enter"` in `keybindings.toml` shows in the hints,
 /// turns plain Enter into a newline and sends on Ctrl+Enter. A plain PTY
 /// writes `\r` for both keys, so Ctrl+Enter goes in as the kitty

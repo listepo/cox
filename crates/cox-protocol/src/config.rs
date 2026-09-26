@@ -1,8 +1,8 @@
 //! The `Config` struct tree that mirrors `config/default.toml` (plan.md
 //! §1.6) key for key. This crate has no logic beyond serde (see `lib.rs`),
 //! so all the figment layering, precedence, provenance tracking and the
-//! `cox config` subcommand live in `crates/cox/src/config_load.rs` and
-//! `crates/cox/src/config_cmd.rs`; what lives here is only the shape every
+//! `cox config` subcommand live in `crates/cox-config` (`load.rs` and
+//! `cmd.rs`, T32.16); what lives here is only the shape every
 //! layer deserializes into, plus the embedded default file those layers
 //! start from.
 //!
@@ -24,7 +24,7 @@ use crate::types::{
 };
 
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
-/// `crates/cox/src/config_load.rs` merges this beneath the user, project,
+/// `crates/cox-config/src/load.rs` merges this beneath the user, project,
 /// env and flag layers via `figment::providers::Toml::string`.
 pub const DEFAULT_CONFIG_TOML: &str = include_str!("../default.toml");
 
@@ -55,6 +55,8 @@ pub struct Config {
     pub hooks: HooksConfig,
     /// `[mcp]`
     pub mcp: McpConfig,
+    /// `[plugins]`
+    pub plugins: PluginsConfig,
     /// `[memory]`
     pub memory: MemoryConfig,
     /// `[telemetry]`
@@ -63,12 +65,71 @@ pub struct Config {
     pub record: RecordConfig,
 }
 
+impl Config {
+    /// Every model id reachable without touching a price file: each
+    /// `[tiers.*].model`, the single-model sections' own default
+    /// (`providers.local.model`, `providers.typesafe.model`), and every
+    /// `[providers.*].models` list entry — native and compatible, including
+    /// each `[providers.<custom>]` section's own default `model`. Sorted
+    /// and deduplicated.
+    ///
+    /// The one enumeration of "every configured model", shared by
+    /// `cox_models::price`'s `usage_prices_cover_every_configured_model`
+    /// test and `cox doctor`'s catalog/price sync row (T30.27,
+    /// `docs/design/providers.md` § Target shape item 5), so the two
+    /// checks can never disagree about what "configured" means.
+    pub fn configured_model_ids(&self) -> Vec<String> {
+        let mut ids = vec![
+            self.tiers.cheap.model.clone(),
+            self.tiers.code.model.clone(),
+            self.tiers.think.model.clone(),
+            self.providers.local.model.clone(),
+            self.providers.typesafe.model.clone(),
+        ];
+        for section in [
+            &self.providers.anthropic.models,
+            &self.providers.openai.models,
+            &self.providers.local.models,
+            &self.providers.typesafe.models,
+        ] {
+            ids.extend(section.iter().map(|m| m.id.clone()));
+        }
+        for custom in self.providers.custom.values() {
+            ids.push(custom.model.clone());
+            ids.extend(custom.models.iter().map(|m| m.id.clone()));
+        }
+        // An unset default `model` (a compatible section that only ever
+        // routes through its `models` list) is not a model id to check.
+        ids.retain(|id| !id.is_empty());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+}
+
 /// What a child process cox spawns (`bash`, hooks, stdio MCP servers)
 /// inherits from cox's environment; everything else — API keys above all —
 /// stays behind (D14).
 pub const CHILD_ENV_ALLOWLIST: &[&str] = &[
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "USER", "SHELL",
 ];
+
+/// The env var that turns every OS-keyring read and write off (A49): the
+/// provider key lookup and the MCP OAuth store. The repo's
+/// `.cargo/config.toml` sets it to `off` for everything cargo runs, so a
+/// test or a `cargo run` smoke check never shows a keychain prompt; an
+/// installed `cox` never sees it unless the user sets it.
+pub const KEYRING_ENV: &str = "COX_KEYRING";
+
+/// Whether the keyring may be used, given [`KEYRING_ENV`]'s value: only
+/// `off`, `0` or `false` (any case, trimmed) disable it, so an unset or
+/// misspelt value keeps the documented env-then-keyring behaviour.
+pub fn keyring_enabled(value: Option<&str>) -> bool {
+    !matches!(
+        value.map(|v| v.trim().to_ascii_lowercase()).as_deref(),
+        Some("off" | "0" | "false")
+    )
+}
 
 /// `[core]` (plan.md §1.6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -84,6 +145,15 @@ pub struct CoreConfig {
     pub max_turns: u32,
     /// `core.parallel_tools`: max concurrent `Concurrency::Parallel` calls.
     pub parallel_tools: u32,
+    /// `core.max_concurrent_subagents` (T34.2): cap on `TaskKind::Agent`
+    /// tasks running at once for a session, foreground and background
+    /// together — a loop of `background: true` `agent` calls cannot
+    /// silently multiply cost or exhaust the parent's budget slice faster
+    /// than the user can notice. Matches the shape of Codex's
+    /// `agents.max_concurrent_threads_per_session` and Claude Code's
+    /// `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as
+    /// a config key (D13), not an env var.
+    pub max_concurrent_subagents: u32,
     /// `core.log_level`: a `tracing` filter string.
     pub log_level: String,
     /// `core.profile`: the assembled-prefix profile, `""` (default) or
@@ -100,6 +170,7 @@ impl Default for CoreConfig {
             workspace_roots: Vec::new(),
             max_turns: 200,
             parallel_tools: 4,
+            max_concurrent_subagents: 8,
             log_level: "info".to_string(),
             profile: String::new(),
         }
@@ -217,6 +288,8 @@ pub struct JobsConfig {
     pub explore: Tier,
     /// `jobs.shell`
     pub shell: Tier,
+    /// `jobs.agent`
+    pub agent: Tier,
     /// `jobs.hook`
     pub hook: Tier,
 }
@@ -235,7 +308,14 @@ impl JobsConfig {
             J::Memory => self.memory,
             J::Explore => self.explore,
             J::Shell => self.shell,
+            J::Agent => self.agent,
             J::Hook => self.hook,
+            // A plugin's tier is its own grant-clamped request, resolved
+            // by the caller before `Router::pick` ever reaches this table
+            // (T33.15, `router.rs`'s `Job::Plugin` arm) — there is no
+            // per-plugin `[jobs]` entry to look up. The fallback here is
+            // never hit; `cheap` is the safe answer if it ever is.
+            J::Plugin(_) => Tier::Cheap,
         }
     }
 }
@@ -252,6 +332,7 @@ impl Default for JobsConfig {
             memory: Tier::Cheap,
             explore: Tier::Cheap,
             shell: Tier::Cheap,
+            agent: Tier::Cheap,
             hook: Tier::Cheap,
         }
     }
@@ -261,8 +342,8 @@ impl Default for JobsConfig {
 /// `provider.<id>.models` shape, `docs/design/providers.md`): the model id
 /// as sent on the wire, its context window, and the efforts it understands
 /// (models.dev `reasoning_options.effort` mapped to [`Effort`]: `low`→`Low`,
-/// `medium`/`high`→`High`, `xhigh`/`max`→`Xhigh`). An empty `efforts` means
-/// unconstrained — any tier effort passes through unclamped.
+/// `medium`→`Medium`, `high`→`High`, `xhigh`/`max`→`Xhigh`). An empty
+/// `efforts` means unconstrained — any tier effort passes through unclamped.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct ProviderModel {
@@ -275,6 +356,13 @@ pub struct ProviderModel {
     pub context_window: u32,
     /// Efforts this model supports; empty means "any".
     pub efforts: Vec<Effort>,
+    /// Whether this model takes the Chat Completions `reasoning_effort`
+    /// field (T30.26). Unset means "not declared", and an `api = "chat"`
+    /// section then sends no effort at all: OpenAI documents the field,
+    /// LM Studio's compatible endpoint does not list it (research.md
+    /// §4.3.3), so it is opt-in per model rather than per wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<bool>,
 }
 
 /// `[providers]` (plan.md §1.6).
@@ -294,6 +382,9 @@ pub struct ProvidersConfig {
     pub openai: OpenAiProviderConfig,
     /// `[providers.local]`
     pub local: LocalProviderConfig,
+    /// `[providers.lmstudio]` (T30.15): LM Studio's Anthropic-compatible
+    /// `/v1/messages`, through the Anthropic wire client.
+    pub lmstudio: LmStudioProviderConfig,
     /// `[providers.typesafe]` (Jev System One, type-1 native)
     pub typesafe: JevProviderConfig,
     /// Every other `[providers.<name>]` table: an OpenAI-compatible
@@ -312,6 +403,10 @@ impl ProvidersConfig {
             "anthropic" => &self.anthropic.models,
             "openai" => &self.openai.models,
             "local" => &self.local.models,
+            // LM Studio has no `models` list (T30.15): the running server
+            // names its own single model, so efforts pass through
+            // unclamped (empty means "any", `ProviderModel`'s doc).
+            "lmstudio" => &[],
             // Jev has one model family; the section default names it, and
             // the router pins it the same way it pins `local`'s.
             "typesafe" => &self.typesafe.models,
@@ -322,6 +417,57 @@ impl ProvidersConfig {
                 .unwrap_or(&[]),
         }
     }
+}
+
+/// The four transport knobs every `[providers.*]` section carries, native
+/// or compatible (`docs/design/providers.md` "Target shape" item 1, T30.22):
+/// where the vendor's API lives, which env var holds the key, and how long
+/// / how many times to retry before giving up.
+///
+/// Each section keeps these as its own flat fields — `base_url = …` stays a
+/// section-level TOML key, not a nested `[providers.<name>.transport]`
+/// table — rather than `#[serde(flatten)] transport: Transport`, because
+/// serde refuses to combine `#[serde(flatten)]` with
+/// `#[serde(deny_unknown_fields)]` on the *same* struct (the flattened map
+/// would have to swallow the "unknown fields" `deny_unknown_fields` exists
+/// to reject). Keeping the fields flat and generating a `transport()`
+/// accessor via [`impl_transport`] gets every section the same one-`Transport`-
+/// value view the target shape asks for, without giving up the typo check.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Transport {
+    /// API base URL.
+    pub base_url: String,
+    /// Env var holding the API key; falls back to the keyring entry
+    /// `cox/<section>`. Neither present builds a keyless client (no
+    /// `Authorization` header), not a startup error (T30.21) — that is
+    /// what a local server with no auth (or `api_key_env = ""`) needs.
+    pub api_key_env: String,
+    /// Request timeout, in seconds.
+    pub timeout_s: u32,
+    /// Max retries for retryable errors.
+    pub max_retries: u32,
+}
+
+/// Generates a `transport()` accessor for a provider-section struct that
+/// carries [`Transport`]'s four fields as its own flat `base_url`,
+/// `api_key_env`, `timeout_s` and `max_retries` fields. See [`Transport`]'s
+/// doc comment for why this is a macro over flat fields instead of
+/// `#[serde(flatten)]`.
+macro_rules! impl_transport {
+    ($ty:ty) => {
+        impl $ty {
+            /// This section's transport knobs as one value (T30.22); every
+            /// constructor takes `&Transport` from T30.23 on.
+            pub fn transport(&self) -> Transport {
+                Transport {
+                    base_url: self.base_url.clone(),
+                    api_key_env: self.api_key_env.clone(),
+                    timeout_s: self.timeout_s,
+                    max_retries: self.max_retries,
+                }
+            }
+        }
+    };
 }
 
 /// `[providers.anthropic]`.
@@ -359,16 +505,26 @@ impl Default for AnthropicProviderConfig {
     }
 }
 
+impl_transport!(AnthropicProviderConfig);
+
 /// `[providers.openai]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct OpenAiProviderConfig {
     /// API base URL.
     pub base_url: String,
-    /// Env var holding the API key.
+    /// Env var holding the API key; falls back to keyring entry
+    /// `cox/openai`. Neither present builds a keyless client (no
+    /// `Authorization` header), not a startup error (T30.21).
     pub api_key_env: String,
     /// Which OpenAI API shape to use: `"responses"` or `"chat"`.
     pub api: String,
+    /// Request timeout, in seconds: the Responses/Chat clients build their
+    /// `reqwest::Client` with this as the read/idle timeout (T30.23).
+    pub timeout_s: u32,
+    /// Max retries for retryable errors; the Responses/Chat clients' retry
+    /// policy reads this instead of `Policy::default()` (T30.23).
+    pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
 }
@@ -379,10 +535,16 @@ impl Default for OpenAiProviderConfig {
             base_url: "https://api.openai.com/v1".to_string(),
             api_key_env: "OPENAI_API_KEY".to_string(),
             api: "responses".to_string(),
+            // Matches `retry::Policy::default()` (`max_retries: 4`) and
+            // Anthropic's `timeout_s` convention.
+            timeout_s: 120,
+            max_retries: 4,
             models: Vec::new(),
         }
     }
 }
+
+impl_transport!(OpenAiProviderConfig);
 
 /// `[providers.local]` (Ollama/vLLM/LM Studio/OpenRouter-shaped).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -390,12 +552,23 @@ impl Default for OpenAiProviderConfig {
 pub struct LocalProviderConfig {
     /// API base URL.
     pub base_url: String,
+    /// Env var holding the API key; empty (the default) means no key —
+    /// most local servers need none.
+    pub api_key_env: String,
     /// API shape; local servers are typically `"chat"`.
     pub api: String,
     /// The model id the local server serves.
     pub model: String,
     /// Context window, since local servers usually don't report it.
     pub context_window: u32,
+    /// Request timeout, in seconds; the Chat client's read/idle timeout
+    /// (T30.23). Higher than a remote section's default (600 vs. 120):
+    /// local models are slow at prefill, and a 120s read timeout can cut
+    /// off a large prompt before the first byte comes back, on hardware
+    /// that would otherwise finish the call just fine.
+    pub timeout_s: u32,
+    /// Max retries for retryable errors (T30.23, as above).
+    pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
 }
@@ -404,13 +577,77 @@ impl Default for LocalProviderConfig {
     fn default() -> Self {
         Self {
             base_url: "http://localhost:11434/v1".to_string(),
+            api_key_env: String::new(),
             api: "chat".to_string(),
             model: "qwen3-coder".to_string(),
             context_window: 32768,
+            // 600s, not the 120s a remote section defaults to: local
+            // prefill on modest hardware can take minutes before the first
+            // streamed byte, and the read timeout would otherwise cut the
+            // call off before it ever gets going (see the field doc).
+            timeout_s: 600,
+            max_retries: 4,
             models: Vec::new(),
         }
     }
 }
+
+impl_transport!(LocalProviderConfig);
+
+/// `[providers.lmstudio]` (T30.15). A dedicated section rather than
+/// pointing `[providers.local]` at LM Studio: its native `/api/v1/chat`
+/// takes no custom tool schemas, and cox's OpenAI Chat path drops tool
+/// calls (`ideas.md`), so the chat loop instead runs over LM Studio's
+/// Anthropic-compatible `/v1/messages` through [`crate`]'s Anthropic wire
+/// client (R§4.3.2) — hence `api_key_env` and the header it feeds are
+/// Anthropic's `x-api-key`, not a bearer token.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct LmStudioProviderConfig {
+    /// API base URL; the client appends `/v1/messages`.
+    pub base_url: String,
+    /// Env var holding the API key; falls back to keyring entry
+    /// `cox/lmstudio` (never the Anthropic keyring entry, since this
+    /// resolves under its own section name). Neither present builds a
+    /// keyless client (no `x-api-key` header) — what LM Studio needs
+    /// unless "Require Authentication" is turned on.
+    pub api_key_env: String,
+    /// The model id LM Studio is serving. Usually left unset and pinned
+    /// instead through `tiers.code.model` / `--tier code=<model>`.
+    pub model: String,
+    /// Context window in tokens; `0` means "ask the server" (T30.16): the
+    /// loaded instance's context length from `GET /api/v1/models`, else
+    /// the model catalog, else a literal floor. Also the `context_length`
+    /// sent when `load` loads the model (`0` sends none: the server's
+    /// default).
+    pub context_window: u32,
+    /// Load the model through `POST /api/v1/models/load` at session start
+    /// when the server has it downloaded but not loaded (T30.16). Off by
+    /// default: loading takes memory and minutes, so it is opt-in.
+    pub load: bool,
+    /// Request timeout, in seconds; higher than a remote section's
+    /// default for the same reason as `local` (slow on-device prefill).
+    pub timeout_s: u32,
+    /// Max retries for retryable errors.
+    pub max_retries: u32,
+}
+
+impl Default for LmStudioProviderConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "http://localhost:1234".to_string(),
+            api_key_env: "LM_API_TOKEN".to_string(),
+            model: String::new(),
+            context_window: 0,
+            load: false,
+            // Same rationale as `LocalProviderConfig::default`.
+            timeout_s: 600,
+            max_retries: 4,
+        }
+    }
+}
+
+impl_transport!(LmStudioProviderConfig);
 
 /// `[providers.typesafe]` (TypeSafe Jev System One, type-1 native, T21.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -444,6 +681,8 @@ impl Default for JevProviderConfig {
     }
 }
 
+impl_transport!(JevProviderConfig);
+
 /// Any other `[providers.<name>]` table: an OpenAI-compatible (Type-2)
 /// provider in the opencode custom-provider shape
 /// (`docs/design/providers.md`). Same wire client as `local`, different
@@ -454,7 +693,10 @@ pub struct CompatibleProviderConfig {
     /// API base URL (the client appends `/chat/completions` or `/responses`
     /// per `api`, so this is the models.dev `api` root verbatim).
     pub base_url: String,
-    /// Env var holding the API key; no key means no `Authorization` header.
+    /// Env var holding the API key; falls back to keyring entry
+    /// `cox/<name>` (the section's own name). Neither present means no
+    /// `Authorization` header (T30.21) — many compatible/self-hosted
+    /// gateways need none.
     pub api_key_env: String,
     /// Which shape to speak: `"chat"` (default) or `"responses"`.
     pub api: String,
@@ -462,6 +704,13 @@ pub struct CompatibleProviderConfig {
     pub model: String,
     /// Fallback context window for models absent from `models`.
     pub context_window: u32,
+    /// Request timeout, in seconds; the Chat/Responses client's read/idle
+    /// timeout (T30.23). A remote compatible section keeps the 120s
+    /// default — only `local` (T30.23) needs the longer one, for slow
+    /// on-device prefill.
+    pub timeout_s: u32,
+    /// Max retries for retryable errors (T30.23, as above).
+    pub max_retries: u32,
     /// Known models with their context windows and supported efforts.
     pub models: Vec<ProviderModel>,
 }
@@ -474,10 +723,15 @@ impl Default for CompatibleProviderConfig {
             api: "chat".to_string(),
             model: String::new(),
             context_window: 32768,
+            // Same rationale as `OpenAiProviderConfig::default`.
+            timeout_s: 120,
+            max_retries: 4,
             models: Vec::new(),
         }
     }
 }
+
+impl_transport!(CompatibleProviderConfig);
 
 /// `[context]` (plan.md §1.6/§1.9/§1.10).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -734,8 +988,9 @@ impl Default for HooksConfig {
     }
 }
 
-/// One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`).
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+/// One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`, plus
+/// `sandbox`, which `.mcp.json`/`~/.claude.json` do not carry).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct McpServerConfig {
     /// Stdio launch command, for a local server.
@@ -746,6 +1001,22 @@ pub struct McpServerConfig {
     pub url: Option<String>,
     /// Extra environment variables for a stdio server.
     pub env: HashMap<String, String>,
+    /// Whether a stdio server runs under `sandbox::Policy` (T33.42,
+    /// `docs/design/plugins.md` §14 decision 4). `false` opts this named
+    /// server out, for setups that need it; irrelevant to a `url` server.
+    pub sandbox: bool,
+}
+
+impl Default for McpServerConfig {
+    fn default() -> Self {
+        Self {
+            command: None,
+            args: Vec::new(),
+            url: None,
+            env: HashMap::new(),
+            sandbox: true,
+        }
+    }
 }
 
 /// `[mcp]` (plan.md §1.6/§1.1). `deny_unknown_fields` is not set for the
@@ -775,6 +1046,100 @@ impl Default for McpConfig {
     }
 }
 
+/// `[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even
+/// when on, only a plugin granted for its exact digest loads (PL§3). Not
+/// `deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in
+/// here (T33.9), the `HooksConfig` pattern, since the plugin id is the TOML
+/// key rather than a fixed field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct PluginsConfig {
+    /// Whether any plugin loads at all; `--no-plugins` sets it to `false`.
+    pub enabled: bool,
+    /// Every `[plugins.<id>]` table, keyed by plugin id, handed unchanged to
+    /// that plugin's `cox_init` as `InitIn.config` (PL§4). Opaque JSON: the
+    /// plugin validates its own table, so cox never needs its shape.
+    #[serde(flatten)]
+    pub entries: HashMap<String, serde_json::Value>,
+    /// `[plugins.decide]` (PL§4, T33.20): which plugin answers each
+    /// decision point.
+    pub decide: DecideConfig,
+}
+
+impl Default for PluginsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            entries: HashMap::new(),
+            decide: DecideConfig::default(),
+        }
+    }
+}
+
+/// `[plugins.decide]` (PL§4 "Decision points", T33.20): one plugin per
+/// point; a point with no plugin is off, so nothing leaves the machine for
+/// it. `deny_unknown_fields` so a mistyped point fails loudly instead of
+/// silently staying off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DecideConfig {
+    /// The plugin id that answers `route` (a main turn's tier, only down).
+    pub route: Option<String>,
+    /// Advice whose confidence is below this (or absent) is ignored.
+    pub min_confidence: f64,
+    /// `route`'s latency budget in milliseconds; a later answer is ignored.
+    pub route_ms: u64,
+    /// `route` offers `cheap` only when its predicted turn cost is at most
+    /// `1 − route_margin` of the `code` cost (J5.2, T33.40.8): a switch
+    /// forfeits the code tier's warm cache.
+    pub route_margin: f64,
+    /// The plugin id that answers `risk` (a tool call's risk, only up).
+    pub risk: Option<String>,
+    /// `risk`'s latency budget in milliseconds.
+    pub risk_ms: u64,
+    /// The plugin id that answers `approve_hint` (a caution note, never
+    /// "looks safe").
+    pub approve_hint: Option<String>,
+    /// `approve_hint`'s latency budget in milliseconds.
+    pub approve_hint_ms: u64,
+    /// The plugin id that answers `compact` (compact now, only earlier).
+    pub compact: Option<String>,
+    /// `compact`'s latency budget in milliseconds.
+    pub compact_ms: u64,
+    /// The plugin id that answers `rank` (reorder or filter `tool_search`
+    /// hits, never add).
+    pub rank: Option<String>,
+    /// `rank`'s latency budget in milliseconds.
+    pub rank_ms: u64,
+    /// The plugin id that answers `salience` (a score per extracted memory
+    /// item, only ordering or dropping against `[memory]`'s threshold).
+    pub salience: Option<String>,
+    /// `salience`'s latency budget in milliseconds.
+    pub salience_ms: u64,
+}
+
+impl Default for DecideConfig {
+    fn default() -> Self {
+        Self {
+            route: None,
+            // J11: a tier choice is a high-stakes answer.
+            min_confidence: 0.6,
+            route_ms: 300,
+            route_margin: 0.15,
+            risk: None,
+            risk_ms: 200,
+            approve_hint: None,
+            approve_hint_ms: 200,
+            compact: None,
+            compact_ms: 500,
+            rank: None,
+            rank_ms: 300,
+            salience: None,
+            salience_ms: 300,
+        }
+    }
+}
+
 /// `[memory]` (plan.md §1.6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -785,6 +1150,9 @@ pub struct MemoryConfig {
     pub extract: bool,
     /// Override for `~/.cox/projects/<slug>/memory`; empty means default.
     pub dir: String,
+    /// The bar a `salience` `Score` must clear to keep an extracted item
+    /// (T33.21.1); fixed here, never moved by the plugin's answer.
+    pub salience_min: f64,
 }
 
 impl Default for MemoryConfig {
@@ -793,6 +1161,7 @@ impl Default for MemoryConfig {
             enabled: true,
             extract: false,
             dir: String::new(),
+            salience_min: 0.3,
         }
     }
 }
@@ -900,8 +1269,11 @@ mode.cycle = \"shift+tab\"
 ```
 
 - Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, \
-`thinking`, `expand`, `diff`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, \
-`Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. \
+`@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable \
+only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two \
+plugins goes to the lower plugin id and `cox doctor` reports it.
 - Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a \
 character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, \
 `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
@@ -997,7 +1369,7 @@ mod tests {
         let pro = cfg.providers.models_for("deepseek")[1].clone();
         assert_eq!(pro.id, "deepseek-v4-pro");
         assert_eq!(pro.context_window, 1_000_000);
-        assert_eq!(pro.efforts, vec![Effort::High, Effort::Xhigh]);
+        assert_eq!(pro.efforts, vec![Effort::Low, Effort::High, Effort::Xhigh]);
     }
 
     #[test]
@@ -1014,5 +1386,170 @@ mod tests {
         }"#;
         let cfg: HooksConfig = serde_json::from_str(with_event).expect("flatten captures it");
         assert_eq!(cfg.events["PreToolUse"][0].command, "echo hi");
+    }
+
+    #[test]
+    fn every_provider_section_transport_matches_documented_defaults() {
+        // T30.22: every section — native and compatible — exposes the same
+        // four knobs as one `Transport` value. Anthropic/Jev keep their
+        // pre-existing numbers; openai/local/compatible get the newly
+        // documented ones (matching `retry::Policy::default()`'s
+        // `max_retries: 4` and Anthropic's `timeout_s` convention).
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.providers.anthropic.transport(),
+            Transport {
+                base_url: "https://api.anthropic.com".to_string(),
+                api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.openai.transport(),
+            Transport {
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key_env: "OPENAI_API_KEY".to_string(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.local.transport(),
+            Transport {
+                base_url: "http://localhost:11434/v1".to_string(),
+                api_key_env: String::new(),
+                // 600, not the 120 every other section defaults to
+                // (T30.23): slow local prefill can outrun a 120s read
+                // timeout before the first byte comes back.
+                timeout_s: 600,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.lmstudio.transport(),
+            Transport {
+                base_url: "http://localhost:1234".to_string(),
+                api_key_env: "LM_API_TOKEN".to_string(),
+                timeout_s: 600,
+                max_retries: 4,
+            }
+        );
+        assert_eq!(
+            cfg.providers.typesafe.transport(),
+            Transport {
+                base_url: "https://api.typesafe.ai".to_string(),
+                api_key_env: "TYPESAFE_API_KEY".to_string(),
+                timeout_s: 30,
+                max_retries: 2,
+            }
+        );
+        assert_eq!(
+            CompatibleProviderConfig::default().transport(),
+            Transport {
+                base_url: String::new(),
+                api_key_env: String::new(),
+                timeout_s: 120,
+                max_retries: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn keyring_is_off_only_for_an_explicit_off_value() {
+        for off in ["off", "OFF", " 0 ", "false", "False"] {
+            assert!(!keyring_enabled(Some(off)), "{off:?} disables it");
+        }
+        for on in [None, Some(""), Some("on"), Some("1"), Some("of")] {
+            assert!(keyring_enabled(on), "{on:?} keeps it");
+        }
+    }
+
+    #[test]
+    fn local_provider_api_key_env_defaults_to_empty() {
+        // Empty means "no key" — most local servers need none.
+        assert_eq!(Config::default().providers.local.api_key_env, "");
+    }
+
+    /// T30.15: LM Studio's own section, unlike `local`, defaults its key
+    /// env var to something non-empty — the vendor's documented one —
+    /// since LM Studio does support turning "Require Authentication" on.
+    #[test]
+    fn lmstudio_provider_defaults() {
+        let l = Config::default().providers.lmstudio;
+        assert_eq!(l.base_url, "http://localhost:1234");
+        assert_eq!(l.api_key_env, "LM_API_TOKEN");
+        assert_eq!(l.context_window, 0, "0 means \"ask the server\" (T30.16)");
+        assert!(
+            l.model.is_empty(),
+            "pinned through tiers.code.model instead"
+        );
+    }
+
+    #[test]
+    fn provider_sections_without_the_new_transport_keys_load_to_documented_defaults() {
+        // A config written before T30.22 named none of the keys this task
+        // added (`timeout_s`/`max_retries` on openai/local/compatible,
+        // `api_key_env` on local). `#[serde(default)]` must still load it,
+        // landing on the same values `default.toml` now writes out loud —
+        // the round-trip this task's Check asks for.
+        use figment::providers::Format as _;
+        let old = r#"
+            [providers.openai]
+            base_url = "https://api.openai.com/v1"
+            api_key_env = "OPENAI_API_KEY"
+            api = "responses"
+
+            [providers.local]
+            base_url = "http://localhost:11434/v1"
+            api = "chat"
+            model = "qwen3-coder"
+            context_window = 32768
+
+            [providers.deepseek]
+            base_url = "https://api.deepseek.com"
+            api_key_env = "DEEPSEEK_API_KEY"
+            api = "chat"
+            model = "deepseek-v4-pro"
+            context_window = 1000000
+        "#;
+        let cfg: Config = figment::Figment::from(figment::providers::Toml::string(old))
+            .extract()
+            .expect("pre-T30.22-shaped config still parses");
+        assert_eq!(
+            cfg.providers.openai.transport(),
+            Config::default().providers.openai.transport()
+        );
+        assert_eq!(cfg.providers.local.api_key_env, "");
+        assert_eq!(
+            cfg.providers.local.transport(),
+            Config::default().providers.local.transport()
+        );
+        let deepseek = cfg.providers.custom["deepseek"].transport();
+        assert_eq!(deepseek.base_url, "https://api.deepseek.com");
+        assert_eq!(deepseek.api_key_env, "DEEPSEEK_API_KEY");
+        assert_eq!(deepseek.timeout_s, 120);
+        assert_eq!(deepseek.max_retries, 4);
+    }
+
+    #[test]
+    fn unknown_key_in_a_provider_section_is_still_rejected() {
+        // Every section struct keeps `deny_unknown_fields` even though the
+        // *container* `ProvidersConfig` cannot (its `custom` flatten
+        // forbids combining the two — see `Transport`'s doc comment): a
+        // typo inside a known section is still a hard error, for the three
+        // sections this task added fields to as much as for Anthropic.
+        let bad = r#"{
+            "base_url": "https://api.openai.com/v1",
+            "api_key_env": "OPENAI_API_KEY",
+            "api": "responses",
+            "timeout_s": 120,
+            "max_retries": 4,
+            "models": [],
+            "timeotu_s": 1
+        }"#;
+        let err =
+            serde_json::from_str::<OpenAiProviderConfig>(bad).expect_err("typo must be rejected");
+        assert!(format!("{err}").contains("timeotu_s"), "{err}");
     }
 }

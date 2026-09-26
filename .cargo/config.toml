@@ -1,0 +1,8 @@
+# Environment for everything cargo runs in this repository: `cargo run`,
+# `cargo test` and `cargo nextest`. An installed `cox` never reads this file.
+[env]
+# A49 (plan.md T30.29): no test or dev run touches the real OS keychain.
+# A rebuilt binary has a new code signature, so macOS would ask for the
+# login password on every build. A variable already set in the shell wins,
+# so `COX_KEYRING=on cargo run` still reaches the keyring deliberately.
+COX_KEYRING = "off"

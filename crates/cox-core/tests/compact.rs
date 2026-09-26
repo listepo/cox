@@ -402,7 +402,7 @@ async fn big_tool_output_mid_turn_compacts_before_call() {
         })
     ));
     let sent = provider.sent.lock().expect("lock").clone();
-    let jobs: Vec<Job> = sent.iter().map(|r| r.job).collect();
+    let jobs: Vec<Job> = sent.iter().map(|r| r.job.clone()).collect();
     assert_eq!(
         jobs,
         [Job::Main, Job::Main, Job::Main, Job::Compact, Job::Main]
@@ -455,7 +455,7 @@ async fn pre_call_still_over_after_compaction_stops_with_budget() {
         .lock()
         .expect("lock")
         .iter()
-        .map(|r| r.job)
+        .map(|r| r.job.clone())
         .collect();
     assert_eq!(
         jobs,

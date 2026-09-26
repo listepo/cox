@@ -98,47 +98,403 @@ fn only_store_depends_on_diesel() {
     }
 }
 
+/// T32.2 / `docs/design/crates.md` C2: the highlighting and markdown stack
+/// lives in `cox-render` alone, so an edit to the TUI's state machine never
+/// recompiles against it and no other crate grows a second renderer.
+#[test]
+fn only_render_depends_on_the_highlighters() {
+    let deps = all_deps();
+    for (crate_name, crate_deps) in &deps {
+        if crate_name == "cox-render" {
+            continue;
+        }
+        for heavy in [
+            "syntect",
+            "two-face",
+            "pulldown-cmark",
+            "terminal-colorsaurus",
+        ] {
+            assert!(
+                !crate_deps.contains(heavy),
+                "{crate_name} must not depend on {heavy}; only cox-render renders markdown and colour"
+            );
+        }
+    }
+}
+
+/// A52/plan.md §1.1: "only `cox-plugin` depends on extism", so no other
+/// crate links wasmtime. `wasmtime` itself is declared only to switch on its
+/// `anyhow` feature for extism (workspace `Cargo.toml`).
+#[test]
+fn only_plugin_depends_on_extism() {
+    let deps = all_deps();
+    for (crate_name, crate_deps) in &deps {
+        if crate_name == "cox-plugin" {
+            continue;
+        }
+        for wasm_crate in ["extism", "wasmtime"] {
+            assert!(
+                !crate_deps.contains(wasm_crate),
+                "{crate_name} must not depend on {wasm_crate}; only cox-plugin hosts WASM"
+            );
+        }
+    }
+
+    // cox-plugin sits beside the other implementations: the contract crates
+    // and the terminal-text guard, never cox-core (plan.md §1.1).
+    let plugin_allowed: HashSet<&str> = ["cox-protocol", "cox-plugin-api", "cox-sanitize"]
+        .into_iter()
+        .collect();
+    let plugin_deps = &workspace_deps()["cox-plugin"];
+    assert!(
+        plugin_deps
+            .iter()
+            .all(|d| plugin_allowed.contains(d.as_str())),
+        "cox-plugin may only depend on cox-protocol/cox-plugin-api/cox-sanitize among workspace crates, found {plugin_deps:?}"
+    );
+}
+
+/// Names of every package in `cox`'s normal dependency tree under `features`.
+fn cox_tree(features: &[&str]) -> HashSet<String> {
+    let output = Command::new("cargo")
+        .args([
+            "tree",
+            "-p",
+            "cox",
+            "-e",
+            "normal",
+            "--offline",
+            "--prefix",
+            "none",
+        ])
+        .args(["--format", "{p}"])
+        .args(features)
+        .output()
+        .expect("cargo tree should run");
+    assert!(
+        output.status.success(),
+        "cargo tree exited with {:?}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
+}
+
+/// PL§12 falsifier 1: the plugin host costs +16.8 MiB, so the `plugins`
+/// feature (on by default) is the slim-build escape hatch and must really
+/// drop extism and wasmtime.
+#[test]
+fn slim_build_has_no_wasm_runtime() {
+    let slim = cox_tree(&["--no-default-features", "--features", "otel"]);
+    let full = cox_tree(&[]);
+    for wasm_crate in ["cox-plugin", "extism", "wasmtime"] {
+        assert!(
+            !slim.contains(wasm_crate),
+            "cox without `plugins` still pulls {wasm_crate}"
+        );
+        assert!(full.contains(wasm_crate), "default cox lacks {wasm_crate}");
+    }
+}
+
 #[test]
 fn no_crate_below_cox_depends_on_core() {
     let deps = workspace_deps();
 
-    // cox-protocol is the base: no workspace-crate dependencies at all.
+    // cox-protocol is the base. Its one workspace dependency is
+    // cox-plugin-api, which it re-exports as `plugin` (A52); that crate is a
+    // pure leaf, so the contract still sits below every implementation.
+    let protocol_allowed: HashSet<&str> = ["cox-plugin-api"].into_iter().collect();
     assert!(
-        deps["cox-protocol"].is_empty(),
-        "cox-protocol must not depend on any other workspace crate, found {:?}",
+        deps["cox-protocol"]
+            .iter()
+            .all(|d| protocol_allowed.contains(d.as_str())),
+        "cox-protocol may only depend on cox-plugin-api among workspace crates, found {:?}",
         deps["cox-protocol"]
     );
 
-    // cox-core depends only on cox-protocol among workspace crates.
-    let core_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    // cox-plugin-api (T33.1) builds for wasm32 so the guest SDK can use it:
+    // no workspace-crate dependencies at all.
+    assert!(
+        deps["cox-plugin-api"].is_empty(),
+        "cox-plugin-api must not depend on any other workspace crate, found {:?}",
+        deps["cox-plugin-api"]
+    );
+
+    // cox-models (T30.24: the model/price catalog) depends only on
+    // cox-protocol among workspace crates.
+    let models_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-models"]
+            .iter()
+            .all(|d| models_allowed.contains(d.as_str())),
+        "cox-models may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-models"]
+    );
+
+    // cox-sanitize (T32.1) is a pure trust guard, same as cox-protocol: no
+    // workspace-crate dependencies at all.
+    assert!(
+        deps["cox-sanitize"].is_empty(),
+        "cox-sanitize must not depend on any other workspace crate, found {:?}",
+        deps["cox-sanitize"]
+    );
+
+    // cox-sandbox (T32.3) is a trust guard that depends only on
+    // cox-protocol among workspace crates (SandboxPolicy, SandboxMode,
+    // LinuxBackend, ToolError).
+    let sandbox_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-sandbox"]
+            .iter()
+            .all(|d| sandbox_allowed.contains(d.as_str())),
+        "cox-sandbox may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-sandbox"]
+    );
+
+    // cox-syntax (T32.4) is a pure parsing engine (tree-sitter and its
+    // five grammars): no workspace-crate dependencies at all.
+    assert!(
+        deps["cox-syntax"].is_empty(),
+        "cox-syntax must not depend on any other workspace crate, found {:?}",
+        deps["cox-syntax"]
+    );
+
+    // cox-tokens (T32.10) is a pure leaf that depends only on cox-protocol
+    // among workspace crates (ProviderError, Content, Request) — it takes a
+    // plain reqwest::Client/HeaderMap rather than any cox-provider type, so
+    // it never depends back on cox-provider.
+    let tokens_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-tokens"]
+            .iter()
+            .all(|d| tokens_allowed.contains(d.as_str())),
+        "cox-tokens may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-tokens"]
+    );
+
+    // cox-permission (T32.8) is a pure trust guard that depends only on
+    // cox-protocol among workspace crates (rule grammar, `Engine::decide`).
+    let permission_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-permission"]
+            .iter()
+            .all(|d| permission_allowed.contains(d.as_str())),
+        "cox-permission may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-permission"]
+    );
+
+    // cox-config (T32.16), the one config owner, depends only on
+    // cox-protocol among workspace crates (`Config`, `CoreError`): the CLI
+    // flag layer and the `.claude/settings.json` import (cox-ext) are passed
+    // in by `crates/cox`.
+    let config_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-config"]
+            .iter()
+            .all(|d| config_allowed.contains(d.as_str())),
+        "cox-config may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-config"]
+    );
+
+    // cox-telemetry (T32.9) is the otel stack: it takes plain values rather
+    // than cox_protocol::Config, so it has no workspace-crate dependencies.
+    assert!(
+        deps["cox-telemetry"].is_empty(),
+        "cox-telemetry must not depend on any other workspace crate, found {:?}",
+        deps["cox-telemetry"]
+    );
+
+    // cox-core depends only on cox-protocol among workspace crates (and may
+    // depend on cox-models once a card actually wires the catalog in, and
+    // on cox-permission, T32.8, re-exported at the old `permission` path).
+    // T34.1's `agent` tool matches a custom preset by `AgentDef`, but that
+    // type lives in `cox_protocol::agent` precisely so this crate never
+    // needs `cox-ext`, which does the filesystem read (`agents::discover`)
+    // the surface (`crates/cox/src/session.rs`) runs instead. cox-sanitize
+    // (T33.9) holds the secret-redaction table `redact::scrub` re-exports,
+    // shared with the plugin host; it is a pure leaf.
+    let core_allowed: HashSet<&str> = [
+        "cox-protocol",
+        "cox-models",
+        "cox-permission",
+        "cox-sanitize",
+    ]
+    .into_iter()
+    .collect();
     assert!(
         deps["cox-core"]
             .iter()
             .all(|d| core_allowed.contains(d.as_str())),
-        "cox-core may only depend on cox-protocol among workspace crates, found {:?}",
+        "cox-core may only depend on cox-protocol/cox-models/cox-permission/cox-sanitize among workspace crates, found {:?}",
         deps["cox-core"]
     );
 
-    // cox-tui and cox-acp may depend on cox-core and cox-protocol, nothing else.
-    let surface_allowed: HashSet<&str> = ["cox-core", "cox-protocol"].into_iter().collect();
+    // cox-tui and cox-acp may depend on cox-core, cox-protocol and
+    // cox-sanitize (T32.1's guard), nothing else; cox-tui also on its
+    // renderers, cox-render (T32.2); cox-acp also on the cox-sandbox guard,
+    // whose `path::confine` serves an external agent's `fs/*` requests when
+    // cox is its ACP client (T35.3, EA§4), and on cox-tools, whose `bash`
+    // runner and `classify` serve that agent's `terminal/*` requests with no
+    // second spawn path (T35.11).
+    let surface_allowed: HashSet<&str> = ["cox-core", "cox-protocol", "cox-sanitize"]
+        .into_iter()
+        .collect();
     for crate_name in ["cox-tui", "cox-acp"] {
         let d = &deps[crate_name];
         assert!(
-            d.iter().all(|dep| surface_allowed.contains(dep.as_str())),
-            "{crate_name} may only depend on cox-core/cox-protocol among workspace crates, found {d:?}"
+            d.iter().all(|dep| surface_allowed.contains(dep.as_str())
+                || (crate_name == "cox-tui" && dep == "cox-render")
+                || (crate_name == "cox-acp" && (dep == "cox-sandbox" || dep == "cox-tools"))),
+            "{crate_name} may only depend on cox-core/cox-protocol/cox-sanitize (and cox-tui on cox-render, cox-acp on cox-sandbox and cox-tools) among workspace crates, found {d:?}"
         );
     }
 
-    // provider/tools/mcp/store/ext depend only on cox-protocol: this is the
-    // rule the test is named for — none of them may reach cox-core.
+    // cox-render (T32.2) is pure rendering: the protocol's config types and
+    // the terminal-text guard, never the agent loop.
+    let render_allowed: HashSet<&str> = ["cox-protocol", "cox-sanitize"].into_iter().collect();
+    assert!(
+        deps["cox-render"]
+            .iter()
+            .all(|dep| render_allowed.contains(dep.as_str())),
+        "cox-render may only depend on cox-protocol/cox-sanitize among workspace crates, found {:?}",
+        deps["cox-render"]
+    );
+
+    // cox-provider-http (T32.12) is a pure leaf shared by every wire
+    // (http.rs/retry.rs/sse.rs): connection setup, credential resolution,
+    // error mapping, SSE framing and retry/backoff. It depends only on
+    // cox-protocol among workspace crates.
+    let provider_http_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-provider-http"]
+            .iter()
+            .all(|d| provider_http_allowed.contains(d.as_str())),
+        "cox-provider-http may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-provider-http"]
+    );
+
+    // cox-provider-openai (T32.14) is the OpenAI Responses/Chat wires and
+    // the only crate that pulls in async-openai. It depends on cox-protocol,
+    // cox-models (the catalog row behind effort/capabilities) and
+    // cox-provider-http (transport, retry, SSE) — never back on
+    // cox-provider, which re-exports it at the old `openai` path.
+    let provider_openai_allowed: HashSet<&str> =
+        ["cox-protocol", "cox-models", "cox-provider-http"]
+            .into_iter()
+            .collect();
+    assert!(
+        deps["cox-provider-openai"]
+            .iter()
+            .all(|d| provider_openai_allowed.contains(d.as_str())),
+        "cox-provider-openai may only depend on cox-protocol/cox-models/cox-provider-http among workspace crates, found {:?}",
+        deps["cox-provider-openai"]
+    );
+
+    // cox-provider-anthropic (T32.13) is the Anthropic Messages wire and its
+    // typify build step: cox-protocol, cox-models (`effort_for`, adaptive
+    // thinking) and cox-provider-http, never back on cox-provider (which
+    // would cycle with cox-provider's `pub use` re-export of it).
+    let provider_anthropic_allowed: HashSet<&str> =
+        ["cox-protocol", "cox-models", "cox-provider-http"]
+            .into_iter()
+            .collect();
+    assert!(
+        deps["cox-provider-anthropic"]
+            .iter()
+            .all(|d| provider_anthropic_allowed.contains(d.as_str())),
+        "cox-provider-anthropic may only depend on cox-protocol/cox-models/cox-provider-http among workspace crates, found {:?}",
+        deps["cox-provider-anthropic"]
+    );
+
+    // cox-provider additionally depends on cox-models (`Priced` prices every
+    // call through the catalog's `PriceTable`, T30.24), cox-tokens
+    // (re-exported at the old `tokens` path, T32.10), cox-provider-http
+    // (re-exported at the old `http`/`retry`/`sse` paths, T32.12),
+    // cox-provider-openai (re-exported at the old `openai` path, T32.14),
+    // cox-provider-testkit (T32.11): `scripted`/`replay` are thin glue over
+    // the pure scenario/cassette helpers moved there, and `from_env` uses
+    // them in production (COX_PROVIDER=scripted|replay), not just in tests;
+    // and cox-provider-anthropic (re-exported at the old `anthropic` path,
+    // T32.13).
+    let provider_allowed: HashSet<&str> = [
+        "cox-protocol",
+        "cox-models",
+        "cox-tokens",
+        "cox-provider-http",
+        "cox-provider-openai",
+        "cox-provider-testkit",
+        "cox-provider-anthropic",
+    ]
+    .into_iter()
+    .collect();
+    let provider_deps = &deps["cox-provider"];
+    assert!(
+        !provider_deps.contains("cox-core"),
+        "cox-provider must not depend on cox-core"
+    );
+    assert!(
+        provider_deps
+            .iter()
+            .all(|dep| provider_allowed.contains(dep.as_str())),
+        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http/cox-provider-openai/cox-provider-testkit/cox-provider-anthropic among workspace crates, found {provider_deps:?}"
+    );
+
+    // cox-provider-testkit (T32.11) is a pure leaf, same shape as
+    // cox-patch/cox-sanitize/cox-syntax: no workspace-crate dependencies
+    // beyond cox-protocol, so it never depends back on cox-provider (which
+    // would cycle with cox-provider's `pub use` re-export of it).
+    let testkit_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-provider-testkit"]
+            .iter()
+            .all(|d| testkit_allowed.contains(d.as_str())),
+        "cox-provider-testkit may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-provider-testkit"]
+    );
+
+    // cox-patch (T32.6) is the V4A parse/match/stage engine: a pure leaf,
+    // same shape as cox-models/cox-sanitize. `ApplyPatchTool` — the `Tool`
+    // impl that calls `path::confine` and `write::atomic_write` — stays in
+    // cox-tools so `confine` keeps its single call site.
+    let patch_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-patch"]
+            .iter()
+            .all(|d| patch_allowed.contains(d.as_str())),
+        "cox-patch may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-patch"]
+    );
+
+    // cox-search (T32.5) is the pure grep/glob walk, match and fuzzy-rank
+    // engine: a pure leaf, same shape as cox-patch/cox-syntax. `GrepTool`/
+    // `GlobTool` — the `Tool` impls that call `path::confine` and, for
+    // `grep`, archive over-cap results — stay in cox-tools so `confine`
+    // keeps its single call site.
+    assert!(
+        deps["cox-search"].is_empty(),
+        "cox-search must not depend on any other workspace crate, found {:?}",
+        deps["cox-search"]
+    );
+
+    // cox-web (T32.7) is the fetch/extract engine behind `web_fetch`: a
+    // pure leaf, same shape as cox-patch. `WebFetchTool` — the `Tool` impl
+    // that owns `ToolCx` and input parsing — stays in cox-tools.
+    let web_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-web"]
+            .iter()
+            .all(|d| web_allowed.contains(d.as_str())),
+        "cox-web may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-web"]
+    );
+
+    // mcp/store/ext depend only on cox-protocol: this is the rule the test
+    // is named for — none of them may reach cox-core.
     let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
-    for crate_name in [
-        "cox-provider",
-        "cox-tools",
-        "cox-mcp",
-        "cox-store",
-        "cox-ext",
-    ] {
+    for crate_name in ["cox-mcp", "cox-store", "cox-ext"] {
         let d = &deps[crate_name];
         assert!(
             !d.contains("cox-core"),
@@ -149,4 +505,31 @@ fn no_crate_below_cox_depends_on_core() {
             "{crate_name} may only depend on cox-protocol among workspace crates, found {d:?}"
         );
     }
+
+    // cox-tools additionally depends on cox-sandbox (T32.3: path::confine
+    // and the sandbox backends), cox-patch (T32.6: the V4A engine),
+    // cox-syntax (T32.4: outline and parse_bash), cox-search (T32.5: the
+    // grep/glob walk and match engine) and cox-web (T32.7: the web_fetch
+    // engine).
+    let tools_allowed: HashSet<&str> = [
+        "cox-protocol",
+        "cox-sandbox",
+        "cox-patch",
+        "cox-syntax",
+        "cox-search",
+        "cox-web",
+    ]
+    .into_iter()
+    .collect();
+    let tools_deps = &deps["cox-tools"];
+    assert!(
+        !tools_deps.contains("cox-core"),
+        "cox-tools must not depend on cox-core"
+    );
+    assert!(
+        tools_deps
+            .iter()
+            .all(|dep| tools_allowed.contains(dep.as_str())),
+        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax/cox-search/cox-web among workspace crates, found {tools_deps:?}"
+    );
 }

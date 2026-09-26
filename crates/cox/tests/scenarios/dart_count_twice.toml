@@ -1,0 +1,14 @@
+# T33.38: the Dart-MCP example's one tool, `count`, called twice in the
+# same turn — the `[[mcp]]` server (`plugins/examples/dart`) is spawned
+# once per `cox run` process, so two calls within one turn are what proves
+# its in-memory counter advances 1 then 2, without depending on a second
+# `cox run --resume` process reusing the first one's server (it does not).
+[[turn]]
+text = "count twice"
+tool_calls = [
+    { name = "mcp__example-dart-count__count", input = {} },
+    { name = "mcp__example-dart-count__count", input = {} },
+]
+
+[[turn]]
+text = "done"

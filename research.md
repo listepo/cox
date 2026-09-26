@@ -138,6 +138,536 @@ Claude Code auto-compacts near the window and reloads instruction files after; `
 ### 4.3 Why an own provider layer (D3)
 Candidate crates: rig-core 0.42 (multi-provider, opinionated), genai 0.7-beta, async-openai 0.41, community `anthropic` 0.0.8 (2024, unofficial, stale — ledger #20). What decides cost and correctness in 2026 is wire-level: `cache_control` placement, thinking blocks replayed unchanged on the same model, `effort`, `fallbacks`, `stop_details`, server tools, per-message system blocks. None of the frameworks track all of these, and each provider is ~500 LOC. Codex hand-rolls its client and uses `eventsource-stream` for SSE (§1.3). Verdict: own layer, `eventsource-stream` for SSE, `wiremock` + recorded `.sse` fixtures for tests.
 
+### 4.3.1 SDKs, specs and logins for the Claude Code and Codex providers (checked 2026-09-25)
+Question: before hand-writing a provider, is there (1) a maintained Rust SDK, else (2) a machine-readable spec to generate from? And can cox log in the way Claude Code and Codex do (subscription OAuth)? Every row was checked against the primary source on 2026-09-25 unless marked.
+
+| Item | Finding | Source |
+|---|---|---|
+| Official Rust SDK, Anthropic | none; official SDKs are Python, TypeScript, Go, Java, Ruby, C#, PHP | https://github.com/anthropics (org repo list) |
+| Official Rust SDK, OpenAI | none | https://github.com/openai (org repo list) |
+| `async-openai` | 0.42.0, released 2026-09-09; hand-written "based on OpenAI OpenAPI spec", struct and field names copied from it; typed Responses API incl. streaming events (`responses` feature → `response-types`); custom base URL; raw JSON escape hatches (`extra_body`, BYOT, `serde_json::Value`) | https://crates.io/api/v1/crates/async-openai ; https://github.com/64bit/async-openai (README, CONTRIBUTING.md) |
+| Community Anthropic crates | none maintained with cache_control, thinking replay and server tools; `anthropic` 0.0.8 is stale (ledger #20) | crates.io search; §4.3 |
+| Codex model client (`codex-rs`) | crates `codex-api` (Responses request + SSE), `codex-client` (transport, retry), `codex-protocol` (wire types, Rust → TS via `ts-rs`), `codex-model-provider-info`, `codex-login`; hand-written; none published on crates.io; Apache-2.0; 180+ workspace crates, no stability contract | https://github.com/openai/codex `codex-rs/Cargo.toml`, `codex-rs/codex-api/src/endpoint/responses.rs`; https://crates.io/api/v1/crates?q=codex |
+| Codex endpoints | `https://api.openai.com/v1/responses` (API key) and `https://chatgpt.com/backend-api/codex/responses` (ChatGPT login), same request code, SSE only | `codex-rs/codex-api/src/provider.rs`; `codex-rs/model-provider-info/src/lib.rs:77` |
+| Codex ChatGPT login | OAuth PKCE (S256), token endpoint `https://auth.openai.com/oauth/token`, Codex's own client id, local callback on port 1455 (fallback 1457), tokens in `$CODEX_HOME/auth.json`, requests carry `Authorization: Bearer` + `ChatGPT-Account-ID` | `codex-rs/login/src/auth/manager.rs`, `login/src/oauth/authorization.rs`, `login/src/server.rs`, `login/src/auth/storage.rs`, `model-provider/src/bearer_auth_provider.rs` |
+| Third-party use of the ChatGPT login | no OpenAI document permits or forbids it: **not found** | OpenAI docs and terms searched; nothing primary |
+| Claude Code auth modes | Console API key; Claude Pro/Max/Team/Enterprise login; Bedrock; Vertex; Microsoft Foundry; gateway | https://code.claude.com/docs/en/authentication |
+| Third-party use of a Claude subscription | **forbidden**: "Anthropic does not permit third-party developers to offer Claude.ai login into their own applications" | https://code.claude.com/docs/en/legal-and-compliance |
+| Claude Code OAuth endpoints, client id, beta header | not published by Anthropic; only community reverse-engineering: **unverified** | https://code.claude.com/docs/en/authentication (absent) |
+| Claude Code SDK dependency | the npm package ships a native binary with no declared `dependencies`; which SDK it bundles is not visible | https://registry.npmjs.org/@anthropic-ai/claude-code/latest (2.1.282) |
+| Anthropic OpenAPI spec | `openapi_spec_url` removed from `anthropic-sdk-python/.stats.yml` in commit `f9b0cf28` (2026-09-03); the last linked Stainless URL still answers: OpenAPI 3.1.0, contains `MessageStreamEvent` and `content_block_delta`. A snapshot, not a maintained pointer | https://github.com/anthropics/anthropic-sdk-python/commit/f9b0cf28 ; https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-465bff21a179090915396565d1ae8f705cf8596e2ec920eb121072f25b8a7d68.yml |
+| OpenAI OpenAPI spec | `openai/openai-openapi`, `main`, `openapi.yaml`/`openapi.json`, OpenAPI 3.1.0, MIT, ~3.7 MB, contains `ResponseStreamEvent` | https://github.com/openai/openai-openapi |
+| progenitor | 0.15.0 (2026-09-10); OpenAPI 3.0.x only (via `openapiv3` 2.2); no SSE support documented | https://crates.io/api/v1/crates/progenitor ; README |
+| typify | 0.8.0 (2026-09-09); JSON Schema → serde types; used in cox since T30.10 | https://crates.io/api/v1/crates/typify ; https://github.com/oxidecomputer/typify |
+| OpenAPI 3.1 + SSE Rust generator | none maintained found: **not found** (README-level search only) | progenitor, openapi-generator READMEs |
+
+Reading: no vendor ships Rust. For OpenAI a maintained typed crate exists (`async-openai`); for Anthropic only the spec exists, and only as an unlinked snapshot, so generation is from a vendored copy (T30.10 does this for the stream types). Subscription login: Anthropic forbids it in writing; OpenAI is silent.
+
+### 4.3.2 LM Studio's native API as a cox provider (checked 2026-09-25)
+
+LM Studio serves three API families on one port (default 1234). Facts are
+from LM Studio's docs and from the running server (LM Studio CLI commit
+`07b7252`, MLX runtime `mlx-llm-mac-arm64-apple-metal-advsimd` 1.11.0,
+model `prism-ml/bonsai-27b`).
+
+| Fact | Source |
+|---|---|
+| Native REST API v1 at `/api/v1/*` is an "official release" in LM Studio 0.4.0; the legacy `/api/v0/*` stays | https://lmstudio.ai/docs/developer/api-changelog |
+| Anthropic-compatible `POST /v1/messages` arrived in 0.4.1; OpenAI-compatible `/v1/chat/completions` tool calling since 0.3.6 | https://lmstudio.ai/docs/developer/api-changelog |
+| v1 endpoints: `GET /api/v1/models`, `POST /api/v1/models/load` (`context_length`, `eval_batch_size`, `flash_attention`, `num_experts`, `offload_kv_cache_to_gpu`), `POST /api/v1/models/unload`, `POST /api/v1/models/download`, `POST /api/v1/chat` | https://lmstudio.ai/docs/developer/rest, https://lmstudio.ai/docs/developer/rest/load |
+| `GET /api/v1/models` returns per model `max_context_length`, `loaded_instances[].config.context_length`, `capabilities.trained_for_tool_use`, `capabilities.reasoning.allowed_options`, `capabilities.vision`, quantization and format | live `curl localhost:1234/api/v1/models` |
+| `POST /api/v1/chat` rejects a `tools` array (`"Unrecognized key(s) in object: 'tools'"`); its only tool mechanism is MCP servers passed as `integrations` | live call; https://lmstudio.ai/docs/developer/core/mcp |
+| v1 chat streams named SSE events (`chat.start`, `prompt_processing.*`, `reasoning.start/delta/end`, message deltas, `chat.end` with the full result) and reports `stats` (`input_tokens`, `total_output_tokens`, `reasoning_output_tokens`, `tokens_per_second`, `time_to_first_token_seconds`); `previous_response_id` chains stateful chats | live streaming call; https://lmstudio.ai/docs/developer/rest |
+| One auth scheme for all three families when "Require Authentication" is on: `Authorization: Bearer <token>` (Anthropic path also `x-api-key`) | https://lmstudio.ai/docs/developer/core/authentication |
+| No Rust SDK: crates.io has no `lmstudio`, `lm-studio`, `lmstudio-rs`, `lmstudio_rs` (`lms` is an unrelated rsync tool). Official SDKs are TypeScript and Python only | https://crates.io/api/v1/crates/lmstudio (404), https://github.com/lmstudio-ai/lmstudio-js, https://github.com/lmstudio-ai/lmstudio-python |
+| No published OpenAPI or JSON Schema for the native API found; lmstudio-js keeps TS/zod types in `packages/lms-shared-types/src` | https://github.com/lmstudio-ai/lmstudio-js (tree checked; deeper listing **unverified**) |
+| The SDKs talk to LM Studio over a WebSocket RPC protocol | **unverified** (secondary summaries only; no LM Studio protocol doc) |
+| cox's Anthropic Messages path works against LM Studio as is: one-tool task finished, `cost_usd` 0 | live run, T30.14 |
+| `POST /api/v1/models/load` answers `type`, `instance_id`, `load_time_seconds`, `status: "loaded"` and, only when the request sets `echo_load_config: true`, `load_config` (`context_length`, …); cox did not call it against the live server (T30.16 tests it on wiremock) | https://lmstudio.ai/docs/developer/rest/load (checked 2026-09-26) |
+| `GET /api/v1/models` shape re-checked for T30.16: `prism-ml/bonsai-27b` loaded at `context_length` 251648 of `max_context_length` 262144, `trained_for_tool_use: true`; saved as `fixtures/lmstudio/models.json` | live `curl localhost:1234/api/v1/models`, 2026-09-26 |
+| `lms load prism-ml/bonsai-27b --context-length 65536 -y` left the model loaded with `context_length` 251648 and `parallel` 4 (`lms ps`, `/api/v1/models`): the loaded context must be read back, not assumed | live, 2026-09-25 |
+
+What follows for cox. Wire types fall to step 3 of D3/A40 (no Rust SDK, no
+spec), and the native surface cox needs is small: `models` and
+`models/load`. The chat loop cannot move to `/api/v1/chat`, because it takes
+no custom tool schemas, so it stays on `/v1/messages` through the existing
+Anthropic provider. OpenAI Chat is not an option either while `chat.rs` drops
+tool calls (ideas.md). The native API earns its place for what the
+compatibility endpoints lack: the loaded context length (the context window
+cox needs for compaction, today a hand-set `context_window`), tool-use and
+reasoning capabilities, load state, and loading a model with an explicit
+context length before a session starts.
+
+### 4.3.3 Providers, models, prices and effort as they stand (T30.17, repo at db1f313, checked 2026-09-25)
+The source for every row is the repository itself, at the commit named in the heading.
+
+| Concern | Where | What it does today | Divergence |
+|---|---|---|---|
+| Provider sections | `cox-protocol/src/config.rs:280-480` | Named sections `anthropic`, `openai`, `local` and `typesafe` (Jev), plus flattened `[providers.<name>]` `CompatibleProviderConfig`. `models_for` (310-325) matches the four names by hand, then falls through to `custom`. | Knobs differ by section. `timeout_s`/`max_retries` exist only on Anthropic and Jev. `cache_ttl` exists only on Anthropic. `context_window` exists only on Local and Compatible. `api` exists on OpenAI, Local and Compatible. A pinned `model` exists on Local, Jev and Compatible. |
+| Construction | `cox/src/session.rs:833-934` | `backend_for` has one match arm per family. `openai_shaped` (909) is shared by the OpenAI-wire arms only. | Local takes the whole config struct (861). Anthropic and Jev have bespoke constructors. |
+| Keys | `anthropic/mod.rs:170-171`; `session.rs:855,875,896` | Anthropic always uses `ANTHROPIC_API_KEY` or keyring `cox/anthropic`. Jev resolves its section's `api_key_env`, then the keyring. OpenAI and Compatible read `std::env::var(api_key_env)` only. | `providers.anthropic.api_key_env` is never read. OpenAI and Compatible have no keyring fallback (A9 deferred it). |
+| Retry, timeout | `AnthropicProvider::new` (`anthropic/mod.rs:86`), Jev | Anthropic and Jev take a `retry::Policy` from config. Chat and Responses wrap `stream_with_retry` with `Policy::default()`. | Retry is configurable for two of five families. |
+| Context window | `anthropic/mod.rs:198` (200 000), `jev.rs:381` (128 000), `session.rs:857` (400 000 OpenAI default), `responses.rs:531` (from config) | `Caps.max_context` is a literal per provider unless Responses finds a configured model. | A second source of truth next to `ProviderModel.context_window`. A larger configured window on Anthropic is ignored. |
+| Thinking capability | `anthropic/request.rs:40,403` `ADAPTIVE_THINKING_PREFIXES` | A model-name prefix list decides `thinking: adaptive`. | A third model table, disjoint from `ProviderModel` and `prices.toml`. |
+| Effort | `types.rs:111` `Effort {Low, High, Xhigh}`; `router.rs:164` `clamp_effort`; `request.rs:140,394`; `responses.rs:96,287`; `config.rs:263` | The router clamps the level to `ProviderModel.efforts`. Anthropic sends `output_config.effort` plus adaptive thinking. Responses sends `reasoning.effort`. | Chat, Local and Compatible send no effort. Jev accepts the level but does not map it. The models.dev `medium` collapses into `High`. Each wire has its own `effort()` fn. |
+| Prices | `cox-provider/src/usage.rs:36-233` | `PriceTable` comes from `prices.toml` and is keyed by the bare model id. `Priced` wraps any `Provider` and prices each `Usage`. | This path is already unified. A model in `providers.*.models` can have no price row: it is costed at 0 with `estimated=true` and warned about once. Only a unit test (`usage.rs:255-291`) checks catalog/price sync. |
+| Usage | `types.rs` `Usage`; `anthropic/stream.rs:255,316`; `chat.rs:406`; `responses.rs:454` | There is one struct. | Only Anthropic fills `cache_write_tokens`. The Chat and Responses APIs do not bill cache writes, so 0 is correct there. |
+| Model id and routing | `types.rs:979` `ModelId(String)`; `cli.rs:28-36`; `config_load.rs:113-117,186-196`; `router.rs:88-157` | `Router::pick` resolves tier → provider → model → effort in one place. | `--provider`/`--model` retarget only the `code` tier. Nothing parses a `vendor/model` id, although `ProviderModel.id` documents the form for gateways. |
+| Chat `reasoning_effort` — OpenAI (T30.26, checked 2026-09-26) | OpenAI API reference, Create chat completion: https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create | Documents `reasoning_effort` as an optional top-level field, one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and notes that not every reasoning model supports every value. | Accepted, but model-dependent: cox sends it only for a `models` entry that declares `reasoning_effort = true`. |
+| Chat `reasoning_effort` — LM Studio (T30.26, checked 2026-09-26) | LM Studio docs, OpenAI Compatibility → Chat Completions, "Supported payload parameters": https://lmstudio.ai/docs/developer/openai-compat/chat-completions | Lists `model`, `top_p`, `top_k`, `messages`, `temperature`, `max_tokens`, `stream`, `stop`, `presence_penalty`, `frequency_penalty`, `logit_bias`, `repeat_penalty`, `seed`; no `reasoning_effort`. Its Responses page (https://lmstudio.ai/docs/developer/openai-compat/responses) shows `"reasoning": {"effort": "low"}` in an example. | Not documented on Chat, so cox's Chat wire does not send it by default; the per-model opt-in stays off for LM Studio rows unless a user sets it. |
+
+**models.dev registry (T30.20, checked 2026-09-25).** `GET https://models.dev/api.json` returns JSON with no key and no pagination: 223 providers. The default urllib User-Agent gets HTTP 403, so the script sends its own. Shape: `{provider_id: {models: {model_id: {limit: {context, output}, cost: {input, output, cache_read, cache_write} (USD/MTok, absent = 0), reasoning_options: [{type: "effort", values: [...]} | {type: "toggle"} | …]}}}}`. Two cox section names differ from models.dev ids: `moonshot` → `moonshotai` and `z-ai` → `zai`. `cox-vendor models` (`scripts/vendor/src/cox_vendor/models.py`) regenerates `prices.toml` rows and `default.toml` `models` arrays from it.
+
+Conclusions for the design (`docs/design/providers.md` § Target shape):
+
+1. Two pieces are already unified and stay as they are: the router's resolution and the `Priced` cost path.
+2. The splits are at construction time: which knobs a section has, how its key resolves, and where the model facts live.
+3. One descriptor per section and one model catalog remove the literals and the prefix table. `Caps` then comes from the catalog.
+
+### 4.3.4 Crate split: measurements (T30.18, repo at db1f313, checked 2026-09-25)
+The source is the repository at the commit named in the heading. LOC counts come from `wc -l` over each crate's `*.rs` files, tests included. The internal graph comes from `use crate::…` lines. The workspace lists `members = ["crates/*"]` (`Cargo.toml:3`), so a new crate directory is picked up without editing the manifest.
+
+| Crate | LOC | Largest modules | Heavy or platform deps |
+|---|---|---|---|
+| `cox` | 8 066 | `session.rs` 1311, `config_load.rs` 804, `plain.rs` 651, `doctor.rs` 650, `stats.rs` 597, `telemetry.rs` 287 | clap, figment, toml_edit; opentelemetry ×5 (feature `otel`, on by default, `crates/cox/Cargo.toml:10-16`) |
+| `cox-protocol` | 3 331 | `types.rs`, `config.rs`, `traits.rs` | serde, schemars |
+| `cox-core` | 12 451 | `session.rs` 1741, `init.rs` 667, `subagent.rs` 651, `turn.rs` 624, `context.rs` 602, `permission/*` 448, `rollout.rs` 446, `compact.rs` 435, `router.rs` 352 | globset |
+| `cox-provider` | 6 941 (src) | `openai/chat.rs` 1042, `openai/responses.rs` 986, `anthropic/*` 2070, `jev.rs` 554, `usage.rs` 473, `scripted.rs` 451, `tokens.rs` 360, `replay.rs` 302, `retry.rs` 248, `http.rs` 159, `sse.rs` 88 | reqwest, tiktoken-rs, async-openai, typify (build) |
+| `cox-tools` | 9 201 | `bash/*` 893, `v4a/*` 987, `sandbox/*` 714, `memory.rs` 610, `git.rs` 600, `grep.rs` 507, `checkpoint.rs` 416, `glob.rs` 366, `web_fetch.rs` 365, `path.rs` 209, `outline.rs` 195 | tree-sitter + 5 grammars (`outline.rs`, `bash/classify.rs:8,84`), ignore / grep-searcher / grep-regex (`grep.rs:15-17`), nucleo (`glob.rs:16`), reqwest (`web_fetch` only, `Cargo.toml:31-32`), nix, landlock and seccompiler (Linux) |
+| `cox-mcp` | 1 717 | client, server | rmcp, reqwest |
+| `cox-store` | 1 930 | | diesel, libsqlite3-sys |
+| `cox-ext` | 2 816 | instructions, skills, commands, subagents, hooks | serde_yaml |
+| `cox-tui` | 14 508 | `state.rs` 2548, `theme.rs` 724, `term.rs` 589, `diff.rs` 569, `markdown.rs` 538, `keymap.rs` 514 | ratatui, crossterm, syntect + two-face, pulldown-cmark, terminal-colorsaurus |
+| `cox-acp` | 1 390 | one adapter | agent-client-protocol |
+
+Findings:
+
+- **The core's cycle.** `cox-core`: `session.rs` ↔ `turn.rs` import each other, and `init`, `subagent`, `compact`, `memory_extract` and `rewind` hang off `session`. This mass cannot be split without redesigning the loop.
+  - Leaves with no `use crate::`: `permission/*`, `router.rs`, `rollout.rs`, `budget.rs` (55), `cache_diag.rs` (172), `dedup.rs` (209), `redact.rs` (261), `truncate.rs` (119).
+- **The TUI.** `cox-tui`: `state.rs` is the TEA hub, with 15 internal imports.
+  - Leaves with no `use crate::`: `theme`, `color`, `svg`, `term`, `text`, `vim`, `link`, `tasks`.
+  - `markdown` and `diff` import two crate modules each.
+- **A guard reached from outside the TUI.** The headless surface imports the TUI crate for one function: `crates/cox/src/plain.rs:21` `use cox_tui::text::sanitize`. `cox-tools/src/git.rs:8` routes git output through the same guard.
+  - The two other `sanitize` names are unrelated helpers, not copies of the guard: `cox-ext/src/memory.rs:193` sanitizes a file name, and `cox-store/src/fts.rs:191` sanitizes an FTS query.
+- **Syntax parsing.** `cox-tools`: tree-sitter serves both `outline.rs` and the bash classifier (`bash/classify.rs:84`). A syntax crate must take both, or the grammars stay in `cox-tools`.
+- **The patch engine.** `v4a/apply.rs` does file I/O, so the patch engine is an adapter, not a pure crate.
+- **The dependency test.** `crates/cox/tests/deps.rs` (152 lines) enforces the DAG through `cargo metadata`:
+  - `cox-protocol` depends on nothing;
+  - `cox-core` depends only on `cox-protocol`;
+  - `cox-tui` and `cox-acp` depend only on `cox-core` and `cox-protocol`;
+  - the adapters never depend on `cox-core`;
+  - only `cox-store` may depend on diesel.
+
+  Any new crate needs a rule there. D1 (`plan.md:25`) fixes "ten in-tree crates".
+- **Shared packages.** `packages/`: only `packages/crates/file-backup` exists, and cox has no matching code to replace with it.
+- **Build time (T32.2, C2 `cox-render`, measured 2026-09-26).** Setup: macOS arm64, 16 cores, `dev` profile, Rust 1.97.1, worktree on `main` at `855fe68`, default `-j`. Command: `cargo build -p cox-tui --timings`, run 5 times per row. "Clean" means `cargo clean -p cox-tui [-p cox-render]` first, with every other dependency already built. "Incremental" means `touch crates/cox-tui/src/state.rs` first. "Before" and "after" ran back to back on the same tree (the move stashed, then restored), at load average 12–15. Unit times come from the `--timings` report; figures are medians.
+
+  | Build | Before: `cox-tui` unit | After: `cox-tui` unit | After: `cox-render` unit | Wall before → after |
+  | --- | --- | --- | --- | --- |
+  | clean | 1.25 s | 0.98 s | 0.50 s | 2.19 s → 2.20 s |
+  | incremental, `state.rs` touched | 0.42 s (0.40–0.43) | 0.39 s (0.37–0.39) | 0 (not rebuilt) | 1.40 s → 1.34 s |
+
+  **Result.** The split gains about 0.03 s of `cox-tui` compile time per `state.rs` edit (about −7 % of the unit, about −4 % of wall time). The ranges do not overlap, so the gain is real, but it is negligible. Explanation: dependency rule (a) moves heavy *dependencies*, and cargo never rebuilds those on an edit either way. Incremental compilation already skipped most of the moved 2.6k lines. The clean total grows by about 0.2 CPU-s (1.25 s → 0.98 s + 0.50 s), with no wall-time change because the two units overlap. So rule (a) buys almost nothing for edit-compile time. What remains is the dependency guard (`deps.rs` `only_render_depends_on_the_highlighters`) and letting a surface render without the TUI. A first unloaded run on the same day (load 28–36) gave the same picture: 0.41–0.47 s before, 0.35–0.39 s after.
+
+### 4.3.5 WASM plugin host: extism and the precedents (A52, `docs/design/plugins.md`, checked 2026-09-26)
+
+Primary sources only. Crate facts come from the crates.io API (`https://crates.io/api/v1/crates/<name>` and `/<version>/dependencies`) and from the published crate sources (`https://static.crates.io/crates/<name>/<name>-<version>.crate`), read at the version named. Lines cited as `src/…:N` are in that crate's published source.
+
+| # | Fact | Source (primary) | Checked |
+|---|---|---|---|
+| P1 | `extism` latest stable is 1.30.0, published 2026-06-04, BSD-3-Clause. `extism-manifest` and `extism-convert` are 1.30.0, same day. | https://crates.io/api/v1/crates/extism, `/extism-manifest`, `/extism-convert` | 2026-09-26 |
+| P2 | `extism-pdk` (guest SDK) latest stable is 1.4.1, published 2025-05-19. It depends on `extism-convert ^1.10`, `extism-pdk-derive ^1.4.1`, `serde`, `serde_json`, `base64`, `anyhow`. | https://crates.io/api/v1/crates/extism-pdk, `/extism-pdk/1.4.1/dependencies` | 2026-09-26 |
+| P3 | `extism` 1.30.0 depends on `wasmtime ^43`, `wasi-common ^43` and `wiggle ^43`. The wasmtime features it enables are `cache`, `gc`, `gc-drc`, `cranelift`, `coredump`, `wat`, `parallel-compilation`, `pooling-allocator`, `demangle`. The latest `wasmtime` is 49.0.1 (2026-09-24), so cox would get the wasmtime extism pins, six majors behind. | https://crates.io/api/v1/crates/extism/1.30.0/dependencies; https://crates.io/api/v1/crates/wasmtime | 2026-09-26 |
+| P4 | Other normal dependencies of `extism` 1.30.0: `anyhow 1`, `tracing 0.1`, `tracing-subscriber ^0.3.23` (`std`, `env-filter`, `fmt`), `toml ^0.9`, `serde_json`, `sha2 ^0.10`, `glob`, `url`, `uuid` (`v4`), `libc`, `async-trait`; `ureq ^3.0` is optional. `cbindgen` is a build dependency. | same as P3 | 2026-09-26 |
+| P5 | Default features are `http`, `register-http`, `register-filesystem` and `wasmtime-default-features`. `http` and `register-http` pull `ureq`. With `default-features = false`, the plugin HTTP host function refuses every request (`src/pdk.rs:180-192`), URL-sourced modules are refused (`src/manifest.rs:81-84`), and file-sourced modules are refused (`src/manifest.rs:42-44`). Bytes passed in by the host still load. | https://crates.io/api/v1/crates/extism/1.30.0 (`features`); `extism-1.30.0/src/pdk.rs`, `src/manifest.rs` | 2026-09-26 |
+| P6 | `extism::Error` is "a wrapper around a dynamic error type" (anyhow). A host crate therefore has to map it into its own `thiserror` enum at the boundary. | https://docs.rs/extism/1.30.0/extism/ | 2026-09-26 |
+| P7 | `PluginBuilder` methods: `with_wasi(bool)`, `with_function(name, args, returns, UserData<T>, f)`, `with_function_in_namespace`, `with_functions`, `with_fuel_limit(u64)`, `with_cache_config(dir)`, `with_cache_disabled()`, `with_wasmtime_config(Config)`, `with_debug_options`, `build() -> Result<Plugin, Error>`, `compile() -> Result<CompiledPlugin, Error>`. `Plugin::new_from_compiled(&CompiledPlugin)` builds an instance from a compiled module. | https://docs.rs/extism/1.30.0/extism/struct.PluginBuilder.html, `/struct.Plugin.html` | 2026-09-26 |
+| P8 | `Plugin` is `Send` and `Sync` (`unsafe impl`, `src/plugin.rs:182-183`). `Plugin::call` takes `&'b mut self` (`src/plugin.rs:1124`), so one instance runs one call at a time. Other methods: `function_exists`, `cancel_handle`, `fuel_consumed`, `reset`, `call_with_host_context`. | https://docs.rs/extism/1.30.0/extism/struct.Plugin.html; `extism-1.30.0/src/plugin.rs` | 2026-09-26 |
+| P9 | `CancelHandle` is `Clone + Send + Sync`, and `cancel()` stops a running call from another thread. | https://docs.rs/extism/1.30.0/extism/struct.CancelHandle.html | 2026-09-26 |
+| P10 | `Pool::get(timeout)` returns `Ok(None)` when no instance frees up in time. The maximum instance count is set through `PoolBuilder`. | https://docs.rs/extism/1.30.0/extism/struct.Pool.html | 2026-09-26 |
+| P11 | `Manifest` fields: `wasm`, `memory: MemoryOptions`, `config: BTreeMap<String,String>` (read by the guest's `config::get`), `allowed_hosts: Option<Vec<String>>` (empty = no host; wildcards allowed), `allowed_paths: Option<BTreeMap<String, PathBuf>>` (WASI preopens; a `ro:` key prefix mounts read-only, `src/current_plugin.rs:354`), `timeout_ms: Option<u64>`. | https://docs.rs/extism-manifest/1.30.0/extism_manifest/struct.Manifest.html; `extism-1.30.0/src/current_plugin.rs` | 2026-09-26 |
+| P12 | `MemoryOptions` fields: `max_pages: Option<u32>` (64 KiB WASM pages), `max_http_response_bytes: Option<u64>`, `max_var_bytes: Option<u64>` ("default value is 1mb"; `0` disables vars). | https://docs.rs/extism-manifest/1.30.0/extism_manifest/struct.MemoryOptions.html | 2026-09-26 |
+| P13 | `timeout_ms` works through wasmtime epoch interruption driven by a timer thread (`src/plugin.rs:56`, `src/timer.rs`). A timed-out call returns `Error("timeout")` (`src/plugin.rs:1081`). | `extism-1.30.0/src/plugin.rs`, `src/timer.rs` | 2026-09-26 |
+| P14 | A `Wasm` source may carry a `hash`. extism checks it as SHA-256 and refuses a mismatch (`src/manifest.rs:18-30`). | `extism-1.30.0/src/manifest.rs` | 2026-09-26 |
+| P15 | A module given as bytes may be WAT text as well as a binary: the loader accepts input that starts with `(module` (`src/manifest.rs:125-135`, wasmtime `wat` feature from P3). This lets host tests use inline WAT with no build step. | `extism-1.30.0/src/manifest.rs` | 2026-09-26 |
+| P16 | `with_wasi(true)` builds a `wasi-common` preview-1 `WasiCtx` whose only directories are the `allowed_paths` preopens (`src/current_plugin.rs:345-365`). | `extism-1.30.0/src/current_plugin.rs` | 2026-09-26 |
+| P17 | The Rust PDK README uses the `wasm32-unknown-unknown` target with `crate-type = ["cdylib"]`, and names `wasm32-wasip1` as the alternative when WASI is needed (README lines 31-78). Host functions are imported with `#[host_fn] extern "ExtismHost" { … }` (README line 322). Guest helpers: `input`, `output`, `config::get`, `var::{get,set,remove}`. | `extism-pdk-1.4.1/README.md`, `src/lib.rs`, `src/config.rs`, `src/var.rs` | 2026-09-26 |
+| P18 | Zellij's `ZellijPlugin` has `load(&mut self, BTreeMap<String,String>)`, `update(&mut self, Event) -> bool` (returning `true` asks for a `render`), `pipe(&mut self, PipeMessage) -> bool` and `render(&mut self, rows, cols)`, which is called only after an update asks for it or on resize. | `zellij-tile-0.45.1/src/lib.rs:33-48` (crates.io 0.45.1, 2026-08-28) | 2026-09-26 |
+| P19 | Zellij plugins `subscribe` to `EventType`s and call `request_permission` over 14 permission types (`ReadApplicationState`, `RunCommands`, `FullHdAccess`, `InterceptInput`, …). The answer comes back as the `PermissionRequestResult` event. | https://zellij.dev/documentation/plugin-api-events.html, https://zellij.dev/documentation/plugin-api-permissions.html | 2026-09-26 |
+| P20 | Zed extensions: an `extension.toml` manifest, Rust compiled to `wasm32-wasip2` against `zed_extension_api` (latest 0.7.0, 2025-09-12). Capabilities are declared in `extension.toml` (`process:exec`, `download_file`, `npm:install`, with wildcard patterns). Users narrow them with the `granted_extension_capabilities` setting. | https://zed.dev/docs/extensions/developing-extensions, https://zed.dev/docs/extensions/capabilities, https://crates.io/api/v1/crates/zed_extension_api | 2026-09-26 |
+| P21 | Claude Code plugins are directory bundles with `.claude-plugin/plugin.json` plus `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, `monitors/`, `output-styles/`, `themes/`, `bin/`, `.mcp.json` and `.lsp.json`. No component is loaded into the process. | https://code.claude.com/docs/en/plugins-reference ("Standard layout") | 2026-09-26 |
+| P22 | mise's `rust` tool takes a `targets` option (array or comma list) and adds missing targets even when the toolchain is already installed. | https://mise.jdx.dev/lang/rust.html | 2026-09-26 |
+| P23 | `dtolnay/rust-toolchain` takes a `targets` input ("Comma-separated string of additional targets to install e.g. wasm32-unknown-unknown"). cox CI uses `dtolnay/rust-toolchain@1.97.1` (`.github/workflows/ci.yml:23`). | https://github.com/dtolnay/rust-toolchain; repo file | 2026-09-26 |
+| P24 | The repo pins `rust = "1.97.1"` with no `targets` (`mise.toml`). On the author's machine, 1.97.1 has `wasm32-unknown-unknown` installed and not `wasm32-wasip1` (`rustup target list --installed`). This is machine state, not a repo guarantee. | `mise.toml`; local `rustup` | 2026-09-26 |
+| P25 | Measured under load (2026-09-26; macOS arm64, 16 cores, load average 36–47 from other agents; `release` profile; clean `target/`). The cox release binary grows from 53 713 168 B (51.2 MiB) to 71 277 728 B (68.0 MiB): **+17 564 560 B (+16.8 MiB)**, with `crates/cox` linking `cox-plugin` (extism 1.30.0 with default features off; wasmtime 43.0.2 with extism's features plus `anyhow`, P38). Nothing in `cox` depends on `cox-plugin` yet, so the "after" build used a temporary call to `PluginHost::load` in `main`, reverted after the measurement. Clean `cargo build --release -p cox --timings`: wall time 159.0 s before and 138.8 s after, so load noise is larger than the difference. Summed unit time went from 1 015 s to 1 478 s (+463 CPU-s, 581 → 770 units). The largest new units are cranelift-codegen (74 s), wasmtime (42 s), zstd-sys (30 s), wasmtime-environ (26 s), wasmparser (24 s), wast (24 s), wasmtime-internal-cranelift (24 s) and extism (22.5 s). Binary size is the deterministic number; wall-clock build growth cannot be measured on this machine under this load. Result: PL§12 falsifier 1 fired (budget 10 MiB). The creator's decision (2026-09-26): a default-on cargo feature `plugins` on `crates/cox` gates the optional `cox-plugin` dependency, so `--no-default-features --features otel` is the slim build without extism or wasmtime (`deps.rs` `slim_build_has_no_wasm_runtime`), and the binary budget becomes 20 MiB (PL§11, PL§12). | `scripts/footprint.sh` before and after; `cargo build --timings` HTML reports; T33.3 | 2026-09-26 |
+| P26 | `github.com/extism/go-pdk` is official. Its latest release is v1.1.3 (2025-03-18) and the repo was last pushed 2026-01-22. The README recommends TinyGo (`tinygo build -o plugin.wasm -target wasip1 -buildmode=c-shared main.go`), says TinyGo ≥ 0.34 supports reactor modules natively, and also documents standard Go (`GOOS="wasip1" GOARCH="wasm" go build -buildmode=c-shared`). Exports use `//go:wasmexport`. | https://github.com/extism/go-pdk; https://api.github.com/repos/extism/go-pdk/releases | 2026-09-26 |
+| P27 | Go 1.24 added the `go:wasmexport` directive, and `-buildmode=c-shared` builds a reactor/library on `GOOS=wasip1`. The latest Go is 1.27.1. | https://go.dev/doc/go1.24 (WebAssembly section); https://go.dev/dl/?mode=json | 2026-09-26 |
+| P28 | The latest TinyGo is v0.42.0 (2026-09-01). | https://api.github.com/repos/tinygo-org/tinygo/releases/latest | 2026-09-26 |
+| P29 | The extism GitHub organisation has PDKs for Rust, Go, C, C++, AssemblyScript, Haskell, .NET, Zig, JS, Python and MoonBit, and none for Kotlin or Dart. | https://api.github.com/orgs/extism/repos (repos with `pdk` in the name) | 2026-09-26 |
+| P30 | The only Kotlin PDK found is the community repo `LizAinslie/extism-kotlin-pdk`, last pushed 2023-11-30 (5 stars): dead by the workspace rule. No Dart PDK was found; the only Dart extism repos are *host* SDKs (`AmiK2001/extism-dart-sdk`). | https://api.github.com/search/repositories?q=extism+kotlin, `?q=extism+dart`, `?q=extism+pdk+dart` | 2026-09-26 |
+| P31 | Kotlin/Wasm is Beta. The `wasmWasi` target "supports WASI 0.1, also known as Preview 1", with 0.2 planned, and names Node.js, Wasmtime, Deno and WasmEdge as runtimes. Browsers need "garbage collection and legacy exception handling". The page does not say which exception-handling encoding `wasmWasi` emits. | https://kotlinlang.org/docs/wasm-overview.html, https://kotlinlang.org/docs/wasm-wasi.html | 2026-09-26 |
+| P32 | `kotlin.wasm.WasmExport` and `WasmImport` exist since Kotlin 1.8 and are experimental (opt-in `ExperimentalWasmInterop`). The latest Kotlin is v2.4.20 (2026-09-07). | https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.wasm/; https://api.github.com/repos/JetBrains/kotlin/releases/latest | 2026-09-26 |
+| P33 | The extism 1.30.0 engine config turns on `wasm_tail_call`, `wasm_function_references` and `wasm_gc`. It turns on `wasm_exceptions` only under its non-default `wasmtime-exceptions` feature (`src/plugin.rs:60-66`). | `extism-1.30.0/src/plugin.rs`; https://crates.io/api/v1/crates/extism/1.30.0 (`features`) | 2026-09-26 |
+| P34 | The current wasmtime docs list `gc`, `function-references`, `exception-handling` and `tail-call` as Tier 1. The page names no version and does not say whether "legacy" exception handling is supported. **unverified** for wasmtime 43, the version extism pins. | https://docs.wasmtime.dev/stability-tiers.html | 2026-09-26 |
+| P35 | dart2wasm output "currently targets JavaScript environments … and thus currently doesn't support execution in standard Wasm run-times like wasmtime and wasmer". It needs WasmGC and a JS bootstrap. The WASI/component-model proposal dart-lang/sdk#56366 is open. The latest Dart stable is 3.13.4 (2026-09-15). | https://dart.dev/web/wasm; https://github.com/dart-lang/sdk/issues/56366; https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION | 2026-09-26 |
+| P36 | `dart_mcp` (the Dart team, `dart-lang/ai`) latest is 0.5.2 (2026-06-29). | https://pub.dev/api/packages/dart_mcp | 2026-09-26 |
+| P37 | The mise registry has `go` (core), `tinygo` (aqua), `kotlin` (github:JetBrains/kotlin), `java` (core), `gradle` (aqua) and `dart` (http). | `mise registry` (local mise, registry as of 2026-09-26) | 2026-09-26 |
+| P38 | `extism` 1.30.0 does not compile with `default-features = false` alone: 20+ `E0277` errors ("`?` couldn't convert the error: `wasmtime::Error: std::error::Error` is not satisfied", `src/plugin.rs`, `src/manifest.rs`, `src/current_plugin.rs`). It depends on wasmtime 43 with `default-features = false` and a list that omits wasmtime's `anyhow` feature (P3), which only its `wasmtime-default-features` feature brings, via the whole wasmtime default set. Declaring `wasmtime = { version = "43", default-features = false, features = ["anyhow"] }` beside it fixes the build without the rest of that set. | `extism-1.30.0/Cargo.toml` (`[dependencies.wasmtime]`, `[features]`); `wasmtime-43.0.2/Cargo.toml` (`[features] default`, `anyhow`); local `cargo build -p cox-plugin` | 2026-09-26 |
+| P39 | wasmtime 43.0.2, the newest version extism 1.30.0 allows (`^43`), is affected by two advisories with no fix in the 43 line: RUSTSEC-2026-0222 / GHSA-hgjw-h833-99q9 "Stores can mix up type indices between engines" (2026-07-31; patched in >=24.0.12 <25, >=36.0.13 <37, >=46.0.2 <47, >=47.0.3) and RUSTSEC-2026-0269 / GHSA-vqjp-4c8c-hfgg "Filesystem sandbox escape when paths or symlinks contain trailing slashes" (2026-08-20; patched in >=24.0.13 <25, >=36.0.14 <37, >=46.0.3 <47, >=47.0.4). No extism release after 1.30.0 (2026-06-04) exists; extism `main` already pins wasmtime 48 (`runtime/Cargo.toml`), which neither advisory affects. `cargo deny check advisories` fails on both. 0222 is not guest-triggerable: it needs the embedder to put an object from one `Engine` into another `Engine`'s `Store` through specific APIs (`Store::debug_register_module`, `StructRefPre`/`ArrayRefPre`/`ExnRefPre::new`, `Tag::new`, breakpoint edits); single-engine embedders and embedders not calling them are not affected. extism 1.30.0 calls none of them, and it cannot share one engine: `CompiledPlugin::new` always builds its own (`src/plugin.rs:74`) and takes no `Engine`. 0269 is a WASI filesystem sandbox escape (cap-std, macOS and Linux without `openat2`). The creator's decision (2026-09-26): ignore both in `deny.toml` with a reason and a review date of 2026-12-31, to be removed when extism ships wasmtime >= 48; keep WASI off and block filesystem preopens (T33.14) until then; cox never moves wasmtime objects between plugins. | https://rustsec.org/advisories/RUSTSEC-2026-0222, https://rustsec.org/advisories/RUSTSEC-2026-0269 (local advisory-db copy); https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-hgjw-h833-99q9, `/GHSA-vqjp-4c8c-hfgg`; https://crates.io/api/v1/crates/extism; https://github.com/extism/extism/blob/main/runtime/Cargo.toml; `extism-1.30.0/src/plugin.rs` | 2026-09-26 |
+| P40 | T33.35 spike toolchain, installed locally via `plugins/spikes/kotlin/mise.toml` (not the root or `plugins/mise.toml`): `kotlinc-jvm 2.4.20` (matches P32's latest release), Temurin OpenJDK `21.0.12+8-LTS`, Gradle `9.8.0`. | local machine, `mise exec -- kotlinc -version` / `java -version` / `gradle -version` | 2026-09-26 |
+| P41 | The spike module (`plugins/spikes/kotlin`, throwaway, not merged): a Kotlin Multiplatform `wasmWasi` target (`binaries.executable()`) with one `@WasmExport("cox_init")` function that calls one `@WasmImport("extism:host/env", "alloc")` import and returns `Int`. `./gradlew compileProductionExecutableKotlinWasmWasi` produced a 6 165-byte `kotlin-spike.wasm`. A direct `wasmtime::Module::new` parse (bypassing extism, with `wasm_exceptions`/`wasm_gc`/`wasm_function_references`/`wasm_tail_call` all on) lists exactly one import, `extism:host/env::alloc`, and three exports: `cox_init` (`() -> i32`), `memory`, `_start`. No WASI import appears anywhere in this module — Kotlin/Wasm's `wasmWasi` runtime bootstrap does not pull in `wasi_snapshot_preview1` unless the program actually performs I/O. | local build; `wasmtime::Module::imports()`/`exports()` dump, scratch `crates/cox-plugin/examples/kotlin_spike.rs`, not committed | 2026-09-26 |
+| P42 | Loading that module in extism 1.30.0 with the workspace's current, unmodified pins (`default-features = false`, no `wasmtime-exceptions`) fails to *parse*, before WASI or any host-function question arises: `failed to parse WebAssembly module: exceptions proposal not enabled`. This reproduces identically with `with_wasi(false)` (`cox_plugin::host::PluginHost::load`, the real host exactly as committed, A55) and with `with_wasi(true)` (raw `extism::PluginBuilder`) — the failure has nothing to do with WASI. Confirms P33/P34 empirically for wasmtime 43.0.2: Kotlin 2.4.20's `wasmWasi` compiler output unconditionally emits the WebAssembly exception-handling proposal, and extism enables it only under its non-default `wasmtime-exceptions` feature. | local, scratch `crates/cox-plugin/examples/kotlin_spike.rs`, not committed | 2026-09-26 |
+| P43 | With `wasmtime-exceptions` turned on (a temporary, reverted edit to the workspace root `Cargo.toml`'s `extism` line, never committed): (a) the module parses and instantiates through `cox_plugin::host::PluginHost::load` with WASI **off**, exactly as the real host runs today (P41 — this module needs no WASI, so A55/T33.43 is not what blocks it); `cox_init` is found and a raw `extism::Plugin::call("cox_init", …)` succeeds. (b) The full cox `host.init()` round-trip (JSON `InitIn` → `InitOut`) fails with `plugin payload is not the expected JSON: EOF while parsing a value` — expected: this probe never calls extism's `input_*`/`output_set` host functions, so it implements none of the real PDK I/O contract a T33.36 SDK would need to. (c) Instantiating and calling succeed identically with WASI on (`extism::PluginBuilder::with_wasi(true)`, scratch only). | local, same scratch example | 2026-09-26 |
+| P44 | **Dart WASI re-check spike (T33.37, falsifier for P35/PL§13).** dart-lang/sdk#56366 is still `state: open` (8 comments, last 2026-06-21). Installed the latest stable Dart SDK, 3.13.4 (macOS arm64, from the official archive, throwaway dir, not the pinned toolchain). `dart compile wasm --help` has no flag for a non-JS/WASI target. `dart compile wasm -o main.wasm main.dart` on a one-line `print` program emits `main.wasm` plus a JS bootstrap `main.mjs` (and a source map); the `.mjs` calls `WebAssembly.compileStreaming(source, {builtins: ['js-string']})` and builds a `dart2wasm` import object of JS functions, with a `jsStringPolyfill` registered under import module `"wasm:js-string"` as fallback. Loading `main.wasm` through the workspace's pinned `extism` 1.30.0 / `wasmtime` 43.0.2 (`extism::PluginBuilder::new(manifest).with_wasi(true).build()`, a `#[ignore]` test in `cox-plugin`, not committed) fails to parse: `"failed to parse WebAssembly module: exceptions proposal not enabled (at offset 0x276)"` — extism/wasmtime 43 only turn on `wasm_exceptions` behind the non-default `wasmtime-exceptions` feature (P33), and even with that feature on, the module would still need imports extism's ABI does not supply (`wasm:js-string`, the `dart2wasm` JS function table). **Falsifier not met: refuted, `dart compile wasm` still needs a JS bootstrap.** The one new lead since P35: a third-party package outside the Dart SDK, `simolus3/wasm.dart`'s `wasm_tools` (first published 2026-06-21, per the issue thread), wraps `dart2wasm` with a hand-built WASI/component-model shim; not tried here — it is not an SDK-level fix and the issue itself is still open. Re-run this spike when #56366 closes or a `dart compile wasm` release note says it targets non-JS embedders directly. | https://api.github.com/repos/dart-lang/sdk/issues/56366 (state, comments); https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION (3.13.4); local `dart --version`, `dart compile wasm --help`, `dart compile wasm`, and `extism::PluginBuilder::build()` against the workspace's pinned extism/wasmtime | 2026-09-26 |
+| P45 | **Kotlin needs WASI after all (T33.36 draft).** Any Kotlin/Wasm `wasmWasi` module that does real work imports `wasi_snapshot_preview1.random_get`: Kotlin's stdlib reaches it through `Any.hashCode`/`Any.toString` → `identityHashCode` → `Random.Default` → `defaultPlatformRandom` → `wasiRandomGet` (traced in the compiler's `-Xwasm-generate-wat` output). A 10-line probe with no libraries (a string, `encodeToByteArray`, one throw/catch) imports it too; the P41 spike module had none only because it did nothing. `cox_plugin::host::PluginHost::load` (WASI off) refuses both modules: `unknown import: wasi_snapshot_preview1::random_get has not been defined`, matching extism 1.30.0 `src/plugin.rs:395-399`, which links WASI only when `with_wasi` is true. | local, Kotlin 2.4.20, Gradle 9.8.0, OpenJDK 27.0.0; draft on branch `wip/t33.36-kotlin`; `extism-1.30.0/src/plugin.rs` | 2026-09-26 |
+
+**T33.35 spike result (2026-09-26).** The card's falsifier ("the module fails to instantiate under the wasmtime 43 extism pins, or needs a feature cox will not enable") fires, but not for the reason A55 predicted going in. Kotlin/Wasm `wasmWasi` 2.4.20 needs no WASI at all for a minimal `cox_init` (P41) — it fails to *parse* under extism's default engine config because its compiled output unconditionally uses the WebAssembly exception-handling proposal, which extism 1.30.0 enables only behind its non-default `wasmtime-exceptions` feature (P33, P42). With that feature on, the module instantiates and round-trips a raw `cox_init` call cleanly, with WASI off exactly as the real host runs today (P43) — so lifting A55 (T33.43) would not by itself unblock Kotlin. **Verdict: refuted as shipped.** Per the falsifier's second clause, cox does not turn on `wasmtime-exceptions` without the creator's sign-off: it is a workspace-wide engine feature that would apply to every plugin (including T33.40's Jev plugin), not only a future Kotlin one, and this spike did not evaluate its maturity or security posture on wasmtime 43. Kotlin stays out of `--lang`; T33.36 does not proceed unless the creator turns `wasmtime-exceptions` on for the workspace. **Resolved 2026-09-26:** the creator approved `wasmtime-exceptions` for the workspace (plan.md A61), so T33.36 proceeds.
+
+### 4.3.6 Jev as the first cox plugin (T33.40, A25/A52, checked 2026-09-26)
+
+Input for the T33.40 cards (`cards.md`). Cited in the cards as J§n and Jn. Primary sources are TypeSafe's own docs and posts, plus this repository. No request went to the Jev API and none went to a model API. Jev's behaviour is therefore not measured in this note. Anything only the vendor claims says **vendor claim**, and anything this note could not confirm says **unverified**.
+
+Creator decisions from 2026-09-26 are applied throughout:
+
+- **C1.** Once the plugin exists, the built-in `typesafe` section and `jev.rs` leave the core. An old config still loads, with a notice and a pointer to `cox plugin install` (D14).
+- **C2.** At `route`, a plugin may only downgrade the tier.
+- **C3.** In v1, plugins install only from a local folder.
+- **C4.** SDK publishing waits for a stable ABI. The Jev plugin builds from `plugins/` in the repository.
+
+#### J1. Sources
+
+| # | Fact | Source (primary) | Checked |
+|---|---|---|---|
+| J1 | The endpoint is `POST https://api.typesafe.ai/v1/systemone` with `Authorization: Bearer <key>` and `Content-Type: application/json`. The request has `state`, `model` and `questions` (a map keyed by the caller's ids). The response has `model`, `answers` (the same keys) and `usage {input_tokens, output_tokens}`. | https://docs.typesafe.ai/api.md | 2026-09-26 |
+| J2 | Question types: `noul` returns a P(yes) between 0 and 1, with an optional `criteria` that defines true and false. `choice` has at most 255 options and returns `choice`, `probabilities` and `confidence`. `score` takes an ordered rubric of 2 to 10 levels and returns `score`, `legend`, `probabilities` and `confidence`. Every type has `type` and `instructions`, which may be a string, an object or an array. | https://docs.typesafe.ai/api.md; https://docs.typesafe.ai/primitives/choice.md | 2026-09-26 |
+| J3 | Choice `criteria` is a map from option to description. For options that are easy to confuse, the description can be an object with `what`, `not_for` and `examples`. The docs recommend an `other` or "none of the above" option when the list may not be complete. | https://docs.typesafe.ai/primitives/choice.md | 2026-09-26 |
+| J4 | Errors: 401 means an invalid key, 422 an invalid body, and 429 or 529 a rate limit or overload, "use exponential backoff". | https://docs.typesafe.ai/api.md | 2026-09-26 |
+| J5 | Models: `jev-1.13.0` is the current stable model. The aliases `jev-latest` and `jev-preview` both point to it. | https://docs.typesafe.ai/models.md | 2026-09-26 |
+| J6 | Limits: "64k tokens per request; 32k tokens for `state` plus the longest question". Input is text only. | https://docs.typesafe.ai/models.md | 2026-09-26 |
+| J7 | Price: input $0.042/MTok, output free. | https://docs.typesafe.ai/models.md; https://typesafe.ai/blog/introducing-system-one-models-and-jev | 2026-09-26 |
+| J8 | Rate limits: "250,000 tokens per second / 1,200 requests per minute", and they "are adjusting dynamically". | https://docs.typesafe.ai/models.md | 2026-09-26 |
+| J9 | Latency: "End-to-end response time is 70ms-500ms" (**vendor claim**; cox has not measured it, and the network path from the user is not included). The post's own date reads 2026-09-15 in the body and 2026-09-25 in the header (**unverified** which is right). | https://typesafe.ai/blog/introducing-system-one-models-and-jev | 2026-09-26 |
+| J10 | Batching: 13 questions (8 Noul, 2 Choice, 3 Score) over a document of about 54 000 characters cost $0.000497 and took 0.27 s as one call. As 13 separate calls they cost $0.006090 and took 2.71 s (the sum of sequential calls). Model `jev-1.12`, 5 repeats. | https://docs.typesafe.ai/cookbooks/parallel_questions.md | 2026-09-26 |
+| J11 | Confidence is one number in [0, 1] derived from the probability distribution. **Noul answers carry no confidence.** Thresholds should scale with the stakes. The examples use a floor of 0.5 or 0.6 and require more than 0.85 or 0.9 for high-stakes automatic actions. Confidence-gated routing: below the floor, fall back to "a different system". | https://docs.typesafe.ai/confidence.md; https://docs.typesafe.ai/patterns/confidence-routing.md | 2026-09-26 |
+| J12 | Documented weaknesses of Jev 1.13: literal reading; poor counting, arithmetic and date comparison; "Accuracy falls as the state grows with content unrelated to the decision"; it "does not treat [adversarial content] as hostile by default" and can be steered by injected instructions; it is not built to generate text. | https://docs.typesafe.ai/model-jaggedness/jev-1.13.md | 2026-09-26 |
+| J13 | Jev inside coding agents: "Jev is not a drop-in replacement" for the agent's LLM, and "There is no `model: 'jev-latest'` setting". Jev is meant as a decision call inside the agent's code (routing, scoring, verification). | https://docs.typesafe.ai/introduction/coding-agents.md | 2026-09-26 |
+| J14 | Skill suggestion: one Choice over 182 skills plus Noul gates, then a rerank of the top three. Over 488 requests with Claude Haiku 4.5, wrong loads fell from 16.8 % to 7.3 % and needless loads from 9.8 % to 4.0 %. Gate and fit thresholds are 0.30. The suggestion fixed 37 requests and broke 7. | https://docs.typesafe.ai/cookbooks/skill_suggestion.md | 2026-09-26 |
+| J15 | Guardrails: a Noul per hazard plus a Score for severity. Review threshold 0.35; action threshold 0.70 (strict) or 0.85 (permissive); severity block at 2.0. The recipe publishes no measured precision or recall. | https://docs.typesafe.ai/cookbooks/llm_guardrails.md | 2026-09-26 |
+| J16 | `state` may be a string, a JSON object or an array. An object is recommended so that each part has a name. Keep content in `state` and judgments in the questions. | https://docs.typesafe.ai/concepts/state.md | 2026-09-26 |
+| J17 | Data: TypeSafe says it does not train on user data. Zero data retention is offered to enterprise customers only, through sales. The docs index names no processing location and no SLA (**unverified** in the DPA itself). | https://docs.typesafe.ai/legal.md | 2026-09-26 |
+| J18 | The cox code as of `22a1138` plus the working tree: `crates/cox-provider/src/jev.rs` (558 lines); `[providers.typesafe]` in `crates/cox-protocol/default.toml:375-381` with `context_window=128000`; `JevProviderConfig` at `config.rs:520-552`; the router arms at `router.rs:131,155`; `ProviderId::Jev` at `types.rs:997`; `provider_name` at `cox-core/src/session.rs:1457`; the session arm at `crates/cox/src/session.rs:900`; the doctor arm at `doctor.rs:215`; the catalog and price special cases at `cox-models/src/catalog.rs:184` and `price.rs:173-179`; the price row at `prices.toml:197` ($0.042 input). No code path calls Jev (plan.md P21: "no call sites yet"). | repository | 2026-09-26 |
+| J19 | Prices in cox's catalog: `claude-sonnet-5` costs $2 input, $10 output, $2.50 cache write and $0.20 cache read. `claude-haiku-4-5` costs $1, $5, $1.25 and $0.10. | `crates/cox-provider/prices.toml:26-50` (source platform.claude.com/docs/pricing, verified_on 2026-09-02) | 2026-09-26 |
+| J20 | A model switch today rewrites history: `Session` runs `inner.history = strip_thinking(&inner.history)` (`cox-core/src/session.rs:672`). With `sandbox` confining it, `Exec` is auto-allowed (`permission/mod.rs:187`), and so is `Write` under `Auto` (`:186`). | repository | 2026-09-26 |
+
+#### J2. What Jev is, as cox uses it
+
+Jev is a "System One" decision model. A request carries one `state` (a string or a JSON object) and a map of typed questions. Choice picks from ≤255 described options. Score rates on an ordered rubric of 2–10 levels. Noul gives a yes-probability. The response answers every question in the same call, with a probability for each option or level, and a `confidence` for Choice and Score. Jev generates no text (J1–J3, J12, J13). Questions in one request are independent, so all the questions cox has at one moment belong in one call (J10).
+
+For cox this means three things:
+
+1. **Jev is an `Advisor`, not a tier.** J13 says so outright, and it matches the code: a tier routed to `typesafe` today would get a JSON decision where it expects a title, a summary or a turn. The provider form exists only as the transport that carries the ledger row, the budget gate and the key. No tier should name it.
+2. **State must be small and focused.** Accuracy falls with irrelevant state (J12), and the hard cap is 32k tokens of state plus the longest question (J6). Each decision point builds its own state object of about 0.3–2k tokens. The transcript is never sent.
+3. **Jev can be steered by injection (J12).** The state includes model- and tool-written text: commands, file names, tool output. Only a monotone rule makes an answer safe to use. `risk` may only raise, and `route` may only lower, which spends less and never loosens a permission. Jev can never be the reason something becomes *allowed*.
+
+**Where the current code disagrees with the docs** (fix it in the plugin, not in `jev.rs`, which is going away):
+
+- **Context window.** `context_window = 128000` (`default.toml:381`) contradicts the 64k-per-request limit (J6). The plugin's `[[models]]` row uses 64 000, and the state builders cap state at 32k tokens minus the question.
+- **Noul confidence.** `parse_response` sets a Noul's confidence to `noul` itself (`jev.rs:162`). The API returns no Noul confidence (J11), and P(yes) = 0.05 is a *confident no*, not a low-confidence answer. The plugin uses `|2p − 1|` as the Noul certainty and puts its thresholds on `p` directly.
+- **The request body.** `build_body` collapses a whole `Request` into `state` with one fixed Noul (`jev.rs:48-86`). The plugin builds the questions for each point itself. The lossy mapping stays only as the fallback for a tier that names the provider.
+- **The model id.** Evals pin `jev-1.13.0`, so a result names the model that produced it. Users keep `jev-latest` (J5).
+
+#### J3. Limits that shape the design
+
+| Limit | Value | Consequence |
+|---|---|---|
+| Latency | 70–500 ms end to end (J9, vendor claim) | This is above the design's default `risk` budget of 200 ms at the upper end. Ask only when the answer could change the outcome (J6.1), batch all calls of one tool batch into one request, and measure the late-fallback rate (E1). |
+| Tokens per request | 64k, of which 32k for state plus the longest question (J6) | A per-point state builder with a hard cap. |
+| Options per Choice | ≤255 (J2) | `rank` over `tool_search` candidates fits (BM25 top 20). |
+| Rate | 1 200 rpm, 250k tok/s (J8) | Not binding for one user. The host's retry reuses the 429/529 backoff (J4). |
+| Price | $0.042/MTok input, output free (J7) | Negligible next to a coding turn (J7 below). Latency, not money, is the cost. |
+| Data | No training on user data; zero retention only for enterprise (J17) | Every point is opt-in (`[plugins.decide]`). The grant dialog and the user guide list, for each point, exactly what leaves the machine. State is built from the scrubbed event stream, the same redaction as the rollout (PL§5). |
+| Early access | The wire may change (v0.2-jev falsifier 3) | This is the reason the wire belongs in a plugin: when it changes, the fix is a plugin update, not a cox release. |
+
+#### J4. ABI gaps found (PL§12 falsifier 3 applies)
+
+Writing the Jev plugin against the design as it stands exposes four gaps. All four are fixed before `api = 1` freezes (card T33.40.1).
+
+1. **Deadlock or ledger bypass inside `cox_decide`.** The plugin must reach its own provider while answering a question. There are two ways today, and both are wrong:
+   - `cox_model_call` inside `cox_decide` routes by *tier*, so it cannot reach the `typesafe` section. If it could, the host would dispatch to the same plugin's `cox_provider_stream`. That plugin's only worker is blocked in `cox_decide` (`call` is `&mut self`, P8), so the call deadlocks.
+   - `cox_http` to the provider's `base_url` host is allowed "all but render" (PL§4), so the guest could POST to Jev directly with the host-injected key. That request gets no budget gate and no `usage` row, which breaks invariant 8.
+   
+   **Fix, a two-phase decide.** `cox_decide(Question) -> DecideOut::{ Advice(Option<Advice>) | Call(ModelCall) }`. The host runs the `ModelCall` against the plugin's own provider section, through budget gate → `PluginProvider` → `Priced` → one `usage` row with `job = plugin:<id>`. The worker is free by then, so there is no re-entry. The host then calls `cox_decide_resume(DecideResume { question, events }) -> Option<Advice>`. `ModelCall` gains `target: Tier(t) | OwnProvider { name, model }`, and `OwnProvider` may name only a `[[provider]]` of the same plugin. The whole exchange shares the point's latency budget.
+2. **`cox_http` to a provider host outside `cox_provider_stream`.** Allow it only inside `cox_provider_stream`, and return `NotInThisContext` everywhere else. With that rule, raw HTTP to a paid endpoint never escapes the ledger.
+3. **Batching.** Give `Question` `items: Vec<…>`, so that one `risk` question covers every call in a tool batch. That is one Jev request instead of N (J10: 12× cheaper and 10× faster for 13 questions).
+4. **Registry and ids for plugin ABI providers.**
+   - `Router::pick` and `backend_for_with` know only the fixed names plus `providers.custom` (`router.rs:125-143`). T33.18 must register ABI sections by name so a tier (or a legacy `typesafe` tier) resolves to them.
+   - `ProviderId` is a closed enum (`types.rs:990`). T33.18 must choose the ledger id for plugin providers. The proposal is a `ProviderId::Plugin` bucket with the section name as the ledger's provider string, as the `Local` bucket works for compatible providers. `provider_name` (`session.rs:1457`) then returns the section name.
+   - The e2e harness sets `COX_PROVIDER=scripted`, which short-circuits provider construction. It must still build plugin providers, so the main turns are scripted while Jev is served by wiremock.
+
+One more requirement lands on T33.20. A turn routed down must strip thinking blocks **in its own `Request` only**. It must never rewrite `inner.history` or emit `ModelSwitched` (J20). Otherwise the next `code` turn loses every cache read after the first thinking block.
+
+#### J5. Use cases, ranked
+
+Legend:
+
+- **Point** is the decision point from PL§4 or the hook or event it hangs on.
+- **Rule** is the monotone rule the core enforces.
+- Every use case fails open (D14): with no key, a network error, a timeout past the point budget, a parse error, low confidence or three strikes, the built-in behaviour runs unchanged and one `Event::Advised { applied: false }` or `Notice(Warn)` records why.
+
+| Rank | Use case | Point | Verdict |
+|---|---|---|---|
+| 1 | Bash/tool risk escalation | `risk` | **Do first.** It can only make cox safer, it can be measured for pennies (E1), and it involves no D5 question. |
+| 2 | Tier downgrade of a main turn | `route` | **Do second, measured.** It is the only money lever, but at default prices the saving is uncertain (J5.2). It stays off by default until E2 shows a saving at no loss in pass rate. |
+| 3 | Deferred-tool ranking | `rank` (`tool_search`) | **Later.** It can be measured only with a large MCP tool set, and cox has no such eval corpus. It is a card after E1 and E2. |
+| 4 | Earlier compaction at a task boundary | `compact` | **Later.** The benefit (context-token-turns, `stats.rs`) is small with cache reads at 0.1× input, and it is hard to separate from noise. It is an `ideas.md` line. |
+| 5 | Memory salience filter | `salience` | **Later.** It needs T33.21's optional wiring first. The rule "may drop a candidate, never add one" is sound. |
+| — | Tool-output truncation choice (which lines survive) | none (new point) | **Drop for now.** It changes model-visible text from untrusted input that Jev can be steered by (J12), and it needs a new decision point. It is an idea. |
+| — | "Looks safe" approve hint | `approve_hint` | **Drop.** An injected command can make Jev say "safe", and the badge would then nudge the user to approve. The only safe shape is warning-only ("Jev: likely irreversible"), which `risk` already covers by raising the prompt. The proposal is to remove `approve_hint` from PL§4, or make it warning-only (question 3). |
+| — | Skill ranking | `rank` (skills) | **Drop from v1.** The skills index sits in the cache-stable prefix (`context.rs:82-131`), so reordering it per turn breaks invariant 1. Adding a hint message is not "reorder or filter". J14's gains are real, but they need a hint channel after the last breakpoint, which is a design change. |
+| — | Subagent dispatch | none | **Drop.** The model already decides this, and `explore` already runs on `cheap`. There is no fixed-option judgment for cox to own. |
+| — | Stop/continue ("claimed done without running tests?") | `Stop` hook | **Drop from v1.** Acting on it means injecting text into the turn, which no monotone rule allows. It stays an idea for a hook-based verifier. |
+| — | Commit message or plan triage | `Job::Commit`/`Plan` | **Drop.** Commit messages are text generation, which Jev does not do (J12). Plan triage would route *up* to `think`, which D5 and C2 forbid. At most it could be a display-only hint, which is not worth a call. |
+
+##### J5.1 `risk`: raise the risk of a call the engine would auto-allow
+
+- **Hangs on.** `gate` (`cox-core/src/turn.rs`), after `PreToolUse` and before `Engine::decide`. That is T33.21's `risk` point.
+- **Asked only when it matters.** The core asks only if raising the call to `Destructive` would change the engine's outcome from `Allow` to `Ask` or `Deny`. That covers `Exec` under a confining sandbox, `Write` under `Auto`, and rule matches that allow by risk (J20). ReadOnly calls, calls already `Ask`, and `Bypass` mode never ask. This filter belongs in T33.21 (a plan amendment to that card). It removes most calls, so latency hits only the calls whose outcome is actually in play.
+- **Question** (one request for the whole tool batch, J4.3). State is an object with the fields below. The tool output is never sent.
+  - `task`: the last user message, trimmed to 1k tokens;
+  - `cwd`, the workspace roots and the sandbox mode;
+  - per call: `tool`, `subject`, and `input` (for bash, the command; for edits, the path plus a diff summary with line counts);
+  - `classifier_risk`.
+  
+  Questions per call:
+  - `severity`: a Score over 4 levels whose descriptions mirror `Risk` (read-only / writes inside the workspace / runs a process / destroys data or reaches beyond the subject);
+  - `irreversible`: a Noul ("cannot be undone by git or the checkpoint");
+  - `external_effect`: a Noul ("pushes, publishes, deploys, sends, or deletes outside the workspace");
+  - `exfiltration`: a Noul ("sends workspace content or credentials to a network destination").
+- **What cox does.** The risk rises to `Destructive` when any of these holds:
+  - `irreversible ≥ 0.7`;
+  - `external_effect ≥ 0.7`;
+  - `exfiltration ≥ 0.5`;
+  - `severity ≥ 2.5` with confidence ≥ `min_confidence` (default 0.6, J11).
+  
+  The thresholds live in the plugin's config table (`[plugins.jev.risk]`), and the core clamps the result to `max(builtin, advised)`. The engine then asks in the TUI and denies in headless mode. `Event::Advised { point: risk, applied: true }` carries the probabilities.
+- **Benefit.** A command the classifier misses stops auto-running: `git push --force`, `curl … | sh` when the network is allowed, `terraform apply`, `kubectl delete`, `npm publish`, `aws s3 rm`, `DROP TABLE` through `psql -c`.
+- **Measure (E1, card T33.40.7).**
+  - A labelled corpus of about 300 commands in two sets: must-ask, and benign.
+  - The main provider is scripted, so it costs $0. Jev is live.
+  - Metrics:
+    - the recall gain on must-ask commands that the baseline auto-allows;
+    - the false-raise rate on benign commands;
+    - the late-fallback rate at a 200 ms budget;
+    - p50 and p95 latency;
+    - $ from the ledger (`job = plugin:jev`).
+  - Budget cap: $0.10.
+- **Cost per session.** About 20–60 asked calls per 100 tool calls, batched to about 10–30 requests of 0.6–1.5k tokens each. That is ≤ 45k tokens, or **≤ $0.002**. The added wall time is 1–15 s at 70–500 ms per request (J9, vendor claim).
+- **Failure mode.** On a late or missing answer the built-in classifier's risk stands. False positives cost the user an extra prompt. The falsifier: if the false-raise rate exceeds 10 %, or more than 20 % of answers arrive late at p95, `risk` is not recommended by default, and the guide says so.
+
+##### J5.2 `route`: downgrade a main turn from `code` to `cheap` (C2)
+
+- **Hangs on.** `Router::pick` for `Job::Main` only, once per `UserTurn`. The choice sticks for every provider call in that turn, so a tool loop never flips back and forth. It is never asked for `Job::Plan` (the user explicitly asked for `think`), for subagents, or after `/model` pinned a tier.
+- **What the core offers.** Only tiers at or below the static pick (T33.20), and never `think` (D5, C2). A new **cache-aware filter** (card T33.40.8) offers `cheap` only when the predicted cost of the turn on `cheap` is at most `(1 − margin)` of its predicted cost on `code`. The prediction uses catalog prices and the last request's prefix size.
+
+  The prices make this necessary (J19). Haiku 4.5 is only 2× cheaper than Sonnet 5, and a switch forfeits the code tier's cache reads. For one turn with prefix P, k provider calls and output O (thinking included):
+
+  ```text
+  code  ≈ 0.20·P·k            + 10·O_code
+  cheap ≈ 1.25·P + 0.10·P·(k−1) + 5·O_cheap          ($/MTok)
+  ```
+
+  At P = 30k, k = 5 and O = 3k on both tiers, `cheap` costs $0.0645 and `code` $0.060, so the downgrade loses money. It wins early in a session (small P), or when the `code` turn's adaptive thinking multiplies O_code. Only a measurement settles it (E2), and the filter keeps a downgrade from making things worse.
+- **Question.**
+  - State:
+    - `prompt`: the user message, ≤ 2k tokens;
+    - `todo`: the todo list;
+    - `last_turn`: tool names, errors, and whether it ended in an error;
+    - `files_touched_count`.
+  - Questions:
+    - `tier`: a Choice over the offered tiers. The descriptions come from the plugin: `cheap` is "mechanical: read, print, list, rename, run a named command, answer from context"; `code` is "reasoning over code: multi-file edits, debugging, design". An explicit `other` → `code`;
+    - `wants_depth`: a Noul, "the user asks for careful or deep work".
+- **What cox does.** It applies `cheap` only when:
+  - `choice == cheap`;
+  - `confidence ≥ 0.8` (a high-stakes action, J11);
+  - `wants_depth < 0.3`;
+  - the last turn did not end in an error.
+  
+  Everything else uses the static pick. `Event::Advised { point: route }` records the choice and the probabilities.
+- **Measure (E2, card T33.40.10).** The `evals/tasks` suite plus four tasks that need the code tier, run once with and once without the plugin, on real Anthropic with live Jev. Metrics:
+  - pass rate;
+  - $ per task from the ledger, grouped by (tier, job);
+  - the downgrade rate;
+  - Jev latency.
+  
+  Caps: `--budget` per run, $3 in total.
+- **Cost per session.** One request of about 1.5k tokens per user turn: 20 turns is 30k tokens, or **$0.0013**, plus 70–500 ms per user turn (not per tool call).
+- **Failure mode.** On silence or a late answer, the static pick runs. The worst case of a wrong downgrade is a weaker turn. The user sees `↓cheap` in the status and can `/model code`. That override stops the point for the session.
+
+##### J5.3 Later: `rank`, `compact`, `salience`
+
+- **`rank`.** A Choice over BM25's top 20 in `tool_search`, with an `other` option (J3), may reorder or filter the list. Measure it by hit@1 against a labelled query set over a large MCP tool list. About 3k tokens per search.
+- **`compact`.** A Noul "the current task is finished" after `TurnDone`, asked when the context is ≥ 40 % of the window. It may compact earlier than the threshold, never later. Measure it by `context_token_turns` and $ per session.
+- **`salience`.** A Score per extracted memory item, which may drop an item and never add one.
+
+All three wait for the E1/E2 results. A plugin update can add them with no cox release.
+
+#### J6. Cost per session (all points on)
+
+| Point | Requests | Tokens | $ |
+|---|---|---|---|
+| risk | 10–30 | ≤ 45k | ≤ 0.0019 |
+| route | 20 | 30k | 0.0013 |
+| total | ≤ 50 | ≤ 75k | **≤ $0.004** |
+
+Jev's price (J7) is under 0.1 % of a typical coding session ($0.5–5 at the J19 prices), so the budget gate never blocks it in practice. It still runs, because invariant 8 applies to every request. The real cost is wall time: every request is on the critical path of a turn or a tool call.
+
+#### J7. What moves, what stays, migration
+
+**Into the plugin** (`plugins/jev/`, guest crate `cox-plugin-jev`, built from the repository workspace per C4):
+
+- **The System One wire.** Request types for the three question kinds and a response parser. The Noul-confidence fix and the 64k/32k limits come with them (J2). The status codes from J4 map to the ABI's error kinds, so the host's retry treats 429 and 529 as transient.
+- **`cox_provider_stream`.** A request marked as a decision call (`Job::Plugin("jev")` plus a JSON body in its one user message) is sent verbatim. A request from a tier that names the provider gets the old lossy mapping and a `Notice(Warn)` once: "typesafe is a decision model; no tier should route to it".
+- **The manifest.**
+
+  ```toml
+  [[provider]]
+  name = "typesafe"
+  api = "plugin"
+  base_url = "https://api.typesafe.ai"
+  api_key_env = "TYPESAFE_API_KEY"
+  auth = "bearer"
+  ```
+
+  The name is kept on purpose. The env var, the keyring entry `cox/typesafe`, the ledger's provider string and any `tiers.*.provider = "typesafe"` keep working without edits. PL§2's example says `name = "jev"` and should change.
+- **`[[models]]`.** `jev-1.13.0` and `jev-latest`, with `context_window = 64000` and price `{input = 0.042, output = 0.0}`. After removal (C1) these are the only rows, so the price comes from the plugin layer, and `cox doctor` shows `source = plugin:jev` (T33.16, T33.39).
+- **`cox_decide` and `cox_decide_resume`.** The questions, state builders and thresholds for `risk` and `route`, in one reviewable module per point, as v0.2-jev's review guidance asks.
+- **Capabilities.** `decide = ["risk", "route"]`, `context = true`, and nothing else: no `net` (the provider section covers the host), no `fs`, no `kv`, no tools. The call-out to its own provider is implied by `decide` plus `[[provider]]`, and the grant dialog shows it as "sends decision questions to api.typesafe.ai; costs appear as plugin:jev".
+
+**Stays in the host.** It all stays behind the four guards, and all of it is generic:
+
+- `resolve_key` and the keyring;
+- auth-header injection;
+- retry and backoff around `PluginProvider` (`retry::Policy` from the section's `max_retries`);
+- the budget gate, `Priced` and the `usage` row;
+- catalog layering;
+- the monotone rules and `Event::Advised`;
+- the cache-aware route filter;
+- the "ask only when it could change the outcome" filter for `risk`;
+- `Engine`.
+
+**Removed from the core after parity (C1).** The removal cards T33.40.12–T33.40.16 take out:
+
+- `jev.rs` and its `mod`;
+- `JevProviderConfig` (it becomes a tombstone, below);
+- the `typesafe` arms in `router.rs`, `session.rs` and `doctor.rs`;
+- `ProviderId::Jev`, which never appears in a serialized event or rollout (it is only mapped to the string `"typesafe"`), so removing it breaks no stored data;
+- the `default.toml` section;
+- the price row and the catalog and price special cases;
+- the vendor script's `typesafe` exception;
+- T32.15 (`cox-provider-jev`), which becomes moot.
+
+**Back-compat for existing configs (the design's open question 8):**
+
+| Old config | During parity (T33.40.5) | After removal (T33.40.12–14) |
+|---|---|---|
+| `[providers.typesafe]` table | With the plugin loaded, its knobs (`base_url`, `api_key_env`, `timeout_s`, `max_retries`, `model`) configure the plugin's `typesafe` section. The user wins, as for declarative sections. Without the plugin, the built-in client runs as today. | It still parses. It becomes a **tombstone** type `LegacyTypesafe` with the same keys (`deny_unknown_fields` kept) and feeds the plugin section's knobs. Without the plugin: one `Notice(Warn)` "Jev moved to a plugin: build `plugins/jev` and run `cox plugin install <dir>`", plus a `cox doctor` row. **Why a named tombstone:** removing the field would let the table fall into the `#[serde(flatten)] custom` map as a `CompatibleProviderConfig` with the default `api = "chat"`. That would silently POST chat bodies to `api.typesafe.ai`. |
+| `models = [...]` in that table | Filled into the catalog as today | Accepted by the tombstone. Its rows still go through the config catalog layer (config beats plugin). |
+| `tiers.<t>.provider = "typesafe"` | Resolves to the plugin section when loaded, else to the built-in | Resolves to the plugin section when it is loaded. Otherwise **fail open** (D14): `Notice(Warn)` with the install pointer, and that tier uses its `default.toml` provider and model for the session. |
+| A tier model `jev-*` under another provider | unchanged | unchanged. The router does not look at the model id. |
+| `[plugins.decide] risk = "jev"` with the plugin absent | Point off, plus `Notice(Warn)` | same |
+| `TYPESAFE_API_KEY` and keyring `cox/typesafe` | used by the host for the section `typesafe` | same, because the name is unchanged |
+| Ledger rows with provider `"typesafe"` | unchanged | unchanged. New rows carry the same provider string and `job = plugin:jev`. |
+
+#### J8. How tests stay offline
+
+There is no key and no network, and the keychain is never touched (A49, A51).
+
+- **Guest unit tests (host target).** The wire, the state builders, the question sets, the thresholds and the Noul certainty are pure Rust in `plugins/jev/src/*.rs`. extism-pdk glue sits behind `cfg(target_arch = "wasm32")`. `cargo test --manifest-path plugins/Cargo.toml -p cox-plugin-jev` runs in the `plugins` CI job. The fixtures are the documented response shapes (J1, J2, and the ones `jev.rs`'s tests already use), inline as in `jev.rs`.
+- **Host e2e (`tests/plugins_jev.rs`).**
+  - `crates/cox-plugin-fixtures/build.rs` builds the plugin, as T33.28 builds the example.
+  - The real binary runs against a scratch `COX_HOME`. Main turns come from `COX_PROVIDER=scripted`.
+  - Jev is a wiremock server on 127.0.0.1 whose `/v1/systemone` returns fixture bodies, reached through `[providers.typesafe] base_url` in the scratch config.
+  - The key is an env var, `TYPESAFE_API_KEY=test-key`, so `resolve_key` never reaches the keyring. Cargo also sets `COX_KEYRING=off`.
+  - The asserts cover:
+    - the bearer header seen by wiremock and absent from the guest (the T33.18 pattern);
+    - one `usage` row per request with `job = plugin:jev`;
+    - the budget-gate block;
+    - `Advised` in the rollout;
+    - 401 → one notice and fail-open;
+    - 529 → the retry count;
+    - a delay past the budget → fallback;
+    - three strikes → the export disabled.
+- **Replay.** `Replay` cassettes are keyed by the `Request` hash (`replay.rs:57`). A call-out is an ordinary `Request`, so a recorded cassette can back it later. That needs a key to record (optional card T33.40.17, run only by the creator). Until then, wiremock fixtures are the offline source.
+- **Evals** (`evals/`, per the eval-tooling rule). E1 and E2 are `cox_evals` modules with pytest tests that run offline: corpus loading, metric maths, budget stop and the command line. Only the live run needs `TYPESAFE_API_KEY` (and `ANTHROPIC_API_KEY` for E2), set by the creator.
+
+### 4.3.7 Subagent messaging: Claude Code, Codex CLI, OpenCode (input for P34, checked 2026-09-26)
+
+Input for the P34 cards (T34.0–T34.9). Primary sources are each vendor's own docs, read directly on the date below; one fact is marked secondary because the primary page did not state it. cox's own subagent inventory (`crates/cox-core/src/subagent.rs`, `tasks.rs`, `crates/cox-ext/src/agents.rs`) has a one-shot `agent` tool, two hardcoded presets, a structurally depth-1 nesting limit (a child session never gets its own `AgentTool`), and no messaging beyond the one-shot approval relay (`relay_approval`) — T34.0–T34.9 close the messaging gap narrowly, staying short of Claude Code's `SendMessage`/agent-teams roster (`ideas.md`).
+
+| # | Fact | Source (primary) | Checked |
+|---|---|---|---|
+| M1 | Claude Code subagent frontmatter fields: `name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `omitClaudeMd`, `effort`, `isolation`, `color`, `initialPrompt`, `experimental`. | https://code.claude.com/docs/en/sub-agents | 2026-09-26 |
+| M2 | Claude Code states multiple subagents cannot run in parallel within a single turn; the documented workaround is multiple turns or backgrounding. cox already exceeds this: `agent`'s `Concurrency::Parallel` plus the turn's own parallel tool dispatch let several `agent` calls run concurrently in one turn. | https://code.claude.com/docs/en/sub-agents | 2026-09-26 |
+| M3 | Claude Code's `SendMessage` tool, addressed by the agent's id or name, resumes a **finished** subagent with its full history intact. Built-in one-shot agents (Explore, Plan) explicitly cannot be resumed even when agent teams are on. | https://code.claude.com/docs/en/sub-agents | 2026-09-26 |
+| M4 | **Secondary, unverified**: `SendMessage` is reported gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` and disabled by default. This came from a GitHub issue, not vendor docs, so it is a lead, not a confirmed fact. | https://github.com/anthropics/claude-code/issues/35240 | 2026-09-26 |
+| M5 | Claude Code's inter-agent communication is the `SendMessage` tool (progress, questions, delegation) plus a separate `SubagentHandoff` tool; with agent teams on, structured messages (`shutdown_request`, `plan_approval_response`) and a sibling roster injected as a system reminder once `SendMessage` is available and at least one agent is named. | https://code.claude.com/docs/en/sub-agents | 2026-09-26 |
+| M6 | **Unverified precise defaults**: `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (reported default 20) and `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` (reported default 3, vs. cox's structural depth-1). Both numbers came through an automated fetch-summary of the page rather than a direct manual read; treat as directional only pending a manual recheck. | https://code.claude.com/docs/en/sub-agents | 2026-09-26 |
+| M7 | Claude Code scans a subagent's final report for instruction-shaped/prompt-injection content and marks it, but never strips it — the same class of problem cox's D14 ("everything not written by cox is untrusted") already targets generically. | https://code.claude.com/docs/en/sub-agents | 2026-09-26 |
+| M8 | Codex CLI custom agents are TOML files under `~/.codex/agents/` (personal) or `.codex/agents/` (project); required fields `name`, `description`, `developer_instructions`; optional `model`, `model_reasoning_effort`, `sandbox_mode`. | https://learn.chatgpt.com/docs/agent-configuration/subagents | 2026-09-26 |
+| M9 | Codex CLI runs true parallel agents across a turn ("Codex runs parallel agents and combines their results"), capped by `agents.max_concurrent_threads_per_session`; background threads switch with the `/agent` command. | https://learn.chatgpt.com/docs/agent-configuration/subagents | 2026-09-26 |
+| M10 | Codex CLI has no resumption after completion — a finished subagent moves to a "Done" list for inspection only — and messaging is one-directional: the main thread waits until all requested results are available, then gets one consolidated response. No progress streaming or two-way dialogue is documented. | https://learn.chatgpt.com/docs/agent-configuration/subagents | 2026-09-26 |
+| M11 | OpenCode subagents are configured via `opencode.json`'s `"agent"` key or markdown files under `~/.config/opencode/agents/` / `.opencode/agents/` (`description`, `mode`, `model`, `permission`, `prompt`, `temperature`/`top_p`, `steps`); invoked through a Task tool or directly by `@mention` (e.g. `"@general help me search for this function"`); setting a subagent's `permission` (Task) to `"deny"` removes it from the Task tool's description entirely. | https://opencode.ai/docs/agents/ | 2026-09-26 |
+| M12 | OpenCode's docs do not specify parallel execution, background execution, resumption or inter-agent messaging for subagents. **Unverified/unknown** — not inferred either way. | https://opencode.ai/docs/agents/ | 2026-09-26 |
+
+### 4.3.8 Cursor as a cox provider (checked 2026-09-26)
+
+Question: does Cursor expose anything cox could wire up the way T30.15 wired
+LM Studio — a wire format one of the three existing `Provider` clients
+already speaks, or at least a maintained SDK/spec to generate types from?
+Method: unauthenticated GETs of Cursor's own docs, the published OpenAPI
+file, npm/PyPI registry metadata and the GitHub API. No Cursor endpoint was
+called with credentials.
+
+| Fact | Source |
+|---|---|
+| Cursor publishes eight documented programmatic surfaces: Cloud Agents API (beta, all plans), Admin API (enterprise), Analytics API (enterprise), AI Code Tracking API (enterprise), Bugbot API (enterprise), TypeScript SDK, Python SDK, SDK Bridge (Connect/protobuf), plus an early-beta Origin API (repos/PRs, separate auth) | https://cursor.com/docs/api (checked 2026-09-26) |
+| **Cloud Agents API is agent-shaped, not chat-shaped.** Every endpoint creates, runs, streams or manages a durable "Cloud Agent" (formerly Background Agent) that clones a repo, works in its own branch and returns a run result; there is no endpoint that takes a message list + tool schema and returns a completion the way Anthropic Messages or OpenAI Chat/Responses do | https://cursor.com/docs/cloud-agent/api/endpoints ; OpenAPI spec below |
+| Endpoints (v1 unless noted): `POST/GET /v1/agents`, `GET /v1/agents/{id}`, `POST/GET /v1/agents/{id}/runs`, `GET /v1/agents/{id}/runs/{runId}`, `GET /v1/agents/{id}/runs/{runId}/stream` (SSE), `POST .../cancel`, `GET /v1/agents/{id}/usage`, `GET/POST /v1/agents/{id}/artifacts[/download]`, `POST /v1/agents/{id}/archive\|unarchive`, `DELETE /v1/agents/{id}`, `POST /v1/sub-tokens`, `GET /v1/me`, `GET /v1/models` (recommended model ids for the `model.id` field only — not a completions call), `GET /v1/repositories`, plus `/v0/private-workers*` for self-hosted worker pools | published spec, `https://cursor.com/docs-static/cloud-agents-openapi.yaml`, fetched 2026-09-26, HTTP 200, 59 113 bytes, OpenAPI 3.0.3 |
+| Auth: HTTP Basic (API key as username, empty password) or HTTP Bearer, both described as equivalent, key issued from `https://cursor.com/dashboard/api` (user or service-account key); server is `https://api.cursor.com` | same OpenAPI file, `components.securitySchemes` |
+| Rate limits: no blanket number published; the one documented case is `GET /v1/repositories` at "1 per user per minute, 30 per user per hour" because it lists GitHub repos through Cursor's GitHub App | same OpenAPI file, endpoint description |
+| Billing: no per-request price list found for the Cloud Agents API itself; usage is reported per agent via `GET /v1/agents/{id}/usage` (token counts) and drawn from the caller's Cursor plan/credit pool, the same pool the desktop app and CLI draw from. Third-party ("Other") models are billed at "public list API price + a $0.25/M-token Cursor Token Rate"; Cursor's own models (Composer, Grok) are exempt from that surcharge | https://cursor.com/help/models-and-usage/token-rate ; https://cursor.com/docs/models-and-pricing (secondary aggregation, not fully re-verified line by line: **med**) |
+| ToS: no clause found that names the Cloud Agents API, the CLI or the SDKs specifically. The general prohibitions (no reverse engineering, no training a competing model, no scraping/harvesting, no renting/sublicensing "the Service") do not obviously reach "build a documented-API client called cox"; nothing in the ToS text affirmatively grants third-party client use either. Verdict: **not settled by the primary text — flag for the creator**, unlike Anthropic's explicit written prohibition on third-party Claude.ai login (R§4.3.1) | https://cursor.com/terms-of-service, fetched 2026-09-26 |
+| Admin API: team/member/usage/spend/audit/model-access management, Basic auth with a team-scoped key, 20 req/min on most endpoints (60 for usage events, 50 for member removal), 429 + `Retry-After: 60` over the limit. No inference endpoint. Not what cox needs (it manages Cursor seats, not model calls) | https://cursor.com/docs/account/teams/admin-api |
+| Official TypeScript SDK: npm `@cursor/sdk`, latest **1.0.32** (2026-09-22), repo `cursor/cursor` (monorepo, not independently browsable), license field `SEE LICENSE IN LICENSE.md` (proprietary, not OSS), requires Node ≥ 22.13, ships per-platform native binaries (`@cursor/sdk-<os>-<arch>`). Wraps the same agent runtime as the IDE/CLI/web app; local mode runs the loop in-process, cloud mode calls the Cloud Agents API. Not a raw-completions client — only full agent runs | `https://registry.npmjs.org/@cursor/sdk` fetched 2026-09-26 ; https://cursor.com/docs/sdk/typescript |
+| Official Python SDK: PyPI `cursor-sdk`, latest **1.0.32**, summary "Python client for the Cursor SDK bridge", license "Proprietary", requires Python ≥ 3.10. It talks to the local SDK Bridge process, not the TS SDK directly | `https://pypi.org/pypi/cursor-sdk/json` fetched 2026-09-26 |
+| SDK Bridge: a small local server (spawned by the Python/other-language client) that embeds `@cursor/sdk` and re-exposes it over a Connect (gRPC-Web-style)/protobuf contract (`sdk.v1`), for languages with no first-party SDK. Repo `cursor/sdk-bridge`: **MIT licensed**, not archived, last push 2026-09-22, latest release `v1.0.32` (same day/version as the npm and PyPI packages) — actively maintained in lockstep with the SDKs | `https://api.github.com/repos/cursor/sdk-bridge` fetched 2026-09-26 ; https://cursor.com/docs/sdk/bridge |
+| No Rust SDK, official or community, was found for either the Cloud Agents API or the SDK Bridge protocol (crates.io has nothing under `cursor-sdk`/`cursor-agent`/`cursor-bridge`; the one `cursor-agent` npm package that exists, latest 1.0.3, is an unrelated third-party "task sequence creator" by `zalab-inc`, not Cursor's CLI) | crates.io search (empty result pages, not individually re-fetched: **med**); `https://registry.npmjs.org/cursor-agent` fetched 2026-09-26 |
+| **Machine-readable spec: yes, one exists and is fetchable unauthenticated** — `https://cursor.com/docs-static/cloud-agents-openapi.yaml`, OpenAPI **3.0.3** (matches the `openapiv3`-based `progenitor` crate's supported version, R§4.3.1), served straight from the docs site with no separate license grant visible in the file or the page around it: treat as "Cursor's own", not redistributable-by-default the way `openai/openai-openapi` (MIT) is | fetched 2026-09-26, HTTP 200 |
+| No spec at all exists for the SDK Bridge's protobuf/Connect contract beyond what `cursor/sdk-bridge`'s own README documents (handshake: bridge writes `cursor-sdk-bridge ready` + JSON with `schemaVersion`/`transport`/`protocol` to stderr) — no `.proto` file location confirmed by this pass | https://cursor.com/docs/sdk/bridge (secondary summary of the repo, README not fetched directly: **med**) |
+| **CLI**: official binary is `agent`, marketed as "Cursor CLI"/"cursor-agent"; official install is `curl https://cursor.com/install -fsSL \| bash` (or a PowerShell one-liner), **not** an npm package | https://cursor.com/docs/cli/installation ; https://cursor.com/cli |
+| CLI headless mode: `agent -p "<prompt>"` (`--print`), `--output-format text\|json\|stream-json`, `--force`/`--yolo` for auto-approval, `--stream-partial-output` for token-level assistant deltas. Auth via `CURSOR_API_KEY` env var (or prior `agent login`) | https://cursor.com/docs/cli/headless ; https://cursor.com/docs/cli/reference/output-format |
+| `stream-json` event shapes (fetched verbatim): `{"type":"system","subtype":"init","apiKeySource","cwd","session_id","model","permissionMode"}`; `{"type":"user","message":{role,content[{type:"text",text}]},"session_id"}`; `{"type":"assistant","message":{role,content[{type:"text",text}]},"session_id","timestamp_ms"?,"model_call_id"?}`; `{"type":"tool_call","subtype":"started"\|"completed","call_id","tool_call":{"<toolName>ToolCall":{"args",...,"result"?}},"session_id"}`; `{"type":"result","subtype":"success","duration_ms","duration_api_ms","is_error","result","session_id","request_id"?}` — shape resembles cox's own `Event` enum (D2) more than a wire-protocol frame; it is the CLI's own agent-turn log, not a model-completions stream | https://cursor.com/docs/cli/reference/output-format, fetched 2026-09-26 |
+| CLI as **ACP server**: `agent acp` runs Cursor CLI as an ACP agent over stdio, JSON-RPC 2.0, newline-delimited, documented protocol version 1; pre-authenticate with `agent login` or `--api-key`/`CURSOR_API_KEY` (or `--auth-token`/`CURSOR_AUTH_TOKEN`) before invoking `acp` | https://cursor.com/docs/cli/acp |
+| CLI as **MCP**: MCP support is client-only — the CLI reads `.cursor/mcp.json` and calls out to MCP servers the same way the editor does. There is no `agent mcp` server subcommand exposing the CLI's own tools as an MCP server (unlike Claude Code's `claude mcp serve` or cox's own `cox mcp`) | https://cursor.com/docs/cli/mcp |
+| Wire compatibility: **no.** The Cloud Agents API's request/response shapes (`prompt`, `model.id`, `repos`, `mcpServers`, `customSubagents`, SSE agent-turn events) do not match OpenAI Chat/Responses or Anthropic Messages; `/v1/models` returns a curated id list for agent creation, not model capability rows in either vendor's shape. Reusing `crates/cox-provider-openai` or `crates/cox-provider-anthropic` as-is is not possible; at best a `[providers.cursor]` `CompatibleProviderConfig` could point at `api.cursor.com`, but the request/response bodies still would not parse — worse than LM Studio, whose native chat endpoint at least speaks the Anthropic Messages shape verbatim (R§4.3.2) | direct comparison of the OpenAPI schemas above against `crates/cox-protocol`'s `Request`/`ProviderEvent` (plan.md §1.2) and the vendored Anthropic/OpenAI schemas (T30.10) |
+| Unofficial/community routes exist and are numerous: GitHub topic `cursor-api`, and named repos `cursor-api-proxy`, `curapi`, `cursor-agent-api-proxy`, `cursoride2api`, `Cursor-To-OpenAI` — all wrap the desktop app's or the CLI's private/internal traffic (or shell out to `agent`) to fake an OpenAI-compatible `/v1/chat/completions` endpoint, letting a Cursor subscription serve non-Cursor clients. None is a Cursor-published surface; none was inspected for correctness here. ToS risk: these plausibly conflict with the ToS's "no reverse engineering", "no reselling/sublicensing the Service", and "no scraping" clauses (R§ above), and separately several proxy variants launder the *subscription* (not an issued API key) into third-party traffic, which is the same category Anthropic explicitly forbids for Claude.ai logins (R§4.3.1) — **do not build on these; named for completeness only** | https://github.com/topics/cursor-api ; individual repo READMEs (not independently verified: **unverified**) |
+
+**Reading.** Cursor's Cloud Agents API is the spiritual equivalent of what
+cox's own `cox-core`/`Event` stream is for cox: an orchestration surface
+around an agent loop, not a raw-inference endpoint. It is well-documented,
+has a real OpenAPI 3.0.3 spec (`progenitor` territory, not `typify`+hand-SSE
+territory — R§4.3.1), and a maintained TS/Python SDK plus an MIT-licensed
+bridge protocol, but nothing in it lets cox send `Request { system, tools,
+messages, effort, … }` and get back `ProviderEvent`s the way it does for
+Anthropic, OpenAI or an OpenAI-compatible chat endpoint. The one thing that
+*is* wire-compatible with something cox already drives as a subprocess is
+the CLI's `stream-json` output and its `acp` mode — both are "drive Cursor
+as an agent", the same relationship cox already has with Claude Code and
+Codex (D4), not "drive Cursor as a model". The creator resolved the
+resulting question by deciding Cursor is a **plugin** (P35, `plan.md` §6
+A54), driving the CLI's two official headless modes, never the desktop
+session and never one of the unofficial proxies named above.
+
 ### 4.4 Routing evidence (D5)
 Copilot's auto model selection is praised because it is explicit, priced (10 % discount) and switchable; Claude Code's Haiku delegation is complained about because it is silent. aider's `--weak-model` (commits, summaries) and OpenCode's small model for titles are the same pattern. Jobs that tolerate a small model, by consensus of the surveyed tools: titles, summaries, commit messages, compaction, search/explore, tool-result summarisation, classification. Effect-size numbers from the survey ("4.2× savings", "Codex 3–4× fewer tokens than Claude Code") are unsourced and dropped. [med]
 
@@ -209,18 +739,43 @@ for other agents are out of scope here — their footprint threads move weekly:
 [Codex CLI memory leak #9345](https://github.com/openai/codex/issues/9345),
 [Codex 12GB on startup (forum)](https://community.openai.com/t/codex-consuming-12gb-memory-for-5-minutes-on-startup-macos/1376282).
 
+#### Plugin timings (filled by T33.28, 2026-09-26, `just bench`)
+
+PL§11's per-plugin latencies over the Rust reference plugin
+(`plugins/examples/rust`, 325 KiB release `wasm32-unknown-unknown` module),
+from `crates/cox/examples/plugin_bench.rs` in the release profile. Primary
+source: this run, on an Apple M3 Max (16 cores, 64 GiB), macOS 27.0,
+rustc 1.97.1, extism 1.30 over wasmtime 43; three runs, range shown.
+
+| Metric | Budget (PL§11) | Measured |
+|---|---|---|
+| session start per plugin: `LivePlugins::load` + `start` (compile, instantiate, `cox_init`), median of 20 | ≤ 50 ms warm (cache on); ≤ 500 ms cold for 1 MiB | 57–97 ms, cold (max 138–169 ms) |
+| `cox_on_event`, batch of 16 `turn_started`, p50 of 1 000 | ≤ 1 ms | 0.12–0.17 ms |
+| `cox_render` of the status segment, p95 of 1 000 | ≤ 5 ms | 0.09–0.51 ms |
+| hook round trip (`PluginHooks::run`, `PostToolUseFailure` with a kv write and a notice), p95 of 1 000 | ≤ 5 ms | 0.38–0.72 ms |
+
+Caveats: the host still builds with wasmtime's compilation cache off
+(`PluginHost::load_with`, `with_cache_disabled`), so every start is a cold
+compile and the warm-start row cannot be measured until the cache is wired
+to `~/.cox/cache/wasmtime`; PL§12 falsifier 2 is therefore not judged by
+these numbers. The module is 325 KiB, not the 1 MiB the cold-compile row
+names. The machine ran four other agents' builds (load average 19–25 on
+16 cores), and wasmtime compiles functions in parallel, so the start row is
+the noisiest; the call rows are within budget by an order of magnitude.
+
 ## 5. Testability patterns adopted
 1. `Provider` trait with `Scripted` and `Replay` (cassette) implementations; cassettes re-recorded on demand and redacted. Temperature 0 and seeds do not give bit-exact replay across providers; replaying the event log does. [high]
 2. Golden `Event` JSONL for loop scenarios (`insta`); the rollout file and the fixture are the same format. [design]
 3. ratatui `TestBackend` + `insta` per widget and per frame; `portable-pty` + `vt100` for the real binary (Codex practice). [high]
 4. Tools in `tempfile` trees; `proptest` on `str_replace` and V4A (`parse(print(p)) == p`, edit-then-reverse identity); fuzz targets for SSE/V4A/frontmatter parsers. [design]
-5. Evals separate from tests: Terminal-Bench adapter + 10 in-repo tasks, run on demand with the real provider, cost recorded in the ledger. §5.3 holds the first recorded run (pending T12.1).
+5. Evals separate from tests: Terminal-Bench 2.0 agent (Harbor) + 10 in-repo tasks, run on demand with the real provider, cost recorded in the ledger. §5.3 holds the recorded runs.
 
 ### 5.3 First eval run (T12.1, 2026-09-04)
 
-Harness `evals/run.py` (`just eval`), 10 tasks in `evals/tasks/`, TB
-adapter in `evals/tbench/adapter.py` (verified against terminal-bench
-0.2.18's `BaseAgent` contract: `name()` / `perform_task`; self-test green).
+Harness `evals/run.py` (`just eval`), 10 tasks in `evals/tasks/`. (The
+terminal-bench 0.2.x adapter written here was replaced in T30.9 by a
+Harbor agent, `evals/src/cox_evals/tbench.py`; see the Terminal-Bench
+subsection below.)
 
 Dry-run (`COX_PROVIDER=scripted just eval --dry-run`): **10/10 passed**,
 $0.0000, no network, no key.
@@ -245,6 +800,95 @@ empty `workspace_roots` reached the tools verbatim so every confined
 tool failed outside `--cwd` (plan §1.6 says empty means git-root-else-cwd;
 now resolved in `session::open`); eval runs pass `--no-hooks --no-mcp`
 because ambient repo servers add startup noise to every task.
+
+#### Live run with and without the verify preset (T30.3, 2026-09-25)
+
+`claude-sonnet-5`, the 10 in-repo tasks, `--approve never
+--permission-mode auto`. Cost and tokens are the per-task ledger rows
+(`usage`, what `cox stats` reads), summed; the harness's own
+per-task rounding gives $0.0516 / $0.0628.
+
+| Configuration | Pass | Provider calls | Input | Output | Cache read | Cache write | Cost |
+|---|---|---|---|---|---|---|---|
+| baseline (`--no-hooks`) | 9/10 | 21 | 42 | 951 | 173 260 | 2 932 | $0.0515 |
+| `--preset verify` | 9/10 | 25 | 50 | 1 273 | 208 382 | 3 300 | $0.0626 |
+
+The one failure is the same task in both: `append-line` exits 2 because
+the model first tried a writing `bash` command, which `--approve never`
+denies ("Exec calls require approval"), then finished with `edit`; the
+file is correct but the harness scores any denial as a failure. The
+preset costs +22 % here and changes no outcome: nine of the ten tasks are
+one tool call and one answer, so there is nothing for a test hook to
+catch, and on `append-line` it doubled the calls (4 → 8). These tasks are
+too small to show a verification benefit; Terminal-Bench is where it
+would.
+
+Getting here took three fixes the offline suite could not see: an
+org-level key needs `anthropic-workspace-id` (T30.4); no production path
+priced a call, so every ledger row was $0 (T30.5); the Anthropic stream
+never emitted `ToolUseEnd`, so every tool call was dropped (T30.6). The
+harness overrides `HOME`, which hides the macOS keychain, so the key has
+to come from the environment:
+
+```bash
+ANTHROPIC_API_KEY="$(security find-generic-password -s cox -a anthropic -w)" \
+  uv run --project evals cox-evals --provider anthropic --model claude-sonnet-5 [--preset verify]
+```
+
+#### Terminal-Bench 2.0 subset (T30.9, 2026-09-25)
+
+Terminal-Bench 2.0 runs through Harbor, not the old `tb` CLI
+(https://github.com/laude-institute/harbor, PyPI `harbor` 0.23.0,
+https://pypi.org/project/harbor/0.23.0/, checked 2026-09-25). The agent is
+`cox_evals.tbench:CoxAgent`, a `BaseInstalledAgent`: `install` uploads a
+Linux cox build to `/installed-agent/cox`, `run` executes one
+`cox run --output-format json` in the task container and copies the payload's
+tokens and cost into Harbor's `AgentContext`. Tasks come from
+https://github.com/laude-institute/terminal-bench-2 at commit
+`69671fbaac6d67a7ef0dfec016cc38a64ef7a77c` (recorded by Harbor in each
+trial's `config.json`).
+
+Setup: cox from `b027a47`, cross-built with `cargo zigbuild --release
+--target aarch64-unknown-linux-gnu.2.31` (cargo-zigbuild 0.23.4, zig
+0.16.0); Docker in colima 0.10.3 (vz, arm64). `claude-sonnet-5`,
+`--budget 0.25`, `--max-turns 40`, `--permission-mode bypass --sandbox
+danger-full-access` (the container is the isolation boundary), two trials
+at a time, three tasks picked for spread: git surgery, a COBOL-to-Python
+port, a Coq proof.
+
+| Task | Reward | Turns | Input | Output | Cache read | Cache write | Cost |
+|---|---|---|---|---|---|---|---|
+| `fix-git` | 1.0 | 9 | 17 | 2 691 | 102 496 | 7 533 | $0.0663 |
+| `cobol-modernization` | 1.0 | 22 | 43 | 13 242 | 379 814 | 16 349 | $0.2493 |
+| `prove-plus-comm` | 1.0 | 4 | 7 | 1 013 | 34 356 | 997 | $0.0195 |
+| **total** | **3/3** | 35 | 67 | 16 946 | 516 666 | 24 879 | **$0.3351** |
+
+Cost is cox's own ledger figure from the `cox run` payload; wall time
+2 min 56 s. Three tasks out of 89 is a smoke test of the agent and the
+pipeline, not a leaderboard score. `cobol-modernization` finished at
+$0.249 of a $0.25 cap, so a larger subset needs a higher per-task budget.
+
+A first attempt the same day spent about $0.51 on `cobol-modernization`
+and `prove-plus-comm` (both stopped by the budget) plus an unrecorded
+share of `fix-git` (at most $0.25, interrupted), and scored nothing, for
+two reasons fixed in `db85e5f`: `--permission-mode auto --approve never`
+denied 24-26 calls per task, which the model spent its budget retrying;
+and the jobs dir sat in `/tmp`, which colima does not share with its VM
+(only `$HOME`), so the verifier's reward file never reached the host.
+
+Reproduce (Docker reachable, Linux cox built):
+
+```bash
+ANTHROPIC_API_KEY="$(security find-generic-password -s cox -a anthropic -w)" \
+  uv run --project evals --extra tbench harbor run -d terminal-bench@2.0 \
+  -a cox_evals.tbench:CoxAgent -m anthropic/claude-sonnet-5 --force-build -n 2 \
+  -i fix-git -i cobol-modernization -i prove-plus-comm \
+  --ak cox_bin=<linux cox> --ak budget_usd=0.25 -o ~/.cache/cox-evals/tb-jobs
+```
+
+The verify preset (T30.3) was not run on Terminal-Bench: the harness
+system addendum and hook are wired for the in-repo harness only, and all
+three tasks already passed without it.
 
 ## 6. Fact-check ledger
 | # | Claim (report) | Verdict | Correction / source |
@@ -318,7 +962,7 @@ Date: 2026-09-22. Method: four parallel research agents (Sonnet 5, web access, ~
 - **System-prompt tax**: Pi keeps the prompt under ~1 000 tokens by shipping nothing optional; `oh-my-pi` adds the rest as extensions. cox's deferred tools (D6d) are the same idea half-done: the skills index, memory index and instruction files still ride in every request. [high]
 - **Copy fidelity**: Claude Code drops GFM features on copy (#26390); Codex falls back to key/value for cramped tables. [high]
 - **Windows**: image paste, sandbox and MCP install remain the weakest area for everyone. [high]
-- **Policy**: Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (enforced 2026-04-04); Codex's ChatGPT-plan login is sanctioned. cox must not implement consumer-subscription OAuth for Anthropic; API keys and the keyring stay the path. [med — secondary sources; treat as policy until the official page is read]
+- **Policy**: Anthropic forbids third-party apps from offering Claude.ai login or routing requests through Free/Pro/Max credentials (https://code.claude.com/docs/en/legal-and-compliance, checked 2026-09-25). cox does not implement Claude subscription OAuth; API keys and the keyring stay the path. OpenAI neither permits nor forbids third-party use of Codex's ChatGPT login in any document found (§4.3.1). [high for Anthropic, unverified for OpenAI]
 
 ### 8.3 Terminal capabilities (author-verified against vendored sources where marked ✔)
 
@@ -405,6 +1049,8 @@ Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, 
 | 31 | crossterm 0.29 exposes `PushKeyboardEnhancementFlags` | confirmed by author | `crossterm-0.29.0/src/event.rs` |
 | 32 | cox `tui.mouse`, `tui.theme = "auto"` are read but have no effect; `ask_user` in the TUI is `Answers::Fixed`; skills index and custom commands are only in `cox ext list`; `SessionStart` hook never fires | confirmed by author | `crates/cox/src/session.rs`, `crates/cox-tui/src/app.rs`, `crates/cox-core/src` grep on 2026-09-22 |
 | 33 | Gemini CLI retired into a closed-source Antigravity CLI (June 2026) | [med] | developers.googleblog.com (agent A/D), not read by the author |
-| 34 | Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (2026-04-04) | [med] | secondary sources only (agent D); read the official policy before any login work |
+| 34 | Anthropic disabled Claude Pro/Max OAuth for third-party harnesses (2026-04-04) | confirmed in substance, date unverified | https://code.claude.com/docs/en/legal-and-compliance (checked 2026-09-25): third parties may not offer Claude.ai login or route requests through plan credentials; the enforcement date is from secondary press only |
 | 35 | Vendor model names quoted by reviewers (e.g. "GPT-6 Astra") and star counts (OpenCode 140–172 k, Pi 104–140 k) | [unverified] | vary by source; directional only |
 | 36 | Codex CLI checkpoints/rewind | [unverified] | no documentation found by agent D |
+| 37 | Codex's ChatGPT-plan login is sanctioned for third-party clients | [unverified] | no OpenAI document found either way (2026-09-25); `codex-rs/login` shows the flow uses Codex's own OAuth client id |
+| 38 | Claude Code matches a `Bash` rule per subcommand: separators `&&`, `||`, `;`, `|`, `|&`, `&` and newlines split the line; an allow rule must match each subcommand; deny and ask rules apply when any subcommand matches, including one nested in a subshell, a command substitution or a loop body; a dangling `&&`/`||` makes the line unparseable, so no allow rule approves it; deny matches past any leading `VAR=` assignment, allow only past known-safe ones; wrappers (`timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin`, `noglob`, bare `xargs`) are stripped before matching; output redirect targets are checked against `Edit` rules; "don't ask again" on a compound line saves one rule per subcommand | confirmed | https://code.claude.com/docs/en/permissions (sections "Compound commands", "Wrappers", "Redirections"), checked 2026-09-26. cox (T36.1) follows the split, the any/every rule, the substitution and parse-error cases and the per-command session grant; it differs in being stricter: it strips no wrappers, an assignment of any variable blocks allow rules, and an output redirect to a path asks instead of consulting `Edit` rules |

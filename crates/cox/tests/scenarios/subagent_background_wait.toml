@@ -1,0 +1,23 @@
+# T34.9 regression: a single background subagent, started moments before
+# the parent's own top-level turn says its final word. Its whole
+# conversation is one scripted round (`when_contains` still pins it, so
+# it can never be mistaken for the parent's own next call racing the same
+# shared `Scripted` queue) — the only thing under test is whether `cox
+# run -p` gives that round a chance to run at all before exiting. Without
+# `Session::wait_idle` (`crates/cox-core/src/tasks.rs`) gating the
+# headless surface's own exit (`crates/cox/src/run.rs`), the process used
+# to exit the instant the parent's own turn ended, abandoning the child's
+# still-unscheduled `drive` task; its `task_completed` (and often its
+# `task_created` too) would never reach stream-json at all.
+
+[[turn]]
+tool_calls = [
+    { name = "agent", input = { task = "say hello\nCHILD", preset = "talker", background = true } },
+]
+
+[[turn]]
+text = "done"
+
+[[turn]]
+when_contains = "CHILD"
+text = "hello"

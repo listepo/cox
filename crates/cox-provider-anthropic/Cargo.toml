@@ -1,0 +1,33 @@
+[package]
+name = "cox-provider-anthropic"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# request.rs asks the catalog which effort level and thinking form a model
+# takes (`effort_for`, `supports_adaptive_thinking`).
+cox-models = { path = "../cox-models", version = "0.1.2" }
+# T32.12: credential lookup, error mapping, SSE framing and retry/backoff.
+cox-provider-http = { path = "../cox-provider-http", version = "0.1.2" }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+
+[build-dependencies]
+# T30.12: build.rs generates the Anthropic wire types from the vendored
+# OpenAPI spec. schemars 0.8 is the schema model typify 0.8's `TypeSpace`
+# takes (already in the tree through typify), not a second schema library.
+typify = { workspace = true }
+serde_json = { workspace = true }
+schemars = "0.8"
+
+[dev-dependencies]
+insta = { workspace = true }
+wiremock = { workspace = true }

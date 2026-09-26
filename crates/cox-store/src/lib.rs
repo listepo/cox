@@ -1,8 +1,9 @@
 //! One SQLite file (`~/.cox/cox.db`): sessions, rollouts (JSONL), the
-//! tool-output archive, memory, and the cost ledger. Separate so `cox-core`
-//! never opens a file directly; it only calls the `Store`/`Archive` traits
-//! this crate implements (plan.md §1.7/D9). The only crate that contains
-//! SQL — a workspace test asserts no other crate depends on `diesel`.
+//! tool-output archive, memory, the cost ledger, and plugin grants/kv
+//! (PL§3, A52). Separate so `cox-core` never opens a file directly; it only
+//! calls the `Store`/`Archive`/`PluginStore` traits this crate implements
+//! (plan.md §1.7/D9). The only crate that contains SQL — a workspace test
+//! asserts no other crate depends on `diesel`.
 
 pub mod fts;
 mod models;
@@ -23,11 +24,17 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use sha2::{Digest, Sha256};
 
 use cox_protocol::{
-    Archive, ArchiveId, ArchivePut, CheckpointRow, Event, MemoryHit, ModelId, SessionId,
-    SessionRow, Store as StoreTrait, StoreError, Usage, UsageRow,
+    Archive, ArchiveId, ArchivePut, CheckpointRow, Event, GrantScope, MemoryHit, ModelId,
+    PluginGrant, PluginStore as PluginStoreTrait, SessionId, SessionRow, Store as StoreTrait,
+    StoreError, Usage, UsageRow,
 };
+// The `plugin_kv` quotas (PL§3) live beside `PluginStore` so the plugin
+// host names the same limit in its refusal (T33.9).
+use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT};
 
-use models::{CheckpointDbRow, NewArchive, NewMemory, NewSession, UsageDbRow};
+use models::{
+    CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow, UsageDbRow,
+};
 use rollout::RolloutWriter;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -71,8 +78,11 @@ impl Store {
 /// Formats the current time as RFC 3339 UTC with millisecond precision
 /// (`"2026-09-02T10:11:12.345Z"`), matching the rollout line format
 /// (plan.md §1.7). No date/time crate for this: the calendar math is
-/// Howard Hinnant's public-domain `civil_from_days` algorithm.
-fn now_rfc3339() -> String {
+/// Howard Hinnant's public-domain `civil_from_days` algorithm. `pub` so
+/// `cox plugin enable`/`install` (T33.7, `crates/cox/src/plugin_cmd.rs`)
+/// stamp a grant's `decided_at` the same way every other row's timestamp
+/// is stamped, instead of a second formatter.
+pub fn now_rfc3339() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
@@ -124,6 +134,26 @@ fn to_tag<T: serde::Serialize>(value: &T) -> String {
 /// no longer names a variant — a corrupt row, not a defaultable one.
 fn from_tag<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
+}
+
+/// `GrantScope` to the `plugin_grants.scope` text PL§3 names: `user` or
+/// `project:<root>`.
+fn scope_to_text(scope: &GrantScope) -> String {
+    match scope {
+        GrantScope::User => "user".to_string(),
+        GrantScope::Project(root) => format!("project:{}", root.to_string_lossy()),
+    }
+}
+
+/// Inverse of `scope_to_text`. `None` means the stored tag matches neither
+/// shape — a corrupt row, not a defaultable one.
+fn scope_from_text(s: &str) -> Option<GrantScope> {
+    if s == "user" {
+        Some(GrantScope::User)
+    } else {
+        s.strip_prefix("project:")
+            .map(|root| GrantScope::Project(PathBuf::from(root)))
+    }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -487,6 +517,193 @@ impl Archive for Store {
 
     async fn get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError> {
         StoreTrait::archive_get(self, id)
+    }
+}
+
+impl Store {
+    /// Decodes one `plugin_grants` row. A tag or JSON blob that no longer
+    /// parses is a corrupt row, same stance as `checkpoint_list`.
+    fn grant_from_row(&self, r: PluginGrantDbRow) -> Result<PluginGrant, StoreError> {
+        let corrupt = || StoreError::Corrupt {
+            path: self.home.join("cox.db"),
+        };
+        Ok(PluginGrant {
+            plugin_id: r.plugin_id,
+            scope: scope_from_text(&r.scope).ok_or_else(corrupt)?,
+            digest: r.digest,
+            capabilities: serde_json::from_str(&r.capabilities).map_err(|_| corrupt())?,
+            enabled: r.enabled,
+            source: serde_json::from_str(&r.source).map_err(|_| corrupt())?,
+            decided_at: r.decided_at,
+        })
+    }
+}
+
+/// Plugin grants and per-plugin kv (T33.5, PL§3).
+impl PluginStoreTrait for Store {
+    fn grant_get(
+        &self,
+        plugin_id: &str,
+        scope: &GrantScope,
+        digest: &str,
+    ) -> Result<Option<PluginGrant>, StoreError> {
+        let scope_text = scope_to_text(scope);
+        let row: Option<PluginGrantDbRow> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            schema::plugin_grants::table
+                .filter(schema::plugin_grants::plugin_id.eq(plugin_id))
+                .filter(schema::plugin_grants::scope.eq(&scope_text))
+                .filter(schema::plugin_grants::digest.eq(digest))
+                .select(PluginGrantDbRow::as_select())
+                .first(&mut *conn)
+                .optional()
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        row.map(|r| self.grant_from_row(r)).transpose()
+    }
+
+    fn grant_put(&self, grant: &PluginGrant) -> Result<(), StoreError> {
+        let row = PluginGrantDbRow {
+            plugin_id: grant.plugin_id.clone(),
+            scope: scope_to_text(&grant.scope),
+            digest: grant.digest.clone(),
+            capabilities: serde_json::to_string(&grant.capabilities).map_err(|_| StoreError::Io)?,
+            enabled: grant.enabled,
+            source: serde_json::to_string(&grant.source).map_err(|_| StoreError::Io)?,
+            decided_at: grant.decided_at.clone(),
+        };
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let updated = diesel::update(
+            schema::plugin_grants::table
+                .filter(schema::plugin_grants::plugin_id.eq(&row.plugin_id))
+                .filter(schema::plugin_grants::scope.eq(&row.scope))
+                .filter(schema::plugin_grants::digest.eq(&row.digest)),
+        )
+        .set((
+            schema::plugin_grants::capabilities.eq(&row.capabilities),
+            schema::plugin_grants::enabled.eq(row.enabled),
+            schema::plugin_grants::source.eq(&row.source),
+            schema::plugin_grants::decided_at.eq(&row.decided_at),
+        ))
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        if updated == 0 {
+            diesel::insert_into(schema::plugin_grants::table)
+                .values(&row)
+                .execute(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?;
+        }
+        Ok(())
+    }
+
+    fn grant_set_enabled(
+        &self,
+        plugin_id: &str,
+        scope: &GrantScope,
+        digest: &str,
+        enabled: bool,
+    ) -> Result<(), StoreError> {
+        let scope_text = scope_to_text(scope);
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let updated = diesel::update(
+            schema::plugin_grants::table
+                .filter(schema::plugin_grants::plugin_id.eq(plugin_id))
+                .filter(schema::plugin_grants::scope.eq(&scope_text))
+                .filter(schema::plugin_grants::digest.eq(digest)),
+        )
+        .set(schema::plugin_grants::enabled.eq(enabled))
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        if updated == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
+    fn grants_delete(&self, plugin_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::delete(
+            schema::plugin_grants::table.filter(schema::plugin_grants::plugin_id.eq(plugin_id)),
+        )
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
+    fn kv_get(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        schema::plugin_kv::table
+            .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+            .filter(schema::plugin_kv::key.eq(key))
+            .select(schema::plugin_kv::value)
+            .first(&mut *conn)
+            .optional()
+            .map_err(|_| StoreError::Sqlite)
+    }
+
+    fn kv_put(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), StoreError> {
+        if value.len() > KV_VALUE_LIMIT {
+            return Err(StoreError::QuotaExceeded);
+        }
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        // Sum every other key's bytes for this plugin so a re-saved key
+        // does not double-count its own previous value against the quota.
+        let other_bytes: usize = schema::plugin_kv::table
+            .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+            .filter(schema::plugin_kv::key.ne(key))
+            .select(schema::plugin_kv::value)
+            .load::<Vec<u8>>(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?
+            .iter()
+            .map(Vec::len)
+            .sum();
+        if other_bytes + value.len() > KV_PLUGIN_LIMIT {
+            return Err(StoreError::QuotaExceeded);
+        }
+        let row = PluginKvDbRow {
+            plugin_id: plugin_id.to_string(),
+            key: key.to_string(),
+            value: value.to_vec(),
+            updated_at: now_rfc3339(),
+        };
+        let updated = diesel::update(
+            schema::plugin_kv::table
+                .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+                .filter(schema::plugin_kv::key.eq(key)),
+        )
+        .set((
+            schema::plugin_kv::value.eq(&row.value),
+            schema::plugin_kv::updated_at.eq(&row.updated_at),
+        ))
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        if updated == 0 {
+            diesel::insert_into(schema::plugin_kv::table)
+                .values(&row)
+                .execute(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?;
+        }
+        Ok(())
+    }
+
+    fn kv_delete(&self, plugin_id: &str, key: &str) -> Result<(), StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::delete(
+            schema::plugin_kv::table
+                .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+                .filter(schema::plugin_kv::key.eq(key)),
+        )
+        .execute(&mut *conn)
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
+    fn kv_delete_all(&self, plugin_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::delete(schema::plugin_kv::table.filter(schema::plugin_kv::plugin_id.eq(plugin_id)))
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
     }
 }
 
@@ -906,5 +1123,131 @@ mod tests {
             })
             .expect("another session's row");
         assert_eq!(store.checkpoint_list(&session).expect("list"), rows);
+    }
+
+    #[test]
+    fn grant_rows_are_per_digest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let scope = GrantScope::User;
+        let grant_v1 = PluginGrant {
+            plugin_id: "git-glance".into(),
+            scope: scope.clone(),
+            digest: "digest-v1".into(),
+            capabilities: serde_json::json!(["events:turn_started"]),
+            enabled: true,
+            source: serde_json::json!({"kind": "path", "path": "/plugins/git-glance"}),
+            decided_at: "2026-01-01T00:00:00.000Z".into(),
+        };
+        let grant_v2 = PluginGrant {
+            digest: "digest-v2".into(),
+            capabilities: serde_json::json!(["events:turn_started", "kv"]),
+            ..grant_v1.clone()
+        };
+        store.grant_put(&grant_v1).expect("put v1");
+        store.grant_put(&grant_v2).expect("put v2");
+
+        // A new digest is a new row: the previous digest's grant is untouched.
+        assert_eq!(
+            store
+                .grant_get("git-glance", &scope, "digest-v1")
+                .expect("get v1"),
+            Some(grant_v1)
+        );
+        assert_eq!(
+            store
+                .grant_get("git-glance", &scope, "digest-v2")
+                .expect("get v2"),
+            Some(grant_v2)
+        );
+        assert_eq!(
+            store
+                .grant_get("git-glance", &scope, "digest-v3")
+                .expect("get missing digest"),
+            None
+        );
+
+        store.grants_delete("git-glance").expect("delete all");
+        assert_eq!(
+            store
+                .grant_get("git-glance", &scope, "digest-v1")
+                .expect("get after delete"),
+            None
+        );
+        assert_eq!(
+            store
+                .grant_get("git-glance", &scope, "digest-v2")
+                .expect("get after delete"),
+            None
+        );
+    }
+
+    #[test]
+    fn kv_quota_rejects_oversize_value() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+
+        let too_big = vec![0u8; KV_VALUE_LIMIT + 1];
+        assert_eq!(
+            store.kv_put("git-glance", "big", &too_big),
+            Err(StoreError::QuotaExceeded)
+        );
+
+        // Each value fits alone, but sixteen of them fill the 1 MiB
+        // per-plugin quota; a seventeenth key of any size goes over it.
+        let chunk = vec![0u8; KV_VALUE_LIMIT];
+        for i in 0..(KV_PLUGIN_LIMIT / KV_VALUE_LIMIT) {
+            store
+                .kv_put("git-glance", &format!("k{i}"), &chunk)
+                .expect("within the per-plugin quota so far");
+        }
+        assert_eq!(
+            store.kv_put("git-glance", "one-more", &[0u8; 1]),
+            Err(StoreError::QuotaExceeded)
+        );
+
+        // Re-saving an already-stored key must not double-count its own
+        // previous bytes against the quota.
+        store
+            .kv_put("git-glance", "k0", &chunk)
+            .expect("re-saving an existing key stays within quota");
+    }
+
+    #[test]
+    fn kv_delete_all_removes_only_that_plugin() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        store
+            .kv_put("git-glance", "a", b"1")
+            .expect("put git-glance");
+        store
+            .kv_put("other-plugin", "a", b"2")
+            .expect("put other-plugin");
+
+        store
+            .kv_delete_all("git-glance")
+            .expect("delete git-glance's kv");
+
+        assert_eq!(store.kv_get("git-glance", "a").expect("get"), None);
+        assert_eq!(
+            store.kv_get("other-plugin", "a").expect("get"),
+            Some(b"2".to_vec())
+        );
+    }
+
+    #[test]
+    fn kv_delete_removes_only_that_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        store.kv_put("jev", "a", b"1").expect("put a");
+        store.kv_put("jev", "b", b"2").expect("put b");
+
+        store.kv_delete("jev", "a").expect("delete a");
+        store
+            .kv_delete("jev", "missing")
+            .expect("absent key is fine");
+
+        assert_eq!(store.kv_get("jev", "a").expect("get"), None);
+        assert_eq!(store.kv_get("jev", "b").expect("get"), Some(b"2".to_vec()));
     }
 }

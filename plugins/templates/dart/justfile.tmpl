@@ -1,0 +1,14 @@
+# {{id}} — build recipe. Needs the Dart SDK on PATH (`dart --version`).
+
+# Build the native executable `plugin.toml`'s `[[mcp]] command` spawns.
+# `dart compile exe` does not create its output directory itself.
+build:
+    dart pub get
+    mkdir -p build
+    dart compile exe bin/server.dart -o build/{{crate_name}}
+
+# Build, then run the smoke test (test/smoke_test.dart): it installs the
+# package into a scratch COX_HOME with `cox plugin install --yes` and
+# checks `cox plugin list --json` reports it granted. Needs `cox` on PATH.
+smoke: build
+    dart test

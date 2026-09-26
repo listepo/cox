@@ -10,18 +10,23 @@
 //! process lives behind a trait in `cox-protocol`").
 //!
 //! - [`ids`] — ULID newtypes (`SessionId`, `TurnId`, `ItemId`, `CallId`, `ArchiveId`, `TaskId`).
+//! - [`agent`] — `AgentDef`, `tier_for`: a discovered subagent definition. Not reachable from `Submission`/`Event` (no wire schema), but crosses the `cox-ext` → `cox-core` boundary, so it lives here (T34.1).
 //! - [`types`] — `Submission`, `Event`, the provider-neutral `Request`/`Content`, `ToolSpec`, and everything reachable from them.
 //! - [`errors`] — the error taxonomy (plan.md §1.14): `ProviderError`, `ToolError`, `CoreError`, `StoreError`, `ExtError`, `McpError`.
-//! - [`traits`] — `Provider`, `Tool`, `ToolCx`, `Store`, `Hook`, `Archive`: the seams every other crate implements against.
+//! - [`traits`] — `Provider`, `Tool`, `ToolCx`, `Store`, `Hook`, `Archive`, `PluginStore`, `Relay`: the seams every other crate implements against.
 //! - [`config`] — the `Config` struct tree mirroring `config/default.toml` (plan.md §1.6).
+//! - [`plugin`] — `cox-plugin-api` re-exported (A52): the `plugin.toml` manifest and, later, the ABI payloads. It lives in its own crate because the guest SDK builds it for wasm32.
 
 #![warn(missing_docs)]
 
+pub mod agent;
 pub mod config;
 pub mod errors;
 pub mod ids;
 pub mod traits;
 pub mod types;
+
+pub use cox_plugin_api as plugin;
 
 pub use config::{Config, DEFAULT_CONFIG_TOML};
 pub use errors::{
@@ -29,16 +34,17 @@ pub use errors::{
 };
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{
-    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, Hook, MemoryHit, PreImage,
-    Provider, SessionRow, Snapshot, Store, Tool, ToolCx, UsageRow,
+    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, GrantScope, Hook, MemoryHit,
+    PluginGrant, PluginStore, PreImage, Provider, Relay, SessionRow, Snapshot, Store, Tool, ToolCx,
+    UsageRow,
 };
 pub use types::ArchiveRef;
 pub use types::{
     ApprovalPolicy, Attachment, Caps, CheckpointFile, CheckpointKind, Concurrency, Content,
     DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level,
     LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role,
-    SandboxMode, SandboxPolicy, SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier,
-    ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
+    SandboxMode, SandboxPolicy, Segments, SlashCommand, StopReason, Submission, SystemBlock,
+    Thinking, Tier, ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
 };
 
 #[cfg(test)]

@@ -1,0 +1,25 @@
+[package]
+name = "cox-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# `glyph` width-checks and truncates through the terminal-text guard.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+ratatui = { workspace = true }
+pulldown-cmark = { workspace = true }
+syntect = { workspace = true }
+two-face = { version = "0.3", features = ["syntect-fancy"] }
+similar = { workspace = true }
+unicode-width = { workspace = true }
+terminal-colorsaurus = { workspace = true }
+# T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
+# set` uses, so a theme file's own comments survive an edit.
+toml_edit = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

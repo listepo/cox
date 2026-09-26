@@ -1,0 +1,18 @@
+# The Dart variant of the shared example every guest language implements
+# (PL§13). Dart cannot emit a wasm module extism can load (T33.37,
+# research.md §4.3.5 P44), so unlike the other languages' status/hook/
+# command/event example, this one implements just the one thing Dart can
+# offer: an `[[mcp]]` stdio server with a single tool, `count`, which
+# returns how many times it has been called in this server process. It
+# ships no `plugin.wasm` and has no `wasm` line, which is valid only
+# because its one capability is `[[mcp]]` (PL§13/§14, T33.38): the host
+# refuses a wasm-less manifest that declares anything else.
+api = 1
+id = "example-dart"
+version = "0.1.0"
+name = "Dart MCP example"
+description = "One MCP tool, count, served by a dart_mcp stdio server"
+
+[[mcp]]
+name = "count"
+command = "build/example_dart"
