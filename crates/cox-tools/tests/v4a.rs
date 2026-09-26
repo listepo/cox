@@ -2,10 +2,10 @@
 //! applied to a copy of `<case>.before/` and the result must equal
 //! `<case>.after/`, byte for byte and file for file.
 //!
-//! Driven through the real `Tool` surface rather than `v4a::apply::stage`,
+//! Driven through the real `Tool` surface rather than `cox_patch::stage`,
 //! because the corpus is the only place `confine`, the archive write and
 //! the atomic rename are exercised together — the unit tests in
-//! `src/v4a/apply.rs` deliberately stop at the pure staging step.
+//! `cox-patch/src/apply.rs` deliberately stop at the pure staging step.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

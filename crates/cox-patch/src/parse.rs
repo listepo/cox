@@ -89,7 +89,8 @@ pub struct Patch {
 
 impl Patch {
     /// How many files the patch removes. Drives the destructive-risk
-    /// threshold in [`super::apply`].
+    /// threshold in `cox_tools::v4a::tool` (T32.6 kept that threshold with
+    /// the `Tool` impl, not in this crate).
     pub fn deletes(&self) -> usize {
         self.ops
             .iter()

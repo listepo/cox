@@ -28,8 +28,9 @@ COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against you
 | `crates/cox-core` | the agent loop as a state machine: turns, context assembly, compaction, permission engine, hooks, model routing, budget. No I/O except through traits |
 | `crates/cox-models` | the model catalog: id → context window, max output, efforts, capabilities and price, merged from built-in rows, config and a user price file. Pure — depends only on `cox-protocol`, no I/O beyond parsing an embedded/caller-supplied string |
 | `crates/cox-provider` | `Provider` trait + Anthropic Messages, OpenAI Responses/Chat (also Ollama, vLLM, LM Studio, OpenRouter), `Replay`/`Scripted` providers for tests |
-| `crates/cox-tools` | built-in tools: read, edit, write, bash, grep, glob, outline, web, todo, ask_user, agent |
+| `crates/cox-tools` | built-in tools: read, edit, write, bash, grep, glob, outline, web, todo, ask_user, agent. `apply_patch`'s `Tool` impl (`v4a::tool`) stays here rather than moving with the rest of `v4a` (T32.6) because it runs `path::confine`, which must keep one call site |
 | `crates/cox-sandbox` | the platform sandbox (Seatbelt, Landlock/bwrap) and `path::confine` — stripped out of `cox-tools` (T32.3) because `landlock`/`seccompiler` are Linux-only and both modules are trust guards; `cox-tools` re-exports them at the old `sandbox` and `path` paths |
+| `crates/cox-patch` | the V4A patch engine, `parse` and `stage` — stripped out of `cox-tools` (T32.6) as a pure leaf: no filesystem, no `ToolCx`. `cox-tools` re-exports it at the old `v4a` path |
 | `crates/cox-sanitize` | the terminal-text guard, `sanitize` — stripped out of `cox-tui` (T32.1) so the headless surface and anything else that only needs the guard do not pull in the whole TUI; `cox-tui` re-exports it at the old `text` path |
 | `crates/cox-mcp` | MCP client over `rmcp`; `.mcp.json` / config discovery; OAuth |
 | `crates/cox-store` | one SQLite file (`~/.cox/cox.db`): sessions, rollouts (JSONL), tool-output archive, memory, cost ledger |

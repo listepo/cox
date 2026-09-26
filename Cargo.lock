@@ -905,6 +905,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-patch"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "proptest",
+]
+
+[[package]]
 name = "cox-protocol"
 version = "0.1.2"
 dependencies = [
@@ -989,6 +997,7 @@ name = "cox-tools"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "cox-patch",
  "cox-protocol",
  "cox-sandbox",
  "globset",

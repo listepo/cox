@@ -11,6 +11,9 @@ cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 # at the old paths (`crates/cox-tools/src/lib.rs`) so existing callers keep
 # working.
 cox-sandbox = { path = "../cox-sandbox", version = "0.1.2" }
+# T32.6: the pure V4A parse/match/stage engine; this crate keeps the
+# apply_patch Tool impl (path::confine, atomic_write).
+cox-patch = { path = "../cox-patch", version = "0.1.2" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }

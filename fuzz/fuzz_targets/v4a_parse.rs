@@ -1,7 +1,8 @@
 //! Fuzz target for the V4A grammar (plan.md T3.5 "Done when", run in
-//! T12.4). Attacks `cox_tools::v4a::parse` from the opposite side of the
-//! round-trip property in `src/v4a/parse.rs`: that test feeds it patches it
-//! built itself, this feeds it arbitrary bytes.
+//! T12.4). Attacks `cox_tools::v4a::parse` (re-exported from `cox-patch`,
+//! T32.6) from the opposite side of the round-trip property in
+//! `cox-patch/src/parse.rs`: that test feeds it patches it built itself,
+//! this feeds it arbitrary bytes.
 //!
 //! Two claims, both of which a panic here would disprove:
 //!   1. `parse` never panics — every malformed input is a `ToolError`, not

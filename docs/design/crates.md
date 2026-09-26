@@ -32,7 +32,7 @@ Seventeen new crates (`cox-models` comes from T30.24 (U4)), twenty-seven in tota
 | `cox-sandbox` | `cox-tools`: `sandbox/*`, `path.rs` (~920) | (a)(b) nix, landlock, seccompiler; `Policy` and `confine` | protocol |
 | `cox-syntax` | `cox-tools`: `outline.rs` + the bash parser setup | (a) tree-sitter + 5 grammars | — |
 | `cox-search` | `cox-tools`: `grep.rs`, `glob.rs` (~870) | (a) ignore, grep-searcher, nucleo | protocol, sandbox |
-| `cox-patch` | `cox-tools/v4a` (~990) | (c) | protocol |
+| `cox-patch` | `cox-tools/v4a` (~990) | (c) — only the pure `parse`/`stage` engine; the `apply_patch` `Tool` impl stays in `cox-tools` so `path::confine` keeps its single call site | protocol |
 | `cox-web` | `cox-tools/web_fetch.rs` | (a) reqwest leaves `cox-tools` | protocol |
 | `cox-permission` | `cox-core/permission` (448) | (b) `Engine`; pure | protocol |
 | `cox-models` | T30.24 (U4) + `usage.rs` price table | (d) the catalog for core, provider and doctor; pure | protocol |

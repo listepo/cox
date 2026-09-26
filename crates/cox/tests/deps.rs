@@ -179,6 +179,19 @@ fn no_crate_below_cox_depends_on_core() {
         "cox-provider may only depend on cox-protocol/cox-models among workspace crates, found {provider_deps:?}"
     );
 
+    // cox-patch (T32.6) is the V4A parse/match/stage engine: a pure leaf,
+    // same shape as cox-models/cox-sanitize. `ApplyPatchTool` — the `Tool`
+    // impl that calls `path::confine` and `write::atomic_write` — stays in
+    // cox-tools so `confine` keeps its single call site.
+    let patch_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-patch"]
+            .iter()
+            .all(|d| patch_allowed.contains(d.as_str())),
+        "cox-patch may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-patch"]
+    );
+
     // mcp/store/ext depend only on cox-protocol: this is the rule the test
     // is named for — none of them may reach cox-core.
     let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
@@ -195,8 +208,10 @@ fn no_crate_below_cox_depends_on_core() {
     }
 
     // cox-tools additionally depends on cox-sandbox (T32.3: path::confine
-    // and the sandbox backends).
-    let tools_allowed: HashSet<&str> = ["cox-protocol", "cox-sandbox"].into_iter().collect();
+    // and the sandbox backends) and cox-patch (T32.6: the V4A engine).
+    let tools_allowed: HashSet<&str> = ["cox-protocol", "cox-sandbox", "cox-patch"]
+        .into_iter()
+        .collect();
     let tools_deps = &deps["cox-tools"];
     assert!(
         !tools_deps.contains("cox-core"),
@@ -206,6 +221,6 @@ fn no_crate_below_cox_depends_on_core() {
         tools_deps
             .iter()
             .all(|dep| tools_allowed.contains(dep.as_str())),
-        "cox-tools may only depend on cox-protocol/cox-sandbox among workspace crates, found {tools_deps:?}"
+        "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch among workspace crates, found {tools_deps:?}"
     );
 }
