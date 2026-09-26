@@ -4,8 +4,6 @@
 - T30.16. LM Studio native API: loaded context, capabilities, load on demand
 - T30.13. cox vs Claude Code vs Terminus 2 on the same local model
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
-- T32.13. `cox-provider-anthropic`
-- T32.14. `cox-provider-openai`
 - T33.2. ABI v1 payload types
 - T33.3. `cox-plugin`: host crate, one worker per plugin
 - T33.4. Discovery, package digest and `cox plugin list`

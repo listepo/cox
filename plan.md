@@ -10,10 +10,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
 | T32.2 | todo | P2 | 4 | 0% | |
-| T32.13 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
-| T32.14 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
 | T33.2 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
-| T33.3 | todo | P1 | 5 | 0% | |
+| T33.3 | in progress | P1 | 5 | 5% | Claude Code / opus-5.5 |
 | T33.4 | todo | P2 | 3 | 0% | |
 | T33.5 | in progress | P1 | 3 | 5% | Claude Code / sonnet-5 |
 | T33.6 | todo | P1 | 4 | 0% | |
@@ -126,7 +124,9 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
-| `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction | reqwest 0.12 (rustls), typify 0.8 (build.rs: Anthropic wire types from the vendored spec, T30.10/T30.12), async-openai 0.42 (`response-types` only, T30.11) |
+| `cox-provider` | the provider registry and `from_env`; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction; re-exports the wires at the old `anthropic` and `openai` paths | reqwest 0.12 (rustls) |
+| `cox-provider-anthropic` | the Anthropic Messages wire (T32.13; split out of `cox-provider`): request building, stream parsing, wire types from the vendored spec, `schema/` | reqwest 0.12, typify 0.8 (build.rs, T30.10/T30.12) |
+| `cox-provider-openai` | the OpenAI Responses and Chat wires (T32.14; split out of `cox-provider`) | reqwest 0.12, async-openai 0.42 (`response-types` only, T30.11) |
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | similar 3.2, nix |
 | `cox-sandbox` | `path::confine`, `sandbox::{seatbelt,bwrap,landlock}` (T32.3; split out of `cox-tools`): path confinement to the workspace roots and the platform sandbox front door. `cox-tools` re-exports both as `path` and `sandbox` | landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-patch` | the V4A patch engine (T32.6; split out of `cox-tools`): `parse` text ↔ AST, `stage` progressive hunk matching. Pure: no filesystem, no `ToolCx`; the `apply_patch` `Tool` impl stays in `cox-tools` (`v4a::tool`) so `path::confine` keeps one call site. `cox-tools` re-exports it as `v4a` | proptest 1.11 (dev) |
@@ -144,12 +144,12 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-sanitize` | `sanitize`, `sanitize_with`, `truncate` (T5.6; split out of `cox-tui` by T32.1): strips escape sequences, C0 controls, bidi overrides and zero-width runs from untrusted text before it reaches the terminal; width-aware truncation. `cox-tui` re-exports it as `text` | unicode-width 0.2 |
 | `cox-tui` | TEA app, composer (tui-textarea-2 0.13, the ratatui-0.30 fork of tui-textarea 0.7), transcript cells, streaming markdown (pulldown-cmark 0.13 → spans; the plan said 0.10, same Tag/TagEnd API), syntect 5 highlighting, diff view, approval modal, status line, `/` commands, `@` file picker, `text::sanitize`, OSC 11 background detection for `tui.theme = "auto"` (T22.6), theme files and `/theme` (T24.2) | ratatui 0.30.2 (`scrolling-regions`, T23.2), crossterm 0.29, nucleo 0.5, pulldown-cmark 0.13, syntect 5.3 (fancy-regex, no onig), two-face 0.3 (`syntect-fancy`; ~250 syntaxes, +0.33 MiB — T24.3), unicode-width 0.2, arboard 3, terminal-colorsaurus 1.0, toml_edit 0.25, similar 3.2 (word diffs, the approval modal's proposed edit — T24.5) |
 | `cox-acp` | Agent Client Protocol 2.0 server: session/prompt, permission requests, client fs/terminal | agent-client-protocol 2.0 |
-| `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1 |
+| `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1, thiserror |
 | `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading; wasmtime 43 underneath), sha2 |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol`, `cox-permission` (and may use `cox-models`); `cox-sandbox`, `cox-config`, `cox-models`, `cox-permission`, `cox-tokens`, `cox-patch`, `cox-web`, `cox-provider-http`, `cox-provider-testkit`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-syntax`, `cox-search`, `cox-telemetry` → no workspace crate; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`, `cox-syntax`, `cox-search`, `cox-web`; `cox-provider` → `cox-protocol`, `cox-models`, `cox-tokens`, `cox-provider-http`, `cox-provider-testkit`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol`, `cox-permission` (and may use `cox-models`); `cox-sandbox`, `cox-config`, `cox-models`, `cox-permission`, `cox-tokens`, `cox-patch`, `cox-web`, `cox-provider-http`, `cox-provider-testkit`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-provider-anthropic`, `cox-provider-openai` → `cox-protocol`, `cox-models`, `cox-provider-http`; `cox-protocol` → `cox-plugin-api` only (the `plugin` re-export, T33.1); `cox-syntax`, `cox-search`, `cox-telemetry` → no workspace crate; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`, `cox-syntax`, `cox-search`, `cox-web`; `cox-provider` → `cox-protocol`, `cox-models`, `cox-tokens`, `cox-provider-http`, `cox-provider-testkit`, `cox-provider-anthropic`, `cox-provider-openai`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -803,20 +803,6 @@ Plan:
 4. Apply the falsifier in `docs/design/crates.md`.
 
 Check: syntect, two-face and pulldown-cmark appear only in `cox-render/Cargo.toml`; the TUI snapshots are unchanged.
-
-#### T32.13 `cox-provider-anthropic`
-
-Depends: T32.12, T30.21–T30.26 (A46), so the wire moves once, already unified.
-Moves: `cox-provider/src/anthropic/*`, `schema/`, `build.rs` (~2.1k).
-Why: dependencies (a) (the typify build step) and size (c).
-Check: the request snapshots are unchanged; the typify build runs only for this crate.
-
-#### T32.14 `cox-provider-openai`
-
-Depends: T32.12, T30.21–T30.26 as in T32.13.
-Moves: `cox-provider/src/openai/*` (~2.2k).
-Why: dependencies (a) (async-openai) and size (c).
-Check: `async-openai` appears only in this crate's `Cargo.toml`.
 
 ### P33 — WASM plugins (goal: one package adds a status segment, a hook, a deferred tool and a provider without a cox release; §1.15 invariants 1, 8, 10 and 15–17 green; ≤ 50 ms warm start per plugin)
 

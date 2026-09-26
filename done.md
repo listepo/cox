@@ -954,3 +954,23 @@ Result: `crates/cox-plugin-api` parses `plugin.toml` into `PluginManifest`, `Cap
 - only the allowed render targets are accepted.
 The id-matches-directory check is left to the loader (T33.4). `docs/plugin.schema.json` is generated and drift-tested. `cox-protocol` re-exports the crate as `plugin`; `deps.rs` lets `cox-protocol` depend on `cox-plugin-api` only, and `cox-plugin-api` on no workspace crate. It builds for `wasm32-unknown-unknown`.
 Check: `manifest_rejects_unknown_keys`, `manifest_rejects_net_url`, `manifest_rejects_id_with_double_underscore` and `plugin_schema_matches_committed_file` pass. nextest ran 951 passed, 3 skipped in the worktree.
+
+#### T32.13 `cox-provider-anthropic`
+
+Depends: T32.12, T30.21–T30.26 (A46), so the wire moves once, already unified.
+Moves: `cox-provider/src/anthropic/*`, `schema/`, `build.rs` (~2.1k).
+Why: dependencies (a) (the typify build step) and size (c).
+Check: the request snapshots are unchanged; the typify build runs only for this crate.
+Status: done 2026-09-26
+Result: `crates/cox-provider-anthropic` owns the Anthropic Messages wire (`request`, `stream`, `wire`), its `build.rs` and the vendored `schema/`, so the typify build step runs only for it. It depends on `cox-protocol`, `cox-models` and `cox-provider-http`. `cox-provider` re-exports it as `anthropic` and has no build-dependencies left. `cox-vendor anthropic-spec` writes to the new schema directory, and a new test checks that its default target is the file `build.rs` reads. The 8 insta snapshots moved byte-identical; only their file names follow the new module path.
+Check: the request snapshots are unchanged. `cargo tree -e build -i typify` shows typify only under this crate, whose `build.rs` is the only one in the workspace. nextest ran 940 passed, 3 skipped in the worktree, and `just vendor-test` ran 37 passed.
+
+#### T32.14 `cox-provider-openai`
+
+Depends: T32.12, T30.21–T30.26 as in T32.13.
+Moves: `cox-provider/src/openai/*` (~2.2k).
+Why: dependencies (a) (async-openai) and size (c).
+Check: `async-openai` appears only in this crate's `Cargo.toml`.
+Status: done 2026-09-26
+Result: `crates/cox-provider-openai` owns the OpenAI Responses and Chat wires (`chat`, `responses`, `wire`) and depends on `cox-protocol`, `cox-models` and `cox-provider-http`. `cox-provider` re-exports it as `openai`. The 11 insta snapshots moved with their tests byte-identical; only their file names follow the new module path.
+Check: `async-openai` appears only in `crates/cox-provider-openai/Cargo.toml` among crates; `cargo tree -i async-openai` shows the single path through it. nextest ran 940 passed, 3 skipped in the worktree, with no `.snap.new`.
