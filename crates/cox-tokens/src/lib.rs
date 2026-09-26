@@ -1,5 +1,7 @@
-//! Token estimation and counting for a `Request` (plan.md T1.8). Three ways
-//! to size a request before or after it goes over the wire, in increasing
+//! Token estimation and counting for a `Request` (plan.md T1.8), moved to
+//! its own crate by T32.10 (dependency (a): `tiktoken-rs` and its BPE data
+//! are the only reason `cox-provider` used to pull them in). Three ways to
+//! size a request before or after it goes over the wire, in increasing
 //! order of accuracy and decreasing order of availability:
 //!
 //! 1. [`estimate`] — a byte-counting heuristic, no I/O, always available;
@@ -8,7 +10,13 @@
 //! 2. [`count_openai`] — exact for OpenAI-family models, via `tiktoken-rs`.
 //! 3. [`count_anthropic`] — exact for Anthropic models, via the provider's
 //!    own `count_tokens` endpoint. Not yet called from `Provider::count_tokens`
-//!    — `anthropic/mod.rs` is mid-edit under T1.2 — wired in T1.6.
+//!    — `anthropic/mod.rs` is mid-edit under T1.2 — wired in T1.6. Takes a
+//!    plain `reqwest::Client`/`HeaderMap` rather than any `cox-provider`
+//!    type, so this crate needs no dependency back on `cox-provider`.
+//!
+//! `cox-provider` re-exports this crate at the old `tokens` path
+//! (`crates/cox-provider/src/lib.rs`), so `cox_provider::tokens::*` keeps
+//! working for existing callers.
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::types::{Content, Request};

@@ -148,6 +148,19 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-syntax"]
     );
 
+    // cox-tokens (T32.10) is a pure leaf that depends only on cox-protocol
+    // among workspace crates (ProviderError, Content, Request) — it takes a
+    // plain reqwest::Client/HeaderMap rather than any cox-provider type, so
+    // it never depends back on cox-provider.
+    let tokens_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-tokens"]
+            .iter()
+            .all(|d| tokens_allowed.contains(d.as_str())),
+        "cox-tokens may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-tokens"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
     // depend on cox-models once a card actually wires the catalog in).
     let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
@@ -172,9 +185,12 @@ fn no_crate_below_cox_depends_on_core() {
         );
     }
 
-    // cox-provider additionally depends on cox-models: `Priced` prices
-    // every call through the catalog's `PriceTable` (T30.24).
-    let provider_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
+    // cox-provider additionally depends on cox-models (`Priced` prices every
+    // call through the catalog's `PriceTable`, T30.24) and cox-tokens
+    // (re-exported at the old `tokens` path, T32.10).
+    let provider_allowed: HashSet<&str> = ["cox-protocol", "cox-models", "cox-tokens"]
+        .into_iter()
+        .collect();
     let provider_deps = &deps["cox-provider"];
     assert!(
         !provider_deps.contains("cox-core"),
@@ -184,7 +200,7 @@ fn no_crate_below_cox_depends_on_core() {
         provider_deps
             .iter()
             .all(|dep| provider_allowed.contains(dep.as_str())),
-        "cox-provider may only depend on cox-protocol/cox-models among workspace crates, found {provider_deps:?}"
+        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens among workspace crates, found {provider_deps:?}"
     );
 
     // cox-patch (T32.6) is the V4A parse/match/stage engine: a pure leaf,

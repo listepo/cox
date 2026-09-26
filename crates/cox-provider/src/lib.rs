@@ -25,8 +25,13 @@ pub mod replay;
 pub mod retry;
 pub mod scripted;
 pub mod sse;
-pub mod tokens;
 pub mod usage;
+
+/// T32.10: token estimation/counting moved to its own crate (dependency
+/// (a): `tiktoken-rs` and its BPE data — `docs/design/crates.md`);
+/// re-exported here at the old path so `cox_provider::tokens::*` keeps
+/// working for existing callers.
+pub use cox_tokens as tokens;
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;

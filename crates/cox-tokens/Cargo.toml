@@ -1,0 +1,19 @@
+[package]
+name = "cox-tokens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+serde_json = { workspace = true }
+# OpenAI-side token counting for T1.8 (no Anthropic-tokenizer equivalent is public).
+tiktoken-rs = { workspace = true }
+# `count_anthropic` calls the Anthropic `count_tokens` endpoint directly over
+# a caller-supplied `reqwest::Client`; no `cox-provider` type crosses in.
+reqwest = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = { workspace = true }
