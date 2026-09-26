@@ -9,7 +9,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.21.1 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.30 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.33 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.34 | todo | P2 | 4 | 0% | |
 | T33.36 | todo | P2 | 4 | 0% | |
@@ -750,12 +749,6 @@ Check: `provider_key_never_reaches_guest` (the WAT guest echoes its request head
 Depends: T33.21 · Size: ~120 · Files: `crates/cox-core/src/memory_extract.rs`, `crates/cox-core/src/monotone.rs`, `crates/cox-protocol/src/config.rs`
 Goal: PL§4 `salience`, split out of T33.21. Memory extraction asks the `[plugins.decide] salience` plugin (within `salience_ms`, default 300) for a `Score` per extracted item; items are scrubbed and one question carries every item of the extraction. The score only orders or drops items against the `[memory]` thresholds; it never adds or edits an item and never lowers a threshold. Silence, lateness or low confidence keeps every item. Every answer emits `Event::Advised { point: salience }`. Regenerate `docs/config.jsonschema`, `docs/config.md` and `default.toml` through their drift tests.
 Check: `salience_advice_cannot_add_memory_items`, `salience_thresholds_stay_in_config`, `late_salience_keeps_every_item`.
-
-#### T33.30 `/plugin new` in the TUI
-
-Depends: T33.29 · Size: ~120 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
-Goal: the palette's `/plugin new <name>` asks for the language with `Modal::Picker` when it is not given, then sends a `Cmd` to the same `plugin_new` function. There is no second implementation.
-Check: insta snapshot of the picker; `tui_plugin_new_calls_shared_scaffold` (a fake executor records one call with the chosen language).
 
 #### T33.33 `/plugin update | remove | list | reload` in the TUI
 

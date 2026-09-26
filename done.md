@@ -2777,3 +2777,27 @@ Check:
 - R§4.3.5 P44 records Dart 3.13.4, the commands, the exact instantiate error and the issue state. Sources, checked 2026-09-26: https://api.github.com/repos/dart-lang/sdk/issues/56366 and https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION
 - The throwaway SDK, spike files and test were deleted; nothing but the two docs was committed.
 - On main: docs-only change (research.md and docs/design/plugins.md); both spikes' conflicting rows were resolved on landing.
+
+#### T33.30 `/plugin new` in the TUI
+
+Depends: T33.29 · Size: ~120 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
+Goal: the palette's `/plugin new <name>` asks for the language with `Modal::Picker` when it is not given, then sends a `Cmd` to the same `plugin_new` function. There is no second implementation.
+Check: insta snapshot of the picker; `tui_plugin_new_calls_shared_scaffold` (a fake executor records one call with the chosen language).
+Status: done 2026-09-26
+Result: `/plugin new <name> [--lang <lang>] [--with <caps>]` in the TUI.
+- **Parsing.** `commands.rs` parses the command into `Action::PluginNew { name, lang: Option<String>, with }` and lists it in `/help`.
+- **Language picker.** Without `--lang`, `State` stashes the request and opens `Modal::Picker` (`Kind::PluginLang`). Its options come from `picker::PLUGIN_LANGS`, which lists only the languages that have a template (`rust` today); that list is extended when each template lands. `Pick::Chosen` sends `Cmd::PluginNew`.
+- **No second implementation.** `app.rs` forwards a `PluginNewRequest` of plain strings over a channel. `session::run_plugin_new` is the only place that maps them back to `plugin_new::Lang` and `Capability` (clap `ValueEnum`), and it calls the same `plugin_new::scaffold` and `write` that `cox plugin new` calls.
+- **Result.** Success or failure comes back as `Msg::PluginNew` and shows as a notice.
+- An explicit `--lang go` (or another language without a template) reaches `scaffold`, and its "no template yet" error shows as a notice.
+Deviations:
+- 8 files. The extra ones are `picker.rs` (the new picker kind), `app.rs` (the channel), `kitty_probe.rs` (the new `run` signature) and the updated `/help` screenshot snapshot.
+- About 300 lines, including tests, against ~120.
+Check:
+- insta snapshot `picker_plugin_lang_snapshot`
+- `tui_plugin_new_calls_shared_scaffold`: a fake executor records one call with the chosen language.
+- `plugin_new_parses_name_lang_and_with`
+- `screen_help_overlay` snapshot updated for the new help row.
+- The real binary with a scratch `COX_HOME`: `cox plugin new demo` scaffolds, and `cox doctor` runs.
+- In the worktree: nextest 1250 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing: nextest 1250 passed, 3 skipped; fmt, clippy and the slim build clean.
