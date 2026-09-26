@@ -58,6 +58,7 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.41. Optional: `cox plugin link` (dev loop)
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
+- T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T34.0. Design doc: subagent messaging
 - T34.1. Wire custom agent definitions into the `agent` tool
 - T34.2. A subagent concurrency cap
