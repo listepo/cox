@@ -14,6 +14,7 @@
 //! - [`http`] — credential lookup, auth headers and error mapping shared by every network backend.
 //! - [`sse`] — generic Server-Sent-Events framing shared by every SSE-based provider.
 //! - [`retry`] — backoff before the first byte, shared by every network backend.
+//! - [`lmstudio`] — LM Studio's native `/api/v1` model list and load call (T30.16); not a chat wire.
 //!
 //! `http`, `retry` and `sse` are re-exports of `cox-provider-http` (T32.12:
 //! reuse (d) — every wire needs them without the rest of this crate), kept
@@ -33,6 +34,7 @@
 pub use cox_provider_anthropic as anthropic;
 pub use cox_provider_http::http;
 pub mod jev;
+pub mod lmstudio;
 pub mod replay;
 pub use cox_provider_http::retry;
 pub mod scripted;

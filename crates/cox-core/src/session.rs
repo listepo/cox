@@ -412,6 +412,14 @@ impl Session {
         self.inner.lock().await.history.clone()
     }
 
+    /// Emits a `Notice` found outside the loop before the first turn — a
+    /// surface's session-start check (T30.16: an LM Studio model not
+    /// trained for tool use). Goes through `emit`, so it is recorded in the
+    /// rollout like every other notice.
+    pub async fn notice(&self, level: Level, text: String) -> Result<(), CoreError> {
+        self.emit(Event::Notice { level, text }).await
+    }
+
     pub(crate) fn clone_handle(&self) -> Self {
         self.clone()
     }

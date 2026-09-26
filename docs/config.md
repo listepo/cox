@@ -75,7 +75,8 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `base_url` = `"http://localhost:1234"`
 - `api_key_env` = `"LM_API_TOKEN"` — else keyring entry "cox/lmstudio"; neither = no x-api-key header
 - `model` = `""` — usually left unset; pin via tiers.code.model / --tier code=<model>
-- `context_window` = `0` — 0 = ask the server (T30.16); until then falls back to the model catalog
+- `context_window` = `0` — 0 = ask the server (GET /api/v1/models), then the model catalog
+- `load` = `false` — true = load the model at session start if it is not loaded (with context_window)
 - `timeout_s` = `600` — local prefill is slow, same rationale as `local`
 - `max_retries` = `4`
 ## `[providers.typesafe]`

@@ -2,7 +2,8 @@
 //! this machine. Checks: toolchain version, `COX_HOME` writable, db opens,
 //! API keys per configured provider, sandbox backend, `git` on PATH, terminal
 //! capabilities (TERM, true colour, size), prices table age, whether every
-//! configured model has a catalog price (T30.27), `.claude/settings.json`,
+//! configured model has a catalog price (T30.27), what LM Studio runs when
+//! it is the code tier's provider (T30.16), `.claude/settings.json`,
 //! and one OAuth row per HTTP MCP server (T22.5).
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
 
@@ -102,6 +103,12 @@ pub fn run(
 
     // Prices table age.
     results.push(check_prices());
+
+    // What LM Studio runs for the code tier (T30.16), only when it is the
+    // code tier's provider: nobody else needs port 1234 probed.
+    if config.tiers.code.provider == "lmstudio" {
+        results.push(check_lmstudio(config));
+    }
 
     // Every model reachable from [tiers.*] or [providers.*].models has a
     // catalog price (T30.27).
@@ -626,24 +633,108 @@ fn check_prefix(config: &cox_protocol::Config) -> CheckResult {
     CheckResult::ok("prefix", format!("{tokens} tokens (profile {profile})"))
 }
 
-fn output_human(results: &[CheckResult]) -> bool {
-    let mut has_fail = false;
-    for result in results {
-        let status_str = match result.status.as_str() {
-            "ok" => "✓",
-            "warn" => "⚠",
-            "fail" => "✗",
-            _ => "?",
-        };
-        println!("{}: {} {}", result.check, status_str, result.detail);
-        if !result.fix.is_empty() && result.status != "ok" {
-            println!("  fix: {}", result.fix);
-        }
-        if result.status == "fail" {
-            has_fail = true;
-        }
+/// One result as the human output prints it: the status line, then a
+/// `fix:` line unless it passed.
+fn human(result: &CheckResult) -> String {
+    let status_str = match result.status.as_str() {
+        "ok" => "✓",
+        "warn" => "⚠",
+        "fail" => "✗",
+        _ => "?",
+    };
+    let mut out = format!("{}: {} {}\n", result.check, status_str, result.detail);
+    if !result.fix.is_empty() && result.status != "ok" {
+        out.push_str(&format!("  fix: {}\n", result.fix));
     }
-    has_fail
+    out
+}
+
+fn output_human(results: &[CheckResult]) -> bool {
+    for result in results {
+        print!("{}", human(result));
+    }
+    results.iter().any(|r| r.status == "fail")
+}
+
+/// How long doctor waits on LM Studio: a hung server must not hang doctor.
+const LMSTUDIO_DOCTOR_TIMEOUT_S: u32 = 5;
+
+/// Asks LM Studio's native API about the code tier's model (T30.16) with
+/// the key the session would use. Read-only: doctor never loads a model.
+fn check_lmstudio(config: &cox_protocol::Config) -> CheckResult {
+    let l = &config.providers.lmstudio;
+    let mut transport = l.transport();
+    transport.timeout_s = LMSTUDIO_DOCTOR_TIMEOUT_S;
+    let model = crate::session::lmstudio_model(config);
+    let key = cox_provider::http::resolve_key(&transport.api_key_env, "lmstudio").ok();
+    let list = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| cox_protocol::errors::ProviderError::Network)
+        .and_then(|rt| {
+            let client = cox_provider::lmstudio::LmStudio::new(&transport, key)?;
+            rt.block_on(client.models())
+        });
+    lmstudio_row(&transport.base_url, model, list)
+}
+
+/// [`check_lmstudio`]'s verdict from the model list alone, so every branch
+/// is testable without a server.
+fn lmstudio_row(
+    base_url: &str,
+    model: &str,
+    list: Result<cox_provider::lmstudio::ModelList, cox_protocol::errors::ProviderError>,
+) -> CheckResult {
+    const CHECK: &str = "LM Studio";
+    let list = match list {
+        Ok(list) => list,
+        Err(e) => {
+            return CheckResult::fail(
+                CHECK,
+                format!("{base_url} unreachable or rejected the model list: {e}"),
+                "start the server (`lms server start`) or fix providers.lmstudio.base_url"
+                    .to_string(),
+            );
+        }
+    };
+    let Some(m) = list.find(model) else {
+        return CheckResult::fail(
+            CHECK,
+            format!("{base_url} reachable; `{model}` is not downloaded"),
+            format!("`lms get {model}`, or point tiers.code.model at a listed model"),
+        );
+    };
+    let max = m
+        .max_context_length
+        .map_or_else(|| "?".to_string(), |n| n.to_string());
+    let tools = match m.tool_use() {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "unknown",
+    };
+    match m.loaded_context() {
+        Some(loaded) => {
+            let detail = format!(
+                "{base_url} reachable; `{model}` loaded, context {loaded} loaded / {max} max; tool use: {tools}"
+            );
+            if m.tool_use() == Some(true) {
+                CheckResult::ok(CHECK, detail)
+            } else {
+                CheckResult::warn(
+                    CHECK,
+                    detail,
+                    "pick a model trained for tool use; cox drives a tool loop".to_string(),
+                )
+            }
+        }
+        None => CheckResult::warn(
+            CHECK,
+            format!(
+                "{base_url} reachable; `{model}` not loaded (max context {max}); tool use: {tools}"
+            ),
+            format!("`lms load {model}`, or set providers.lmstudio.load = true"),
+        ),
+    }
 }
 
 fn output_json(results: &[CheckResult]) -> bool {
@@ -772,6 +863,44 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"check\":\"test\""));
         assert!(json.contains("\"status\":\"ok\""));
+    }
+
+    /// T30.16: the LM Studio row for a loaded model, an unloaded one, one
+    /// the server does not list, and a server that is down.
+    #[test]
+    fn doctor_lmstudio_rows() {
+        let raw = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/lmstudio/models.json"),
+        )
+        .expect("fixture");
+        let list: cox_provider::lmstudio::ModelList =
+            serde_json::from_str(&raw).expect("fixture parses");
+        let mut unloaded = list.clone();
+        for m in &mut unloaded.models {
+            m.loaded_instances.clear();
+        }
+        let url = "http://localhost:1234";
+        let rows = [
+            lmstudio_row(url, "prism-ml/bonsai-27b", Ok(list.clone())),
+            lmstudio_row(url, "prism-ml/bonsai-27b", Ok(unloaded)),
+            lmstudio_row(
+                url,
+                "text-embedding-nomic-embed-text-v1.5",
+                Ok(list.clone()),
+            ),
+            lmstudio_row(url, "nope/absent", Ok(list)),
+            lmstudio_row(
+                url,
+                "prism-ml/bonsai-27b",
+                Err(cox_protocol::errors::ProviderError::Network),
+            ),
+        ];
+        assert_eq!(
+            rows.iter().map(|r| r.status.as_str()).collect::<Vec<_>>(),
+            ["ok", "warn", "warn", "fail", "fail"]
+        );
+        insta::assert_snapshot!(rows.iter().map(human).collect::<String>());
     }
 
     #[test]

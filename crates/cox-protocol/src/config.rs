@@ -593,10 +593,16 @@ pub struct LmStudioProviderConfig {
     /// The model id LM Studio is serving. Usually left unset and pinned
     /// instead through `tiers.code.model` / `--tier code=<model>`.
     pub model: String,
-    /// Context window in tokens; `0` means "ask the server" (T30.16, not
-    /// yet implemented) — until then a `0` here falls back to the model
-    /// catalog, then a literal floor.
+    /// Context window in tokens; `0` means "ask the server" (T30.16): the
+    /// loaded instance's context length from `GET /api/v1/models`, else
+    /// the model catalog, else a literal floor. Also the `context_length`
+    /// sent when `load` loads the model (`0` sends none: the server's
+    /// default).
     pub context_window: u32,
+    /// Load the model through `POST /api/v1/models/load` at session start
+    /// when the server has it downloaded but not loaded (T30.16). Off by
+    /// default: loading takes memory and minutes, so it is opt-in.
+    pub load: bool,
     /// Request timeout, in seconds; higher than a remote section's
     /// default for the same reason as `local` (slow on-device prefill).
     pub timeout_s: u32,
@@ -611,6 +617,7 @@ impl Default for LmStudioProviderConfig {
             api_key_env: "LM_API_TOKEN".to_string(),
             model: String::new(),
             context_window: 0,
+            load: false,
             // Same rationale as `LocalProviderConfig::default`.
             timeout_s: 600,
             max_retries: 4,

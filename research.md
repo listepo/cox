@@ -183,6 +183,8 @@ model `prism-ml/bonsai-27b`).
 | No published OpenAPI or JSON Schema for the native API found; lmstudio-js keeps TS/zod types in `packages/lms-shared-types/src` | https://github.com/lmstudio-ai/lmstudio-js (tree checked; deeper listing **unverified**) |
 | The SDKs talk to LM Studio over a WebSocket RPC protocol | **unverified** (secondary summaries only; no LM Studio protocol doc) |
 | cox's Anthropic Messages path works against LM Studio as is: one-tool task finished, `cost_usd` 0 | live run, T30.14 |
+| `POST /api/v1/models/load` answers `type`, `instance_id`, `load_time_seconds`, `status: "loaded"` and, only when the request sets `echo_load_config: true`, `load_config` (`context_length`, …); cox did not call it against the live server (T30.16 tests it on wiremock) | https://lmstudio.ai/docs/developer/rest/load (checked 2026-09-26) |
+| `GET /api/v1/models` shape re-checked for T30.16: `prism-ml/bonsai-27b` loaded at `context_length` 251648 of `max_context_length` 262144, `trained_for_tool_use: true`; saved as `fixtures/lmstudio/models.json` | live `curl localhost:1234/api/v1/models`, 2026-09-26 |
 | `lms load prism-ml/bonsai-27b --context-length 65536 -y` left the model loaded with `context_length` 251648 and `parallel` 4 (`lms ps`, `/api/v1/models`): the loaded context must be read back, not assumed | live, 2026-09-25 |
 
 What follows for cox. Wire types fall to step 3 of D3/A40 (no Rust SDK, no

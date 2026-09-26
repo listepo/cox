@@ -81,7 +81,21 @@ pub async fn open(
         }
     }
     let config = loaded.config.clone();
-    let provider = provider_for(&config)?;
+    // T30.16: ask LM Studio what it runs before the provider is built, so
+    // the loaded context becomes the session's window. The key resolved
+    // here is reused for the chat client: one keyring read, not two.
+    let served = lmstudio_served(&config).await?;
+    let provider = match &served {
+        Some(s) => {
+            let key = s.api_key.clone();
+            provider_for_served(
+                &config,
+                move |_, _| key.ok_or(cox_protocol::errors::ProviderError::Auth),
+                Some(&s.model),
+            )?
+        }
+        None => provider_for(&config)?,
+    };
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let store = Arc::new(Store::open(&home)?);
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
@@ -169,7 +183,51 @@ pub async fn open(
     )));
     // T27.3: `agent(isolation: "worktree")` gets real worktrees on every surface.
     session.set_worktrees(Arc::new(cox_tools::git::GitWorktrees));
+    for warning in served.iter().flat_map(|s| s.model.warnings()) {
+        session.notice(Level::Warn, warning).await?;
+    }
     Ok((session, loaded))
+}
+
+/// The model id an `lmstudio` session sends: the section's pin, else
+/// `tiers.code.model` — `Router::pick`'s rule, so the id asked about is the
+/// id chatted with.
+pub(crate) fn lmstudio_model(config: &Config) -> &str {
+    let pinned = &config.providers.lmstudio.model;
+    if pinned.is_empty() {
+        &config.tiers.code.model
+    } else {
+        pinned
+    }
+}
+
+/// What LM Studio reported for the session's model, plus the key it was
+/// asked with.
+struct Served {
+    model: cox_provider::lmstudio::Model,
+    api_key: Option<String>,
+}
+
+/// T30.16: reads (and, with `load = true`, loads) the session's model on
+/// LM Studio's native API. `None` unless `tiers.code` is `lmstudio` and no
+/// test double (`COX_PROVIDER`) stands in for the server. An unreachable
+/// server is an error here, before any turn: the first chat call would
+/// fail the same way.
+async fn lmstudio_served(config: &Config) -> anyhow::Result<Option<Served>> {
+    let double = std::env::var_os("COX_PROVIDER").is_some_and(|v| !v.is_empty());
+    if config.tiers.code.provider != "lmstudio" || double {
+        return Ok(None);
+    }
+    let l = &config.providers.lmstudio;
+    let transport = l.transport();
+    let api_key = cox_provider::http::resolve_key(&transport.api_key_env, "lmstudio").ok();
+    let client = cox_provider::lmstudio::LmStudio::new(&transport, api_key.clone())?;
+    let context_length = (l.context_window > 0).then_some(l.context_window);
+    let model = client
+        .prepare(lmstudio_model(config), l.load, context_length)
+        .await
+        .map_err(|e| anyhow::anyhow!("LM Studio at {}: {e}", transport.base_url))?;
+    Ok(Some(Served { model, api_key }))
 }
 
 /// `--worktree <name>` (T27.3): creates or reuses the worktree, then makes
@@ -833,12 +891,22 @@ fn provider_for_with(
     config: &Config,
     resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
 ) -> anyhow::Result<Arc<dyn Provider>> {
+    provider_for_served(config, resolve, None)
+}
+
+/// [`provider_for_with`] plus what a local server reported for the
+/// session's model (T30.16), overlaid on the catalog before any lookup.
+fn provider_for_served(
+    config: &Config,
+    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
+    served: Option<&cox_provider::lmstudio::Model>,
+) -> anyhow::Result<Arc<dyn Provider>> {
     if let Some(double) = cox_provider::from_env()? {
         return Ok(Arc::from(double));
     }
     let prices = Arc::new(PriceTable::embedded()?);
     Ok(Arc::new(Priced::new(
-        backend_for_with(config, resolve)?,
+        backend_for_with(config, resolve, served)?,
         prices,
     )))
 }
@@ -860,6 +928,7 @@ fn provider_for_with(
 fn backend_for_with(
     config: &Config,
     resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
+    served: Option<&cox_provider::lmstudio::Model>,
 ) -> anyhow::Result<Arc<dyn Provider>> {
     // T30.25: `Caps.max_context` for the sections below comes from the
     // model catalog rather than a per-family literal. `Catalog::load`
@@ -868,7 +937,11 @@ fn backend_for_with(
     // is empty on a bare `Config::default()`); a bad/unparseable catalog
     // falls back to the empty default, which is exactly "no row found" —
     // every lookup below already has its own literal fallback for that.
-    let catalog = cox_models::Catalog::load(config, None).unwrap_or_default();
+    let mut catalog = cox_models::Catalog::load(config, None).unwrap_or_default();
+    // T30.16 (A46): a server's own report is the last override layer.
+    if let Some(m) = served {
+        catalog.overlay_served(&m.key, m.loaded_context(), m.tool_use());
+    }
     match config.tiers.code.provider.as_str() {
         "anthropic" => {
             let a = &config.providers.anthropic;
@@ -906,14 +979,14 @@ fn backend_for_with(
             let l = &config.providers.lmstudio;
             let transport = l.transport();
             let api_key = resolve(&transport.api_key_env, "lmstudio").ok();
-            // `context_window = 0` means "ask the server" (T30.16, not yet
-            // implemented); until then, the catalog, then the same literal
-            // floor `local` falls back to.
+            // `context_window = 0` means "ask the server": its loaded
+            // context, overlaid on the catalog above (T30.16), then the
+            // catalog's own row, then the same literal floor `local` uses.
             let max_context = if l.context_window > 0 {
                 l.context_window
             } else {
                 catalog
-                    .get(&config.tiers.code.model)
+                    .get(lmstudio_model(config))
                     .and_then(|row| row.context_window)
                     .unwrap_or(32_768)
             };
@@ -1285,8 +1358,32 @@ mod tests {
         assert_eq!(
             p.capabilities().max_context,
             32_768,
-            "the literal floor when context_window is 0 (T30.16 asks the server instead) and the catalog has no row for the configured model"
+            "the literal floor when context_window is 0, no server report was given and the catalog has no row for the configured model"
         );
+    }
+
+    /// T30.16: the context LM Studio reports as loaded is the session's
+    /// window (what compaction fits), overriding the catalog and the floor;
+    /// a configured `context_window` still wins over the server.
+    #[test]
+    fn lmstudio_window_follows_the_served_loaded_context() {
+        let mut cfg = Config::default();
+        cfg.tiers.code.provider = "lmstudio".into();
+        cfg.tiers.code.model = "prism-ml/bonsai-27b".into();
+        let raw = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/lmstudio/models.json"),
+        )
+        .expect("fixture");
+        let list: cox_provider::lmstudio::ModelList =
+            serde_json::from_str(&raw).expect("fixture parses");
+        let served = list.find("prism-ml/bonsai-27b").expect("listed");
+
+        let p = provider_for_served(&cfg, no_key, Some(served)).expect("builds");
+        assert_eq!(p.capabilities().max_context, 251_648);
+
+        cfg.providers.lmstudio.context_window = 65_536;
+        let p = provider_for_served(&cfg, no_key, Some(served)).expect("builds");
+        assert_eq!(p.capabilities().max_context, 65_536);
     }
 
     /// T30.25 check: a model configured with a 1M context window is

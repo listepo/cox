@@ -1,0 +1,13 @@
+---
+source: crates/cox/src/doctor.rs
+expression: "rows.iter().map(human).collect::<String>()"
+---
+LM Studio: ✓ http://localhost:1234 reachable; `prism-ml/bonsai-27b` loaded, context 251648 loaded / 262144 max; tool use: yes
+LM Studio: ⚠ http://localhost:1234 reachable; `prism-ml/bonsai-27b` not loaded (max context 262144); tool use: yes
+  fix: `lms load prism-ml/bonsai-27b`, or set providers.lmstudio.load = true
+LM Studio: ⚠ http://localhost:1234 reachable; `text-embedding-nomic-embed-text-v1.5` not loaded (max context 2048); tool use: unknown
+  fix: `lms load text-embedding-nomic-embed-text-v1.5`, or set providers.lmstudio.load = true
+LM Studio: ✗ http://localhost:1234 reachable; `nope/absent` is not downloaded
+  fix: `lms get nope/absent`, or point tiers.code.model at a listed model
+LM Studio: ✗ http://localhost:1234 unreachable or rejected the model list: network error
+  fix: start the server (`lms server start`) or fix providers.lmstudio.base_url

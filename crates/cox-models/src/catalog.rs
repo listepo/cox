@@ -161,6 +161,22 @@ impl Catalog {
         Ok(catalog)
     }
 
+    /// What a running local server reports for `id` (T30.16): the context
+    /// it actually loaded and whether the model was trained for tool use.
+    /// Overrides every other layer, because the loaded window is the one
+    /// compaction must fit, whatever the model could support. `None`
+    /// fields keep the row's value. The caller does the I/O; this crate
+    /// only merges the numbers.
+    pub fn overlay_served(&mut self, id: &str, context_window: Option<u32>, tools: Option<bool>) {
+        let row = self.row_mut(id);
+        if let Some(window) = context_window {
+            row.context_window = Some(window);
+        }
+        if let Some(tools) = tools {
+            row.capabilities.tools = Some(tools);
+        }
+    }
+
     /// A model's row, if the catalog has one.
     pub fn get(&self, id: &str) -> Option<&ModelRow> {
         self.rows.get(id)
@@ -232,6 +248,30 @@ verified_on = "2026-01-01"
 source_url = "https://example.test"
 "#
         )
+    }
+
+    #[test]
+    fn served_context_overrides_config_and_keeps_the_price() {
+        let mut config = Config::default();
+        config.providers.local.models = vec![ProviderModel {
+            id: "claude-haiku-4-5".into(),
+            context_window: 1_000,
+            ..ProviderModel::default()
+        }];
+        let mut catalog = Catalog::load(&config, None).expect("catalog");
+        catalog.overlay_served("claude-haiku-4-5", Some(251_648), Some(true));
+        let row = catalog.get("claude-haiku-4-5").expect("row");
+        assert_eq!(row.context_window, Some(251_648));
+        assert_eq!(row.capabilities.tools, Some(true));
+        assert!(row.price.is_some(), "the served report touches no price");
+        // A server that reports nothing leaves the row alone.
+        catalog.overlay_served("claude-haiku-4-5", None, None);
+        assert_eq!(
+            catalog
+                .get("claude-haiku-4-5")
+                .and_then(|r| r.context_window),
+            Some(251_648)
+        );
     }
 
     #[test]

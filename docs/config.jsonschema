@@ -98,6 +98,7 @@
           "api_key_env": "LM_API_TOKEN",
           "model": "",
           "context_window": 0,
+          "load": false,
           "timeout_s": 600,
           "max_retries": 4
         },
@@ -531,6 +532,7 @@
             "api_key_env": "LM_API_TOKEN",
             "model": "",
             "context_window": 0,
+            "load": false,
             "timeout_s": 600,
             "max_retries": 4
           }
@@ -755,11 +757,16 @@
           "default": ""
         },
         "context_window": {
-          "description": "Context window in tokens; `0` means \"ask the server\" (T30.16, not\nyet implemented) — until then a `0` here falls back to the model\ncatalog, then a literal floor.",
+          "description": "Context window in tokens; `0` means \"ask the server\" (T30.16): the\nloaded instance's context length from `GET /api/v1/models`, else\nthe model catalog, else a literal floor. Also the `context_length`\nsent when `load` loads the model (`0` sends none: the server's\ndefault).",
           "type": "integer",
           "format": "uint32",
           "minimum": 0,
           "default": 0
+        },
+        "load": {
+          "description": "Load the model through `POST /api/v1/models/load` at session start\nwhen the server has it downloaded but not loaded (T30.16). Off by\ndefault: loading takes memory and minutes, so it is opt-in.",
+          "type": "boolean",
+          "default": false
         },
         "timeout_s": {
           "description": "Request timeout, in seconds; higher than a remote section's\ndefault for the same reason as `local` (slow on-device prefill).",
