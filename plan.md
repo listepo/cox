@@ -14,7 +14,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T32.2 | todo | P2 | 4 | 0% | |
 | T32.4 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.5 | todo | P2 | 3 | 0% | |
-| T32.6 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T32.7 | todo | P2 | 3 | 0% | |
 | T32.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.9 | todo | P2 | 3 | 0% | |
@@ -141,6 +140,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-provider` | Anthropic Messages; OpenAI Responses; OpenAI Chat; `Scripted`; `Replay`; usage extraction; retry/backoff; token estimate | reqwest 0.12 (rustls), eventsource-stream 0.2.3, tiktoken-rs 0.12, typify 0.8 (build.rs: Anthropic wire types from the vendored spec, T30.10/T30.12), async-openai 0.42 (`response-types` only, T30.11) |
 | `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | ignore 0.4.33, grep-searcher 0.1.17, globset, nucleo 0.5, similar 3.2, diffy 0.5, tree-sitter 0.25 + bash/rust/typescript/python/go grammars, shlex, nix |
 | `cox-sandbox` | `path::confine`, `sandbox::{seatbelt,bwrap,landlock}` (T32.3; split out of `cox-tools`): path confinement to the workspace roots and the platform sandbox front door. `cox-tools` re-exports both as `path` and `sandbox` | landlock 0.4.7, seccompiler 0.5, nix |
+| `cox-patch` | the V4A patch engine (T32.6; split out of `cox-tools`): `parse` text ↔ AST, `stage` progressive hunk matching. Pure: no filesystem, no `ToolCx`; the `apply_patch` `Tool` impl stays in `cox-tools` (`v4a::tool`) so `path::confine` keeps one call site. `cox-tools` re-exports it as `v4a` | proptest 1.11 (dev) |
 | `cox-mcp` | MCP client (stdio, Streamable HTTP, OAuth), server discovery (`.mcp.json`, config), tool namespacing `mcp__<server>__<tool>`, `cox mcp` server | rmcp 3.2 (`client`, `server`, `auth`, `transport-io`, `transport-child-process`, `transport-streamable-http-client-reqwest`), async-trait (server tools as `Tool` impls, T7.6), keyring 4 (OAuth tokens as `cox/mcp/<server>`, T22.5), reqwest 0.13 (the version rmcp implements its HTTP client trait for; the workspace row stays 0.12 for the providers) |
 | `cox-store` | `~/.cox/cox.db` Diesel models, `schema.rs`, embedded migrations, rollout writer/reader, archive, FTS5 search (`sql_query`), ledger queries | diesel 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`, `r2d2` off), diesel_migrations 2.2, libsqlite3-sys 0.30 (`bundled`), directories 6, keyring 4 |
 | `cox-ext` | instruction-file hierarchy, `SKILL.md`, commands, subagent definitions, hook runner (Claude JSON protocol), `.claude/settings.json` import | serde_yaml (frontmatter), shlex, tokio + nix `signal` (hook runner: `sh -c` with a process-group kill on timeout, T7.4), regex 1 (hook `matcher` regexes, T22.3) |
@@ -152,7 +152,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
-Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-sandbox`, `cox-models`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`; `cox-provider` → `cox-protocol`, `cox-models`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
+Dependency direction (enforced by a test in T0.1 that parses `cargo metadata`): `cox` → everything; `cox-tui`, `cox-acp` → `cox-core`, `cox-protocol`, `cox-sanitize`; `cox-sanitize` → no workspace crate; `cox-core` → `cox-protocol` (and may use `cox-models`); `cox-sandbox`, `cox-models`, `cox-patch`, `cox-mcp`, `cox-store`, `cox-ext` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`; `cox-provider` → `cox-protocol`, `cox-models`; `cox-plugin-api` → no workspace crate; `cox-plugin` → `cox-protocol`, `cox-plugin-api`, `cox-sanitize`; only `cox-plugin` depends on extism (A52). No crate below `cox` depends on `cox-core`, and `cox-core` does not depend on `cox-plugin`.
 
 ### 1.2 The contract every crate shares (`cox-protocol`)
 
@@ -841,12 +841,6 @@ Check: no `tree_sitter*` dependency is left in `cox-tools/Cargo.toml`; the class
 Depends: T32.3 · Moves: `cox-tools/src/grep.rs`, `glob.rs` (~870).
 Why: dependencies (a), namely ignore, grep-searcher, grep-regex and nucleo.
 Check: those four crates appear only in `cox-search/Cargo.toml`. If another tool still uses one of them, the card says so and leaves that dependency shared.
-
-#### T32.6 `cox-patch`: the V4A patch engine
-
-Depends: — · Moves: `cox-tools/src/v4a/*` (~990).
-Why: size (c), a self-contained leaf.
-Check: the `v4a` tests pass unchanged in the new crate.
 
 #### T32.7 `cox-web`: `web_fetch`
 

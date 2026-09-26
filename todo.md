@@ -8,7 +8,6 @@
 - T32.2. `cox-render`: themes, colour, markdown, diff, SVG and glyphs
 - T32.4. `cox-syntax`: tree-sitter and its grammars
 - T32.5. `cox-search`: grep and glob
-- T32.6. `cox-patch`: the V4A patch engine
 - T32.7. `cox-web`: `web_fetch`
 - T32.8. `cox-permission`: the permission engine
 - T32.9. `cox-telemetry`: tracing setup and the OpenTelemetry stack

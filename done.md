@@ -732,3 +732,24 @@ Status: dropped 2026-09-26 · Depends: T32.12, T30.21–T30.26 as in T32.13 · P
 Goal (as planned): move `cox-provider/src/jev.rs` into its own crate `cox-provider-jev` (size, item c).
 Reason for dropping: superseded by §6 A52 (T33.40, the Jev-as-a-plugin work). Once the Jev plugin reaches parity (T33.40.5–T33.40.6), `jev.rs` is deleted outright by T33.40.12, not extracted into a crate — the built-in Jev client is going away, so splitting it into its own crate first would be immediately undone. Recorded here rather than left `todo`, per the creator's decision of 2026-09-26 (`docs/design/plugins.md` §14 decision 12).
 Check: n/a — no code moved for this task.
+
+#### T32.6 `cox-patch`: the V4A patch engine
+
+Depends: — · Moves: `cox-tools/src/v4a/*` (~990).
+Why: size (c), a self-contained leaf.
+Check: the `v4a` tests pass unchanged in the new crate.
+Status: done 2026-09-26
+
+What landed:
+- `crates/cox-patch` holds the pure V4A engine: `parse.rs` (moved with `git mv`, 12 tests) and the pure part of `apply.rs` (`Change`, `stage`, hunk matching; 8 tests). No filesystem, no `ToolCx`.
+- `ApplyPatchTool` and its `Tool` impl stay in `cox-tools/src/v4a/tool.rs`, because they run `path::confine` and `write::atomic_write`; `v4a/mod.rs` re-exports `cox_patch`'s types, so `cox_tools::v4a::*` still resolves.
+- Widened: `Change::status()` only.
+- `deps.rs`: `cox-patch` → `cox-protocol` only; `cox-tools` → `cox-protocol`, `cox-sandbox`, `cox-patch`.
+- Docs: AGENTS.md layout rows, `docs/design/crates.md` `cox-patch` row, plan.md §1.1 row and dependency sentence.
+
+Deviations:
+- The card assumed `v4a` was a leaf; `apply.rs` imports `crate::path::confine` and `crate::write`. Moving it whole would create a `cox-tools` ↔ `cox-patch` cycle. The creator approved the split: the engine moves, the tool wrapper stays, so `confine` keeps its single call site.
+- Done in worktree `_worktrees/cox-t32.6`, then cherry-picked onto main after T32.3; the `deps.rs`, AGENTS.md and `cox-tools/Cargo.toml` conflicts kept both sides.
+
+Check:
+- `cargo nextest run -p cox-patch`: 14 passed; the 25-patch golden corpus in `cox-tools/tests/v4a.rs` passes unchanged.
