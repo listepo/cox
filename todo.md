@@ -4,7 +4,6 @@
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
-- T33.24. TUI panel and overlay
 - T33.26. Custom rendering of tool results and messages
 - T33.28. Rust reference example and e2e
 - T33.29. `cox plugin new` and the Rust template

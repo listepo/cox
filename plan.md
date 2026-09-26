@@ -10,7 +10,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.21 | todo | P2 | 4 | 0% | |
-| T33.24 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.26 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.28 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.29 | todo | P2 | 3 | 0% | |
@@ -774,12 +773,6 @@ Goal: the monotone rules from PL§4:
 - rank reorders or filters cox's own candidates.
 `salience` is wired only if it fits the size; otherwise it is a follow-up card noted here.
 Check: `risk_advice_cannot_lower_risk`, `risk_not_asked_when_outcome_would_not_change`, `approve_hint_cannot_say_looks_safe`, `compact_advice_cannot_skip_mandatory_compaction`, `rank_advice_cannot_add_tools`.
-
-#### T33.24 TUI panel and overlay
-
-Depends: T33.23 · Size: ~170 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`
-Goal: a bottom `panel` (≤ 8 rows, above the composer, toggled by the plugin's command or key) and `Modal::Plugin { id }` as a full-screen overlay that Esc closes. Sizes are sent through `Cmd::Plugin`.
-Check: insta snapshots of the panel open and closed and of the overlay; `esc_closes_plugin_overlay`.
 
 #### T33.26 Custom rendering of tool results and messages
 

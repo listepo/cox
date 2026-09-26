@@ -2292,3 +2292,29 @@ Check:
 - The real binary, run against a scratch `COX_HOME` (`run -p` with the scripted provider, then `doctor`), exits 0.
 - In the worktree after the rebase: nextest 1170 passed, 3 skipped; fmt, clippy and the slim build clean; `cox-plugin-cursor` tests pass.
 - On main after landing (with T33.20, T33.12 and T35.13 together): nextest 1183 passed, 3 skipped; fmt, clippy, the slim build and the cox-plugin-cursor tests clean.
+
+#### T33.24 TUI panel and overlay
+
+Depends: T33.23 · Size: ~170 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs`, `crates/cox-tui/src/modal.rs`
+Goal: a bottom `panel` (≤ 8 rows, above the composer, toggled by the plugin's command or key) and `Modal::Plugin { id }` as a full-screen overlay that Esc closes. Sizes are sent through `Cmd::Plugin`.
+Check: insta snapshots of the panel open and closed and of the overlay; `esc_closes_plugin_overlay`.
+Status: done 2026-09-26
+Result: plugins get a bottom panel and a full-screen overlay in the TUI.
+- **Panel.** `State.plugin_panel_open: Option<String>` controls it, and `view.rs` draws it as an 8-row band above the composer, after the todo band.
+- **Overlay.** `Modal::Plugin { id }` has zero modal height and is drawn over the transcript like `Diff`/`Transcript`. Esc closes it; other keys keep it open. When nothing has rendered yet, `modal::plugin_overlay_placeholder` shows instead (fail open).
+- **Commands.** T33.25's `CommandOut::TogglePanel` toggles the panel and `OpenOverlay` opens the overlay. Both re-ask `status::render_requests`, because opening counts as a slot becoming visible.
+- **Slots** (`status.rs`, the one slot-render machinery):
+  - `Declare` now registers `panel` and `overlay` slots and reuses `PluginSegment` and its 3-miss stop.
+  - `slot_visible` renders panel and overlay only once they are opened; status segments are always visible.
+  - `area_for` sizes each request: status stays 24×1, the panel is `(term cols, 8)` and the overlay is the full terminal.
+- **Terminal size.** `State.term` is fed by `Msg::Resize` and seeded in `app.rs` from the size the first draw uses.
+- Plugin output goes through the existing widget-tree path (`plugin_ui::render`) and its sanitize boundary.
+Deviations:
+- `status.rs` and `app.rs` are touched beyond the card's three files. `status.rs` already owns slot rendering, so extending it avoids a second copy; `app.rs` gets the one-line size seed.
+- About 210 lines of code against ~170.
+Check:
+- `esc_closes_plugin_overlay`
+- `plugin_command_toggles_panel_and_opens_overlay`
+- insta snapshots: `plugin_panel_open_and_closed`, `plugin_overlay_snapshot`
+- In the worktree: nextest 1168 passed, 3 skipped; fmt, clippy and the slim build clean.
+- On main after landing: nextest 1187 passed, 3 skipped; fmt, clippy and the slim build clean.
