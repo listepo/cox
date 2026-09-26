@@ -4,14 +4,17 @@
 //! never holds a plugin (it depends on the ABI types only) and `session.rs`
 //! only wires the channels; the session's live hosts (T33.44) are passed in.
 //! T33.25 adds `Command`/`Key`: the same request/answer shape, `cox_command`
-//! or `cox_key` in place of `cox_render`.
+//! or `cox_key` in place of `cox_render`. T33.26 adds `RenderItem`:
+//! `cox_render_item` for a finished cell, under the same render deadline.
 
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use cox_plugin::{Lane, PluginHost, Redraw};
-use cox_protocol::plugin::{CommandIn, CommandOut, Widget};
+use cox_protocol::plugin::{CommandIn, CommandOut, RenderItemIn, Widget};
+use cox_protocol::types::ItemKind;
+use cox_tui::item_render::RenderSource;
 use cox_tui::state::{Msg, PluginRequest, PluginUiMsg};
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -23,6 +26,7 @@ pub(crate) const COMMAND_DEADLINE: Duration = Duration::from_secs(5);
 const RENDER: &str = "cox_render";
 const COMMAND: &str = "cox_command";
 const KEY: &str = "cox_key";
+const RENDER_ITEM: &str = "cox_render_item";
 
 /// Serves `requests` on a thread of its own, since a host call blocks for
 /// up to its deadline. Requests that piled up behind a slow render are
@@ -46,7 +50,8 @@ pub(crate) fn serve(
                     let plugin = match &request {
                         PluginRequest::Render { plugin, .. }
                         | PluginRequest::Command { plugin, .. }
-                        | PluginRequest::Key { plugin, .. } => plugin,
+                        | PluginRequest::Key { plugin, .. }
+                        | PluginRequest::RenderItem { plugin, .. } => plugin,
                     };
                     let host = hosts.iter().find(|(id, _)| id == plugin);
                     let msg = answer(host.map(|(_, h)| h.as_ref()), request);
@@ -84,6 +89,21 @@ pub(crate) fn answer(host: Option<&PluginHost>, request: PluginRequest) -> Plugi
                 out: command_call(host, COMMAND, &input),
             }
         }
+        PluginRequest::RenderItem {
+            cell,
+            target,
+            source,
+            width,
+            ..
+        } => {
+            let input = render_item_input(target, source, width);
+            let widget = host
+                .map(|h| {
+                    h.call::<_, Option<Widget>>(Lane::Control, RENDER_ITEM, &input, RENDER_DEADLINE)
+                })
+                .and_then(|out| out.ok().flatten().flatten());
+            PluginUiMsg::ItemRendered { cell, widget }
+        }
         PluginRequest::Key { plugin, name } => {
             let input = CommandIn {
                 name,
@@ -94,6 +114,27 @@ pub(crate) fn answer(host: Option<&PluginHost>, request: PluginRequest) -> Plugi
                 out: command_call(host, KEY, &input),
             }
         }
+    }
+}
+
+/// PL§4's `RenderItemIn`: the call and its result as the model's history
+/// carries them, or the assistant item as `ItemKind` serializes it.
+fn render_item_input(target: String, source: RenderSource, width: u16) -> RenderItemIn {
+    let (call, result) = match source {
+        RenderSource::Tool { call, result } => (
+            serde_json::to_value(&call).ok(),
+            serde_json::to_value(&result),
+        ),
+        RenderSource::Assistant { text } => (
+            None,
+            serde_json::to_value(ItemKind::AssistantMessage { text }),
+        ),
+    };
+    RenderItemIn {
+        target,
+        call,
+        result: result.unwrap_or_default(),
+        width,
     }
 }
 
@@ -134,6 +175,11 @@ mod tests {
 
     /// A plugin whose `cox_render` is `render`; `cox_init` answers `{}`.
     fn host(render: &str) -> PluginHost {
+        export_host("cox_render", render)
+    }
+
+    /// A plugin whose `export` is `body`, with `WIDGET` at offset 0.
+    fn export_host(export: &str, body: &str) -> PluginHost {
         let json = WIDGET.replace('"', "\\\"");
         let wat = format!(
             r#"(module {IMPORTS}
@@ -151,7 +197,7 @@ mod tests {
                 (call $output_set (local.get $off) (local.get $n)))
               (func (export "cox_init") (result i32)
                 (call $out (i64.const 64) (i64.const 2)) (i32.const 0))
-              (func (export "cox_render") (result i32) {render}))"#,
+              (func (export "{export}") (result i32) {body}))"#,
         );
         // A long call cap, so only the render deadline can cut a spin short.
         let limits = Limits {
@@ -206,6 +252,40 @@ mod tests {
             answer(None, request()),
             PluginUiMsg::Missed { .. }
         ));
+    }
+
+    /// T33.26: `cox_render_item` answers the cell it was asked for, and a
+    /// spin past `RENDER_DEADLINE` answers `None` (the built-in look).
+    #[test]
+    fn render_item_answers_its_cell_or_none_at_the_deadline() {
+        use cox_protocol::ids::ItemId;
+        use cox_tui::item_render::CellRef;
+
+        let cell = CellRef::Item(ItemId::new());
+        let request = || PluginRequest::RenderItem {
+            plugin: "acme".into(),
+            cell,
+            target: cox_tui::item_render::ASSISTANT.into(),
+            source: RenderSource::Assistant { text: "hi".into() },
+            width: 40,
+        };
+        let body = format!(
+            "(call $out (i64.const 0) (i64.const {})) (i32.const 0)",
+            WIDGET.len()
+        );
+        let widget: Widget = serde_json::from_str(WIDGET).expect("widget json");
+        assert_eq!(
+            answer(Some(&export_host("cox_render_item", &body)), request()),
+            PluginUiMsg::ItemRendered {
+                cell,
+                widget: Some(widget),
+            }
+        );
+        let spin = export_host("cox_render_item", "(loop $l (br $l)) (i32.const 0)");
+        let started = Instant::now();
+        let missed = answer(Some(&spin), request());
+        assert_eq!(missed, PluginUiMsg::ItemRendered { cell, widget: None });
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     const COMMAND_JSON: &str = r#"{"kind":"prompt","text":"go"}"#;

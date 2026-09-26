@@ -9,6 +9,7 @@ use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::diff;
+use crate::item_render::ItemRender;
 use crate::link;
 use crate::markdown;
 use crate::state::Cell;
@@ -81,6 +82,12 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             );
             lines
         }
+        // T33.26: a plugin's rendering stands in for the markdown; the
+        // text the model wrote is untouched in the cell and the rollout.
+        Cell::Assistant {
+            render: ItemRender::Plugin(w),
+            ..
+        } => crate::plugin_ui::lines(w, look.width, &look.colors, look.marks),
         Cell::Assistant { text, .. } => markdown::render(&clean(text), look),
         Cell::Thinking { text, done, .. } if !look.show_thinking => {
             // No tokenizer here; four bytes a token is the usual estimate.
@@ -119,6 +126,7 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             result,
             started,
             user,
+            render,
         } => {
             let sep = g.sep;
             // The card's phase: no result yet, a result that succeeded, or
@@ -186,7 +194,17 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             // An error shows its output whole rather than hide the reason it
             // failed; otherwise `Ctrl+E` on the one eligible cell does.
             let force_open = phase_ok == Some(false) || look.expand_last == Some(true);
-            if !force_open && out.len() > HEAD + TAIL + 1 {
+            // T33.26: a plugin's rendering replaces the output body only;
+            // the header, the diff and the footer (with its `cox expand`)
+            // stay built-in, so a renderer cannot hide what ran or changed.
+            if let ItemRender::Plugin(w) = render {
+                let inner = look.width.saturating_sub(2);
+                lines.extend(
+                    crate::plugin_ui::lines(w, inner, &look.colors, look.marks)
+                        .into_iter()
+                        .map(|l| rail(l, rail_glyph, rail_style)),
+                );
+            } else if !force_open && out.len() > HEAD + TAIL + 1 {
                 lines.extend(body(&out[..HEAD]));
                 let hidden = out.len() - HEAD - TAIL;
                 let hint = if look.expand_last == Some(false) {

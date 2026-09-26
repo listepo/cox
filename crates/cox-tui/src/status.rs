@@ -18,7 +18,6 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use unicode_width::UnicodeWidthStr;
 
 use crate::state::{Cmd, Modal, PluginRequest, PluginUiMsg, State};
 use crate::vim::Mode;
@@ -90,7 +89,8 @@ pub fn on_plugin(state: &mut State, msg: PluginUiMsg) -> Vec<Cmd> {
         // `state::update` (T33.25) matches this variant first and never
         // reaches `on_plugin` with it; kept here only so the match stays
         // exhaustive over every `PluginUiMsg`.
-        PluginUiMsg::Command { .. } => Vec::new(),
+        // Likewise `ItemRendered` (T33.26), folded by `item_render`.
+        PluginUiMsg::Command { .. } | PluginUiMsg::ItemRendered { .. } => Vec::new(),
     }
 }
 
@@ -206,7 +206,7 @@ fn plugin_seg(state: &State, seg: &PluginSegment) -> Option<Seg> {
             &state.theme,
             state.marks,
         );
-        row_spans(&buf)
+        crate::plugin_ui::row_spans(&buf, 0)
     };
     let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
     (!text.is_empty()).then_some(Seg {
@@ -214,31 +214,6 @@ fn plugin_seg(state: &State, seg: &PluginSegment) -> Option<Seg> {
         text,
         spans: Some(spans),
     })
-}
-
-/// Row 0 of `buf` as runs of equal style, trailing blanks dropped; a wide
-/// glyph's hidden follower cells are skipped so its width counts once.
-fn row_spans(buf: &Buffer) -> Vec<Span<'static>> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut x = 0;
-    while x < buf.area.width {
-        let cell = &buf[(x, 0)];
-        let (symbol, style) = (cell.symbol(), cell.style());
-        match spans.last_mut() {
-            Some(last) if last.style == style => last.content.to_mut().push_str(symbol),
-            _ => spans.push(Span::styled(symbol.to_string(), style)),
-        }
-        x = x.saturating_add(symbol.width().max(1) as u16);
-    }
-    while let Some(last) = spans.last_mut() {
-        let trimmed = last.content.trim_end().len();
-        if trimmed > 0 {
-            last.content.to_mut().truncate(trimmed);
-            break;
-        }
-        spans.pop();
-    }
-    spans
 }
 
 /// Cells of the `ctx` mini bar; the cached share fills in `theme.accent`.
@@ -507,6 +482,7 @@ mod tests {
     use crate::view::render;
     use cox_protocol::plugin::ui;
     use cox_protocol::types::{PermissionMode, SandboxMode};
+    use unicode_width::UnicodeWidthStr;
 
     fn text(t: &str) -> Widget {
         Widget::Text(vec![vec![ui::Span {
@@ -527,6 +503,7 @@ mod tests {
                 slots,
                 commands: Vec::new(),
                 keys: Vec::new(),
+                renderers: Vec::new(),
             },
         )
     }

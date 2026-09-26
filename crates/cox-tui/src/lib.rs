@@ -7,6 +7,7 @@ pub mod banner;
 pub mod cells;
 pub mod commands;
 pub mod composer;
+pub mod item_render;
 pub mod keymap;
 pub mod modal;
 pub mod picker;

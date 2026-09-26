@@ -24,6 +24,7 @@ use crate::color::Depth;
 use crate::commands::{self, Action, COMMANDS, Context};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
+use crate::item_render::{CellRef, ItemRender, RenderSource};
 use crate::keymap::{self, Keymap};
 use crate::markdown;
 use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer};
@@ -47,6 +48,8 @@ pub enum Cell {
         item: ItemId,
         text: String,
         done: bool,
+        /// A plugin's rendering (T33.26), asked once when `done`.
+        render: ItemRender,
     },
     Thinking {
         item: ItemId,
@@ -61,6 +64,8 @@ pub enum Cell {
         started: u64,
         /// A composer `!` line (T25.3) rather than the model asked for it.
         user: bool,
+        /// A plugin's rendering (T33.26), asked once when `result` lands.
+        render: ItemRender,
     },
     Notice {
         level: Level,
@@ -99,8 +104,10 @@ impl Cell {
             | Cell::Error { .. }
             | Cell::Summary { .. }
             | Cell::TaskMessage { .. } => true,
-            Cell::Assistant { done, .. } | Cell::Thinking { done, .. } => *done,
-            Cell::Tool { result, .. } => result.is_some(),
+            // T33.26: a pending plugin render holds the cell in the viewport.
+            Cell::Assistant { done, render, .. } => *done && !render.pending(),
+            Cell::Thinking { done, .. } => *done,
+            Cell::Tool { result, render, .. } => result.is_some() && !render.pending(),
         }
     }
 }
@@ -353,6 +360,9 @@ pub struct State {
     /// `overlay` render has an area before the terminal ever resizes
     /// (T33.24, PL§8: "the render request carries the area size").
     pub term: (u16, u16),
+    /// Plugin renderer targets for finished cells, `(plugin, target)` in
+    /// declaration order (T33.26, PL§8); the first match wins.
+    pub plugin_renderers: Vec<(String, String)>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -465,6 +475,13 @@ pub enum PluginUiMsg {
         slots: Vec<Slot>,
         commands: Vec<CommandDecl>,
         keys: Vec<KeyDecl>,
+        /// Granted `cox_render_item` targets (T33.26).
+        renderers: Vec<String>,
+    },
+    /// A `cox_render_item` answer (T33.26); `None` keeps the built-in look.
+    ItemRendered {
+        cell: CellRef,
+        widget: Option<Widget>,
     },
     /// `Effects.redraw` or `cox_redraw()`: render this plugin's slots again.
     Redraw { plugin: String },
@@ -500,6 +517,14 @@ pub enum PluginRequest {
     },
     /// `<leader> <key>` (T33.25, PL§8): call `plugin`'s `cox_key`.
     Key { plugin: String, name: String },
+    /// A finished cell (T33.26): call `plugin`'s `cox_render_item`.
+    RenderItem {
+        plugin: String,
+        cell: CellRef,
+        target: String,
+        source: RenderSource,
+        width: u16,
+    },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -645,6 +670,7 @@ impl State {
             plugin_leader_armed: false,
             plugin_panel_open: None,
             term: (80, 24),
+            plugin_renderers: Vec::new(),
         }
     }
 
@@ -689,6 +715,7 @@ impl State {
                                     item: ItemId::new(),
                                     text: text.clone(),
                                     done: true,
+                                    render: ItemRender::Builtin,
                                 });
                             }
                             Content::Thinking { text, .. } => {
@@ -812,6 +839,7 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
         Msg::Event(ev) => on_event(state, ev),
         Msg::Tick => {
             state.tick += 1;
+            crate::item_render::expire(state);
             loop_tick(state)
         }
         // PL§8: a resize is one of the three times a plugin renders; T33.24
@@ -820,6 +848,10 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
         Msg::Resize(w, h) => {
             state.term = (w, h);
             crate::status::render_requests(state, None)
+        }
+        Msg::Plugin(PluginUiMsg::ItemRendered { cell, widget }) => {
+            crate::item_render::on_rendered(state, cell, widget);
+            Vec::new()
         }
         // T33.25, PL§8: a `Command` answer applies `CommandOut` here, not
         // in `status`, which only ever folds slots; everything else
@@ -832,11 +864,13 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
                 plugin,
                 commands,
                 keys,
+                renderers,
                 ..
             } = &msg
             {
                 declare_plugin_commands(state, plugin, commands);
                 state.keymap.declare_plugin_keys(plugin, keys);
+                crate::item_render::declare(state, plugin, renderers);
             }
             crate::status::on_plugin(state, msg)
         }
@@ -1933,6 +1967,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 item,
                 text,
                 done: false,
+                render: ItemRender::Builtin,
             }),
             ItemKind::Thinking { text, .. } => state.transcript.push(Cell::Thinking {
                 item,
@@ -1958,6 +1993,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             {
                 *done = true;
             }
+            cmds = crate::item_render::ask(state, CellRef::Item(item));
         }
         Event::ToolCallRequested { call } => {
             let user = call.name == "bash" && state.shell.take().is_some();
@@ -1971,6 +2007,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 result: None,
                 started: state.tick,
                 user,
+                render: ItemRender::Builtin,
             });
         }
         Event::ToolCallOutput { call_id, delta } => {
@@ -1992,6 +2029,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             if let Some(todo) = todo {
                 state.todo = todo;
             }
+            cmds = crate::item_render::ask(state, CellRef::Call(call_id));
             // A `!` line has no `TurnDone`; its card closing ends it, and
             // a message queued behind it goes out as a turn would release it.
             if state.shell_call == Some(call_id) {

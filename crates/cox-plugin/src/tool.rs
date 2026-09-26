@@ -27,7 +27,7 @@ pub(crate) const EXPORT: &str = "cox_tool_call";
 /// The prefix of every plugin tool's model-facing name.
 pub const PREFIX: &str = "wasm__";
 /// The granted-capability line prefix `grant::capability_list` writes.
-const GRANT_PREFIX: &str = "tools:";
+pub(crate) const GRANT_PREFIX: &str = "tools:";
 
 /// The model-facing name of plugin `id`'s tool `tool`. Plugin ids have no
 /// `_`, so the second `__` always ends the id.

@@ -3,6 +3,8 @@
 //! no terminal; here is where a `StyleToken` becomes a `Theme` colour and
 //! every plugin string passes `sanitize_with`, the same boundary as
 //! `cells::cell_lines`. A tree over the PL§8 caps draws one placeholder line.
+//! `lines` (T33.26) reads a drawn tree back as transcript lines, for a
+//! plugin-rendered cell.
 
 use cox_protocol::plugin::ui::{self, StyleToken, Widget};
 use ratatui::buffer::Buffer;
@@ -13,6 +15,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, LineGauge, List, ListState, Paragraph, Row, StatefulWidget, Table, Widget as Draw,
 };
+
+use unicode_width::UnicodeWidthStr;
 
 use crate::text;
 use crate::theme::Theme;
@@ -28,6 +32,74 @@ pub fn render(widget: &Widget, area: Rect, buf: &mut Buffer, theme: &Theme, mark
     } else {
         Line::styled(TOO_LARGE, pen.style(StyleToken::Dim)).render(area, buf);
     }
+}
+
+/// Rows a transcript cell may give one plugin render (T33.26): bounds the
+/// buffer a `Stack` of huge `sizes` would otherwise ask for.
+const MAX_ROWS: u16 = 256;
+
+/// `widget` as transcript lines `width` columns wide (T33.26): drawn by
+/// `render` into a buffer of the tree's own height, read back row by row.
+pub fn lines(widget: &Widget, width: u16, theme: &Theme, marks: bool) -> Vec<Line<'static>> {
+    let height = match widget.within_limits() {
+        true => rows(widget).clamp(1, MAX_ROWS),
+        false => 1,
+    };
+    let area = Rect::new(0, 0, width.max(1), height);
+    let mut buf = Buffer::empty(area);
+    render(widget, area, &mut buf, theme, marks);
+    (0..height)
+        .map(|y| Line::from(row_spans(&buf, y)))
+        .collect()
+}
+
+/// The rows `widget` fills: a slot has a fixed height, a transcript cell
+/// takes the tree's own, which `Stack.sizes` sets where it is given.
+fn rows(widget: &Widget) -> u16 {
+    let n = |len: usize| u16::try_from(len).unwrap_or(u16::MAX);
+    match widget {
+        Widget::Text(lines) => n(lines.len()),
+        Widget::List { items, .. } => n(items.len()),
+        Widget::Table { rows, .. } => n(rows.len()).saturating_add(1),
+        Widget::KeyValue(pairs) => n(pairs.len()),
+        Widget::Gauge { .. } => 1,
+        Widget::Stack {
+            vertical: true,
+            children,
+            sizes,
+        } => children
+            .iter()
+            .enumerate()
+            .map(|(i, c)| sizes.get(i).copied().unwrap_or_else(|| rows(c)))
+            .fold(0, u16::saturating_add),
+        Widget::Stack { children, .. } => children.iter().map(rows).max().unwrap_or(0),
+        Widget::Block { child, .. } => rows(child).saturating_add(2),
+    }
+}
+
+/// Row `y` of `buf` as runs of equal style, trailing blanks dropped; a wide
+/// glyph's hidden follower cells are skipped so its width counts once.
+pub(crate) fn row_spans(buf: &Buffer, y: u16) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut x = 0;
+    while x < buf.area.width {
+        let cell = &buf[(x, y)];
+        let (symbol, style) = (cell.symbol(), cell.style());
+        match spans.last_mut() {
+            Some(last) if last.style == style => last.content.to_mut().push_str(symbol),
+            _ => spans.push(Span::styled(symbol.to_string(), style)),
+        }
+        x = x.saturating_add(symbol.width().max(1) as u16);
+    }
+    while let Some(last) = spans.last_mut() {
+        let trimmed = last.content.trim_end().len();
+        if trimmed > 0 {
+            last.content.to_mut().truncate(trimmed);
+            break;
+        }
+        spans.pop();
+    }
+    spans
 }
 
 struct Pen<'a> {

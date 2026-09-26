@@ -94,6 +94,37 @@ impl Live {
         self.init.as_ref().map_or(Vec::new(), |i| i.keys.clone())
     }
 
+    /// `InitOut.renderers` it may serve (T33.26, PL§2, PL§8): a target
+    /// needs its own `ui.render:<target>` line, except `tool:` one of the
+    /// plugin's own granted tools, which only it can ever produce.
+    pub fn granted_renderers(&self) -> Vec<String> {
+        let Some(init) = &self.init else {
+            return Vec::new();
+        };
+        let granted = |kind: &str, item: &str| {
+            self.granted
+                .iter()
+                .any(|g| g.strip_prefix(kind) == Some(item))
+        };
+        let own = |target: &str| {
+            let Some(name) = target.strip_prefix("tool:") else {
+                return false;
+            };
+            init.tools
+                .iter()
+                .filter_map(|t| t.get("name")?.as_str())
+                .any(|t| {
+                    granted(crate::tool::GRANT_PREFIX, t)
+                        && name == crate::tool::qualified(self.id(), t)
+                })
+        };
+        init.renderers
+            .iter()
+            .filter(|t| granted("ui.render:", t) || own(t))
+            .cloned()
+            .collect()
+    }
+
     /// Queued `cox_notify`/`Effects` notices, attributed to the plugin.
     fn take_notices(&self) -> impl Iterator<Item = (Level, String)> + '_ {
         let id = self.id();
@@ -464,6 +495,32 @@ mod tests {
         // don't (PL§2, PL§4).
         assert_eq!(live.plugins()[0].granted_commands().len(), 1);
         assert!(live.plugins()[0].granted_keys().is_empty());
+    }
+
+    #[test]
+    fn renderers_outside_own_tools_need_their_grant() {
+        let caps = json!({ "tools": ["sum"], "ui": { "render": ["item:assistant_message"] } });
+        let mut live = LivePlugins::default();
+        live.load(&manifest("look", caps), &module(""), store())
+            .expect("loads");
+        live.start(&PluginsConfig::default(), SessionId::new(), Path::new("/w"));
+        let targets = [
+            "tool:wasm__look__sum",
+            "tool:wasm__look__other",
+            "tool:read",
+            "item:assistant_message",
+        ];
+        live.plugins[0].init = Some(InitOut {
+            tools: vec![json!({ "name": "sum" }), json!({ "name": "other" })],
+            renderers: targets.iter().map(|t| t.to_string()).collect(),
+            ..InitOut::default()
+        });
+        // Its own granted tool needs no line; `other` was never granted,
+        // `read` is not its own, and the assistant item has its grant.
+        assert_eq!(
+            live.plugins()[0].granted_renderers(),
+            ["tool:wasm__look__sum", "item:assistant_message"]
+        );
     }
 
     #[tokio::test]

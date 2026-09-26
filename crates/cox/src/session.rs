@@ -517,9 +517,9 @@ fn start_plugins(
 }
 
 /// T33.23's render server over the live hosts, and each plugin's granted
-/// status slots, commands and keys (T33.25) declared on the feed, which
-/// renders/registers them the first time. A plugin with commands or keys
-/// but no status slot still gets a `Declare`. Returns the tap's `Redraw`.
+/// status slots, commands and keys (T33.25) and item renderers (T33.26)
+/// declared on the feed, which renders/registers them the first time. A
+/// plugin with any of them but no status slot still gets a `Declare`. Returns the tap's `Redraw`.
 /// A server thread that fails to start only leaves plugin segments
 /// unrendered.
 #[cfg(feature = "plugins")]
@@ -536,20 +536,22 @@ fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::
                 p.granted_status(),
                 p.granted_commands(),
                 p.granted_keys(),
+                p.granted_renderers(),
             )
         })
-        .filter(|(_, slots, commands, keys)| {
-            !slots.is_empty() || !commands.is_empty() || !keys.is_empty()
+        .filter(|(_, slots, commands, keys, renderers)| {
+            !slots.is_empty() || !commands.is_empty() || !keys.is_empty() || !renderers.is_empty()
         })
         .collect();
     let feed = ui.feed.clone();
     tokio::spawn(async move {
-        for (plugin, slots, commands, keys) in declares {
+        for (plugin, slots, commands, keys, renderers) in declares {
             let msg = Msg::Plugin(PluginUiMsg::Declare {
                 plugin,
                 slots,
                 commands,
                 keys,
+                renderers,
             });
             if feed.send(msg).await.is_err() {
                 break;
@@ -3382,5 +3384,124 @@ text = "done"
             })
             .expect("a tool result");
         assert!(seen.contains(&pointer), "{seen}");
+    }
+
+    #[cfg(feature = "plugins")]
+    fn rollout_json(store: &Store, session: &Session) -> String {
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        serde_json::to_string(&events).expect("rollout json")
+    }
+
+    /// Two turns over a granted `item:assistant_message` renderer that
+    /// always paints `PAINTED`. With `tui`, a TUI `State` consumes turn one
+    /// and its render request is served by the real host before turn two.
+    /// Asserts the render left the rollout byte-identical; returns every
+    /// `Request` as JSON, the final rollout and the first reply as drawn.
+    #[cfg(feature = "plugins")]
+    async fn render_run(work: &Path, tui: bool) -> (Vec<String>, String, String) {
+        use cox_protocol::types::{PermissionMode, SandboxMode};
+        use cox_tui::state::{Cell, Cmd, update};
+
+        let home = tempfile::tempdir().expect("home");
+        let init = r#"{"renderers":["item:assistant_message"]}"#;
+        let widget = r#"{"text":[[{"text":"PAINTED"}]]}"#;
+        let base = plugin_wat("", init, "");
+        let wat = format!(
+            r#"{} (data (i32.const 1536) "{}")
+              (func (export "cox_render_item") (result i32)
+                (call $out (i32.const 1536) (i32.const {})) (i32.const 0)))"#,
+            base.trim_end().strip_suffix(')').expect("module"),
+            widget.replace('"', "\\\""),
+            widget.len()
+        );
+        let caps = "[capabilities]\nui = { render = [\"item:assistant_message\"] }\n";
+        install_granted(home.path(), "look", caps, &wat);
+        let scenario = "[[turn]]\ntext = \"reply 0\"\n[[turn]]\ntext = \"reply 1\"\n";
+        let recorder = Arc::new(Recorder {
+            inner: cox_provider::scripted::Scripted::from_toml(scenario, "").expect("scenario"),
+            sent: std::sync::Mutex::default(),
+        });
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let config = Config::default();
+        let session = Session::new(
+            config.clone(),
+            recorder.clone(),
+            vec![],
+            store.clone(),
+            store.clone(),
+            work.to_path_buf(),
+        )
+        .expect("session");
+        let plugins = load_plugins(&config, home.path(), work, store.clone(), None);
+        let (req_tx, req_rx) = tokio::sync::mpsc::channel(8);
+        let (feed_tx, mut feed_rx) = tokio::sync::mpsc::channel(8);
+        let ui = tui.then(|| PluginUi {
+            feed: feed_tx,
+            requests: req_rx,
+        });
+        start_plugins(&session, plugins.live, &config.plugins, work, ui);
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        if tui {
+            let declare = feed_rx.recv().await.expect("declare");
+            update(&mut state, declare);
+        }
+        user_turn(&session, "one").await;
+        let before = rollout_json(&store, &session);
+        let mut drawn = String::new();
+        if tui {
+            let events = store.rollout_read(&session.id()).expect("rollout");
+            let asks: Vec<_> = events
+                .into_iter()
+                .flat_map(|ev| update(&mut state, Msg::Event(ev)))
+                .filter_map(|cmd| match cmd {
+                    Cmd::Plugin(request) => Some(request),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(asks.len(), 1, "{asks:?}");
+            for request in asks {
+                req_tx.send(request).await.expect("request");
+                let answer = feed_rx.recv().await.expect("answer");
+                update(&mut state, answer);
+            }
+            let look = state.look(40);
+            let cell = state
+                .transcript
+                .iter()
+                .find(|c| matches!(c, Cell::Assistant { .. }))
+                .expect("reply cell");
+            drawn = cox_tui::cells::cell_lines(cell, &look)
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+        }
+        let after = rollout_json(&store, &session);
+        assert_eq!(before, after, "the render wrote nothing to the rollout");
+        user_turn(&session, "two").await;
+        let requests = recorder
+            .sent
+            .lock()
+            .expect("sent")
+            .iter()
+            .map(|r| serde_json::to_string(r).expect("request json"))
+            .collect();
+        (requests, rollout_json(&store, &session), drawn)
+    }
+
+    /// T33.26, PL§8: renderer output is display-only.
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn renderer_output_never_reaches_rollout_or_model() {
+        let work = tempfile::tempdir().expect("work");
+        let (with, with_rollout, drawn) = render_run(work.path(), true).await;
+        let (without, _, plain) = render_run(work.path(), false).await;
+        // The renderer really ran: the reply cell draws the plugin's widget.
+        assert_eq!(drawn, "PAINTED");
+        assert!(plain.is_empty());
+        // Every `Request`, the second turn's included, is byte-identical.
+        assert_eq!(with.len(), 2);
+        assert_eq!(with, without);
+        assert!(!with_rollout.contains("PAINTED"));
+        assert!(with.iter().all(|r| !r.contains("PAINTED")));
     }
 }
