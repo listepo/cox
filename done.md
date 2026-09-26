@@ -1319,3 +1319,28 @@ Check: passing tests:
 nextest: 1008 passed, 3 skipped in the worktree. fmt and clippy clean.
 
 nextest on main after both landed: 1014 passed, 3 skipped. fmt and clippy clean.
+
+#### T34.7 TUI and stream-json rendering
+
+Depends: T34.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs` (the transcript line and the `/agents` overlay)
+Goal: a delivered `TaskMessage` shows as a transcript line (sanitized through `cox_sanitize::sanitize`, D14) and updates the `/agents` card for that task (A29's narrow card, not a new progress event stream); `stream-json` needs no special case since `Event` already passes through generically (D2) — this card adds the test that proves it.
+Check: `insta` snapshot of a task-message transcript line and an updated `/agents` card; `stream_json_passes_task_message_through_unchanged` (headless e2e).
+Plan: starts before T34.6 lands, because `Event::TaskMessage` has existed since T34.4 and the tests feed the event straight into `update`. In `state.rs`, add a `TaskMessage` arm that pushes a sanitized transcript line labelled like `ApprovalRequired`'s relay, and touch that task's `/agents` card. Add the `view.rs` line style. For stream-json, one headless e2e that proves the event passes through unchanged.
+Status: done 2026-09-26
+Result: a delivered `Event::TaskMessage` now shows up in the TUI (SM§6).
+- **Transcript:** `state.rs` handles `TaskMessage` with a new `Cell::TaskMessage { label, text, from_task }`. The label is the task's registered label, or the raw `TaskId` if the task has already finished. Label and text go through `sanitize` once, in `state.rs`.
+- **Rendering:** a child speaking to its parent shows as "X says: …"; a message delivered to a task shows as "→ X: …". The label uses the bold `theme.agent` style of the T34.3 "X asks:" line.
+- **`/agents`:** the task's card gets a `· last: <first line>` segment (A29's narrow card).
+- **stream-json:** needs no special case.
+Deviations:
+- The style lives in `cells.rs`, not `view.rs`, because every `Cell` variant renders there.
+- No scripted scenario can emit a `TaskMessage` until T34.6. So `stream_json_passes_task_message_through_unchanged` calls the stream-json writer's own two steps, `redact::scrub_event` and then `serde_json::to_string`, on a hand-built event. It asserts the event comes back unchanged with `type: "task_message"`. T34.9's e2e covers the live path.
+- Started before T34.6 landed: the event has existed since T34.4.
+Check: passing tests:
+- `cell_task_message_labels_the_speaker_and_direction` (insta)
+- `task_message_adds_a_last_message_line_to_the_agents_card` (insta)
+- `stream_json_passes_task_message_through_unchanged`
+
+nextest: 1017 passed, 3 skipped in the worktree.
+
+nextest on main after landing: 1017 passed, 3 skipped. fmt and clippy clean.

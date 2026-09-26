@@ -62,7 +62,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T34.6 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T34.7 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.8 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.9 | todo | P1 | 3 | 0% | |
 | T35.2 | todo | P1 | 4 | 0% | |
@@ -1352,13 +1351,6 @@ Plan:
 3. A message that wakes a *dormant* child (`wake`, from `deliver`/`park_child`) must hold a T34.2 slot for that run, reserved with `try_reserve_agent_slot`. At the cap, the sender gets `Denied` and the message is not queued. T34.2 left this gap: a woken child today runs outside the cap.
 4. No preset grants `send_message` yet, the same as `ask_user` (SM§4).
 Check: `sibling_message_is_relayed_through_the_parent_session`, `message_cap_denies_the_nth_plus_one_follow_up`, `waking_a_dormant_child_at_the_cap_is_denied` (T34.5 already has `hop_limit_stops_a_ping_pong`).
-
-#### T34.7 TUI and stream-json rendering
-
-Depends: T34.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/view.rs` (the transcript line and the `/agents` overlay)
-Goal: a delivered `TaskMessage` shows as a transcript line (sanitized through `cox_sanitize::sanitize`, D14) and updates the `/agents` card for that task (A29's narrow card, not a new progress event stream); `stream-json` needs no special case since `Event` already passes through generically (D2) — this card adds the test that proves it.
-Check: `insta` snapshot of a task-message transcript line and an updated `/agents` card; `stream_json_passes_task_message_through_unchanged` (headless e2e).
-Plan: starts before T34.6 lands, because `Event::TaskMessage` has existed since T34.4 and the tests feed the event straight into `update`. In `state.rs`, add a `TaskMessage` arm that pushes a sanitized transcript line labelled like `ApprovalRequired`'s relay, and touch that task's `/agents` card. Add the `view.rs` line style. For stream-json, one headless e2e that proves the event passes through unchanged.
 
 #### T34.8 ACP rendering, and the dropped task-lifecycle events
 
