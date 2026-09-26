@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::checkpoint::{self, Pending};
 use crate::session::Session;
-use crate::subagent::Dormant;
+use crate::subagent::{Dormant, MAX_MESSAGES_PER_TASK};
 
 /// What a task runs. A subagent reports its own `TaskCreated`/
 /// `TaskCompleted` pair (`subagent.rs`); a detached shell call gets its pair
@@ -155,6 +155,23 @@ pub fn detached_detail(exit_code: Option<i32>, archive: Option<ArchiveId>) -> St
     }
 }
 
+/// What holding `inner`'s lock decided for a `deliver` call (T34.6, SM§5):
+/// acted on after the lock drops, so a notice/emit/spawn never runs while
+/// `inner` is still held.
+enum Delivery {
+    /// No such addressee.
+    Unknown,
+    /// `MAX_MESSAGES_PER_TASK` was already reached; nothing queued.
+    Flooded,
+    /// The addressee is dormant, but the concurrency cap (T34.2) has no
+    /// slot free to wake it with; nothing queued.
+    AtCapacity(u32, u32),
+    /// Queued behind a running turn.
+    Queued,
+    /// A finished child is woken, holding this slot for its run.
+    Wake(Box<Dormant>, AgentSlotGuard),
+}
+
 impl Session {
     /// Registers a running task; `/tasks` and the status count read the
     /// `TaskCreated`/`TaskCompleted` events, this is the core's own view.
@@ -230,7 +247,10 @@ impl Session {
     }
 
     /// `Submission::TaskMessage`: queued behind a running child's current
-    /// turn, never mid-turn; a finished child is woken with it.
+    /// turn, never mid-turn; a finished child is woken with it, holding one
+    /// of T34.2's concurrency slots for that run (T34.6 point 3 — a woken
+    /// child ran outside the cap before this). `MAX_MESSAGES_PER_TASK`
+    /// (T34.6, SM§5) denies a flood before either happens.
     pub(crate) async fn deliver(
         &self,
         task: TaskId,
@@ -243,42 +263,107 @@ impl Session {
             hop,
             text: text.clone(),
         };
-        let wake = {
+        let decision = {
             let mut inner = self.inner.lock().await;
-            match inner.children.get_mut(&task) {
-                None => None,
-                Some(Child::Running { queue, .. }) => {
-                    queue.push_back(queued.clone());
-                    Some(None)
-                }
-                Some(Child::Finished(_)) => {
-                    let running = Child::Running {
-                        queue: VecDeque::new(),
-                        hop,
-                    };
-                    match inner.children.insert(task, running) {
-                        Some(Child::Finished(dormant)) => Some(Some(dormant)),
-                        _ => Some(None),
+            if !inner.children.contains_key(&task) {
+                Delivery::Unknown
+            } else if *inner.message_counts.get(&task).unwrap_or(&0) >= MAX_MESSAGES_PER_TASK {
+                Delivery::Flooded
+            } else {
+                match inner.children.get_mut(&task) {
+                    Some(Child::Running { queue, .. }) => {
+                        queue.push_back(queued.clone());
+                        *inner.message_counts.entry(task).or_insert(0) += 1;
+                        Delivery::Queued
                     }
+                    Some(Child::Finished(_)) => {
+                        let cap = self.config.core.max_concurrent_subagents;
+                        match self.try_reserve_agent_slot(cap) {
+                            Ok(slot) => {
+                                let running = Child::Running {
+                                    queue: VecDeque::new(),
+                                    hop,
+                                };
+                                match inner.children.insert(task, running) {
+                                    Some(Child::Finished(dormant)) => {
+                                        *inner.message_counts.entry(task).or_insert(0) += 1;
+                                        Delivery::Wake(dormant, slot)
+                                    }
+                                    _ => Delivery::Queued, // unreachable: just matched Finished
+                                }
+                            }
+                            Err(running) => Delivery::AtCapacity(running, cap),
+                        }
+                    }
+                    None => Delivery::Unknown, // unreachable: just matched Some above
                 }
             }
         };
-        let Some(wake) = wake else {
-            let text = format!("no subagent task {task} to message");
-            return self.notice(Level::Warn, text).await;
-        };
-        self.emit(Event::TaskMessage {
-            task,
-            from,
-            hop,
-            text,
-        })
-        .await?;
-        if let Some(dormant) = wake {
-            let parent = self.clone();
-            tokio::spawn(crate::subagent::wake(parent, task, dormant, queued));
+        match decision {
+            Delivery::Unknown => {
+                let text = format!("no subagent task {task} to message");
+                self.notice(Level::Warn, text).await
+            }
+            Delivery::Flooded => {
+                let why = format!(
+                    "message cap reached: task {task} already received \
+                     {MAX_MESSAGES_PER_TASK} of {MAX_MESSAGES_PER_TASK} messages"
+                );
+                self.notice(Level::Warn, why.clone()).await?;
+                Err(CoreError::Denied { why })
+            }
+            Delivery::AtCapacity(running, cap) => {
+                let why = format!(
+                    "subagent concurrency cap reached: {running} of {cap} `agent` tasks \
+                     already running; task {task} stays dormant"
+                );
+                self.notice(Level::Warn, why.clone()).await?;
+                Err(CoreError::Denied { why })
+            }
+            Delivery::Queued => {
+                self.emit(Event::TaskMessage {
+                    task,
+                    from,
+                    hop,
+                    text,
+                })
+                .await
+            }
+            Delivery::Wake(dormant, slot) => {
+                self.emit(Event::TaskMessage {
+                    task,
+                    from,
+                    hop,
+                    text,
+                })
+                .await?;
+                let parent = self.clone();
+                tokio::spawn(async move {
+                    let _slot = slot;
+                    crate::subagent::wake(parent, task, dormant, queued).await;
+                });
+                Ok(())
+            }
         }
-        Ok(())
+    }
+
+    /// `send_message`'s name/id resolution for a direct (parent-side) call
+    /// (T34.6, SM§4): the exact registry name `name_task` indexed, else a
+    /// literal `TaskId` that is still a tracked child — an unknown or
+    /// already-forgotten id is "unknown", not silently accepted.
+    pub(crate) async fn resolve_addressee(&self, to: &str) -> Option<TaskId> {
+        let inner = self.inner.lock().await;
+        if let Some(id) = inner.task_names.get(to) {
+            return Some(*id);
+        }
+        let id: TaskId = to.parse().ok()?;
+        inner.children.contains_key(&id).then_some(id)
+    }
+
+    /// Indexes a spawned child's registry name (`explore-2`) for
+    /// `resolve_addressee`, alongside `track_child`'s id-keyed entry.
+    pub(crate) async fn name_task(&self, name: String, task: TaskId) {
+        self.inner.lock().await.task_names.insert(name, task);
     }
 
     /// A child's message to its parent (SM§3): a line in history after the

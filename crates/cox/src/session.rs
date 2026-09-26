@@ -25,6 +25,7 @@ use cox_tools::glob::GlobTool;
 use cox_tools::grep::GrepTool;
 use cox_tools::memory::{MemorySaveTool, MemorySearchTool};
 use cox_tools::read::ReadTool;
+use cox_tools::send_message::SendMessageTool;
 use cox_tools::todo::TodoTool;
 use cox_tools::tool_search::ToolSearchTool;
 use cox_tools::v4a::ApplyPatchTool;
@@ -130,6 +131,12 @@ pub async fn open(
     if let Some(tx) = questions {
         all = with_question_surface(all, tx);
     }
+    // T34.6: stateless — the session that builds each call's own `ToolCx`
+    // (`cox-core/src/turn.rs`) stamps `ToolCx.relay` with itself, so this
+    // one shared instance still reaches each caller's own session, never a
+    // handle fixed at construction time (SM§4; no preset grants it to a
+    // child yet, but a shared instance must be safe if one someday does).
+    all.push(Arc::new(SendMessageTool));
     // T22.2: the deferred `skill` tool hands skill bodies out on demand
     // (its spec is `deferred`, `ReadOnly`; broken skills are skipped above,
     // D14). `tool_search` answers from the spec list it was built with, so

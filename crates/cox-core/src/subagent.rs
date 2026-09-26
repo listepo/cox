@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use async_trait::async_trait;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{ItemId, SessionId, TaskId};
-use cox_protocol::traits::{Tool, ToolCx, Worktree};
+use cox_protocol::traits::{Relay, Tool, ToolCx, Worktree};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Level, Message,
     ModelId, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock, Tier, ToolCall,
@@ -336,8 +336,10 @@ impl Tool for AgentTool {
         // not all pass a count-then-register check — `try_reserve_agent_slot`
         // checks the cap and reserves a slot in one atomic step. The guard
         // frees it on drop: kept as a local for the foreground path (freed
-        // when `call()` returns, however it returns) and moved into the
-        // background closure below (freed when that child actually finishes).
+        // when `call()` returns, unless a message raced the parking and
+        // moves it into that continuation instead — T34.6 point 4, below)
+        // and moved into the background closure below (freed when that
+        // child actually finishes).
         let cap = self.parent.config.core.max_concurrent_subagents;
         let agent_slot =
             self.parent
@@ -400,7 +402,7 @@ impl Tool for AgentTool {
             result_cap_tokens: preset.result_cap_tokens,
             label: format!("{}: {}", preset.name, first_line(&task_text)),
         };
-        let child = spawn(&self.parent, &spec, None).map_err(core_error)?;
+        let child = spawn(&self.parent, task, &spec, None).map_err(core_error)?;
         let Some(events) = child.events() else {
             return Err(ToolError::Io);
         };
@@ -429,6 +431,9 @@ impl Tool for AgentTool {
             .register_task(task, label.clone(), tier, crate::tasks::TaskKind::Agent)
             .await;
         self.parent.track_child(task).await;
+        // T34.6: a `send_message` call from the parent addresses this child
+        // by `spec.name` (`explore-2`), never its `TaskId` directly.
+        self.parent.name_task(spec.name.clone(), task).await;
         let mut io = RunIo {
             task,
             spec,
@@ -494,7 +499,17 @@ impl Tool for AgentTool {
             },
         );
         if let Some((dormant, next)) = parked.await {
-            tokio::spawn(wake(self.parent.clone(), task, dormant, next));
+            // T34.6 point 4: a message that raced the parking continues
+            // the very run this `call()` is still holding `agent_slot`
+            // for — not a brand-new wake — so the continuation takes that
+            // same guard with it instead of reserving (or being denied) a
+            // second one. Only a genuinely new wake from `Finished`
+            // (`Session::deliver`, `tasks.rs`) reserves its own.
+            let parent = self.parent.clone();
+            tokio::spawn(async move {
+                let _slot = agent_slot;
+                wake(parent, task, dormant, next).await;
+            });
         }
         completed.map_err(core_error)?;
         let outcome = outcome?;
@@ -588,9 +603,13 @@ pub(crate) struct Dormant {
     spec: Spec,
 }
 
-/// The child session for `spec`, fresh or restored from `resume`.
+/// The child session for `spec`, fresh or restored from `resume`. `task` is
+/// the parent's id for this child, stamped onto it (`self_task`, T34.6) so
+/// its own `send_message` calls know which task id means "the parent"
+/// (SM§4): a child compares `to` against this, never its own `SessionId`.
 fn spawn(
     parent: &Session,
+    task: TaskId,
     spec: &Spec,
     resume: Option<(SessionId, History)>,
 ) -> Result<Session, CoreError> {
@@ -609,6 +628,7 @@ fn spawn(
     if let Some(wt) = &spec.worktree {
         child.set_writable_roots(vec![wt.path.clone()]);
     }
+    child.set_self_task(task);
     Ok(child)
 }
 
@@ -692,7 +712,12 @@ async fn restart(
         .rollout_read(&dormant.session)
         .map_err(|error| CoreError::Store { error })?;
     let history = History::from_events(&events);
-    let child = spawn(parent, &dormant.spec, Some((dormant.session, history)))?;
+    let child = spawn(
+        parent,
+        task,
+        &dormant.spec,
+        Some((dormant.session, history)),
+    )?;
     io.events = child.events().unwrap_or_else(|| mpsc::channel(1).1);
     io.cancel = parent.cancel_token();
     let (label, tier) = (dormant.spec.label.clone(), dormant.spec.tier);
@@ -720,6 +745,12 @@ async fn lost(parent: &Session, task: TaskId, e: CoreError) {
 /// A→B→A ping-pong stops. `MAX_MESSAGES_PER_TASK` is T34.6's, with the tool.
 pub(crate) const MAX_HOPS: u32 = 4;
 
+/// SM§5: a per-task received-message flood cap, checked by `Session::deliver`
+/// (`tasks.rs`) before a `send_message` follow-up is queued or wakes a
+/// dormant child. A named constant, not a config key: raising it is a code
+/// change, not a per-session tuning knob.
+pub(crate) const MAX_MESSAGES_PER_TASK: u32 = 16;
+
 /// A child's `Event::TaskMessage`, routed by the parent only (SM§3): to its
 /// own task id means "to the parent", anything else is a sibling reached
 /// through the parent's own `Submission::TaskMessage`. `from` and `hop`
@@ -746,6 +777,52 @@ pub(crate) async fn relay(
         text,
     };
     parent.submit(sub).await
+}
+
+/// `send_message`'s only way into a session (T34.6, SM§4): `cox-tools`
+/// holds `Arc<dyn Relay>`, never a `Session`, so the routing lives here
+/// instead of a new channel. A child (`self_task` set by `spawn`) cannot
+/// see the registry `resolve_addressee` reads, so it may only name
+/// `"parent"` (mapped to its own task id, matching `relay`'s `to == from`
+/// check) or a literal sibling `TaskId`; resolving a sibling's name
+/// (`explore-2`) is parent-only, the same asymmetry SM§3 describes for
+/// routing. The parent's own call is hop 0, direct, no relay hop-count.
+#[async_trait]
+impl Relay for Session {
+    async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError> {
+        match self.self_task() {
+            Some(me) => {
+                let target = if to == "parent" {
+                    me
+                } else {
+                    to.parse::<TaskId>().map_err(|_| ToolError::Denied {
+                        why: format!(
+                            "unknown addressee {to:?}: a subagent may only message \
+                             \"parent\" or a task id, never a sibling by name"
+                        ),
+                    })?
+                };
+                self.emit(Event::TaskMessage {
+                    task: target,
+                    from: None,
+                    hop: 0,
+                    text: text.to_string(),
+                })
+                .await
+                .map_err(core_error)
+            }
+            None => {
+                let Some(target) = self.resolve_addressee(to).await else {
+                    return Err(ToolError::Denied {
+                        why: format!("unknown addressee {to:?}: no such subagent task"),
+                    });
+                };
+                self.deliver(target, None, 0, text.to_string())
+                    .await
+                    .map_err(core_error)
+            }
+        }
+    }
 }
 
 /// How one child run is driven and observed.
@@ -1366,7 +1443,7 @@ text = "it was 42"
         parent.track_child(a).await;
         parent.track_child(b).await;
         let spec = child_spec();
-        let child = spawn(&parent, &spec, None).expect("child");
+        let child = spawn(&parent, a, &spec, None).expect("child");
         let events = child.events().expect("events");
         // The child claims a sender and a hop; the parent overrides both.
         for (to, text) in [(b, "hi b"), (a, "hi parent")] {
@@ -1485,6 +1562,7 @@ text = "it was 42"
             call: cox_protocol::ids::CallId::new(),
             agent: None,
             preset: None,
+            relay: None,
         }
     }
 
@@ -1614,5 +1692,220 @@ text = "it was 42"
         }
         assert_eq!(ok, cap as usize, "exactly the cap's worth of calls succeed");
         assert_eq!(denied, n - cap as usize, "the rest are denied by the cap");
+    }
+
+    /// T34.6: the same routing `sibling_message_is_relayed_through_the_parent`
+    /// proves, but through `send_message`'s own `Relay` impl instead of a
+    /// forged `Event::TaskMessage` — proving the child branch resolves
+    /// `"parent"` to its own task id (so `relay`'s `to == from` check
+    /// fires) and a sibling's `TaskId` on its own, with no registry access.
+    #[tokio::test]
+    async fn sibling_message_is_relayed_through_the_parent_session() {
+        let (parent, _, mut rx) = parent_with("[[turn]]\ntext = \"sent\"\n");
+        let (a, b) = (TaskId::new(), TaskId::new());
+        parent.track_child(a).await;
+        parent.track_child(b).await;
+        let spec = child_spec();
+        let child = spawn(&parent, a, &spec, None).expect("child");
+        let events = child.events().expect("events");
+        child
+            .send_message(&b.to_string(), "hi b")
+            .await
+            .expect("send to sibling by task id");
+        child
+            .send_message("parent", "hi parent")
+            .await
+            .expect("\"parent\" resolves to the child's own task id");
+        let (progress, _) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
+        let task = a;
+        let mut io = RunIo {
+            task,
+            spec,
+            events,
+            cancel,
+            progress,
+        };
+        let out = run_task(&parent, child, "a".into(), &mut io).await;
+        assert_eq!(out.map(|o| o.answer).ok().as_deref(), Some("sent"));
+
+        let relayed = Queued {
+            from: Some(a),
+            hop: 1,
+            text: "hi b".into(),
+        };
+        assert_eq!(parent.next_queued(b).await, Some(relayed));
+        let parent_line = format!("[message from task {a}] hi parent");
+        let history = parent.history().await;
+        let line = history
+            .iter()
+            .flat_map(|m| &m.content)
+            .any(|c| matches!(c, Content::Text { text } if *text == parent_line));
+        assert!(
+            line,
+            "\"parent\" routed to the parent, not queued as a sibling"
+        );
+        let seen = until(
+            &mut rx,
+            |e| matches!(e, Event::TaskMessage { task, .. } if *task == a),
+        )
+        .await;
+        assert!(seen.iter().any(|e| matches!(
+            e,
+            Event::TaskMessage { task, from: Some(f), hop: 1, .. } if *task == b && *f == a
+        )));
+    }
+
+    /// A `ToolCx` carrying `relay: Some(Arc::new(session.clone()))`, exactly
+    /// what `cox-core/src/turn.rs`'s `run_one` stamps into each call's own
+    /// context — never a handle fixed once and shared.
+    fn cx_with_relay(session: &Session) -> ToolCx {
+        let (tx, _rx) = mpsc::channel(8);
+        ToolCx {
+            roots: session.config.core.workspace_roots.clone(),
+            writable_roots: session.config.core.workspace_roots.clone(),
+            cwd: session.cwd.clone(),
+            sandbox: cox_protocol::types::SandboxPolicy {
+                mode: session.config.sandbox.mode,
+                network: session.config.sandbox.network,
+                writable: session.config.sandbox.writable.clone(),
+                readonly_in_workspace: session.config.sandbox.readonly_in_workspace.clone(),
+                linux_backend: session.config.sandbox.linux_backend,
+            },
+            archive: Arc::new(crate::MemoryStore::new()),
+            cancel: CancellationToken::new(),
+            output: tx,
+            session: session.id,
+            call: cox_protocol::ids::CallId::new(),
+            agent: None,
+            preset: None,
+            relay: Some(Arc::new(session.clone()) as Arc<dyn Relay>),
+        }
+    }
+
+    /// T34.6 review: the bug a shared `DeferredRelay` had — one relay handle
+    /// pointing at whichever session built it first — must not resurface
+    /// now that the binding is per call. Two siblings' own `ToolCx`s (built
+    /// the same way `run_one` builds one) must each reach *their own*
+    /// session's `Relay` impl: a call through child a's `ToolCx.relay` is
+    /// attributed to a on a's own event stream, never to b or to a
+    /// parent-side `deliver` that bypasses the child branch entirely.
+    #[tokio::test]
+    async fn each_childs_tool_cx_relay_is_bound_to_its_own_session() {
+        let (parent, _, _rx) = parent_with("[[turn]]\ntext = \"sent\"\n");
+        let (a, b) = (TaskId::new(), TaskId::new());
+        parent.track_child(a).await;
+        parent.track_child(b).await;
+        let child_a = spawn(&parent, a, &child_spec(), None).expect("child a");
+        let child_b = spawn(&parent, b, &child_spec(), None).expect("child b");
+        let mut events_a = child_a.events().expect("a's events");
+        let mut events_b = child_b.events().expect("b's events");
+
+        let cx_a = cx_with_relay(&child_a);
+        let cx_b = cx_with_relay(&child_b);
+        cx_a.relay
+            .as_ref()
+            .expect("a's ToolCx carries a relay")
+            .send_message("parent", "hi from a")
+            .await
+            .expect("a's own relay resolves \"parent\" to a's own task id");
+        cx_b.relay
+            .as_ref()
+            .expect("b's ToolCx carries a relay")
+            .send_message("parent", "hi from b")
+            .await
+            .expect("b's own relay resolves \"parent\" to b's own task id");
+
+        // Each child's own stream opens with `SessionStarted`; drain to the
+        // `TaskMessage` the call above should have produced on *that*
+        // stream specifically.
+        let seen_a = until(&mut events_a, |e| matches!(e, Event::TaskMessage { .. })).await;
+        assert!(
+            seen_a.iter().any(|e| matches!(
+                e,
+                Event::TaskMessage { task, text, .. } if *task == a && text == "hi from a"
+            )),
+            "a's call must land on a's own stream, attributed to a: {seen_a:?}"
+        );
+        let seen_b = until(&mut events_b, |e| matches!(e, Event::TaskMessage { .. })).await;
+        assert!(
+            seen_b.iter().any(|e| matches!(
+                e,
+                Event::TaskMessage { task, text, .. } if *task == b && text == "hi from b"
+            )),
+            "b's call must land on b's own stream, attributed to b: {seen_b:?}"
+        );
+    }
+
+    /// SM§5: the 17th message received by one task in `Session::deliver`
+    /// (`tasks.rs`) is refused, shaped like T34.2's concurrency-cap denial,
+    /// rather than queued forever behind a child that never catches up.
+    #[tokio::test]
+    async fn message_cap_denies_the_nth_plus_one_follow_up() {
+        let (parent, _, _rx) = parent_with("");
+        let task = TaskId::new();
+        parent.track_child(task).await;
+        for i in 0..MAX_MESSAGES_PER_TASK {
+            parent
+                .deliver(task, None, 0, format!("msg {i}"))
+                .await
+                .unwrap_or_else(|e| {
+                    panic!("message {i} of {MAX_MESSAGES_PER_TASK} should be admitted: {e}")
+                });
+        }
+        let err = parent
+            .deliver(task, None, 0, "one too many".into())
+            .await
+            .expect_err("the 17th message trips the flood cap");
+        let CoreError::Denied { why } = err else {
+            panic!("expected Denied, got {err:?}");
+        };
+        assert!(why.contains("cap"), "{why:?}");
+        assert!(
+            why.contains(&format!(
+                "{MAX_MESSAGES_PER_TASK} of {MAX_MESSAGES_PER_TASK}"
+            )),
+            "names the cap: {why:?}"
+        );
+    }
+
+    /// T34.6 point 4: waking a *dormant* child (`Session::deliver`'s
+    /// `Finished` branch, `tasks.rs`) reserves a T34.2 slot for the woken
+    /// run, same as a fresh `agent` call — at the cap the sender is denied
+    /// and, unlike the flood cap above, the message is never queued at
+    /// all, since there is no running turn left for it to wait behind.
+    #[tokio::test]
+    async fn waking_a_dormant_child_at_the_cap_is_denied() {
+        let tool = agent_tool_with_cap(1);
+        let parent = tool.parent.clone();
+        let task = TaskId::new();
+        parent.track_child(task).await;
+        let dormant = Dormant {
+            session: SessionId::new(),
+            spec: child_spec(),
+        };
+        assert!(
+            parent.park_child(task, dormant).await.is_none(),
+            "nothing queued yet, so the child goes dormant"
+        );
+
+        // Fill the one slot the cap allows, so waking has nowhere to run.
+        let _holding = parent.try_reserve_agent_slot(1).expect("the one slot");
+
+        let err = parent
+            .deliver(task, None, 0, "wake up".into())
+            .await
+            .expect_err("no slot left to run the woken child");
+        let CoreError::Denied { why } = err else {
+            panic!("expected Denied, got {err:?}");
+        };
+        assert!(why.contains("cap"), "{why:?}");
+        assert!(
+            matches!(
+                parent.inner.lock().await.children.get(&task),
+                Some(Child::Finished(_))
+            ),
+            "denied, so the message is not queued: still dormant, not woken"
+        );
     }
 }

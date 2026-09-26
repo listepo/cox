@@ -182,6 +182,15 @@ pub enum CoreError {
         /// The hook's error text.
         error: String,
     },
+    /// A subagent action was refused by a named guard — T34.2's
+    /// concurrency cap or T34.6's message-flood cap — shaped like
+    /// `ToolError::Denied` so `Relay::send_message` can hand the same text
+    /// back to whoever called it.
+    #[error("denied: {why}")]
+    Denied {
+        /// Human-readable reason.
+        why: String,
+    },
 }
 
 /// Failures from `cox-store`.

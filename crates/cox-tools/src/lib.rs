@@ -1,5 +1,5 @@
 //! Built-in tools: read, edit, write, bash, grep, glob, outline, web, todo,
-//! ask_user, agent. Separate from `cox-core` because every tool touches the
+//! ask_user, agent, send_message. Separate from `cox-core` because every tool touches the
 //! filesystem or a process and must go through a trait, never called
 //! directly by the loop. The same rule puts the `/rewind` pre-image reader
 //! (`checkpoint`) here. The sandbox (Seatbelt, Landlock/bwrap) and
@@ -22,6 +22,7 @@ pub mod glob;
 pub mod grep;
 pub mod memory;
 pub mod read;
+pub mod send_message;
 pub mod todo;
 pub mod tool_search;
 pub mod v4a;
@@ -83,6 +84,9 @@ pub fn tool_cx(
         // constructor arg here — every existing caller stays unchanged.
         agent: None,
         preset: None,
+        // T34.6: no session builds this bare helper's caller, so no relay;
+        // real per-call binding happens in `cox-core/src/turn.rs`.
+        relay: None,
     }
 }
 

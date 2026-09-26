@@ -1,8 +1,10 @@
-//! The five traits every other crate implements against instead of a
-//! concrete type (plan.md §1.2). This is the enforcement point for
-//! AGENTS.md's rule that anything touching the network, filesystem or a
-//! process lives behind a trait defined here: `cox-core` depends only on
-//! these signatures, never on `cox-provider`/`cox-tools`/`cox-mcp`/`cox-store`.
+//! The traits every other crate implements against instead of a concrete
+//! type (plan.md §1.2). This is the enforcement point for AGENTS.md's rule
+//! that anything touching the network, filesystem or a process lives
+//! behind a trait defined here: `cox-core` depends only on these
+//! signatures, never on `cox-provider`/`cox-tools`/`cox-mcp`/`cox-store`.
+//! `Relay` (T34.6, SM§4) is the same shape for `send_message`: `cox-tools`
+//! needs no `Session` handle, only this narrow hook back into it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -211,6 +213,13 @@ pub struct ToolCx {
     pub agent: Option<String>,
     /// The dispatched preset/def name (`explore`), alongside `agent`.
     pub preset: Option<String>,
+    /// `send_message`'s only way into a session (T34.6), same pattern as
+    /// `agent`/`preset` (T34.3): the session that builds this `ToolCx`
+    /// (`cox-core/src/turn.rs`) fills it with itself, so a child session's
+    /// call reaches the child's own `Relay` impl (its `self_task`, never
+    /// the top-level session's) and the parent's reaches the parent's.
+    /// `None` where no session builds one (a unit test's bare `ToolCx`).
+    pub relay: Option<Arc<dyn Relay>>,
 }
 
 /// A built-in or MCP tool. Implemented by `cox-tools` (`read`, `edit`,
@@ -437,6 +446,18 @@ pub trait Hook: Send + Sync {
     ) -> crate::types::HookOutcome;
 }
 
+/// Where `send_message` (T34.6, SM§4) delivers a follow-up: implemented by
+/// `Session` (`cox-core`) so `cox-tools` needs no handle to it, only this
+/// narrow hook — the same shape as `Archive`/`Worktrees` (AGENTS.md's
+/// trust-boundary rule: anything reaching outside this crate goes through
+/// a trait defined here).
+#[async_trait]
+pub trait Relay: Send + Sync {
+    /// Sends `text` to `to` (`"parent"`, a sibling's registry name, or a
+    /// `TaskId`), stamped with the caller's own task if it is a subagent.
+    async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,5 +473,6 @@ mod tests {
         assert_object_safe::<dyn Tool>();
         assert_object_safe::<dyn Hook>();
         assert_object_safe::<dyn Checkpointer>();
+        assert_object_safe::<dyn Relay>();
     }
 }

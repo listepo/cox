@@ -47,6 +47,7 @@ fn cx(root: PathBuf) -> ToolCx {
         call: CallId::new(),
         agent: None,
         preset: None,
+        relay: None,
     }
 }
 

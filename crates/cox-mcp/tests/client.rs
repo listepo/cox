@@ -88,6 +88,7 @@ fn cx() -> ToolCx {
         call: CallId::new(),
         agent: None,
         preset: None,
+        relay: None,
     }
 }
 

@@ -8,7 +8,7 @@ use std::time::Instant;
 use cox_protocol::ArchivePut;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, TurnId};
-use cox_protocol::traits::{Tool, ToolCx};
+use cox_protocol::traits::{Relay, Tool, ToolCx};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
     ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall, ToolOutput,
@@ -401,6 +401,11 @@ async fn run_one(
         // label `relay_approval` already gives an approval.
         agent: session.agent.clone(),
         preset: session.preset.clone(),
+        // T34.6 review: bound per call, to *this* session, never a handle
+        // fixed once at tool-construction time — a child's call must reach
+        // its own `Relay` impl (`self_task` + emit), not the top-level
+        // session's, and this is the one place that distinction is made.
+        relay: Some(Arc::new(session.clone()) as Arc<dyn Relay>),
     };
     let pump = session.clone_handle();
     let pump_id = id;

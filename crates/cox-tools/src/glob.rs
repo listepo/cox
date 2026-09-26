@@ -178,6 +178,7 @@ mod tests {
             call: cox_protocol::CallId::new(),
             agent: None,
             preset: None,
+            relay: None,
         }
     }
 

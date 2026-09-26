@@ -1712,6 +1712,24 @@
               "id",
               "error"
             ]
+          },
+          {
+            "description": "A subagent action was refused by a named guard — T34.2's\nconcurrency cap or T34.6's message-flood cap — shaped like\n`ToolError::Denied` so `Relay::send_message` can hand the same text\nback to whoever called it.",
+            "type": "object",
+            "properties": {
+              "why": {
+                "description": "Human-readable reason.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "denied"
+              }
+            },
+            "required": [
+              "type",
+              "why"
+            ]
           }
         ]
       },

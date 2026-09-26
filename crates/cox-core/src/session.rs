@@ -89,6 +89,14 @@ pub(crate) struct Inner {
     pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
     /// Subagents a follow-up can reach, running or finished (T34.5, SM§2).
     pub(crate) children: HashMap<TaskId, crate::tasks::Child>,
+    /// Exact registry name (`explore-2`) → task id (T34.6, SM§4):
+    /// `send_message`'s name-based resolution when the parent addresses a
+    /// child directly, alongside `children`'s id-keyed entries.
+    pub(crate) task_names: HashMap<String, TaskId>,
+    /// Received-message counter per task (T34.6, SM§5):
+    /// `MAX_MESSAGES_PER_TASK` denies the 17th delivery instead of letting
+    /// a flood spin the addressee.
+    pub(crate) message_counts: HashMap<TaskId, u32>,
     /// Running calls `Submission::Background` may detach (T27.1).
     pub(crate) detach: HashMap<CallId, CancellationToken>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
@@ -155,6 +163,11 @@ pub struct Session {
     /// installed like `worktrees`, empty until then. Not copied to
     /// children — only `new`/`resume` push the `agent` tool at all.
     agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
+    /// The task id `send_message`'s `Relay` impl stamps a child's own
+    /// message with (T34.6, SM§4), set once by `subagent::spawn` right
+    /// after the child session exists; unset for the session the user is
+    /// talking to.
+    self_task: Arc<OnceLock<TaskId>>,
     /// The one "checkpoints off" warning per session has been emitted.
     pub(crate) checkpoint_warned: Arc<AtomicBool>,
     /// T34.2's `core.max_concurrent_subagents` cap: how many `agent` slots
@@ -370,6 +383,7 @@ impl Session {
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
+            self_task: Arc::new(OnceLock::new()),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
             agent_slots: Arc::new(AtomicU32::new(0)),
             tx,
@@ -395,6 +409,8 @@ impl Session {
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
                 children: HashMap::new(),
+                task_names: HashMap::new(),
+                message_counts: HashMap::new(),
                 detach: HashMap::new(),
                 extracted: Vec::new(),
                 last_context_tokens: 0,
@@ -571,6 +587,17 @@ impl Session {
 
     pub(crate) fn agent_defs(&self) -> &[AgentDef] {
         self.agent_defs.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// `subagent::spawn` calls this once, right after the child exists
+    /// (T34.6, SM§4); a second call is ignored like `set_worktrees`.
+    pub(crate) fn set_self_task(&self, task: TaskId) {
+        let _ = self.self_task.set(task);
+    }
+
+    /// `Some` only for a subagent's own session.
+    pub(crate) fn self_task(&self) -> Option<TaskId> {
+        self.self_task.get().copied()
     }
 
     /// Feeds one submission into the state machine.
