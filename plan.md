@@ -27,6 +27,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
+| T35.14 | todo | P2 | 3 | 0% | |
 
 ## Reference
 
@@ -1034,6 +1035,12 @@ Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_liv
 Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
 Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required).
 
+#### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
+
+Depends: none · Size: ~120 · Files: `crates/cox-sandbox/src/sandbox.rs` (the bwrap argument list), the host-only spawner from T35.2, `crates/cox-sandbox/tests/*`, `AGENTS.md` (dev-run note)
+Goal: on Linux, bwrap gives a wrapped program a private `/tmp`, so a plugin's `[[mcp]]` server, an external agent (T35.2) or a PATH directory under `/tmp` cannot be found inside the sandbox, and the process fails to start. AGENTS.md's own dev runs (`COX_HOME=/tmp/cox-scratch`) hit this; the PR #53 CI fix moved the test fixtures out of `/tmp` instead of fixing the product. Done means: the directory that holds the spawned program (and the plugin package or `COX_HOME` it runs from) is bound read-only into the sandbox even when it is under `/tmp`, without exposing the rest of the host `/tmp`; or, where that cannot be done safely, the spawn fails with a clear message naming the path and the fix, and `cox doctor` says so. Landlock and Seatbelt behaviour is unchanged.
+Check: a Linux-only test (skipped elsewhere, run in the `test (ubuntu-24.04)` job under bwrap) spawns a program from a `/tmp` tempdir under the sandbox and it runs, while a sibling file in `/tmp` stays unreadable; the doctor or error-message case if the bind is refused.
+
 ### P36 — Compound shell commands (goal: a `Bash(<prefix>:*)` rule or a session grant covers exactly the commands it names, never a command chained after them)
 
 Rationale in §6 A62.
@@ -1167,6 +1174,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A62 §3 new P36 (T36.1), by the creator. Why: a `Bash(<prefix>:*)` allow rule and a session grant match the command line as one string, so `Bash(git:*)` allows `git status; rm -rf …` and `Bash(rm:*)` in `deny` misses `git status && rm …`. Effect: the bash tool hands the engine its command segments; deny matches any segment, allow and grants need every segment, and substitution, `eval`/`-c` and redirects ask. `cox_permission::Engine` stays the single guard and stays pure. No decision changes.
 - A63 §3 T33.36 — Kotlin waits for WASI, by the creator. Why: the T33.36 draft showed that any real Kotlin/Wasm module imports `wasi_snapshot_preview1::random_get` from Kotlin's own stdlib (`Any.hashCode` → `Random.Default`), and cox loads plugins with WASI off (A55), so the host refuses the module (research.md P45); the T33.35 spike module had no WASI imports only because it did nothing (P41). The creator chose to wait rather than define `random_get` alone in the host or stub it at build time. Effect: T33.36 depends on T33.43, like T33.34 (Go); `wasmtime-exceptions` stays on (A61). No decision changes.
 - A64 §3 P36 (new T36.2), by the creator. Why: T36.1's follow-ups are security gaps: an assignment prefix (`GIT_PAGER='rm x' git log`) keeps a command rated `ReadOnly`, so it runs without asking; wrappers (`nohup rm …`) and `sh -c` strings hide a command from deny. Effect: one card; `cox_permission::Engine` stays the single guard. No decision changes.
+- A65 `docs/design/plugins.md` §11–12, `scripts/footprint.json` — plugin size budget 22 MiB, by the creator. Why: PR #53's footprint job failed: the full release binary is 77 764 992 B on the macOS CI runner against a baseline of 47 323 136 B, and the whole `plugins` feature now adds +20.38 MiB over the slim build (56 409 008 B), just over A55's 20 MiB. Effect: the budget is 22 MiB and the `Darwin-arm64-ci` baseline is refreshed from that CI run (startup 6.9 ms, first frame 35.7 ms, RSS 24.0 MiB), and the local `Darwin-arm64` one from a fresh release build (77 799 856 B). No decision changes.
+- A66 §3 P35 (new T35.14), by the creator. Why: the PR #53 CI fix found that bwrap's private `/tmp` hides any sandboxed program under `/tmp` on Linux, including AGENTS.md's `COX_HOME=/tmp/cox-scratch` dev runs. Effect: one card; `cox_sandbox::sandbox::Policy` stays the single sandbox guard. No decision changes.
 
 ## 7. Risk register
 
