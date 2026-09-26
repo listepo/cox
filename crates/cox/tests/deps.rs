@@ -212,12 +212,31 @@ fn no_crate_below_cox_depends_on_core() {
         );
     }
 
+    // cox-provider-http (T32.12) is a pure leaf shared by every wire
+    // (http.rs/retry.rs/sse.rs): connection setup, credential resolution,
+    // error mapping, SSE framing and retry/backoff. It depends only on
+    // cox-protocol among workspace crates.
+    let provider_http_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-provider-http"]
+            .iter()
+            .all(|d| provider_http_allowed.contains(d.as_str())),
+        "cox-provider-http may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-provider-http"]
+    );
+
     // cox-provider additionally depends on cox-models (`Priced` prices every
-    // call through the catalog's `PriceTable`, T30.24) and cox-tokens
-    // (re-exported at the old `tokens` path, T32.10).
-    let provider_allowed: HashSet<&str> = ["cox-protocol", "cox-models", "cox-tokens"]
-        .into_iter()
-        .collect();
+    // call through the catalog's `PriceTable`, T30.24), cox-tokens
+    // (re-exported at the old `tokens` path, T32.10) and cox-provider-http
+    // (re-exported at the old `http`/`retry`/`sse` paths, T32.12).
+    let provider_allowed: HashSet<&str> = [
+        "cox-protocol",
+        "cox-models",
+        "cox-tokens",
+        "cox-provider-http",
+    ]
+    .into_iter()
+    .collect();
     let provider_deps = &deps["cox-provider"];
     assert!(
         !provider_deps.contains("cox-core"),
@@ -227,7 +246,7 @@ fn no_crate_below_cox_depends_on_core() {
         provider_deps
             .iter()
             .all(|dep| provider_allowed.contains(dep.as_str())),
-        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens among workspace crates, found {provider_deps:?}"
+        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http among workspace crates, found {provider_deps:?}"
     );
 
     // cox-patch (T32.6) is the V4A parse/match/stage engine: a pure leaf,

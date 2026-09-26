@@ -1,0 +1,18 @@
+[package]
+name = "cox-provider-http"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+reqwest = { workspace = true }
+keyring = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+# T1.2: SSE parsing (sse.rs) over a reqwest byte stream.
+eventsource-stream = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }

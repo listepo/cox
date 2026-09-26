@@ -14,17 +14,23 @@
 //! - [`http`] — credential lookup, auth headers and error mapping shared by every network backend.
 //! - [`sse`] — generic Server-Sent-Events framing shared by every SSE-based provider.
 //! - [`retry`] — backoff before the first byte, shared by every network backend.
+//!
+//! `http`, `retry` and `sse` are re-exports of `cox-provider-http` (T32.12:
+//! reuse (d) — every wire needs them without the rest of this crate), kept
+//! at these paths so `cox_provider::http::resolve_key_with` and every other
+//! `crate::http`/`crate::retry`/`crate::sse` call in this crate's own wires
+//! keep working unchanged.
 
 #![warn(missing_docs)]
 
 pub mod anthropic;
-pub mod http;
+pub use cox_provider_http::http;
 pub mod jev;
 pub mod openai;
 pub mod replay;
-pub mod retry;
+pub use cox_provider_http::retry;
 pub mod scripted;
-pub mod sse;
+pub use cox_provider_http::sse;
 pub mod usage;
 
 /// T32.10: token estimation/counting moved to its own crate (dependency

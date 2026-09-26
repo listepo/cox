@@ -56,10 +56,12 @@ pub fn resolve_key(env_var: &str, section: &str) -> Result<String, ProviderError
 /// the real Keychain/Credential-Manager/Secret-Service the first time
 /// *anything* touches it, once per process and irreversibly (it is a
 /// `LazyLock` that always wins over a prior `set_default_store`), so no
-/// mock swapped in afterwards would ever be consulted. `pub(crate)` so
-/// every backend's own tests can inject a fake lookup too (A49, T30.28)
-/// instead of calling [`resolve_key`] and reaching the real keyring.
-pub(crate) fn resolve_key_with(
+/// mock swapped in afterwards would ever be consulted. `pub` (T32.12: this
+/// crate is a dependency of `cox-provider`, not a module inside it) so
+/// every wire's own tests, wherever they live, can inject a fake lookup too
+/// (A49, T30.28) instead of calling [`resolve_key`] and reaching the real
+/// keyring.
+pub fn resolve_key_with(
     env_var: &str,
     section: &str,
     keyring_lookup: impl FnOnce(&str) -> Option<String>,
