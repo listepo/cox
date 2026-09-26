@@ -114,6 +114,7 @@ fn main() -> anyhow::Result<()> {
             Some(crate::cli::PluginAction::Remove { id, keep_data, yes }) => {
                 plugin_cmd::remove(&cli, &cwd, id, *keep_data, *yes)
             }
+            Some(crate::cli::PluginAction::Link { dir, yes }) => plugin_cmd::link(&cli, dir, *yes),
         },
         Some(Command::Run(args)) => {
             let code = run::run(&cli, args, &cwd)?;

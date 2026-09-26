@@ -1,5 +1,5 @@
-//! `cox plugin` (plan.md T33.4, T33.7, T33.31, T33.32): `list`, `install`,
-//! `enable`, `disable`, `update`, `remove`. `list` reports discovery results only — id, source, version,
+//! `cox plugin` (plan.md T33.4, T33.7, T33.31, T33.32, T33.41): `list`, `install`,
+//! `enable`, `disable`, `update`, `remove`, `link`. `list` reports discovery results only — id, source, version,
 //! digest and the manifest's *declared* capabilities, plus the real grant
 //! state from `grant::check` (T33.7; T33.6 landed the check itself in
 //! `session.rs`'s session-open path) — and never compiles or runs a
@@ -107,6 +107,49 @@ pub fn install(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `cox plugin link <dir> [--yes]` (T33.41, PL§13's dev loop): uses a
+/// built plugin from `<dir>` in place, without staging or copying it.
+/// Writes the `link` pointer through `cox_plugin::install::link`, then
+/// runs the same approval flow as `install`, but keyed to the fixed
+/// `discover::link_digest()` rather than `<dir>`'s package digest — a
+/// rebuild changes that digest on every save, and the whole point of
+/// linking is to never re-ask for that alone (`grant::check`'s
+/// `is_linked`).
+pub fn link(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
+    let home = cli.home.clone().unwrap_or_else(cox_home);
+    // Absolute, so `discover` can read it from any cwd, the same reason
+    // `install` canonicalizes its `dir`.
+    let dir = &fs::canonicalize(dir)
+        .map_err(|e| anyhow::anyhow!("cannot link {}: {e}", dir.display()))?;
+    let manifest_path = dir.join("plugin.toml");
+    let (manifest, _digest) = discover::load_manifest(dir, &manifest_path, None)
+        .map_err(|e| anyhow::anyhow!("cannot link {}: {e}", dir.display()))?;
+    let plugin_dir = install::plugin_dir(&home, &manifest.id);
+    install::link(&plugin_dir, dir)?;
+    println!(
+        "linked {} v{} (dev) -> {}",
+        manifest.id,
+        manifest.version,
+        dir.display()
+    );
+
+    let store = Store::open(&home)?;
+    let source = serde_json::json!({
+        "kind": "link",
+        "path": dir.display().to_string(),
+    });
+    decide(
+        &store,
+        &manifest.id,
+        &GrantScope::User,
+        &discover::link_digest(),
+        &manifest,
+        source,
+        yes,
+    )?;
+    Ok(())
+}
+
 /// `cox plugin enable <id> [--project] [--yes]` (PL§3). `--project` is
 /// what makes a project plugin reachable at all: without it, discovery
 /// never looks under `.cox/plugins/`, so a project-only id comes back
@@ -148,15 +191,20 @@ pub fn enable(cli: &Cli, cwd: &Path, id: &str, project: bool, yes: bool) -> anyh
         return Ok(());
     };
     let store = Store::open(&home)?;
-    let stored = store.grant_get(id, &scope, digest).ok().flatten();
+    // A linked plugin's grant is keyed to `link_digest()`, not its
+    // (rebuild-volatile) package digest (T33.41) — `p.grant_digest()`
+    // picks the right key; `grant::check` still gets the real `digest` so
+    // it can tell a genuine mismatch from a linked one.
+    let grant_digest = p.grant_digest().unwrap_or_else(|| digest.to_string());
+    let stored = store.grant_get(id, &scope, &grant_digest).ok().flatten();
     if grant::check(manifest, digest, stored.as_ref()) == Verdict::Granted {
         println!("plugin {id} is already granted");
         return Ok(());
     }
     let source = stored
         .map(|g| g.source)
-        .unwrap_or_else(|| default_source(p.source, &p.dir));
-    decide(&store, id, &scope, digest, manifest, source, yes)?;
+        .unwrap_or_else(|| default_source(p.source, p.dev, &p.dir));
+    decide(&store, id, &scope, &grant_digest, manifest, source, yes)?;
     Ok(())
 }
 
@@ -179,7 +227,10 @@ pub fn disable(cli: &Cli, cwd: &Path, id: &str, project: bool) -> anyhow::Result
         return Ok(());
     };
     let store = Store::open(&home)?;
-    match store.grant_set_enabled(id, &scope, digest, false) {
+    // Same key `enable`/`list` use: a linked plugin's grant lives under
+    // `link_digest()`, not the package digest (T33.41).
+    let grant_digest = p.grant_digest().unwrap_or_else(|| digest.to_string());
+    match store.grant_set_enabled(id, &scope, &grant_digest, false) {
         Ok(()) => println!("plugin {id} disabled"),
         Err(cox_protocol::StoreError::NotFound) => {
             println!("plugin {id} has no grant to disable");
@@ -217,7 +268,14 @@ pub fn update(
             failed = true;
             continue;
         };
-        let done = if rollback {
+        // A `cox plugin link`ed plugin (T33.41) has no staged source or
+        // `previous` to switch between — it is read in place — so both
+        // `update` and `--rollback` fail here with a specific message
+        // instead of `update_one`'s generic "no recorded source path" or
+        // `rollback_one`'s "no previous version".
+        let done = if p.dev {
+            Err(anyhow::anyhow!("linked plugin: rebuild in place"))
+        } else if rollback {
             rollback_one(&store, &home, p, yes)
         } else {
             update_one(&store, &home, p, check, yes)
@@ -361,6 +419,8 @@ fn keybinding_refs(home: &Path, id: &str) -> Vec<String> {
 /// PL§1b steps 1–8 for one plugin: re-read the source the current grant
 /// recorded, validate and digest it through `discover::load_manifest`,
 /// print the capability diff against that grant, then stage and switch.
+/// Never called for a `cox plugin link`ed plugin (T33.41): `update`'s
+/// caller intercepts those first.
 fn update_one(
     store: &Store,
     home: &Path,
@@ -442,7 +502,7 @@ fn rollback_one(store: &Store, home: &Path, p: &discover::Plugin, yes: bool) -> 
             .map(|g| g.source),
         State::Skipped { .. } => None,
     }
-    .unwrap_or_else(|| default_source(Source::User, &dir));
+    .unwrap_or_else(|| default_source(Source::User, false, &dir));
     switch_to(
         store,
         &plugin_dir,
@@ -590,18 +650,28 @@ fn confirm(question: &str) -> bool {
 /// The `source` a grant records when nothing was stored yet: a project
 /// plugin is repository content, so there is no external path to
 /// remember; a user plugin's is its version directory, the best guess
-/// available to a bare `enable` that did not go through `install`.
-fn default_source(source: Source, dir: &Path) -> serde_json::Value {
+/// available to a bare `enable` that did not go through `install`. `dev`
+/// is `p.dev` (T33.41): a plugin found through a `link` pointer gets
+/// `{"kind": "link", ...}`, not `{"kind": "path", ...}`, so a bare
+/// `enable` on one — bypassing `cox plugin link` — still records the
+/// shape `grant::check`'s `is_linked` looks for.
+fn default_source(source: Source, dev: bool, dir: &Path) -> serde_json::Value {
     match source {
         Source::Project => serde_json::json!({ "kind": "project" }),
+        Source::User if dev => {
+            serde_json::json!({ "kind": "link", "path": dir.display().to_string() })
+        }
         Source::User => serde_json::json!({ "kind": "path", "path": dir.display().to_string() }),
     }
 }
 
 /// The grant verdict for one discovered, loaded plugin: looks up the row
-/// at its exact digest (T33.6's own key) and runs it through
-/// `grant::check`, the one pure answer every surface shares. A missing or
-/// unreadable store counts as no grant, never a wider one.
+/// at its grant digest (`p.grant_digest()`: T33.6's own key for a staged
+/// plugin, or the fixed `link_digest()` for one found through `cox plugin
+/// link`, T33.41) and runs it through `grant::check`, the one pure answer
+/// every surface shares, passing the real `digest` so it can still tell a
+/// genuine mismatch from a linked one. A missing or unreadable store
+/// counts as no grant, never a wider one.
 fn verdict_for(
     p: &discover::Plugin,
     manifest: &PluginManifest,
@@ -609,8 +679,10 @@ fn verdict_for(
     store: Option<&Store>,
     project_root: Option<&Path>,
 ) -> Verdict {
-    let stored = grant::scope(p.source, project_root)
-        .and_then(|scope| store.and_then(|s| s.grant_get(&p.id, &scope, digest).ok().flatten()));
+    let grant_digest = p.grant_digest().unwrap_or_else(|| digest.to_string());
+    let stored = grant::scope(p.source, project_root).and_then(|scope| {
+        store.and_then(|s| s.grant_get(&p.id, &scope, &grant_digest).ok().flatten())
+    });
     grant::check(manifest, digest, stored.as_ref())
 }
 
@@ -663,17 +735,30 @@ fn grant_words(v: &Verdict) -> (String, &'static str) {
     }
 }
 
+/// " dev" for a `cox plugin link`ed plugin (T33.41), shown in every
+/// listing surface: `list`'s text and JSON here, `cox doctor` and the TUI
+/// grant dialog (`PluginGrantDialog`) elsewhere.
+fn dev_tag(dev: bool) -> &'static str {
+    if dev { ", dev" } else { "" }
+}
+
 fn row_line(p: &discover::Plugin, store: Option<&Store>, project_root: Option<&Path>) -> String {
     match &p.state {
-        State::Skipped { reason } => format!("{} ({}): skipped — {reason}", p.id, p.source),
+        State::Skipped { reason } => format!(
+            "{} ({}{}): skipped — {reason}",
+            p.id,
+            p.source,
+            dev_tag(p.dev)
+        ),
         State::Loaded { manifest, digest } => {
             let digest12 = &digest[..12];
             let verdict = verdict_for(p, manifest, digest, store, project_root);
             let (grant_word, loaded_word) = grant_words(&verdict);
             format!(
-                "{} ({}, v{}, digest {digest12}, grant {grant_word}, {loaded_word}): {}",
+                "{} ({}{}, v{}, digest {digest12}, grant {grant_word}, {loaded_word}): {}",
                 p.id,
                 p.source,
+                dev_tag(p.dev),
                 manifest.version,
                 declared_summary(&manifest.capabilities)
             )
@@ -692,6 +777,7 @@ fn row_json(
             "source": p.source.to_string(),
             "state": "skipped",
             "reason": reason,
+            "dev": p.dev,
         }),
         State::Loaded { manifest, digest } => {
             let verdict = verdict_for(p, manifest, digest, store, project_root);
@@ -711,6 +797,7 @@ fn row_json(
                 "grant": grant_state,
                 "loaded": loaded,
                 "state": "discovered",
+                "dev": p.dev,
                 "declared": serde_json::to_value(&manifest.capabilities).unwrap_or_default(),
             });
             if let (Some(added), Some(removed)) = (added, removed) {

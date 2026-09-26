@@ -411,6 +411,17 @@ pub enum PluginAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Use a built plugin from `<dir>` in place, without installing it
+    /// (T33.41, PL§13's dev loop). `discover` reads `<dir>` directly, and
+    /// the grant re-asks only when `<dir>`'s capabilities widen, never on
+    /// a rebuild's changed bytes.
+    Link {
+        /// The built plugin's package directory (holds `plugin.toml`).
+        dir: PathBuf,
+        /// Skip the stdin prompt and grant what the manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[cfg(test)]

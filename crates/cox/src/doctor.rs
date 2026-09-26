@@ -496,10 +496,15 @@ fn check_external_agents(
         if manifest.external_agents.is_empty() {
             continue;
         }
+        // A linked plugin's grant is keyed on `grant_digest()` (T33.41), not
+        // the live content `digest`, so an external-agents row for one must
+        // look it up the same way `load_plugins`/`plugin_cmd` do or it
+        // would find no grant and skip a plugin that is actually granted.
+        let grant_digest = p.grant_digest().unwrap_or_else(|| digest.clone());
         let stored = grant::scope(p.source, root.as_deref()).and_then(|scope| {
             store
                 .as_ref()
-                .and_then(|s| s.grant_get(&p.id, &scope, digest).ok().flatten())
+                .and_then(|s| s.grant_get(&p.id, &scope, &grant_digest).ok().flatten())
         });
         if !matches!(
             grant::check(manifest, digest, stored.as_ref()),

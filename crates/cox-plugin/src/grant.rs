@@ -34,7 +34,15 @@ pub enum Verdict {
 
 /// Checks `manifest` at `digest` against the grant on file, if any.
 /// Asking for fewer capabilities than granted never re-asks; changed bytes
-/// always do, since the grant names the digest it was decided against.
+/// always do, since the grant names the digest it was decided against —
+/// except for a plugin opened with `cox plugin link` (T33.41, PL§13's dev
+/// loop): its grant is stored under a fixed digest (`discover::link_digest`),
+/// never the package digest, precisely so a rebuild's changed bytes never
+/// move it off its row. `is_linked` reads that off the grant's own
+/// recorded `source`, so this still works no matter which digest the
+/// caller passes in, and the non-linked path is untouched: a normal
+/// plugin's grant still names its real digest, so `grant.digest != digest`
+/// still re-asks there exactly as before.
 pub fn check(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGrant>) -> Verdict {
     let requested = capability_list(manifest);
     let Some(grant) = stored else {
@@ -56,7 +64,8 @@ pub fn check(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGran
         .filter(|cap| !covered(cap, &granted))
         .cloned()
         .collect();
-    if grant.digest == digest && added.is_empty() {
+    let digest_ok = grant.digest == digest || is_linked(grant);
+    if digest_ok && added.is_empty() {
         return Verdict::Granted;
     }
     let removed = granted
@@ -65,6 +74,14 @@ pub fn check(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGran
         .cloned()
         .collect();
     Verdict::NeedsApproval { added, removed }
+}
+
+/// Whether `grant` was decided for a `cox plugin link`ed source
+/// (T33.41): `install`/`plugin_cmd::link` record `{"kind": "link", ...}`
+/// (PL§1's `install` records `{kind: "path", ...}`; `link` is this
+/// module's sibling for the dev loop).
+fn is_linked(grant: &PluginGrant) -> bool {
+    grant.source.get("kind").and_then(|v| v.as_str()) == Some("link")
 }
 
 /// Whether `cap` is within `granted`. The model tier is the one ordered
@@ -274,6 +291,68 @@ mod tests {
             Verdict::NeedsApproval { added, .. }
                 if added == ["agent:cursor npx acp --trust key=CURSOR_API_KEY"]
         ));
+    }
+
+    fn linked_grant(caps: &[&str]) -> PluginGrant {
+        PluginGrant {
+            source: json!({"kind": "link", "path": "/home/user/dev/git-glance"}),
+            ..grant(&crate::discover::link_digest(), caps)
+        }
+    }
+
+    /// T33.41 Check: a linked plugin's grant is keyed to the fixed
+    /// `link_digest()`, not the package digest, so a rebuild that changes
+    /// only bytes — `digest` here stands in for the live, changed content
+    /// digest `discover` would compute after the rebuild — must not
+    /// re-ask as long as the capability list did not widen.
+    #[test]
+    fn linked_plugin_rebuild_does_not_reask() {
+        let m = manifest(Capabilities {
+            kv: true,
+            ..Capabilities::default()
+        });
+        let stored = linked_grant(&["kv"]);
+        assert_eq!(
+            check(&m, "rebuilt-bytes-digest-does-not-match", Some(&stored)),
+            Verdict::Granted
+        );
+    }
+
+    /// T33.41 Check: even linked, a widened capability list still asks.
+    #[test]
+    fn linked_plugin_widening_reasks() {
+        let m = manifest(Capabilities {
+            kv: true,
+            net: vec!["api.github.com".into()],
+            ..Capabilities::default()
+        });
+        let stored = linked_grant(&["kv"]);
+        assert_eq!(
+            check(&m, "rebuilt-bytes-digest-does-not-match", Some(&stored)),
+            Verdict::NeedsApproval {
+                added: vec!["net:api.github.com".into()],
+                removed: Vec::new(),
+            }
+        );
+    }
+
+    /// A grant whose `source` is not `{"kind": "link", ...}` — the usual
+    /// `cox plugin install` shape — must still re-ask on any digest
+    /// change: linking must never weaken the non-linked path.
+    #[test]
+    fn non_linked_plugin_still_reasks_on_changed_bytes() {
+        let m = manifest(Capabilities {
+            kv: true,
+            ..Capabilities::default()
+        });
+        let stored = grant("d1", &["kv"]);
+        assert_eq!(
+            check(&m, "d2", Some(&stored)),
+            Verdict::NeedsApproval {
+                added: Vec::new(),
+                removed: Vec::new(),
+            }
+        );
     }
 
     #[test]

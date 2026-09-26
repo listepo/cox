@@ -197,6 +197,11 @@ impl Approval {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluginGrantDialog {
     pub plugin_id: String,
+    /// The grant key (`crates/cox`'s `discover::Plugin::grant_digest()`):
+    /// the real package digest, or — for a linked plugin (`dev` below,
+    /// T33.41) — the fixed `link_digest()`. `y` writes the grant under
+    /// this value, so it must be the same one `grant_digest()` looks up
+    /// under next time, not the plugin's live, rebuild-volatile digest.
     pub digest: String,
     pub scope: GrantScope,
     /// The full requested capability list (PL§3's unit of approval) — what
@@ -212,6 +217,10 @@ pub struct PluginGrantDialog {
     /// A project plugin's repository root (PL§3: shown in warning style);
     /// `None` for a user plugin.
     repo: Option<String>,
+    /// True for a `cox plugin link`ed plugin (T33.41, PL§13's dev loop):
+    /// shown so an approval at session open still says why this one asks
+    /// again on a widened capability list rather than on any byte change.
+    dev: bool,
 }
 
 impl PluginGrantDialog {
@@ -226,6 +235,7 @@ impl PluginGrantDialog {
         added: Vec<String>,
         removed: Vec<String>,
         repo: Option<String>,
+        dev: bool,
     ) -> Self {
         Self {
             plugin_id,
@@ -237,6 +247,7 @@ impl PluginGrantDialog {
             added,
             removed,
             repo,
+            dev,
         }
     }
 
@@ -258,9 +269,10 @@ impl PluginGrantDialog {
     pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
         let bold = Style::default().add_modifier(Modifier::BOLD);
         let digest12 = &self.digest[..self.digest.len().min(12)];
+        let dev_tag = if self.dev { " (dev)" } else { "" };
         let mut out = vec![Line::styled(
             format!(
-                " plugin {} ({}) wants to load {} digest {}",
+                " plugin {} ({}) wants to load{dev_tag} {} digest {}",
                 sanitize(&self.name),
                 sanitize(&self.plugin_id),
                 g.sep,
@@ -268,6 +280,13 @@ impl PluginGrantDialog {
             ),
             bold.fg(theme.warn),
         )];
+        if self.dev {
+            out.push(Line::styled(
+                " linked plugin — asks again only if capabilities widen, not on a rebuild"
+                    .to_string(),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
         if !self.description.is_empty() {
             out.push(Line::raw(format!(" {}", sanitize(&self.description))));
         }
@@ -588,6 +607,7 @@ mod tests {
             added,
             removed,
             repo.map(String::from),
+            false,
         )
     }
 
@@ -643,5 +663,20 @@ mod tests {
         assert!(!text.contains('\u{1b}'), "{text:?}");
         assert!(!text.contains('\u{202e}'), "{text:?}");
         assert!(text.contains("red evil"), "{text:?}");
+    }
+
+    /// T33.41 Check `linked_plugin_marked_dev_everywhere`: the TUI grant
+    /// dialog is one of the surfaces that must mark a `cox plugin link`ed
+    /// plugin as `dev` (alongside `cox plugin list` and `cox doctor`).
+    #[test]
+    fn plugin_grant_dialog_marks_a_linked_plugin_dev() {
+        let mut dialog = plugin_grant(&["model:code"], &["model:cheap"], None);
+        dialog.dev = true;
+        let text = render_grant(&dialog);
+        assert!(text.contains("(dev)"), "{text:?}");
+        assert!(
+            text.contains("asks again only if capabilities widen"),
+            "{text:?}"
+        );
     }
 }

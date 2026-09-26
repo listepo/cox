@@ -8,7 +8,10 @@
 //! answers `Loaded` or `Skipped`, never fatal (invariant 17). `load_manifest`
 //! is `pub` so `cox plugin install` (T33.7) parses, validates and digests a
 //! not-yet-placed package through the same path `discover` uses, rather
-//! than computing a second digest of its own.
+//! than computing a second digest of its own. Also honours a user
+//! plugin's `link` pointer (T33.41, PL§13's dev loop): when one is
+//! present, its target is read in place instead of `current`'s staged
+//! version, and the plugin is reported as `dev`.
 
 use std::fmt;
 use std::fs;
@@ -18,6 +21,8 @@ use cox_plugin_api::PluginManifest;
 use figment::Figment;
 use figment::providers::{Format, Toml};
 use sha2::{Digest, Sha256};
+
+use crate::install;
 
 /// Where a plugin's directory was found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,10 +49,33 @@ pub struct Plugin {
     pub id: String,
     /// User or project.
     pub source: Source,
-    /// The package directory (the version directory for a user plugin).
+    /// The package directory: the version directory for a staged user
+    /// plugin, or the `cox plugin link` target when `dev` is true.
     pub dir: PathBuf,
     /// The outcome of parsing, validating and digesting it.
     pub state: State,
+    /// True for a user plugin opened with `cox plugin link` (T33.41,
+    /// PL§13): its directory is read in place, never staged, and its
+    /// grant is looked up and written under `link_digest()`, not the
+    /// package digest, since a rebuild changes that on every save.
+    pub dev: bool,
+}
+
+impl Plugin {
+    /// The digest a grant for this plugin is stored and looked up under:
+    /// the real package digest for a staged plugin, or the fixed
+    /// `link_digest()` for one opened with `cox plugin link`, pinned so a
+    /// rebuild's changed bytes never move the grant off its row.
+    /// `grant::check` is still given the real, live digest as its own
+    /// argument, so it can tell a genuine mismatch from a linked one
+    /// (`grant.rs`'s `is_linked`). `None` when nothing loaded to digest.
+    pub fn grant_digest(&self) -> Option<String> {
+        match &self.state {
+            State::Loaded { .. } if self.dev => Some(link_digest()),
+            State::Loaded { digest, .. } => Some(digest.clone()),
+            State::Skipped { .. } => None,
+        }
+    }
 }
 
 /// A discovered plugin's manifest state.
@@ -86,20 +114,26 @@ pub fn discover(cox_home: &Path, project_root: Option<&Path>) -> Discovered {
     let user_root = cox_home.join("plugins");
     for id in scan_ids(&user_root) {
         let plugin_dir = user_root.join(&id);
-        let dir = match current_version_dir(&plugin_dir) {
-            Ok(dir) => dir,
+        let (dir, dev) = match resolve_user_dir(&plugin_dir) {
+            Ok(resolved) => resolved,
             Err(reason) => {
                 out.plugins.push(Plugin {
                     id,
                     source: Source::User,
                     dir: plugin_dir,
                     state: State::Skipped { reason },
+                    dev: false,
                 });
                 continue;
             }
         };
-        out.plugins
-            .push(load_one(id, Source::User, &dir, &dir.join("plugin.toml")));
+        out.plugins.push(load_one(
+            id,
+            Source::User,
+            &dir,
+            &dir.join("plugin.toml"),
+            dev,
+        ));
     }
     if let Some(root) = project_root {
         let project_root_dir = root.join(".cox").join("plugins");
@@ -113,11 +147,26 @@ pub fn discover(cox_home: &Path, project_root: Option<&Path>) -> Discovered {
             let dir = project_root_dir.join(&id);
             let manifest_path = dir.join("plugin.toml");
             out.plugins
-                .push(load_one(id, Source::Project, &dir, &manifest_path));
+                .push(load_one(id, Source::Project, &dir, &manifest_path, false));
         }
     }
     out.plugins.sort_by(|a, b| a.id.cmp(&b.id));
     out
+}
+
+/// Where a user plugin's package sits: the `cox plugin link` target when
+/// `<plugin_dir>/link` names one (T33.41, PL§13's dev loop), else the
+/// version `current` points at (PL§1). A link takes priority, so putting
+/// a plugin into dev mode never needs `cox plugin remove` first.
+fn resolve_user_dir(plugin_dir: &Path) -> Result<(PathBuf, bool), String> {
+    match install::read_pointer(plugin_dir, install::LINK) {
+        Ok(Some(path)) => Ok((PathBuf::from(path), true)),
+        Ok(None) => current_version_dir(plugin_dir).map(|dir| (dir, false)),
+        Err(e) => Err(format!(
+            "cannot read {}: {e}",
+            plugin_dir.join(install::LINK).display()
+        )),
+    }
 }
 
 /// Directory names directly under `dir`; empty (never an error) when `dir`
@@ -147,7 +196,7 @@ fn current_version_dir(plugin_dir: &Path) -> Result<PathBuf, String> {
     Ok(plugin_dir.join("versions").join(digest12))
 }
 
-fn load_one(id: String, source: Source, dir: &Path, manifest_path: &Path) -> Plugin {
+fn load_one(id: String, source: Source, dir: &Path, manifest_path: &Path, dev: bool) -> Plugin {
     let state = load_manifest(dir, manifest_path, Some(&id))
         .map(|(manifest, digest)| State::Loaded {
             manifest: Box::new(manifest),
@@ -159,7 +208,24 @@ fn load_one(id: String, source: Source, dir: &Path, manifest_path: &Path) -> Plu
         source,
         dir: dir.to_path_buf(),
         state,
+        dev,
     }
+}
+
+/// The fixed digest every `cox plugin link`ed plugin's grant is keyed to
+/// (T33.41, PL§13's dev loop): not a content hash, since the point of
+/// linking is to skip re-approval on a rebuild. `plugin_id` and `scope`
+/// already make a grant row unique, so one shared value for every linked
+/// plugin never collides. 64 hex characters, the same shape `&digest[..12]`
+/// elsewhere expects.
+pub fn link_digest() -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"cox-plugin-link-v1");
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Parses and validates one `plugin.toml`, the way `config_load` parses
@@ -331,6 +397,41 @@ mod tests {
         assert_eq!(found.plugins.len(), 1);
         assert!(
             matches!(&found.plugins[0].state, State::Skipped { reason } if reason.contains("wasm"))
+        );
+    }
+
+    /// T33.41 (PL§13 dev loop): a `link` pointer wins over a staged
+    /// `current`, the plugin reports `dev`, and its `grant_digest()` stays
+    /// the fixed `link_digest()` even after the linked directory's bytes
+    /// change — the whole point of linking is that a rebuild never moves
+    /// the grant off its row.
+    #[test]
+    fn link_pointer_wins_over_current_and_pins_the_grant_digest() {
+        let home = tempfile::tempdir().unwrap();
+        let staged = home.path().join("plugins/demo/versions/abc123456789");
+        write(&staged, "plugin.toml", MANIFEST);
+        write(&staged, "plugin.wasm", "staged");
+        write(&home.path().join("plugins/demo"), "current", "abc123456789");
+
+        let dev_dir = tempfile::tempdir().unwrap();
+        write(dev_dir.path(), "plugin.toml", MANIFEST);
+        write(dev_dir.path(), "plugin.wasm", "one");
+        install::link(&home.path().join("plugins/demo"), dev_dir.path()).unwrap();
+
+        let found = discover(home.path(), None);
+        assert_eq!(found.plugins.len(), 1, "{found:?}");
+        let p = &found.plugins[0];
+        assert!(p.dev, "a link must win over the staged current: {p:?}");
+        assert_eq!(p.dir, dev_dir.path());
+        let pinned = p.grant_digest().expect("loaded");
+        assert_eq!(pinned, link_digest());
+
+        write(dev_dir.path(), "plugin.wasm", "two");
+        let rebuilt = discover(home.path(), None);
+        assert_eq!(
+            rebuilt.plugins[0].grant_digest().expect("loaded"),
+            pinned,
+            "a rebuild must not move the grant digest"
         );
     }
 }

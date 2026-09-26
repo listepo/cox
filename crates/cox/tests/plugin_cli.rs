@@ -14,6 +14,12 @@
 //! T33.32 Check: `remove` deletes the plugin's directory, every grant row
 //! and its kv, leaving a sibling plugin untouched; `--keep-data` keeps the
 //! kv; declining (no `--yes`, no terminal) deletes nothing.
+//! T33.41 Check: `cox plugin link` grants a built plugin in place;
+//! `linked_plugin_rebuild_does_not_reask` — changing only bytes keeps it
+//! granted; `linked_plugin_widening_reasks` — a widened capability list
+//! re-asks; `linked_plugin_marked_dev_everywhere` — `list`'s text and
+//! JSON both mark it `dev`; `update` on one fails with a message naming
+//! the dev loop instead of the generic "no recorded source path".
 
 #![cfg(feature = "plugins")]
 
@@ -710,4 +716,90 @@ fn plugin_remove_of_a_project_plugin_keeps_its_files() {
         listed["plugins"][0]["grant"], "needs_approval",
         "the grant is gone, so it is discovered but ungranted again: {listed}"
     );
+}
+
+/// `cox plugin link <dir> --yes` (T33.41, PL§13's dev loop): links, grants,
+/// stays granted across a rebuild's changed bytes
+/// (`linked_plugin_rebuild_does_not_reask`), re-asks once capabilities
+/// widen (`linked_plugin_widening_reasks`), and is marked `dev` in both
+/// `list --json` and the human-readable `list`
+/// (`linked_plugin_marked_dev_everywhere`). No `versions/` directory is
+/// ever staged: the plugin is read straight from `src`.
+#[test]
+fn link_grants_in_place_survives_rebuild_and_reasks_on_widening() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let src = tempfile::tempdir().unwrap();
+    write_plugin(src.path(), "demo");
+
+    cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["link", src.path().to_str().unwrap(), "--yes"],
+    )
+    .assert()
+    .success();
+
+    let listed = list_json(home.path(), cwd.path());
+    assert_eq!(listed["plugins"][0]["grant"], "granted", "{listed}");
+    assert_eq!(listed["plugins"][0]["loaded"], true, "{listed}");
+    assert_eq!(listed["plugins"][0]["dev"], true, "{listed}");
+    assert!(
+        !home.path().join("plugins/demo/versions").exists(),
+        "a linked plugin is read in place, never staged"
+    );
+
+    let text = list_text(home.path(), cwd.path());
+    assert!(text.contains(", dev"), "{text}");
+    assert!(text.contains("loaded"), "{text}");
+
+    // `linked_plugin_rebuild_does_not_reask`: changed bytes, same
+    // capabilities.
+    std::fs::write(src.path().join("plugin.wasm"), "rebuilt wasm bytes").unwrap();
+    let after_rebuild = list_json(home.path(), cwd.path());
+    assert_eq!(
+        after_rebuild["plugins"][0]["grant"], "granted",
+        "a rebuild must not move the grant: {after_rebuild}"
+    );
+
+    // `linked_plugin_widening_reasks`: a newly declared capability.
+    let widened = format!("{}\n[capabilities]\nkv = true\n", manifest("demo"));
+    std::fs::write(src.path().join("plugin.toml"), widened).unwrap();
+    let after_widen = list_json(home.path(), cwd.path());
+    assert_eq!(
+        after_widen["plugins"][0]["grant"], "needs_approval",
+        "a widened capability list must re-ask: {after_widen}"
+    );
+    assert_eq!(
+        after_widen["plugins"][0]["grant_added"],
+        serde_json::json!(["kv"]),
+        "{after_widen}"
+    );
+}
+
+/// `cox plugin update` has nothing to re-read for a linked plugin — it is
+/// already read in place — so it fails with a message naming the dev
+/// loop instead of the generic "no recorded source path".
+#[test]
+fn update_on_a_linked_plugin_names_the_dev_loop() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let src = tempfile::tempdir().unwrap();
+    write_plugin(src.path(), "demo");
+    cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["link", src.path().to_str().unwrap(), "--yes"],
+    )
+    .assert()
+    .success();
+
+    let out = cox_plugin(home.path(), cwd.path(), &["update", "demo"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("linked plugin: rebuild in place"), "{out}");
 }

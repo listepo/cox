@@ -384,8 +384,13 @@ pub(crate) fn load_plugins(
                 continue;
             }
         };
+        // A linked plugin's grant lives under the fixed `grant_digest()` key
+        // (T33.41), never the live content `digest`, which changes on every
+        // rebuild — looking it up under `digest` here would silently
+        // re-ask on every session open for a plugin already granted.
+        let grant_digest = p.grant_digest().unwrap_or_else(|| digest.to_string());
         let stored = grant::scope(p.source, root.as_deref())
-            .and_then(|scope| store.grant_get(id, &scope, digest).ok().flatten());
+            .and_then(|scope| store.grant_get(id, &scope, &grant_digest).ok().flatten());
         let enable = grant::enable_command(id, p.source);
         match grant::check(manifest, digest, stored.as_ref()) {
             Verdict::Granted => {
@@ -823,7 +828,12 @@ fn plugin_grant_requests(
         let Some(scope) = grant::scope(p.source, root.as_deref()) else {
             continue;
         };
-        let stored = store.grant_get(&p.id, &scope, digest).ok().flatten();
+        // A linked plugin's grant is keyed to `link_digest()`, not its
+        // (rebuild-volatile) package digest (T33.41) — `p.grant_digest()`
+        // picks the right key; `grant::check` still gets the real
+        // `digest` so it can tell a genuine mismatch from a linked one.
+        let grant_digest = p.grant_digest().unwrap_or_else(|| digest.to_string());
+        let stored = store.grant_get(&p.id, &scope, &grant_digest).ok().flatten();
         let Verdict::NeedsApproval { added, removed } =
             grant::check(manifest, digest, stored.as_ref())
         else {
@@ -833,9 +843,15 @@ fn plugin_grant_requests(
             GrantScope::Project(root) => Some(root.display().to_string()),
             GrantScope::User => None,
         };
+        // Carries `grant_digest`, not the live `digest`: a `y` here goes
+        // through `GrantDecision` to `write_plugin_grant` below, which
+        // must write the same key `p.grant_digest()` looks up under next
+        // time, or a linked plugin's approval would never be found again
+        // (T33.41). Identical to `digest` for a non-linked plugin, so
+        // this changes nothing for the existing path.
         out.push(cox_tui::modal::PluginGrantDialog::new(
             p.id.clone(),
-            digest.clone(),
+            grant_digest.clone(),
             scope,
             manifest.name.clone(),
             manifest.description.clone(),
@@ -843,6 +859,7 @@ fn plugin_grant_requests(
             added,
             removed,
             repo,
+            p.dev,
         ));
     }
     out

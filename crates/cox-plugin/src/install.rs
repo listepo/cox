@@ -5,11 +5,16 @@
 //! through here, so there is one staging path, one swap and one delete.
 //! Separate from `discover`, which only reads this layout, and free of
 //! prompts and printing, which stay with the CLI in `crates/cox`.
+//! Also owns the `link` pointer `cox plugin link <dir>` writes (T33.41,
+//! PL§13's dev loop): unlike `current`, it names an absolute directory
+//! path rather than a digest12, and nothing is staged under it; `remove`
+//! deletes it along with everything else under `<id>/`.
 //!
 //! ```text
 //! <cox_home>/plugins/<id>/
 //!   current            digest12 of the active version
 //!   previous           digest12 of the one kept for `--rollback`
+//!   link               absolute path to a `cox plugin link` target, if any
 //!   versions/<digest12>/
 //! ```
 
@@ -23,6 +28,8 @@ use crate::discover::package_digest;
 pub const CURRENT: &str = "current";
 /// The pointer file naming the one version kept for `--rollback`.
 pub const PREVIOUS: &str = "previous";
+/// The pointer file naming a `cox plugin link` target directory.
+pub const LINK: &str = "link";
 
 /// `<cox_home>/plugins/<id>`. `id` has passed `PluginManifest::validate`
 /// (`^[a-z][a-z0-9-]{1,23}$`), so it cannot name a path outside that root.
@@ -127,6 +134,16 @@ pub fn activate(plugin_dir: &Path, digest12: &str) -> io::Result<()> {
     }
     let previous = read_pointer(plugin_dir, PREVIOUS)?;
     prune(plugin_dir, digest12, previous.as_deref())
+}
+
+/// Points `<plugin_dir>/link` at `src` (T33.41, PL§13's dev loop):
+/// `discover` prefers this over `current` when both are present, and
+/// reads `src` in place — nothing is copied, unlike `stage`/`activate`.
+/// Calling this again with a different `src` simply repoints it; there is
+/// no `unlink`, since removing the file with `cox plugin remove` or by
+/// hand falls back to `current`.
+pub fn link(plugin_dir: &Path, src: &Path) -> io::Result<()> {
+    write_pointer(plugin_dir, LINK, &src.display().to_string())
 }
 
 /// Writes a pointer via a temp file plus rename, atomic on one filesystem,
@@ -239,6 +256,26 @@ mod tests {
     }
 
     #[test]
+    fn link_writes_a_readable_pointer_and_repointing_overwrites_it() {
+        let home = tempfile::tempdir().unwrap();
+        let plugin = plugin_dir(home.path(), "demo");
+        let src_a = tempfile::tempdir().unwrap();
+        let src_b = tempfile::tempdir().unwrap();
+
+        link(&plugin, src_a.path()).unwrap();
+        assert_eq!(
+            read_pointer(&plugin, LINK).unwrap().as_deref(),
+            Some(src_a.path().to_str().unwrap())
+        );
+
+        link(&plugin, src_b.path()).unwrap();
+        assert_eq!(
+            read_pointer(&plugin, LINK).unwrap().as_deref(),
+            Some(src_b.path().to_str().unwrap())
+        );
+    }
+
+    #[test]
     fn activate_keeps_one_previous_and_rollback_swaps_the_pointers() {
         let home = tempfile::tempdir().unwrap();
         let plugin = plugin_dir(home.path(), "demo");
@@ -281,6 +318,23 @@ mod tests {
 
         remove(home.path(), "demo").unwrap();
 
+        assert!(!plugin.exists());
+    }
+
+    /// `remove` deletes the whole `<id>/` directory (PL§1c), so a `link`
+    /// pointer left by `cox plugin link` goes with it — there is no separate
+    /// unlink step to forget (T33.41 x T33.32).
+    #[test]
+    fn remove_also_clears_the_link_pointer() {
+        let home = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let plugin = plugin_dir(home.path(), "demo");
+        link(&plugin, src.path()).unwrap();
+        assert!(plugin.join(LINK).exists());
+
+        remove(home.path(), "demo").unwrap();
+
+        assert!(!plugin.join(LINK).exists());
         assert!(!plugin.exists());
     }
 
