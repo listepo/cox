@@ -78,7 +78,7 @@ impl Engine {
     ///
     /// ```rust
     /// use std::path::Path;
-    /// use cox_core::permission::{Engine, Outcome};
+    /// use cox_permission::{Engine, Outcome};
     /// use cox_protocol::{CallId, config::PermissionsConfig, types::*};
     /// use serde_json::json;
     ///

@@ -840,10 +840,10 @@ name = "cox-core"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "cox-permission",
  "cox-protocol",
  "cox-provider",
  "cox-tools",
- "globset",
  "insta",
  "opentelemetry",
  "opentelemetry_sdk",
@@ -910,6 +910,15 @@ version = "0.1.2"
 dependencies = [
  "cox-protocol",
  "proptest",
+]
+
+[[package]]
+name = "cox-permission"
+version = "0.1.2"
+dependencies = [
+ "cox-protocol",
+ "globset",
+ "serde_json",
 ]
 
 [[package]]

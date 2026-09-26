@@ -161,14 +161,28 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-tokens"]
     );
 
+    // cox-permission (T32.8) is a pure trust guard that depends only on
+    // cox-protocol among workspace crates (rule grammar, `Engine::decide`).
+    let permission_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    assert!(
+        deps["cox-permission"]
+            .iter()
+            .all(|d| permission_allowed.contains(d.as_str())),
+        "cox-permission may only depend on cox-protocol among workspace crates, found {:?}",
+        deps["cox-permission"]
+    );
+
     // cox-core depends only on cox-protocol among workspace crates (and may
-    // depend on cox-models once a card actually wires the catalog in).
-    let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models"].into_iter().collect();
+    // depend on cox-models once a card actually wires the catalog in, and
+    // on cox-permission, T32.8, re-exported at the old `permission` path).
+    let core_allowed: HashSet<&str> = ["cox-protocol", "cox-models", "cox-permission"]
+        .into_iter()
+        .collect();
     assert!(
         deps["cox-core"]
             .iter()
             .all(|d| core_allowed.contains(d.as_str())),
-        "cox-core may only depend on cox-protocol/cox-models among workspace crates, found {:?}",
+        "cox-core may only depend on cox-protocol/cox-models/cox-permission among workspace crates, found {:?}",
         deps["cox-core"]
     );
 

@@ -6,8 +6,10 @@ Everything the model, a tool, an MCP server, a hook, a skill file or a
 repository writes is untrusted input. Four guards hold the line; simplicity
 never removes one of them:
 
-- `cox_core::permission::Engine` — the single place a tool call is allowed,
-  denied or escalated. A tool never checks its own permission.
+- `cox_permission::Engine` — the single place a tool call is allowed,
+  denied or escalated. A tool never checks its own permission. `cox-core`
+  re-exports it at the old `cox_core::permission::Engine` path, so either
+  name reaches the same guard.
 - `cox_sandbox::path::confine` — every path from the model passes through
   it; rejects escapes from the workspace roots. `cox-tools` re-exports it
   at the old `cox_tools::path::confine` path, so either name reaches the

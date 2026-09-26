@@ -26,6 +26,7 @@ COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against you
 | `crates/cox` | clap surface and dispatch — nothing else |
 | `crates/cox-protocol` | `Submission`, `Event`, `Item`, config and tool-schema types; every type that crosses a crate boundary |
 | `crates/cox-core` | the agent loop as a state machine: turns, context assembly, compaction, permission engine, hooks, model routing, budget. No I/O except through traits |
+| `crates/cox-permission` | the permission engine (`Engine`, `Outcome`, the rule grammar) — stripped out of `cox-core` (T32.8) because it is a pure trust guard; `cox-core` re-exports it at the old `permission` path |
 | `crates/cox-models` | the model catalog: id → context window, max output, efforts, capabilities and price, merged from built-in rows, config and a user price file. Pure — depends only on `cox-protocol`, no I/O beyond parsing an embedded/caller-supplied string |
 | `crates/cox-provider` | `Provider` trait + Anthropic Messages, OpenAI Responses/Chat (also Ollama, vLLM, LM Studio, OpenRouter), `Replay`/`Scripted` providers for tests |
 | `crates/cox-tokens` | token estimation and counting (`estimate`, `count_openai`, `count_anthropic`) — stripped out of `cox-provider` (T32.10) because `tiktoken-rs` and its BPE data are the only reason `cox-provider` pulled them in; `cox-provider` re-exports it at the old `tokens` path |
@@ -63,7 +64,7 @@ Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; se
 
 Everything the model, a tool, an MCP server, a hook, a skill file or a repository writes is untrusted input. Reuse the guards that exist rather than adding new ones:
 
-- `cox_core::permission::Engine` — the single place a tool call is allowed, denied or escalated. A tool never checks its own permission.
+- `cox_permission::Engine` — the single place a tool call is allowed, denied or escalated. A tool never checks its own permission. `cox-core` re-exports it at the old `cox_core::permission::Engine` path (T32.8), so either name reaches the same guard.
 - `cox_sandbox::path::confine` — every path from the model passes through it; rejects escapes from the workspace roots. `cox-tools` re-exports it at the old `cox_tools::path::confine` path (T32.3), so either name reaches the same guard.
 - `cox_sandbox::sandbox::Policy` — a shell command runs under the platform sandbox unless the user chose `danger-full-access` for that session. `cox-tools` re-exports it at the old `cox_tools::sandbox::Policy` path (T32.3), so either name reaches the same guard.
 - `cox_sanitize::sanitize` — strips escape sequences and bidi overrides from anything the model or a tool prints. A tool result is the one place cox shows a whole file someone else wrote. `cox-tui` re-exports it at the old `cox_tui::text::sanitize` path (T32.1), so either name reaches the same guard.
