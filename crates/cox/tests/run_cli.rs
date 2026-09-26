@@ -89,12 +89,13 @@ fn stream_json_lists_every_event_and_the_claude_aliases() {
 /// T34.7/SM§6: `stream-json`'s writer (`run.rs`) is
 /// `serde_json::to_string(&cox_core::redact::scrub_event(&ev))` for every
 /// `Event`, generically (D2) — `scrub_event` special-cases only
-/// `TextDelta`/`ToolCallOutput`/`ToolCallDone`. A scripted scenario cannot
-/// produce a real `TaskMessage` yet (T34.6's `send_message` tool is
-/// concurrent, not landed in this worktree), so this proves the two
-/// functions the real writer calls at the serializer level instead: the
-/// event survives `scrub_event` untouched and round-trips through JSON
-/// with every field intact.
+/// `TextDelta`/`ToolCallOutput`/`ToolCallDone`. `send_message` has since
+/// landed (T34.6) and `subagent_messaging.rs` now proves a real
+/// `TaskMessage` reaching stream-json end to end through the binary; this
+/// test stays alongside it as the narrower, no-binary-spawn check of the
+/// two functions the writer calls at the serializer level: the event
+/// survives `scrub_event` untouched and round-trips through JSON with
+/// every field intact.
 #[test]
 fn stream_json_passes_task_message_through_unchanged() {
     let ev = Event::TaskMessage {

@@ -19,7 +19,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
-use cox_protocol::types::{Caps, ModelId, ProviderEvent, ProviderId, Request, Usage};
+use cox_protocol::types::{Caps, Content, ModelId, ProviderEvent, ProviderId, Request, Usage};
 pub use cox_provider_testkit::scripted::{ToolCallSpec, TurnSpec, events_for, parse_scenario};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -89,6 +89,22 @@ impl Scripted {
     }
 }
 
+/// T34.9: whether `pat` appears in a plain spoken `Content::Text` block of
+/// `req`'s transcript — never inside a tool call's echoed `input` JSON or a
+/// tool result's text. Both of those can otherwise leak a marker meant for
+/// one particular child into an unrelated session's own request: a
+/// background `agent` call's dispatch turn echoes its `task` argument back
+/// into the *parent's* own history as a `ToolUse`, and the "background task
+/// started" result echoes the label built from it back as a `ToolResult`.
+/// Restricting the search to `Text` keeps a scenario's markers scoped to
+/// the one subagent whose own task text (or reply) actually carries them.
+fn request_says(req: &Request, pat: &str) -> bool {
+    req.messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .any(|c| matches!(c, Content::Text { text } if text.contains(pat)))
+}
+
 #[async_trait]
 impl Provider for Scripted {
     fn id(&self) -> ProviderId {
@@ -113,14 +129,27 @@ impl Provider for Scripted {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
-        let turn = self
-            .turns
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pop_front()
-            .ok_or_else(|| ProviderError::Unsupported {
+        let turn = {
+            let mut turns = self.turns.lock().unwrap_or_else(|e| e.into_inner());
+            // T34.9: a turn tagged `when_contains` is reserved for whichever
+            // request's own transcript names it, found anywhere in the
+            // queue; an untagged turn is served only once no tagged turn
+            // ahead of it claims this request, so a still-unclaimed tagged
+            // turn is never stolen by an unrelated caller's plain FIFO ask
+            // (`scripted.rs`'s module doc, `cox-provider-testkit`).
+            let picked = turns
+                .iter()
+                .position(|t| {
+                    t.when_contains
+                        .as_deref()
+                        .is_some_and(|pat| request_says(&req, pat))
+                })
+                .or_else(|| turns.iter().position(|t| t.when_contains.is_none()));
+            let index = picked.ok_or_else(|| ProviderError::Unsupported {
                 feature: "scripted scenario ran out".into(),
             })?;
+            turns.remove(index).expect("index just found by position")
+        };
         let usage = Self::usage_for(&turn, &req);
         let model = if self.model.is_empty() {
             req.model.clone()
@@ -263,6 +292,83 @@ mod tests {
             .await
             .expect_err("scenario is exhausted");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
+    }
+
+    /// A request whose transcript carries one plain user text block, the
+    /// shape a subagent's own first provider call has (its task text as a
+    /// `Content::Text` message, `subagent.rs`'s `run_task`/`drive`).
+    fn req_with_text(text: &str) -> Request {
+        Request {
+            messages: vec![cox_protocol::types::Message {
+                role: cox_protocol::types::Role::User,
+                content: vec![Content::Text {
+                    text: text.to_string(),
+                }],
+            }],
+            ..req()
+        }
+    }
+
+    /// T34.9: `when_contains` lets a scenario pin a turn to one particular
+    /// caller even out of file order — the claim `request_says` restricts
+    /// the search to `Content::Text` guards: a "B"-marked turn must not
+    /// answer a request that only *mentions* "B" inside a tool call's
+    /// echoed JSON input, never in plain text.
+    #[tokio::test]
+    async fn when_contains_picks_the_marked_turn_out_of_order() {
+        let toml = "[[turn]]\ntext = \"for B\"\nwhen_contains = \"TASK-B\"\n\n\
+                    [[turn]]\ntext = \"for parent\"\n";
+        let provider = Scripted::from_toml(toml, "").expect("scenario");
+        // The parent's own request (no "TASK-B" anywhere) must fall through
+        // to the untagged turn, never stealing the one reserved for B.
+        let parent_events = drain(&provider, req()).await.expect("parent's turn");
+        assert!(parent_events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "for parent"
+        )));
+        // B's own request, asking second, still finds its marked turn.
+        let b_events = drain(&provider, req_with_text("TASK-B: reply"))
+            .await
+            .expect("b's turn");
+        assert!(b_events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "for B"
+        )));
+    }
+
+    /// The same guard the module doc calls out: a request that only echoes
+    /// the marker inside a tool call's `input` (never plain `Content::Text`)
+    /// must not match — otherwise a background `agent` dispatch's own
+    /// echoed `task` argument, or its "background task started" result,
+    /// would let the parent steal a turn reserved for the child it named.
+    #[tokio::test]
+    async fn when_contains_ignores_a_marker_inside_tool_use_or_tool_result() {
+        let toml = "[[turn]]\ntext = \"for B\"\nwhen_contains = \"TASK-B\"\n\n\
+                    [[turn]]\ntext = \"for parent\"\n";
+        let provider = Scripted::from_toml(toml, "").expect("scenario");
+        let echoing = Request {
+            messages: vec![cox_protocol::types::Message {
+                role: cox_protocol::types::Role::Assistant,
+                content: vec![
+                    Content::ToolUse {
+                        id: cox_protocol::ids::CallId::new(),
+                        name: "agent".into(),
+                        input: serde_json::json!({"task": "TASK-B: reply"}),
+                    },
+                    Content::ToolResult {
+                        call_id: cox_protocol::ids::CallId::new(),
+                        content: "background task started: TASK-B: reply".into(),
+                        is_error: false,
+                    },
+                ],
+            }],
+            ..req()
+        };
+        let events = drain(&provider, echoing).await.expect("parent's turn");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "for parent"
+        )));
     }
 
     #[tokio::test]

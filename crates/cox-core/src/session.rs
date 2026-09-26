@@ -16,7 +16,7 @@ use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
     ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument as _;
 
@@ -89,10 +89,6 @@ pub(crate) struct Inner {
     pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
     /// Subagents a follow-up can reach, running or finished (T34.5, SM§2).
     pub(crate) children: HashMap<TaskId, crate::tasks::Child>,
-    /// Exact registry name (`explore-2`) → task id (T34.6, SM§4):
-    /// `send_message`'s name-based resolution when the parent addresses a
-    /// child directly, alongside `children`'s id-keyed entries.
-    pub(crate) task_names: HashMap<String, TaskId>,
     /// Received-message counter per task (T34.6, SM§5):
     /// `MAX_MESSAGES_PER_TASK` denies the 17th delivery instead of letting
     /// a flood spin the addressee.
@@ -168,8 +164,23 @@ pub struct Session {
     /// after the child session exists; unset for the session the user is
     /// talking to.
     self_task: Arc<OnceLock<TaskId>>,
+    /// Exact registry name (`explore-2`) → task id (T34.6, SM§4), one map
+    /// per subagent tree: the parent owns it, `spawn_child` hands every
+    /// child the same `Arc` (T34.9) so a child's own `Relay::send_message`
+    /// resolves a sibling's name itself instead of only "parent" or a
+    /// literal `TaskId` it has no way to learn in a scripted scenario. A
+    /// child never writes it — only the parent's `name_task` does — but
+    /// nothing below the type system enforces that; see `resolve_name_or_id`.
+    pub(crate) task_names: Arc<Mutex<HashMap<String, TaskId>>>,
     /// The one "checkpoints off" warning per session has been emitted.
     pub(crate) checkpoint_warned: Arc<AtomicBool>,
+    /// Bumped by `complete_task` whenever `inner.tasks` empties out
+    /// (T34.9): `wait_idle` below awaits it instead of a caller-guessed
+    /// delay. Fresh per session — only a session built by `new`/`resume`
+    /// ever calls `register_task` on itself (a child never gets the
+    /// `agent` tool, so it never spawns a background task under its own
+    /// id), so a child's own unused copy is harmless.
+    pub(crate) tasks_idle: Arc<Notify>,
     /// T34.2's `core.max_concurrent_subagents` cap: how many `agent` slots
     /// this session has reserved right now. A plain atomic, not the
     /// `inner.tasks` map: a burst of parallel `agent` calls (the core's own
@@ -291,6 +302,9 @@ impl Session {
         child.checkpointer = self.checkpointer.clone();
         child.worktrees = self.worktrees.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
+        // T34.9: share this session's name→TaskId registry so the child can
+        // resolve a sibling by name itself (`resolve_name_or_id`).
+        child.task_names = self.task_names.clone();
         Ok(child)
     }
 
@@ -384,7 +398,9 @@ impl Session {
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
             self_task: Arc::new(OnceLock::new()),
+            task_names: Arc::new(Mutex::new(HashMap::new())),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
+            tasks_idle: Arc::new(Notify::new()),
             agent_slots: Arc::new(AtomicU32::new(0)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
@@ -409,7 +425,6 @@ impl Session {
                 overrides: Overrides::default(),
                 tasks: HashMap::new(),
                 children: HashMap::new(),
-                task_names: HashMap::new(),
                 message_counts: HashMap::new(),
                 detach: HashMap::new(),
                 extracted: Vec::new(),

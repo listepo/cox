@@ -470,10 +470,7 @@ impl Tool for AgentTool {
 
         let session = child.id();
         let outcome = run_task(&self.parent, child, task_text, &mut io).await;
-        // A failed task still finished: drop the registry entry and close
-        // the Created/Completed pair so `/tasks` never shows a ghost.
         let cost_usd = outcome.as_ref().map(|o| o.cost_usd).unwrap_or(0.0);
-        self.parent.complete_task(task).await;
         let completed = self
             .parent
             .emit(Event::TaskCompleted {
@@ -505,11 +502,22 @@ impl Tool for AgentTool {
             // same guard with it instead of reserving (or being denied) a
             // second one. Only a genuinely new wake from `Finished`
             // (`Session::deliver`, `tasks.rs`) reserves its own.
+            //
+            // T34.9: the registry entry stays in place (`register_task`,
+            // above) rather than being dropped and re-added — `complete_task`
+            // only runs once this chain truly ends (the `else` below, or
+            // `lost`) — so `wait_idle` never wakes into the gap between
+            // this parking and `wake`'s spawned task actually resuming it.
             let parent = self.parent.clone();
             tokio::spawn(async move {
                 let _slot = agent_slot;
                 wake(parent, task, dormant, next).await;
             });
+        } else {
+            // A failed task still finished: drop the registry entry and
+            // close the Created/Completed pair so `/tasks` never shows a
+            // ghost, and so `wait_idle` sees this task as done.
+            self.parent.complete_task(task).await;
         }
         completed.map_err(core_error)?;
         let outcome = outcome?;
@@ -603,6 +611,16 @@ pub(crate) struct Dormant {
     spec: Spec,
 }
 
+impl Dormant {
+    /// What `Session::deliver`'s `Wake` case needs to re-register the task
+    /// (`tasks.rs`) before spawning `wake`, below, so a woken dormant child
+    /// counts as running immediately rather than once its restart actually
+    /// gets scheduled (T34.9).
+    pub(crate) fn label_and_tier(&self) -> (String, Tier) {
+        (self.spec.label.clone(), self.spec.tier)
+    }
+}
+
 /// The child session for `spec`, fresh or restored from `resume`. `task` is
 /// the parent's id for this child, stamped onto it (`self_task`, T34.6) so
 /// its own `send_message` calls know which task id means "the parent"
@@ -644,7 +662,6 @@ async fn drive(parent: Session, task: TaskId, mut child: Session, text: String, 
             Err(e) => (format!("task failed: {e}"), 0.0),
         };
         let label = io.spec.label.clone();
-        parent.complete_task(task).await;
         let _ = parent
             .emit(Event::TaskCompleted {
                 task,
@@ -661,7 +678,14 @@ async fn drive(parent: Session, task: TaskId, mut child: Session, text: String, 
         let _ = hooks::fire(&parent, HookEvent::SubagentStop, stop).await;
         io.spec.charge(cost_usd);
         let spec = io.spec.clone();
+        // T34.9: the registry entry (`register_task`, from the initial
+        // dispatch or a previous `restart`) stays in place across this
+        // call — `complete_task` only runs once a cycle turns up nothing
+        // queued (below) or the child cannot be restarted (`lost`) — so
+        // `wait_idle` never wakes into the gap between one cycle ending
+        // and the next, raced in by a message, actually starting.
         let Some((dormant, next)) = parent.park_child(task, Dormant { session, spec }).await else {
+            parent.complete_task(task).await;
             return;
         };
         text = message_line(next.from, &next.text);
@@ -735,7 +759,13 @@ async fn restart(
 }
 
 /// A child that could not be restored stops being addressable, loudly.
+/// Also closes its registry entry (T34.9): a failed `restart` never
+/// reaches its own `register_task` call, so whichever caller still had
+/// this task registered (`drive`'s own mid-loop retry; `wake`'s fresh one
+/// never registered it in the first place, so this is a harmless no-op
+/// there) needs it cleared for `wait_idle` to see the task as done.
 async fn lost(parent: &Session, task: TaskId, e: CoreError) {
+    parent.complete_task(task).await;
     parent.forget_child(task).await;
     let text = format!("subagent task {task} could not resume: {e}");
     let _ = parent.notice(Level::Warn, text).await;
@@ -781,12 +811,14 @@ pub(crate) async fn relay(
 
 /// `send_message`'s only way into a session (T34.6, SM§4): `cox-tools`
 /// holds `Arc<dyn Relay>`, never a `Session`, so the routing lives here
-/// instead of a new channel. A child (`self_task` set by `spawn`) cannot
-/// see the registry `resolve_addressee` reads, so it may only name
-/// `"parent"` (mapped to its own task id, matching `relay`'s `to == from`
-/// check) or a literal sibling `TaskId`; resolving a sibling's name
-/// (`explore-2`) is parent-only, the same asymmetry SM§3 describes for
-/// routing. The parent's own call is hop 0, direct, no relay hop-count.
+/// instead of a new channel. A child (`self_task` set by `spawn`) resolves
+/// `"parent"` to its own task id (matching `relay`'s `to == from` check)
+/// or a sibling by its registry name or literal `TaskId`, through the same
+/// `resolve_name_or_id` the parent uses (`tasks.rs`) — `spawn_child` hands
+/// every child the parent's name→`TaskId` registry read-only (T34.9), so a
+/// scripted scenario can address a sibling by the deterministic name it was
+/// given rather than a `TaskId` it has no way to learn. The parent's own
+/// call is hop 0, direct, no relay hop-count.
 #[async_trait]
 impl Relay for Session {
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError> {
@@ -795,12 +827,11 @@ impl Relay for Session {
                 let target = if to == "parent" {
                     me
                 } else {
-                    to.parse::<TaskId>().map_err(|_| ToolError::Denied {
-                        why: format!(
-                            "unknown addressee {to:?}: a subagent may only message \
-                             \"parent\" or a task id, never a sibling by name"
-                        ),
-                    })?
+                    self.resolve_name_or_id(to)
+                        .await
+                        .ok_or_else(|| ToolError::Denied {
+                            why: format!("unknown addressee {to:?}: no such subagent task"),
+                        })?
                 };
                 self.emit(Event::TaskMessage {
                     task: target,
@@ -1754,6 +1785,52 @@ text = "it was 42"
             e,
             Event::TaskMessage { task, from: Some(f), hop: 1, .. } if *task == b && *f == a
         )));
+    }
+
+    /// T34.9: `spawn_child` shares the parent's name→`TaskId` registry with
+    /// each child (`Session::task_names`), so a child's own `send_message`
+    /// resolves a sibling by its deterministic registry name (`talker-2`)
+    /// — the only address a scripted scenario can know ahead of time,
+    /// since `TaskId` is random and never appears in a scenario file.
+    #[tokio::test]
+    async fn child_resolves_a_sibling_by_name() {
+        let (parent, _, _rx) = parent_with("[[turn]]\ntext = \"sent\"\n");
+        let (a, b) = (TaskId::new(), TaskId::new());
+        parent.track_child(a).await;
+        parent.track_child(b).await;
+        parent.name_task("talker-2".into(), b).await;
+        let spec = child_spec();
+        let child = spawn(&parent, a, &spec, None).expect("child");
+        let events = child.events().expect("events");
+
+        child
+            .send_message("talker-2", "hi b")
+            .await
+            .expect("child resolves a sibling by its registry name");
+
+        // `run_task` drains the child's own turn and, along the way,
+        // relays the `Event::TaskMessage` it just emitted into the
+        // parent's `Submission::TaskMessage` (`relay`, below) — the same
+        // path `sibling_message_is_relayed_through_the_parent_session`
+        // exercises for a literal `TaskId`.
+        let (progress, _) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
+        let mut io = RunIo {
+            task: a,
+            spec,
+            events,
+            cancel,
+            progress,
+        };
+        let out = run_task(&parent, child, "a".into(), &mut io).await;
+        assert_eq!(out.map(|o| o.answer).ok().as_deref(), Some("sent"));
+
+        let relayed = Queued {
+            from: Some(a),
+            hop: 1,
+            text: "hi b".into(),
+        };
+        assert_eq!(parent.next_queued(b).await, Some(relayed));
     }
 
     /// A `ToolCx` carrying `relay: Some(Arc::new(session.clone()))`, exactly

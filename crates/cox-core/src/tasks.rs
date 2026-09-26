@@ -19,6 +19,7 @@ use std::collections::VecDeque;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 use cox_protocol::ArchivePut;
 use cox_protocol::errors::{CoreError, ToolError};
@@ -189,9 +190,83 @@ impl Session {
             .insert(task, (label, tier, kind));
     }
 
-    /// Forgets a finished task.
+    /// Forgets a finished task and wakes anyone in `wait_idle`, below.
+    /// Callers only reach this once a task is truly done — a follow-up
+    /// message that raced in keeps its entry in place instead (`subagent`'s
+    /// `drive`/`AgentTool::call`, and `deliver`'s own `Wake` case below),
+    /// so this never fires mid-relay just because one cycle ended.
     pub(crate) async fn complete_task(&self, task: TaskId) {
         self.inner.lock().await.tasks.remove(&task);
+        self.tasks_idle.notify_waiters();
+    }
+
+    /// Awaits until no `TaskKind::Agent` task — a backgrounded `agent`, or
+    /// a subagent a follow-up message just woke — is registered, or the
+    /// session is cancelled (Ctrl-C, `Session::interrupt`), whichever comes
+    /// first (T34.9). The headless surface's `run()` calls this before its
+    /// own `process::exit`, which otherwise abandons a still-running
+    /// background chain mid-relay the instant the top-level turn's own
+    /// last event is handled.
+    ///
+    /// Deliberately blind to `TaskKind::Shell`: a detached `bash` (a dev
+    /// server, a `sleep`, anything the model backgrounded on purpose) is
+    /// meant to outlive the run exactly as it already does today — waiting
+    /// for it here would turn "start a server in the background" into "hang
+    /// the headless run forever" (T34.9 follow-up). `notified()` is
+    /// created while `inner` is still locked, the documented race-free
+    /// pattern for `Notify::notify_waiters` (no permit is stored for a
+    /// waiter that registers after the fact, unlike `notify_one`), so a
+    /// `complete_task` that empties out the last `Agent` entry between this
+    /// check and the `.await` below can never be missed.
+    pub async fn wait_idle(&self) {
+        let cancel = self.cancel_token();
+        loop {
+            let notified = {
+                let inner = self.inner.lock().await;
+                let idle = inner
+                    .tasks
+                    .values()
+                    .all(|(_, _, kind)| *kind != TaskKind::Agent);
+                if idle {
+                    return;
+                }
+                self.tasks_idle.notified()
+            };
+            tokio::select! {
+                () = notified => {}
+                () = cancel.cancelled() => return,
+            }
+        }
+    }
+
+    /// Waits, bounded by `deadline`, for every task of any kind — including
+    /// `TaskKind::Shell`, which `wait_idle` above deliberately ignores — to
+    /// leave the registry (T34.9 follow-up). The headless surface calls
+    /// `interrupt()` first, then this, right before `shutdown_background`:
+    /// a still-running detached `bash` gets killed rather than merely
+    /// abandoned as an orphan process. Unlike `wait_idle`, this cannot use
+    /// `cancel.cancelled()` as an exit condition — the caller just set it,
+    /// so it is already true and would make this return immediately,
+    /// before the kill it triggered actually lands. `deadline` is the
+    /// safety net for the one case that leaves anyway: cancellation is
+    /// turn-scoped (`register_task`'s callers, `deliver`'s `Wake` case),
+    /// so a `Shell` task detached in an *older* turn (only reachable in
+    /// `--loop`) holds a `ToolCx::cancel` clone of a token this session's
+    /// `interrupt()` can no longer reach, and would otherwise never clear.
+    pub async fn wait_tasks_cleared(&self, deadline: Duration) {
+        let _ = tokio::time::timeout(deadline, async {
+            loop {
+                let notified = {
+                    let inner = self.inner.lock().await;
+                    if inner.tasks.is_empty() {
+                        return;
+                    }
+                    self.tasks_idle.notified()
+                };
+                notified.await;
+            }
+        })
+        .await;
     }
 
     /// Makes a freshly spawned subagent addressable; its task is hop 0.
@@ -337,6 +412,13 @@ impl Session {
                     text,
                 })
                 .await?;
+                // T34.9: register before spawning `wake`, not inside it —
+                // that task is scheduled independently and may not run for
+                // a moment, and `wait_idle` must never see this task as
+                // idle in the gap between deciding to wake it and the
+                // wake actually starting.
+                let (label, tier) = dormant.label_and_tier();
+                self.register_task(task, label, tier, TaskKind::Agent).await;
                 let parent = self.clone();
                 tokio::spawn(async move {
                     let _slot = slot;
@@ -347,23 +429,34 @@ impl Session {
         }
     }
 
-    /// `send_message`'s name/id resolution for a direct (parent-side) call
-    /// (T34.6, SM§4): the exact registry name `name_task` indexed, else a
-    /// literal `TaskId` that is still a tracked child — an unknown or
-    /// already-forgotten id is "unknown", not silently accepted.
-    pub(crate) async fn resolve_addressee(&self, to: &str) -> Option<TaskId> {
-        let inner = self.inner.lock().await;
-        if let Some(id) = inner.task_names.get(to) {
-            return Some(*id);
+    /// `send_message`'s name-or-id resolution (T34.6/T34.9, SM§4): the
+    /// exact registry name `name_task` indexed, else a literal `TaskId`.
+    /// Shared by the parent's own `resolve_addressee` below (further
+    /// checked against `children`, since the parent must reject a name/id
+    /// that names no live child) and by a child's `Relay::send_message`
+    /// (`subagent.rs`), which holds the same registry read-only via
+    /// `spawn_child` and has no `children` map of its own to check a
+    /// literal id against.
+    pub(crate) async fn resolve_name_or_id(&self, to: &str) -> Option<TaskId> {
+        if let Some(id) = self.task_names.lock().await.get(to).copied() {
+            return Some(id);
         }
-        let id: TaskId = to.parse().ok()?;
+        to.parse().ok()
+    }
+
+    /// `send_message`'s name/id resolution for a direct (parent-side) call
+    /// (T34.6, SM§4): an unknown or already-forgotten id is "unknown", not
+    /// silently accepted.
+    pub(crate) async fn resolve_addressee(&self, to: &str) -> Option<TaskId> {
+        let id = self.resolve_name_or_id(to).await?;
+        let inner = self.inner.lock().await;
         inner.children.contains_key(&id).then_some(id)
     }
 
     /// Indexes a spawned child's registry name (`explore-2`) for
     /// `resolve_addressee`, alongside `track_child`'s id-keyed entry.
     pub(crate) async fn name_task(&self, name: String, task: TaskId) {
-        self.inner.lock().await.task_names.insert(name, task);
+        self.task_names.lock().await.insert(name, task);
     }
 
     /// A child's message to its parent (SM§3): a line in history after the

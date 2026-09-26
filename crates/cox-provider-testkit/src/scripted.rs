@@ -29,6 +29,22 @@
 //! [`events_for`] only ever reports `EndTurn` — tool use is detected from
 //! the `ToolUseStart` events, not from the stop reason, so a scripted turn
 //! reports `EndTurn` even on a tool-call turn.
+//!
+//! **`when_contains`** (T34.9): every session — the parent and every
+//! child — shares one `Scripted` instance (`spawn_child` clones the same
+//! `Arc<dyn Provider>`), so by default the turns above are handed out in
+//! file order to whichever session's next provider call reaches the
+//! shared queue first. A background `agent` call races the parent's own
+//! continuation and its siblings for "the next" turn (`subagent_background_two.toml`),
+//! which is fine when every racer's turn is interchangeable but breaks a
+//! scenario that needs a *specific* subagent to run a *specific* script —
+//! two children messaging each other by name (T34.9) is exactly that.
+//! `when_contains = "MARKER"` pins a turn to whichever request's own
+//! transcript contains that substring (`cox-provider::scripted` does the
+//! matching, since only it has the `Request`); an unmarked turn is never
+//! chosen this way; it is served by plain FIFO order once every marked
+//! turn ahead of it in the queue either matched someone else or is still
+//! waiting for its own subagent to ask.
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::CallId;
@@ -62,6 +78,11 @@ pub struct TurnSpec {
     /// and `stream` returns `BadRequest` — a mid-stream failure (T2.1).
     #[serde(default)]
     pub error: Option<String>,
+    /// T34.9: pins this turn to a request whose transcript contains this
+    /// substring, so it can only ever answer one particular subagent (see
+    /// the module doc). `None` for an ordinary turn, matched by position.
+    #[serde(default)]
+    pub when_contains: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -147,6 +168,14 @@ tool_calls = [
     }
 
     #[test]
+    fn scripted_parses_when_contains() {
+        let toml = "[[turn]]\ntext = \"a\"\nwhen_contains = \"MARKER\"\n\n[[turn]]\ntext = \"b\"\n";
+        let turns = parse_scenario(toml).expect("parses");
+        assert_eq!(turns[0].when_contains.as_deref(), Some("MARKER"));
+        assert_eq!(turns[1].when_contains, None);
+    }
+
+    #[test]
     fn events_for_reports_end_turn_even_on_tool_call() {
         let turn = TurnSpec {
             text: None,
@@ -155,6 +184,7 @@ tool_calls = [
                 input: serde_json::json!({"path": "a.rs"}),
             }],
             error: None,
+            when_contains: None,
         };
         let usage = Usage {
             input_tokens: 1,
