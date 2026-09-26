@@ -102,11 +102,24 @@ fn only_store_depends_on_diesel() {
 fn no_crate_below_cox_depends_on_core() {
     let deps = workspace_deps();
 
-    // cox-protocol is the base: no workspace-crate dependencies at all.
+    // cox-protocol is the base. Its one workspace dependency is
+    // cox-plugin-api, which it re-exports as `plugin` (A52); that crate is a
+    // pure leaf, so the contract still sits below every implementation.
+    let protocol_allowed: HashSet<&str> = ["cox-plugin-api"].into_iter().collect();
     assert!(
-        deps["cox-protocol"].is_empty(),
-        "cox-protocol must not depend on any other workspace crate, found {:?}",
         deps["cox-protocol"]
+            .iter()
+            .all(|d| protocol_allowed.contains(d.as_str())),
+        "cox-protocol may only depend on cox-plugin-api among workspace crates, found {:?}",
+        deps["cox-protocol"]
+    );
+
+    // cox-plugin-api (T33.1) builds for wasm32 so the guest SDK can use it:
+    // no workspace-crate dependencies at all.
+    assert!(
+        deps["cox-plugin-api"].is_empty(),
+        "cox-plugin-api must not depend on any other workspace crate, found {:?}",
+        deps["cox-plugin-api"]
     );
 
     // cox-models (T30.24: the model/price catalog) depends only on

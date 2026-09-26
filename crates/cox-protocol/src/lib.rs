@@ -14,6 +14,7 @@
 //! - [`errors`] — the error taxonomy (plan.md §1.14): `ProviderError`, `ToolError`, `CoreError`, `StoreError`, `ExtError`, `McpError`.
 //! - [`traits`] — `Provider`, `Tool`, `ToolCx`, `Store`, `Hook`, `Archive`: the seams every other crate implements against.
 //! - [`config`] — the `Config` struct tree mirroring `config/default.toml` (plan.md §1.6).
+//! - [`plugin`] — `cox-plugin-api` re-exported (A52): the `plugin.toml` manifest and, later, the ABI payloads. It lives in its own crate because the guest SDK builds it for wasm32.
 
 #![warn(missing_docs)]
 
@@ -22,6 +23,8 @@ pub mod errors;
 pub mod ids;
 pub mod traits;
 pub mod types;
+
+pub use cox_plugin_api as plugin;
 
 pub use config::{Config, DEFAULT_CONFIG_TOML};
 pub use errors::{

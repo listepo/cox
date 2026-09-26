@@ -929,10 +929,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-plugin-api"
+version = "0.1.2"
+dependencies = [
+ "figment",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "cox-protocol"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "cox-plugin-api",
  "figment",
  "insta",
  "pretty_assertions",
