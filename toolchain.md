@@ -49,6 +49,7 @@ Programs the project uses and the direct packages from its manifests.
 | directories | local | https://crates.io/crates/directories | Rust dependency |
 | dotenvy | local | https://crates.io/crates/dotenvy | T0.7: load local .env files without overriding the process environment. |
 | eventsource-stream | local | https://crates.io/crates/eventsource-stream | Rust dependency |
+| extism | local (default features off) | https://github.com/extism/extism | cox-plugin: the WASM plugin host (A52, T33.3); no ureq, no URL or file module loading |
 | figment | local | https://crates.io/crates/figment | Config loading |
 | futures | local | https://crates.io/crates/futures | Rust dependency |
 | globset | local | https://crates.io/crates/globset | Rust dependency |
@@ -109,6 +110,7 @@ Programs the project uses and the direct packages from its manifests.
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
+| wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
 
 ## uv (`evals/`)

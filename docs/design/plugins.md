@@ -398,7 +398,7 @@ Headless and ACP do not call UI exports.
 
 | Metric | Budget | Measured by |
 | --- | --- | --- |
-| release binary growth from extism and wasmtime | ≤ 10 MiB | `scripts/footprint.sh` before and after T33.3 (R§4.7) |
+| release binary growth from extism and wasmtime | ≤ 20 MiB (was 10 MiB; T33.3 measured +16.8 MiB, 2026-09-26) | `scripts/footprint.sh` before and after T33.3 (R§4.3.5 P25) |
 | clean build growth | ≤ 60 s | `cargo build --timings` before and after T33.3 (R§4.3.5 P25) |
 | warm session start per plugin (wasmtime cache on) | ≤ 50 ms | `just bench` timing over the Rust example: open, then `cox_init` |
 | cold compile of a 1 MiB module | ≤ 500 ms | same, cache cleared |
@@ -412,7 +412,7 @@ The compilation cache uses `with_cache_config` (P7), pointed at `~/.cox/cache/wa
 
 **Falsifiers.**
 
-1. **Footprint.** If T33.3 measures more than 10 MiB of binary or 60 s of clean build for extism, the host moves behind a default-on cargo feature `plugins`, a lean build ships without it, and D1 is amended.
+1. **Footprint.** If T33.3 measures more than 10 MiB of binary or 60 s of clean build for extism, the host moves behind a default-on cargo feature `plugins`, a lean build ships without it, and D1 is amended. **Fired (2026-09-26).** T33.3 measured +16.8 MiB (53 713 168 → 71 277 728 B, R§4.3.5 P25); clean-build growth could not be separated from machine load (wall time 159 s before, 139 s after; +463 CPU-s of new units). The creator's decision: the host sits behind the cargo feature `plugins` on `crates/cox`, on by default, which gates the optional `cox-plugin` dependency. The slim build is `--no-default-features --features otel`, and `crates/cox/tests/deps.rs` (`slim_build_has_no_wasm_runtime`) checks that it has no extism or wasmtime. The binary budget is now 20 MiB; the falsifier fires again above that.
 2. **Latency.** If warm start exceeds 50 ms per plugin or a status render exceeds 5 ms p95 on the example, status segments become push-only: a `cox_set_status` host function replaces `cox_render` for the status slot.
 3. **The ABI is too small.** If Jev-as-a-plugin (T33.40) needs a host function that bypasses the engine, the ledger or the sandbox, the ABI is wrong and the decision-point design is revisited before `api = 1` freezes.
 4. **The wasmtime pin.** If a wasmtime advisory affects the version extism pins (43, P3) and extism ships no fix within 30 days, embedding wasmtime directly is re-evaluated.

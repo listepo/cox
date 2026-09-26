@@ -1,0 +1,18 @@
+[package]
+name = "cox-plugin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The WASM plugin host (plan.md §1.1, A52, docs/design/plugins.md). The only
+# crate that depends on extism; `crates/cox/tests/deps.rs` holds that line.
+[dependencies]
+cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2" }
+extism = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# Only to switch on wasmtime's `anyhow` feature, which extism needs and does
+# not enable with its default features off (workspace Cargo.toml).
+wasmtime = { workspace = true }

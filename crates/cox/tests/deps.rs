@@ -98,6 +98,83 @@ fn only_store_depends_on_diesel() {
     }
 }
 
+/// A52/plan.md §1.1: "only `cox-plugin` depends on extism", so no other
+/// crate links wasmtime. `wasmtime` itself is declared only to switch on its
+/// `anyhow` feature for extism (workspace `Cargo.toml`).
+#[test]
+fn only_plugin_depends_on_extism() {
+    let deps = all_deps();
+    for (crate_name, crate_deps) in &deps {
+        if crate_name == "cox-plugin" {
+            continue;
+        }
+        for wasm_crate in ["extism", "wasmtime"] {
+            assert!(
+                !crate_deps.contains(wasm_crate),
+                "{crate_name} must not depend on {wasm_crate}; only cox-plugin hosts WASM"
+            );
+        }
+    }
+
+    // cox-plugin sits beside the other implementations: the contract crates
+    // and the terminal-text guard, never cox-core (plan.md §1.1).
+    let plugin_allowed: HashSet<&str> = ["cox-protocol", "cox-plugin-api", "cox-sanitize"]
+        .into_iter()
+        .collect();
+    let plugin_deps = &workspace_deps()["cox-plugin"];
+    assert!(
+        plugin_deps
+            .iter()
+            .all(|d| plugin_allowed.contains(d.as_str())),
+        "cox-plugin may only depend on cox-protocol/cox-plugin-api/cox-sanitize among workspace crates, found {plugin_deps:?}"
+    );
+}
+
+/// Names of every package in `cox`'s normal dependency tree under `features`.
+fn cox_tree(features: &[&str]) -> HashSet<String> {
+    let output = Command::new("cargo")
+        .args([
+            "tree",
+            "-p",
+            "cox",
+            "-e",
+            "normal",
+            "--offline",
+            "--prefix",
+            "none",
+        ])
+        .args(["--format", "{p}"])
+        .args(features)
+        .output()
+        .expect("cargo tree should run");
+    assert!(
+        output.status.success(),
+        "cargo tree exited with {:?}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
+}
+
+/// PL§12 falsifier 1: the plugin host costs +16.8 MiB, so the `plugins`
+/// feature (on by default) is the slim-build escape hatch and must really
+/// drop extism and wasmtime.
+#[test]
+fn slim_build_has_no_wasm_runtime() {
+    let slim = cox_tree(&["--no-default-features", "--features", "otel"]);
+    let full = cox_tree(&[]);
+    for wasm_crate in ["cox-plugin", "extism", "wasmtime"] {
+        assert!(
+            !slim.contains(wasm_crate),
+            "cox without `plugins` still pulls {wasm_crate}"
+        );
+        assert!(full.contains(wasm_crate), "default cox lacks {wasm_crate}");
+    }
+}
+
 #[test]
 fn no_crate_below_cox_depends_on_core() {
     let deps = workspace_deps();
