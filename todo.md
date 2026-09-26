@@ -1,13 +1,9 @@
 # Todo
 
-- T33.8. TUI grant dialog
-- T33.10. Events: the tap, the rings, `cox_on_event`
-- T33.11. Hooks: plugins as a hook source
 - T33.12. Tools from plugins
 - T33.13. `cox_invoke_tool` through the engine
 - T33.14. `cox_http` and filesystem preopens
 - T33.15. `cox_model_call` and `Job::Plugin`
-- T33.17. Providers, declarative form
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.20. Decision points: the `Advisor` trait and `route`
 - T33.21. Decision points: `risk`, `approve_hint`, `compact`, `rank`, `salience`
@@ -18,7 +14,6 @@
 - T33.28. Rust reference example and e2e
 - T33.29. `cox plugin new` and the Rust template
 - T33.30. `/plugin new` in the TUI
-- T33.31. `cox plugin update` and rollback
 - T33.32. `cox plugin remove`
 - T33.33. `/plugin update | remove | list | reload` in the TUI
 - T33.34. Go: SDK wrapper, template, example
@@ -44,7 +39,6 @@
 - T33.40.16. Docs and plan sweep after the removal
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.41. Optional: `cox plugin link` (dev loop)
-- T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T33.44. The session keeps one live instance per granted plugin
 - T35.2. Host spawner, sandbox and grant

@@ -1789,3 +1789,141 @@ Deviations:
 - Picking the ACP or stream-json driver by `mode` is host work (both drivers do I/O), so it moved to T35.13.
 Check: `agent_dispatches_a_granted_external_agent_preset_by_name`, `task_message_reaches_a_running_external_agent_task` and `external_agent_turn_writes_a_billed_externally_usage_row` pass (in-process fake driver). In the worktree: nextest 1064 passed, 3 skipped; fmt and both clippy runs clean.
 - On main after landing: nextest 1078 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.11 Hooks: plugins as a hook source
+
+Depends: T33.9 · Size: ~190 · Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-core/src/hooks.rs`, `crates/cox-plugin/src/hooks.rs`
+Goal:
+- `Hook::interested(event)` with the config check as the default, so `fire_configured` asks the hook instead of `[hooks]`.
+- The `ShellHooks` chaining loop becomes one shared function used by a new `HookChain`.
+- `PluginHooks` implements `Hook` through `cox_hook`.
+- Order: shell hooks first, then plugins by id; the deadline is the smaller of `hooks.timeout_s` and `limits.call_ms`.
+Check: `plugin_hook_fires_without_hooks_config`, `shell_block_wins_over_plugin`, `plugin_modify_chains_into_next_hook`, `plugin_hook_timeout_fails_open_with_notice`; invariant 10 `broken_hook_is_skipped_not_fatal` still green.
+Status: done 2026-09-26
+Result: plugins can be a hook source through one shared chaining loop.
+- `Hook::interested(event, &HooksConfig)` defaults to the old `[hooks]` check. `fire_configured` asks the installed hook. `PresenceHook::interested` forwards to the hook it wraps.
+- `cox_ext::hooks::chain(steps, payload, step)` is the one chaining loop. The first `Block` or `Failed` stops it, and a `Modify` feeds `tool_input` to the later steps. `ShellHooks::run` uses it; the old index assignment that panicked on a non-object payload is now a safe insert.
+- `HookChain::new(shell: Option<Arc<dyn Hook>>, plugins: Vec<(String, Arc<dyn Hook>)>)` runs shell hooks first, then plugins sorted by id, through the same `chain`.
+- `cox_plugin::PluginHooks::new(id, Arc<PluginHost>, granted)` answers only its granted `hooks:<Event>` lines. It calls `cox_hook` with `HookCall { event: "<serde HookEvent>", payload }` on the control lane inside `spawn_blocking` and expects a `HookOutcome` tagged by `type`. A trap, timeout, bad output or missing export becomes `Failed { "plugin <id>: …" }`, so it fails open. The deadline is `min(hooks.timeout_s, limits.call_ms)`.
+Deviations:
+- `interested` takes the `HooksConfig` too, since the default must be the config check. 9 files: the trait lives in `traits.rs`, `PresenceHook` needed `interested`, and `crates/cox-plugin` needed `lib.rs`, `Cargo.toml` (async-trait and tokio, both existing workspace deps) and a shared WAT test helper.
+- `plugin_hook_timeout_fails_open_with_notice` lives in cox-plugin, which cannot depend on cox-core. It proves the timeout returns `Failed` within the deadline; `broken_hook_is_skipped_not_fatal` proves the core turns `Failed` into the notice.
+Not done: the session still installs `PresenceHook(ShellHooks)`; the `HookChain` wiring is T33.44.
+Check:
+- `plugin_hook_fires_without_hooks_config`, `shell_block_wins_over_plugin`, `plugin_modify_chains_into_next_hook`, `plugin_hook_timeout_fails_open_with_notice` and the added `plugin_hook_answers_only_its_granted_events` pass; `broken_hook_is_skipped_not_fatal` still passes.
+- In the worktree: nextest 1080 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.42 Sandbox every MCP stdio server, with a per-server opt-out
+
+Depends: T33.19 · Size: ~140 · Files: `crates/cox-mcp/src/client.rs`, `crates/cox/src/session.rs`, `crates/cox-protocol/src/config.rs`
+Goal: extend the sandbox wrap from T33.19 to every MCP stdio server, not only plugin-shipped ones (`docs/design/plugins.md` §7c, resolved 2026-09-26, §14 decision 4). `crates/cox` wraps every stdio command with `sandbox::Policy` before `cox-mcp` spawns it, including today's user-configured `.mcp.json`/config servers. A per-server `sandbox = false` key opts a named server out, for setups that need it, and `cox doctor` gains a row naming any server that opted out.
+Check: `every_stdio_server_runs_under_sandbox_by_default`, `sandbox_false_opts_a_named_server_out`, `doctor_lists_unsandboxed_servers`; existing `.mcp.json`/config MCP e2e tests still pass with the wrap applied.
+Status: done 2026-09-26
+Result: every stdio MCP server now runs under the session's `sandbox::Policy`, not only plugin ones.
+- `McpServerConfig.sandbox: bool` defaults to `true`. Servers from `.mcp.json` or `~/.claude.json` are always sandboxed; only cox's own `[mcp.servers.<name>]` can set `sandbox = false`.
+- `crates/cox/src/session.rs`: T33.19's `sandboxed_argv` is no longer plugin-gated and is the one wrap. `sandbox_stdio_servers(found, config, writable)` wraps each non-plugin stdio server before `connect_all` spawns it, and skips the wrap under `danger-full-access`. On a Landlock-only or no-backend host, user servers run unwrapped with one aggregated Warn notice; plugin servers are still refused (T33.19).
+- The project-config guard (`mcp.servers.*.sandbox`) reverts any `sandbox = false` that the project layer causes, for existing and new servers alike, since the sandbox is what contains a command a cloned repository chose.
+- `cox doctor` has an `mcp sandbox` row naming every stdio server with `sandbox = false`.
+- Config schema and docs regenerated. `docs/compat.md` and `docs/how-it-works.md` updated, as is the §1.6 `[mcp]` example.
+Deviations: about 330 changed lines (roughly 155 without tests), over the ~140 estimate. Files outside the card's list: `cox-config` `load.rs` for the guard, `doctor.rs`, `cox-mcp` `discovery.rs`, and one fixture fix in `client.rs`.
+For T35.2: `sandboxed_argv(program, args, config, writable) -> Result<Vec<String>, String>` is the wrap to reuse. `sandbox_stdio_servers` shows the warn-and-continue pattern; `plugin_mcp` shows wrap-or-refuse.
+Check:
+- `every_stdio_server_runs_under_sandbox_by_default`, `sandbox_false_opts_a_named_server_out`, `doctor_lists_unsandboxed_servers` and `config_project_cannot_disable_an_mcp_server_sandbox` pass.
+- In the worktree: nextest 1062 passed, 3 skipped (3 PTY/e2e load timeouts passed on rerun); fmt and both clippy runs clean.
+- On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.8 TUI grant dialog
+
+Depends: T33.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox/src/session.rs`
+Goal: `Modal::PluginGrant` asks for each `NeedsApproval` plugin at session open, queued in the single modal slot. `y` grants that digest and `n` skips it for this session. Project plugins show their repository in warning style. Every manifest string is sanitized.
+Check: insta snapshots (a new plugin, a widened plugin with the diff, a project plugin); `grant_dialog_sanitizes_description`.
+Status: done 2026-09-26
+Result: the TUI asks for plugin grants at session open.
+- `Modal::PluginGrant(PluginGrantDialog)` shows name, description and the capability list for a new plugin, the added/removed diff for a widened one, and the repository for a project plugin (theme warning token). Every manifest string passes through `sanitize` at render time.
+- `State.pending_grants` queues one dialog per `NeedsApproval` plugin. `y` grants, `n` skips, and the next dialog pops.
+- cox-tui never touches the store. `Cmd::PluginGrant(GrantDecision)` goes through a channel `app::run` takes to the `poll` task in `crates/cox`, the same pattern as `Cmd::PersistConfig`.
+- `plugin_cmd::write_grant(store, id, scope, digest, capabilities, source)` is the one place a `PluginGrant` row is built, with `cox_store::now_rfc3339()`. The CLI `decide()` (T33.7) and the TUI path both call it.
+- A plugin granted in the dialog loads next session, since the session's tool and plugin set is fixed at construction. Headless and ACP are unchanged and still only warn.
+Deviations: `view.rs`, `app.rs` (`run` gains a grants sender) and `bin/kitty_probe.rs` changed too, forced by the exhaustive `Modal`/`Cmd` matches and the probe's `app::run` call.
+Check:
+- `grant_dialog_sanitizes_description` and the snapshots `new_plugin_grant_snapshot`, `widened_plugin_grant_shows_the_diff` and `project_plugin_grant_shows_its_repository` pass.
+- In the worktree after rebasing on T33.7: nextest 1082 passed, 3 skipped; fmt and both clippy runs clean. `cox doctor` against a scratch `COX_HOME` ran clean apart from the expected missing key.
+- On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.17 Providers, declarative form
+
+Depends: T33.16 · Size: ~130 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/provider.rs`
+Goal: a `[[provider]]` with `api = "chat" | "responses"` merges into `providers.custom` as a `CompatibleProviderConfig`. A user config section of the same name wins. The key comes through `resolve_key(api_key_env, name)`.
+Check: `plugin_chat_section_builds_openai_shaped_client` (wiremock), `config_section_shadows_plugin_section`, `plugin_provider_request_has_usage_row`.
+Status: done 2026-09-26
+Result: a granted plugin's `[[provider]]` with `api = "chat" | "responses"` joins `providers.custom`.
+- `cox_plugin::provider::merge(&ProvidersConfig, &[PluginProviders]) -> Merged { custom, warnings }` is pure. It walks plugins in id order and adds a `CompatibleProviderConfig { base_url, api_key_env, api }` for each declaration. It skips with a warning:
+  - a reserved native name;
+  - a name the user config already has, because config wins;
+  - a name a lower-id plugin already claimed;
+  - `auth = x-api-key`, because the OpenAI-shaped client sends only `Authorization: Bearer`.
+  `api = "plugin"` rows are left for T33.18.
+- `load_plugins` returns the merged `providers` and the warnings as notices. `open()` now loads plugins before it builds the session's provider, so `tiers.<tier>.provider` can name a plugin provider. The key resolves through the existing `resolve_key(api_key_env, name)`.
+- No `net_allows` check: the grant's capability list already names each provider's base URL (PL§7a), and `net` governs `cox_http`.
+Deviations: `open()` moves plugin loading earlier. `crates/cox` gains `wiremock` as a dev-dependency (already a workspace dependency).
+Check:
+- `plugin_chat_section_builds_openai_shaped_client` (wiremock), `config_section_shadows_plugin_section`, `plugin_provider_request_has_usage_row` and six more unit tests pass.
+- In the worktree: nextest 1070 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.10 Events: the tap, the rings, `cox_on_event`
+
+Depends: T33.9 · Size: ~180 · Files: `crates/cox-protocol/src/traits.rs`, `crates/cox-core/src/session.rs`, `crates/cox-plugin/src/events.rs`
+Goal: `EventTap` in `cox-protocol`, and `Session::set_event_tap`, called in `emit` after the rollout append with the scrubbed event. A per-plugin ring of 256 with drop-oldest and a counter, delivered in batches with `first_seq`/`dropped`. `Effects.redraw` is forwarded.
+Check:
+- `tap_never_blocks_emit`: a plugin that sleeps in `cox_on_event` does not slow a scripted 50-turn session beyond noise;
+- `ring_drops_oldest_and_counts`;
+- `plugin_sees_only_subscribed_kinds`;
+- invariant 7 `no_event_after_turn_done` still green.
+Status: done 2026-09-26
+Result: the session has an event tap, and plugins get their subscribed events in batches.
+- `cox_protocol::traits::EventTap { fn offer(&self, seq, &Event) }`. `Session::set_event_tap` works once, like `set_external_agents`; child sessions get no tap. `emit` offers the scrubbed event right after `rollout_append`, with the rollout `seq`.
+- `cox_plugin::events::PluginTap`:
+  - `offer` folds the event into the shared `Context`, serializes it once, and pushes it into each subscribed plugin's ring.
+  - A ring holds 256 events (`EVENT_DEPTH`), drops the oldest and counts what it dropped.
+  - One pump thread per plugin calls `cox_on_event` with `EventBatch { first_seq, dropped, events }` on the event lane, with a 50 ms deadline.
+  - `Effects.notices` go to the plugin's notice queue, and `Effects.redraw` calls the `Redraw` callback with the plugin id.
+  - A plugin without `cox_on_event` has its feed closed. A call error is logged and the batch skipped.
+- `subscriptions(subscribe, granted)` returns what `InitOut.subscribe` asked for, limited to the `events:<tag>` grant lines.
+- `HostEnv::notify` is now the one notice path, shared by `cox_notify` and `Effects.notices`.
+Deviations:
+- `offer` takes a plain lock rather than PL§5's `try_lock`, because a failed `try_lock` would lose an event while the pump swaps the ring. The lock is never held while the plugin runs.
+- Files outside the card's list: `hostfn.rs`, `lib.rs`, and `Cargo.toml`. `Cargo.toml` adds only dev-dependencies: `cox-core`, `cox-provider` and `tokio`, for the scripted-session tests.
+Not done (T33.44): nothing builds a `PluginTap` or calls `set_event_tap` yet. The tap never sees `SessionStarted`, so the session must fold it into the `Context` itself. There is no detach and no cut-off for a plugin that keeps timing out.
+Check:
+- `ring_drops_oldest_and_counts`, `plugin_sees_only_subscribed_kinds`, `tap_never_blocks_emit` (a 50-turn scripted session with a plugin sleeping 100 ms per batch), `subscriptions_are_what_was_asked_and_granted` and `effects_redraw_and_notices_are_forwarded` pass.
+- The invariant 7 test `turn_no_event_after_turn_done` still passes.
+- In the worktree: nextest 1083 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.31 `cox plugin update` and rollback
+
+Depends: T33.7 · Size: ~190 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/install.rs`
+Goal: PL§1b: re-read the recorded path source, validate the schema, `api` and digest, print a capability diff, and support `--check`. Staging uses temp and rename; `current` is swapped only after approval; one `previous` is kept. `--rollback` reuses the stored grant for that digest. Headless and ACP never approve a widening.
+Check: e2e offline against a local path: install → rebuild with changed bytes → `update --check` shows the diff → `update` requires a re-grant → `--rollback` restores the old digest without asking; `update_in_headless_keeps_current_and_warns`.
+Status: done 2026-09-26
+Result: `cox plugin update [ids…] [--all] [--check] [--rollback] [--yes]` (PL§1b).
+- `crates/cox-plugin/src/install.rs` is the only code that changes a user plugin's layout, `<home>/plugins/<id>/{current, previous, versions/<d12>/}`:
+  - `stage` copies into `versions/<d12>.tmp`, fsyncs, re-digests the copy (rejecting bytes changed since validation), then renames it into place.
+  - `activate` moves the replaced version to `previous`, swaps `current` by temp file and rename, and prunes other versions.
+  - `install` uses both, so there is no second copy of that logic.
+- `update` re-reads the `{kind: "path", path, digest}` source recorded on the current grant (install now stores the canonical path), validates it, and prints the capability diff from `grant::check`.
+  - `--check` changes nothing.
+  - Approval goes through `decide`, then `activate`. A digest that already has a grant switches without asking.
+- `--rollback` re-digests `versions/<previous>` through `load_manifest` and switches back with the stored grant.
+- Headless means no TTY and no `--yes`: `update` warns and keeps `current`, even with `y` piped in.
+Deviations:
+- Files outside the card's list: `cli.rs`, `main.rs`, `lib.rs` and the e2e tests.
+- Reinstalling over a plugin now sets `previous` and prunes older versions.
+- A declined update leaves its staged version until the next successful swap prunes it.
+Not done: no in-session notice or TUI `/plugin update`, and only user plugins are covered.
+Check:
+- `update_check_regrant_then_rollback_restores_old_digest` (install → changed bytes → `--check` diff → re-grant → `--rollback` without asking) and `update_in_headless_keeps_current_and_warns` pass, plus three `install.rs` unit tests.
+- In the worktree: nextest 1080 passed, 3 skipped; fmt and both clippy runs clean.
+- On main after landing (with T33.11, T33.42, T33.8, T33.17, T33.10, T33.31): nextest 1110 passed, 3 skipped; fmt, clippy and the slim build clean.

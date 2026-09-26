@@ -6,14 +6,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T33.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.10 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
-| T33.11 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.12 | todo | P2 | 4 | 0% | |
 | T33.13 | todo | P2 | 4 | 0% | |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.15 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T33.17 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.20 | todo | P2 | 5 | 0% | |
 | T33.21 | todo | P2 | 4 | 0% | |
@@ -24,7 +20,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.28 | todo | P2 | 4 | 0% | |
 | T33.29 | todo | P2 | 3 | 0% | |
 | T33.30 | todo | P2 | 2 | 0% | |
-| T33.31 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T33.32 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.33 | todo | P2 | 3 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
@@ -50,7 +45,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.16 | todo | P2 | 2 | 0% | |
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.41 | todo | P3 | 2 | 0% | |
-| T33.42 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T33.44 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T35.2 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
@@ -760,32 +754,6 @@ Every card in this phase:
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
 
-#### T33.8 TUI grant dialog
-
-Depends: T33.6 · Size: ~150 · Files: `crates/cox-tui/src/state.rs`, `crates/cox-tui/src/modal.rs`, `crates/cox/src/session.rs`
-Goal: `Modal::PluginGrant` asks for each `NeedsApproval` plugin at session open, queued in the single modal slot. `y` grants that digest and `n` skips it for this session. Project plugins show their repository in warning style. Every manifest string is sanitized.
-Check: insta snapshots (a new plugin, a widened plugin with the diff, a project plugin); `grant_dialog_sanitizes_description`.
-
-#### T33.10 Events: the tap, the rings, `cox_on_event`
-
-Depends: T33.9 · Size: ~180 · Files: `crates/cox-protocol/src/traits.rs`, `crates/cox-core/src/session.rs`, `crates/cox-plugin/src/events.rs`
-Goal: `EventTap` in `cox-protocol`, and `Session::set_event_tap`, called in `emit` after the rollout append with the scrubbed event. A per-plugin ring of 256 with drop-oldest and a counter, delivered in batches with `first_seq`/`dropped`. `Effects.redraw` is forwarded.
-Check:
-- `tap_never_blocks_emit`: a plugin that sleeps in `cox_on_event` does not slow a scripted 50-turn session beyond noise;
-- `ring_drops_oldest_and_counts`;
-- `plugin_sees_only_subscribed_kinds`;
-- invariant 7 `no_event_after_turn_done` still green.
-
-#### T33.11 Hooks: plugins as a hook source
-
-Depends: T33.9 · Size: ~190 · Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-core/src/hooks.rs`, `crates/cox-plugin/src/hooks.rs`
-Goal:
-- `Hook::interested(event)` with the config check as the default, so `fire_configured` asks the hook instead of `[hooks]`.
-- The `ShellHooks` chaining loop becomes one shared function used by a new `HookChain`.
-- `PluginHooks` implements `Hook` through `cox_hook`.
-- Order: shell hooks first, then plugins by id; the deadline is the smaller of `hooks.timeout_s` and `limits.call_ms`.
-Check: `plugin_hook_fires_without_hooks_config`, `shell_block_wins_over_plugin`, `plugin_modify_chains_into_next_hook`, `plugin_hook_timeout_fails_open_with_notice`; invariant 10 `broken_hook_is_skipped_not_fatal` still green.
-
 #### T33.12 Tools from plugins
 
 Depends: T33.9, T33.44 · Size: ~170 · Files: `crates/cox-plugin/src/tool.rs`, `crates/cox/src/session.rs`
@@ -811,12 +779,6 @@ Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provid
 Depends: T33.9 · Size: ~170 · Files: `crates/cox-protocol/src/types.rs` (`Job::Plugin`), `crates/cox-core/src/router.rs`, `crates/cox-plugin/src/hostfn.rs`
 Goal: a plugin's model call goes through the router at or below its granted tier (never `think`), passes the budget gate and writes one `usage` row with job `plugin:<id>`.
 Check: `plugin_model_call_writes_usage_row` (Scripted provider), `plugin_model_call_blocked_by_budget`, `plugin_cannot_reach_think_tier`; invariant 8 green.
-
-#### T33.17 Providers, declarative form
-
-Depends: T33.16 · Size: ~130 · Files: `crates/cox/src/session.rs`, `crates/cox-plugin/src/provider.rs`
-Goal: a `[[provider]]` with `api = "chat" | "responses"` merges into `providers.custom` as a `CompatibleProviderConfig`. A user config section of the same name wins. The key comes through `resolve_key(api_key_env, name)`.
-Check: `plugin_chat_section_builds_openai_shaped_client` (wiremock), `config_section_shadows_plugin_section`, `plugin_provider_request_has_usage_row`.
 
 #### T33.18 Providers, ABI form (`PluginProvider`)
 
@@ -889,12 +851,6 @@ Check: e2e `cox plugin new demo --lang rust --with status,hook` in a scratch `CO
 Depends: T33.29 · Size: ~120 · Files: `crates/cox-tui/src/commands.rs`, `crates/cox-tui/src/state.rs`, `crates/cox/src/session.rs`
 Goal: the palette's `/plugin new <name>` asks for the language with `Modal::Picker` when it is not given, then sends a `Cmd` to the same `plugin_new` function. There is no second implementation.
 Check: insta snapshot of the picker; `tui_plugin_new_calls_shared_scaffold` (a fake executor records one call with the chosen language).
-
-#### T33.31 `cox plugin update` and rollback
-
-Depends: T33.7 · Size: ~190 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/install.rs`
-Goal: PL§1b: re-read the recorded path source, validate the schema, `api` and digest, print a capability diff, and support `--check`. Staging uses temp and rename; `current` is swapped only after approval; one `previous` is kept. `--rollback` reuses the stored grant for that digest. Headless and ACP never approve a widening.
-Check: e2e offline against a local path: install → rebuild with changed bytes → `update --check` shows the diff → `update` requires a re-grant → `--rollback` restores the old digest without asking; `update_in_headless_keeps_current_and_warns`.
 
 #### T33.32 `cox plugin remove`
 
@@ -1194,12 +1150,6 @@ Check: the offline pytest (body construction, redaction, no key means a clear ex
 Depends: T33.7 · Size: ~110 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox-plugin/src/grant.rs`
 Goal: use a built plugin in place without installing it. A linked plugin asks again only when its capabilities widen, never on byte changes. It is marked `dev` in `list`, `doctor` and the TUI grant dialog. `cox plugin build` and `cox plugin dev` are not planned (PL§13).
 Check: `linked_plugin_rebuild_does_not_reask`, `linked_plugin_widening_reasks`, `linked_plugin_marked_dev_everywhere`.
-
-#### T33.42 Sandbox every MCP stdio server, with a per-server opt-out
-
-Depends: T33.19 · Size: ~140 · Files: `crates/cox-mcp/src/client.rs`, `crates/cox/src/session.rs`, `crates/cox-protocol/src/config.rs`
-Goal: extend the sandbox wrap from T33.19 to every MCP stdio server, not only plugin-shipped ones (`docs/design/plugins.md` §7c, resolved 2026-09-26, §14 decision 4). `crates/cox` wraps every stdio command with `sandbox::Policy` before `cox-mcp` spawns it, including today's user-configured `.mcp.json`/config servers. A per-server `sandbox = false` key opts a named server out, for setups that need it, and `cox doctor` gains a row naming any server that opted out.
-Check: `every_stdio_server_runs_under_sandbox_by_default`, `sandbox_false_opts_a_named_server_out`, `doctor_lists_unsandboxed_servers`; existing `.mcp.json`/config MCP e2e tests still pass with the wrap applied.
 
 #### T33.44 The session keeps one live instance per granted plugin — blocker
 
