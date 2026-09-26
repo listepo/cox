@@ -8,7 +8,7 @@ Programs the project uses and the direct packages from its manifests.
 | --- | --- | --- | --- |
 | mise | brew / curl, then `mise install` | Pins tool versions | https://github.com/jdx/mise |
 | cargo-cache | mise | `just cache` / `just cache-autoclean`; the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
-| rust | mise | Compiler and std | https://github.com/rust-lang/rust |
+| rust | mise (with the `wasm32-unknown-unknown` target) | Compiler and std; the target builds the guest workspace `plugins/` (T33.27) | https://github.com/rust-lang/rust |
 | rustc | mise (pin rust) | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | mise (pin rust) | Rust builds and dependencies | https://github.com/rust-lang/cargo |
 | cargo-nextest | global (cargo install / brew) | Parallel test runner | https://github.com/nextest-rs/nextest |
@@ -50,6 +50,7 @@ Programs the project uses and the direct packages from its manifests.
 | dotenvy | local | https://crates.io/crates/dotenvy | T0.7: load local .env files without overriding the process environment. |
 | eventsource-stream | local | https://crates.io/crates/eventsource-stream | Rust dependency |
 | extism | local (default features off) | https://github.com/extism/extism | cox-plugin: the WASM plugin host (A52, T33.3); no ureq, no URL or file module loading |
+| extism-pdk | local, `plugins/` guest workspace (default features off) | https://github.com/extism/rust-pdk | cox-plugin-sdk: the official Rust PDK the guest SDK wraps (exports, `cox:host/v1` imports, extism memory; T33.27) |
 | figment | local | https://crates.io/crates/figment | Config loading |
 | futures | local | https://crates.io/crates/futures | Rust dependency |
 | globset | local | https://crates.io/crates/globset | Rust dependency |

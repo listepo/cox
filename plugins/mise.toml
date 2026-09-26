@@ -1,0 +1,3 @@
+# Toolchains for guest languages other than Rust (Go, Kotlin, Dart; PL§13).
+# mise reads this file only inside `plugins/`, so host-only contributors never
+# install them. Rust and its wasm32 target come from the root `mise.toml`.

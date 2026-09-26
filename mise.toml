@@ -1,5 +1,5 @@
 [tools]
 "cargo:cargo-cache" = "0.8.3" # `just cache` / `just cache-autoclean`; the shared cargo home fills up
-rust = "1.97.1"
+rust = { version = "1.97.1", targets = ["wasm32-unknown-unknown"] } # wasm32: the guest workspace `plugins/` (T33.27, PL§13)
 zig = "0.16.0" # linker for `cargo zigbuild`: the Linux cox build the Terminal-Bench containers run (T30.9)
 "aqua:rust-cross/cargo-zigbuild" = "0.23.4" # cross-builds that Linux cox from macOS without a Docker build step

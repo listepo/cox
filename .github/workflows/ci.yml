@@ -23,6 +23,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
+          # The guest workspace `plugins/` builds for wasm32 (PL§13, T33.27).
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
 
