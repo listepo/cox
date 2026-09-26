@@ -22,6 +22,9 @@
 //!   rows into `providers.custom` (PL§7a, T33.17).
 //! - [`events`] — the session's `EventTap`: per-plugin drop-oldest rings
 //!   delivered to `cox_on_event` in batches (PL§5, T33.10).
+//! - [`external_agent`] — a granted `[[external_agents]]` entry resolved
+//!   to the sandbox-wrapped command the host spawns, and the in-package
+//!   program resolution `[[mcp]]` shares (EA§2, T35.2).
 
 #![warn(missing_docs)]
 
@@ -29,6 +32,7 @@ pub mod context;
 pub mod discover;
 pub mod error;
 pub mod events;
+pub mod external_agent;
 pub mod grant;
 pub mod hooks;
 pub mod host;

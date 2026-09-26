@@ -244,6 +244,13 @@ pub(crate) struct Plugins {
     /// caller extends `config.providers.custom` with these before building
     /// the tier's provider.
     pub providers: HashMap<String, CompatibleProviderConfig>,
+    /// Each granted plugin's `[[external_agents]]` entries (EA§2, T35.2),
+    /// resolved like a `[[mcp]]` stdio server and already wrapped by
+    /// `sandboxed_argv`: a driver spawns `ExternalAgentCommand::command`.
+    /// Never an ungranted plugin's; empty without `writable`.
+    #[cfg(feature = "plugins")]
+    #[allow(dead_code, reason = "T35.13's drivers are the first reader")]
+    pub external_agents: Vec<cox_plugin::external_agent::ExternalAgentCommand>,
 }
 
 /// The warnings of `load_plugins`, for a surface with no MCP servers (ACP).
@@ -317,11 +324,16 @@ pub(crate) fn load_plugins(
                 }
                 match (loaded, writable) {
                     (Err(e), _) => notices.push(format!("plugin {id} failed to load: {e}")),
-                    (Ok(_), Some(writable)) if !manifest.mcp.is_empty() => {
-                        let servers = plugin_mcp(id, &p.dir, manifest, config, writable, notices);
-                        out.mcp.push((id.clone(), servers));
+                    (Ok(_), Some(writable)) => {
+                        if !manifest.mcp.is_empty() {
+                            let servers =
+                                plugin_mcp(id, &p.dir, manifest, config, writable, notices);
+                            out.mcp.push((id.clone(), servers));
+                        }
+                        let agents = plugin_agents(id, &p.dir, manifest, config, writable, notices);
+                        out.external_agents.extend(agents);
                     }
-                    (Ok(_), _) => {}
+                    (Ok(_), None) => {}
                 }
             }
             Verdict::Disabled => {
@@ -373,7 +385,8 @@ fn plugin_mcp(
     let mut servers = Vec::new();
     for decl in &manifest.mcp {
         let server = match (&decl.command, &decl.url) {
-            (Some(command), _) => plugin_program(dir, command)
+            (Some(command), _) => cox_plugin::external_agent::package_program(dir, command)
+                .map_err(|e| e.to_string())
                 .and_then(|program| sandboxed_argv(&program, &decl.args, config, writable))
                 .map(|mut argv| McpServerConfig {
                     command: Some(argv.remove(0)),
@@ -403,45 +416,33 @@ fn plugin_mcp(
     servers
 }
 
-/// A bare name is a PATH program, approved as shown. Anything else must be
-/// a regular file inside the package, reached through no symlink: the
-/// package digest hashes regular files only, so a symlink would run bytes
-/// the grant never covered.
+/// EA§2 (T35.2): one granted plugin's `[[external_agents]]` entries, each
+/// resolved like a `[[mcp]]` stdio server and wrapped by `sandboxed_argv`.
+/// It is plugin-shipped code, so where the wrap is impossible the entry is
+/// refused with a warning (wrap-or-refuse, as `plugin_mcp`), never run bare.
 #[cfg(feature = "plugins")]
-fn plugin_program(dir: &Path, command: &str) -> Result<PathBuf, String> {
-    use std::path::Component;
+fn plugin_agents(
+    id: &str,
+    dir: &Path,
+    manifest: &cox_plugin_api::PluginManifest,
+    config: &Config,
+    writable: &[PathBuf],
+    notices: &mut Vec<String>,
+) -> Vec<cox_plugin::external_agent::ExternalAgentCommand> {
+    use cox_plugin::external_agent::ExternalAgentCommand;
 
-    let path = Path::new(command);
-    let mut parts = path.components();
-    if matches!(
-        (parts.next(), parts.next()),
-        (Some(Component::Normal(_)), None)
-    ) {
-        return Ok(path.to_path_buf());
-    }
-    if !path
-        .components()
-        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
-    {
-        return Err(format!(
-            "command {command:?} must be a PATH program or a path inside the package"
-        ));
-    }
-    let mut at = dir.to_path_buf();
-    for part in path.components() {
-        at.push(part);
-        let meta = std::fs::symlink_metadata(&at).map_err(|e| format!("{}: {e}", at.display()))?;
-        if meta.file_type().is_symlink() {
-            return Err(format!(
-                "{} is a symlink, which the package digest does not cover",
-                at.display()
-            ));
+    let wrap = |program: &Path, args: &[String]| sandboxed_argv(program, args, config, writable);
+    let mut agents = Vec::new();
+    for decl in &manifest.external_agents {
+        match ExternalAgentCommand::resolve(id, dir, decl, wrap) {
+            Ok(agent) => agents.push(agent),
+            Err(e) => notices.push(format!(
+                "plugin {id}: external agent {} skipped: {e}",
+                decl.name
+            )),
         }
     }
-    if !std::fs::metadata(&at).is_ok_and(|m| m.is_file()) {
-        return Err(format!("{} is not a file", at.display()));
-    }
-    Ok(at)
+    agents
 }
 
 /// `program args` under `sandbox::command`, the guard `bash` runs under. The
@@ -450,8 +451,9 @@ fn plugin_program(dir: &Path, command: &str) -> Result<PathBuf, String> {
 /// quoting to get wrong. Landlock confines in a pre-exec hook that no argv
 /// can carry, so it — like a host with no backend — refuses the server
 /// rather than run it bare; `danger-full-access` is the user's own choice.
-/// Shared by a plugin's `[[mcp]]` servers (`plugin_mcp`) and, T33.42, every
-/// other stdio server (`sandbox_stdio_servers`) — one wrap, not two.
+/// Shared by a plugin's `[[mcp]]` servers (`plugin_mcp`), its external
+/// agents (`plugin_agents`, T35.2) and, T33.42, every other stdio server
+/// (`sandbox_stdio_servers`) — one wrap, not two.
 fn sandboxed_argv(
     program: &Path,
     args: &[String],
@@ -2163,16 +2165,145 @@ mod tests {
         );
     }
 
+    /// A package with one `[[external_agents]]` entry whose in-package
+    /// program is `script`.
+    #[cfg(all(feature = "plugins", unix))]
+    fn agent_package(pkg: &Path, args: &[String], script: &str) -> cox_plugin_api::PluginManifest {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        std::fs::create_dir_all(pkg.join("bin")).expect("mkdir");
+        std::fs::write(pkg.join("bin/agent"), script).expect("agent");
+        std::fs::set_permissions(
+            pkg.join("bin/agent"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .expect("chmod");
+        std::fs::write(
+            pkg.join("plugin.wasm"),
+            r#"(module (func (export "cox_init") (result i32) (i32.const 0)))"#,
+        )
+        .expect("wasm");
+        let quoted: Vec<String> = args.iter().map(|a| format!("{a:?}")).collect();
+        let toml = format!(
+            "api = 1\nid = \"cur\"\nversion = \"0.1.0\"\nname = \"Cur\"\nwasm = \"plugin.wasm\"\n\n\
+             [[external_agents]]\nname = \"cursor\"\ncommand = \"bin/agent\"\nargs = [{}]\n\
+             mode = \"acp\"\nkey_env = \"CURSOR_API_KEY\"\n",
+            quoted.join(", ")
+        );
+        std::fs::write(pkg.join("plugin.toml"), &toml).expect("manifest");
+        cox_plugin::discover::load_manifest(pkg, &pkg.join("plugin.toml"), Some("cur"))
+            .expect("valid manifest")
+            .0
+    }
+
+    /// T35.2 Check (EA§2, PL§7c): the command a driver gets runs the
+    /// sandbox launcher, not the agent, so the agent is under the same
+    /// Seatbelt or bwrap profile as `bash`: a write inside the workspace
+    /// lands, one under `$HOME` is denied. Where no argv backend exists the
+    /// entry is refused with a warning, never run bare.
     #[cfg(all(feature = "plugins", unix))]
     #[test]
-    fn symlinked_server_binary_is_refused() {
+    fn external_agent_command_is_wrapped_by_sandbox_before_spawn() {
+        use cox_tools::sandbox::{Backend, backend};
+
         let pkg = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(pkg.path().join("bin")).expect("mkdir");
-        std::os::unix::fs::symlink("/bin/sh", pkg.path().join("bin/server")).expect("symlink");
-        let err = plugin_program(pkg.path(), "bin/server").expect_err("not covered by the digest");
-        assert!(err.contains("symlink"), "{err}");
-        assert!(plugin_program(pkg.path(), "../outside").is_err());
-        assert_eq!(plugin_program(pkg.path(), "npx"), Ok(PathBuf::from("npx")));
+        let ws = tempfile::tempdir().expect("tempdir");
+        let home = std::env::var("HOME").expect("HOME");
+        let outside = format!("{home}/.cox-agent-escape-{}", std::process::id());
+        let args = [ws.path().display().to_string(), outside.clone()];
+        let script = "#!/bin/sh\necho in > \"$1/inside\"\necho x > \"$2\"\n";
+        let manifest = agent_package(pkg.path(), &args, script);
+        let mut config = Config::default();
+        config.core.workspace_roots = vec![ws.path().to_path_buf()];
+        let roots = config.core.workspace_roots.clone();
+        let mut notices = Vec::new();
+        let agents = plugin_agents("cur", pkg.path(), &manifest, &config, &roots, &mut notices);
+
+        if !matches!(
+            backend(cox_protocol::LinuxBackend::Auto),
+            Some(Backend::Seatbelt | Backend::Bwrap)
+        ) {
+            assert!(agents.is_empty(), "ran without a sandbox");
+            assert!(
+                notices[0].contains("external agent cursor skipped"),
+                "{notices:?}"
+            );
+            return;
+        }
+        assert!(notices.is_empty(), "{notices:?}");
+        let program = pkg.path().join("bin/agent");
+        let cmd = agents[0].command();
+        assert_ne!(cmd.get_program(), program.as_os_str(), "spawned bare");
+        assert!(cmd.get_args().any(|a| a == program.as_os_str()));
+        let _ = agents[0].command().status().expect("spawns");
+        let leaked = Path::new(&outside).exists();
+        let _ = std::fs::remove_file(&outside);
+        assert!(ws.path().join("inside").exists(), "the agent never ran");
+        assert!(!leaked, "the sandbox let an external agent write {outside}");
+    }
+
+    /// T35.2 Check (matches T33.6's `headless_never_loads_ungranted_plugin`):
+    /// an ungranted plugin's external agent is neither resolved nor run;
+    /// the notice names its approval line. Granting the same bytes is what
+    /// lets it through, so the refusal is the grant's.
+    #[cfg(all(feature = "plugins", unix))]
+    #[test]
+    fn ungranted_external_agent_is_not_spawned() {
+        use cox_protocol::{PluginGrant, PluginStore as _};
+
+        let home = tempfile::tempdir().expect("tempdir");
+        let repo = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(repo.path().join(".git")).expect("git");
+        let pkg = repo.path().join(".cox/plugins/cur");
+        let manifest = agent_package(&pkg, &[], "#!/bin/sh\ntouch \"$0.ran\"\n");
+        let store = Store::open(home.path()).expect("store");
+        let mut config = Config::default();
+        config.core.workspace_roots = vec![repo.path().to_path_buf()];
+        let roots = config.core.workspace_roots.clone();
+
+        let out = load_plugins(&config, home.path(), repo.path(), &store, Some(&roots));
+        assert!(out.external_agents.is_empty());
+        let line = "agent:cursor bin/agent key=CURSOR_API_KEY";
+        assert!(
+            out.notices
+                .iter()
+                .any(|n| n.contains("plugin cur is not loaded") && n.contains(line)),
+            "{:?}",
+            out.notices
+        );
+        assert!(
+            !pkg.join("bin/agent.ran").exists(),
+            "an ungranted agent ran"
+        );
+
+        let root = config_load::find_git_root(repo.path());
+        let scope = cox_plugin::grant::scope(cox_plugin::Source::Project, root.as_deref())
+            .expect("project scope");
+        store
+            .grant_put(&PluginGrant {
+                plugin_id: "cur".into(),
+                scope,
+                digest: cox_plugin::package_digest(&pkg).expect("digest"),
+                capabilities: serde_json::json!(cox_plugin::grant::capability_list(&manifest)),
+                enabled: true,
+                source: serde_json::json!({}),
+                decided_at: "2026-09-26T00:00:00Z".into(),
+            })
+            .expect("grant");
+        let out = load_plugins(&config, home.path(), repo.path(), &store, Some(&roots));
+        let resolved = out.external_agents.len()
+            + out
+                .notices
+                .iter()
+                .filter(|n| {
+                    n.contains("external agent cursor skipped: cannot run under the sandbox")
+                })
+                .count();
+        assert_eq!(resolved, 1, "{:?}", out.notices);
+        assert!(
+            !pkg.join("bin/agent.ran").exists(),
+            "loading spawned the agent"
+        );
     }
 
     #[cfg(feature = "plugins")]

@@ -248,6 +248,34 @@ mod tests {
         );
     }
 
+    /// EA§2, T35.2: an external agent is one approval line naming the
+    /// program exactly as it will be looked up on PATH, args and key env
+    /// included, so a changed program or argument asks again.
+    #[test]
+    fn path_program_is_shown_verbatim_at_approval() {
+        let mut m = manifest(Capabilities::default());
+        m.external_agents.push(cox_plugin_api::ExternalAgentDecl {
+            name: "cursor".into(),
+            command: "agent".into(),
+            args: vec!["acp".into(), "--trust".into()],
+            mode: cox_plugin_api::AgentMode::Acp,
+            key_env: "CURSOR_API_KEY".into(),
+        });
+        let line = "agent:cursor agent acp --trust key=CURSOR_API_KEY";
+        assert_eq!(capability_list(&m), [line]);
+        assert_eq!(
+            check(&m, "d1", Some(&grant("d1", &[line]))),
+            Verdict::Granted
+        );
+
+        m.external_agents[0].command = "npx".into();
+        assert!(matches!(
+            check(&m, "d1", Some(&grant("d1", &[line]))),
+            Verdict::NeedsApproval { added, .. }
+                if added == ["agent:cursor npx acp --trust key=CURSOR_API_KEY"]
+        ));
+    }
+
     #[test]
     fn disabled_grant_never_loads_and_corrupt_row_grants_nothing() {
         let m = manifest(Capabilities {
