@@ -196,12 +196,18 @@ fn command_slash_effort_sets_or_clears_the_session_effort() {
         }))
     );
     assert_eq!(
+        commands::parse("/effort medium", Tier::Code),
+        Some(Action::Submit(Submission::SetEffort {
+            effort: Some(Effort::Medium)
+        }))
+    );
+    assert_eq!(
         commands::parse("/effort", Tier::Code),
         Some(Action::Submit(Submission::SetEffort { effort: None }))
     );
     assert!(matches!(
         commands::parse("/effort max", Tier::Code),
-        Some(Action::Notice(text)) if text.contains("xhigh")
+        Some(Action::Notice(text)) if text.contains("medium") && text.contains("xhigh")
     ));
 }
 

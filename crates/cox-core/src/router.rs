@@ -225,11 +225,13 @@ mod tests {
                         id: "deepseek-v4-flash".into(),
                         context_window: 1_000_000,
                         efforts: vec![Effort::Low, Effort::High, Effort::Xhigh],
+                        ..Default::default()
                     },
                     cox_protocol::config::ProviderModel {
                         id: "deepseek-v4-pro".into(),
                         context_window: 1_000_000,
                         efforts: vec![Effort::High, Effort::Xhigh],
+                        ..Default::default()
                     },
                 ],
                 ..Default::default()
@@ -319,6 +321,29 @@ mod tests {
             clamp_effort(&cfg, "local", &ModelId("qwen3-coder".into()), Effort::High),
             Effort::High
         );
+    }
+
+    #[test]
+    fn router_clamp_effort_treats_medium_as_a_level_between_low_and_high() {
+        let mut cfg = custom_config();
+        if let Some(section) = cfg.providers.custom.get_mut("deepseek") {
+            section.models.push(cox_protocol::config::ProviderModel {
+                id: "deepseek-v4-mid".into(),
+                context_window: 1_000_000,
+                efforts: vec![Effort::Low, Effort::Medium],
+                ..Default::default()
+            });
+        }
+        let clamp =
+            |model: &str, want| clamp_effort(&cfg, "deepseek", &ModelId(model.into()), want);
+        // A row that lists `medium` keeps it.
+        assert_eq!(clamp("deepseek-v4-mid", Effort::Medium), Effort::Medium);
+        // Above the row's top level: down to `medium`, not to `low`.
+        assert_eq!(clamp("deepseek-v4-mid", Effort::Xhigh), Effort::Medium);
+        // A row without `medium` (low/high/xhigh): down to `low`, never up.
+        assert_eq!(clamp("deepseek-v4-flash", Effort::Medium), Effort::Low);
+        // A row whose floor is `high`: raised to it, as for `low`.
+        assert_eq!(clamp("deepseek-v4-pro", Effort::Medium), Effort::High);
     }
 
     #[test]

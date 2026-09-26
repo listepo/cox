@@ -1235,6 +1235,7 @@ mod tests {
             id: "claude-big-1m".into(),
             context_window: 1_000_000,
             efforts: vec![],
+            ..Default::default()
         }];
         let p = provider_for_with(&cfg, fake_key).expect("anthropic builds");
         assert_eq!(p.capabilities().max_context, 1_000_000);

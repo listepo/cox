@@ -93,8 +93,14 @@ pub fn build_body(req: &Request) -> Result<Value, ProviderError> {
         stream: Some(true),
         store: Some(false),
         max_output_tokens: Some(req.max_tokens),
-        reasoning: Some(wire::Reasoning {
-            effort: Some(effort(req.effort)),
+        // Responses reads no row capability (`cox_models::effort_for`).
+        reasoning: cox_models::effort_for(
+            cox_models::Api::Responses,
+            req.effort,
+            &cox_models::Capabilities::default(),
+        )
+        .map(|w| wire::Reasoning {
+            effort: Some(effort(w.effort)),
             ..Default::default()
         }),
         instructions: (!req.system.is_empty()).then(|| {
@@ -284,9 +290,11 @@ fn message_items(m: &Message) -> Result<Vec<wire::InputItem>, ProviderError> {
     Ok(items)
 }
 
+/// Type conversion only: which level to send is `cox_models::effort_for`'s.
 fn effort(e: Effort) -> wire::ReasoningEffort {
     match e {
         Effort::Low => wire::ReasoningEffort::Low,
+        Effort::Medium => wire::ReasoningEffort::Medium,
         Effort::High => wire::ReasoningEffort::High,
         Effort::Xhigh => wire::ReasoningEffort::Xhigh,
     }
@@ -914,6 +922,14 @@ mod tests {
         assert_eq!(body["reasoning"]["effort"], "xhigh");
     }
 
+    #[test]
+    fn responses_request_medium_effort_is_sent_as_medium() {
+        let mut req = base("gpt-5.1");
+        req.effort = Effort::Medium;
+        let body = build_body(&req).expect("no thinking blocks, never fails");
+        assert_eq!(body["reasoning"]["effort"], "medium");
+    }
+
     /// "Done when": a wiremock shaped like `POST /responses` completes a
     /// tool-call turn end to end through the live client, with the bearer
     /// header the key implies.
@@ -990,6 +1006,7 @@ mod tests {
                 id: "gpt-5.5".into(),
                 context_window: 1_050_000,
                 efforts: vec![],
+                ..Default::default()
             }],
             400_000,
         )

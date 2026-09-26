@@ -44,7 +44,8 @@ pub const DEFAULT_MODEL: &str = "jev-latest";
 /// sites (router pick, risk score, skill rank) are composed by the
 /// `cox-core` judge layer, which owns the questions and thresholds per
 /// TypeSafe's review guidance; this translator only proves the wire shape is
-/// well-formed without a key.
+/// well-formed without a key. `Request.effort` is not sent: the wire has no
+/// such field, and `cox_models::effort_for(Api::Jev, ..)` is `None` (T30.26).
 pub fn build_body(req: &Request) -> Value {
     let mut parts: Vec<&str> = Vec::new();
     for b in &req.system {

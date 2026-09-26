@@ -14,7 +14,7 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+C quit · Ctrl+D quit · y co
        /model [cheap|code|think] [model]                        switch a tier's model
        /think <prompt>                                          one turn on the think tier, price
        confirmed first
-       /effort [low|high|xhigh]                                 effort for the rest of the session;
+       /effort [low|medium|high|xhigh]                          effort for the rest of the session;
        bare restores the tier default
        /compact [focus]                                         compact the context now
        /rewind                                                  go back to an earlier turn: code,

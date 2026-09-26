@@ -102,6 +102,13 @@ struct Raw {
 /// ones used here can; the error exists so that is not a panic.
 pub fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Result<Value, ProviderError> {
     let mut raw = Vec::new();
+    // The prefix rule, not a catalog row, says whether a model takes
+    // adaptive thinking (T30.25), so it needs no `Catalog` here.
+    let caps = cox_models::Capabilities {
+        adaptive_thinking: Some(cox_models::supports_adaptive_thinking(&req.model.0)),
+        ..cox_models::Capabilities::default()
+    };
+    let sent = cox_models::effort_for(cox_models::Api::Anthropic, req.effort, &caps);
     let params = wire::CreateMessageParams {
         model: wire::Model(req.model.0.clone()),
         max_tokens: u64::from(req.max_tokens),
@@ -120,8 +127,8 @@ pub fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Result<Value, ProviderErr
             })
             .collect(),
         stream: Some(true),
-        output_config: Some(wire::OutputConfig {
-            effort: Some(effort(req.effort)),
+        output_config: sent.map(|w| wire::OutputConfig {
+            effort: Some(effort(w.effort)),
             format: None,
         }),
         system: (!req.system.is_empty()).then(|| {
@@ -135,9 +142,8 @@ pub fn build_body(req: &Request, cfg: BuildCfg<'_>) -> Result<Value, ProviderErr
         tool_choice: (!req.tools.is_empty()).then_some(wire::ToolChoice::Auto {
             disable_parallel_tool_use: None,
         }),
-        thinking: (req.thinking == Thinking::Adaptive
-            && cox_models::supports_adaptive_thinking(&req.model.0))
-        .then_some(wire::ThinkingConfigParam::Adaptive { display: None }),
+        thinking: (req.thinking == Thinking::Adaptive && sent.is_some_and(|w| w.adaptive_thinking))
+            .then_some(wire::ThinkingConfigParam::Adaptive { display: None }),
         stop_sequences: req.stop_sequences.clone(),
         cache_control: None,
         container: None,
@@ -376,9 +382,11 @@ fn content_blocks(
     blocks
 }
 
+/// Type conversion only: which level to send is `cox_models::effort_for`'s.
 fn effort(e: Effort) -> wire::EffortLevel {
     match e {
         Effort::Low => wire::EffortLevel::Low,
+        Effort::Medium => wire::EffortLevel::Medium,
         Effort::High => wire::EffortLevel::High,
         Effort::Xhigh => wire::EffortLevel::Xhigh,
     }
@@ -613,6 +621,23 @@ mod tests {
         assert_eq!(count_cache_control(&body), MAX_BREAKPOINTS);
         // The volatile system block never gets one, whatever the caller asks.
         assert!(body["system"][2].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn medium_effort_is_sent_and_adaptive_thinking_follows_the_model() {
+        let mut req = base("claude-sonnet-5");
+        req.effort = Effort::Medium;
+        let body = build_body(&req, cfg(None));
+        assert_eq!(body["output_config"]["effort"], "medium");
+        assert_eq!(body["thinking"]["type"], "adaptive");
+
+        // Not an adaptive-thinking model: the effort still goes out, the
+        // `thinking` field does not.
+        let mut req = base("claude-haiku-4-5");
+        req.effort = Effort::Medium;
+        let body = build_body(&req, cfg(None));
+        assert_eq!(body["output_config"]["effort"], "medium");
+        assert!(body.get("thinking").is_none());
     }
 
     fn count_cache_control(v: &Value) -> usize {

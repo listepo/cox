@@ -4,7 +4,7 @@
 //! from three layers, each overriding the last by id — built-in rows
 //! (embedded, written only by `cox-vendor models`, AGENTS.md A48) < a
 //! `Config`'s `[providers.*].models` entries < a user-supplied
-//! `prices.toml`.
+//! `prices.toml` — and the one per-wire effort map over it (T30.26).
 //!
 //! Depends only on `cox-protocol` (AGENTS.md layout table;
 //! `crates/cox/tests/deps.rs` enforces it) and does no I/O beyond parsing
@@ -14,7 +14,9 @@
 #![warn(missing_docs)]
 
 mod catalog;
+mod effort;
 mod price;
 
 pub use catalog::{Capabilities, Catalog, CatalogError, ModelRow, supports_adaptive_thinking};
+pub use effort::{Api, WireEffort, effort_for};
 pub use price::{Price, PriceError, PriceTable};

@@ -80,7 +80,7 @@ PROVIDER_TO_MODELS_DEV = {
 }
 
 # cox `Effort` values, in the fixed order rendered into `efforts = [...]`.
-EFFORT_ORDER = ("low", "high", "xhigh")
+EFFORT_ORDER = ("low", "medium", "high", "xhigh")
 
 _CACHE_LINE_PREFIX = "# Cache pricing:"
 _ANTHROPIC_LINE_PREFIX = "# Verified on"
@@ -110,8 +110,9 @@ def validate(body: bytes) -> dict[str, Any]:
 def cox_effort_for(reasoning_options: Any) -> list[str] | None:
     """Map a models.dev `reasoning_options` list to cox `Effort` names
     (docs/design/providers.md): an `effort` entry's `values` map
-    low->low, medium/high->high, xhigh/max->xhigh; a `toggle`-only list
-    (no `effort` entry) maps to all three. `none` (no-reasoning) is not a
+    low->low, medium->medium, high->high, xhigh/max->xhigh (cox has
+    `Effort::Medium` since T30.26, so `medium` no longer folds into
+    `high`); a `toggle`-only list (no `effort` entry) maps to all four. `none` (no-reasoning) is not a
     cox effort and is dropped. Anything else — missing, empty, or another
     shape such as `budget_tokens` — is not recognised: returns None so the
     caller reports it and keeps what's on disk.
@@ -125,7 +126,9 @@ def cox_effort_for(reasoning_options: Any) -> list[str] | None:
         mapped: set[str] = set()
         if "low" in values:
             mapped.add("low")
-        if "medium" in values or "high" in values:
+        if "medium" in values:
+            mapped.add("medium")
+        if "high" in values:
             mapped.add("high")
         if "xhigh" in values or "max" in values:
             mapped.add("xhigh")

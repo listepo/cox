@@ -41,8 +41,9 @@ Two types, split by wire protocol, not by vendor:
   a default `model`, a fallback `context_window`, and a `models` list where
   each entry carries the model id, its context window and the efforts it
   understands (models.dev `reasoning_options.effort` mapped to cox
-  `Effort`: `low→low`, `medium/high→high`, `xhigh/max→xhigh`; `toggle`-only
-  models accept all three). Costs stay in `prices.toml` — the one file the
+  `Effort`: `low→low`, `medium→medium`, `high→high`, `xhigh/max→xhigh`;
+  `toggle`-only models accept all four; `medium` folded into `high` until
+  T30.26). Costs stay in `prices.toml` — the one file the
   ledger reads — extended with the same ids from models.dev. Runtime use of
   the list is real, not decorative: per-model context resolution feeds
   `Caps::max_context`, which drives the compaction trigger.
@@ -109,6 +110,17 @@ Routing (`Router::pick`) and costing (`Priced`) are already single and stay that
    - Jev: explicitly `None`.
 
    `clamp_effort` keeps enforcing the model's supported levels, now from the catalog. `Effort` gains `Medium` so models.dev's four levels map without loss.
+
+   Implemented (T30.26): `cox_models::effort_for(Api, Effort, &Capabilities) -> Option<WireEffort { effort, adaptive_thinking }>` (`crates/cox-models/src/effort.rs`) is the one mapping; each wire only converts the returned `Effort` into its own generated enum.
+
+   | `Api` | Sends | Condition |
+   |---|---|---|
+   | `Anthropic` | `output_config.effort`; `thinking: adaptive` when the tier asks for thinking | always; adaptive thinking when `caps.adaptive_thinking == Some(true)`, which `request.rs` fills from `supports_adaptive_thinking(model)` (the T30.25 prefix rule) |
+   | `Responses` | `reasoning.effort` | always |
+   | `Chat` | top-level `reasoning_effort` | only when `caps.reasoning_effort_param == Some(true)` |
+   | `Jev` | nothing | never (`None`) |
+
+   A Chat row declares the field with `reasoning_effort = true` on its `[providers.<name>].models` entry (`ProviderModel.reasoning_effort`, read through `Capabilities::declared_by` by both the catalog merge and `OpenAiChatProvider`). No built-in row sets it, so every Chat request is byte-identical to before: OpenAI's Chat API documents `reasoning_effort`, but LM Studio's compatible endpoint does not list it (R§4.3.3), so the field is opt-in per model, not per wire. `Effort::Medium` sits between `Low` and `High` and goes out as `medium` on all three wires that send an effort; `/effort medium` accepts it. `cox-vendor models` now maps models.dev's `medium` to `medium` (no longer `high`); the vendored `default.toml` rows still list the old three-level sets until the script is re-run, and until then `clamp_effort` lowers a `medium` request on such a row to `low` (never up). `clamp_effort` still reads the section's `models` list (the same entries the catalog overlays), not `Catalog`.
 5. **One sync check.** `cox doctor` reports a routable model with no catalog price, instead of relying only on the unit test.
 
    Implemented (T30.27): `Config::configured_model_ids` (`crates/cox-protocol/src/config.rs`) is the one enumeration of "every model reachable without touching a price file" — each `[tiers.*].model`, `providers.local.model`/`providers.typesafe.model`, every native and compatible section's `models` list, and every `[providers.<custom>]` section's own default `model` — extracted from `cox_models::price`'s `usage_prices_cover_every_configured_model` test so `cox doctor`'s new `catalog prices` row (`crates/cox/src/doctor.rs`) and that test can never disagree about what "configured" means. The row builds a `cox_models::Catalog::load(config, None)` and warns, naming every unpriced id and pointing at `uv run --project scripts/vendor cox-vendor models`, when one has no `ModelRow.price`; on `default.toml` the row is `ok`, since `usage_prices_cover_every_configured_model` already guarantees every built-in id is priced.

@@ -320,8 +320,8 @@ impl Default for JobsConfig {
 /// `provider.<id>.models` shape, `docs/design/providers.md`): the model id
 /// as sent on the wire, its context window, and the efforts it understands
 /// (models.dev `reasoning_options.effort` mapped to [`Effort`]: `low`→`Low`,
-/// `medium`/`high`→`High`, `xhigh`/`max`→`Xhigh`). An empty `efforts` means
-/// unconstrained — any tier effort passes through unclamped.
+/// `medium`→`Medium`, `high`→`High`, `xhigh`/`max`→`Xhigh`). An empty
+/// `efforts` means unconstrained — any tier effort passes through unclamped.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct ProviderModel {
@@ -334,6 +334,13 @@ pub struct ProviderModel {
     pub context_window: u32,
     /// Efforts this model supports; empty means "any".
     pub efforts: Vec<Effort>,
+    /// Whether this model takes the Chat Completions `reasoning_effort`
+    /// field (T30.26). Unset means "not declared", and an `api = "chat"`
+    /// section then sends no effort at all: OpenAI documents the field,
+    /// LM Studio's compatible endpoint does not list it (research.md
+    /// §4.3.3), so it is opt-in per model rather than per wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<bool>,
 }
 
 /// `[providers]` (plan.md §1.6).

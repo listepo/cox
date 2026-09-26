@@ -24,7 +24,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ),
     (
         "effort",
-        "/effort [low|high|xhigh]",
+        "/effort [low|medium|high|xhigh]",
         "effort for the rest of the session; bare restores the tier default",
     ),
     ("compact", "/compact [focus]", "compact the context now"),
@@ -273,7 +273,9 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
                 Some(effort) => Action::Submit(Submission::SetEffort {
                     effort: Some(effort),
                 }),
-                None => Action::Notice(format!("unknown effort `{level}`; low, high or xhigh")),
+                None => Action::Notice(format!(
+                    "unknown effort `{level}`; low, medium, high or xhigh"
+                )),
             },
         },
         "compact" => Action::Submit(Submission::Compact { focus: joined() }),

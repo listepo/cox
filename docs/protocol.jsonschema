@@ -2565,12 +2565,17 @@
         "type": "string"
       },
       "Effort": {
-        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < High < Xhigh` so the router can clamp a tier's effort to\nthe greatest level a model supports (`docs/design/providers.md`).",
+        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < Medium < High < Xhigh` so the router can clamp a tier's\neffort to the greatest level a model supports (`docs/design/providers.md`).\nThe four levels are models.dev's own, so a catalog row maps without loss\n(T30.26).",
         "oneOf": [
           {
             "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
             "type": "string",
             "const": "low"
+          },
+          {
+            "description": "Between `Low` and `High`: models.dev's and the wires' `medium`.",
+            "type": "string",
+            "const": "medium"
           },
           {
             "description": "Default for `code`/`think` tiers.",

@@ -30,6 +30,7 @@
 //! `responses.rs`: unsigned dropped, signed rejected with `Unsupported`.
 
 use async_trait::async_trait;
+use cox_models::{Api, Capabilities, effort_for};
 use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::CallId;
 use cox_protocol::traits::Provider;
@@ -43,8 +44,10 @@ use tokio_util::sync::CancellationToken;
 
 /// Translates a `Request` into the JSON body for `POST /v1/chat/completions`.
 /// Errors only when history carries a signed thinking block (see module
-/// header) — every other shape translates unconditionally.
-pub fn build_body(req: &Request) -> Result<Value, ProviderError> {
+/// header) — every other shape translates unconditionally. `caps` is what
+/// the model's `models` entry declares: `reasoning_effort` goes out only
+/// when it declares the field (`cox_models::effort_for`).
+pub fn build_body(req: &Request, caps: &Capabilities) -> Result<Value, ProviderError> {
     let mut messages = Vec::new();
     // Chat takes one `system` message; the blocks are joined in order.
     if !req.system.is_empty() {
@@ -87,6 +90,9 @@ pub fn build_body(req: &Request) -> Result<Value, ProviderError> {
     }
     if !req.stop_sequences.is_empty() {
         obj.insert("stop".into(), json!(req.stop_sequences));
+    }
+    if let Some(w) = effort_for(Api::Chat, req.effort, caps) {
+        obj.insert("reasoning_effort".into(), json!(w.effort.name()));
     }
     Ok(body)
 }
@@ -523,7 +529,13 @@ impl OpenAiChatProvider {
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
         let started = std::time::Instant::now();
-        let body = build_body(req)?;
+        let caps = self
+            .models
+            .iter()
+            .find(|m| m.id == req.model.0)
+            .map(Capabilities::declared_by)
+            .unwrap_or_default();
+        let body = build_body(req, &caps)?;
 
         let mut request = self
             .http
@@ -752,7 +764,7 @@ mod tests {
     fn chat_request_plain_text() {
         let mut req = base("qwen3-coder");
         req.messages = vec![user_text("read a.rs")];
-        let body = build_body(&req).expect("no thinking blocks");
+        let body = build_body(&req, &Capabilities::default()).expect("no thinking blocks");
         insta::assert_json_snapshot!(body);
     }
 
@@ -792,7 +804,7 @@ mod tests {
                 ],
             },
         ];
-        let body = build_body(&req).expect("no thinking blocks");
+        let body = build_body(&req, &Capabilities::default()).expect("no thinking blocks");
         let dumped = serde_json::to_string(&body).expect("serializes");
         assert!(dumped.contains("\"tool_calls\""));
         assert!(dumped.contains("\"tool_call_id\""));
@@ -810,7 +822,8 @@ mod tests {
                 signature: Some("sig".into()),
             }],
         }];
-        let err = build_body(&req).expect_err("signed thinking must not drop silently");
+        let err = build_body(&req, &Capabilities::default())
+            .expect_err("signed thinking must not drop silently");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
     }
 
@@ -829,7 +842,8 @@ mod tests {
                 },
             ],
         }];
-        let body = build_body(&req).expect("no signature: nothing to replay");
+        let body =
+            build_body(&req, &Capabilities::default()).expect("no signature: nothing to replay");
         let msgs = body["messages"].as_array().expect("messages");
         let last = msgs.last().expect("at least one message");
         assert_eq!(last["content"], "here is the answer");
@@ -853,7 +867,7 @@ mod tests {
                 },
             ],
         }];
-        let body = build_body(&req).expect("no thinking blocks");
+        let body = build_body(&req, &Capabilities::default()).expect("no thinking blocks");
         let msgs = body["messages"].as_array().expect("messages");
         let last = msgs.last().expect("user message follows system");
         let content = last["content"].as_str().expect("text content");
@@ -865,8 +879,23 @@ mod tests {
     fn chat_request_stop_sequences() {
         let mut req = base("qwen3-coder");
         req.stop_sequences = vec!["```".into()];
-        let body = build_body(&req).expect("no thinking blocks");
+        let body = build_body(&req, &Capabilities::default()).expect("no thinking blocks");
         assert_eq!(body["stop"], json!(["```"]));
+    }
+
+    #[test]
+    fn chat_request_sends_reasoning_effort_only_when_the_row_declares_it() {
+        let mut req = base("gpt-5.1");
+        req.effort = Effort::Medium;
+        let undeclared = build_body(&req, &Capabilities::default()).expect("no thinking blocks");
+        assert!(undeclared.get("reasoning_effort").is_none());
+
+        let declared = Capabilities {
+            reasoning_effort_param: Some(true),
+            ..Capabilities::default()
+        };
+        let body = build_body(&req, &declared).expect("no thinking blocks");
+        assert_eq!(body["reasoning_effort"], "medium");
     }
 
     #[test]
@@ -1028,6 +1057,7 @@ mod tests {
                 id: "deepseek-v4-pro".into(),
                 context_window: 1_000_000,
                 efforts: vec![],
+                ..Default::default()
             }],
             32_768,
         )

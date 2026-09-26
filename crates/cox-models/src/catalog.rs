@@ -2,9 +2,9 @@
 //! "Target shape" item 3): one [`ModelRow`] per model id, combining three
 //! layers in override order — built-in rows < a `Config`'s
 //! `[providers.*].models` entries < a user price file. `Caps` derivation
-//! (T30.25) and the effort map (T30.26) are the first real readers of
-//! `context_window`/`efforts`/`capabilities`; this module only builds and
-//! merges the row.
+//! (T30.25) and the effort map (T30.26, `effort.rs`) are the first real
+//! readers of `context_window`/`efforts`/`capabilities`; this module only
+//! builds and merges the row.
 
 use std::collections::HashMap;
 
@@ -28,8 +28,22 @@ pub struct Capabilities {
     pub tools: Option<bool>,
     /// Sends extended/adaptive thinking.
     pub adaptive_thinking: Option<bool>,
-    /// Accepts a reasoning-effort wire parameter.
+    /// Accepts a reasoning-effort wire parameter. Declared per model by
+    /// `ProviderModel.reasoning_effort` (T30.26); read by
+    /// [`crate::effort_for`] for the Chat wire.
     pub reasoning_effort_param: Option<bool>,
+}
+
+impl Capabilities {
+    /// What a config `models` entry declares. A wire that holds only its
+    /// section's entries (Chat) and the catalog merge both read it here,
+    /// so the two cannot disagree.
+    pub fn declared_by(model: &ProviderModel) -> Self {
+        Self {
+            reasoning_effort_param: model.reasoning_effort,
+            ..Self::default()
+        }
+    }
 }
 
 /// One catalog row: everything the catalog knows about a model id.
@@ -169,6 +183,10 @@ impl Catalog {
         if !model.efforts.is_empty() {
             row.efforts = model.efforts.clone();
         }
+        // Like `efforts`: an entry that declares nothing keeps the row's.
+        if let Some(param) = Capabilities::declared_by(model).reasoning_effort_param {
+            row.capabilities.reasoning_effort_param = Some(param);
+        }
     }
 
     fn overlay_config(&mut self, config: &Config) {
@@ -231,6 +249,7 @@ source_url = "https://example.test"
             id: "claude-haiku-4-5".into(),
             context_window: 555_000,
             efforts: vec![Effort::Low, Effort::High],
+            ..ProviderModel::default()
         }];
         let catalog = Catalog::load(&config, None).expect("catalog");
         let row = catalog.get("claude-haiku-4-5").expect("haiku row");
@@ -247,6 +266,7 @@ source_url = "https://example.test"
             id: "claude-haiku-4-5".into(),
             context_window: 555_000,
             efforts: vec![],
+            ..ProviderModel::default()
         }];
         let user = user_price_toml("claude-haiku-4-5", 42.0);
         let catalog = Catalog::load(&config, Some(&user)).expect("catalog");
@@ -277,6 +297,23 @@ source_url = "https://example.test"
     }
 
     #[test]
+    fn config_entry_declares_the_reasoning_effort_param() {
+        let mut config = Config::default();
+        config.providers.local.models = vec![ProviderModel {
+            id: "qwen3-coder".into(),
+            context_window: 32_768,
+            reasoning_effort: Some(true),
+            ..ProviderModel::default()
+        }];
+        let catalog = Catalog::load(&config, None).expect("catalog");
+        let row = catalog.get("qwen3-coder").expect("qwen row");
+        assert_eq!(row.capabilities.reasoning_effort_param, Some(true));
+        // A built-in row declares nothing: Chat sends no effort for it.
+        let haiku = catalog.get("claude-haiku-4-5").expect("haiku row");
+        assert_eq!(haiku.capabilities.reasoning_effort_param, None);
+    }
+
+    #[test]
     fn empty_config_efforts_do_not_erase_the_builtin_efforts() {
         // `ProviderModel.efforts: []` means "any" (its own doc comment) —
         // a config override that doesn't mention efforts must not clear
@@ -286,6 +323,7 @@ source_url = "https://example.test"
             id: "claude-haiku-4-5".into(),
             context_window: 555_000,
             efforts: vec![],
+            ..ProviderModel::default()
         }];
         let builtin = Catalog::builtin().expect("builtin catalog");
         let builtin_efforts = builtin

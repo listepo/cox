@@ -102,8 +102,10 @@ pub enum Job {
 
 /// Reasoning effort passed to the provider.
 ///
-/// Ordered `Low < High < Xhigh` so the router can clamp a tier's effort to
-/// the greatest level a model supports (`docs/design/providers.md`).
+/// Ordered `Low < Medium < High < Xhigh` so the router can clamp a tier's
+/// effort to the greatest level a model supports (`docs/design/providers.md`).
+/// The four levels are models.dev's own, so a catalog row maps without loss
+/// (T30.26).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -111,6 +113,8 @@ pub enum Job {
 pub enum Effort {
     /// Cheapest, fastest; used for `cheap`-tier jobs.
     Low,
+    /// Between `Low` and `High`: models.dev's and the wires' `medium`.
+    Medium,
     /// Default for `code`/`think` tiers.
     High,
     /// User-selected for a flagged large refactor.
@@ -122,6 +126,7 @@ impl Effort {
     pub fn name(self) -> &'static str {
         match self {
             Self::Low => "low",
+            Self::Medium => "medium",
             Self::High => "high",
             Self::Xhigh => "xhigh",
         }
@@ -131,6 +136,7 @@ impl Effort {
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
             "xhigh" => Some(Self::Xhigh),
             _ => None,
@@ -1224,6 +1230,17 @@ mod tests {
             cost_usd: 0.01,
             latency_ms: 250,
         }
+    }
+
+    #[test]
+    fn effort_medium_sits_between_low_and_high_and_round_trips_by_name() {
+        let all = [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh];
+        assert!(all.windows(2).all(|w| w[0] < w[1]));
+        for e in all {
+            assert_eq!(Effort::parse(e.name()), Some(e));
+            assert_eq!(serde_json::to_value(e).ok(), Some(e.name().into()));
+        }
+        assert_eq!(Effort::Medium.name(), "medium");
     }
 
     #[test]

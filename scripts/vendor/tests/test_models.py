@@ -51,7 +51,10 @@ class TestCoxEffortFor:
     def test_effort_values_map_low_medium_high_xhigh_max(self):
         assert models.cox_effort_for(
             [{"type": "effort", "values": ["low", "medium", "high", "xhigh", "max"]}]
-        ) == ["low", "high", "xhigh"]
+        ) == ["low", "medium", "high", "xhigh"]
+
+    def test_medium_maps_to_medium_not_high(self):
+        assert models.cox_effort_for([{"type": "effort", "values": ["medium"]}]) == ["medium"]
 
     def test_effort_without_low_or_xhigh_omits_them(self):
         assert models.cox_effort_for([{"type": "effort", "values": ["high", "max"]}]) == ["high", "xhigh"]
@@ -59,8 +62,8 @@ class TestCoxEffortFor:
     def test_none_value_is_not_a_cox_effort(self):
         assert models.cox_effort_for([{"type": "effort", "values": ["none", "low"]}]) == ["low"]
 
-    def test_toggle_only_maps_to_all_three(self):
-        assert models.cox_effort_for([{"type": "toggle"}]) == ["low", "high", "xhigh"]
+    def test_toggle_only_maps_to_all_four(self):
+        assert models.cox_effort_for([{"type": "toggle"}]) == ["low", "medium", "high", "xhigh"]
 
     def test_toggle_alongside_effort_uses_the_effort_values(self):
         assert models.cox_effort_for([{"type": "toggle"}, {"type": "effort", "values": ["low"]}]) == ["low"]
@@ -106,8 +109,8 @@ def test_default_toml_regenerates_context_window_and_efforts(isolated_files):
     doc = tomlkit.parse(default.read_text())
 
     anthropic = {m["id"]: m for m in doc["providers"]["anthropic"]["models"]}
-    # claude-sonnet-5: effort values low/medium/high/xhigh/max -> low/high/xhigh.
-    assert list(anthropic["claude-sonnet-5"]["efforts"]) == ["low", "high", "xhigh"]
+    # claude-sonnet-5: effort values low/medium/high/xhigh/max -> low/medium/high/xhigh.
+    assert list(anthropic["claude-sonnet-5"]["efforts"]) == ["low", "medium", "high", "xhigh"]
     assert anthropic["claude-sonnet-5"]["context_window"] == 1000000
     # claude-haiku-4-5: budget_tokens-only reasoning_options is not recognised,
     # so efforts stay untouched, but context_window still comes from `limit`.
@@ -115,12 +118,13 @@ def test_default_toml_regenerates_context_window_and_efforts(isolated_files):
     assert anthropic["claude-haiku-4-5"]["context_window"] == 200000
 
     openai = {m["id"]: m for m in doc["providers"]["openai"]["models"]}
-    assert list(openai["gpt-5.1"]["efforts"]) == ["low", "high"]
+    # none/low/medium/high -> low/medium/high (`none` is not a cox effort).
+    assert list(openai["gpt-5.1"]["efforts"]) == ["low", "medium", "high"]
     assert openai["gpt-5.1"]["context_window"] == 400000
 
     moonshot = {m["id"]: m for m in doc["providers"]["moonshot"]["models"]}
-    # toggle-only -> all three.
-    assert list(moonshot["kimi-k2.6"]["efforts"]) == ["low", "high", "xhigh"]
+    # toggle-only -> all four.
+    assert list(moonshot["kimi-k2.6"]["efforts"]) == ["low", "medium", "high", "xhigh"]
     # kimi-k2.7-code isn't in the fixture registry: left byte-for-byte alone.
     assert list(moonshot["kimi-k2.7-code"]["efforts"]) == ["low", "high", "xhigh"]
     assert moonshot["kimi-k2.7-code"]["context_window"] == 262144
