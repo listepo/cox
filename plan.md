@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T36.2 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 
 ## Reference
 
@@ -1038,16 +1037,6 @@ Check: the recorded fixture round-trips through T35.7's mapper unchanged; the sc
 ### P36 — Compound shell commands (goal: a `Bash(<prefix>:*)` rule or a session grant covers exactly the commands it names, never a command chained after them)
 
 Rationale in §6 A62.
-
-#### T36.2 The read-only rating and deny see through assignments, wrappers and `sh -c`
-
-Depends: T36.1 · Size: ~150 · Files: `crates/cox-tools/src/bash/classify.rs`, `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/tests/bash.rs`, `crates/cox-core/tests/permission.rs`, `docs/how-it-works.md`
-Goal: close the gaps T36.1 left (its done.md card, "Not done"). `classify` drops variable assignments as if they did not change what runs, so `GIT_PAGER='rm x' git log` and `export PATH=/tmp/evil; git status` are rated `ReadOnly` and run without asking (only the sandbox applies). Done means:
-- a command with an assignment prefix, or a line with `export`/`declare`/`unset`/a bare assignment, is never rated `ReadOnly`; at least `Exec`, so it takes the normal ask path. A short allow-list of assignments known not to change what runs (for example `LC_ALL`, `LANG`, `TZ`, `NO_COLOR`) may stay read-only, with its source in research.md;
-- deny and ask matching strips the wrappers Claude Code strips (`timeout`, `nice`, `nohup`, `time`, bare `xargs`, per research.md §8.5 row 38) before matching a command, so `nohup rm -rf x` is caught by `Bash(rm:*)` in `deny`;
-- deny looks inside `sh -c '…'`/`bash -c '…'` string arguments (split with the same walk); allow still never covers them (T36.1);
-- read-only commands without such a prefix still auto-allow as today.
-Check: `assignment_prefix_is_not_read_only` (`GIT_PAGER='rm x' git log`, `PAGER=… man ls`, `export PATH=/tmp/evil; git status`), `safe_locale_assignment_stays_read_only`, `deny_sees_through_wrappers` (`nohup rm -rf x`, `timeout 5 rm x`), `deny_looks_inside_sh_c`; the real binary in a scratch `COX_HOME` asks (headless: denies) `GIT_PAGER='touch x' git log` and `x` is not created.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 

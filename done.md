@@ -2921,3 +2921,28 @@ Check:
 - The real binary with a scratch `COX_HOME`: `git status; touch x` shows `segments: ["git status","touch x"]`, is denied headless, exit 2, no `x`.
 - In the worktree: nextest 1298 passed, 4 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1298 passed, 4 skipped; fmt, clippy and the slim build clean.
+
+#### T36.2 The read-only rating and deny see through assignments, wrappers and `sh -c`
+
+Depends: T36.1 · Size: ~150 · Files: `crates/cox-tools/src/bash/classify.rs`, `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/tests/bash.rs`, `crates/cox-core/tests/permission.rs`, `docs/how-it-works.md`
+Goal: close the gaps T36.1 left (its done.md card, "Not done"). `classify` drops variable assignments as if they did not change what runs, so `GIT_PAGER='rm x' git log` and `export PATH=/tmp/evil; git status` are rated `ReadOnly` and run without asking (only the sandbox applies). Done means:
+- a command with an assignment prefix, or a line with `export`/`declare`/`unset`/a bare assignment, is never rated `ReadOnly`; at least `Exec`, so it takes the normal ask path. A short allow-list of assignments known not to change what runs (for example `LC_ALL`, `LANG`, `TZ`, `NO_COLOR`) may stay read-only, with its source in research.md;
+- deny and ask matching strips the wrappers Claude Code strips (`timeout`, `nice`, `nohup`, `time`, bare `xargs`, per research.md §8.5 row 38) before matching a command, so `nohup rm -rf x` is caught by `Bash(rm:*)` in `deny`;
+- deny looks inside `sh -c '…'`/`bash -c '…'` string arguments (split with the same walk); allow still never covers them (T36.1);
+- read-only commands without such a prefix still auto-allow as today.
+Check: `assignment_prefix_is_not_read_only` (`GIT_PAGER='rm x' git log`, `PAGER=… man ls`, `export PATH=/tmp/evil; git status`), `safe_locale_assignment_stays_read_only`, `deny_sees_through_wrappers` (`nohup rm -rf x`, `timeout 5 rm x`), `deny_looks_inside_sh_c`; the real binary in a scratch `COX_HOME` asks (headless: denies) `GIT_PAGER='touch x' git log` and `x` is not created.
+Status: done 2026-09-27
+Result: the gaps T36.1 left are closed in the bash tool's shared tree-sitter walk (`crates/cox-tools/src/bash/classify.rs`); `cox_permission::Engine` is unchanged and stays pure.
+- **Assignments.** A variable-assignment prefix rates the command at least `Exec` (and marks the line opaque) unless the variable is on `SAFE_ASSIGNMENTS` (`LC_ALL`, `LANG`, `TZ`, `NO_COLOR`). `export`/`declare`/`typeset`/`readonly`/`local` and `unset` always do, with no safe-list exception. So `GIT_PAGER='rm x' git log` now asks.
+- **Wrappers.** `env`, `command`, `builtin`, `noglob`, `nohup`, `time`, `nice`, `timeout` (its duration is skipped), `stdbuf`, bare `xargs` and `exec` are stripped before deny and ask match a command, so `nohup rm -rf x` is caught by `Bash(rm:*)`. One `wrapper_args` helper drives both the risk and the segment path.
+- **Inner code.** `eval`, `sh -c` and `bash -c` strings are re-parsed with the same walk (`MAX_INNER_DEPTH` = 4), so deny and ask see the commands inside; allow still never covers them (opaque, T36.1). This is stricter than Claude Code, whose own docs say its deny does not stop `bash -c 'rm -rf build/'`.
+- Docs: `docs/how-it-works.md` (compound matching); research.md §8.5 row 38 updated and row 39 added (https://code.claude.com/docs/en/permissions, checked 2026-09-26: `NODE_ENV` is its only safe-variable example, the bare-`xargs` rule, the wrappers it never strips).
+Deviations:
+- `export`/`declare`/`unset` get no safe-list exception, even `export LC_ALL=C`.
+- The wrapper list is Claude Code's full documented list, wider than the card's examples.
+Check:
+- `assignment_prefix_is_not_read_only`, `safe_locale_assignment_stays_read_only` (crates/cox-tools/tests/bash.rs)
+- `deny_sees_through_wrappers` (nohup, timeout with a duration, stacked wrappers), `deny_looks_inside_sh_c` (sh -c, compound bash -c, sh -c behind a wrapper) through the real `BashTool` and `Engine`
+- e2e `an_assignment_prefix_asks_instead_of_auto_allowing` (scenario `bash_assignment_prefix.toml`): the real binary in a scratch `COX_HOME` denies `GIT_PAGER='touch x' git log` headless, exit 2, `x` not created.
+- In the worktree: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
+- On main after landing: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
