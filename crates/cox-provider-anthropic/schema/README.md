@@ -4,7 +4,7 @@
 
 Anthropic's OpenAPI 3.1 spec, the snapshot the Stainless SDK generator last
 published for the Anthropic SDKs. `build.rs` generates the Anthropic wire types
-(`src/anthropic/wire.rs`) from it with typify; nothing else reads it.
+(`src/wire.rs`) from it with typify; nothing else reads it.
 
 | | |
 | --- | --- |

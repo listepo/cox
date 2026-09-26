@@ -9,6 +9,9 @@ import pytest
 
 from cox_vendor import anthropic_spec as spec
 
+# Captured at import, before the autouse fixture points SCHEMA_FILE at tmp_path.
+REAL_SCHEMA_FILE = spec.SCHEMA_FILE
+
 SPEC_BODY = json.dumps({"openapi": "3.1.0", "paths": {}}, sort_keys=True).encode()
 
 README_TEMPLATE = """# Vendored API specs
@@ -87,3 +90,12 @@ def test_json_without_an_openapi_key_is_rejected(isolated_files):
 
 def test_validate_accepts_a_minimal_openapi_document():
     spec.validate(SPEC_BODY)  # no raise
+
+
+def test_default_target_is_the_file_build_rs_reads():
+    # T32.13 moved the spec with the Anthropic wire; a stale path would make
+    # the script write a file no build reads.
+    crate = spec.REPO_ROOT / "crates" / "cox-provider-anthropic"
+    assert REAL_SCHEMA_FILE == crate / "schema" / "anthropic-openapi.json"
+    assert REAL_SCHEMA_FILE.is_file()
+    assert '"schema/anthropic-openapi.json"' in (crate / "build.rs").read_text()

@@ -23,6 +23,9 @@ cox-provider-testkit = { path = "../cox-provider-testkit", version = "0.1.2" }
 # T32.14: the OpenAI Responses/Chat wires and their SDK types moved out;
 # re-exported at the old `openai` path (crates/cox-provider/src/lib.rs).
 cox-provider-openai = { path = "../cox-provider-openai", version = "0.1.2" }
+# T32.13: the Anthropic Messages wire and its typify build step moved out;
+# re-exported at the old `anthropic` path (crates/cox-provider/src/lib.rs).
+cox-provider-anthropic = { path = "../cox-provider-anthropic", version = "0.1.2" }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
@@ -31,14 +34,6 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-
-[build-dependencies]
-# T30.12: build.rs generates the Anthropic wire types from the vendored
-# OpenAPI spec. schemars 0.8 is the schema model typify 0.8's `TypeSpace`
-# takes (already in the tree through typify), not a second schema library.
-typify = { workspace = true }
-serde_json = { workspace = true }
-schemars = "0.8"
 
 [dev-dependencies]
 insta = { workspace = true }

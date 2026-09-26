@@ -23,10 +23,14 @@
 //!
 //! [`scripted`] and [`replay`] build on the pure scenario/cassette helpers
 //! in `cox-provider-testkit` (T32.11), re-exported at their old paths.
+//!
+//! [`anthropic`] is a re-export of `cox-provider-anthropic` (T32.13:
+//! dependencies (a), the typify build step, and size (c)), kept at this path
+//! so `cox_provider::anthropic::*` keeps working.
 
 #![warn(missing_docs)]
 
-pub mod anthropic;
+pub use cox_provider_anthropic as anthropic;
 pub use cox_provider_http::http;
 pub mod jev;
 pub mod replay;

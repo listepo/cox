@@ -965,6 +965,7 @@ dependencies = [
  "async-trait",
  "cox-models",
  "cox-protocol",
+ "cox-provider-anthropic",
  "cox-provider-http",
  "cox-provider-openai",
  "cox-provider-testkit",
@@ -972,10 +973,28 @@ dependencies = [
  "futures",
  "insta",
  "reqwest 0.12.28",
- "schemars 0.8.22",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "wiremock",
+]
+
+[[package]]
+name = "cox-provider-anthropic"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "cox-models",
+ "cox-protocol",
+ "cox-provider-http",
+ "futures",
+ "insta",
+ "reqwest 0.12.28",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-util",
  "typify",

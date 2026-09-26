@@ -6,7 +6,7 @@
 //! reachable from the Messages request body and the stream frames are fed to
 //! typify. A few constructs are rewritten first, each for the reason given at
 //! the rewrite. The result is written to `$OUT_DIR/anthropic_wire.rs`, which
-//! `src/anthropic/wire.rs` includes.
+//! `src/wire.rs` includes.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;

@@ -1,6 +1,7 @@
 """Vendors the Anthropic OpenAPI spec (T30.19): the JSON snapshot that
-`cox-provider`'s `build.rs` turns into wire types with typify. This module
-is the only thing that writes `crates/cox-provider/schema/anthropic-openapi.json`
+`cox-provider-anthropic`'s `build.rs` turns into wire types with typify. This
+module is the only thing that writes
+`crates/cox-provider-anthropic/schema/anthropic-openapi.json`
 and the "Downloaded"/"sha256" rows in its README — no hand `curl`.
 
 To vendor a newer snapshot: bump SNAPSHOT_URL below, then run
@@ -16,7 +17,7 @@ from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCHEMA_DIR = REPO_ROOT / "crates" / "cox-provider" / "schema"
+SCHEMA_DIR = REPO_ROOT / "crates" / "cox-provider-anthropic" / "schema"
 SCHEMA_FILE = SCHEMA_DIR / "anthropic-openapi.json"
 README_FILE = SCHEMA_DIR / "README.md"
 

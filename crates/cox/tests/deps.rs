@@ -263,14 +263,32 @@ fn no_crate_below_cox_depends_on_core() {
         deps["cox-provider-openai"]
     );
 
+    // cox-provider-anthropic (T32.13) is the Anthropic Messages wire and its
+    // typify build step: cox-protocol, cox-models (`effort_for`, adaptive
+    // thinking) and cox-provider-http, never back on cox-provider (which
+    // would cycle with cox-provider's `pub use` re-export of it).
+    let provider_anthropic_allowed: HashSet<&str> =
+        ["cox-protocol", "cox-models", "cox-provider-http"]
+            .into_iter()
+            .collect();
+    assert!(
+        deps["cox-provider-anthropic"]
+            .iter()
+            .all(|d| provider_anthropic_allowed.contains(d.as_str())),
+        "cox-provider-anthropic may only depend on cox-protocol/cox-models/cox-provider-http among workspace crates, found {:?}",
+        deps["cox-provider-anthropic"]
+    );
+
     // cox-provider additionally depends on cox-models (`Priced` prices every
     // call through the catalog's `PriceTable`, T30.24), cox-tokens
     // (re-exported at the old `tokens` path, T32.10), cox-provider-http
     // (re-exported at the old `http`/`retry`/`sse` paths, T32.12),
-    // cox-provider-openai (re-exported at the old `openai` path, T32.14) and
+    // cox-provider-openai (re-exported at the old `openai` path, T32.14),
     // cox-provider-testkit (T32.11): `scripted`/`replay` are thin glue over
     // the pure scenario/cassette helpers moved there, and `from_env` uses
-    // them in production (COX_PROVIDER=scripted|replay), not just in tests.
+    // them in production (COX_PROVIDER=scripted|replay), not just in tests;
+    // and cox-provider-anthropic (re-exported at the old `anthropic` path,
+    // T32.13).
     let provider_allowed: HashSet<&str> = [
         "cox-protocol",
         "cox-models",
@@ -278,6 +296,7 @@ fn no_crate_below_cox_depends_on_core() {
         "cox-provider-http",
         "cox-provider-openai",
         "cox-provider-testkit",
+        "cox-provider-anthropic",
     ]
     .into_iter()
     .collect();
@@ -290,7 +309,7 @@ fn no_crate_below_cox_depends_on_core() {
         provider_deps
             .iter()
             .all(|dep| provider_allowed.contains(dep.as_str())),
-        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http/cox-provider-openai/cox-provider-testkit among workspace crates, found {provider_deps:?}"
+        "cox-provider may only depend on cox-protocol/cox-models/cox-tokens/cox-provider-http/cox-provider-openai/cox-provider-testkit/cox-provider-anthropic among workspace crates, found {provider_deps:?}"
     );
 
     // cox-provider-testkit (T32.11) is a pure leaf, same shape as

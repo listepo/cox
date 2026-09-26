@@ -7,6 +7,10 @@
 //! Kept apart from the OpenAI backends because the fields that decide cost
 //! here — `cache_control` placement, `output_config.effort`, adaptive
 //! `thinking`, `fallbacks` — have no counterpart there (D3).
+//!
+//! Its own crate (T32.13, `docs/design/crates.md`) because it alone runs the
+//! typify build step over the vendored spec in `schema/`, and for its size;
+//! `cox-provider` re-exports it at the old `cox_provider::anthropic` path.
 
 pub mod request;
 pub mod stream;
@@ -22,6 +26,9 @@ use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+// Imported at the crate root so the `crate::http`/`crate::retry`/`crate::sse`
+// paths this wire used inside `cox-provider` resolve unchanged.
+use cox_provider_http::{http, retry, sse};
 
 /// The API version cox pins; Anthropic requires it on every request.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";

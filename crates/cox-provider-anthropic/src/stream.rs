@@ -21,7 +21,7 @@
 //! emitted in a prior call), and `anthropic::request::content_blocks`
 //! already round-trips this same cox-minted id back out as both the replayed
 //! `tool_use.id` and the matching `tool_result.tool_use_id` (plan.md §1.2;
-//! see `crates/cox-provider/src/anthropic/request.rs`).
+//! see `crates/cox-provider-anthropic/src/request.rs`).
 //!
 //! **Thinking signatures.** `signature_delta` chunks are consumed and
 //! dropped: `ProviderEvent` (plan.md §1.2, committed in `cox-protocol`
@@ -353,7 +353,7 @@ fn refusal_detail(d: &wire::RefusalStopDetails) -> String {
 /// live-vs-golden comparisons need it deterministic instead; this replaces
 /// each `ToolUseStart` id with a counter-derived one, in event order, so two
 /// parallel tool calls still get visibly distinct (but stable) ids. Used by
-/// both this module's fixture snapshots and `super::super::tests` (the
+/// both this module's fixture snapshots and `crate::tests` (the
 /// `wiremock` contract test), which is why it is `pub(crate)` instead of
 /// nested inside `mod tests`.
 #[cfg(test)]
