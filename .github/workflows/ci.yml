@@ -6,6 +6,15 @@ on:
     # Draft PRs get standard CI: docs-only changes finish in ~2 min and the
     # signal (fmt/clippy/nextest green) is what promotes a draft to ready.
   workflow_dispatch:
+  # Dependabot pull requests: dependabot.yml calls this workflow so they get the
+  # same jobs before its patch-only auto-merge.
+  workflow_call:
+
+# Build and test jobs need only to read the repository; a job that needs more
+# (revert-on-failure) declares its own. This also caps these jobs when
+# dependabot.yml calls this workflow with wider permissions.
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
