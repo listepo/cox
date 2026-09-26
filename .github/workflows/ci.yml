@@ -148,10 +148,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.97.1
+      # cargo-audit does not read deny.toml, so its `[advisories] ignore` list
+      # (each entry with its reason and review date) is passed as --ignore
+      # flags: one list, one place to remove an entry.
       - name: cargo audit
         run: |
           cargo install cargo-audit --locked
-          cargo audit
+          ignores=$(python3 -c 'import tomllib; print(" ".join("--ignore " + (i if isinstance(i, str) else i["id"]) for i in tomllib.load(open("deny.toml", "rb"))["advisories"]["ignore"]))')
+          # shellcheck disable=SC2086 # word splitting into flags is intended
+          cargo audit $ignores
 
   # plan.md T30.2: `bash scripts/footprint.sh --check` fails when any metric
   # regresses more than 20% against scripts/footprint.json (keyed by
