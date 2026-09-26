@@ -1,0 +1,17 @@
+api = 1
+id = "jev"
+version = "0.1.0"
+name = "Jev"
+description = "TypeSafe System One decisions (choice, score, yes/no) over cox's own state"
+wasm = "jev.wasm"
+
+# The System One wire (J1): the host injects the key from `api_key_env` and
+# `cox_http` may reach only this host from inside `cox_provider_stream`.
+# `capabilities.decide`/`[[models]]` are added once a decision point calls in
+# (T33.40.6, T33.40.9); `capabilities.model` is not requested here — this
+# plugin only ever answers through its own provider, never through a tier.
+[[provider]]
+name = "typesafe"
+api = "plugin"
+base_url = "https://api.typesafe.ai"
+api_key_env = "TYPESAFE_API_KEY"

@@ -9,6 +9,11 @@ check:
 test: && dunnage
     mise exec -- cargo nextest run --workspace
 
+# The guest workspace (plugins/, PL§9): pure/host-target tests only — no
+# wasm32 build here, that is CI's separate step (T33.40.2).
+plugin-test:
+    mise exec -- cargo test --manifest-path plugins/Cargo.toml --workspace
+
 # Lossless cleanup of ./target (compress + dedupe); never deletes. A no-op without dunnage.
 dunnage:
     #!/usr/bin/env sh
