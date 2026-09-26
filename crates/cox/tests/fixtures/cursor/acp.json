@@ -1,0 +1,79 @@
+{
+  "mode": "acp",
+  "sources": [
+    "https://cursor.com/docs/cli/acp.md",
+    "https://agentclientprotocol.com/protocol/initialization.md",
+    "https://agentclientprotocol.com/protocol/session-setup.md",
+    "https://agentclientprotocol.com/protocol/prompt-turn.md",
+    "https://agentclientprotocol.com/protocol/tool-calls.md"
+  ],
+  "responses": {
+    "initialize": {
+      "protocolVersion": 1,
+      "agentCapabilities": {
+        "loadSession": true,
+        "promptCapabilities": {
+          "image": true,
+          "audio": true,
+          "embeddedContext": true
+        },
+        "mcpCapabilities": {
+          "http": true,
+          "sse": true
+        }
+      },
+      "agentInfo": {
+        "name": "my-agent",
+        "title": "My Agent",
+        "version": "1.0.0"
+      },
+      "authMethods": []
+    },
+    "session/new": {
+      "sessionId": "sess_abc123def456"
+    },
+    "session/prompt": {
+      "stopReason": "end_turn"
+    }
+  },
+  "prompt_turn": [
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "sess_abc123def456",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "msg_agent_c42b9",
+          "content": {
+            "type": "text",
+            "text": "I'll analyze your code for potential issues. Let me examine it..."
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 5,
+      "method": "session/request_permission",
+      "params": {
+        "sessionId": "sess_abc123def456",
+        "toolCall": {
+          "toolCallId": "call_001"
+        },
+        "options": [
+          {
+            "optionId": "allow-once",
+            "name": "Allow once",
+            "kind": "allow_once"
+          },
+          {
+            "optionId": "reject-once",
+            "name": "Reject",
+            "kind": "reject_once"
+          }
+        ]
+      }
+    }
+  ]
+}

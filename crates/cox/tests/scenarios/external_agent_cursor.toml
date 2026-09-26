@@ -1,0 +1,6 @@
+[[turn]]
+text = "delegating"
+tool_calls = [{ name = "agent", input = { task = "work", preset = "cursor" } }]
+
+[[turn]]
+text = "done"

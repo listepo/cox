@@ -5,6 +5,28 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+# T35.7: `fake_agent` below makes this a two-binary package; `cargo run`
+# must keep meaning `cox`.
+default-run = "cox"
+
+# T35.7: the test-only stand-in for Cursor's `agent` CLI that
+# `tests/external_agents_cursor.rs` spawns. A `[[bin]]` because an
+# integration test can only find a binary of its own package
+# (`CARGO_BIN_EXE_fake_agent`); its only dependency is `serde_json`.
+[[bin]]
+name = "fake_agent"
+path = "tests/support/fake_agent.rs"
+test = false
+doc = false
+
+# T35.7: without this, dist puts `fake_agent` in every release archive next
+# to `cox` (checked with `dist plan`). One row per `targets` entry in
+# dist-workspace.toml; a new target needs its row here too.
+[package.metadata.dist.binaries]
+aarch64-apple-darwin = ["cox"]
+x86_64-apple-darwin = ["cox"]
+x86_64-unknown-linux-gnu = ["cox"]
+aarch64-unknown-linux-gnu = ["cox"]
 
 [features]
 default = ["otel", "plugins"]
