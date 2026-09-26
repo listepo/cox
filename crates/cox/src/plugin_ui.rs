@@ -52,6 +52,17 @@ pub(crate) fn serve(
                         | PluginRequest::Command { plugin, .. }
                         | PluginRequest::Key { plugin, .. }
                         | PluginRequest::RenderItem { plugin, .. } => plugin,
+                        // T33.33, PL§1c: answered inline, not through
+                        // `answer()` below — `Stop` has no `PluginUiMsg` and
+                        // needs none; the modal that asked for it already
+                        // told the user, and `WasmTool::is_stopped` is the
+                        // only reader of the flag `PluginHost::stop` sets.
+                        PluginRequest::Stop { plugin } => {
+                            if let Some((_, host)) = hosts.iter().find(|(id, _)| id == plugin) {
+                                host.stop();
+                            }
+                            continue;
+                        }
                     };
                     let host = hosts.iter().find(|(id, _)| id == plugin);
                     let msg = answer(host.map(|(_, h)| h.as_ref()), request);
@@ -114,6 +125,10 @@ pub(crate) fn answer(host: Option<&PluginHost>, request: PluginRequest) -> Plugi
                 out: command_call(host, KEY, &input),
             }
         }
+        // `serve`'s loop above answers `Stop` itself and `continue`s before
+        // ever building this match's `host`/`request`, so this arm exists
+        // only for exhaustiveness (T33.33, PL§1c).
+        PluginRequest::Stop { .. } => unreachable!("serve() answers Stop before calling answer()"),
     }
 }
 

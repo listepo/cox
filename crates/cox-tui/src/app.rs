@@ -28,7 +28,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
 use crate::cells::cell_lines;
-use crate::state::{Ask, Cmd, GrantDecision, Msg, PluginNewRequest, PluginRequest, State, update};
+use crate::state::{Ask, Cmd, GrantDecision, Msg, PluginMgmtRequest, PluginRequest, State, update};
 use crate::view::view;
 
 /// Rows the live viewport keeps below the scrollback; a short terminal
@@ -98,8 +98,9 @@ pub enum TuiError {
 /// writes it — same reason as `persist`, this crate never touches the store.
 /// `plugins` (T33.23) carries each `Cmd::Plugin` to `crates/cox`, which holds
 /// the plugin hosts; the answer arrives on `feed` as `Msg::Plugin`.
-/// `plugin_new` (T33.30) carries a `Cmd::PluginNew` the same way; its answer
-/// arrives on `feed` as `Msg::PluginNew`.
+/// `plugin_mgmt` (T33.30 `New`; T33.33 `Update`/`Remove`/`List`) carries a
+/// `Cmd::PluginMgmt` the same way; its answer arrives on `feed` as
+/// `Msg::PluginMgmt`.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     session: Session,
@@ -110,7 +111,7 @@ pub async fn run(
     persist: tokio::sync::mpsc::Sender<(String, String)>,
     grants: tokio::sync::mpsc::Sender<GrantDecision>,
     plugins: tokio::sync::mpsc::Sender<PluginRequest>,
-    plugin_new: tokio::sync::mpsc::Sender<PluginNewRequest>,
+    plugin_mgmt: tokio::sync::mpsc::Sender<PluginMgmtRequest>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
@@ -269,11 +270,11 @@ pub async fn run(
                     Cmd::Plugin(request) => {
                         let _ = plugins.try_send(request);
                     }
-                    // T33.30: best-effort too — a request lost to a full
-                    // channel just means `/plugin new` silently does
-                    // nothing; the user can retry.
-                    Cmd::PluginNew(request) => {
-                        let _ = plugin_new.try_send(request);
+                    // T33.30, T33.33: best-effort too — a request lost to a
+                    // full channel just means the `/plugin` subcommand
+                    // silently does nothing; the user can retry.
+                    Cmd::PluginMgmt(request) => {
+                        let _ = plugin_mgmt.try_send(request);
                     }
                 }
             }

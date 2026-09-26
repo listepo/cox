@@ -37,8 +37,7 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+K plugin leader · Ctrl+C qui
        /skills                                                  list skills
        /hooks                                                   list hooks
        /mcp                                                     MCP servers and their tools
-       /plugin new <name> [--lang <lang>] [--with <cap,...>]    scaffold a new plugin package
-       (PL§13)
+       /plugin <new|update|remove|list|reload> ...              manage plugins (PL§13)
        /doctor                                                  check the install
        /clear                                                   new session, same directory
        /fork [turn]                                             new child session with the history

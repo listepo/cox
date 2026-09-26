@@ -316,6 +316,52 @@ impl PluginGrantDialog {
     }
 }
 
+/// `Modal::PluginRemove` (T33.33, PL§1c): `/plugin remove <id>
+/// [--keep-data]`'s confirmation before an irreversible action — the same
+/// `y`/`n` shape `PluginGrantDialog` uses above, but its own kind rather
+/// than reusing that one: a remove has no capability diff to show, and
+/// `Approval` carries a `ToolCall`/`Why` this has none of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoveConfirm {
+    pub id: String,
+    pub keep_data: bool,
+}
+
+impl RemoveConfirm {
+    /// `Some(true)`: remove. `Some(false)`: cancel. `None` keeps the modal
+    /// open — only `y`/`n` decide it.
+    pub fn key(&self, key: KeyEvent) -> Option<bool> {
+        match key.code {
+            KeyCode::Char('y') => Some(true),
+            KeyCode::Char('n') | KeyCode::Esc => Some(false),
+            _ => None,
+        }
+    }
+
+    /// The prompt, whether `--keep-data` was given, and the keys. `id` is
+    /// sanitized: it names a directory on disk, not model output, but every
+    /// other modal here sanitizes what it shows regardless of source.
+    pub fn lines(&self, theme: &Theme) -> Vec<Line<'static>> {
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let data = if self.keep_data {
+            " its stored data is kept (--keep-data)"
+        } else {
+            " its stored data is deleted too"
+        };
+        vec![
+            Line::styled(
+                format!(" remove plugin {}?", sanitize(&self.id)),
+                bold.fg(theme.warn),
+            ),
+            Line::styled(
+                data.to_string(),
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+            Line::raw(" [y]es  [n]o"),
+        ]
+    }
+}
+
 /// The `?` overlay (T24.6): the keymap as bound now (T25.5) by context, a
 /// bold header per context and its rows packed into as few `width`-column
 /// lines as fit, so the whole table stays inside the inline viewport.
@@ -678,5 +724,35 @@ mod tests {
             text.contains("asks again only if capabilities widen"),
             "{text:?}"
         );
+    }
+
+    fn render_remove(confirm: &RemoveConfirm) -> String {
+        let lines = confirm.lines(&Theme::dark());
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let mut term = Terminal::new(TestBackend::new(72, height)).expect("test terminal");
+        term.draw(|f| Paragraph::new(lines).render(f.area(), f.buffer_mut()))
+            .expect("draw");
+        crate::view::buffer_to_string(term.backend().buffer())
+    }
+
+    /// T33.33's Done-when: an insta snapshot of `/plugin remove`'s
+    /// confirmation modal.
+    #[test]
+    fn plugin_remove_confirm_snapshot() {
+        insta::assert_snapshot!(render_remove(&RemoveConfirm {
+            id: "git-glance".into(),
+            keep_data: false,
+        }));
+    }
+
+    /// `--keep-data` shows in the modal too, not only in the notice after
+    /// the remove runs.
+    #[test]
+    fn plugin_remove_confirm_shows_keep_data() {
+        let text = render_remove(&RemoveConfirm {
+            id: "git-glance".into(),
+            keep_data: true,
+        });
+        assert!(text.contains("--keep-data"), "{text:?}");
     }
 }

@@ -27,7 +27,7 @@ use crate::glyph::{self, Glyphs};
 use crate::item_render::{CellRef, ItemRender, RenderSource};
 use crate::keymap::{self, Keymap};
 use crate::markdown;
-use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer};
+use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer, RemoveConfirm};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
@@ -144,6 +144,10 @@ pub enum Modal {
     /// `NeedsApproval` at session open (T33.8, PL§3); more than one queues
     /// in `pending_grants` below, since this is the same one modal slot.
     PluginGrant(PluginGrantDialog),
+    /// `/plugin remove <id> [--keep-data]` (T33.33, PL§1c): confirms an
+    /// irreversible action before `Cmd::PluginMgmt(PluginMgmtRequest::Remove)`
+    /// reaches the runtime.
+    PluginRemove(RemoveConfirm),
     Picker(Picker),
     /// `Ctrl+G` (T15.3): the working tree's `git diff HEAD`, drawn over the
     /// transcript; `scroll` is lines from the top.
@@ -461,10 +465,11 @@ pub enum Msg {
     Rollout(Vec<Event>),
     /// What the runtime learned about a plugin's UI (T33.23, PL§8).
     Plugin(PluginUiMsg),
-    /// The runtime's answer to `Cmd::PluginNew` (T33.30): `Ok` names where
-    /// the package landed, `Err` names why `plugin_new::scaffold`/`write`
-    /// refused. Shown as a notice, the same as `Event::Notice`.
-    PluginNew(Result<String, String>),
+    /// The runtime's answer to `Cmd::PluginMgmt` (T33.30 `New`; T33.33
+    /// `Update`/`Remove`/`List`): `Ok` is the lines `cox plugin
+    /// new`/`update`/`remove`/`list` would have printed, joined; `Err`
+    /// names why. Shown as a notice, the same as `Event::Notice`.
+    PluginMgmt(Result<String, String>),
 }
 
 /// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
@@ -533,6 +538,13 @@ pub enum PluginRequest {
         source: RenderSource,
         width: u16,
     },
+    /// `/plugin remove <id>` confirmed (T33.33, PL§1c): `crates/cox` sends
+    /// this after `plugin_cmd::remove_for_tui` succeeds, over the same
+    /// channel `Render`/`Command`/`Key` already reach `plugin_ui::serve` on
+    /// — the one place holding this session's live hosts — so it can flag
+    /// `plugin`'s host stopped without a second channel. No answer rides
+    /// back on the feed; the modal's own notice already told the user.
+    Stop { plugin: String },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -569,6 +581,39 @@ pub struct PluginNewRequest {
     pub name: String,
     pub lang: String,
     pub with: Vec<String>,
+}
+
+/// `/plugin`'s management requests to the runtime (T33.30 `New`; T33.33
+/// `Update`/`Remove`/`List`), carried over the one channel `Cmd::PluginMgmt`
+/// reaches (`app.rs`) rather than a second channel per subcommand —
+/// `crates/cox`'s executor matches on this and calls the same
+/// `plugin_new`/`plugin_cmd` functions `cox plugin ...` uses, so there is
+/// only one implementation of each. Its answer rides the feed as
+/// `Msg::PluginMgmt`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginMgmtRequest {
+    New(PluginNewRequest),
+    /// `/plugin update [<id>...] [--all] [--check] [--rollback]` (PL§1b):
+    /// always pre-approved — the TUI's raw mode has no stdin to prompt a
+    /// widened capability list on, so `crates/cox` runs it the way `--yes`
+    /// would.
+    Update {
+        ids: Vec<String>,
+        all: bool,
+        check: bool,
+        rollback: bool,
+    },
+    /// `/plugin remove <id> [--keep-data]` (PL§1c): only reached after
+    /// `Modal::PluginRemove` confirmed it, so `crates/cox` never prompts
+    /// either.
+    Remove {
+        id: String,
+        keep_data: bool,
+    },
+    /// `/plugin list [--json]`.
+    List {
+        json: bool,
+    },
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -612,11 +657,12 @@ pub enum Cmd {
     /// A plugin call the runtime makes off-screen (T33.23); `app.rs`
     /// forwards it to `crates/cox`, the only side that holds plugin hosts.
     Plugin(PluginRequest),
-    /// `/plugin new`'s picker (or a bare `--lang`) resolved a language
-    /// (T33.30): `app.rs` forwards this to `crates/cox`, which runs the
-    /// same `plugin_new::scaffold`/`write` pair `cox plugin new` calls and
-    /// answers on the feed as `Msg::PluginNew`.
-    PluginNew(PluginNewRequest),
+    /// `/plugin new|update|remove|list`'s request to the runtime (T33.30
+    /// `New`; T33.33 `Update`/`Remove`/`List`): `app.rs` forwards this to
+    /// `crates/cox`, which runs the same `plugin_new`/`plugin_cmd`
+    /// functions `cox plugin ...` calls and answers on the feed as
+    /// `Msg::PluginMgmt`.
+    PluginMgmt(PluginMgmtRequest),
 }
 
 impl State {
@@ -844,9 +890,15 @@ fn progress(state: &mut State) -> Option<Cmd> {
     }
     let want = match (state.status.busy, &state.modal) {
         (false, _) => Progress::Idle,
-        (true, Some(Modal::Approval(_) | Modal::Question(_) | Modal::PluginGrant(_))) => {
-            Progress::Paused
-        }
+        (
+            true,
+            Some(
+                Modal::Approval(_)
+                | Modal::Question(_)
+                | Modal::PluginGrant(_)
+                | Modal::PluginRemove(_),
+            ),
+        ) => Progress::Paused,
         (true, _) => Progress::Busy,
     };
     (want != state.progress).then(|| {
@@ -938,7 +990,7 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             });
             Vec::new()
         }
-        Msg::PluginNew(result) => {
+        Msg::PluginMgmt(result) => {
             let (level, text) = match result {
                 Ok(text) => (Level::Info, text),
                 Err(text) => (Level::Warn, text),
@@ -1007,6 +1059,7 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
             Modal::Approval(_)
             | Modal::Question(_)
             | Modal::PluginGrant(_)
+            | Modal::PluginRemove(_)
             | Modal::Help
             | Modal::Agents { .. }
             | Modal::Transcript { .. }
@@ -1157,6 +1210,29 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 Vec::new()
             }
         },
+        // T33.33, PL§1c: `y` reaches the runtime only from here — `act()`
+        // just opens the modal, never the request itself, so a stray
+        // `/plugin remove` can never fire without this confirmation.
+        Some(Modal::PluginRemove(confirm)) => match confirm.key(key) {
+            Some(true) => {
+                vec![Cmd::PluginMgmt(PluginMgmtRequest::Remove {
+                    id: confirm.id,
+                    keep_data: confirm.keep_data,
+                })]
+            }
+            Some(false) => {
+                notice(
+                    state,
+                    Level::Info,
+                    format!("cancelled removing {}", confirm.id),
+                );
+                Vec::new()
+            }
+            None => {
+                state.modal = Some(Modal::PluginRemove(confirm));
+                Vec::new()
+            }
+        },
         // T24.2: every key that changes the selection previews the row
         // immediately, not only `Enter` — the same live-apply the picker's
         // other kinds do not need, since none of them redraws the screen
@@ -1218,11 +1294,11 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 // `rewind_to` for `Kind::RewindWhat` above.
                 Pick::Chosen(choice) if picker.kind == Kind::PluginLang => {
                     if let Some((name, with)) = state.pending_plugin_new.take() {
-                        return vec![Cmd::PluginNew(PluginNewRequest {
+                        return vec![Cmd::PluginMgmt(PluginMgmtRequest::New(PluginNewRequest {
                             name,
                             lang: choice,
                             with,
-                        })];
+                        }))];
                     }
                 }
                 Pick::Chosen(choice) => match picker.kind {
@@ -1995,7 +2071,11 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             lang: Some(lang),
             with,
         } => {
-            return vec![Cmd::PluginNew(PluginNewRequest { name, lang, with })];
+            return vec![Cmd::PluginMgmt(PluginMgmtRequest::New(PluginNewRequest {
+                name,
+                lang,
+                with,
+            }))];
         }
         // No `--lang`: stash `name`/`with` and ask the picker, the same
         // two-step shape `Action::Rewind` uses for its turn-then-what picks.
@@ -2012,6 +2092,45 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
                     .map(|s| (*s).to_string())
                     .collect(),
             )));
+        }
+        // T33.33: `list`/`update` need no confirmation — the runtime
+        // already pre-approves them the way `--yes` would, since the TUI's
+        // raw mode has no stdin to prompt a widened capability list on.
+        Action::PluginList { json } => {
+            return vec![Cmd::PluginMgmt(PluginMgmtRequest::List { json })];
+        }
+        Action::PluginUpdate {
+            ids,
+            all,
+            check,
+            rollback,
+        } => {
+            return vec![Cmd::PluginMgmt(PluginMgmtRequest::Update {
+                ids,
+                all,
+                check,
+                rollback,
+            })];
+        }
+        // `remove` is the one irreversible plugin action, so it asks
+        // through `Modal::PluginRemove` first — `on_key`'s handler for it
+        // sends `Cmd::PluginMgmt(PluginMgmtRequest::Remove)` only on `y`.
+        Action::PluginRemove { id, keep_data } => {
+            state.modal = Some(Modal::PluginRemove(RemoveConfirm { id, keep_data }));
+        }
+        // `/plugin reload` means `/clear`: the plugin host only reloads a
+        // manifest at session open, so restarting the cache prefix is the
+        // only way to pick up a changed one — mirrors the `command.name ==
+        // "clear"` handling below, plus a notice explaining why.
+        Action::PluginReload => {
+            state.queue.clear();
+            state.active_loop = None;
+            notice(
+                state,
+                Level::Info,
+                "plugin reload: restarting session to reload plugins".into(),
+            );
+            return vec![Cmd::Clear];
         }
     }
     Vec::new()
@@ -2445,8 +2564,9 @@ mod tests {
     }
 
     /// T33.30's Done-when: `/plugin new <name>` with no `--lang` opens the
-    /// language picker, and choosing a row reaches `Cmd::PluginNew` with
-    /// that language — the one `Cmd` `crates/cox`'s executor turns into a
+    /// language picker, and choosing a row reaches
+    /// `Cmd::PluginMgmt(PluginMgmtRequest::New)` with that language — the
+    /// one `Cmd` `crates/cox`'s executor turns into a
     /// `plugin_new::scaffold`/`write` call, so there is no second
     /// implementation of the mapping. `fake_executor` stands in for that
     /// runtime executor (`cox-tui` cannot call `plugin_new::scaffold`
@@ -2467,7 +2587,7 @@ mod tests {
         let fake_executor =
             |req: &PluginNewRequest| (req.name.clone(), req.lang.clone(), req.with.clone());
         for cmd in &cmds {
-            if let Cmd::PluginNew(req) = cmd {
+            if let Cmd::PluginMgmt(PluginMgmtRequest::New(req)) = cmd {
                 calls.push(fake_executor(req));
             }
         }

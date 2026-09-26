@@ -6,6 +6,7 @@
 //! parallel, and a slow plugin never holds a core thread.
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -87,6 +88,14 @@ pub struct PluginHost {
     cancel: CancelHandle,
     call_cap: Duration,
     threads: Vec<JoinHandle<()>>,
+    /// `/plugin remove`'s liveness flag (T33.33, PL§1c): set by [`Self::stop`]
+    /// once its manifest is gone from disk. The worker threads and queues
+    /// keep running underneath — dropping the shared `Arc<PluginHost>` still
+    /// does the real teardown at session end — this only tells a frozen
+    /// `WasmTool` (which holds its own clone) to stop calling in, so it can
+    /// answer `Denied` instead of a call that would otherwise still work
+    /// against deleted files.
+    stopped: Arc<AtomicBool>,
 }
 
 impl PluginHost {
@@ -135,6 +144,7 @@ impl PluginHost {
             cancel: cancel.clone(),
             call_cap,
             threads: Vec::new(),
+            stopped: Arc::new(AtomicBool::new(false)),
         };
         let dog = shared.clone();
         let id = env.id().to_string();
@@ -199,6 +209,20 @@ impl PluginHost {
             Some(out) => Ok(Some(serde_json::from_slice(&out)?)),
             None => Ok(None),
         }
+    }
+
+    /// `/plugin remove <id>` (T33.33, PL§1c): flags this instance stopped so
+    /// [`Self::is_stopped`] — the check a frozen `WasmTool` makes before
+    /// every call — answers `true` from here on. Idempotent; does not touch
+    /// the queues or threads, since the `Arc<PluginHost>` this session's
+    /// tools/hooks/tap still hold keeps them alive until the session ends.
+    pub fn stop(&self) {
+        self.stopped.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether [`Self::stop`] has been called.
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::Relaxed)
     }
 }
 
@@ -440,6 +464,22 @@ pub(crate) mod tests {
         // `cox_init` is the one required export.
         let no_init = PluginHost::load("t", b"(module)", &Limits::default());
         assert!(matches!(no_init, Err(PluginError::MissingExport(INIT))));
+    }
+
+    /// T33.33, PL§1c: fresh, `is_stopped` is `false`; `stop` flips it, and
+    /// the worker keeps serving underneath — `stop` only marks liveness, it
+    /// does not close the queues (that stays `Drop`'s job).
+    #[test]
+    fn stop_flags_is_stopped_without_closing_the_worker() {
+        let host = load("", &Limits::default());
+        assert!(!host.is_stopped());
+        host.stop();
+        assert!(host.is_stopped());
+        assert_eq!(
+            host.init(&init_in())
+                .expect("worker still serves after stop"),
+            InitOut::default()
+        );
     }
 
     #[test]

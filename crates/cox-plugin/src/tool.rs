@@ -155,6 +155,19 @@ impl Tool for WasmTool {
     }
 
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        // T33.33, PL§1c: `/plugin remove` calls `PluginHost::stop` on this
+        // instance but does not tear down its worker — this session's
+        // frozen spec (`declared` above) still lists the tool, so a call
+        // already queued by the model must answer instead of hanging or
+        // running against files `plugin_cmd::remove_for_tui` just deleted.
+        // Not a second permission guard (AGENTS.md "Trust boundaries"): the
+        // Engine already decided this call is allowed; this only answers
+        // whether the plugin behind it is still there to run it.
+        if self.host.is_stopped() {
+            return Err(ToolError::Denied {
+                why: "plugin removed".into(),
+            });
+        }
         let guard = self.serial.clone().lock_owned().await;
         let (output, cancel) = (cx.output.clone(), cx.cancel.clone());
         let watched = cancel.clone();
@@ -367,5 +380,30 @@ mod tests {
         let started = Instant::now();
         init_again(&live);
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    /// T33.33, PL§1c (Done-when): once `/plugin remove` calls
+    /// `PluginHost::stop` on this session's instance, its `WasmTool`
+    /// answers `Denied` for every further call — never reaching the guest,
+    /// so it cannot hang on `cox_tool_call`'s `cox_cancelled` loop — until
+    /// the next session builds a fresh `PluginHost`. `stopped` lives on
+    /// this one instance, so a fresh `cox_init` elsewhere (`init_again`,
+    /// standing in for the next session's `open`) is unaffected.
+    #[tokio::test]
+    async fn removed_plugin_tool_is_denied_until_next_session() {
+        let live = started();
+        let tool = live.tools().0.remove(0);
+        // `tools()` erases `WasmTool` to `Arc<dyn Tool>`, so `stop` is
+        // called through the same accessor `init_again` uses — the clone
+        // `declared` gave the tool shares this one `PluginHost`.
+        live.plugins()[0].host().stop();
+        let (tx, _rx) = mpsc::channel(4);
+        let cx = cx(tx, CancellationToken::new());
+        let out = tool.call(json!({}), &cx).await;
+        assert!(
+            matches!(&out, Err(ToolError::Denied { why }) if why == "plugin removed"),
+            "{out:?}"
+        );
+        init_again(&live);
     }
 }

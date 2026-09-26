@@ -112,11 +112,18 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::PluginGrant(g)) => g.lines(&state.glyphs, &state.theme),
         _ => Vec::new(),
     };
+    // T33.33: same reason as `grant` above — a band, not an overlay, so
+    // `view` needs its line count before laying out the transcript.
+    let remove = match &state.modal {
+        Some(Modal::PluginRemove(r)) => r.lines(&state.theme),
+        _ => Vec::new(),
+    };
     let modal = match &state.modal {
         Some(Modal::Approval(_)) => u16::try_from(approval.len()).unwrap_or(u16::MAX),
         Some(Modal::Question(q)) => q.height(),
         Some(Modal::Picker(p)) => p.height(),
         Some(Modal::PluginGrant(_)) => u16::try_from(grant.len()).unwrap_or(u16::MAX),
+        Some(Modal::PluginRemove(_)) => u16::try_from(remove.len()).unwrap_or(u16::MAX),
         // The diff view, the agents list, the rollout overlay and a
         // plugin's overlay (T33.24) all take the transcript's rows
         // (`Context::Overlay`), not a band of their own.
@@ -284,6 +291,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
             Paragraph::new(p.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
         }
         Some(Modal::PluginGrant(_)) => Paragraph::new(grant).render(modal_area, buf),
+        Some(Modal::PluginRemove(_)) => Paragraph::new(remove).render(modal_area, buf),
         // Drawn over the transcript above, like `Diff`/`Help`; no band
         // here. `Plugin`'s overlay is drawn there too, right after the
         // transcript `Paragraph` above.

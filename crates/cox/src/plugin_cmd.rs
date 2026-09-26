@@ -14,6 +14,12 @@
 //! `remove` (PL§1c) never needs the manifest to parse: a plugin whose
 //! `plugin.toml` is corrupt must still be removable, so it is found by
 //! whether its directory exists, not through `discover`.
+//! `update`/`remove`'s printed lines are built by a shared, stdin-free core
+//! (`update_core`/`remove_with`) that a `println!`-ing CLI wrapper and a
+//! `_for_tui` wrapper both call (T33.33): the TUI has no terminal to
+//! prompt on, so its wrapper always answers `yes` and never reaches
+//! `confirm`'s stdin read. `list` already returned a `String`; nothing to
+//! change there.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -95,7 +101,11 @@ pub fn install(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
         "path": dir.display().to_string(),
         "digest": digest,
     });
+    let mut out = Vec::new();
+    let mut confirm_fn = |q: &str| confirm(q);
     decide(
+        &mut out,
+        &mut confirm_fn,
         &store,
         &manifest.id,
         &GrantScope::User,
@@ -104,6 +114,9 @@ pub fn install(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
         source,
         yes,
     )?;
+    for line in &out {
+        println!("{line}");
+    }
     Ok(())
 }
 
@@ -138,7 +151,11 @@ pub fn link(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
         "kind": "link",
         "path": dir.display().to_string(),
     });
+    let mut out = Vec::new();
+    let mut confirm_fn = |q: &str| confirm(q);
     decide(
+        &mut out,
+        &mut confirm_fn,
         &store,
         &manifest.id,
         &GrantScope::User,
@@ -147,6 +164,9 @@ pub fn link(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
         source,
         yes,
     )?;
+    for line in &out {
+        println!("{line}");
+    }
     Ok(())
 }
 
@@ -204,7 +224,22 @@ pub fn enable(cli: &Cli, cwd: &Path, id: &str, project: bool, yes: bool) -> anyh
     let source = stored
         .map(|g| g.source)
         .unwrap_or_else(|| default_source(p.source, p.dev, &p.dir));
-    decide(&store, id, &scope, &grant_digest, manifest, source, yes)?;
+    let mut out = Vec::new();
+    let mut confirm_fn = |q: &str| confirm(q);
+    decide(
+        &mut out,
+        &mut confirm_fn,
+        &store,
+        id,
+        &scope,
+        &grant_digest,
+        manifest,
+        source,
+        yes,
+    )?;
+    for line in &out {
+        println!("{line}");
+    }
     Ok(())
 }
 
@@ -253,6 +288,71 @@ pub fn update(
     rollback: bool,
     yes: bool,
 ) -> anyhow::Result<()> {
+    let mut out = Vec::new();
+    let mut confirm_fn = |q: &str| confirm(q);
+    let failed = update_core(
+        cli,
+        ids,
+        all,
+        check,
+        rollback,
+        yes,
+        &mut confirm_fn,
+        &mut out,
+    )?;
+    for line in &out {
+        println!("{line}");
+    }
+    if failed {
+        anyhow::bail!("not every plugin was updated");
+    }
+    Ok(())
+}
+
+/// `/plugin update` from the TUI (T33.33): always pre-approved, since the
+/// TUI's raw mode has no stdin to prompt on — a widened capability list is
+/// granted the same way `--yes` would grant it on the CLI. Returns the
+/// lines `update` would have printed, joined for one notice; only a hard
+/// failure (`Store::open`) is `Err` — a per-plugin failure still shows in
+/// the text, so the caller does not need `update`'s "not every plugin was
+/// updated" bail on top of it.
+pub fn update_for_tui(
+    cli: &Cli,
+    ids: &[String],
+    all: bool,
+    check: bool,
+    rollback: bool,
+) -> anyhow::Result<String> {
+    let mut out = Vec::new();
+    update_core(
+        cli,
+        ids,
+        all,
+        check,
+        rollback,
+        true,
+        &mut |_| true,
+        &mut out,
+    )?;
+    Ok(out.join("\n"))
+}
+
+/// `update`'s and `update_for_tui`'s shared body (PL§1b, T33.31, T33.33):
+/// builds the target list and runs each one through
+/// `update_one`/`rollback_one`, collecting every line into `out` instead of
+/// printing so both callers can present it their own way. Returns whether
+/// any target failed.
+#[allow(clippy::too_many_arguments)]
+fn update_core(
+    cli: &Cli,
+    ids: &[String],
+    all: bool,
+    check: bool,
+    rollback: bool,
+    yes: bool,
+    confirm: &mut dyn FnMut(&str) -> bool,
+    out: &mut Vec<String>,
+) -> anyhow::Result<bool> {
     let home = cli.home.clone().unwrap_or_else(cox_home);
     let found = discover::discover(&home, None);
     let store = Store::open(&home)?;
@@ -264,7 +364,9 @@ pub fn update(
     let mut failed = false;
     for id in targets {
         let Some(p) = found.plugins.iter().find(|p| p.id == id) else {
-            println!("plugin {id} not found (update covers installed user plugins)");
+            out.push(format!(
+                "plugin {id} not found (update covers installed user plugins)"
+            ));
             failed = true;
             continue;
         };
@@ -276,19 +378,16 @@ pub fn update(
         let done = if p.dev {
             Err(anyhow::anyhow!("linked plugin: rebuild in place"))
         } else if rollback {
-            rollback_one(&store, &home, p, yes)
+            rollback_one(&store, &home, p, yes, confirm, out)
         } else {
-            update_one(&store, &home, p, check, yes)
+            update_one(&store, &home, p, check, yes, confirm, out)
         };
         if let Err(e) = done {
-            println!("plugin {id}: {e:#}");
+            out.push(format!("plugin {id}: {e:#}"));
             failed = true;
         }
     }
-    if failed {
-        anyhow::bail!("not every plugin was updated");
-    }
-    Ok(())
+    Ok(failed)
 }
 
 /// `cox plugin remove <id> [--keep-data] [--yes]` (PL§1c, T33.32). Found by
@@ -303,6 +402,36 @@ pub fn update(
 /// its grant and kv go, and the path is printed for the user to delete
 /// with git.
 pub fn remove(cli: &Cli, cwd: &Path, id: &str, keep_data: bool, yes: bool) -> anyhow::Result<()> {
+    let mut confirm_fn = |q: &str| confirm(q);
+    let out = remove_with(cli, cwd, id, keep_data, yes, &mut confirm_fn)?;
+    for line in &out {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// `/plugin remove` from the TUI (T33.33, PL§1c): the confirm modal
+/// already decided it, so this never prompts on stdin — `confirm` answers
+/// yes unconditionally, the same effect a `--yes` CLI run has once the
+/// modal said `y`. Returns the lines `remove` would have printed, joined
+/// for one notice.
+pub fn remove_for_tui(cli: &Cli, cwd: &Path, id: &str, keep_data: bool) -> anyhow::Result<String> {
+    let out = remove_with(cli, cwd, id, keep_data, true, &mut |_| true)?;
+    Ok(out.join("\n"))
+}
+
+/// `remove`'s and `remove_for_tui`'s shared body (PL§1c, T33.32, T33.33).
+/// Collects its lines instead of printing so both callers can show them
+/// their own way; `confirm` is only reached when `!yes`.
+fn remove_with(
+    cli: &Cli,
+    cwd: &Path,
+    id: &str,
+    keep_data: bool,
+    yes: bool,
+    confirm: &mut dyn FnMut(&str) -> bool,
+) -> anyhow::Result<Vec<String>> {
+    let mut out = Vec::new();
     let home = cli.home.clone().unwrap_or_else(cox_home);
     let user_dir = install::plugin_dir(&home, id);
     let git_root = find_git_root(cwd);
@@ -312,12 +441,12 @@ pub fn remove(cli: &Cli, cwd: &Path, id: &str, keep_data: bool, yes: bool) -> an
     let user_exists = user_dir.exists();
     let project_exists = project_dir.as_deref().is_some_and(Path::exists);
     if !user_exists && !project_exists {
-        println!("plugin {id} not found");
-        return Ok(());
+        out.push(format!("plugin {id} not found"));
+        return Ok(out);
     }
     if !yes && !confirm(&format!("remove plugin {id}?")) {
-        println!("plugin {id} not removed");
-        return Ok(());
+        out.push(format!("plugin {id} not removed"));
+        return Ok(out);
     }
 
     let store = Store::open(&home)?;
@@ -329,29 +458,29 @@ pub fn remove(cli: &Cli, cwd: &Path, id: &str, keep_data: bool, yes: bool) -> an
     if let Some(project_dir) = &project_dir
         && project_exists
     {
-        println!(
+        out.push(format!(
             "plugin {id} is a project plugin; its files at {} stay — remove them with git if you want them gone",
             project_dir.display()
-        );
+        ));
     }
 
     if keep_data {
-        println!("plugin {id}: kept its stored data (--keep-data)");
+        out.push(format!("plugin {id}: kept its stored data (--keep-data)"));
     } else {
         store.kv_delete_all(id)?;
     }
 
-    println!("plugin {id} removed");
+    out.push(format!("plugin {id} removed"));
 
     if let Ok(loaded) = config_load::load(cwd, cli) {
         for r in config_refs(&loaded.config, id) {
-            println!("note: config still references {id}: {r}");
+            out.push(format!("note: config still references {id}: {r}"));
         }
         for r in keybinding_refs(&home, id) {
-            println!("note: keybindings.toml still references {id}: {r}");
+            out.push(format!("note: keybindings.toml still references {id}: {r}"));
         }
     }
-    Ok(())
+    Ok(out)
 }
 
 /// PL§1c step 6: what in the effective config still names `id` after
@@ -421,12 +550,15 @@ fn keybinding_refs(home: &Path, id: &str) -> Vec<String> {
 /// print the capability diff against that grant, then stage and switch.
 /// Never called for a `cox plugin link`ed plugin (T33.41): `update`'s
 /// caller intercepts those first.
+#[allow(clippy::too_many_arguments)]
 fn update_one(
     store: &Store,
     home: &Path,
     p: &discover::Plugin,
     check: bool,
     yes: bool,
+    confirm: &mut dyn FnMut(&str) -> bool,
+    out: &mut Vec<String>,
 ) -> anyhow::Result<()> {
     let id = p.id.as_str();
     let current = match &p.state {
@@ -448,16 +580,19 @@ fn update_one(
     let (manifest, digest) = discover::load_manifest(src, &src.join("plugin.toml"), Some(id))
         .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", src.display()))?;
     if digest == current {
-        println!("plugin {id} is up to date ({})", install::short(current));
+        out.push(format!(
+            "plugin {id} is up to date ({})",
+            install::short(current)
+        ));
         return Ok(());
     }
-    println!(
+    out.push(format!(
         "plugin {id}: {} -> {} (v{})",
         install::short(current),
         install::short(&digest),
         sanitize(&manifest.version)
-    );
-    print_diff(&manifest, &digest, stored.as_ref());
+    ));
+    diff_lines(&manifest, &digest, stored.as_ref(), out);
     if check {
         return Ok(());
     }
@@ -476,17 +611,28 @@ fn update_one(
         source,
         yes,
         "",
+        confirm,
+        out,
     )
 }
 
 /// `--rollback`: make `previous` current again. Its grant is keyed on its
 /// own digest (PL§3), so a grant still on file lets it switch without
 /// asking; a revoked or missing one asks like any other new digest.
-fn rollback_one(store: &Store, home: &Path, p: &discover::Plugin, yes: bool) -> anyhow::Result<()> {
+fn rollback_one(
+    store: &Store,
+    home: &Path,
+    p: &discover::Plugin,
+    yes: bool,
+    confirm: &mut dyn FnMut(&str) -> bool,
+    out: &mut Vec<String>,
+) -> anyhow::Result<()> {
     let id = p.id.as_str();
     let plugin_dir = install::plugin_dir(home, id);
     let Some(previous) = install::read_pointer(&plugin_dir, install::PREVIOUS)? else {
-        println!("plugin {id} has no previous version to roll back to");
+        out.push(format!(
+            "plugin {id} has no previous version to roll back to"
+        ));
         return Ok(());
     };
     let dir = plugin_dir.join("versions").join(&previous);
@@ -511,6 +657,8 @@ fn rollback_one(store: &Store, home: &Path, p: &discover::Plugin, yes: bool) -> 
         source,
         yes,
         " --rollback",
+        confirm,
+        out,
     )
 }
 
@@ -521,6 +669,7 @@ fn rollback_one(store: &Store, home: &Path, p: &discover::Plugin, yes: bool) -> 
 /// even if it could supply a `y`, so `current` stays and a warning names
 /// the command to run. Only `--yes`, a user's own provisioning script,
 /// approves without a terminal.
+#[allow(clippy::too_many_arguments)]
 fn switch_to(
     store: &Store,
     plugin_dir: &Path,
@@ -529,6 +678,8 @@ fn switch_to(
     source: serde_json::Value,
     yes: bool,
     flag: &str,
+    confirm: &mut dyn FnMut(&str) -> bool,
+    out: &mut Vec<String>,
 ) -> anyhow::Result<()> {
     let digest12 = install::short(digest);
     let own = store
@@ -538,14 +689,26 @@ fn switch_to(
     let approved = if grant::check(manifest, digest, own.as_ref()) == Verdict::Granted {
         true
     } else if !yes && !std::io::stdin().is_terminal() {
-        println!("warning: update for {id} waits for approval: run `cox plugin update {id}{flag}`");
+        out.push(format!(
+            "warning: update for {id} waits for approval: run `cox plugin update {id}{flag}`"
+        ));
         return Ok(());
     } else {
-        decide(store, id, &GrantScope::User, digest, manifest, source, yes)?
+        decide(
+            out,
+            confirm,
+            store,
+            id,
+            &GrantScope::User,
+            digest,
+            manifest,
+            source,
+            yes,
+        )?
     };
     if approved {
         install::activate(plugin_dir, digest12)?;
-        println!("plugin {id} is now at {digest12}");
+        out.push(format!("plugin {id} is now at {digest12}"));
     }
     Ok(())
 }
@@ -555,7 +718,12 @@ fn switch_to(
 /// Computed by `grant::check` itself so the diff and the load decision
 /// never disagree; a disabled grant is diffed as if enabled, since
 /// `Disabled` would otherwise hide the capabilities it granted.
-fn print_diff(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGrant>) {
+fn diff_lines(
+    manifest: &PluginManifest,
+    digest: &str,
+    stored: Option<&PluginGrant>,
+    out: &mut Vec<String>,
+) {
     let active = stored.map(|g| PluginGrant {
         enabled: true,
         ..g.clone()
@@ -565,13 +733,13 @@ fn print_diff(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGra
         return;
     };
     if added.is_empty() && removed.is_empty() {
-        println!("  capabilities unchanged; the new bytes still need approval");
+        out.push("  capabilities unchanged; the new bytes still need approval".to_string());
     }
     for cap in &added {
-        println!("  + {} (new)", sanitize(cap));
+        out.push(format!("  + {} (new)", sanitize(cap)));
     }
     for cap in &removed {
-        println!("  - {}", sanitize(cap));
+        out.push(format!("  - {}", sanitize(cap)));
     }
 }
 
@@ -580,7 +748,10 @@ fn print_diff(manifest: &PluginManifest, digest: &str, stored: Option<&PluginGra
 /// same `(plugin_id, scope, digest)`, PL§3) and returns whether it is now
 /// enabled. A decline writes nothing, so a later `enable` sees a fresh
 /// `NeedsApproval`, not a stale `Disabled`.
+#[allow(clippy::too_many_arguments)]
 fn decide(
+    out: &mut Vec<String>,
+    confirm: &mut dyn FnMut(&str) -> bool,
     store: &Store,
     id: &str,
     scope: &GrantScope,
@@ -590,29 +761,29 @@ fn decide(
     yes: bool,
 ) -> anyhow::Result<bool> {
     let caps = grant::capability_list(manifest);
-    println!(
+    out.push(format!(
         "{} ({})",
         sanitize(&manifest.name),
         sanitize(&manifest.version)
-    );
+    ));
     if !manifest.description.is_empty() {
-        println!("  {}", sanitize(&manifest.description));
+        out.push(format!("  {}", sanitize(&manifest.description)));
     }
     if caps.is_empty() {
-        println!("  asks for no capabilities");
+        out.push("  asks for no capabilities".to_string());
     } else {
-        println!("  asks to be able to:");
+        out.push("  asks to be able to:".to_string());
         for cap in &caps {
-            println!("    - {}", sanitize(cap));
+            out.push(format!("    - {}", sanitize(cap)));
         }
     }
     let approved = yes || confirm(&format!("grant {id} these capabilities?"));
     if !approved {
-        println!("plugin {id} not enabled");
+        out.push(format!("plugin {id} not enabled"));
         return Ok(false);
     }
     write_grant(store, id, scope, digest, caps, source)?;
-    println!("plugin {id} enabled");
+    out.push(format!("plugin {id} enabled"));
     Ok(true)
 }
 

@@ -33,7 +33,7 @@ use cox_tools::tool_search::ToolSearchTool;
 use cox_tools::v4a::ApplyPatchTool;
 use cox_tools::web_fetch::WebFetchTool;
 use cox_tools::write::WriteTool;
-use cox_tui::state::{Ask, GitStatus, Msg, PluginNewRequest, State};
+use cox_tui::state::{Ask, GitStatus, Msg, PluginMgmtRequest, PluginNewRequest, State};
 
 use crate::cli::Cli;
 use crate::config_cmd;
@@ -570,12 +570,12 @@ fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::
     crate::plugin_ui::redraw(ui.feed)
 }
 
-/// T33.30's `Cmd::PluginNew` executor: the same `plugin_new::scaffold`/
-/// `write` pair `cox plugin new` calls (`main.rs`), so there is only one
-/// implementation of the name/language/capability mapping. Maps the
-/// picker's or `--lang`'s string back to `Lang`, and each `--with` word
-/// back to `Capability`, here — the one place that happens, since
-/// `cox-tui` cannot depend on this crate's types. Writes under
+/// `PluginMgmtRequest::New`'s executor (T33.30): the same
+/// `plugin_new::scaffold`/`write` pair `cox plugin new` calls (`main.rs`),
+/// so there is only one implementation of the name/language/capability
+/// mapping. Maps the picker's or `--lang`'s string back to `Lang`, and each
+/// `--with` word back to `Capability`, here — the one place that happens,
+/// since `cox-tui` cannot depend on this crate's types. Writes under
 /// `cwd`/`name`; `write` already refuses an existing directory.
 #[cfg(feature = "plugins")]
 fn run_plugin_new(cwd: &Path, request: &PluginNewRequest) -> Result<String, String> {
@@ -600,6 +600,56 @@ fn run_plugin_new(cwd: &Path, request: &PluginNewRequest) -> Result<String, Stri
 #[cfg(not(feature = "plugins"))]
 fn run_plugin_new(_cwd: &Path, _request: &PluginNewRequest) -> Result<String, String> {
     Err("this build has no plugin support (built without --features plugins)".to_string())
+}
+
+/// `Cmd::PluginMgmt`'s executor (T33.30 `New`; T33.33 `Update`/`Remove`/
+/// `List`): each arm calls the same `plugin_new`/`plugin_cmd` function
+/// `cox plugin ...` calls (`main.rs`), so there is only one implementation.
+/// `Remove` additionally sends `PluginRequest::Stop` on `plugin_tx` — the
+/// same channel `Cmd::Plugin` already reaches `plugin_ui::serve` on, the one
+/// place that holds this session's live hosts — so the removed plugin's
+/// frozen `WasmTool`s answer `Denied` for the rest of the session instead of
+/// still calling into an instance `cox plugin remove` just deleted on disk.
+#[cfg(feature = "plugins")]
+fn run_plugin_mgmt(
+    cli: &Cli,
+    cwd: &Path,
+    plugin_tx: &tokio::sync::mpsc::Sender<cox_tui::state::PluginRequest>,
+    request: PluginMgmtRequest,
+) -> Result<String, String> {
+    match request {
+        PluginMgmtRequest::New(req) => run_plugin_new(cwd, &req),
+        PluginMgmtRequest::Update {
+            ids,
+            all,
+            check,
+            rollback,
+        } => crate::plugin_cmd::update_for_tui(cli, &ids, all, check, rollback)
+            .map_err(|e| e.to_string()),
+        PluginMgmtRequest::Remove { id, keep_data } => {
+            let text = crate::plugin_cmd::remove_for_tui(cli, cwd, &id, keep_data)
+                .map_err(|e| e.to_string())?;
+            let _ = plugin_tx.try_send(cox_tui::state::PluginRequest::Stop { plugin: id });
+            Ok(text)
+        }
+        PluginMgmtRequest::List { json } => Ok(crate::plugin_cmd::list(cli, cwd, json)),
+    }
+}
+
+/// The slim build has no `plugin_cmd` module (T33.30, T33.33); `New` still
+/// goes through `run_plugin_new` above so its own slim message stays the one
+/// place that text is written.
+#[cfg(not(feature = "plugins"))]
+fn run_plugin_mgmt(
+    _cli: &Cli,
+    cwd: &Path,
+    _plugin_tx: &tokio::sync::mpsc::Sender<cox_tui::state::PluginRequest>,
+    request: PluginMgmtRequest,
+) -> Result<String, String> {
+    match request {
+        PluginMgmtRequest::New(req) => run_plugin_new(cwd, &req),
+        _ => Err("this build has no plugin support (built without --features plugins)".to_string()),
+    }
 }
 
 /// T33.12 (PL§7): runs each loaded plugin's `cox_init` for session `id`
@@ -1352,16 +1402,22 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             feed: feed.clone(),
             requests: plugin_rx,
         };
-        // T33.30: `/plugin new`'s executor, spawned per session like the
-        // plugin UI channel above — its answer rides this session's `feed`.
-        let (plugin_new_tx, mut plugin_new_rx) = tokio::sync::mpsc::channel::<PluginNewRequest>(4);
+        // T33.30, T33.33: `/plugin new|update|remove|list`'s executor,
+        // spawned per session like the plugin UI channel above — its answer
+        // rides this session's `feed`. `plugin_tx` is cloned because
+        // `app::run` below takes the original; a successful `remove` sends
+        // `PluginRequest::Stop` on it (`run_plugin_mgmt`'s doc comment).
+        let (plugin_mgmt_tx, mut plugin_mgmt_rx) =
+            tokio::sync::mpsc::channel::<PluginMgmtRequest>(4);
         {
+            let cli = cli.clone();
             let cwd = cwd.to_path_buf();
             let feed = feed.clone();
+            let plugin_tx = plugin_tx.clone();
             rt.spawn(async move {
-                while let Some(request) = plugin_new_rx.recv().await {
-                    let result = run_plugin_new(&cwd, &request);
-                    if feed.send(Msg::PluginNew(result)).await.is_err() {
+                while let Some(request) = plugin_mgmt_rx.recv().await {
+                    let result = run_plugin_mgmt(&cli, &cwd, &plugin_tx, request);
+                    if feed.send(Msg::PluginMgmt(result)).await.is_err() {
                         break;
                     }
                 }
@@ -1635,7 +1691,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             persist_tx.clone(),
             grant_tx,
             plugin_tx,
-            plugin_new_tx,
+            plugin_mgmt_tx,
         ))?;
         poll.abort();
         // `/handoff`'s summary is the parent's `compact` call, so it runs
