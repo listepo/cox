@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 
 use assert_cmd::Command;
+use cox_protocol::ids::TaskId;
+use cox_protocol::types::Event;
 use serde_json::Value;
 
 fn cox(work: &Path, home: &Path, scenario: &str) -> Command {
@@ -82,6 +84,36 @@ fn stream_json_lists_every_event_and_the_claude_aliases() {
     assert!(types.contains(&"assistant".into()), "{types:?}");
     let done = types.iter().position(|t| t == "turn_done").unwrap();
     assert_eq!(&types[done + 1..], ["result"]);
+}
+
+/// T34.7/SM§6: `stream-json`'s writer (`run.rs`) is
+/// `serde_json::to_string(&cox_core::redact::scrub_event(&ev))` for every
+/// `Event`, generically (D2) — `scrub_event` special-cases only
+/// `TextDelta`/`ToolCallOutput`/`ToolCallDone`. A scripted scenario cannot
+/// produce a real `TaskMessage` yet (T34.6's `send_message` tool is
+/// concurrent, not landed in this worktree), so this proves the two
+/// functions the real writer calls at the serializer level instead: the
+/// event survives `scrub_event` untouched and round-trips through JSON
+/// with every field intact.
+#[test]
+fn stream_json_passes_task_message_through_unchanged() {
+    let ev = Event::TaskMessage {
+        task: TaskId::new(),
+        from: Some(TaskId::new()),
+        hop: 2,
+        text: "hi from a sibling".into(),
+    };
+    let scrubbed = cox_core::redact::scrub_event(&ev);
+    assert_eq!(*scrubbed, ev, "scrub_event touched a TaskMessage");
+    let line = serde_json::to_string(&scrubbed).unwrap();
+    let v: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(v["type"], "task_message");
+    assert_eq!(v["hop"], 2);
+    assert_eq!(v["text"], "hi from a sibling");
+    assert!(v["from"].is_string());
+    // Round-trips to the same event: nothing dropped, renamed or reordered.
+    let back: Event = serde_json::from_str(&line).unwrap();
+    assert_eq!(back, ev);
 }
 
 #[test]

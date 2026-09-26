@@ -72,14 +72,31 @@ pub enum Cell {
     Summary {
         text: String,
     },
+    /// A follow-up delivered to, or a reply from, a background task
+    /// (`Event::TaskMessage`, T34.4/SM§6): one line labelled like a
+    /// relayed `ApprovalRequired`'s `Source` ("X asks:", `Approval::from_agent`).
+    /// `label` and `text` are already sanitized at the boundary in
+    /// `update` (T34.4's `deliver`/`message_parent` text is model-controlled
+    /// on both ends), mirroring `Modal::Diff`'s text rather than a second
+    /// `text::sanitize` pass in `cells::cell_lines`.
+    TaskMessage {
+        label: String,
+        text: String,
+        /// `true`: the task itself spoke to the parent (`from == task`,
+        /// SM§3's `message_parent`). `false`: a message was delivered to it
+        /// (parent/user or a relayed sibling, SM§3's `deliver`).
+        from_task: bool,
+    },
 }
 
 impl Cell {
     pub fn done(&self) -> bool {
         match self {
-            Cell::User { .. } | Cell::Notice { .. } | Cell::Error { .. } | Cell::Summary { .. } => {
-                true
-            }
+            Cell::User { .. }
+            | Cell::Notice { .. }
+            | Cell::Error { .. }
+            | Cell::Summary { .. }
+            | Cell::TaskMessage { .. } => true,
             Cell::Assistant { done, .. } | Cell::Thinking { done, .. } => *done,
             Cell::Tool { result, .. } => result.is_some(),
         }
@@ -170,10 +187,13 @@ pub struct State {
     pub status: Status,
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
-    /// `(id, label, tier, started)`: `tier` and `started` (`tick` at
-    /// `TaskCreated`) exist only so `/agents` (T27.2) can show a running
-    /// task's tier and elapsed time; `/tasks` still reads just the label.
-    pub tasks: Vec<(TaskId, String, Tier, u64)>,
+    /// `(id, label, tier, started, last_message)`: `tier` and `started`
+    /// (`tick` at `TaskCreated`) exist only so `/agents` (T27.2) can show a
+    /// running task's tier and elapsed time; `/tasks` still reads just the
+    /// label. `last_message` (T34.7) is the sanitized first line of the
+    /// most recent `Event::TaskMessage` naming this task, either way — no
+    /// new progress event stream, SM§6.
+    pub tasks: Vec<(TaskId, String, Tier, u64, Option<String>)>,
     /// Recently finished tasks as `/tasks` lines: exit code and the
     /// `/expand` id of a shell task's output (T27.1).
     pub finished_tasks: Vec<String>,
@@ -1176,7 +1196,8 @@ fn cell_text(cell: &Cell) -> &str {
         | Cell::Thinking { text, .. }
         | Cell::Notice { text, .. }
         | Cell::Error { text, .. }
-        | Cell::Summary { text } => text,
+        | Cell::Summary { text }
+        | Cell::TaskMessage { text, .. } => text,
         Cell::Tool { output, .. } => output,
     }
 }
@@ -1365,7 +1386,7 @@ fn open_rewind(state: &mut State) -> Vec<Cmd> {
 /// no resumable id on the wire yet (plan.md §3 P27).
 fn agents_rows(
     agents: &[Presence],
-    tasks: &[(TaskId, String, Tier, u64)],
+    tasks: &[(TaskId, String, Tier, u64, Option<String>)],
     tick: u64,
 ) -> Vec<(String, Option<SessionId>)> {
     let mut rows: Vec<(String, Option<SessionId>)> = agents
@@ -1379,16 +1400,23 @@ fn agents_rows(
             (text, Some(a.session))
         })
         .collect();
-    rows.extend(tasks.iter().map(|(_, label, tier, started)| {
+    rows.extend(tasks.iter().map(|(_, label, tier, started, last)| {
         let preset = label.split_once(": ").map_or("-", |(p, _)| p);
         let elapsed = tick.saturating_sub(*started);
-        let text = crate::text::sanitize(&format!(
+        let mut text = format!(
             "{label} · preset {preset} · tier {} · cost - · elapsed {}.{}s · running",
             format!("{tier:?}").to_lowercase(),
             elapsed / 10,
             elapsed % 10
-        ));
-        (text, None)
+        );
+        // T34.7/SM§6: the narrow card grows a last-message line instead of
+        // a new progress event stream — already sanitized in `update`, but
+        // re-run through `sanitize` with the rest of the row, same as the
+        // label above (`crate::text::sanitize` is idempotent).
+        if let Some(last) = last {
+            text.push_str(&format!(" · last: {last}"));
+        }
+        (crate::text::sanitize(&text), None)
     }));
     rows
 }
@@ -1721,7 +1749,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }
         }
         Event::TaskCreated { task, label, tier } => {
-            state.tasks.push((task, label, tier, state.tick));
+            state.tasks.push((task, label, tier, state.tick, None));
         }
         Event::TaskCompleted {
             task,
@@ -1739,6 +1767,31 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                     .saturating_sub(tasks::FINISHED_KEPT);
                 state.finished_tasks.drain(..over);
             }
+        }
+        // T34.7/SM§6: `task` is always the task this message concerns —
+        // the addressee delivered to (`deliver`), or, when a child speaks
+        // to the parent (`message_parent`), its own id doubling as `from`
+        // (`tasks.rs`: "the parent has no id"). Resolved once here to the
+        // task's registered label, since a finished task is already gone
+        // from `state.tasks` by the time an in-flight reply renders.
+        Event::TaskMessage {
+            task, from, text, ..
+        } => {
+            let label = state
+                .tasks
+                .iter()
+                .find(|(t, ..)| *t == task)
+                .map_or_else(|| task.to_string(), |(_, label, ..)| label.clone());
+            let label = crate::text::sanitize(&label);
+            let text = crate::text::sanitize(&text);
+            if let Some(entry) = state.tasks.iter_mut().find(|(t, ..)| *t == task) {
+                entry.4 = Some(text.lines().next().unwrap_or("").to_string());
+            }
+            state.transcript.push(Cell::TaskMessage {
+                label,
+                from_task: from == Some(task),
+                text,
+            });
         }
         Event::Notice { level, text } => state.transcript.push(Cell::Notice { level, text }),
         Event::Error { error, fatal } => state.transcript.push(Cell::Error {
@@ -1762,8 +1815,6 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }
         }
         Event::SessionStarted { .. } | Event::Compacted { .. } => {}
-        // T34.7 gives this its own transcript line and `/agents` card update.
-        Event::TaskMessage { .. } => {}
     }
     cmds
 }

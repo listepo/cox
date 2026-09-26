@@ -2,9 +2,9 @@
 //! stream in `fixtures/events/transcript.jsonl`, so a change to how a cell
 //! prints shows up as a snapshot diff rather than in a user's terminal.
 
-use cox_protocol::ids::CallId;
+use cox_protocol::ids::{CallId, TaskId};
 use cox_protocol::types::{
-    Event, PermissionMode, Risk, SandboxMode, Submission, ToolCall, ToolResult,
+    Event, PermissionMode, Risk, SandboxMode, Submission, Tier, ToolCall, ToolResult,
 };
 use cox_tui::cells::cell_lines;
 use cox_tui::state::{Cell, Cmd, Msg, State, update};
@@ -187,6 +187,69 @@ fn cell_notice_error_and_summary() {
         .map(|c| text(&s, c))
         .collect();
     insta::assert_snapshot!(rest.join("\n"));
+}
+
+/// T34.7/SM§6: `Event::TaskMessage` renders one transcript line, labelled
+/// like a relayed `ApprovalRequired`'s "X asks:" (`Approval::from_agent`,
+/// `modal.rs`) — here the task's own registered label, resolved by
+/// `TaskCreated`. `from == task` (a child speaking to the parent, `SM§3`'s
+/// `message_parent`) reads "label says: text"; anything else (a message
+/// delivered to the task) reads "→ label: text".
+#[test]
+fn cell_task_message_labels_the_speaker_and_direction() {
+    let mut s = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let task = TaskId::new();
+    update(
+        &mut s,
+        Msg::Event(Event::TaskCreated {
+            task,
+            label: "explore: find the flaky test".into(),
+            tier: Tier::Cheap,
+        }),
+    );
+    update(
+        &mut s,
+        Msg::Event(Event::TaskMessage {
+            task,
+            from: Some(task),
+            hop: 1,
+            text: "found it: flaky_sleep in tests/shell.rs".into(),
+        }),
+    );
+    let says = text(
+        &s,
+        cell(&s, |c| {
+            matches!(
+                c,
+                Cell::TaskMessage {
+                    from_task: true,
+                    ..
+                }
+            )
+        }),
+    );
+    update(
+        &mut s,
+        Msg::Event(Event::TaskMessage {
+            task,
+            from: None,
+            hop: 0,
+            text: "keep looking".into(),
+        }),
+    );
+    let delivered = text(
+        &s,
+        cell(&s, |c| {
+            matches!(
+                c,
+                Cell::TaskMessage {
+                    from_task: false,
+                    ..
+                }
+            )
+        }),
+    );
+    insta::assert_snapshot!(format!("{says}\n---\n{delivered}"));
 }
 
 // T24.4 tool cards: a dedicated session per test (rather than the fixture

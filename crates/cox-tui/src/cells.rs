@@ -317,6 +317,36 @@ pub fn cell_lines(cell: &Cell, look: &Look) -> Vec<Line<'static>> {
             lines.extend(clean(text).lines().map(|l| dim(format!("  {l}"))));
             lines
         }
+        // T34.7/SM§6: `label`/`text` are already sanitized in `update`
+        // (state.rs), like `Modal::Diff`'s text — no second `clean()` pass
+        // here. Styled like `Approval::from_agent`'s "X asks:" prefix
+        // (`modal.rs`): bold, `theme.agent`, inserted before the body.
+        Cell::TaskMessage {
+            label,
+            text,
+            from_task,
+        } => {
+            let bold = Style::default().add_modifier(Modifier::BOLD);
+            let prefix = if *from_task {
+                format!("{label} says: ")
+            } else {
+                format!("→ {label}: ")
+            };
+            let pad = " ".repeat(prefix.width());
+            text.lines()
+                .enumerate()
+                .map(|(i, l)| {
+                    if i == 0 {
+                        Line::from(vec![
+                            Span::styled(prefix.clone(), bold.fg(look.colors.agent)),
+                            Span::raw(l.to_string()),
+                        ])
+                    } else {
+                        Line::raw(format!("{pad}{l}"))
+                    }
+                })
+                .collect()
+        }
     };
     wrap(lines, look.width)
 }
