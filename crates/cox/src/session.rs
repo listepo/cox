@@ -10,7 +10,7 @@ use cox_core::{History, Session};
 use cox_protocol::Config;
 #[cfg(feature = "plugins")]
 use cox_protocol::GrantScope;
-use cox_protocol::config::{McpServerConfig, Transport};
+use cox_protocol::config::{CompatibleProviderConfig, McpServerConfig, Transport};
 use cox_protocol::ids::{ItemId, SessionId};
 use cox_protocol::traits::{Hook, Provider, SessionRow, Store as _, Tool};
 use cox_protocol::types::{Event, ItemKind, Job, Level, Submission};
@@ -83,7 +83,22 @@ pub async fn open(
             tier.provider = loaded.config.tiers.code.provider.clone();
         }
     }
-    let config = loaded.config.clone();
+    let mut config = loaded.config.clone();
+    let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    let store = Arc::new(Store::open(&home)?);
+    // T33.19: granted plugins load before the provider is built and before
+    // MCP discovery: a granted plugin's declarative `[[provider]]` rows
+    // (T33.17) must already be in `config.providers.custom` when
+    // `provider_for`/`provider_for_served` below pick the tier's client,
+    // and its `[[mcp]]` servers join MCP discovery further down. A
+    // worktree session's plugin server may write only the worktree, like
+    // its `bash` (`set_writable_roots` below).
+    let writable = match worktree_main {
+        Some(_) => vec![cwd.to_path_buf()],
+        None => config.core.workspace_roots.clone(),
+    };
+    let plugins = load_plugins(&config, &home, cwd, store.as_ref(), Some(&writable));
+    config.providers.custom.extend(plugins.providers.clone());
     // T30.16: ask LM Studio what it runs before the provider is built, so
     // the loaded context becomes the session's window. The key resolved
     // here is reused for the chat client: one keyring read, not two.
@@ -99,8 +114,6 @@ pub async fn open(
         }
         None => provider_for(&config)?,
     };
-    let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
-    let store = Arc::new(Store::open(&home)?);
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
     // T27.3: a worktree session's project is still the main checkout, so
     // the sessions of one repository see each other whatever tree they edit.
@@ -154,14 +167,6 @@ pub async fn open(
             _ => t,
         })
         .collect();
-    // T33.19: granted plugins load before MCP discovery, since their
-    // `[[mcp]]` servers join it; a worktree session's plugin server may
-    // write only the worktree, like its `bash` (`set_writable_roots` below).
-    let writable = match worktree_main {
-        Some(_) => vec![cwd.to_path_buf()],
-        None => config.core.workspace_roots.clone(),
-    };
-    let plugins = load_plugins(&config, &home, cwd, store.as_ref(), Some(&writable));
     if config.mcp.enabled {
         all.extend(mcp_tools(&config, cwd, interactive, plugins.mcp, &writable).await);
     }
@@ -231,6 +236,14 @@ pub(crate) struct Plugins {
     /// Each loaded plugin's `[[mcp]]` servers by plugin id, stdio commands
     /// already sandboxed, for `cox_mcp::discovery::add_plugin`.
     pub mcp: Vec<(String, Vec<(String, McpServerConfig)>)>,
+    /// New `providers.custom` sections from each granted plugin's
+    /// declarative `[[provider]]` rows (`docs/design/plugins.md` §7a,
+    /// T33.17): `api = "chat" | "responses"` only, already checked against
+    /// the live config by `cox_plugin::provider::merge` (a name the config
+    /// already uses is skipped with a notice, not returned here). The
+    /// caller extends `config.providers.custom` with these before building
+    /// the tier's provider.
+    pub providers: HashMap<String, CompatibleProviderConfig>,
 }
 
 /// The warnings of `load_plugins`, for a surface with no MCP servers (ACP).
@@ -269,6 +282,10 @@ pub(crate) fn load_plugins(
     let found = discover::discover(home, root.as_deref());
     let notices = &mut out.notices;
     notices.extend(found.notices);
+    // T33.17: each granted, successfully loaded plugin's `[[provider]]`
+    // rows, collected alongside `[[mcp]]` below and merged into
+    // `providers.custom` once every plugin has been checked (PL§7a).
+    let mut plugin_providers: Vec<cox_plugin::provider::PluginProviders<'_>> = Vec::new();
     for p in &found.plugins {
         let id = &p.id;
         let (manifest, digest) = match &p.state {
@@ -292,6 +309,12 @@ pub(crate) fn load_plugins(
                         cox_plugin::PluginHost::load(id, &wasm, &manifest.limits)
                             .map_err(|e| e.to_string())
                     });
+                if loaded.is_ok() && !manifest.provider.is_empty() {
+                    plugin_providers.push(cox_plugin::provider::PluginProviders {
+                        plugin: id.as_str(),
+                        decls: &manifest.provider,
+                    });
+                }
                 match (loaded, writable) {
                     (Err(e), _) => notices.push(format!("plugin {id} failed to load: {e}")),
                     (Ok(_), Some(writable)) if !manifest.mcp.is_empty() => {
@@ -318,6 +341,9 @@ pub(crate) fn load_plugins(
             }
         }
     }
+    let merged = cox_plugin::provider::merge(&config.providers, &plugin_providers);
+    out.notices.extend(merged.warnings);
+    out.providers = merged.custom;
     out
 }
 
@@ -2299,5 +2325,173 @@ mod tests {
         assert_eq!(found.servers["s"].command.as_deref(), Some("echo"));
         assert_eq!(found.servers["s"].args, ["hi"]);
         assert!(found.notices.is_empty(), "{:?}", found.notices);
+    }
+
+    /// The same fixture `cox-provider-openai`'s own Chat tests read
+    /// (`crates/cox-provider-openai/src/chat.rs`), one directory further up
+    /// from this crate.
+    #[cfg(feature = "plugins")]
+    fn openai_chat_fixture(name: &str) -> String {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/openai-chat")
+            .join(format!("{name}.sse"));
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading fixture {path:?}: {e}"))
+    }
+
+    #[cfg(feature = "plugins")]
+    fn provider_test_request(model: &str) -> cox_protocol::types::Request {
+        use cox_protocol::types::{
+            Content, Effort, Message, ModelId, Role, SystemBlock, Thinking, Tier,
+        };
+        cox_protocol::types::Request {
+            tier: Tier::Code,
+            job: Job::Main,
+            model: ModelId(model.into()),
+            system: vec![SystemBlock {
+                text: "You are cox.".into(),
+                cache: true,
+            }],
+            tools: vec![],
+            messages: vec![Message {
+                role: Role::User,
+                content: vec![Content::Text {
+                    text: "hello".into(),
+                }],
+            }],
+            effort: Effort::High,
+            max_tokens: 1024,
+            thinking: Thinking::Off,
+            cache_breakpoints: vec![],
+            stop_sequences: vec![],
+        }
+    }
+
+    /// T33.17 Check: a granted plugin's `api = "chat"` `[[provider]]` row,
+    /// merged by `cox_plugin::provider::merge`, becomes a real
+    /// `OpenAiChatProvider` once `tiers.code.provider` names it — same
+    /// `providers.custom` "Type-2" arm `deepseek_config`'s tests exercise
+    /// above, now fed a plugin section instead of a hand-written one, and
+    /// proven against a mock server rather than just its shape (§7a: "cox
+    /// drives it with its own wire clients").
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn plugin_chat_section_builds_openai_shaped_client() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/chat/completions"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_raw(openai_chat_fixture("text_only"), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let decl = cox_plugin_api::ProviderDecl {
+            name: "acme".into(),
+            api: cox_plugin_api::ProviderApi::Chat,
+            base_url: server.uri(),
+            api_key_env: None,
+            auth: cox_plugin_api::ProviderAuth::Bearer,
+        };
+        let decls = [decl];
+        let plugins = [cox_plugin::provider::PluginProviders {
+            plugin: "acme-pkg",
+            decls: &decls,
+        }];
+        let merged = cox_plugin::provider::merge(
+            &cox_protocol::config::ProvidersConfig::default(),
+            &plugins,
+        );
+        assert!(merged.warnings.is_empty(), "{:?}", merged.warnings);
+
+        let mut config = Config::default();
+        config.providers.custom.extend(merged.custom);
+        config.tiers.code.provider = "acme".into();
+        config.tiers.code.model = "acme-coder".into();
+
+        let provider = provider_for_with(&config, no_key).expect("builds the merged section");
+        assert_eq!(provider.id(), ProviderId::Local);
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        provider
+            .stream(
+                provider_test_request("acme-coder"),
+                tx,
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect("the merged section speaks the wire it was built for");
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                cox_protocol::types::ProviderEvent::Stop {
+                    stop: cox_protocol::types::StopReason::EndTurn
+                }
+            )),
+            "{events:?}"
+        );
+    }
+
+    /// T33.17 Check (invariant 8): a full turn against a plugin's merged
+    /// `[[provider]]` section writes exactly one ledger row, the same as
+    /// any other provider — `Priced` (wrapped in by `provider_for_with`)
+    /// prices the call and `cox-core` records it (`session.rs:1340`).
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn plugin_provider_request_has_usage_row() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/chat/completions"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_raw(openai_chat_fixture("text_only"), "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let decl = cox_plugin_api::ProviderDecl {
+            name: "acme".into(),
+            api: cox_plugin_api::ProviderApi::Chat,
+            base_url: server.uri(),
+            api_key_env: None,
+            auth: cox_plugin_api::ProviderAuth::Bearer,
+        };
+        let decls = [decl];
+        let plugins = [cox_plugin::provider::PluginProviders {
+            plugin: "acme-pkg",
+            decls: &decls,
+        }];
+        let merged = cox_plugin::provider::merge(
+            &cox_protocol::config::ProvidersConfig::default(),
+            &plugins,
+        );
+        let mut config = Config::default();
+        config.providers.custom.extend(merged.custom);
+        config.tiers.code.provider = "acme".into();
+        config.tiers.code.model = "acme-coder".into();
+
+        let provider: Arc<dyn Provider> =
+            provider_for_with(&config, no_key).expect("builds the merged section");
+        let home = tempfile::tempdir().expect("home");
+        let work = tempfile::tempdir().expect("work");
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let session = Session::new(
+            config,
+            provider,
+            vec![],
+            store.clone(),
+            store.clone(),
+            work.path().to_path_buf(),
+        )
+        .expect("session");
+        user_turn(&session, "hello").await;
+
+        let rows = store.usage_for_session(&session.id()).expect("usage query");
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].provider, ProviderId::Local);
     }
 }

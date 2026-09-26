@@ -16,6 +16,8 @@
 //!   `cox_hook` (PL§6, T33.11).
 //! - [`context`] — the event-folded, redacted snapshot `cox_context`
 //!   returns (PL§5, T33.9).
+//! - [`provider`] — merges a granted plugin's declarative `[[provider]]`
+//!   rows into `providers.custom` (PL§7a, T33.17).
 
 #![warn(missing_docs)]
 
@@ -26,6 +28,7 @@ pub mod grant;
 pub mod hooks;
 pub mod host;
 pub mod hostfn;
+pub mod provider;
 
 pub use context::Context;
 pub use discover::{Discovered, Plugin, Source, State, package_digest};

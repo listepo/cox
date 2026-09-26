@@ -82,3 +82,9 @@ vt100 = { workspace = true }
 # a `CancellationToken`; both already ship in the workspace.
 async-trait = { workspace = true }
 tokio-util = { workspace = true }
+# T33.17: `plugin_chat_section_builds_openai_shaped_client` and
+# `plugin_provider_request_has_usage_row` drive a merged `[[provider]]`
+# section's real OpenAI-shaped client against a mock server, no real
+# network — already a workspace dependency (`cox-provider-openai`'s own
+# wiremock tests).
+wiremock = { workspace = true }
