@@ -1344,3 +1344,26 @@ Check: passing tests:
 nextest: 1017 passed, 3 skipped in the worktree.
 
 nextest on main after landing: 1017 passed, 3 skipped. fmt and clippy clean.
+
+#### T34.8 ACP rendering, and the dropped task-lifecycle events
+
+Depends: T34.6 · Size: ~120 · Files: `crates/cox-acp/src/server.rs`
+Goal: `drive_prompt`'s event loop today falls into `Ok(_) => {}` for everything except `TurnDone` and `ApprovalRequired` (server.rs:344), so an ACP client (Zed, JetBrains) never sees `TaskCreated`/`TaskCompleted`/a delivered `TaskMessage`. This card gives those three their own arms: `TaskCreated`/`TaskCompleted` become a plan/task update the same way `ask_permission` already labels a relayed approval, and a `TaskMessage` renders with the same label.
+Check: `acp_reports_task_created_and_completed`, `acp_reports_a_delivered_task_message`.
+Plan: starts before T34.6 lands, because the three events already exist and the tests drive `drive_prompt` with injected events. Add three arms in `server.rs`: `TaskCreated`/`TaskCompleted` become a plan/tool-call update, and `TaskMessage` becomes an agent-message chunk with the task label. All text goes through `cox_sanitize::sanitize`.
+Status: done 2026-09-26
+Result: `drive_prompt` no longer drops the task events.
+- **`TaskCreated`** becomes a `SessionUpdate::ToolCall` titled "task: <label>" (`ToolKind::Other`, `InProgress`, keyed by the `TaskId`).
+- **`TaskCompleted`** becomes a `ToolCallUpdate` on the same id: `Completed`, plus a one-line "finished ($cost)[, exit N]".
+- **`TaskMessage`** becomes an `AgentMessageChunk`. It is prefixed with the sender's label when `from` names a task this prompt has seen (falling back to the bare `TaskId`), and has no prefix when the parent sent it. This mirrors how `ask_permission` labels a relayed approval.
+- **Sanitizing:** labels and text go through `cox_sanitize::sanitize`. The workspace crate `cox-sanitize` is now a dependency of `cox-acp`; no external crate was added.
+Deviations:
+- The three arms build their updates in pure helpers (`task_created_update`, `task_completed_update`, `task_message_update`). The tests assert on the serialized ACP JSON from those helpers rather than going through the full `tests/conformance.rs` transport. The reason: no live `TaskMessage` can be produced from outside `cox-core` until T34.6, and T34.9's e2e covers the live path.
+- Started before T34.6 landed.
+Check: passing tests:
+- `acp_reports_task_created_and_completed`
+- `acp_reports_a_delivered_task_message`
+
+nextest: 1016 passed, 3 skipped in the worktree.
+
+nextest on main after landing: 1019 passed, 3 skipped. fmt, clippy and cargo deny clean.
