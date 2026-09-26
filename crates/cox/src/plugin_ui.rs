@@ -67,7 +67,6 @@ pub(crate) fn answer(host: Option<&PluginHost>, request: PluginRequest) -> Plugi
 /// The `Redraw` a `PluginTap` calls when a plugin's `Effects.redraw` is set.
 /// `try_send`: the tap's pump thread must not wait on the TUI; a redraw lost
 /// to a full feed is repainted by the plugin's next one.
-#[expect(dead_code, reason = "T33.44 hands it to the session's PluginTap")]
 pub(crate) fn redraw(feed: Sender<Msg>) -> Redraw {
     Arc::new(move |plugin: &str| {
         let msg = PluginUiMsg::Redraw {

@@ -36,7 +36,7 @@ impl cox_acp::SessionFactory for AcpFactory {
         let mdir = session::memory_dir_for(&config, &home, &req.cwd);
         let tools = session::tools(self.answer.clone(), &store, mdir);
         let tools = session::with_client_tools(tools, req.link, req.client_fs, req.client_terminal);
-        let warnings = session::plugin_notices(&config, &home, &req.cwd, store.as_ref());
+        let warnings = session::plugin_notices(&config, &home, &req.cwd, store.clone());
         let session =
             cox_core::Session::new(config, provider, tools, store.clone(), store, req.cwd)?;
         // `create` is sync but runs on the ACP server's runtime; the

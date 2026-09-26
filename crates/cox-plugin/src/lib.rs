@@ -25,6 +25,8 @@
 //! - [`external_agent`] — a granted `[[external_agents]]` entry resolved
 //!   to the sandbox-wrapped command the host spawns, and the in-package
 //!   program resolution `[[mcp]]` shares (EA§2, T35.2).
+//! - [`live`] — a session's live plugins: one instance per granted plugin,
+//!   `cox_init` once, shared by hooks, the tap and tools (T33.44).
 
 #![warn(missing_docs)]
 
@@ -38,6 +40,7 @@ pub mod hooks;
 pub mod host;
 pub mod hostfn;
 pub mod install;
+pub mod live;
 pub mod provider;
 
 pub use context::Context;
@@ -48,3 +51,4 @@ pub use grant::Verdict;
 pub use hooks::PluginHooks;
 pub use host::{CONTROL_DEPTH, EVENT_DEPTH, Lane, PluginHost};
 pub use hostfn::{HostEnv, init_input};
+pub use live::{Live, LivePlugins, Notices, SessionTap};

@@ -47,7 +47,10 @@ use crate::resume;
 /// interactively rather than with `answer`. `tweak` lets a surface adjust
 /// the effective config before the session locks it in; `interactive` says
 /// a person is at the terminal, so an MCP server's 401 may open a browser
-/// login (T22.5).
+/// login (T22.5). `plugin_ui` (T33.23, T33.44) — only `run_tui` has one —
+/// takes the TUI's plugin feed and render requests, so the live plugins
+/// can be rendered and ask for redraws.
+#[allow(clippy::too_many_arguments)]
 pub async fn open(
     cli: &Cli,
     cwd: &Path,
@@ -56,6 +59,7 @@ pub async fn open(
     tweak: impl FnOnce(&mut Config),
     resume: Option<(SessionId, History)>,
     interactive: bool,
+    plugin_ui: Option<PluginUi>,
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
@@ -97,8 +101,11 @@ pub async fn open(
         Some(_) => vec![cwd.to_path_buf()],
         None => config.core.workspace_roots.clone(),
     };
-    let plugins = load_plugins(&config, &home, cwd, store.as_ref(), Some(&writable));
+    let plugins = load_plugins(&config, &home, cwd, store.clone(), Some(&writable));
     config.providers.custom.extend(plugins.providers.clone());
+    // T33.44: granted plugins' `[[models]]` join the catalog the provider
+    // reads its context window from (PL§7b).
+    let plugin_models = plugins.catalog_rows();
     // T30.16: ask LM Studio what it runs before the provider is built, so
     // the loaded context becomes the session's window. The key resolved
     // here is reused for the chat client: one keyring read, not two.
@@ -110,9 +117,15 @@ pub async fn open(
                 &config,
                 move |_, _| key.ok_or(cox_protocol::errors::ProviderError::Auth),
                 Some(&s.model),
+                &plugin_models,
             )?
         }
-        None => provider_for(&config)?,
+        None => provider_for_served(
+            &config,
+            cox_provider::http::resolve_key,
+            None,
+            &plugin_models,
+        )?,
     };
     let mdir = memory_dir_for(&loaded.config, &home, cwd);
     // T27.3: a worktree session's project is still the main checkout, so
@@ -195,8 +208,26 @@ pub async fn open(
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
     session.set_agent_defs(agents_found.agents);
+    // T33.44: each granted plugin's `cox_init` runs once, now that the
+    // session id exists; its instance is shared by its hooks (below) and
+    // the event tap `start_plugins` sets.
+    #[cfg(feature = "plugins")]
+    let (plugin_hooks, plugin_started) = start_plugins(
+        &session,
+        plugins.live,
+        &loaded.config.plugins,
+        cwd,
+        plugin_ui,
+    );
+    #[cfg(not(feature = "plugins"))]
+    let (plugin_hooks, plugin_started) = {
+        drop(plugin_ui);
+        (Vec::new(), Vec::new())
+    };
     // A14: the presence hook wraps the user's shell hooks so the other
-    // sessions of this workspace see every surface, `--no-hooks` or not.
+    // sessions of this workspace see every surface, `--no-hooks` or not;
+    // PL§6: plugin hooks follow the shell's in one chain, and `--no-hooks`
+    // turns off only the shell's.
     let shell: Option<Arc<dyn Hook>> = loaded.config.hooks.enabled.then(|| {
         Arc::new(cox_ext::hooks::ShellHooks::new(
             &loaded.config.hooks,
@@ -209,7 +240,10 @@ pub async fn open(
             session.id(),
             cwd.to_path_buf(),
             project,
-            shell,
+            Some(Arc::new(cox_ext::hooks::HookChain::new(
+                shell,
+                plugin_hooks,
+            ))),
         )
         .with_worktree(cli.worktree.as_ref().map(|_| cwd.to_path_buf())),
     ));
@@ -225,7 +259,24 @@ pub async fn open(
     for warning in plugin_warnings {
         session.notice(Level::Warn, warning).await?;
     }
+    for (level, text) in plugin_started {
+        session.notice(level, text).await?;
+    }
     Ok((session, loaded))
+}
+
+/// The TUI's ends of the plugin UI channels (T33.23): where `Msg::Plugin`
+/// answers go, and the `Cmd::Plugin` requests to serve. `open` hands them
+/// to the live plugins (T33.44).
+#[cfg_attr(
+    not(feature = "plugins"),
+    expect(dead_code, reason = "the slim build has no plugin to render")
+)]
+pub struct PluginUi {
+    /// The TUI's feed.
+    pub feed: tokio::sync::mpsc::Sender<Msg>,
+    /// The TUI's render requests.
+    pub requests: tokio::sync::mpsc::Receiver<cox_tui::state::PluginRequest>,
 }
 
 /// What the grant check let into a session (T33.6, T33.19).
@@ -251,6 +302,22 @@ pub(crate) struct Plugins {
     #[cfg(feature = "plugins")]
     #[allow(dead_code, reason = "T35.13's drivers are the first reader")]
     pub external_agents: Vec<cox_plugin::external_agent::ExternalAgentCommand>,
+    /// Each loaded plugin's `[[models]]` rows by plugin id (T33.44).
+    pub models: Vec<(String, Vec<cox_protocol::plugin::ModelDecl>)>,
+    /// The loaded instances, compiled under their grants; `start_plugins`
+    /// runs their `cox_init` once the session exists (T33.44).
+    #[cfg(feature = "plugins")]
+    pub live: cox_plugin::LivePlugins,
+}
+
+impl Plugins {
+    /// `models` in the shape `Catalog::load` takes.
+    pub fn catalog_rows(&self) -> Vec<cox_models::PluginModels<'_>> {
+        self.models
+            .iter()
+            .map(|(plugin, models)| cox_models::PluginModels { plugin, models })
+            .collect()
+    }
 }
 
 /// The warnings of `load_plugins`, for a surface with no MCP servers (ACP).
@@ -258,7 +325,7 @@ pub(crate) fn plugin_notices(
     config: &Config,
     home: &Path,
     cwd: &Path,
-    store: &dyn cox_protocol::PluginStore,
+    store: Arc<dyn cox_protocol::PluginStore>,
 ) -> Vec<String> {
     load_plugins(config, home, cwd, store, None).notices
 }
@@ -275,7 +342,7 @@ pub(crate) fn load_plugins(
     config: &Config,
     home: &Path,
     cwd: &Path,
-    store: &dyn cox_protocol::PluginStore,
+    store: Arc<dyn cox_protocol::PluginStore>,
     writable: Option<&[PathBuf]>,
 ) -> Plugins {
     use cox_plugin::discover::{self, State};
@@ -307,13 +374,14 @@ pub(crate) fn load_plugins(
         let enable = grant::enable_command(id, p.source);
         match grant::check(manifest, digest, stored.as_ref()) {
             Verdict::Granted => {
-                // T33.9 keeps the instance and runs `cox_init`; until then
-                // the load proves the granted package still compiles, and a
-                // failure is a visible warning, never fatal (D14).
+                // T33.44: compiled once under its real grant and kept;
+                // `start_plugins` runs `cox_init`. A failure is a visible
+                // warning, never fatal (D14).
                 let loaded = std::fs::read(p.dir.join(&manifest.wasm))
                     .map_err(|e| e.to_string())
                     .and_then(|wasm| {
-                        cox_plugin::PluginHost::load(id, &wasm, &manifest.limits)
+                        out.live
+                            .load(manifest, &wasm, store.clone())
                             .map_err(|e| e.to_string())
                     });
                 if loaded.is_ok() && !manifest.provider.is_empty() {
@@ -321,6 +389,9 @@ pub(crate) fn load_plugins(
                         plugin: id.as_str(),
                         decls: &manifest.provider,
                     });
+                }
+                if loaded.is_ok() && !manifest.models.is_empty() {
+                    out.models.push((id.clone(), manifest.models.clone()));
                 }
                 match (loaded, writable) {
                     (Err(e), _) => notices.push(format!("plugin {id} failed to load: {e}")),
@@ -356,7 +427,103 @@ pub(crate) fn load_plugins(
     let merged = cox_plugin::provider::merge(&config.providers, &plugin_providers);
     out.notices.extend(merged.warnings);
     out.providers = merged.custom;
+    // PL§7b: a plugin row that would change a configured or built-in one
+    // is ignored; the catalog says which, and the session shows it.
+    if !out.models.is_empty()
+        && let Ok(catalog) = cox_models::Catalog::load(config, &out.catalog_rows(), None)
+    {
+        out.notices.extend(catalog.warnings().iter().cloned());
+    }
     out
+}
+
+/// T33.44 (PL§3–§6): runs each loaded plugin's `cox_init` once for
+/// `session` and sets the event tap, which owns the instances from then on.
+/// Returns the plugins' hook sources for `HookChain` and the notices to
+/// emit now: init failures (that plugin is skipped) and what `cox_init`
+/// queued. Later notices (`cox_notify` from a hook, `Effects.notices`) are
+/// drained by the tap after each event and emitted by a task, because
+/// `EventTap::offer` runs inside `Session::emit` and must not emit itself.
+/// `start_plugins`'s answer: the plugins' hook sources for `HookChain`
+/// and the notices to emit now.
+#[cfg(feature = "plugins")]
+type Started = (Vec<(String, Arc<dyn Hook>)>, Vec<(Level, String)>);
+
+#[cfg(feature = "plugins")]
+fn start_plugins(
+    session: &Session,
+    mut live: cox_plugin::LivePlugins,
+    config: &cox_protocol::config::PluginsConfig,
+    cwd: &Path,
+    ui: Option<PluginUi>,
+) -> Started {
+    let mut notices = Vec::new();
+    // T33.15: plugins reach the session's router only through a `Weak`;
+    // the notice task below holds the one strong handle.
+    let caller: Arc<dyn cox_protocol::traits::ModelCaller> = Arc::new(session.clone());
+    live.bind_model_caller(&caller);
+    if !live.plugins().is_empty() {
+        let started = live.start(config, session.id(), cwd);
+        notices.extend(started.into_iter().map(|w| (Level::Warn, w)));
+        // Taken before the tap is set, so the caller emits them in order
+        // instead of the tap's own drain racing it.
+        notices.extend(live.take_notices());
+    }
+    // Non-TUI surfaces have no slots to redraw.
+    let redraw = match ui {
+        Some(ui) => serve_plugin_ui(&live, ui),
+        None => Arc::new(|_: &str| {}),
+    };
+    if live.plugins().is_empty() {
+        return (Vec::new(), notices);
+    }
+    let hooks = live.hooks();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(Level, String)>();
+    let emitter = session.clone();
+    tokio::spawn(async move {
+        let _caller = caller;
+        while let Some((level, text)) = rx.recv().await {
+            if emitter.notice(level, text).await.is_err() {
+                break;
+            }
+        }
+    });
+    let forward: cox_plugin::Notices = Arc::new(move |batch| {
+        for notice in batch {
+            let _ = tx.send(notice);
+        }
+    });
+    let (tap, warnings) = live.into_tap(redraw, forward);
+    notices.extend(warnings.into_iter().map(|w| (Level::Warn, w)));
+    session.set_event_tap(Arc::new(tap));
+    (hooks, notices)
+}
+
+/// T33.23's render server over the live hosts, and each plugin's granted
+/// status slots declared on the feed, which renders them the first time.
+/// Returns the tap's `Redraw`. A server thread that fails to start only
+/// leaves plugin segments unrendered.
+#[cfg(feature = "plugins")]
+fn serve_plugin_ui(live: &cox_plugin::LivePlugins, ui: PluginUi) -> cox_plugin::Redraw {
+    use cox_tui::state::PluginUiMsg;
+
+    let _ = crate::plugin_ui::serve(live.hosts(), ui.requests, ui.feed.clone());
+    let declares: Vec<_> = live
+        .plugins()
+        .iter()
+        .map(|p| (p.id().to_string(), p.granted_status()))
+        .filter(|(_, slots)| !slots.is_empty())
+        .collect();
+    let feed = ui.feed.clone();
+    tokio::spawn(async move {
+        for (plugin, slots) in declares {
+            let msg = Msg::Plugin(PluginUiMsg::Declare { plugin, slots });
+            if feed.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+    crate::plugin_ui::redraw(ui.feed)
 }
 
 /// The slim build has no plugin host, so there is never a plugin to load.
@@ -365,7 +532,7 @@ pub(crate) fn load_plugins(
     _config: &Config,
     _home: &Path,
     _cwd: &Path,
-    _store: &dyn cox_protocol::PluginStore,
+    _store: Arc<dyn cox_protocol::PluginStore>,
     _writable: Option<&[PathBuf]>,
 ) -> Plugins {
     Plugins::default()
@@ -991,7 +1158,7 @@ pub(crate) fn resume_from_flags(
 /// existing `AGENTS.md` without `--force`) or denied.
 pub fn run_init(cli: &Cli, cwd: &Path, force: bool) -> anyhow::Result<i32> {
     let rt = tokio::runtime::Runtime::new()?;
-    let (session, _) = rt.block_on(open(cli, cwd, None, None, |_| {}, None, false))?;
+    let (session, _) = rt.block_on(open(cli, cwd, None, None, |_| {}, None, false, None))?;
     let mut events = session
         .events()
         .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
@@ -1057,6 +1224,14 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         // T22.1: the TUI is the only surface with somewhere to show a
         // question, so it is the only `open` caller that passes one.
         let (question_tx, mut question_rx) = tokio::sync::mpsc::channel::<AskUserQuestion>(1);
+        // T33.23/T33.44: made before `open`, which hands the feed and the
+        // `Cmd::Plugin` requests to the live plugins it starts.
+        let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
+        let (plugin_tx, plugin_rx) = tokio::sync::mpsc::channel(16);
+        let plugin_ui = PluginUi {
+            feed: feed.clone(),
+            requests: plugin_rx,
+        };
         let (session, loaded) = rt.block_on(open(
             cli,
             cwd,
@@ -1065,6 +1240,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             |_| {},
             resume_spec.take(),
             true,
+            Some(plugin_ui),
         ))?;
         let config = &loaded.config;
         let mut state = State::new(config.permissions.mode, config.sandbox.mode);
@@ -1211,19 +1387,10 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             .pop_front()
             .map(cox_tui::state::Modal::PluginGrant);
         state.pending_grants = pending_grants;
-        let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
         let (surfaced, surfaced_rx) = tokio::sync::mpsc::channel(1);
         let (grant_tx, mut grant_rx) =
             tokio::sync::mpsc::channel::<cox_tui::state::GrantDecision>(4);
-        // T33.23: `Cmd::Plugin` goes to `plugin_ui::serve`, answered on the
-        // feed. T33.44 passes the session's live hosts in place of none; a
-        // thread that fails to start only leaves plugin segments unrendered.
-        let (plugin_tx, plugin_rx) = tokio::sync::mpsc::channel(16);
-        #[cfg(feature = "plugins")]
-        let _ = crate::plugin_ui::serve(Vec::new(), plugin_rx, feed.clone());
-        #[cfg(not(feature = "plugins"))]
-        drop(plugin_rx);
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
         let poll = {
             let home = home.clone();
@@ -1415,7 +1582,7 @@ fn provider_for_with(
     config: &Config,
     resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
 ) -> anyhow::Result<Arc<dyn Provider>> {
-    provider_for_served(config, resolve, None)
+    provider_for_served(config, resolve, None, &[])
 }
 
 /// [`provider_for_with`] plus what a local server reported for the
@@ -1424,13 +1591,14 @@ fn provider_for_served(
     config: &Config,
     resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
     served: Option<&cox_provider::lmstudio::Model>,
+    plugin_models: &[cox_models::PluginModels<'_>],
 ) -> anyhow::Result<Arc<dyn Provider>> {
     if let Some(double) = cox_provider::from_env()? {
         return Ok(Arc::from(double));
     }
     let prices = Arc::new(PriceTable::embedded()?);
     Ok(Arc::new(Priced::new(
-        backend_for_with(config, resolve, served)?,
+        backend_for_with(config, resolve, served, plugin_models)?,
         prices,
     )))
 }
@@ -1453,6 +1621,7 @@ fn backend_for_with(
     config: &Config,
     resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
     served: Option<&cox_provider::lmstudio::Model>,
+    plugin_models: &[cox_models::PluginModels<'_>],
 ) -> anyhow::Result<Arc<dyn Provider>> {
     // T30.25: `Caps.max_context` for the sections below comes from the
     // model catalog rather than a per-family literal. `Catalog::load`
@@ -1461,8 +1630,8 @@ fn backend_for_with(
     // is empty on a bare `Config::default()`); a bad/unparseable catalog
     // falls back to the empty default, which is exactly "no row found" —
     // every lookup below already has its own literal fallback for that.
-    // Empty until T33.6's granted plugins feed their `[[models]]` rows here.
-    let mut catalog = cox_models::Catalog::load(config, &[], None).unwrap_or_default();
+    // `plugin_models` are the granted plugins' `[[models]]` (T33.44).
+    let mut catalog = cox_models::Catalog::load(config, plugin_models, None).unwrap_or_default();
     // T30.16 (A46): a server's own report is the last override layer.
     if let Some(m) = served {
         catalog.overlay_served(&m.key, m.loaded_context(), m.tool_use());
@@ -1903,11 +2072,11 @@ mod tests {
             serde_json::from_str(&raw).expect("fixture parses");
         let served = list.find("prism-ml/bonsai-27b").expect("listed");
 
-        let p = provider_for_served(&cfg, no_key, Some(served)).expect("builds");
+        let p = provider_for_served(&cfg, no_key, Some(served), &[]).expect("builds");
         assert_eq!(p.capabilities().max_context, 251_648);
 
         cfg.providers.lmstudio.context_window = 65_536;
-        let p = provider_for_served(&cfg, no_key, Some(served)).expect("builds");
+        let p = provider_for_served(&cfg, no_key, Some(served), &[]).expect("builds");
         assert_eq!(p.capabilities().max_context, 65_536);
     }
 
@@ -2256,12 +2425,18 @@ mod tests {
         std::fs::create_dir(repo.path().join(".git")).expect("git");
         let pkg = repo.path().join(".cox/plugins/cur");
         let manifest = agent_package(&pkg, &[], "#!/bin/sh\ntouch \"$0.ran\"\n");
-        let store = Store::open(home.path()).expect("store");
+        let store = Arc::new(Store::open(home.path()).expect("store"));
         let mut config = Config::default();
         config.core.workspace_roots = vec![repo.path().to_path_buf()];
         let roots = config.core.workspace_roots.clone();
 
-        let out = load_plugins(&config, home.path(), repo.path(), &store, Some(&roots));
+        let out = load_plugins(
+            &config,
+            home.path(),
+            repo.path(),
+            store.clone(),
+            Some(&roots),
+        );
         assert!(out.external_agents.is_empty());
         let line = "agent:cursor bin/agent key=CURSOR_API_KEY";
         assert!(
@@ -2290,7 +2465,13 @@ mod tests {
                 decided_at: "2026-09-26T00:00:00Z".into(),
             })
             .expect("grant");
-        let out = load_plugins(&config, home.path(), repo.path(), &store, Some(&roots));
+        let out = load_plugins(
+            &config,
+            home.path(),
+            repo.path(),
+            store.clone(),
+            Some(&roots),
+        );
         let resolved = out.external_agents.len()
             + out
                 .notices
@@ -2633,5 +2814,274 @@ mod tests {
         let rows = store.usage_for_session(&session.id()).expect("usage query");
         assert_eq!(rows.len(), 1, "{rows:?}");
         assert_eq!(rows[0].provider, ProviderId::Local);
+    }
+
+    /// T33.44 fixture: a plugin module. `cox_init` `cox_notify`s
+    /// `init_note` (when not empty) and answers `init_out`; `cox_hook`
+    /// counts its calls, `cox_notify`s `hook_note` (when not empty) and
+    /// answers `continue`; `cox_on_event` answers one notice, `hooks <n>`.
+    #[cfg(feature = "plugins")]
+    fn plugin_wat(init_note: &str, init_out: &str, hook_note: &str) -> String {
+        let note = |text: &str| format!(r#"{{"level":"info","text":"{text}"}}"#);
+        let effects = r#"{"redraw":false,"notices":[{"level":"info","text":"hooks 0"}]}"#;
+        let digit = 1024 + effects.find('0').expect("digit");
+        let data = |at: usize, text: &str| {
+            let wat = text.replace('\\', "\\\\").replace('"', "\\\"");
+            format!(r#"(data (i32.const {at}) "{wat}")"#)
+        };
+        let notify = |at: usize, text: &str| match text {
+            "" => String::new(),
+            _ => format!(
+                "(drop (call $notify (call $copy (i32.const {at}) (i32.const {}))))",
+                note(text).len()
+            ),
+        };
+        format!(
+            r#"(module
+              (import "extism:host/env" "alloc" (func $alloc (param i64) (result i64)))
+              (import "extism:host/env" "store_u8" (func $store (param i64 i32)))
+              (import "extism:host/env" "output_set" (func $output_set (param i64 i64)))
+              (import "cox:host/v1" "cox_notify" (func $notify (param i64) (result i64)))
+              (memory 1)
+              (global $n (mut i32) (i32.const 0))
+              {d0} {d1} {d2} {d3} {d4}
+              (func $copy (param $p i32) (param $len i32) (result i64) (local $off i64) (local $i i32)
+                (local.set $off (call $alloc (i64.extend_i32_u (local.get $len))))
+                (block $done (loop $next
+                  (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+                  (call $store (i64.add (local.get $off) (i64.extend_i32_u (local.get $i)))
+                    (i32.load8_u (i32.add (local.get $p) (local.get $i))))
+                  (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                  (br $next)))
+                (local.get $off))
+              (func $out (param $p i32) (param $len i32)
+                (call $output_set (call $copy (local.get $p) (local.get $len))
+                  (i64.extend_i32_u (local.get $len))))
+              (func (export "cox_init") (result i32)
+                {init_notify}
+                (call $out (i32.const 0) (i32.const {init_len})) (i32.const 0))
+              (func (export "cox_hook") (result i32)
+                (global.set $n (i32.add (global.get $n) (i32.const 1)))
+                {hook_notify}
+                (call $out (i32.const 768) (i32.const 19)) (i32.const 0))
+              (func (export "cox_on_event") (result i32)
+                (i32.store8 (i32.const {digit}) (i32.add (i32.const 48) (global.get $n)))
+                (call $out (i32.const 1024) (i32.const {effects_len})) (i32.const 0)))"#,
+            d0 = data(0, init_out),
+            d1 = data(256, &note(init_note)),
+            d2 = data(512, &note(hook_note)),
+            d3 = data(768, r#"{"type":"continue"}"#),
+            d4 = data(1024, effects),
+            init_notify = notify(256, init_note),
+            hook_notify = notify(512, hook_note),
+            init_len = init_out.len(),
+            effects_len = effects.len(),
+        )
+    }
+
+    /// Installs a user plugin under `home` the way `cox plugin install`
+    /// leaves it, granted for its exact digest (T33.44 fixtures).
+    #[cfg(feature = "plugins")]
+    fn install_granted(home: &Path, id: &str, extra_toml: &str, wasm: &str) {
+        let staged = home.join("plugins").join(id).join("versions/staged");
+        std::fs::create_dir_all(&staged).expect("plugin dir");
+        let toml = format!(
+            "api = 1\nid = \"{id}\"\nversion = \"0.1.0\"\nname = \"{id}\"\nwasm = \"plugin.wasm\"\n{extra_toml}"
+        );
+        std::fs::write(staged.join("plugin.toml"), toml).expect("plugin.toml");
+        std::fs::write(staged.join("plugin.wasm"), wasm).expect("plugin.wasm");
+        let digest = cox_plugin::package_digest(&staged).expect("digest");
+        std::fs::rename(&staged, staged.with_file_name(&digest[..12])).expect("stage");
+        std::fs::write(home.join("plugins").join(id).join("current"), &digest[..12])
+            .expect("current");
+        let found = cox_plugin::discover::discover(home, None);
+        let plugin = found.plugins.iter().find(|p| p.id == id).expect("found");
+        let cox_plugin::State::Loaded { manifest, digest } = &plugin.state else {
+            panic!("{id} did not load: {:?}", found.notices);
+        };
+        let store = Store::open(home).expect("store");
+        crate::plugin_cmd::write_grant(
+            &store,
+            id,
+            &GrantScope::User,
+            digest,
+            cox_plugin::grant::capability_list(manifest),
+            serde_json::json!({}),
+        )
+        .expect("grant");
+    }
+
+    /// `open`'s plugin steps over a scripted session: discover and load,
+    /// build, `start_plugins`, the hook chain, then the notices in order.
+    #[cfg(feature = "plugins")]
+    async fn session_with_plugins(home: &Path, work: &Path, turns: usize) -> (Session, Arc<Store>) {
+        let scenario: String = (0..turns)
+            .map(|i| format!("[[turn]]\ntext = \"reply {i}\"\n"))
+            .collect();
+        let (session, store) = scripted_session(home, work, &scenario);
+        let config = Config::default();
+        let plugins = load_plugins(&config, home, work, store.clone(), None);
+        let (hooks, started) = start_plugins(&session, plugins.live, &config.plugins, work, None);
+        session.set_hook(Arc::new(cox_ext::hooks::HookChain::new(None, hooks)));
+        let loaded = plugins.notices.into_iter().map(|w| (Level::Warn, w));
+        for (level, text) in loaded.chain(started) {
+            session.notice(level, text).await.expect("notice");
+        }
+        (session, store)
+    }
+
+    #[cfg(feature = "plugins")]
+    fn notices(store: &Store, session: &Session) -> Vec<String> {
+        store
+            .rollout_read(&session.id())
+            .expect("rollout")
+            .into_iter()
+            .filter_map(|ev| match ev {
+                Event::Notice { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Polls the rollout until a notice satisfies `want`; the tap's notices
+    /// reach it through a task, after the event that drained them.
+    #[cfg(feature = "plugins")]
+    async fn wait_for_notice(
+        store: &Store,
+        session: &Session,
+        want: impl Fn(&str) -> bool,
+    ) -> String {
+        for _ in 0..250 {
+            if let Some(found) = notices(store, session).into_iter().find(|n| want(n)) {
+                return found;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("no such notice in {:?}", notices(store, session));
+    }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn granted_plugin_runs_cox_init_once_per_session() {
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        install_granted(home.path(), "once", "", &plugin_wat("init ran", "{}", ""));
+        let (session, store) = session_with_plugins(home.path(), work.path(), 2).await;
+        user_turn(&session, "one").await;
+        user_turn(&session, "two").await;
+        let inits = notices(&store, &session)
+            .into_iter()
+            .filter(|n| n == "plugin once: init ran")
+            .count();
+        assert_eq!(inits, 1, "{:?}", notices(&store, &session));
+    }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn plugin_notify_reaches_the_transcript() {
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        let caps = "[capabilities]\nhooks = [\"UserPromptSubmit\"]\n";
+        install_granted(
+            home.path(),
+            "tell",
+            caps,
+            &plugin_wat("", "{}", r"\u001b[2Jfrom a hook"),
+        );
+        let (session, store) = session_with_plugins(home.path(), work.path(), 1).await;
+        user_turn(&session, "hi").await;
+        // Sanitized on the way (T33.9), attributed to the plugin here.
+        let got = wait_for_notice(&store, &session, |n| n.contains("from a hook")).await;
+        assert_eq!(got, "plugin tell: from a hook");
+    }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn hooks_and_event_tap_share_one_plugin_instance() {
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        let caps = "[capabilities]\nhooks = [\"UserPromptSubmit\"]\nevents = [\"turn_done\"]\n";
+        let init_out = r#"{"subscribe":["turn_done"]}"#;
+        install_granted(home.path(), "ctr", caps, &plugin_wat("", init_out, ""));
+        let (session, store) = session_with_plugins(home.path(), work.path(), 8).await;
+        // The tap drains after an event, so a later turn carries the notice
+        // `cox_on_event` answered for an earlier `turn_done`.
+        let mut seen = None;
+        for i in 0..8 {
+            user_turn(&session, &format!("turn {i}")).await;
+            seen = notices(&store, &session)
+                .into_iter()
+                .find(|n| n.starts_with("plugin ctr: hooks"));
+            if seen.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        // Two instances would leave the event side's count at 0.
+        let seen = seen.expect("a notice from cox_on_event");
+        assert_ne!(seen, "plugin ctr: hooks 0");
+    }
+
+    #[cfg(feature = "plugins")]
+    #[tokio::test]
+    async fn plugin_init_failure_is_skipped_with_a_warning() {
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        let caps = "[capabilities]\nhooks = [\"UserPromptSubmit\"]\n";
+        let trap = r#"(module (func (export "cox_init") (result i32) unreachable)
+                      (func (export "cox_hook") (result i32) unreachable))"#;
+        install_granted(home.path(), "boom", caps, trap);
+        let (session, store) = session_with_plugins(home.path(), work.path(), 1).await;
+        // The session goes on and the dropped plugin's hook never runs:
+        // it would trap, which the core reports as a hook warning.
+        user_turn(&session, "hi").await;
+        let all = notices(&store, &session);
+        assert!(
+            all.iter()
+                .any(|n| n.starts_with("plugin boom failed to start")),
+            "{all:?}"
+        );
+        assert_eq!(all.len(), 1, "{all:?}");
+    }
+
+    #[cfg(feature = "plugins")]
+    #[test]
+    fn granted_plugin_models_join_the_catalog() {
+        fn fake_key(_: &str, _: &str) -> Result<String, cox_protocol::errors::ProviderError> {
+            Ok("sk-test".to_string())
+        }
+        let (home, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("work"),
+        );
+        let init = r#"(module (func (export "cox_init") (result i32) (i32.const 0)))"#;
+        let row =
+            |window: u32| format!("[[models]]\nid = \"plug-big\"\ncontext_window = {window}\n");
+        install_granted(home.path(), "aa", &row(1_000_000), init);
+        install_granted(home.path(), "zz", &row(5), init);
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let mut cfg = Config::default();
+        cfg.tiers.code.model = "plug-big".into();
+        let plugins = load_plugins(&cfg, home.path(), work.path(), store, None);
+        // The lower id keeps the row; the other is shown, not applied.
+        assert!(
+            plugins
+                .notices
+                .iter()
+                .any(|n| n == "plugin zz also defines model plug-big; plugin aa's row is kept"),
+            "{:?}",
+            plugins.notices
+        );
+        let p = provider_for_served(&cfg, fake_key, None, &plugins.catalog_rows())
+            .expect("anthropic builds");
+        assert_eq!(p.capabilities().max_context, 1_000_000);
     }
 }

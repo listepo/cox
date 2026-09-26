@@ -63,6 +63,7 @@ pub fn run(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         |_| {},
         resume,
         true,
+        None,
     ))?;
     let mut plain = Plain {
         session: session.clone(),

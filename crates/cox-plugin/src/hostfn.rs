@@ -460,7 +460,7 @@ pub fn init_input(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
 
     use cox_plugin_api::{Capabilities, Limits};
@@ -471,7 +471,7 @@ mod tests {
 
     /// An in-memory `PluginStore`: only kv is exercised here.
     #[derive(Default)]
-    struct MemKv(Mutex<HashMap<(String, String), Vec<u8>>>);
+    pub(crate) struct MemKv(Mutex<HashMap<(String, String), Vec<u8>>>);
 
     impl PluginStore for MemKv {
         fn grant_get(
