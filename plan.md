@@ -7,24 +7,24 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T30.15 | todo | P2 | 3 | 0% | |
-| T30.16 | todo | P2 | 3 | 0% | |
+| T30.16 | todo | P2 | 4 | 0% | |
 | T30.13 | todo | P3 | 3 | 0% | |
-| T30.26 | todo | P1 | 3 | 0% | |
+| T30.26 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T30.27 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
-| T32.2 | todo | P2 | 3 | 0% | |
+| T32.2 | todo | P2 | 4 | 0% | |
 | T32.4 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T32.5 | todo | P2 | 2 | 0% | |
+| T32.5 | todo | P2 | 3 | 0% | |
 | T32.6 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
-| T32.7 | todo | P2 | 2 | 0% | |
-| T32.8 | todo | P2 | 2 | 0% | |
+| T32.7 | todo | P2 | 3 | 0% | |
+| T32.8 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T32.9 | todo | P2 | 3 | 0% | |
-| T32.10 | todo | P2 | 2 | 0% | |
-| T32.11 | todo | P2 | 2 | 0% | |
-| T32.12 | todo | P2 | 2 | 0% | |
-| T32.13 | todo | P2 | 3 | 0% | |
-| T32.14 | todo | P2 | 3 | 0% | |
+| T32.10 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
+| T32.11 | todo | P2 | 3 | 0% | |
+| T32.12 | todo | P2 | 3 | 0% | |
+| T32.13 | todo | P2 | 4 | 0% | |
+| T32.14 | todo | P2 | 4 | 0% | |
 | T32.15 | todo | P2 | 2 | 0% | |
-| T32.16 | todo | P2 | 3 | 0% | |
+| T32.16 | in progress | P2 | 4 | 5% | Claude Code / claude-opus-5-5 |
 
 ## Reference
 
