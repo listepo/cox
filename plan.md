@@ -12,9 +12,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.30 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.33 | todo | P2 | 3 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
-| T33.35 | in progress | P3 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T33.36 | todo | P2 | 4 | 0% | |
-| T33.37 | in progress | P3 | 1 | 5% | Claude Code / claude-sonnet-5 |
 | T33.38 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T33.40.1 | todo | P1 | 5 | 0% | |
 | T33.40.3 | todo | P2 | 4 | 0% | |
@@ -771,25 +769,11 @@ Depends: T33.29, T33.43 (go-pdk v1.1.3 needs `wasip1`, and the host keeps WASI o
 Goal: a thin Go package over `github.com/extism/go-pdk` (v1.1.3) for the PL§4 exports and host functions (`//go:wasmimport` in `cox:host/v1`). The same example is built with TinyGo `-target wasip1 -buildmode=c-shared` (`wasi = true`). `cox plugin new --lang go`.
 Check: `plugin_example_go` is `#[ignore = "needs go and tinygo: run just plugin-examples go"]` locally and runs in the `plugin-examples` CI job, where a missing toolchain fails the job; it asserts the same rollout effect as T33.28.
 
-#### T33.35 Kotlin: feasibility spike
-
-Depends: T33.28 · Size: ~80 (spike; a throwaway branch of files under `plugins/spikes/kotlin`, not merged) · Files: `research.md` §4.3.5, `docs/design/plugins.md` §13
-Goal: prove or refute that a Kotlin/Wasm `wasmWasi` module (the latest Kotlin, R§4.3.5 P32) with `@WasmImport("extism:host/env", …)` and `@WasmExport` loads in extism 1.30.0 and round-trips `cox_init`, with and without extism's `wasmtime-exceptions` feature (P33–P34).
-Falsifier: the module fails to instantiate under the wasmtime 43 extism pins, or needs a feature cox will not enable → Kotlin stays out of `--lang` and PL§13 records why. If it passes only with `wasmtime-exceptions`, ask the creator before enabling it.
-Check: R§4.3.5 gains the spike's facts with versions; the PL§13 row says "proven" or "refuted".
-
 #### T33.36 Kotlin: thin PDK, template, example (only if T33.35 passes)
 
 Depends: T33.35 · Size: ~200 · Files: `plugins/sdk-kotlin/src/…/Cox.kt`, `plugins/examples/kotlin/src/…/Main.kt`, `plugins/templates/kotlin/*.tmpl`; `plugins/mise.toml` gets java, gradle and kotlin
 Goal: a cox-owned minimal Kotlin PDK over the raw extism imports (there is no maintained one, R§4.3.5 P30), the same example, and `--lang kotlin`.
 Check: `plugin_example_kotlin` is ignored with its reason locally and runs in the CI job.
-
-#### T33.37 Dart: WASI re-check spike
-
-Depends: T33.28 · Size: ~60 · Files: `research.md` §4.3.5, `docs/design/plugins.md` §13
-Goal: re-check whether the latest Dart can emit a module that runs outside JS (dart-lang/sdk#56366, R§4.3.5 P35) and load it in extism.
-Falsifier: `dart compile wasm` output still needs a JS bootstrap → Dart stays an MCP-server-only exception (T33.38) and the spike is repeated when #56366 closes.
-Check: R§4.3.5 records the Dart version tried and the result.
 
 #### T33.38 Dart: MCP-server plugin template and example
 

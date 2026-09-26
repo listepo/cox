@@ -6,9 +6,7 @@
 - T33.30. `/plugin new` in the TUI
 - T33.33. `/plugin update | remove | list | reload` in the TUI
 - T33.34. Go: SDK wrapper, template, example
-- T33.35. Kotlin: feasibility spike
 - T33.36. Kotlin: thin PDK, template, example
-- T33.37. Dart: WASI re-check spike
 - T33.38. Dart: MCP-server plugin template and example
 - T33.40.1. ABI: two-phase decide, own-provider call-out, batched questions
 - T33.40.3. Jev provider export

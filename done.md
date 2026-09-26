@@ -2741,3 +2741,39 @@ Check:
 - The real binary with a scratch `COX_HOME`: `cox doctor` exits 0 and prints the plugin cache row.
 - In the worktree: nextest 1207 passed, 3 skipped; fmt, clippy and the slim build clean.
 - On main after landing (T33.41, T33.40.8, T33.21, T35.9, T33.29 and T33.39 together): nextest 1247 passed, 3 skipped; fmt, clippy and the slim build clean.
+
+#### T33.35 Kotlin: feasibility spike
+
+Depends: T33.28 · Size: ~80 (spike; a throwaway branch of files under `plugins/spikes/kotlin`, not merged) · Files: `research.md` §4.3.5, `docs/design/plugins.md` §13
+Goal: prove or refute that a Kotlin/Wasm `wasmWasi` module (the latest Kotlin, R§4.3.5 P32) with `@WasmImport("extism:host/env", …)` and `@WasmExport` loads in extism 1.30.0 and round-trips `cox_init`, with and without extism's `wasmtime-exceptions` feature (P33–P34).
+Falsifier: the module fails to instantiate under the wasmtime 43 extism pins, or needs a feature cox will not enable → Kotlin stays out of `--lang` and PL§13 records why. If it passes only with `wasmtime-exceptions`, ask the creator before enabling it.
+Check: R§4.3.5 gains the spike's facts with versions; the PL§13 row says "proven" or "refuted".
+Status: done 2026-09-26
+Result: refuted. Kotlin works only with extism's `wasmtime-exceptions` feature, which cox does not enable.
+- **Toolchain:** Kotlin 2.4.20, JDK Temurin 21.0.12 and Gradle 9.8.0, in a throwaway `plugins/spikes/kotlin` (deleted).
+- **Module:** a minimal `wasmWasi` module with `@WasmExport("cox_init")` and `@WasmImport("extism:host/env", "alloc")`. Its only import is `extism:host/env::alloc`; it has no WASI imports.
+- **Real host** (`PluginHost::load`, WASI off per A55) and raw extism with WASI on: both fail at parse time with "exceptions proposal not enabled". Kotlin 2.4.20's `wasmWasi` output always uses the exception-handling proposal, and extism 1.30.0 enables it only behind its non-default `wasmtime-exceptions` feature (P33/P34).
+- **With `wasmtime-exceptions` on** (scratch only, reverted): the module instantiates and `cox_init` runs through the real host with WASI still off. WASI (A55/T33.43) is therefore not what blocks Kotlin.
+- **Docs:** `research.md` §4.3.5 gains the spike's rows and a result paragraph. `docs/design/plugins.md` §13's Kotlin row and §14 decision 3 say "refuted (T33.35)". Kotlin stays out of `--lang`, and T33.36 proceeds only if the creator enables `wasmtime-exceptions` for the whole workspace, which is a decision for every plugin.
+Check:
+- R§4.3.5 records the versions, the exact errors and the sources: https://api.github.com/repos/JetBrains/kotlin/releases/latest and extism-1.30.0 `src/plugin.rs`, both checked 2026-09-26.
+- The spike dir, the scratch example and the Cargo.toml flip are all removed. In the worktree: nextest 1247 passed, 3 skipped; fmt and clippy clean.
+- On main: docs-only change (research.md and docs/design/plugins.md); both spikes' conflicting rows were resolved on landing.
+
+#### T33.37 Dart: WASI re-check spike
+
+Depends: T33.28 · Size: ~60 · Files: `research.md` §4.3.5, `docs/design/plugins.md` §13
+Goal: re-check whether the latest Dart can emit a module that runs outside JS (dart-lang/sdk#56366, R§4.3.5 P35) and load it in extism.
+Falsifier: `dart compile wasm` output still needs a JS bootstrap → Dart stays an MCP-server-only exception (T33.38) and the spike is repeated when #56366 closes.
+Check: R§4.3.5 records the Dart version tried and the result.
+Status: done 2026-09-26
+Result: refuted again. Dart 3.13.4 (stable, macOS arm64) still needs a JS bootstrap.
+- `dart compile wasm` has no WASI or non-JS target. It emits `main.wasm` plus a `main.mjs` that compiles with `builtins: ['js-string']` and supplies a `dart2wasm` JS import object.
+- Loading `main.wasm` through the workspace's extism 1.30.0 / wasmtime 43.0.2 with WASI on fails: "failed to parse WebAssembly module: exceptions proposal not enabled". With extism's `wasmtime-exceptions` feature it would still need `wasm:js-string` and the JS import object, which the extism ABI does not supply.
+- dart-lang/sdk#56366 is still open (last activity 2026-06-21). A third-party `wasm_tools` shim outside the SDK was not tried.
+- Dart stays the MCP-server-only exception (T33.38). The spike is repeated when #56366 closes.
+- `research.md` §4.3.5 gains row P44 (renumbered on landing: T33.35 took P40–P43), and the Dart lines of `docs/design/plugins.md` §13/§14 are updated.
+Check:
+- R§4.3.5 P44 records Dart 3.13.4, the commands, the exact instantiate error and the issue state. Sources, checked 2026-09-26: https://api.github.com/repos/dart-lang/sdk/issues/56366 and https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION
+- The throwaway SDK, spike files and test were deleted; nothing but the two docs was committed.
+- On main: docs-only change (research.md and docs/design/plugins.md); both spikes' conflicting rows were resolved on landing.
