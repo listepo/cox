@@ -94,6 +94,14 @@
         "$ref": "#/$defs/McpDecl"
       },
       "default": []
+    },
+    "external_agents": {
+      "description": "`[[external_agents]]` entries: a plugin-brought external agent CLI\ndriven over ACP or `stream-json` (P35, EA§1 in\n`docs/design/external-agents.md`).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ExternalAgentDecl"
+      },
+      "default": []
     }
   },
   "additionalProperties": false,
@@ -501,6 +509,58 @@
       "additionalProperties": false,
       "required": [
         "name"
+      ]
+    },
+    "ExternalAgentDecl": {
+      "description": "A `[[external_agents]]` entry (EA§1): a host-spawned external agent CLI,\nnever a WASM export — a guest cannot open a process (EA§2).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The `agent(preset: \"<name>\")` dispatch name (EA§1, EA§3).",
+          "type": "string"
+        },
+        "command": {
+          "description": "Program inside the package or on PATH.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Arguments for `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "mode": {
+          "description": "Which headless protocol the process speaks.",
+          "$ref": "#/$defs/AgentMode"
+        },
+        "key_env": {
+          "description": "Env var the host resolves the key from with `resolve_key` (D12/A49);\na name, never a value — the key never enters wasm and is never\nhand-typed into the manifest.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "command",
+        "mode",
+        "key_env"
+      ]
+    },
+    "AgentMode": {
+      "description": "The headless protocol an `[[external_agents]]` entry speaks.",
+      "oneOf": [
+        {
+          "description": "Agent Client Protocol over stdio (EA§4): cox is the client.",
+          "type": "string",
+          "const": "acp"
+        },
+        {
+          "description": "The line-oriented `stream-json` protocol (EA§5): a pure host-side\nline mapper onto `cox_protocol::Event`/`Item`.",
+          "type": "string",
+          "const": "stream-json"
+        }
       ]
     }
   }

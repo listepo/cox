@@ -21,8 +21,9 @@ pub use abi::{
 };
 
 pub use manifest::{
-    API_MAJOR, Capabilities, FsCaps, Limits, ManifestError, McpDecl, ModelDecl, ModelTier,
-    PluginManifest, PriceDecl, ProviderApi, ProviderAuth, ProviderDecl, UiCaps,
+    API_MAJOR, AgentMode, Capabilities, ExternalAgentDecl, FsCaps, Limits, ManifestError, McpDecl,
+    ModelDecl, ModelTier, PluginManifest, PriceDecl, ProviderApi, ProviderAuth, ProviderDecl,
+    UiCaps,
 };
 
 #[cfg(test)]

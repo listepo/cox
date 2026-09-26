@@ -48,6 +48,11 @@ pub struct PluginManifest {
     /// `[[mcp]]` server declarations (PL§7c).
     #[serde(default)]
     pub mcp: Vec<McpDecl>,
+    /// `[[external_agents]]` entries: a plugin-brought external agent CLI
+    /// driven over ACP or `stream-json` (P35, EA§1 in
+    /// `docs/design/external-agents.md`).
+    #[serde(default)]
+    pub external_agents: Vec<ExternalAgentDecl>,
 }
 
 /// `[limits]`. Absent means "the host default".
@@ -232,6 +237,37 @@ pub struct McpDecl {
     pub url: Option<String>,
 }
 
+/// A `[[external_agents]]` entry (EA§1): a host-spawned external agent CLI,
+/// never a WASM export — a guest cannot open a process (EA§2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalAgentDecl {
+    /// The `agent(preset: "<name>")` dispatch name (EA§1, EA§3).
+    pub name: String,
+    /// Program inside the package or on PATH.
+    pub command: String,
+    /// Arguments for `command`.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Which headless protocol the process speaks.
+    pub mode: AgentMode,
+    /// Env var the host resolves the key from with `resolve_key` (D12/A49);
+    /// a name, never a value — the key never enters wasm and is never
+    /// hand-typed into the manifest.
+    pub key_env: String,
+}
+
+/// The headless protocol an `[[external_agents]]` entry speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentMode {
+    /// Agent Client Protocol over stdio (EA§4): cox is the client.
+    Acp,
+    /// The line-oriented `stream-json` protocol (EA§5): a pure host-side
+    /// line mapper onto `cox_protocol::Event`/`Item`.
+    StreamJson,
+}
+
 /// Why a parsed manifest is refused.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ManifestError {
@@ -256,6 +292,9 @@ pub enum ManifestError {
     /// An `[[mcp]]` entry has both or neither of `command` and `url`.
     #[error("[[mcp]] {0:?} needs exactly one of command or url")]
     McpTransport(String),
+    /// A `key_env` is not an env var name.
+    #[error("key_env {0:?} must be an env var name such as CURSOR_API_KEY, not a value")]
+    KeyEnv(String),
 }
 
 impl PluginManifest {
@@ -306,6 +345,17 @@ impl PluginManifest {
                 return Err(ManifestError::McpTransport(server.name.clone()));
             }
         }
+        for agent in &self.external_agents {
+            // Same "fits after prefixing" rule as an `[[mcp]]` server name
+            // (EA§1): the id-joined form must still be a valid tool name.
+            let prefixed = format!("{}-{}", self.id, agent.name);
+            if !is_tool_name(&prefixed) {
+                return Err(ManifestError::ToolName(agent.name.clone()));
+            }
+            if !is_env_var_name(&agent.key_env) {
+                return Err(ManifestError::KeyEnv(agent.key_env.clone()));
+            }
+        }
         Ok(())
     }
 }
@@ -324,6 +374,17 @@ fn is_tool_name(s: &str) -> bool {
     (1..=64).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// A shell environment-variable name: `[A-Za-z_][A-Za-z0-9_]*`. `key_env`
+/// names the var the host resolves at spawn time (`resolve_key`); it must
+/// never look like a value (a key, a URL, a path), which this shape rules out.
+fn is_env_var_name(s: &str) -> bool {
+    let mut bytes = s.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 /// A DNS name, optionally `*.`-prefixed. Rejecting `:`, `/` and `@` is what
@@ -523,5 +584,60 @@ args = ["--stdio"]
         let mut m = example();
         m.api = 2;
         assert_eq!(m.validate(), Err(ManifestError::ApiMajor(2)));
+    }
+
+    /// EA§1's `plugin.toml` example, appended to the PL§2 fixture.
+    const EXTERNAL_AGENT: &str = r#"
+[[external_agents]]
+name = "cursor"
+command = "agent"
+mode = "acp"
+key_env = "CURSOR_API_KEY"
+"#;
+
+    #[test]
+    fn external_agent_entry_round_trips_through_toml() {
+        let toml = format!("{EXAMPLE}\n{EXTERNAL_AGENT}");
+        let m = parse(&toml).expect("EA§1's example parses");
+        assert_eq!(
+            m.external_agents,
+            vec![ExternalAgentDecl {
+                name: "cursor".into(),
+                command: "agent".into(),
+                args: vec![],
+                mode: AgentMode::Acp,
+                key_env: "CURSOR_API_KEY".into(),
+            }]
+        );
+        assert_eq!(m.validate(), Ok(()));
+    }
+
+    #[test]
+    fn unknown_mode_value_is_a_validation_error() {
+        let toml = format!(
+            "{EXAMPLE}\n{}",
+            EXTERNAL_AGENT.replace("\"acp\"", "\"yolo\"")
+        );
+        assert!(parse(&toml).is_err(), "an unknown mode must be refused");
+    }
+
+    #[test]
+    fn manifest_rejects_external_agent_key_env_that_is_not_an_identifier() {
+        for bad in ["CURSOR-API-KEY", "1CURSOR", "sk-abc123", "", "CURSOR KEY"] {
+            let toml = format!(
+                "{EXAMPLE}\n{}",
+                EXTERNAL_AGENT.replace("CURSOR_API_KEY", bad)
+            );
+            let m = parse(&toml).expect("a bad key_env is still a string, so this parses");
+            assert_eq!(m.validate(), Err(ManifestError::KeyEnv(bad.into())));
+        }
+    }
+
+    #[test]
+    fn manifest_rejects_external_agent_name_too_long_after_prefix() {
+        let mut m = parse(&format!("{EXAMPLE}\n{EXTERNAL_AGENT}")).expect("parses");
+        // 64 on its own, but not after `git-glance-`.
+        m.external_agents[0].name = "c".repeat(64);
+        assert_eq!(m.validate(), Err(ManifestError::ToolName("c".repeat(64))));
     }
 }
