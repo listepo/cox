@@ -1251,3 +1251,26 @@ Check: passing tests:
 - `hop_limit_stops_a_ping_pong`
 
 These use the scripted provider. nextest: 1005 passed, 3 skipped in the worktree.
+
+#### T34.3 `ask_user` from a subagent, labelled with `Source`
+
+Depends: — · Size: ~150 · Files: `crates/cox-tools/src/ask_user.rs`, `crates/cox-protocol/src/traits.rs` (`ToolCx` gains the agent label), `crates/cox-core/src/subagent.rs`
+Goal: a subagent whose preset/definition grants `ask_user` can pause and ask the user a question exactly like the parent does, and every surface that renders it can say which subagent is asking — reusing the `Source` type `ApprovalRequired` already carries instead of inventing a new one.
+Plan:
+1. `ask_user::Question` gains an optional `source: Option<Source>` — `None` for the top-level session, `Some` for a subagent.
+2. `ToolCx` carries the agent name/preset alongside its existing `session: SessionId`, set once in `spawn_child`/`AgentTool::call`, the same way `relay_approval` builds its `Source` today.
+3. Wherever `Answers::Surface` renders a `Question`, it shows the label the same way `ask_permission` labels a relayed approval, when `source` is `Some`.
+4. No shipped preset (`explore`, `shell`) grants `ask_user` in this task — that is a content decision for whoever writes the first custom definition that needs it; this task only makes it possible and labelled.
+Check: `ask_user_from_subagent_carries_its_source`, `ask_user_surface_shows_which_agent_is_asking`; existing `ask_user.rs` tests unchanged.
+Status: done 2026-09-26
+Result: `ask_user` called from a subagent reaches the user labelled with the agent that asks (SM§4).
+- **Protocol:** `Question` gets `source: Option<Source>`. `ToolCx` gets `agent`/`preset`, which are `None` in a top-level session.
+- **Core:** `spawn_child` takes the child's `name` and preset name, the same labels `relay_approval` already uses, so every `ToolCx` the child hands its tools carries them.
+- **TUI:** the question modal shows an "X asks:" line. The label goes through `cox_sanitize::sanitize`.
+- **Permissions:** no built-in preset grants `ask_user`. A child sees it only if the parent's tool set and the preset allow it.
+Deviations: the cherry-pick onto main conflicted with T34.5 in `spawn_child`, which now takes `resume` too, and in `AgentTool::call`. Resolved by keeping T34.5's `Spec`/`spawn` path, and `spawn` now passes `spec.name`/`spec.preset_name`.
+Check: passing tests:
+- `ask_user_from_subagent_carries_its_source`
+- `ask_user_surface_shows_which_agent_is_asking` (insta snapshot)
+
+nextest on main after the merge: 1007 passed, 3 skipped. The merged `spawn_child` needed `#[allow(clippy::too_many_arguments)]`, the same as `build`.

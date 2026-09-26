@@ -56,7 +56,6 @@
 - T33.42. Sandbox every MCP stdio server, with a per-server opt-out
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T34.2. A subagent concurrency cap
-- T34.3. `ask_user` from a subagent, labelled with `Source`
 - T34.6. The `send_message` tool
 - T34.7. TUI and stream-json rendering
 - T34.8. ACP rendering, and the dropped task-lifecycle events

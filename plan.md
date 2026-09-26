@@ -62,7 +62,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.42 | todo | P2 | 3 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T34.2 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
-| T34.3 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T34.6 | todo | P1 | 3 | 0% | |
 | T34.7 | todo | P2 | 2 | 0% | |
 | T34.8 | todo | P2 | 2 | 0% | |
@@ -1351,17 +1350,6 @@ Depends: — · Size: ~140 · Files: `crates/cox-protocol/src/config.rs` (new `c
 Goal: cap how many subagent tasks (foreground and background) may run at once per session, so a loop of `background: true` calls cannot silently multiply cost or exhaust the parent's budget slice faster than the user can notice. Matches the shape of Codex's `agents.max_concurrent_threads_per_session` and Claude Code's `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as a `cox-config` key (D13: one config file, every flag is a key), not an env var.
 Plan: `core.max_concurrent_subagents` (default generous, e.g. 8), read from `self.parent.config.core` in `AgentTool::call()`; counted against the parent's currently-registered `TaskKind::Agent` tasks (`register_task`/`complete_task`, already tracked in `Session::inner.tasks`) before spawning; over the cap is `ToolError::Denied` naming the cap and how many are running, the same shape as T34.1's "unknown preset" denial.
 Check: `agent_call_denied_when_concurrent_cap_reached`, `agent_call_allowed_after_a_running_task_completes`, `config_jsonschema_matches_committed_file` stays green with the new key.
-
-#### T34.3 `ask_user` from a subagent, labelled with `Source`
-
-Depends: — · Size: ~150 · Files: `crates/cox-tools/src/ask_user.rs`, `crates/cox-protocol/src/traits.rs` (`ToolCx` gains the agent label), `crates/cox-core/src/subagent.rs`
-Goal: a subagent whose preset/definition grants `ask_user` can pause and ask the user a question exactly like the parent does, and every surface that renders it can say which subagent is asking — reusing the `Source` type `ApprovalRequired` already carries instead of inventing a new one.
-Plan:
-1. `ask_user::Question` gains an optional `source: Option<Source>` — `None` for the top-level session, `Some` for a subagent.
-2. `ToolCx` carries the agent name/preset alongside its existing `session: SessionId`, set once in `spawn_child`/`AgentTool::call`, the same way `relay_approval` builds its `Source` today.
-3. Wherever `Answers::Surface` renders a `Question`, it shows the label the same way `ask_permission` labels a relayed approval, when `source` is `Some`.
-4. No shipped preset (`explore`, `shell`) grants `ask_user` in this task — that is a content decision for whoever writes the first custom definition that needs it; this task only makes it possible and labelled.
-Check: `ask_user_from_subagent_carries_its_source`, `ask_user_surface_shows_which_agent_is_asking`; existing `ask_user.rs` tests unchanged.
 
 #### T34.6 The `send_message` tool
 
