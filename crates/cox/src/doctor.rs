@@ -1352,7 +1352,7 @@ mod tests {
     #[test]
     fn doctor_human_output() {
         let results = vec![
-            CheckResult::ok("toolchain", "rustc 1.97.1".to_string()),
+            CheckResult::ok("toolchain", "rustc 1.98.1".to_string()),
             CheckResult::ok("COX_HOME writable", "/home/user/.cox".to_string()),
             CheckResult::ok("db", "database opens and schema is valid".to_string()),
             CheckResult::ok("API keys", "Anthropic API key found".to_string()),
