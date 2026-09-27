@@ -1,4 +1,18 @@
 
+#### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
+
+Model: Cursor / grok 4.7 · Status: done 2026-09-27 · Depends: none · Size: ~200 · Priority: P2 · Complexity: 3
+Goal: on Linux, bwrap gives a wrapped program a private `/tmp`, so a plugin's `[[mcp]]` server, an external agent or a PATH directory under `/tmp` cannot be found inside the sandbox. The directory that holds the spawned program (the plugin package or `COX_HOME` when the program lives there) is bound read-only, and the rest of the host `/tmp` stays hidden. Landlock and Seatbelt are unchanged.
+Files: `crates/cox-sandbox/src/sandbox/bwrap.rs`, `crates/cox/src/session.rs`, `AGENTS.md`.
+What landed: `expose_under_private_tmp` inserts one `--ro-bind` before `--` for the highest directory under `/tmp` that contains the program. It never binds `/tmp` itself. A program already inside a writable `--bind` is left alone, and the climb stops before a wider mount would hide another writable bind. `sandboxed_argv` resolves a bare PATH name and passes that file in when the backend is bwrap. `AGENTS.md` notes that a `COX_HOME` or plugin program under `/tmp` is mounted back that way.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-sandbox -E 'test(expose_) or test(bwrap_)'
+6 tests run: 6 passed, 8 skipped
+$ mise exec -- cargo clippy -p cox-sandbox -p cox --all-targets -- -D warnings
+Finished `dev` profile
+```
+The Linux exec test `bwrap_runs_a_program_from_a_private_tmp_dir_and_hides_siblings` is `#[cfg(target_os = "linux")]` and was not run on this Mac.
 
 #### T30.8 Tests for the eval package
 

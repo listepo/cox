@@ -17,6 +17,7 @@ mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 mise exec -- cargo fmt --check
 mise exec -- cargo insta review              # after an intentional TUI/transcript change
 COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against your real ~/.cox; cargo sets COX_KEYRING=off
+# A `COX_HOME` or plugin program under `/tmp` is bind-mounted read-only into the bwrap sandbox (that directory only); the rest of `/tmp` stays hidden.
 ```
 
 ## Layout

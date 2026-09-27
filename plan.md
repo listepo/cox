@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T35.14 | todo | P2 | 3 | 0% | |
 
 ## Reference
 
@@ -1034,12 +1033,6 @@ Every card in this phase:
 Depends: T35.7 · Size: ~130 · Files: `scripts/vendor/src/cox_vendor/cursor_live_fixtures.py` (+ its tests), `tests/fixtures/cursor/*.json` (data, recorded from one real run)
 Goal: with the creator's own `CURSOR_API_KEY` and the installed CLI, one real `agent -p --output-format stream-json` and one real `agent acp` run against a scratch repo, recorded into the same fixture shape T35.7 already consumes — confirms the documented event shapes still match a real CLI release; never runs in CI, matches T33.40.17's shape.
 Check: the recorded fixture round-trips through T35.7's mapper unchanged; the script's own test asserts it never touches a real key by default (opt-in env var required).
-
-#### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
-
-Depends: none · Size: ~120 · Files: `crates/cox-sandbox/src/sandbox.rs` (the bwrap argument list), the host-only spawner from T35.2, `crates/cox-sandbox/tests/*`, `AGENTS.md` (dev-run note)
-Goal: on Linux, bwrap gives a wrapped program a private `/tmp`, so a plugin's `[[mcp]]` server, an external agent (T35.2) or a PATH directory under `/tmp` cannot be found inside the sandbox, and the process fails to start. AGENTS.md's own dev runs (`COX_HOME=/tmp/cox-scratch`) hit this; the PR #53 CI fix moved the test fixtures out of `/tmp` instead of fixing the product. Done means: the directory that holds the spawned program (and the plugin package or `COX_HOME` it runs from) is bound read-only into the sandbox even when it is under `/tmp`, without exposing the rest of the host `/tmp`; or, where that cannot be done safely, the spawn fails with a clear message naming the path and the fix, and `cox doctor` says so. Landlock and Seatbelt behaviour is unchanged.
-Check: a Linux-only test (skipped elsewhere, run in the `test (ubuntu-24.04)` job under bwrap) spawns a program from a `/tmp` tempdir under the sandbox and it runs, while a sibling file in `/tmp` stays unreadable; the doctor or error-message case if the bind is refused.
 
 ### P36 — Compound shell commands (goal: a `Bash(<prefix>:*)` rule or a session grant covers exactly the commands it names, never a command chained after them)
 
