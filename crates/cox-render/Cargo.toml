@@ -12,7 +12,7 @@ cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 ratatui = { workspace = true }
 pulldown-cmark = { workspace = true }
 syntect = { workspace = true }
-two-face = { version = "0.3", features = ["syntect-fancy"] }
+two-face = { version = "0.5", features = ["syntect-fancy"] }
 similar = { workspace = true }
 unicode-width = { workspace = true }
 terminal-colorsaurus = { workspace = true }
