@@ -9,7 +9,10 @@ accent: "#A8E06C"
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/shop-mvp as content/projects/cox.md on every change to main and on every v* tag. -->
+listepo/shop-mvp as content/projects/cox.md on every change to main and on every v* tag.
+Sources (checked 2026-09-27): README.md, docs/ and the clap CLI in crates/cox/src/cli.rs; version
+from the latest GitHub release (v0.1.0); accent is the dark-theme --accent in
+website/assets/css/main.css. -->
 
 ## Overview
 
