@@ -20,39 +20,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          components: rustfmt, clippy
-          # The guest workspace `plugins/` builds for wasm32 (PL§13, T33.27).
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@v2
-
+  # The shared listepo/infra workflow, pinned by commit, with Rust from mise.toml
+  # and a check that rustc is that pin: fmt once, then per target clippy
+  # (--all-targets --all-features), check, and nextest where the runner executes
+  # the target (Linux x86_64 and aarch64, macOS aarch64) or a build where it does
+  # not (macOS x86_64).
+  rust:
+    uses: listepo/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    with:
+      # The shared matrix minus Windows: cox is Unix-only (a pty through nix,
+      # std::os::unix in cox-tools; no Windows release target).
+      matrix: >-
+        [
+        {"os": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu"},
+        {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
+        {"os": "macos-latest", "target": "aarch64-apple-darwin"},
+        {"os": "macos-latest", "target": "x86_64-apple-darwin"}
+        ]
+      # The manifest is virtual with `default-members`; cover every member.
+      clippy-args: --workspace
+      tools: nextest
       # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
       # (sandbox-landlock) covers the Landlock fallback.
-      - name: bubblewrap
-        if: runner.os == 'Linux'
-        uses: ./.github/actions/bwrap
-
-      - name: fmt
-        run: cargo fmt --check
-
-      - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - uses: taiki-e/install-action@nextest
-
-      - name: test
-        run: cargo nextest run --workspace
+      setup-command: |
+        if [ "$RUNNER_OS" = Linux ]; then bash .github/actions/bwrap/install.sh; fi
+      test-command: cargo nextest run --workspace
+      build-command: cargo build --workspace --all-targets --all-features --target "$TARGET"
+      # CI runs only on pull requests, so the default-branch-only cache would
+      # never be written.
+      cache-all-refs: true
 
   # Linux job B (plan.md T4.2): no bwrap on PATH, so the sandbox must fall
   # back to Landlock + seccomp and still hold the same guarantees.
@@ -78,7 +74,7 @@ jobs:
         run: cargo nextest run -p cox-tools sandbox_ bash_
 
   # The guest workspace (plugins/, PL§9, T33.40.2): its own `cargo test`
-  # target (a separate workspace, so the root `test` job above never builds
+  # target (a separate workspace, so the root `rust` job above never builds
   # it) plus the wasm32-unknown-unknown build every plugin ships as.
   plugins:
     runs-on: ubuntu-24.04
@@ -98,7 +94,7 @@ jobs:
         run: cargo build --manifest-path plugins/Cargo.toml --workspace --target wasm32-unknown-unknown
 
   # Guest-language examples that need a toolchain of their own (PL§13):
-  # each is `#[ignore]`d in the main `test` job with a reason naming
+  # each is `#[ignore]`d in the main `rust` job with a reason naming
   # `just plugin-examples <lang>`, so a missing toolchain here is a CI
   # failure rather than a silently skipped test. Dart (T33.38) today;
   # go/kotlin join this job once T33.34/T33.36 land.
@@ -180,7 +176,7 @@ jobs:
   revert-on-failure:
     name: revert-on-failure
     needs:
-      [test, sandbox-landlock, plugins, plugin-examples, deny, audit, footprint]
+      [rust, sandbox-landlock, plugins, plugin-examples, deny, audit, footprint]
     if: >-
       always()
       && github.event_name == 'push'
