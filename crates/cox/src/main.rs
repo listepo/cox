@@ -11,8 +11,16 @@ mod config_load;
 mod doctor;
 mod expand_cmd;
 mod ext_cmd;
+#[cfg(feature = "plugins")]
+mod external_agents;
 mod mcp_cmd;
 mod plain;
+#[cfg(feature = "plugins")]
+mod plugin_cmd;
+#[cfg(feature = "plugins")]
+mod plugin_new;
+#[cfg(feature = "plugins")]
+mod plugin_ui;
 mod record;
 mod resume;
 mod run;
@@ -37,7 +45,12 @@ fn main() -> anyhow::Result<()> {
     }
     let loaded = config_load::load(&cwd, &cli)?;
     let telemetry_home = cli.home.clone().unwrap_or_else(config_load::cox_home);
-    let telemetry = telemetry::init(&loaded.config, &telemetry_home)?;
+    let telemetry = telemetry::init(
+        &loaded.config.core.log_level,
+        loaded.config.telemetry.otel,
+        &loaded.config.telemetry.endpoint,
+        &telemetry_home,
+    )?;
 
     match &cli.command {
         Some(Command::Config(args)) => run_config(&cwd, &cli, &args.action),
@@ -46,6 +59,7 @@ fn main() -> anyhow::Result<()> {
             let code = doctor::run(
                 cli.json,
                 &servers,
+                &cwd,
                 &loaded.config.tui.theme,
                 &loaded.config.tui.caps,
                 &loaded.config,
@@ -70,6 +84,49 @@ fn main() -> anyhow::Result<()> {
             }
             Some(crate::cli::ExtAction::List { json }) => {
                 print!("{}", ext_cmd::list(&cli, &cwd, *json));
+                Ok(())
+            }
+        },
+        #[cfg(feature = "plugins")]
+        Some(Command::Plugin(args)) => match &args.action {
+            None => {
+                print!("{}", plugin_cmd::list(&cli, &cwd, false));
+                Ok(())
+            }
+            Some(crate::cli::PluginAction::List { json }) => {
+                print!("{}", plugin_cmd::list(&cli, &cwd, *json));
+                Ok(())
+            }
+            Some(crate::cli::PluginAction::Install { dir, yes }) => {
+                plugin_cmd::install(&cli, dir, *yes)
+            }
+            Some(crate::cli::PluginAction::Enable { id, project, yes }) => {
+                plugin_cmd::enable(&cli, &cwd, id, *project, *yes)
+            }
+            Some(crate::cli::PluginAction::Disable { id, project }) => {
+                plugin_cmd::disable(&cli, &cwd, id, *project)
+            }
+            Some(crate::cli::PluginAction::Update {
+                ids,
+                all,
+                check,
+                rollback,
+                yes,
+            }) => plugin_cmd::update(&cli, ids, *all, *check, *rollback, *yes),
+            Some(crate::cli::PluginAction::Remove { id, keep_data, yes }) => {
+                plugin_cmd::remove(&cli, &cwd, id, *keep_data, *yes)
+            }
+            Some(crate::cli::PluginAction::Link { dir, yes }) => plugin_cmd::link(&cli, dir, *yes),
+            Some(crate::cli::PluginAction::New {
+                name,
+                lang,
+                dir,
+                with,
+            }) => {
+                let dir = dir.clone().unwrap_or_else(|| cwd.join(name));
+                let files = plugin_new::scaffold(name, *lang, with)?;
+                plugin_new::write(&dir, &files)?;
+                println!("scaffolded {name} in {}", dir.display());
                 Ok(())
             }
         },
@@ -132,8 +189,7 @@ fn run_config(cwd: &std::path::Path, cli: &Cli, action: &ConfigAction) -> anyhow
     match action {
         ConfigAction::Show { sources } => {
             let loaded = config_load::load(cwd, cli)?;
-            config_cmd::show(&loaded, *sources);
-            Ok(())
+            config_cmd::show(&loaded, *sources)
         }
         ConfigAction::Get { key } => {
             let loaded = config_load::load(cwd, cli)?;

@@ -1,0 +1,19 @@
+[package]
+name = "cox-plugin-cursor"
+description = "cox plugin: drive Cursor's official `agent` CLI as an external subagent (P35)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# rlib alongside cdylib so `cargo test` can run the manifest test on the
+# host target; only the cdylib ships as the plugin's `cursor.wasm` (PL§2).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cox-plugin-sdk = { path = "../sdk" }
+
+[dev-dependencies]
+figment = { workspace = true }

@@ -1,0 +1,1648 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Config",
+  "description": "The full configuration tree (plan.md §1.6), one field per top-level\n`default.toml` table.",
+  "type": "object",
+  "properties": {
+    "core": {
+      "description": "`[core]`",
+      "$ref": "#/$defs/CoreConfig",
+      "default": {
+        "home": "~/.cox",
+        "workspace_roots": [],
+        "max_turns": 200,
+        "parallel_tools": 4,
+        "max_concurrent_subagents": 8,
+        "log_level": "info",
+        "profile": ""
+      }
+    },
+    "tiers": {
+      "description": "`[tiers.cheap]` / `[tiers.code]` / `[tiers.think]`",
+      "$ref": "#/$defs/TiersConfig",
+      "default": {
+        "cheap": {
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5",
+          "effort": "low",
+          "max_tokens": 4096,
+          "thinking": "off",
+          "confirm": false
+        },
+        "code": {
+          "provider": "anthropic",
+          "model": "claude-sonnet-5",
+          "effort": "high",
+          "max_tokens": 16384,
+          "thinking": "adaptive",
+          "confirm": false
+        },
+        "think": {
+          "provider": "anthropic",
+          "model": "claude-fable-5-1",
+          "effort": "high",
+          "max_tokens": 32768,
+          "thinking": "adaptive",
+          "confirm": true
+        }
+      }
+    },
+    "jobs": {
+      "description": "`[jobs]`",
+      "$ref": "#/$defs/JobsConfig",
+      "default": {
+        "main": "code",
+        "plan": "think",
+        "compact": "cheap",
+        "title": "cheap",
+        "summarize": "cheap",
+        "commit": "cheap",
+        "memory": "cheap",
+        "explore": "cheap",
+        "shell": "cheap",
+        "agent": "cheap",
+        "hook": "cheap"
+      }
+    },
+    "providers": {
+      "description": "`[providers.anthropic]` / `[providers.openai]` / `[providers.local]`",
+      "$ref": "#/$defs/ProvidersConfig",
+      "default": {
+        "anthropic": {
+          "base_url": "https://api.anthropic.com",
+          "api_key_env": "ANTHROPIC_API_KEY",
+          "cache_ttl": "5m",
+          "fallbacks": true,
+          "timeout_s": 120,
+          "max_retries": 4,
+          "models": []
+        },
+        "openai": {
+          "base_url": "https://api.openai.com/v1",
+          "api_key_env": "OPENAI_API_KEY",
+          "api": "responses",
+          "timeout_s": 120,
+          "max_retries": 4,
+          "models": []
+        },
+        "local": {
+          "base_url": "http://localhost:11434/v1",
+          "api_key_env": "",
+          "api": "chat",
+          "model": "qwen3-coder",
+          "context_window": 32768,
+          "timeout_s": 600,
+          "max_retries": 4,
+          "models": []
+        },
+        "lmstudio": {
+          "base_url": "http://localhost:1234",
+          "api_key_env": "LM_API_TOKEN",
+          "model": "",
+          "context_window": 0,
+          "load": false,
+          "timeout_s": 600,
+          "max_retries": 4
+        },
+        "typesafe": {
+          "base_url": "https://api.typesafe.ai",
+          "api_key_env": "TYPESAFE_API_KEY",
+          "model": "jev-latest",
+          "timeout_s": 30,
+          "max_retries": 2,
+          "models": []
+        }
+      }
+    },
+    "context": {
+      "description": "`[context]`",
+      "$ref": "#/$defs/ContextConfig",
+      "default": {
+        "compact_at": 0.75,
+        "keep_turns": 2,
+        "microcompact_after_turns": 6,
+        "tool_output_visible_bytes": 8192,
+        "tool_output_head_lines": 60,
+        "tool_output_tail_lines": 20,
+        "dedup_window_turns": 8,
+        "instruction_budget_tokens": 8000,
+        "memory_budget_tokens": 800,
+        "deferred_tools": true,
+        "system_prompt": "default"
+      }
+    },
+    "permissions": {
+      "description": "`[permissions]`",
+      "$ref": "#/$defs/PermissionsConfig",
+      "default": {
+        "mode": "default",
+        "approval": "on-request",
+        "allow": [],
+        "ask": [],
+        "deny": [
+          "Read(~/.ssh/**)",
+          "Read(~/.aws/**)",
+          "Bash(rm -rf /*)"
+        ],
+        "import_claude_settings": true,
+        "allow_for_session_persists": false
+      }
+    },
+    "sandbox": {
+      "description": "`[sandbox]`",
+      "$ref": "#/$defs/SandboxConfig",
+      "default": {
+        "mode": "workspace-write",
+        "network": false,
+        "writable": [],
+        "readonly_in_workspace": [
+          ".git",
+          ".cox",
+          ".claude"
+        ],
+        "linux_backend": "auto"
+      }
+    },
+    "budget": {
+      "description": "`[budget]`",
+      "$ref": "#/$defs/BudgetConfig",
+      "default": {
+        "session_usd": 5.0,
+        "monthly_usd": 100.0,
+        "warn_at": 0.8,
+        "cheap_counts": true
+      }
+    },
+    "tui": {
+      "description": "`[tui]`",
+      "$ref": "#/$defs/TuiConfig",
+      "default": {
+        "vim": false,
+        "theme": "auto",
+        "inline": true,
+        "show_thinking": "collapsed",
+        "screen_reader": false,
+        "mouse": true,
+        "glyphs": "auto",
+        "icons": {},
+        "color": "auto",
+        "syntax_theme": "",
+        "diff": "auto",
+        "git": true,
+        "notify": "auto",
+        "motion": "full",
+        "caps": {}
+      }
+    },
+    "hooks": {
+      "description": "`[hooks]`",
+      "$ref": "#/$defs/HooksConfig",
+      "default": {
+        "timeout_s": 60,
+        "fail_open": true,
+        "enabled": true
+      }
+    },
+    "mcp": {
+      "description": "`[mcp]`",
+      "$ref": "#/$defs/McpConfig",
+      "default": {
+        "timeout_s": 30,
+        "deferred": true,
+        "enabled": true,
+        "servers": {}
+      }
+    },
+    "plugins": {
+      "description": "`[plugins]`",
+      "$ref": "#/$defs/PluginsConfig",
+      "default": {
+        "enabled": true,
+        "decide": {
+          "route": null,
+          "min_confidence": 0.6,
+          "route_ms": 300,
+          "route_margin": 0.15,
+          "risk": null,
+          "risk_ms": 200,
+          "approve_hint": null,
+          "approve_hint_ms": 200,
+          "compact": null,
+          "compact_ms": 500,
+          "rank": null,
+          "rank_ms": 300,
+          "salience": null,
+          "salience_ms": 300
+        }
+      }
+    },
+    "memory": {
+      "description": "`[memory]`",
+      "$ref": "#/$defs/MemoryConfig",
+      "default": {
+        "enabled": true,
+        "extract": false,
+        "dir": "",
+        "salience_min": 0.3
+      }
+    },
+    "telemetry": {
+      "description": "`[telemetry]`",
+      "$ref": "#/$defs/TelemetryConfig",
+      "default": {
+        "otel": false,
+        "endpoint": ""
+      }
+    },
+    "record": {
+      "description": "`[record]`",
+      "$ref": "#/$defs/RecordConfig",
+      "default": {
+        "redact": true
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CoreConfig": {
+      "description": "`[core]` (plan.md §1.6).",
+      "type": "object",
+      "properties": {
+        "home": {
+          "description": "`core.home`: where `~/.cox` lives; `COX_HOME` overrides this directly\n(not via the `COX_CORE_HOME` env pattern) before any layer is read.",
+          "type": "string",
+          "default": "~/.cox"
+        },
+        "workspace_roots": {
+          "description": "`core.workspace_roots`: empty means \"git root of cwd, else cwd\";\n`--add-dir`/`--cwd` append to this.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "max_turns": {
+          "description": "`core.max_turns`: provider calls allowed per `UserTurn`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 200
+        },
+        "parallel_tools": {
+          "description": "`core.parallel_tools`: max concurrent `Concurrency::Parallel` calls.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        },
+        "max_concurrent_subagents": {
+          "description": "`core.max_concurrent_subagents` (T34.2): cap on `TaskKind::Agent`\ntasks running at once for a session, foreground and background\ntogether — a loop of `background: true` `agent` calls cannot\nsilently multiply cost or exhaust the parent's budget slice faster\nthan the user can notice. Matches the shape of Codex's\n`agents.max_concurrent_threads_per_session` and Claude Code's\n`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (research.md §4.3.7), but as\na config key (D13), not an env var.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 8
+        },
+        "log_level": {
+          "description": "`core.log_level`: a `tracing` filter string.",
+          "type": "string",
+          "default": "info"
+        },
+        "profile": {
+          "description": "`core.profile`: the assembled-prefix profile, `\"\"` (default) or\n`\"minimal\"` (T30.1: the core eight tools plus `expand`/`tool_search`,\na ≤300-token system prompt, no skills or memory index;\n`cox --profile minimal`).",
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
+    "TiersConfig": {
+      "description": "`[tiers]` (plan.md §1.6): the three routing tiers (plan.md D5).",
+      "type": "object",
+      "properties": {
+        "cheap": {
+          "description": "`[tiers.cheap]`",
+          "$ref": "#/$defs/TierConfig",
+          "default": {
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5",
+            "effort": "low",
+            "max_tokens": 4096,
+            "thinking": "off",
+            "confirm": false
+          }
+        },
+        "code": {
+          "description": "`[tiers.code]`",
+          "$ref": "#/$defs/TierConfig",
+          "default": {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5",
+            "effort": "high",
+            "max_tokens": 16384,
+            "thinking": "adaptive",
+            "confirm": false
+          }
+        },
+        "think": {
+          "description": "`[tiers.think]`",
+          "$ref": "#/$defs/TierConfig",
+          "default": {
+            "provider": "anthropic",
+            "model": "claude-fable-5-1",
+            "effort": "high",
+            "max_tokens": 32768,
+            "thinking": "adaptive",
+            "confirm": true
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TierConfig": {
+      "description": "One `[tiers.<tier>]` table.",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "description": "The provider id this tier calls (matches a `[providers.*]` table).",
+          "type": "string",
+          "default": ""
+        },
+        "model": {
+          "description": "The model id sent in the request.",
+          "type": "string",
+          "default": ""
+        },
+        "effort": {
+          "description": "Reasoning effort passed to the provider.",
+          "$ref": "#/$defs/Effort",
+          "default": "low"
+        },
+        "max_tokens": {
+          "description": "Max output tokens for a call on this tier.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "thinking": {
+          "description": "Extended/adaptive thinking mode; absent (`cheap`) means `off`.",
+          "$ref": "#/$defs/Thinking",
+          "default": "off"
+        },
+        "confirm": {
+          "description": "Whether picking this tier requires user confirmation (`think` only;\nproject config may not set this to `false`, plan.md §1.6).",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Effort": {
+      "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < Medium < High < Xhigh` so the router can clamp a tier's\neffort to the greatest level a model supports (`docs/design/providers.md`).\nThe four levels are models.dev's own, so a catalog row maps without loss\n(T30.26).",
+      "oneOf": [
+        {
+          "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
+          "type": "string",
+          "const": "low"
+        },
+        {
+          "description": "Between `Low` and `High`: models.dev's and the wires' `medium`.",
+          "type": "string",
+          "const": "medium"
+        },
+        {
+          "description": "Default for `code`/`think` tiers.",
+          "type": "string",
+          "const": "high"
+        },
+        {
+          "description": "User-selected for a flagged large refactor.",
+          "type": "string",
+          "const": "xhigh"
+        }
+      ]
+    },
+    "Thinking": {
+      "description": "Extended/adaptive thinking mode for a request.",
+      "oneOf": [
+        {
+          "description": "No thinking block requested.",
+          "type": "string",
+          "const": "off"
+        },
+        {
+          "description": "Provider decides whether and how much to think.",
+          "type": "string",
+          "const": "adaptive"
+        }
+      ]
+    },
+    "JobsConfig": {
+      "description": "`[jobs]` (plan.md §1.6): every `Job` pinned to a `Tier`.",
+      "type": "object",
+      "properties": {
+        "main": {
+          "description": "`jobs.main`",
+          "$ref": "#/$defs/Tier",
+          "default": "code"
+        },
+        "plan": {
+          "description": "`jobs.plan`",
+          "$ref": "#/$defs/Tier",
+          "default": "think"
+        },
+        "compact": {
+          "description": "`jobs.compact`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "title": {
+          "description": "`jobs.title`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "summarize": {
+          "description": "`jobs.summarize`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "commit": {
+          "description": "`jobs.commit`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "memory": {
+          "description": "`jobs.memory`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "explore": {
+          "description": "`jobs.explore`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "shell": {
+          "description": "`jobs.shell`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "agent": {
+          "description": "`jobs.agent`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        },
+        "hook": {
+          "description": "`jobs.hook`",
+          "$ref": "#/$defs/Tier",
+          "default": "cheap"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Tier": {
+      "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.\n\nOrdered cheapest first (declaration order), the one tier ordering every\n\"never up\" rule compares with: a plugin's model-call grant clamp\n(PL§7d) and the `route` decision point (PL§4, T33.20).",
+      "oneOf": [
+        {
+          "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
+          "type": "string",
+          "const": "cheap"
+        },
+        {
+          "description": "Sonnet by default, Opus when picked; the main coding turn.",
+          "type": "string",
+          "const": "code"
+        },
+        {
+          "description": "Fable 5.1 only, only via `/think`/`--deep`, always confirmed.",
+          "type": "string",
+          "const": "think"
+        }
+      ]
+    },
+    "ProvidersConfig": {
+      "description": "`[providers]` (plan.md §1.6).\n\n`deny_unknown_fields` is intentionally *not* set here (same reason as\n`HooksConfig`/`McpConfig`): the flattened `custom` map is exactly what\nwould otherwise be \"unknown fields\". A typo'd `[providers.*]` table\ntherefore parses, but it can only take effect when a `[tiers.*]` names\nit — anything else fails closed in the router (`UnknownProvider`) and\nin session startup (`unknown provider`).",
+      "type": "object",
+      "properties": {
+        "anthropic": {
+          "description": "`[providers.anthropic]`",
+          "$ref": "#/$defs/AnthropicProviderConfig",
+          "default": {
+            "base_url": "https://api.anthropic.com",
+            "api_key_env": "ANTHROPIC_API_KEY",
+            "cache_ttl": "5m",
+            "fallbacks": true,
+            "timeout_s": 120,
+            "max_retries": 4,
+            "models": []
+          }
+        },
+        "openai": {
+          "description": "`[providers.openai]`",
+          "$ref": "#/$defs/OpenAiProviderConfig",
+          "default": {
+            "base_url": "https://api.openai.com/v1",
+            "api_key_env": "OPENAI_API_KEY",
+            "api": "responses",
+            "timeout_s": 120,
+            "max_retries": 4,
+            "models": []
+          }
+        },
+        "local": {
+          "description": "`[providers.local]`",
+          "$ref": "#/$defs/LocalProviderConfig",
+          "default": {
+            "base_url": "http://localhost:11434/v1",
+            "api_key_env": "",
+            "api": "chat",
+            "model": "qwen3-coder",
+            "context_window": 32768,
+            "timeout_s": 600,
+            "max_retries": 4,
+            "models": []
+          }
+        },
+        "lmstudio": {
+          "description": "`[providers.lmstudio]` (T30.15): LM Studio's Anthropic-compatible\n`/v1/messages`, through the Anthropic wire client.",
+          "$ref": "#/$defs/LmStudioProviderConfig",
+          "default": {
+            "base_url": "http://localhost:1234",
+            "api_key_env": "LM_API_TOKEN",
+            "model": "",
+            "context_window": 0,
+            "load": false,
+            "timeout_s": 600,
+            "max_retries": 4
+          }
+        },
+        "typesafe": {
+          "description": "`[providers.typesafe]` (Jev System One, type-1 native)",
+          "$ref": "#/$defs/JevProviderConfig",
+          "default": {
+            "base_url": "https://api.typesafe.ai",
+            "api_key_env": "TYPESAFE_API_KEY",
+            "model": "jev-latest",
+            "timeout_s": 30,
+            "max_retries": 2,
+            "models": []
+          }
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/CompatibleProviderConfig"
+      }
+    },
+    "AnthropicProviderConfig": {
+      "description": "`[providers.anthropic]`.",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL.",
+          "type": "string",
+          "default": "https://api.anthropic.com"
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key; falls back to keyring entry `cox/anthropic`.",
+          "type": "string",
+          "default": "ANTHROPIC_API_KEY"
+        },
+        "cache_ttl": {
+          "description": "Prompt cache TTL: `\"5m\"` or `\"1h\"`.",
+          "type": "string",
+          "default": "5m"
+        },
+        "fallbacks": {
+          "description": "Whether to send the `fallbacks: \"default\"` beta header.",
+          "type": "boolean",
+          "default": true
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 120
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        },
+        "models": {
+          "description": "Known models with their context windows and supported efforts (used\nto clamp the tier effort to what the model understands).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderModel"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderModel": {
+      "description": "One model entry in a provider section's `models` list (the opencode\n`provider.<id>.models` shape, `docs/design/providers.md`): the model id\nas sent on the wire, its context window, and the efforts it understands\n(models.dev `reasoning_options.effort` mapped to [`Effort`]: `low`→`Low`,\n`medium`→`Medium`, `high`→`High`, `xhigh`/`max`→`Xhigh`). An empty\n`efforts` means unconstrained — any tier effort passes through unclamped.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "The model id sent on the wire (e.g. `\"deepseek-v4-pro\"`; for\ngateways the full `\"vendor/model\"` id, e.g.\n`\"anthropic/claude-sonnet-5\"`).",
+          "type": "string",
+          "default": ""
+        },
+        "context_window": {
+          "description": "Context window in tokens (local servers do not report it; gateways\nvary it per model, so the section default is only a fallback).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "efforts": {
+          "description": "Efforts this model supports; empty means \"any\".",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Effort"
+          },
+          "default": []
+        },
+        "reasoning_effort": {
+          "description": "Whether this model takes the Chat Completions `reasoning_effort`\nfield (T30.26). Unset means \"not declared\", and an `api = \"chat\"`\nsection then sends no effort at all: OpenAI documents the field,\nLM Studio's compatible endpoint does not list it (research.md\n§4.3.3), so it is opt-in per model rather than per wire.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "OpenAiProviderConfig": {
+      "description": "`[providers.openai]`.",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL.",
+          "type": "string",
+          "default": "https://api.openai.com/v1"
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key; falls back to keyring entry\n`cox/openai`. Neither present builds a keyless client (no\n`Authorization` header), not a startup error (T30.21).",
+          "type": "string",
+          "default": "OPENAI_API_KEY"
+        },
+        "api": {
+          "description": "Which OpenAI API shape to use: `\"responses\"` or `\"chat\"`.",
+          "type": "string",
+          "default": "responses"
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds: the Responses/Chat clients build their\n`reqwest::Client` with this as the read/idle timeout (T30.23).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 120
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors; the Responses/Chat clients' retry\npolicy reads this instead of `Policy::default()` (T30.23).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        },
+        "models": {
+          "description": "Known models with their context windows and supported efforts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderModel"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "LocalProviderConfig": {
+      "description": "`[providers.local]` (Ollama/vLLM/LM Studio/OpenRouter-shaped).",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL.",
+          "type": "string",
+          "default": "http://localhost:11434/v1"
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key; empty (the default) means no key —\nmost local servers need none.",
+          "type": "string",
+          "default": ""
+        },
+        "api": {
+          "description": "API shape; local servers are typically `\"chat\"`.",
+          "type": "string",
+          "default": "chat"
+        },
+        "model": {
+          "description": "The model id the local server serves.",
+          "type": "string",
+          "default": "qwen3-coder"
+        },
+        "context_window": {
+          "description": "Context window, since local servers usually don't report it.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 32768
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds; the Chat client's read/idle timeout\n(T30.23). Higher than a remote section's default (600 vs. 120):\nlocal models are slow at prefill, and a 120s read timeout can cut\noff a large prompt before the first byte comes back, on hardware\nthat would otherwise finish the call just fine.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 600
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors (T30.23, as above).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        },
+        "models": {
+          "description": "Known models with their context windows and supported efforts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderModel"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "LmStudioProviderConfig": {
+      "description": "`[providers.lmstudio]` (T30.15). A dedicated section rather than\npointing `[providers.local]` at LM Studio: its native `/api/v1/chat`\ntakes no custom tool schemas, and cox's OpenAI Chat path drops tool\ncalls (`ideas.md`), so the chat loop instead runs over LM Studio's\nAnthropic-compatible `/v1/messages` through [`crate`]'s Anthropic wire\nclient (R§4.3.2) — hence `api_key_env` and the header it feeds are\nAnthropic's `x-api-key`, not a bearer token.",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL; the client appends `/v1/messages`.",
+          "type": "string",
+          "default": "http://localhost:1234"
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key; falls back to keyring entry\n`cox/lmstudio` (never the Anthropic keyring entry, since this\nresolves under its own section name). Neither present builds a\nkeyless client (no `x-api-key` header) — what LM Studio needs\nunless \"Require Authentication\" is turned on.",
+          "type": "string",
+          "default": "LM_API_TOKEN"
+        },
+        "model": {
+          "description": "The model id LM Studio is serving. Usually left unset and pinned\ninstead through `tiers.code.model` / `--tier code=<model>`.",
+          "type": "string",
+          "default": ""
+        },
+        "context_window": {
+          "description": "Context window in tokens; `0` means \"ask the server\" (T30.16): the\nloaded instance's context length from `GET /api/v1/models`, else\nthe model catalog, else a literal floor. Also the `context_length`\nsent when `load` loads the model (`0` sends none: the server's\ndefault).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "load": {
+          "description": "Load the model through `POST /api/v1/models/load` at session start\nwhen the server has it downloaded but not loaded (T30.16). Off by\ndefault: loading takes memory and minutes, so it is opt-in.",
+          "type": "boolean",
+          "default": false
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds; higher than a remote section's\ndefault for the same reason as `local` (slow on-device prefill).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 600
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        }
+      },
+      "additionalProperties": false
+    },
+    "JevProviderConfig": {
+      "description": "`[providers.typesafe]` (TypeSafe Jev System One, type-1 native, T21.1).",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL; the client appends `/v1/systemone`.",
+          "type": "string",
+          "default": "https://api.typesafe.ai"
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key (`TYPESAFE_API_KEY`); falls back to the\nkeyring entry `cox/typesafe`. Absent key is `Auth` (fail-open path).",
+          "type": "string",
+          "default": "TYPESAFE_API_KEY"
+        },
+        "model": {
+          "description": "Default model id sent as `model` (`jev-latest`).",
+          "type": "string",
+          "default": "jev-latest"
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 30
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 2
+        },
+        "models": {
+          "description": "Known models with their context windows and supported efforts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderModel"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "CompatibleProviderConfig": {
+      "description": "Any other `[providers.<name>]` table: an OpenAI-compatible (Type-2)\nprovider in the opencode custom-provider shape\n(`docs/design/providers.md`). Same wire client as `local`, different\nbase URL, key and model list — adding DeepSeek took zero new Rust.",
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "description": "API base URL (the client appends `/chat/completions` or `/responses`\nper `api`, so this is the models.dev `api` root verbatim).",
+          "type": "string",
+          "default": ""
+        },
+        "api_key_env": {
+          "description": "Env var holding the API key; falls back to keyring entry\n`cox/<name>` (the section's own name). Neither present means no\n`Authorization` header (T30.21) — many compatible/self-hosted\ngateways need none.",
+          "type": "string",
+          "default": ""
+        },
+        "api": {
+          "description": "Which shape to speak: `\"chat\"` (default) or `\"responses\"`.",
+          "type": "string",
+          "default": "chat"
+        },
+        "model": {
+          "description": "Default model id sent when a tier names this provider without a model.",
+          "type": "string",
+          "default": ""
+        },
+        "context_window": {
+          "description": "Fallback context window for models absent from `models`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 32768
+        },
+        "timeout_s": {
+          "description": "Request timeout, in seconds; the Chat/Responses client's read/idle\ntimeout (T30.23). A remote compatible section keeps the 120s\ndefault — only `local` (T30.23) needs the longer one, for slow\non-device prefill.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 120
+        },
+        "max_retries": {
+          "description": "Max retries for retryable errors (T30.23, as above).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        },
+        "models": {
+          "description": "Known models with their context windows and supported efforts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderModel"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "ContextConfig": {
+      "description": "`[context]` (plan.md §1.6/§1.9/§1.10).",
+      "type": "object",
+      "properties": {
+        "compact_at": {
+          "description": "Fraction of `max_context` that triggers compaction.",
+          "type": "number",
+          "format": "double",
+          "default": 0.75
+        },
+        "keep_turns": {
+          "description": "Turns compaction always keeps verbatim.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 2
+        },
+        "microcompact_after_turns": {
+          "description": "Turns after which a tool result is microcompacted to a pointer.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 6
+        },
+        "tool_output_visible_bytes": {
+          "description": "Bytes of a tool result kept visible before truncation.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 8192
+        },
+        "tool_output_head_lines": {
+          "description": "Head lines kept when truncating a tool result.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 60
+        },
+        "tool_output_tail_lines": {
+          "description": "Tail lines kept when truncating a tool result.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 20
+        },
+        "dedup_window_turns": {
+          "description": "Turn window used for tool-result dedup.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 8
+        },
+        "instruction_budget_tokens": {
+          "description": "Token budget for instruction files.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 8000
+        },
+        "memory_budget_tokens": {
+          "description": "Token budget for the memory index.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 800
+        },
+        "deferred_tools": {
+          "description": "Whether non-core tools are deferred (found via `tool_search`).",
+          "type": "boolean",
+          "default": true
+        },
+        "system_prompt": {
+          "description": "`context.system_prompt`: which embedded system prompt assembly uses,\n`\"default\"` or `\"minimal\"` (T30.1: the ≤300-token prompt; profiles\nset this, users normally set `core.profile` instead).",
+          "type": "string",
+          "default": "default"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PermissionsConfig": {
+      "description": "`[permissions]` (plan.md §1.6/§1.8).",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "`permissions.mode`; project config may not set this to `bypass`.",
+          "$ref": "#/$defs/PermissionMode",
+          "default": "default"
+        },
+        "approval": {
+          "description": "`permissions.approval`.",
+          "$ref": "#/$defs/ApprovalPolicy",
+          "default": "on-request"
+        },
+        "allow": {
+          "description": "`allow` rule strings (plan.md §1.8 grammar).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "ask": {
+          "description": "`ask` rule strings.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "deny": {
+          "description": "`deny` rule strings.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Read(~/.ssh/**)",
+            "Read(~/.aws/**)",
+            "Bash(rm -rf /*)"
+          ]
+        },
+        "import_claude_settings": {
+          "description": "Whether to import `.claude/settings.json` permission rules (T7.5).",
+          "type": "boolean",
+          "default": true
+        },
+        "allow_for_session_persists": {
+          "description": "Whether an `AllowForSession` grant survives past the session.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "PermissionMode": {
+      "description": "`permissions.mode` (plan.md §1.6/§1.8).",
+      "oneOf": [
+        {
+          "description": "Rules and risk decide as usual.",
+          "type": "string",
+          "const": "default"
+        },
+        {
+          "description": "Only `Risk::ReadOnly` is allowed; everything else denies without asking.",
+          "type": "string",
+          "const": "plan"
+        },
+        {
+          "description": "`Write` is allowed automatically; `Exec`/`Destructive` still ask unless a safe-command match.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Everything is allowed; flag-only, banner shown.",
+          "type": "string",
+          "const": "bypass"
+        }
+      ]
+    },
+    "ApprovalPolicy": {
+      "description": "`permissions.approval` (plan.md §1.6/§1.8 step 8).",
+      "oneOf": [
+        {
+          "description": "Anything not covered by an `allow` rule asks.",
+          "type": "string",
+          "const": "untrusted"
+        },
+        {
+          "description": "Default: risk-based asking (step 7).",
+          "type": "string",
+          "const": "on-request"
+        },
+        {
+          "description": "`Exec` runs sandboxed without asking; asks only if the sandbox denies.",
+          "type": "string",
+          "const": "on-failure"
+        },
+        {
+          "description": "Any `Ask` becomes `Deny` (headless default).",
+          "type": "string",
+          "const": "never"
+        }
+      ]
+    },
+    "SandboxConfig": {
+      "description": "`[sandbox]` (plan.md §1.6/D7). Not `SandboxPolicy` (`types.rs`), which is\nthe value resolved for one call; this is the on-disk config it's built from.",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "`sandbox.mode`; project config may not set this to `danger-full-access`.",
+          "$ref": "#/$defs/SandboxMode",
+          "default": "workspace-write"
+        },
+        "network": {
+          "description": "Whether network access is allowed.",
+          "type": "boolean",
+          "default": false
+        },
+        "writable": {
+          "description": "Extra writable roots beyond the workspace.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "readonly_in_workspace": {
+          "description": "Paths inside the workspace that stay read-only even in `workspace-write`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git",
+            ".cox",
+            ".claude"
+          ]
+        },
+        "linux_backend": {
+          "description": "Linux backend selection: `auto` | `bwrap` | `landlock` | `none`.",
+          "$ref": "#/$defs/LinuxBackend",
+          "default": "auto"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SandboxMode": {
+      "description": "`sandbox.mode` (plan.md §1.6/D7).",
+      "oneOf": [
+        {
+          "description": "No writes anywhere.",
+          "type": "string",
+          "const": "read-only"
+        },
+        {
+          "description": "Writes confined to the workspace roots.",
+          "type": "string",
+          "const": "workspace-write"
+        },
+        {
+          "description": "No sandbox at all; requires explicit opt-in.",
+          "type": "string",
+          "const": "danger-full-access"
+        }
+      ]
+    },
+    "LinuxBackend": {
+      "description": "`sandbox.linux_backend` (plan.md T4.2): which Linux confinement to use.",
+      "oneOf": [
+        {
+          "description": "`bwrap` when it can create namespaces here, else Landlock, else none.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "bubblewrap only.",
+          "type": "string",
+          "const": "bwrap"
+        },
+        {
+          "description": "Landlock + seccomp only.",
+          "type": "string",
+          "const": "landlock"
+        },
+        {
+          "description": "No confinement on Linux; the surface warns and forces `on-request`.",
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
+    "BudgetConfig": {
+      "description": "`[budget]` (plan.md §1.6/§1.9). Project config may not raise any field\nhere above the user/default value (plan.md §1.6 guard list).",
+      "type": "object",
+      "properties": {
+        "session_usd": {
+          "description": "Session spend cap, in USD.",
+          "type": "number",
+          "format": "double",
+          "default": 5.0
+        },
+        "monthly_usd": {
+          "description": "Monthly spend cap, in USD.",
+          "type": "number",
+          "format": "double",
+          "default": 100.0
+        },
+        "warn_at": {
+          "description": "Fraction of a cap that raises a `Level::Budget` notice.",
+          "type": "number",
+          "format": "double",
+          "default": 0.8
+        },
+        "cheap_counts": {
+          "description": "Whether `cheap`-tier calls count against the budget.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "TuiConfig": {
+      "description": "`[tui]` (plan.md §1.6/§1.13).",
+      "type": "object",
+      "properties": {
+        "vim": {
+          "description": "Vim keybindings in the editor.",
+          "type": "boolean",
+          "default": false
+        },
+        "theme": {
+          "description": "`auto` | `dark` | `light`.",
+          "type": "string",
+          "default": "auto"
+        },
+        "inline": {
+          "description": "Whether the TUI renders inline (vs. alt-screen).",
+          "type": "boolean",
+          "default": true
+        },
+        "show_thinking": {
+          "description": "`collapsed` | `hidden` | `full`.",
+          "type": "string",
+          "default": "collapsed"
+        },
+        "screen_reader": {
+          "description": "The plain, screen-reader-friendly surface instead of the TUI (T29.1).",
+          "type": "boolean",
+          "default": false
+        },
+        "mouse": {
+          "description": "Whether mouse input (scroll, click) is enabled.",
+          "type": "boolean",
+          "default": true
+        },
+        "glyphs": {
+          "description": "`auto` | `unicode` | `ascii`: the glyph set the TUI prints.",
+          "type": "string",
+          "default": "auto"
+        },
+        "icons": {
+          "description": "`[tui.icons]`: one glyph replaced by name (`tool = \"\\u{f085}\"`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "color": {
+          "description": "`auto` | `none` | `16` | `256` | `true`: the colour depth to print.",
+          "type": "string",
+          "default": "auto"
+        },
+        "syntax_theme": {
+          "description": "A syntect theme name for code, diffs and file output; empty follows\n`theme`, and an unknown name warns and follows `theme` too.",
+          "type": "string",
+          "default": ""
+        },
+        "diff": {
+          "description": "`auto` | `side` | `stacked` (T24.5): side-by-side diffs from 120\ncolumns, or never; an unknown value is `auto`.",
+          "type": "string",
+          "default": "auto"
+        },
+        "git": {
+          "description": "Whether the status line polls git for the branch and `+n −m` (T15.2).",
+          "type": "boolean",
+          "default": true
+        },
+        "notify": {
+          "description": "`auto` | `always` | `off` (T23.5): ring the terminal when a turn\nends, an approval waits or `ask_user` asks — `auto` only while the\nterminal is unfocused; an unknown value is `auto`.",
+          "type": "string",
+          "default": "auto"
+        },
+        "motion": {
+          "description": "`full` | `reduced` (T24.7): `reduced` stops the running-tool spinner\nand its ticking elapsed time; an unknown value is `full`.",
+          "type": "string",
+          "default": "full"
+        },
+        "caps": {
+          "description": "`[tui.caps]` (T23.0): overrides one named `cox_tui::term::Caps`\nfield (`osc8 = false`) for a terminal `Caps::detect`/`query` guesses\nwrong about. An unrecognised name is ignored, not rejected.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    },
+    "HooksConfig": {
+      "description": "`[hooks]` (plan.md §1.6/§1.10/D14). The fixed `timeout_s`/`fail_open`\nkeys plus every `[[hooks.<Event>]]` table, captured generically since\nthe event name is the TOML key (`PreToolUse`, `PostToolUse`, ...) rather\nthan a fixed field.\n\n`deny_unknown_fields` is intentionally *not* set here: the flattened\n`events` map is exactly what would otherwise be \"unknown fields\", so the\ntwo are mutually exclusive for this one struct.",
+      "type": "object",
+      "properties": {
+        "timeout_s": {
+          "description": "Max seconds a hook process may run before it's treated as failed.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 60
+        },
+        "fail_open": {
+          "description": "Whether a broken hook is skipped (warned) instead of fatal (AGENTS.md).",
+          "type": "boolean",
+          "default": true
+        },
+        "enabled": {
+          "description": "`--no-hooks` sets this to `false`; not a `default.toml` key.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/HookConfig"
+        }
+      }
+    },
+    "HookConfig": {
+      "description": "One `[[hooks.<Event>]]` entry.",
+      "type": "object",
+      "properties": {
+        "matcher": {
+          "description": "Tool/subject matcher (Claude Code hook matcher syntax), if any.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "command": {
+          "description": "The command to run.",
+          "type": "string",
+          "default": ""
+        },
+        "timeout_s": {
+          "description": "Per-hook timeout override, in seconds; falls back to `hooks.timeout_s`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "McpConfig": {
+      "description": "`[mcp]` (plan.md §1.6/§1.1). `deny_unknown_fields` is not set for the\nsame reason as `HooksConfig`: `servers` is a flattened catch-all for\narbitrary server names.",
+      "type": "object",
+      "properties": {
+        "timeout_s": {
+          "description": "Per-call timeout, in seconds.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 30
+        },
+        "deferred": {
+          "description": "Whether MCP tools are deferred (found via `tool_search`) by default.",
+          "type": "boolean",
+          "default": true
+        },
+        "enabled": {
+          "description": "`--no-mcp` sets this to `false`; not a `default.toml` key.",
+          "type": "boolean",
+          "default": true
+        },
+        "servers": {
+          "description": "`[mcp.servers.<name>]` entries.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/McpServerConfig"
+          },
+          "default": {}
+        }
+      }
+    },
+    "McpServerConfig": {
+      "description": "One `[mcp.servers.<name>]` entry (same shape as `.mcp.json`, plus\n`sandbox`, which `.mcp.json`/`~/.claude.json` do not carry).",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Stdio launch command, for a local server.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "args": {
+          "description": "Arguments to `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "url": {
+          "description": "Remote URL, for an HTTP/SSE server (mutually exclusive with `command`).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "env": {
+          "description": "Extra environment variables for a stdio server.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "sandbox": {
+          "description": "Whether a stdio server runs under `sandbox::Policy` (T33.42,\n`docs/design/plugins.md` §14 decision 4). `false` opts this named\nserver out, for setups that need it; irrelevant to a `url` server.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginsConfig": {
+      "description": "`[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even\nwhen on, only a plugin granted for its exact digest loads (PL§3). Not\n`deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in\nhere (T33.9), the `HooksConfig` pattern, since the plugin id is the TOML\nkey rather than a fixed field.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether any plugin loads at all; `--no-plugins` sets it to `false`.",
+          "type": "boolean",
+          "default": true
+        },
+        "decide": {
+          "description": "`[plugins.decide]` (PL§4, T33.20): which plugin answers each\ndecision point.",
+          "$ref": "#/$defs/DecideConfig",
+          "default": {
+            "route": null,
+            "min_confidence": 0.6,
+            "route_ms": 300,
+            "route_margin": 0.15,
+            "risk": null,
+            "risk_ms": 200,
+            "approve_hint": null,
+            "approve_hint_ms": 200,
+            "compact": null,
+            "compact_ms": 500,
+            "rank": null,
+            "rank_ms": 300,
+            "salience": null,
+            "salience_ms": 300
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "DecideConfig": {
+      "description": "`[plugins.decide]` (PL§4 \"Decision points\", T33.20): one plugin per\npoint; a point with no plugin is off, so nothing leaves the machine for\nit. `deny_unknown_fields` so a mistyped point fails loudly instead of\nsilently staying off.",
+      "type": "object",
+      "properties": {
+        "route": {
+          "description": "The plugin id that answers `route` (a main turn's tier, only down).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "min_confidence": {
+          "description": "Advice whose confidence is below this (or absent) is ignored.",
+          "type": "number",
+          "format": "double",
+          "default": 0.6
+        },
+        "route_ms": {
+          "description": "`route`'s latency budget in milliseconds; a later answer is ignored.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 300
+        },
+        "route_margin": {
+          "description": "`route` offers `cheap` only when its predicted turn cost is at most\n`1 − route_margin` of the `code` cost (J5.2, T33.40.8): a switch\nforfeits the code tier's warm cache.",
+          "type": "number",
+          "format": "double",
+          "default": 0.15
+        },
+        "risk": {
+          "description": "The plugin id that answers `risk` (a tool call's risk, only up).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "risk_ms": {
+          "description": "`risk`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 200
+        },
+        "approve_hint": {
+          "description": "The plugin id that answers `approve_hint` (a caution note, never\n\"looks safe\").",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "approve_hint_ms": {
+          "description": "`approve_hint`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 200
+        },
+        "compact": {
+          "description": "The plugin id that answers `compact` (compact now, only earlier).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "compact_ms": {
+          "description": "`compact`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 500
+        },
+        "rank": {
+          "description": "The plugin id that answers `rank` (reorder or filter `tool_search`\nhits, never add).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "rank_ms": {
+          "description": "`rank`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 300
+        },
+        "salience": {
+          "description": "The plugin id that answers `salience` (a score per extracted memory\nitem, only ordering or dropping against `[memory]`'s threshold).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "salience_ms": {
+          "description": "`salience`'s latency budget in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 300
+        }
+      },
+      "additionalProperties": false
+    },
+    "MemoryConfig": {
+      "description": "`[memory]` (plan.md §1.6).",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether the memory index is read into context.",
+          "type": "boolean",
+          "default": true
+        },
+        "extract": {
+          "description": "Whether end-of-session extraction runs (on the `memory` job's tier).",
+          "type": "boolean",
+          "default": false
+        },
+        "dir": {
+          "description": "Override for `~/.cox/projects/<slug>/memory`; empty means default.",
+          "type": "string",
+          "default": ""
+        },
+        "salience_min": {
+          "description": "The bar a `salience` `Score` must clear to keep an extracted item\n(T33.21.1); fixed here, never moved by the plugin's answer.",
+          "type": "number",
+          "format": "double",
+          "default": 0.3
+        }
+      },
+      "additionalProperties": false
+    },
+    "TelemetryConfig": {
+      "description": "`[telemetry]` (plan.md §1.6).",
+      "type": "object",
+      "properties": {
+        "otel": {
+          "description": "Whether an OpenTelemetry exporter is enabled.",
+          "type": "boolean",
+          "default": false
+        },
+        "endpoint": {
+          "description": "OTLP endpoint; empty means the exporter's own default.",
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecordConfig": {
+      "description": "`[record]` (`cox record`, plan.md §1.12).",
+      "type": "object",
+      "properties": {
+        "redact": {
+          "description": "Whether secrets are redacted from a re-recorded cassette.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

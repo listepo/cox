@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use cox_protocol::{
-    ArchivePut, Concurrency, Risk, SandboxMode, SandboxPolicy, TaskId, Tool, ToolCx, ToolError,
-    ToolOutput, ToolSpec,
+    ArchivePut, Concurrency, Risk, SandboxMode, SandboxPolicy, Segments, TaskId, Tool, ToolCx,
+    ToolError, ToolOutput, ToolSpec,
 };
 use nix::libc;
 use nix::poll::{PollFd, PollFlags, poll};
@@ -33,7 +33,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-pub use classify::classify;
+pub use classify::{classify, segments};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a process gets between SIGTERM and SIGKILL.
@@ -161,6 +161,10 @@ impl Tool for BashTool {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string()
+    }
+
+    fn segments(&self, input: &Value) -> Option<Segments> {
+        Some(segments(&self.subject(input)))
     }
 
     fn risk(&self, input: &Value) -> Risk {
@@ -371,6 +375,53 @@ fn signal(pid: u32, sig: Signal) {
     let _ = killpg(Pid::from_raw(pid as i32), sig);
 }
 
+/// SIGKILLs the process group led by `pid`, the kill a cancelled `bash`
+/// call ends with. `pub` so another host-spawned process that leads its own
+/// group (an external agent's CLI, T35.13) is reaped the same way, not by a
+/// second implementation.
+pub fn kill_group(pid: u32) {
+    signal(pid, Signal::SIGKILL);
+}
+
+/// How a command run through `run_line` ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Exit {
+    /// The exit code, or 128 plus the signal that ended it.
+    pub code: Option<u32>,
+    /// Why it was stopped early (`cancelled`, `timed out`), if it was.
+    pub stopped: Option<&'static str>,
+}
+
+/// Runs one `sh -c` command line exactly as `bash` does — same sandbox wrap,
+/// env allowlist, PTY and process-group kill — with `roots` as both the
+/// readable and the writable workspace. `pub` so a host that runs a command
+/// for someone else (an external agent's ACP terminal, T35.11) has no second
+/// spawn path. Output streams to `output` with ANSI stripped; `cancel` ends
+/// the run with SIGTERM, then SIGKILL, of the whole group.
+pub async fn run_line(
+    line: &str,
+    cwd: &Path,
+    roots: &[PathBuf],
+    sandbox: &SandboxPolicy,
+    cancel: &CancellationToken,
+    output: &mpsc::Sender<String>,
+    timeout: Duration,
+) -> Result<Exit, ToolError> {
+    let cmd = Cmd {
+        line: line.to_owned(),
+        shell: Shell::Sh.path()?,
+    };
+    let workspace = Workspace {
+        read: roots,
+        write: roots,
+    };
+    let run = run(&cmd, cwd, workspace, sandbox, cancel, output, timeout).await?;
+    Ok(Exit {
+        code: run.code,
+        stopped: run.ended,
+    })
+}
+
 async fn run(
     cmd: &Cmd,
     cwd: &Path,
@@ -402,6 +453,14 @@ async fn run(
     let slave = pty.slave;
 
     let phase = Arc::new(AtomicU8::new(RUNNING));
+    // A run dropped mid-way (its task aborted, the runtime shutting down)
+    // never reaches the end below: without this the reader would poll
+    // forever and the group would keep running, and either holds the
+    // runtime's shutdown open.
+    let mut abandoned = Abandoned {
+        phase: phase.clone(),
+        group: Some(pid),
+    };
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
     let reader_phase = phase.clone();
     tokio::task::spawn_blocking(move || {
@@ -492,11 +551,31 @@ async fn run(
         }
     }
     phase.store(STOP, Ordering::Relaxed);
-    if !exited {
+    // A stopped run ends with the group SIGKILLed even after its shell went
+    // down on SIGTERM: a child that ignores SIGTERM must not outlive it.
+    if !exited || run.ended.is_some() {
         signal(pid, Signal::SIGKILL);
     }
+    // Finished: the group may be reaped, and its id reused, from here on.
+    abandoned.group = None;
     run.elapsed = start.elapsed();
     Ok(run)
+}
+
+/// What `run` undoes if it is dropped before it finishes: the PTY reader
+/// goes to `STOP` and the process group, while `Some`, is SIGKILLed.
+struct Abandoned {
+    phase: Arc<AtomicU8>,
+    group: Option<u32>,
+}
+
+impl Drop for Abandoned {
+    fn drop(&mut self) {
+        self.phase.store(STOP, Ordering::Relaxed);
+        if let Some(pid) = self.group {
+            signal(pid, Signal::SIGKILL);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -597,6 +676,41 @@ mod tests {
         );
         assert_eq!(tool.risk(&serde_json::json!({})), Risk::Exec);
         assert_eq!(tool.subject(&serde_json::json!({"command": "ls"})), "ls");
+    }
+
+    /// Regression: a run dropped mid-way left its PTY reader polling forever
+    /// and its command running, so the runtime that ran it never finished
+    /// shutting down (the ACP `terminal/release` test hung on Linux this way).
+    #[test]
+    fn dropped_run_lets_the_runtime_shut_down() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy = SandboxPolicy {
+            mode: SandboxMode::DangerFullAccess,
+            network: true,
+            writable: vec![],
+            readonly_in_workspace: vec![],
+            linux_backend: Default::default(),
+        };
+        rt.block_on(async {
+            let (tx, _rx) = mpsc::channel(64);
+            let cancel = CancellationToken::new();
+            let long = Duration::from_secs(60);
+            let run = run_line("sleep 30", dir.path(), &[], &policy, &cancel, &tx, long);
+            let _ = tokio::time::timeout(Duration::from_millis(300), run).await;
+        });
+        let (done, ended) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(rt);
+            let _ = done.send(());
+        });
+        assert!(
+            ended.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "the reader or the command outlived its dropped run"
+        );
     }
 
     #[test]

@@ -1,0 +1,25 @@
+---
+source: crates/cox-tui/src/view.rs
+expression: "format!(\"{waiting}\\n---\\n{rendered}\")"
+---
+ acme …
+
+
+
+
+
+
+
+> Esc close · PageUp scroll up · PageDow
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]
+---
+overlay text
+
+
+
+
+
+
+
+> Esc close · PageUp scroll up · PageDow
+- · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]

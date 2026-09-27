@@ -1,0 +1,18 @@
+[package]
+name = "{{id}}"
+version = "0.1.0"
+edition = "2024"
+description = "A cox plugin scaffolded by `cox plugin new`"
+publish = false
+
+# `rlib` alongside `cdylib` so `cargo test`/`just smoke` runs the smoke test
+# on the host target; only the cdylib ships, as `{{crate_name}}.wasm`.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Not on crates.io yet (cox plan.md §14 decision 1): a git dependency,
+# patchable to a local path with `[patch]` for in-repo development
+# (docs/plugins.md "Setup" in the cox repository).
+cox-plugin-sdk = { git = "https://github.com/listepo/cox" }
+serde_json = "1"

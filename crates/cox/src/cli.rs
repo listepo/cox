@@ -75,15 +75,16 @@ pub struct Cli {
     /// Disable MCP servers for this invocation.
     #[arg(long = "no-mcp", global = true)]
     pub no_mcp: bool,
+    /// Load no WASM plugins for this invocation (T33.6).
+    #[arg(long = "no-plugins", global = true)]
+    pub no_plugins: bool,
     /// Plain surface for screen readers: labelled lines, numbered prompts,
     /// no cursor movement (also `COX_PLAIN=1`, `tui.screen_reader`).
     #[arg(long)]
     pub plain: bool,
 }
 
-/// Top-level subcommands (plan.md §1.12). Only `Run` and `Config` are
-/// implemented past their clap shape in T0.3; the rest print `not
-/// implemented` until their own task lands.
+/// Top-level subcommands (plan.md §1.12); `main.rs` dispatches each one.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Headless run: `cox run -p <prompt>`.
@@ -108,6 +109,9 @@ pub enum Command {
     Init(InitArgs),
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
     Ext(ExtArgs),
+    /// Discovered plugins and their declared capabilities (T33.4).
+    #[cfg(feature = "plugins")]
+    Plugin(PluginArgs),
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate(SelfUpdateArgs),
@@ -323,6 +327,117 @@ pub enum ExtAction {
         /// Machine-readable JSON output.
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// `cox plugin [list]` (plan.md T33.4): bare `plugin` lists too, since
+/// `list` is its only action so far.
+#[cfg(feature = "plugins")]
+#[derive(Args, Debug, Clone)]
+pub struct PluginArgs {
+    #[command(subcommand)]
+    pub action: Option<PluginAction>,
+}
+
+/// `cox plugin` subcommands (T33.4, T33.7, T33.31).
+#[cfg(feature = "plugins")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum PluginAction {
+    /// Discovered plugins: source, version, digest, grant state, declared capabilities.
+    List {
+        /// Machine-readable JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Validate `<dir>`, copy it into `versions/<digest12>/`, write
+    /// `current`, then ask for its capabilities (PL§1).
+    Install {
+        /// A local plugin package directory (the only v1 source).
+        dir: PathBuf,
+        /// Skip the stdin prompt and grant what the manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Show a discovered plugin's capabilities in words and, on approval,
+    /// grant it (PL§3).
+    Enable {
+        /// The plugin id, as its directory is named.
+        id: String,
+        /// Look for a project plugin in this repository instead of a user
+        /// one; the grant is scoped to the repository root.
+        #[arg(long)]
+        project: bool,
+        /// Skip the stdin prompt and grant what the manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Clear `enabled` on the grant; files and stored data stay.
+    Disable {
+        /// The plugin id, as its directory is named.
+        id: String,
+        /// The grant to clear is the project one, not the user one.
+        #[arg(long)]
+        project: bool,
+    },
+    /// Re-read each plugin's recorded source, show the capability diff
+    /// and, on approval, switch to it; one previous version is kept (PL§1b).
+    Update {
+        /// The plugin ids to update.
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        ids: Vec<String>,
+        /// Update every installed user plugin.
+        #[arg(long)]
+        all: bool,
+        /// Print what would change and change nothing.
+        #[arg(long, conflicts_with = "rollback")]
+        check: bool,
+        /// Switch back to the kept previous version.
+        #[arg(long)]
+        rollback: bool,
+        /// Skip the stdin prompt and grant what the new manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Disable, delete the plugin's own directory and grants, and delete
+    /// its kv unless `--keep-data` (PL§1c). A project plugin's files are
+    /// repository content and stay; only its grant and kv go.
+    Remove {
+        /// The plugin id, as its directory is named.
+        id: String,
+        /// Keep the plugin's stored kv rows.
+        #[arg(long)]
+        keep_data: bool,
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Use a built plugin from `<dir>` in place, without installing it
+    /// (T33.41, PL§13's dev loop). `discover` reads `<dir>` directly, and
+    /// the grant re-asks only when `<dir>`'s capabilities widen, never on
+    /// a rebuild's changed bytes.
+    Link {
+        /// The built plugin's package directory (holds `plugin.toml`).
+        dir: PathBuf,
+        /// Skip the stdin prompt and grant what the manifest asks for.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Scaffold a fresh plugin package from the PL§13 templates: `plugin.toml`
+    /// with `[capabilities]` matching `--with`, stub exports for those
+    /// capabilities only, a `justfile`, a `README.md` and a smoke test.
+    /// Never overwrites an existing directory.
+    New {
+        /// The plugin id; also the scaffolded directory's default name.
+        name: String,
+        /// Only `rust` has a template today (PL§13); headless defaults to it.
+        #[arg(long, default_value = "rust")]
+        lang: crate::plugin_new::Lang,
+        /// Where to write the package; defaults to `./<name>`.
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Capabilities to scaffold stubs for, comma-separated (PL§13).
+        #[arg(long, value_delimiter = ',')]
+        with: Vec<crate::plugin_new::Capability>,
     },
 }
 

@@ -5,7 +5,7 @@
 
 use diesel::prelude::*;
 
-use crate::schema::{archive, checkpoints, memory, sessions, usage};
+use crate::schema::{archive, checkpoints, memory, plugin_grants, plugin_kv, sessions, usage};
 
 #[derive(Insertable)]
 #[diesel(table_name = sessions)]
@@ -99,4 +99,33 @@ pub(crate) struct CheckpointDbRow {
     pub kind: String,
     pub archive_id: Option<String>,
     pub created_at: String,
+}
+
+/// Both directions of the `plugin_grants` table (T33.5, PL§3): the grant
+/// approved for one plugin id at one package digest, in one scope. Field
+/// order matches the table; `Store` converts `scope`/`capabilities`/`source`
+/// to and from `GrantScope`/JSON at the boundary.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = plugin_grants)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub(crate) struct PluginGrantDbRow {
+    pub plugin_id: String,
+    pub scope: String,
+    pub digest: String,
+    pub capabilities: String,
+    pub enabled: bool,
+    pub source: String,
+    pub decided_at: String,
+}
+
+/// Both directions of the `plugin_kv` table (T33.5, PL§3): one value under
+/// one key for one plugin id.
+#[derive(Insertable, Queryable, Selectable)]
+#[diesel(table_name = plugin_kv)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub(crate) struct PluginKvDbRow {
+    pub plugin_id: String,
+    pub key: String,
+    pub value: Vec<u8>,
+    pub updated_at: String,
 }

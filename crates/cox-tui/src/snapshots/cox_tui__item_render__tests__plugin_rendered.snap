@@ -1,0 +1,8 @@
+---
+source: crates/cox-tui/src/item_render.rs
+expression: screen(&state)
+---
+⚙ read src/lib.rs · 7ms
+│ tool:read by plugin
+│ ✓ 12B 7ms
+item:assistant_message by plugin

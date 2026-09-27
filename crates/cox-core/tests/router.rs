@@ -31,8 +31,14 @@ fn router_job_table_pins_every_job() {
     let config = Config::default();
     assert_eq!(table().len(), 10);
     for (job, tier) in table() {
-        let route =
-            Router::pick(&config, job, Tier::Code, &Overrides::default(), true).expect("routed");
+        let route = Router::pick(
+            &config,
+            job.clone(),
+            Tier::Code,
+            &Overrides::default(),
+            true,
+        )
+        .expect("routed");
         assert_eq!(route.tier, tier, "{job:?}");
     }
     let main = Router::pick(&config, Job::Main, Tier::Code, &Overrides::default(), true).unwrap();
@@ -98,7 +104,8 @@ fn router_model_override_local_and_unknown() {
     }
     local.providers.local.model = "qwen3-coder".into();
     for (job, _) in table() {
-        let route = Router::pick(&local, job, Tier::Code, &Overrides::default(), true).unwrap();
+        let route =
+            Router::pick(&local, job.clone(), Tier::Code, &Overrides::default(), true).unwrap();
         assert_eq!(route.provider, ProviderId::Local, "{job:?}");
         assert_eq!(route.model.0, "qwen3-coder", "{job:?}");
     }

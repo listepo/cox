@@ -23,6 +23,14 @@ use crate::{resume, session};
 
 /// Exit codes from §1.12: `0 ok · 1 error · 2 denied · 3 budget · 4 interrupted`.
 pub const EXIT_OK: i32 = 0;
+
+/// Not a new user-facing timeout config: a fixed safety margin around the
+/// `bash` tool's own SIGTERM→SIGKILL grace (`crates/cox-tools/src/bash/
+/// mod.rs`'s `TERM_GRACE` plus its PTY-drain `REAP_GRACE`, ~2.5s) so
+/// `Session::wait_tasks_cleared` (T34.9 follow-up) cannot hang the
+/// headless exit (or the TUI's, T34.11) on a `TaskKind::Shell` task this
+/// session's own `interrupt()` cannot reach.
+pub(crate) const SHELL_CANCEL_GRACE: Duration = Duration::from_secs(5);
 pub const EXIT_ERROR: i32 = 1;
 pub const EXIT_DENIED: i32 = 2;
 pub const EXIT_BUDGET: i32 = 3;
@@ -201,6 +209,7 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         },
         resume_spec,
         false,
+        None,
     ))?;
     // T6.3: with any other policy a driver answers asks on stdin, within
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
@@ -221,7 +230,7 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
                 interrupter.interrupt();
             }
         });
-        match loop_spec {
+        let outcome = match loop_spec {
             Some(loop_spec) => {
                 run_loop(
                     &session, &mut rx, prompt, format, approvals, args.deep, loop_spec,
@@ -229,7 +238,24 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
                 .await
             }
             None => drive(&session, &mut rx, prompt, format, approvals, args.deep).await,
-        }
+        };
+        // T34.9 follow-up: `drive`/`run_loop` above already awaited
+        // `session.wait_idle()`, so every `TaskKind::Agent` chain is done.
+        // A `TaskKind::Shell` task (a detached `bash`) is deliberately not
+        // waited for there, but leaving it running and only abandoning the
+        // OS process (`shutdown_background`, in `run`) leaks it as an
+        // orphan once this process exits. `interrupt()` is the same
+        // cancellation Ctrl+B/session cancel already use; for a shell task
+        // detached in this same turn (the common case, and the only one
+        // `--loop`'s last iteration leaves outstanding) it reaches the
+        // exact token that call's `ToolCx::cancel` cloned, which trips the
+        // shell tool's own SIGTERM-then-SIGKILL logic
+        // (`crates/cox-tools/src/bash/mod.rs`) and kills its process
+        // group. `wait_tasks_cleared` then waits for that kill to actually
+        // land before `shutdown_background` runs.
+        session.interrupt();
+        session.wait_tasks_cleared(SHELL_CANCEL_GRACE).await;
+        outcome
     })?;
     let mut out = std::io::stdout().lock();
     match format {
@@ -242,6 +268,19 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
             writeln!(out, "{result}")?;
         }
     }
+    // By this point every `TaskKind::Agent` chain is done (`wait_idle`)
+    // and any `TaskKind::Shell` task this same session could still reach
+    // has already been cancelled and killed (`interrupt` +
+    // `wait_tasks_cleared`, above) — so nothing meaningful is left
+    // outstanding. `rt`'s own `Drop` does not know that: left to run
+    // normally, it shuts down by "waiting until all [spawned] tasks have
+    // completed" (`tokio::runtime::Runtime`'s own docs), which would hang
+    // this process on a genuinely unreachable leftover (an older, already-
+    // rotated turn's background shell in a `--loop` run — the one case
+    // `wait_tasks_cleared`'s own deadline gives up on). `shutdown_background`
+    // returns immediately instead, abandoning only that one, already-rare
+    // edge case rather than every ordinary exit.
+    rt.shutdown_background();
     Ok(outcome.exit_code())
 }
 
@@ -284,9 +323,21 @@ async fn drive(
     let mut out = std::io::stdout().lock();
     let mut driver = approvals.map(|_| spawn_stdin());
     let mut pending: Vec<(CallId, Instant)> = Vec::new();
+    // T34.9: the top-level turn ending is not the whole run ending — a
+    // background subagent (or a detached `bash`) this turn started can
+    // still be mid-relay. `ended` remembers that the terminal event
+    // already arrived; the loop keeps draining `rx` exactly as before
+    // (still printing stream-json, still answering approvals for a
+    // relayed child call) until `session.wait_idle()` also agrees nothing
+    // is left running, so a still-running chain's own `task_message`/
+    // `notice`/`task_completed` events are never dropped. `rx.recv` stays
+    // the first (biased) branch so a message already sitting in the
+    // channel is always drained before this decides the run is idle.
+    let mut ended = false;
     loop {
         let deadline = pending.iter().map(|(_, at)| *at).min();
         let ev = tokio::select! {
+            biased;
             ev = rx.recv() => match ev {
                 Some(ev) => ev,
                 None => break,
@@ -312,6 +363,7 @@ async fn drive(
                 }
                 continue;
             }
+            () = session.wait_idle(), if ended => break,
         };
         // T28.4: this surface prints, so every event passes through the one
         // redaction helper first; folding the scrubbed copy keeps `result`,
@@ -343,7 +395,7 @@ async fn drive(
             ev,
             Event::TurnDone { .. } | Event::Error { fatal: true, .. }
         ) {
-            break;
+            ended = true;
         }
     }
     if let Ok(Err(e)) = turn.await {

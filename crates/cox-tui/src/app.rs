@@ -28,7 +28,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
 use crate::cells::cell_lines;
-use crate::state::{Ask, Cmd, Msg, State, update};
+use crate::state::{Ask, Cmd, GrantDecision, Msg, PluginMgmtRequest, PluginRequest, State, update};
 use crate::view::view;
 
 /// Rows the live viewport keeps below the scrollback; a short terminal
@@ -68,6 +68,10 @@ pub struct Question {
     pub question: String,
     pub options: Vec<String>,
     pub reply: tokio::sync::oneshot::Sender<String>,
+    /// The subagent asking (T34.3), mirroring
+    /// `cox_tools::ask_user::Question::source`'s `agent`; `None` for the
+    /// top-level session.
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -89,7 +93,15 @@ pub enum TuiError {
 /// arrives on `feed`. `questions` carries each `ask_user` call (T22.1); its
 /// reply sender is answered from here, never from `state::update`. `persist`
 /// carries a `/theme` choice's `(key, value)` (T24.2) out to `config_cmd::set`
-/// — this crate has no `toml_edit`-editing path of its own.
+/// — this crate has no `toml_edit`-editing path of its own. `grants`
+/// (T33.8) carries a `Modal::PluginGrant`'s `y` out to `crates/cox`, which
+/// writes it — same reason as `persist`, this crate never touches the store.
+/// `plugins` (T33.23) carries each `Cmd::Plugin` to `crates/cox`, which holds
+/// the plugin hosts; the answer arrives on `feed` as `Msg::Plugin`.
+/// `plugin_mgmt` (T33.30 `New`; T33.33 `Update`/`Remove`/`List`) carries a
+/// `Cmd::PluginMgmt` the same way; its answer arrives on `feed` as
+/// `Msg::PluginMgmt`.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     session: Session,
     mut state: State,
@@ -97,6 +109,9 @@ pub async fn run(
     ask: tokio::sync::mpsc::Sender<Ask>,
     mut questions: tokio::sync::mpsc::Receiver<Question>,
     persist: tokio::sync::mpsc::Sender<(String, String)>,
+    grants: tokio::sync::mpsc::Sender<GrantDecision>,
+    plugins: tokio::sync::mpsc::Sender<PluginRequest>,
+    plugin_mgmt: tokio::sync::mpsc::Sender<PluginMgmtRequest>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
     enable_raw_mode()?;
@@ -135,6 +150,11 @@ pub async fn run(
     }));
     let mut terminal = inline_terminal(crossterm::terminal::size()?.1)?;
     let mut built_for = terminal.size()?;
+    // T33.24, PL§8: seed `state.term` with the real startup size, the same
+    // one the first draw is built for — otherwise a `panel`/`overlay`
+    // opened before the first `Msg::Resize` would ask a plugin to render
+    // into `State::new`'s placeholder area instead of the real one.
+    state.term = (built_for.width, built_for.height);
     // The last size read while a resize settles, and when it was taken.
     let mut settling: Option<(Size, Instant)> = None;
     // The cursor's row inside the viewport after the last draw: after a
@@ -171,6 +191,7 @@ pub async fn run(
                         call: q.call,
                         question: q.question,
                         options: q.options,
+                        agent: q.agent,
                     }
                 }
             };
@@ -236,6 +257,24 @@ pub async fn run(
                         let mut out = io::stdout();
                         out.write_all(bytes.as_bytes())?;
                         out.flush()?;
+                    }
+                    // T33.8: best-effort, like `PersistConfig` — a full
+                    // channel or a closed receiver just means this one
+                    // grant is not persisted; the dialog already moved on.
+                    Cmd::PluginGrant(decision) => {
+                        let _ = grants.try_send(decision);
+                    }
+                    // T33.23: best-effort too — a request lost to a full
+                    // channel leaves the last good render on screen, and
+                    // the next redraw or resize asks again.
+                    Cmd::Plugin(request) => {
+                        let _ = plugins.try_send(request);
+                    }
+                    // T33.30, T33.33: best-effort too — a request lost to a
+                    // full channel just means the `/plugin` subcommand
+                    // silently does nothing; the user can retry.
+                    Cmd::PluginMgmt(request) => {
+                        let _ = plugin_mgmt.try_send(request);
                     }
                 }
             }

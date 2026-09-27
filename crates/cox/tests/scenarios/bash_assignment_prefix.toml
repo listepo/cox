@@ -1,0 +1,8 @@
+# T36.2: an assignment prefix in front of a read-only command must not
+# auto-allow: `classify` used to drop it and rate the whole line `ReadOnly`.
+[[turn]]
+text = "checking"
+tool_calls = [{ name = "bash", input = { command = "GIT_PAGER='touch x' git log" } }]
+
+[[turn]]
+text = "done"

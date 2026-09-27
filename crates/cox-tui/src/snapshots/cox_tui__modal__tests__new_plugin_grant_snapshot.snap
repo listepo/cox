@@ -1,0 +1,8 @@
+---
+source: crates/cox-tui/src/modal.rs
+expression: "render_grant(&plugin_grant(&[\"kv\", \"net:api.github.com\"], &[], None))"
+---
+ plugin Git Glance (git-glance) wants to load · digest aaaaaaaaaaaa
+ Shows a one-line git summary in the status bar
+ wants: kv, net:api.github.com
+ [y]es  [n]o

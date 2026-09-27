@@ -63,7 +63,13 @@ pub enum Concurrency {
 }
 
 /// A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+///
+/// Ordered cheapest first (declaration order), the one tier ordering every
+/// "never up" rule compares with: a plugin's model-call grant clamp
+/// (PL§7d) and the `route` decision point (PL§4, T33.20).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Tier {
     /// Haiku-class or local; mechanical work, never chosen for the main coding turn.
@@ -75,8 +81,17 @@ pub enum Tier {
 }
 
 /// What a request is *for* (plan.md §1.4); every job is pinned to one tier in config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+///
+/// Every variant but `Plugin` is a bare tag (`"main"`, `"compact"`, …), the
+/// convention this file's header describes for field-less enums. `Plugin`
+/// breaks that shape — it carries the calling plugin's id — so `Job` gets
+/// hand-written `Serialize`/`Deserialize`/`JsonSchema` instead of deriving
+/// them: the wire and ledger form is still a single string, `"plugin:<id>"`
+/// (PL§7d, T33.15), which `to_tag`/`from_tag` (`cox-store`) and `tag`
+/// (`cox`'s `stats.rs`) already assume for every `Job` value. Losing `Copy`
+/// (a `String` payload cannot be `Copy`) is why call sites that used to
+/// read `self.job`/`row.job` as a value now clone it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Job {
     /// The main coding turn.
     Main,
@@ -96,14 +111,132 @@ pub enum Job {
     Explore,
     /// A background shell/HTTP subagent.
     Shell,
+    /// A custom subagent definition (`.cox/agents`/`.claude/agents`,
+    /// T34.1): its own `tier`/`model` decides the tier, not this job.
+    Agent,
     /// A hook-driven LLM call.
     Hook,
+    /// A plugin's own `cox_model_call` (PL§7d, T33.15): the router runs it
+    /// at or below the plugin's granted tier, never `think`, and the
+    /// ledger row's job tag is `plugin:<id>`. No `[jobs]` entry names it —
+    /// its tier comes from the call itself, already grant-clamped.
+    Plugin(String),
+}
+
+/// The bare tag every non-`Plugin` variant serializes as — kept in one
+/// place so the `Serialize`/`Deserialize`/`JsonSchema` impls below and the
+/// schema literals agree.
+const JOB_TAGS: [(&str, Job); 11] = {
+    // A `const` array can't hold a `String`-carrying variant, so this only
+    // ever binds the fieldless ones; `Job::Plugin` is handled separately
+    // everywhere this table is used.
+    [
+        ("main", Job::Main),
+        ("plan", Job::Plan),
+        ("compact", Job::Compact),
+        ("title", Job::Title),
+        ("summarize", Job::Summarize),
+        ("commit", Job::Commit),
+        ("memory", Job::Memory),
+        ("explore", Job::Explore),
+        ("shell", Job::Shell),
+        ("agent", Job::Agent),
+        ("hook", Job::Hook),
+    ]
+};
+
+impl Job {
+    /// The bare tag this job serializes as: one of the fixed strings above,
+    /// or `plugin:<id>` for `Job::Plugin`.
+    fn tag(&self) -> std::borrow::Cow<'static, str> {
+        match self {
+            Job::Plugin(id) => std::borrow::Cow::Owned(format!("plugin:{id}")),
+            other => JOB_TAGS
+                .iter()
+                .find(|(_, job)| job == other)
+                .map(|(tag, _)| std::borrow::Cow::Borrowed(*tag))
+                .unwrap_or(std::borrow::Cow::Borrowed("")),
+        }
+    }
+}
+
+impl Serialize for Job {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.tag())
+    }
+}
+
+impl<'de> Deserialize<'de> for Job {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        if let Some((_, job)) = JOB_TAGS.iter().find(|(tag, _)| *tag == s) {
+            return Ok(job.clone());
+        }
+        if let Some(id) = s.strip_prefix("plugin:")
+            && !id.is_empty()
+        {
+            return Ok(Job::Plugin(id.to_string()));
+        }
+        Err(serde::de::Error::unknown_variant(
+            &s,
+            &[
+                "main",
+                "plan",
+                "compact",
+                "title",
+                "summarize",
+                "commit",
+                "memory",
+                "explore",
+                "shell",
+                "agent",
+                "hook",
+                "plugin:<id>",
+            ],
+        ))
+    }
+}
+
+impl JsonSchema for Job {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("Job")
+    }
+
+    fn json_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "What a request is *for* (plan.md §1.4); every job is pinned to one tier in config.",
+            "oneOf": [
+                { "description": "The main coding turn.", "type": "string", "const": "main" },
+                { "description": "A `/think`/`--deep` plan.", "type": "string", "const": "plan" },
+                { "description": "Compaction summary.", "type": "string", "const": "compact" },
+                { "description": "Session title generation.", "type": "string", "const": "title" },
+                { "description": "Tool-result or transcript summarisation.", "type": "string", "const": "summarize" },
+                { "description": "Commit message generation.", "type": "string", "const": "commit" },
+                { "description": "Memory extraction.", "type": "string", "const": "memory" },
+                { "description": "An `explore` subagent.", "type": "string", "const": "explore" },
+                { "description": "A background shell/HTTP subagent.", "type": "string", "const": "shell" },
+                {
+                    "description": "A custom subagent definition (`.cox/agents`/`.claude/agents`,\nT34.1): its own `tier`/`model` decides the tier, not this job.",
+                    "type": "string",
+                    "const": "agent"
+                },
+                { "description": "A hook-driven LLM call.", "type": "string", "const": "hook" },
+                {
+                    "description": "A plugin's own `cox_model_call` (PL§7d, T33.15): the router runs it\nat or below the plugin's granted tier, never `think`, and the\nledger row's job tag is `plugin:<id>`. No `[jobs]` entry names it —\nits tier comes from the call itself, already grant-clamped.",
+                    "type": "string",
+                    "pattern": "^plugin:.+$"
+                }
+            ]
+        })
+    }
 }
 
 /// Reasoning effort passed to the provider.
 ///
-/// Ordered `Low < High < Xhigh` so the router can clamp a tier's effort to
-/// the greatest level a model supports (`docs/design/providers.md`).
+/// Ordered `Low < Medium < High < Xhigh` so the router can clamp a tier's
+/// effort to the greatest level a model supports (`docs/design/providers.md`).
+/// The four levels are models.dev's own, so a catalog row maps without loss
+/// (T30.26).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -111,6 +244,8 @@ pub enum Job {
 pub enum Effort {
     /// Cheapest, fastest; used for `cheap`-tier jobs.
     Low,
+    /// Between `Low` and `High`: models.dev's and the wires' `medium`.
+    Medium,
     /// Default for `code`/`think` tiers.
     High,
     /// User-selected for a flagged large refactor.
@@ -122,6 +257,7 @@ impl Effort {
     pub fn name(self) -> &'static str {
         match self {
             Self::Low => "low",
+            Self::Medium => "medium",
             Self::High => "high",
             Self::Xhigh => "xhigh",
         }
@@ -131,6 +267,7 @@ impl Effort {
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
             "xhigh" => Some(Self::Xhigh),
             _ => None,
@@ -398,6 +535,27 @@ pub struct ToolCall {
     pub risk: Risk,
     /// What permission rules match on: the confined path, command line, URL, or MCP name.
     pub subject: String,
+    /// The simple commands a shell `subject` splits into (T36.1). `None`
+    /// means the subject is one unit, as for every tool that is not a shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Segments>,
+}
+
+/// A compound command line as the permission engine judges it (T36.1): a
+/// deny or ask rule matching any command denies or asks, an allow rule or a
+/// session grant must cover every command. Plain strings, so the engine
+/// stays pure and the shell tool owns the parser.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Segments {
+    /// Every simple command in source order, including those nested in a
+    /// subshell, a substitution or a loop body.
+    pub commands: Vec<String>,
+    /// The split cannot vouch for the whole line — a substitution, `eval`,
+    /// `sh -c`, a variable assignment, an output redirect to a path, or a
+    /// parse error — so no prefix rule or grant may allow it; deny and ask
+    /// rules still match `commands`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub opaque: bool,
 }
 
 /// The outcome of a finished tool call, as it appears in history.
@@ -765,6 +923,22 @@ pub enum Submission {
     },
     /// Wind down the session cleanly.
     Shutdown,
+    /// A follow-up for a background task, addressed by `TaskId` (T34.4,
+    /// SM§1). Only ever submitted to the **parent** session: `from: None`
+    /// is the parent/user, `Some(id)` a sibling relayed through the parent
+    /// (SM§3). `hop` is set only by the parent and never trusted from a
+    /// tool call (SM§5); T34.5 gives it a router, T34.6 the tool that
+    /// produces it.
+    TaskMessage {
+        /// The task the message is addressed to.
+        task: TaskId,
+        /// Who it is from; `None` for the parent/user, `Some` for a sibling.
+        from: Option<TaskId>,
+        /// How many relays this message has been through (SM§5's loop guard).
+        hop: u32,
+        /// The message text.
+        text: String,
+    },
 }
 
 /// Everything a consumer (TUI, `stream-json`, ACP, the rollout file) can
@@ -944,6 +1118,20 @@ pub enum Event {
         /// The new model.
         to: ModelId,
     },
+    /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
+    /// for every answer, used or not, so replay and `cox stats` see which
+    /// advice changed the core's pick; it never feeds model history.
+    Advised {
+        /// Which point asked.
+        point: crate::plugin::DecidePoint,
+        /// The plugin `[plugins.decide]` names for the point.
+        plugin: String,
+        /// The plugin's answer as given.
+        advice: crate::plugin::Advice,
+        /// Whether the core followed it (its choice may equal the static
+        /// pick); `false` means it was ignored and the static pick stood.
+        applied: bool,
+    },
     /// An informational or warning message, not part of the model-visible transcript.
     Notice {
         /// Severity.
@@ -964,6 +1152,20 @@ pub enum Event {
         error: CoreError,
         /// Whether the whole session must end (`StoreError::Corrupt`, `Config`) or just the turn.
         fatal: bool,
+    },
+    /// A follow-up for a background task was delivered or relayed (T34.4,
+    /// SM§1); same fields as `Submission::TaskMessage`. Renders as one
+    /// transcript line labelled like a relayed approval (T34.7); ACP gives
+    /// it its own arm instead of falling into `Ok(_) => {}` (T34.8).
+    TaskMessage {
+        /// The task the message is addressed to.
+        task: TaskId,
+        /// Who it is from; `None` for the parent/user, `Some` for a sibling.
+        from: Option<TaskId>,
+        /// How many relays this message has been through (SM§5's loop guard).
+        hop: u32,
+        /// The message text.
+        text: String,
     },
 }
 
@@ -996,6 +1198,9 @@ pub enum ProviderId {
     Local,
     /// TypeSafe System One API (Jev decision model, T21.1).
     Jev,
+    /// An external CLI agent from a plugin (EA§6, T35.5): billed on the
+    /// user's own plan, so its ledger rows are `$0` and never priced here.
+    External,
 }
 
 /// One block of the system prompt, with its own cache eligibility (plan.md §1.9).
@@ -1227,9 +1432,40 @@ mod tests {
     }
 
     #[test]
+    fn effort_medium_sits_between_low_and_high_and_round_trips_by_name() {
+        let all = [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh];
+        assert!(all.windows(2).all(|w| w[0] < w[1]));
+        for e in all {
+            assert_eq!(Effort::parse(e.name()), Some(e));
+            assert_eq!(serde_json::to_value(e).ok(), Some(e.name().into()));
+        }
+        assert_eq!(Effort::Medium.name(), "medium");
+    }
+
+    #[test]
     fn usage_sums_cache_fields() {
         let usage = sample_usage();
         assert_eq!(usage.context_tokens(), 100 + 30 + 5);
+    }
+
+    /// Every fieldless `Job` still serializes as its bare tag (unchanged by
+    /// the hand-written impl), and `Plugin` serializes/round-trips as
+    /// `plugin:<id>` — the literal ledger tag `to_tag`/`from_tag`
+    /// (`cox-store`) and `cox`'s `stats.rs` `tag()` both rely on (T33.15).
+    #[test]
+    fn job_tags_are_plain_strings_and_plugin_round_trips_by_id() {
+        assert_eq!(serde_json::to_value(Job::Main).unwrap(), "main");
+        assert_eq!(serde_json::to_value(Job::Hook).unwrap(), "hook");
+        assert_eq!(
+            serde_json::to_value(Job::Plugin("git-glance".into())).unwrap(),
+            "plugin:git-glance"
+        );
+        let round: Job = serde_json::from_value(serde_json::json!("plugin:git-glance")).unwrap();
+        assert_eq!(round, Job::Plugin("git-glance".into()));
+        let round: Job = serde_json::from_value(serde_json::json!("main")).unwrap();
+        assert_eq!(round, Job::Main);
+        assert!(serde_json::from_value::<Job>(serde_json::json!("plugin:")).is_err());
+        assert!(serde_json::from_value::<Job>(serde_json::json!("bogus")).is_err());
     }
 
     #[rstest]
@@ -1238,8 +1474,8 @@ mod tests {
     #[case::item_started(Event::ItemStarted { item: ItemId::new(), kind: ItemKind::UserMessage { text: "hi".into(), attachments: vec![] } })]
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
-    #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into() } })]
-    #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into() }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
+    #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into(), segments: None } })]
+    #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None } })]
@@ -1250,9 +1486,11 @@ mod tests {
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
+    #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
     #[case::error(Event::Error { error: CoreError::Interrupted, fatal: false })]
+    #[case::task_message(Event::TaskMessage { task: TaskId::new(), from: Some(TaskId::new()), hop: 1, text: "ping".into() })]
     fn event_json_roundtrip(#[case] event: Event) {
         let json = serde_json::to_string(&event).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
@@ -1287,10 +1525,37 @@ mod tests {
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
     #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
+    #[case::task_message(Submission::TaskMessage { task: TaskId::new(), from: None, hop: 0, text: "follow up".into() })]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");
         let back: Submission = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(submission, back);
+    }
+
+    /// T34.4: the wire shape SM§1 specifies, both directions and both
+    /// `from` cases (parent/user vs. a sibling `TaskId`), survive a JSON
+    /// round trip byte-for-byte in the fields that matter.
+    #[test]
+    fn task_message_round_trips_through_serde() {
+        let sub = Submission::TaskMessage {
+            task: TaskId::new(),
+            from: None,
+            hop: 0,
+            text: "from the parent".into(),
+        };
+        let json = serde_json::to_string(&sub).expect("serialize");
+        let back: Submission = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(sub, back);
+
+        let event = Event::TaskMessage {
+            task: TaskId::new(),
+            from: Some(TaskId::new()),
+            hop: 2,
+            text: "from a sibling".into(),
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, back);
     }
 
     /// plan.md T0.2 step 4: grep the serialized form for the `type` tag and

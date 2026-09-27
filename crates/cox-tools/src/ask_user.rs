@@ -4,6 +4,7 @@
 //! over a channel, a headless run answers with `--answer` or fails.
 
 use async_trait::async_trait;
+use cox_protocol::types::Source;
 use cox_protocol::{CallId, Concurrency, Risk, Tool, ToolCx, ToolError, ToolOutput, ToolSpec};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
@@ -20,6 +21,10 @@ pub struct Question {
     pub options: Vec<String>,
     /// Where the answer goes.
     pub reply: oneshot::Sender<String>,
+    /// The subagent asking (T34.3), built from `cx.agent`/`cx.preset` the
+    /// same way `relay_approval` builds an `ApprovalRequired`'s `Source`;
+    /// `None` for the top-level session the user is talking to.
+    pub source: Option<Source>,
 }
 
 /// Where answers come from.
@@ -97,12 +102,18 @@ impl Tool for AskUserTool {
             }
             Answers::Surface(tx) => {
                 let (reply, answered) = oneshot::channel();
+                let source = cx.agent.clone().map(|agent| Source {
+                    session: cx.session,
+                    agent: Some(agent),
+                    preset: cx.preset.clone(),
+                });
                 let sent = tx
                     .send(Question {
                         call: cx.call,
                         question: question.clone(),
                         options: options.clone(),
                         reply,
+                        source,
                     })
                     .await;
                 if sent.is_err() {
@@ -221,5 +232,54 @@ mod tests {
             .await
             .expect_err("cancelled");
         assert!(matches!(err, ToolError::Cancelled));
+    }
+
+    /// T34.3: a `ToolCx` labelled by `spawn_child` (`agent`/`preset` set)
+    /// makes `ask_user`'s `Question::source` carry the same `Source` shape
+    /// `relay_approval` already builds for a relayed approval; the
+    /// top-level session's own `cx` (this file's `cx` helper) keeps
+    /// `source: None`.
+    #[tokio::test]
+    async fn ask_user_from_subagent_carries_its_source() {
+        let session = SessionId::new();
+        let child_cx = ToolCx {
+            session,
+            agent: Some("explore-2".into()),
+            preset: Some("explore".into()),
+            ..cx(CancellationToken::new())
+        };
+        let (tx, mut rx) = mpsc::channel(1);
+        let tool = AskUserTool::new(Answers::Surface(tx));
+        let surface = tokio::spawn(async move {
+            let q = rx.recv().await.expect("question");
+            assert_eq!(
+                q.source,
+                Some(cox_protocol::types::Source {
+                    session,
+                    agent: Some("explore-2".into()),
+                    preset: Some("explore".into()),
+                })
+            );
+            let _ = q.reply.send("staging".into());
+        });
+        let out = tool
+            .call(json!({"question": "which env?"}), &child_cx)
+            .await
+            .expect("answered");
+        assert_eq!(out.text, "staging");
+        surface.await.expect("surface");
+
+        // The top-level session's own call carries no source at all.
+        let (tx, mut rx) = mpsc::channel(1);
+        let tool = AskUserTool::new(Answers::Surface(tx));
+        let surface = tokio::spawn(async move {
+            let q = rx.recv().await.expect("question");
+            assert_eq!(q.source, None);
+            let _ = q.reply.send("ok".into());
+        });
+        tool.call(json!({"question": "ok?"}), &cx(CancellationToken::new()))
+            .await
+            .expect("answered");
+        surface.await.expect("surface");
     }
 }

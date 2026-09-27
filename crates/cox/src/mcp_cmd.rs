@@ -11,13 +11,14 @@ use cox_core::permission::{Engine, Outcome, why_text};
 use cox_mcp::server::{CxTemplate, Gate, ToolServer};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::Store as _;
-use cox_protocol::types::{ApprovalPolicy, PermissionMode, SandboxMode, SandboxPolicy, ToolCall};
+use cox_protocol::types::{ApprovalPolicy, PermissionMode, SandboxMode, ToolCall};
 use cox_store::Store;
 
 use crate::cli::{Cli, McpAction, McpArgs};
 use crate::{config_load, session};
 
-const READ_ONLY: &[&str] = &["read", "grep", "glob", "outline"];
+// No `outline` here: an outline is `read` with `mode = "outline"`, not a tool.
+const READ_ONLY: &[&str] = &["read", "grep", "glob"];
 const WRITE: &[&str] = &["edit", "write", "apply_patch"];
 
 /// `policy = never`: an ask becomes a deny, since no one is there to answer.
@@ -85,13 +86,7 @@ pub fn run(cli: &Cli, args: &McpArgs, cwd: &Path) -> anyhow::Result<()> {
         writable_roots: roots.clone(),
         roots,
         cwd: cwd.to_path_buf(),
-        sandbox: SandboxPolicy {
-            mode: config.sandbox.mode,
-            network: config.sandbox.network,
-            writable: config.sandbox.writable.clone(),
-            readonly_in_workspace: config.sandbox.readonly_in_workspace.clone(),
-            linux_backend: config.sandbox.linux_backend,
-        },
+        sandbox: crate::session::sandbox_policy(&config),
         archive: store,
         session: SessionId::new(),
     };
@@ -141,16 +136,13 @@ mod tests {
 
     #[test]
     fn default_selection_is_read_only_and_write_is_opt_in() {
-        assert_eq!(
-            selected(&McpArgs::default()),
-            ["read", "grep", "glob", "outline"]
-        );
+        assert_eq!(selected(&McpArgs::default()), ["read", "grep", "glob"]);
         let with_write = selected(&McpArgs {
             action: None,
             allow_write: true,
             tools: None,
         });
-        assert_eq!(with_write.len(), 7);
+        assert_eq!(with_write.len(), 6);
         assert!(with_write.contains(&"apply_patch".to_string()));
         assert!(!with_write.contains(&"bash".to_string()));
         let explicit = selected(&McpArgs {

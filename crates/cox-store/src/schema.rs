@@ -97,3 +97,31 @@ diesel::table! {
         created_at -> Text,
     }
 }
+
+diesel::table! {
+    /// `00000000000004_plugins` (T33.5, PL§3): the grant approved for one
+    /// plugin id at one package digest, in one scope (`user` or
+    /// `project:<root>`, stored as text — `Store` converts to/from
+    /// `GrantScope`). `capabilities` and `source` are JSON text.
+    plugin_grants (plugin_id, scope, digest) {
+        plugin_id -> Text,
+        scope -> Text,
+        digest -> Text,
+        capabilities -> Text,
+        enabled -> Bool,
+        source -> Text,
+        decided_at -> Text,
+    }
+}
+
+diesel::table! {
+    /// `00000000000004_plugins` (T33.5, PL§3): the per-plugin key-value
+    /// store, the only state that outlives a call (extism's own vars are
+    /// off, P12). Quota is enforced in `Store`, not the schema.
+    plugin_kv (plugin_id, key) {
+        plugin_id -> Text,
+        key -> Text,
+        value -> Binary,
+        updated_at -> Text,
+    }
+}

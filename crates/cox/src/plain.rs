@@ -4,7 +4,7 @@
 //! ever rewritten — so scrollback is the full transcript and a screen reader
 //! reads each line once. Separate from `session.rs` because it shares none
 //! of the TUI's state, only `session::open`, `cox_tui::commands::parse` and
-//! `cox_tui::text::sanitize`.
+//! `cox_sanitize::sanitize` (T32.1: no longer routed through `cox-tui`).
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, IsTerminal, Write};
@@ -16,9 +16,9 @@ use cox_protocol::CoreError;
 use cox_protocol::Event;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::types::{Decision, ItemKind, Level, StopReason, Submission, Tier, ToolResult};
+use cox_sanitize::sanitize;
 use cox_tools::ask_user::Question;
 use cox_tui::commands::{self, Action};
-use cox_tui::text::sanitize;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -63,6 +63,7 @@ pub fn run(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         |_| {},
         resume,
         true,
+        None,
     ))?;
     let mut plain = Plain {
         session: session.clone(),

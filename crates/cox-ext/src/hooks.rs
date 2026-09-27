@@ -2,10 +2,13 @@
 //! commands over Claude Code's JSON protocol — payload on stdin, verdict on
 //! stdout, exit 2 = block. It lives here, not in `cox-core`, because it
 //! spawns processes; the core only sees a `HookOutcome` and fails open.
+//! Also the one chaining rule ([`chain`]) and [`HookChain`], which puts the
+//! shell hooks and plugin hooks behind one `Hook` (PL§6, T33.11).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -32,9 +35,8 @@ impl ShellHooks {
 
 #[async_trait]
 impl Hook for ShellHooks {
-    /// Hooks for `event` run in config order; the first block or failure
-    /// ends the chain, a rewritten input feeds the hooks after it.
-    async fn run(&self, event: HookEvent, mut payload: Value, timeout: Duration) -> HookOutcome {
+    /// Hooks for `event` run in config order under [`chain`]'s rule.
+    async fn run(&self, event: HookEvent, payload: Value, timeout: Duration) -> HookOutcome {
         let Some(hooks) = self.events.get(event.name()) else {
             return HookOutcome::Continue;
         };
@@ -43,35 +45,96 @@ impl Hook for ShellHooks {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let mut outcome = HookOutcome::Continue;
-        for hook in hooks {
-            match matches(hook.matcher.as_deref(), &tool) {
-                Ok(true) => {}
-                Ok(false) => continue,
-                // D14 fail open: a broken matcher is this hook's failure —
-                // skipped with the core's `Notice(Warn)` naming it.
-                Err(e) => {
-                    return HookOutcome::Failed {
-                        error: format!(
-                            "{}: invalid matcher regex {:?}: {e}",
-                            hook.command, hook.matcher
-                        ),
-                    };
+        chain(hooks, payload, |hook, payload| {
+            let (tool, cwd) = (&tool, &self.cwd);
+            async move {
+                match matches(hook.matcher.as_deref(), tool) {
+                    Ok(true) => {}
+                    Ok(false) => return HookOutcome::Continue,
+                    // D14 fail open: a broken matcher is this hook's failure —
+                    // skipped with the core's `Notice(Warn)` naming it.
+                    Err(e) => {
+                        return HookOutcome::Failed {
+                            error: format!(
+                                "{}: invalid matcher regex {:?}: {e}",
+                                hook.command, hook.matcher
+                            ),
+                        };
+                    }
                 }
+                let limit = hook
+                    .timeout_s
+                    .map_or(timeout, |s| Duration::from_secs(u64::from(s)));
+                run_one(&hook.command, &payload, limit, cwd).await
             }
-            let limit = hook
-                .timeout_s
-                .map_or(timeout, |s| Duration::from_secs(u64::from(s)));
-            match run_one(&hook.command, &payload, limit, &self.cwd).await {
-                HookOutcome::Continue => {}
-                HookOutcome::Modify { input } => {
-                    payload["tool_input"] = input.clone();
-                    outcome = HookOutcome::Modify { input };
+        })
+        .await
+    }
+}
+
+/// The one chaining rule for every hook source (PL§6): steps run in order,
+/// the first `Block` or `Failed` ends the chain, and a `Modify` feeds its
+/// input to the steps after it as `tool_input` and is the chain's verdict
+/// unless a later step modifies again. Shared by a source's own hooks
+/// (`ShellHooks`) and by [`HookChain`] across sources, so the two levels
+/// cannot drift apart.
+pub async fn chain<T, F, Fut>(
+    steps: impl IntoIterator<Item = T>,
+    mut payload: Value,
+    mut step: F,
+) -> HookOutcome
+where
+    F: FnMut(T, Value) -> Fut,
+    Fut: Future<Output = HookOutcome>,
+{
+    let mut outcome = HookOutcome::Continue;
+    for item in steps {
+        match step(item, payload.clone()).await {
+            HookOutcome::Continue => {}
+            HookOutcome::Modify { input } => {
+                if let Some(fields) = payload.as_object_mut() {
+                    fields.insert("tool_input".into(), input.clone());
                 }
-                stop => return stop,
+                outcome = HookOutcome::Modify { input };
             }
+            stop => return stop,
         }
-        outcome
+    }
+    outcome
+}
+
+/// Every hook source of a session as one `Hook` (PL§6): the user's shell
+/// hooks first, so their own rules win, then plugin hooks in plugin-id
+/// order. `PresenceHook` wraps the chain, as it wrapped `ShellHooks`.
+pub struct HookChain(Vec<Arc<dyn Hook>>);
+
+impl HookChain {
+    /// `shell` first, then `plugins` sorted by id, whatever order the
+    /// caller loaded them in.
+    pub fn new(shell: Option<Arc<dyn Hook>>, mut plugins: Vec<(String, Arc<dyn Hook>)>) -> Self {
+        plugins.sort_by(|a, b| a.0.cmp(&b.0));
+        Self(
+            shell
+                .into_iter()
+                .chain(plugins.into_iter().map(|(_, hook)| hook))
+                .collect(),
+        )
+    }
+}
+
+#[async_trait]
+impl Hook for HookChain {
+    fn interested(&self, event: HookEvent, config: &HooksConfig) -> bool {
+        self.0.iter().any(|hook| hook.interested(event, config))
+    }
+
+    /// Each source filters its own events, so every source is asked; the
+    /// core applies the deadline and fail-open to the chain's verdict.
+    async fn run(&self, event: HookEvent, payload: Value, timeout: Duration) -> HookOutcome {
+        chain(&self.0, payload, |hook, payload| {
+            hook.run(event, payload, timeout)
+        })
+        .await
     }
 }
 
@@ -229,6 +292,125 @@ mod tests {
             matches!(out, HookOutcome::Failed { ref error }
                 if error.contains("echo never") && error.contains("matcher")),
             "{out:?}"
+        );
+    }
+
+    /// A plugin-like source: granted `PreToolUse` only, answers `verdict`
+    /// and records the `tool_input` it was handed.
+    struct Fake {
+        verdict: HookOutcome,
+        seen: std::sync::Mutex<Vec<Value>>,
+    }
+
+    fn fake(verdict: HookOutcome) -> Arc<Fake> {
+        Arc::new(Fake {
+            verdict,
+            seen: std::sync::Mutex::new(Vec::new()),
+        })
+    }
+
+    #[async_trait]
+    impl Hook for Fake {
+        fn interested(&self, event: HookEvent, _config: &HooksConfig) -> bool {
+            event == HookEvent::PreToolUse
+        }
+
+        async fn run(&self, _event: HookEvent, payload: Value, _timeout: Duration) -> HookOutcome {
+            self.seen
+                .lock()
+                .unwrap()
+                .push(payload["tool_input"].clone());
+            self.verdict.clone()
+        }
+    }
+
+    fn shell(command: &str) -> (HooksConfig, Arc<dyn Hook>) {
+        let mut events = HashMap::new();
+        events.insert(
+            "PreToolUse".to_string(),
+            vec![HookConfig {
+                matcher: None,
+                command: command.into(),
+                timeout_s: None,
+            }],
+        );
+        let config = HooksConfig {
+            events,
+            ..HooksConfig::default()
+        };
+        let hooks = Arc::new(ShellHooks::new(&config, PathBuf::from(".")));
+        (config, hooks)
+    }
+
+    fn pre_tool_use() -> Value {
+        serde_json::json!({ "tool_name": "bash", "tool_input": { "command": "rm -rf /" } })
+    }
+
+    #[tokio::test]
+    async fn shell_block_wins_over_plugin() {
+        let (config, shell) = shell("echo mine >&2; exit 2");
+        let plugin = fake(HookOutcome::Modify {
+            input: serde_json::json!({ "command": "ls" }),
+        });
+        let chain = HookChain::new(Some(shell), vec![("p".into(), plugin.clone() as _)]);
+        assert!(chain.interested(HookEvent::PreToolUse, &config));
+        let out = chain
+            .run(
+                HookEvent::PreToolUse,
+                pre_tool_use(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(
+            out,
+            HookOutcome::Block {
+                reason: "mine".into()
+            }
+        );
+        assert!(
+            plugin.seen.lock().unwrap().is_empty(),
+            "the plugin never ran"
+        );
+    }
+
+    #[tokio::test]
+    async fn plugin_modify_chains_into_next_hook() {
+        let (_, shell) = shell("true");
+        let first = fake(HookOutcome::Modify {
+            input: serde_json::json!({ "command": "ls" }),
+        });
+        let second = fake(HookOutcome::Continue);
+        // Loaded out of order; the chain runs plugins by id.
+        let chain = HookChain::new(
+            Some(shell),
+            vec![
+                ("b".into(), second.clone() as _),
+                ("a".into(), first.clone() as _),
+            ],
+        );
+        // No `[hooks]` entry is needed for a plugin's event to be wanted.
+        assert!(chain.interested(HookEvent::PreToolUse, &HooksConfig::default()));
+        assert!(!chain.interested(HookEvent::Stop, &HooksConfig::default()));
+        let out = chain
+            .run(
+                HookEvent::PreToolUse,
+                pre_tool_use(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(
+            *first.seen.lock().unwrap(),
+            [serde_json::json!({ "command": "rm -rf /" })]
+        );
+        assert_eq!(
+            *second.seen.lock().unwrap(),
+            [serde_json::json!({ "command": "ls" })]
+        );
+        assert_eq!(
+            out,
+            HookOutcome::Modify {
+                input: serde_json::json!({ "command": "ls" })
+            }
         );
     }
 

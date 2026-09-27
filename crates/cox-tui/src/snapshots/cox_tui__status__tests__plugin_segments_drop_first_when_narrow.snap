@@ -1,0 +1,6 @@
+---
+source: crates/cox-tui/src/status.rs
+assertion_line: 530
+expression: narrow
+---
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · 0 tasks · [default]

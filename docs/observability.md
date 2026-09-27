@@ -169,7 +169,7 @@ finished turn:
 | `job` | `main`, `compact`, `summarize`, `memory`, … |
 | `tier` | `cheap` \| `code` \| `think` — what the router was asked for |
 | `provider`, `model` | what actually served it |
-| `effort` | `low` \| `high` \| `xhigh` after clamping to what the model supports. `NULL` on rows written before this column existed — the ledger reports what it observed, never a default, and both `cox stats` and `cox sessions <id>` print such a row as `-` |
+| `effort` | `low` \| `medium` \| `high` \| `xhigh` after clamping to what the model supports. `NULL` on rows written before this column existed — the ledger reports what it observed, never a default, and both `cox stats` and `cox sessions <id>` print such a row as `-` |
 | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | **tokens**, as the provider reported them |
 | `context_tokens` | what the model saw on this call (the context-token-turns metric) |
 | `estimated` | the model had no price row: costed 0 rather than dropped |

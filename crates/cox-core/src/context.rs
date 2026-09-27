@@ -263,6 +263,19 @@ pub fn microcompact(
         .collect()
 }
 
+/// A routed-down turn's request (T33.40.8, J20): thinking blocks from
+/// turns before `turn_start` were signed by the static tier's model, so the
+/// cheap model would reject them. They are dropped from this copy only; the
+/// stored history keeps them, so the next static-tier request's prefix stays
+/// byte-identical and warm. The running turn's own blocks are the cheap
+/// model's and stay, as a tool loop with thinking needs them.
+pub fn strip_thinking_before(mut messages: Vec<Message>, turn_start: usize) -> Vec<Message> {
+    let current = messages.split_off(turn_start.min(messages.len()));
+    let mut out = crate::router::strip_thinking(&messages);
+    out.extend(current);
+    out
+}
+
 // The `/context` payload surface below is called from `session.rs`'s
 // `Submission::Command` dispatch — the wiring split out of T25.7's 3-file
 // budget (recorded in the card) — so until that lands nothing in the crate

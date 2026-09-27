@@ -4,6 +4,7 @@
 //! table and its words) so parsing and precedence are tested without a
 //! `State`, and so `doctor` can list conflicts without a terminal.
 
+use cox_protocol::plugin::KeyDecl;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::commands::{Context, KEYMAP};
@@ -37,6 +38,8 @@ actions! {
     Thinking = "thinking",
     Expand = "expand",
     Diff = "diff",
+    // T33.25, PL§8: arms the next key as `<leader> <key>` for a plugin.
+    PluginLeader = "plugin.leader",
     Background = "background",
     Unqueue = "unqueue",
     Quit = "quit",
@@ -177,10 +180,23 @@ fn shown(text: &str) -> String {
         .join("+")
 }
 
+/// One plugin's key under the leader (T33.25, PL§8): a separate table from
+/// `rows`, since its `plugin`/`name` are runtime strings, not one of the
+/// closed `Action`s `rows` binds — the key never resolves through
+/// `resolve`, only through `resolve_plugin_key` once the leader armed it.
+#[derive(Debug, Clone, PartialEq)]
+struct PluginKeyRow {
+    shown: String,
+    binding: (KeyCode, KeyModifiers),
+    plugin: String,
+    name: String,
+}
+
 /// Every key the TUI knows, in `KEYMAP` order with user keys added.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Keymap {
     rows: Vec<Row>,
+    plugin_keys: Vec<PluginKeyRow>,
 }
 
 impl Default for Keymap {
@@ -202,7 +218,10 @@ impl Default for Keymap {
                 })
             })
             .collect();
-        Keymap { rows }
+        Keymap {
+            rows,
+            plugin_keys: Vec::new(),
+        }
     }
 }
 
@@ -274,7 +293,11 @@ impl Keymap {
         keys.iter().try_for_each(|k| self.put(action, k))
     }
 
-    /// Two actions on one key in one context, as `doctor` words them.
+    /// Two actions on one key in one context, as `doctor` words them, plus
+    /// two plugins whose declared keys land on the same one under the
+    /// leader (T33.25, PL§8: "a clash between plugins ... is reported by
+    /// `Keymap::conflicts()`"). Built-in and user bindings never clash with
+    /// a plugin key: the two live in separate tables and separate lookups.
     pub fn conflicts(&self) -> Vec<String> {
         let mut out = Vec::new();
         for (i, a) in self.rows.iter().enumerate() {
@@ -288,7 +311,53 @@ impl Keymap {
                 }
             }
         }
+        for (i, a) in self.plugin_keys.iter().enumerate() {
+            for b in self.plugin_keys[i + 1..]
+                .iter()
+                .filter(|b| b.binding == a.binding)
+            {
+                if a.plugin != b.plugin {
+                    out.push(format!(
+                        "<leader> {}: plugin {} and plugin {}",
+                        a.shown, a.plugin, b.plugin
+                    ));
+                }
+            }
+        }
         out
+    }
+
+    /// `plugin`'s keys under the leader (T33.25, PL§8), replacing any it
+    /// declared before — a session re-`Declare`s after every `cox_init`.
+    /// A key `parse` does not recognise is dropped, same as a bad user
+    /// binding. Sorted by plugin id so a clash always resolves the same
+    /// way: `resolve_plugin_key` returns the first match, i.e. the lowest
+    /// id (PL§8 "goes to the lower id").
+    pub fn declare_plugin_keys(&mut self, plugin: &str, keys: &[KeyDecl]) {
+        self.plugin_keys.retain(|r| r.plugin != plugin);
+        for k in keys {
+            let Some(binding) = parse(&k.key) else {
+                continue;
+            };
+            self.plugin_keys.push(PluginKeyRow {
+                shown: shown(&k.key),
+                binding,
+                plugin: plugin.to_string(),
+                name: k.name.clone(),
+            });
+        }
+        self.plugin_keys.sort_by(|a, b| a.plugin.cmp(&b.plugin));
+    }
+
+    /// The plugin and command name `key` means under the leader, or `None`
+    /// when no plugin declared it. The lowest plugin id wins a clash
+    /// (`declare_plugin_keys`'s sort order).
+    pub fn resolve_plugin_key(&self, key: KeyEvent) -> Option<(&str, &str)> {
+        let binding = normalize(key.code, key.modifiers);
+        self.plugin_keys
+            .iter()
+            .find(|r| r.binding == binding)
+            .map(|r| (r.plugin.as_str(), r.name.as_str()))
     }
 }
 
@@ -510,5 +579,52 @@ mod tests {
         );
         assert_eq!(loaded.skipped.len(), 2, "{:?}", loaded.skipped);
         assert!(loaded.warnings.is_empty());
+    }
+
+    fn decl(k: &str, name: &str) -> KeyDecl {
+        KeyDecl {
+            key: k.into(),
+            name: name.into(),
+            description: String::new(),
+        }
+    }
+
+    /// T33.25, PL§8: two plugins declaring the same key under the leader
+    /// both stay reachable — `resolve_plugin_key` picks the lower plugin
+    /// id — but `conflicts()` still names both, the same way `doctor`
+    /// already reports two built-in actions sharing a key.
+    #[test]
+    fn plugin_key_conflict_is_reported() {
+        let mut map = Keymap::default();
+        map.declare_plugin_keys("beta", &[decl("r", "run")]);
+        map.declare_plugin_keys("acme", &[decl("r", "reset")]);
+        assert_eq!(
+            map.resolve_plugin_key(key(KeyCode::Char('r'), KeyModifiers::NONE)),
+            Some(("acme", "reset")),
+            "the lower plugin id wins"
+        );
+        assert_eq!(map.conflicts(), ["<leader> r: plugin acme and plugin beta"]);
+    }
+
+    /// A re-`Declare` (T33.44's own re-init) replaces a plugin's keys
+    /// rather than piling up stale ones, and an unrecognised key is
+    /// dropped instead of poisoning the table.
+    #[test]
+    fn declare_plugin_keys_replaces_the_previous_set() {
+        let mut map = Keymap::default();
+        map.declare_plugin_keys("acme", &[decl("r", "reset"), decl("chord+bad", "nope")]);
+        assert_eq!(
+            map.resolve_plugin_key(key(KeyCode::Char('r'), KeyModifiers::NONE)),
+            Some(("acme", "reset"))
+        );
+        map.declare_plugin_keys("acme", &[decl("s", "save")]);
+        assert_eq!(
+            map.resolve_plugin_key(key(KeyCode::Char('r'), KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            map.resolve_plugin_key(key(KeyCode::Char('s'), KeyModifiers::NONE)),
+            Some(("acme", "save"))
+        );
     }
 }

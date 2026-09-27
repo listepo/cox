@@ -1,8 +1,16 @@
-//! Built-in tools and the sandbox (Seatbelt, Landlock/bwrap): read, edit,
-//! write, bash, grep, glob, outline, web, todo, ask_user, agent. Separate
-//! from `cox-core` because every tool touches the filesystem or a process
-//! and must go through a trait, never called directly by the loop. The same
-//! rule puts the `/rewind` pre-image reader (`checkpoint`) here.
+//! Built-in tools: read, edit, write, bash, grep, glob, outline, web, todo,
+//! ask_user, agent, send_message. Separate from `cox-core` because every tool touches the
+//! filesystem or a process and must go through a trait, never called
+//! directly by the loop. The same rule puts the `/rewind` pre-image reader
+//! (`checkpoint`) here. The sandbox (Seatbelt, Landlock/bwrap) and
+//! `path::confine` live in `cox-sandbox` (T32.3), re-exported here at their
+//! old paths. Tree-sitter and its grammars live in `cox-syntax` (T32.4);
+//! `outline` is re-exported the same way, and `bash/classify.rs` calls into
+//! it for parsing while keeping its own risk walk here. The pure `grep`/
+//! `glob` walk and match engine lives in `cox-search` (T32.5); the `Tool`
+//! impls (`path::confine`, archiving) stay here. `web_fetch`'s HTTP
+//! GET and HTML→text engine live in `cox-web` (T32.7); `web_fetch.rs` keeps
+//! only the `Tool` glue (`ToolCx`, input parsing, output framing).
 
 pub mod ask_user;
 pub mod bash;
@@ -13,15 +21,27 @@ pub mod git;
 pub mod glob;
 pub mod grep;
 pub mod memory;
-pub mod outline;
-pub mod path;
 pub mod read;
-pub mod sandbox;
+pub mod send_message;
 pub mod todo;
 pub mod tool_search;
 pub mod v4a;
 pub mod web_fetch;
 pub mod write;
+
+/// T32.3: `path::confine` and `sandbox` moved to their own crate (dependency
+/// (a): `landlock`/`seccompiler` are Linux-only, and guard (b) —
+/// `docs/design/crates.md`); re-exported here at the old paths so
+/// `cox_tools::path::confine` and `cox_tools::sandbox::Policy` keep working
+/// for existing callers.
+pub use cox_sandbox::path;
+pub use cox_sandbox::sandbox;
+
+/// T32.4: `outline` (AST signature extraction) moved to `cox-syntax`
+/// (dependency (a): tree-sitter and its five grammars are each a C build);
+/// re-exported here at the old path so `cox_tools::outline::outline` keeps
+/// working for existing callers (`read.rs`).
+pub use cox_syntax::outline;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -59,6 +79,14 @@ pub fn tool_cx(
         output,
         session,
         call,
+        // T34.3: callers that need a labelled child `ToolCx` build it with
+        // `..tool_cx(...)` struct-update syntax rather than a new
+        // constructor arg here — every existing caller stays unchanged.
+        agent: None,
+        preset: None,
+        // T34.6: no session builds this bare helper's caller, so no relay;
+        // real per-call binding happens in `cox-core/src/turn.rs`.
+        relay: None,
     }
 }
 

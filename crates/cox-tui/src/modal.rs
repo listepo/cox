@@ -7,6 +7,7 @@
 //! the renderer the edit card and `Ctrl+G` use. The `?` keymap overlay
 //! (T24.6) draws here too, from the live `keymap::Keymap` (T25.5).
 
+use cox_protocol::GrantScope;
 use cox_protocol::ids::CallId;
 use cox_protocol::types::{Decision, Diff, ToolCall, Why};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -185,6 +186,182 @@ impl Approval {
     }
 }
 
+/// `Modal::PluginGrant` (T33.8, PL§3): one `NeedsApproval` plugin from
+/// session open. More than one queues in `state.rs`'s `pending_grants`,
+/// since the TUI has one modal slot. `y` grants the full requested
+/// capability list at this digest; `n` skips it for this session only —
+/// there is no "always" key, since a grant is always decided per digest.
+/// `crates/cox` builds one of these per plugin (`session::plugin_grant_requests`)
+/// and never this crate: no store read, no filesystem, matches every other
+/// modal here.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PluginGrantDialog {
+    pub plugin_id: String,
+    /// The grant key (`crates/cox`'s `discover::Plugin::grant_digest()`):
+    /// the real package digest, or — for a linked plugin (`dev` below,
+    /// T33.41) — the fixed `link_digest()`. `y` writes the grant under
+    /// this value, so it must be the same one `grant_digest()` looks up
+    /// under next time, not the plugin's live, rebuild-volatile digest.
+    pub digest: String,
+    pub scope: GrantScope,
+    /// The full requested capability list (PL§3's unit of approval) — what
+    /// `y` grants, not just `added`.
+    pub capabilities: Vec<String>,
+    name: String,
+    description: String,
+    /// Requested and not granted, sorted (mirrors `grant::Verdict`'s field
+    /// of the same name; for a brand-new plugin this is the whole request).
+    added: Vec<String>,
+    /// Granted and no longer requested, sorted.
+    removed: Vec<String>,
+    /// A project plugin's repository root (PL§3: shown in warning style);
+    /// `None` for a user plugin.
+    repo: Option<String>,
+    /// True for a `cox plugin link`ed plugin (T33.41, PL§13's dev loop):
+    /// shown so an approval at session open still says why this one asks
+    /// again on a widened capability list rather than on any byte change.
+    dev: bool,
+}
+
+impl PluginGrantDialog {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        plugin_id: String,
+        digest: String,
+        scope: GrantScope,
+        name: String,
+        description: String,
+        capabilities: Vec<String>,
+        added: Vec<String>,
+        removed: Vec<String>,
+        repo: Option<String>,
+        dev: bool,
+    ) -> Self {
+        Self {
+            plugin_id,
+            digest,
+            scope,
+            capabilities,
+            name,
+            description,
+            added,
+            removed,
+            repo,
+            dev,
+        }
+    }
+
+    /// `Some(true)`: grant. `Some(false)`: skip for this session. `None`
+    /// keeps the modal open — only `y`/`n` decide it (PL§3: no "always").
+    pub fn key(&self, key: KeyEvent) -> Option<bool> {
+        match key.code {
+            KeyCode::Char('y') => Some(true),
+            KeyCode::Char('n') | KeyCode::Esc => Some(false),
+            _ => None,
+        }
+    }
+
+    /// The prompt, the plugin's description, the repository line for a
+    /// project plugin, the capability diff and the keys. Every manifest
+    /// string (`name`, `description`, `repo`, each capability) passes
+    /// `sanitize`: a plugin's own `plugin.toml` is untrusted repository or
+    /// download content, the same boundary `Approval`'s `why` crosses.
+    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let digest12 = &self.digest[..self.digest.len().min(12)];
+        let dev_tag = if self.dev { " (dev)" } else { "" };
+        let mut out = vec![Line::styled(
+            format!(
+                " plugin {} ({}) wants to load{dev_tag} {} digest {}",
+                sanitize(&self.name),
+                sanitize(&self.plugin_id),
+                g.sep,
+                sanitize(digest12),
+            ),
+            bold.fg(theme.warn),
+        )];
+        if self.dev {
+            out.push(Line::styled(
+                " linked plugin — asks again only if capabilities widen, not on a rebuild"
+                    .to_string(),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
+        if !self.description.is_empty() {
+            out.push(Line::raw(format!(" {}", sanitize(&self.description))));
+        }
+        if let Some(repo) = &self.repo {
+            out.push(Line::styled(
+                format!(" project plugin {} repository {}", g.sep, sanitize(repo)),
+                Style::default().fg(theme.warn),
+            ));
+        }
+        let joined = |caps: &[String]| {
+            caps.iter()
+                .map(|c| sanitize(c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        if !self.added.is_empty() {
+            out.push(Line::raw(format!(" wants: {}", joined(&self.added))));
+        }
+        if !self.removed.is_empty() {
+            out.push(Line::styled(
+                format!(" no longer asks for: {}", joined(&self.removed)),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
+        out.push(Line::raw(" [y]es  [n]o"));
+        out
+    }
+}
+
+/// `Modal::PluginRemove` (T33.33, PL§1c): `/plugin remove <id>
+/// [--keep-data]`'s confirmation before an irreversible action — the same
+/// `y`/`n` shape `PluginGrantDialog` uses above, but its own kind rather
+/// than reusing that one: a remove has no capability diff to show, and
+/// `Approval` carries a `ToolCall`/`Why` this has none of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoveConfirm {
+    pub id: String,
+    pub keep_data: bool,
+}
+
+impl RemoveConfirm {
+    /// `Some(true)`: remove. `Some(false)`: cancel. `None` keeps the modal
+    /// open — only `y`/`n` decide it.
+    pub fn key(&self, key: KeyEvent) -> Option<bool> {
+        match key.code {
+            KeyCode::Char('y') => Some(true),
+            KeyCode::Char('n') | KeyCode::Esc => Some(false),
+            _ => None,
+        }
+    }
+
+    /// The prompt, whether `--keep-data` was given, and the keys. `id` is
+    /// sanitized: it names a directory on disk, not model output, but every
+    /// other modal here sanitizes what it shows regardless of source.
+    pub fn lines(&self, theme: &Theme) -> Vec<Line<'static>> {
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let data = if self.keep_data {
+            " its stored data is kept (--keep-data)"
+        } else {
+            " its stored data is deleted too"
+        };
+        vec![
+            Line::styled(
+                format!(" remove plugin {}?", sanitize(&self.id)),
+                bold.fg(theme.warn),
+            ),
+            Line::styled(
+                data.to_string(),
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+            Line::raw(" [y]es  [n]o"),
+        ]
+    }
+}
+
 /// The `?` overlay (T24.6): the keymap as bound now (T25.5) by context, a
 /// bold header per context and its rows packed into as few `width`-column
 /// lines as fit, so the whole table stays inside the inline viewport.
@@ -222,6 +399,16 @@ pub fn help_lines(g: &Glyphs, theme: &Theme, keymap: &Keymap, width: u16) -> Vec
     out
 }
 
+/// `Modal::Plugin`'s overlay before its first render lands, or once the
+/// slot has stopped (T33.24, PL§8): fail open like a missed status
+/// segment — a line, never a crash or a stuck blank screen.
+pub fn plugin_overlay_placeholder(id: &str, theme: &Theme) -> Line<'static> {
+    Line::styled(
+        format!(" {} …", sanitize(id)),
+        Style::default().fg(theme.dim),
+    )
+}
+
 /// `ask_user`'s answer, once a key decides it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuestionAnswer {
@@ -244,6 +431,9 @@ pub struct Question {
     options: Vec<String>,
     /// What the user has typed so far; sent verbatim on `Enter`.
     input: String,
+    /// The subagent asking (T34.3), same shape as `Approval::agent`;
+    /// `None` for the session itself.
+    agent: Option<String>,
 }
 
 impl Question {
@@ -253,7 +443,15 @@ impl Question {
             question,
             options,
             input: String::new(),
+            agent: None,
         }
+    }
+
+    /// Labels the prompt with the subagent it came from, mirroring
+    /// `Approval::from_agent`.
+    pub fn from_agent(mut self, agent: Option<String>) -> Self {
+        self.agent = agent;
+        self
     }
 
     /// `Some` once a key decided the answer; `None` keeps the modal open.
@@ -298,11 +496,19 @@ impl Question {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        let mut header = Line::styled(
+            format!(" ask_user {}", sanitize(&self.question)),
+            bold.fg(theme.warn),
+        );
+        if let Some(agent) = &self.agent {
+            let asks = format!(" {} asks:", sanitize(agent));
+            header
+                .spans
+                .insert(0, Span::styled(asks, bold.fg(theme.agent)));
+        }
         vec![
-            Line::styled(
-                format!(" ask_user {}", sanitize(&self.question)),
-                Style::default().fg(theme.warn).add_modifier(Modifier::BOLD),
-            ),
+            header,
             Line::styled(options, Style::default().add_modifier(Modifier::DIM)),
             Line::raw(format!(
                 " > {}{}   Enter sends {} Esc dismisses",
@@ -430,5 +636,123 @@ mod tests {
         })
         .expect("draw");
         insta::assert_snapshot!(crate::view::buffer_to_string(term.backend().buffer()));
+    }
+
+    fn plugin_grant(added: &[&str], removed: &[&str], repo: Option<&str>) -> PluginGrantDialog {
+        let added: Vec<String> = added.iter().map(|s| s.to_string()).collect();
+        let removed: Vec<String> = removed.iter().map(|s| s.to_string()).collect();
+        PluginGrantDialog::new(
+            "git-glance".into(),
+            "a".repeat(64),
+            repo.map_or(GrantScope::User, |r| {
+                GrantScope::Project(std::path::PathBuf::from(r))
+            }),
+            "Git Glance".into(),
+            "Shows a one-line git summary in the status bar".into(),
+            added.clone(),
+            added,
+            removed,
+            repo.map(String::from),
+            false,
+        )
+    }
+
+    fn render_grant(dialog: &PluginGrantDialog) -> String {
+        let lines = dialog.lines(&Glyphs::default(), &Theme::dark());
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let mut term = Terminal::new(TestBackend::new(72, height)).expect("test terminal");
+        term.draw(|f| Paragraph::new(lines).render(f.area(), f.buffer_mut()))
+            .expect("draw");
+        crate::view::buffer_to_string(term.backend().buffer())
+    }
+
+    /// T33.8, PL§3: a brand-new plugin's `added` is its whole request
+    /// (`grant::check` with no stored grant), no `removed`, no repository.
+    #[test]
+    fn new_plugin_grant_snapshot() {
+        insta::assert_snapshot!(render_grant(&plugin_grant(
+            &["kv", "net:api.github.com"],
+            &[],
+            None
+        )));
+    }
+
+    /// A plugin whose package widened: `added`/`removed` show the diff
+    /// (`grant::Verdict::NeedsApproval`).
+    #[test]
+    fn widened_plugin_grant_shows_the_diff() {
+        insta::assert_snapshot!(render_grant(&plugin_grant(
+            &["model:code"],
+            &["model:cheap"],
+            None
+        )));
+    }
+
+    /// PL§3: a project plugin's repository shows in warning style.
+    #[test]
+    fn project_plugin_grant_shows_its_repository() {
+        insta::assert_snapshot!(render_grant(&plugin_grant(
+            &["fs.write:$WORKSPACE"],
+            &[],
+            Some("/home/user/repo")
+        )));
+    }
+
+    /// A plugin's `plugin.toml` is untrusted content (repository or
+    /// download): `description` must never carry an escape sequence or a
+    /// bidi override into the terminal.
+    #[test]
+    fn grant_dialog_sanitizes_description() {
+        let mut dialog = plugin_grant(&["kv"], &[], None);
+        dialog.description = "\u{1b}[31mred\u{1b}[0m \u{202e}evil\u{202c}".into();
+        let text = render_grant(&dialog);
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+        assert!(!text.contains('\u{202e}'), "{text:?}");
+        assert!(text.contains("red evil"), "{text:?}");
+    }
+
+    /// T33.41 Check `linked_plugin_marked_dev_everywhere`: the TUI grant
+    /// dialog is one of the surfaces that must mark a `cox plugin link`ed
+    /// plugin as `dev` (alongside `cox plugin list` and `cox doctor`).
+    #[test]
+    fn plugin_grant_dialog_marks_a_linked_plugin_dev() {
+        let mut dialog = plugin_grant(&["model:code"], &["model:cheap"], None);
+        dialog.dev = true;
+        let text = render_grant(&dialog);
+        assert!(text.contains("(dev)"), "{text:?}");
+        assert!(
+            text.contains("asks again only if capabilities widen"),
+            "{text:?}"
+        );
+    }
+
+    fn render_remove(confirm: &RemoveConfirm) -> String {
+        let lines = confirm.lines(&Theme::dark());
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let mut term = Terminal::new(TestBackend::new(72, height)).expect("test terminal");
+        term.draw(|f| Paragraph::new(lines).render(f.area(), f.buffer_mut()))
+            .expect("draw");
+        crate::view::buffer_to_string(term.backend().buffer())
+    }
+
+    /// T33.33's Done-when: an insta snapshot of `/plugin remove`'s
+    /// confirmation modal.
+    #[test]
+    fn plugin_remove_confirm_snapshot() {
+        insta::assert_snapshot!(render_remove(&RemoveConfirm {
+            id: "git-glance".into(),
+            keep_data: false,
+        }));
+    }
+
+    /// `--keep-data` shows in the modal too, not only in the notice after
+    /// the remove runs.
+    #[test]
+    fn plugin_remove_confirm_shows_keep_data() {
+        let text = render_remove(&RemoveConfirm {
+            id: "git-glance".into(),
+            keep_data: true,
+        });
+        assert!(text.contains("--keep-data"), "{text:?}");
     }
 }

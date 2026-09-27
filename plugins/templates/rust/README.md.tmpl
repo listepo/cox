@@ -1,0 +1,32 @@
+# {{id}}
+
+A cox plugin scaffolded by `cox plugin new {{id}} --lang rust`. `docs/design/plugins.md`
+(PL) and `docs/plugins.md` in the [cox repository](https://github.com/listepo/cox)
+have the full contract; this file only covers this package.
+
+Capabilities asked for at scaffold time: {{with_summary}}. Edit `plugin.toml`'s
+`[capabilities]` to change them, and `src/lib.rs` for the exports that back them.
+
+## Build
+
+```
+rustup target add wasm32-unknown-unknown   # once
+just build
+```
+
+## Try it
+
+```
+just smoke
+```
+
+builds the module, stages it next to `plugin.toml` in `target/`, and runs
+`tests/smoke.rs`, which installs the package into a scratch `COX_HOME` with
+`cox plugin install --yes` and checks that `cox plugin list --json` reports
+it `loaded`. `cox` must be on `PATH`.
+
+## Install for real
+
+```
+cox plugin install . --yes
+```

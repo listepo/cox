@@ -1,0 +1,15 @@
+[package]
+name = "cox-models"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+# T30.24: parses `prices.toml` and `default.toml` the same way the price
+# table already did before the move (figment's Toml provider over a
+# string) — no new dependency, and no I/O of its own.
+figment = { workspace = true }

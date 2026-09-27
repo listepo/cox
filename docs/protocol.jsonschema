@@ -541,6 +541,39 @@
         ]
       },
       {
+        "description": "A decision plugin answered a decision point (PL§4, T33.20). Recorded\nfor every answer, used or not, so replay and `cox stats` see which\nadvice changed the core's pick; it never feeds model history.",
+        "type": "object",
+        "properties": {
+          "point": {
+            "description": "Which point asked.",
+            "$ref": "#/$defs/DecidePoint"
+          },
+          "plugin": {
+            "description": "The plugin `[plugins.decide]` names for the point.",
+            "type": "string"
+          },
+          "advice": {
+            "description": "The plugin's answer as given.",
+            "$ref": "#/$defs/Advice"
+          },
+          "applied": {
+            "description": "Whether the core followed it (its choice may equal the static\npick); `false` means it was ignored and the static pick stood.",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "const": "advised"
+          }
+        },
+        "required": [
+          "type",
+          "point",
+          "plugin",
+          "advice",
+          "applied"
+        ]
+      },
+      {
         "description": "An informational or warning message, not part of the model-visible transcript.",
         "type": "object",
         "properties": {
@@ -608,6 +641,47 @@
           "error",
           "fatal"
         ]
+      },
+      {
+        "description": "A follow-up for a background task was delivered or relayed (T34.4,\nSM§1); same fields as `Submission::TaskMessage`. Renders as one\ntranscript line labelled like a relayed approval (T34.7); ACP gives\nit its own arm instead of falling into `Ok(_) => {}` (T34.8).",
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "The task the message is addressed to.",
+            "$ref": "#/$defs/TaskId"
+          },
+          "from": {
+            "description": "Who it is from; `None` for the parent/user, `Some` for a sibling.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TaskId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hop": {
+            "description": "How many relays this message has been through (SM§5's loop guard).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "text": {
+            "description": "The message text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "task_message"
+          }
+        },
+        "required": [
+          "type",
+          "task",
+          "hop",
+          "text"
+        ]
       }
     ],
     "$defs": {
@@ -670,14 +744,24 @@
             "const": "shell"
           },
           {
+            "description": "A custom subagent definition (`.cox/agents`/`.claude/agents`,\nT34.1): its own `tier`/`model` decides the tier, not this job.",
+            "type": "string",
+            "const": "agent"
+          },
+          {
             "description": "A hook-driven LLM call.",
             "type": "string",
             "const": "hook"
+          },
+          {
+            "description": "A plugin's own `cox_model_call` (PL§7d, T33.15): the router runs it\nat or below the plugin's granted tier, never `think`, and the\nledger row's job tag is `plugin:<id>`. No `[jobs]` entry names it —\nits tier comes from the call itself, already grant-clamped.",
+            "type": "string",
+            "pattern": "^plugin:.+$"
           }
         ]
       },
       "Tier": {
-        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.\n\nOrdered cheapest first (declaration order), the one tier ordering every\n\"never up\" rule compares with: a plugin's model-call grant clamp\n(PL§7d) and the `route` decision point (PL§4, T33.20).",
         "oneOf": [
           {
             "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
@@ -906,6 +990,17 @@
           "subject": {
             "description": "What permission rules match on: the confined path, command line, URL, or MCP name.",
             "type": "string"
+          },
+          "segments": {
+            "description": "The simple commands a shell `subject` splits into (T36.1). `None`\nmeans the subject is one unit, as for every tool that is not a shell.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Segments"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -944,6 +1039,26 @@
             "type": "string",
             "const": "destructive"
           }
+        ]
+      },
+      "Segments": {
+        "description": "A compound command line as the permission engine judges it (T36.1): a\ndeny or ask rule matching any command denies or asks, an allow rule or a\nsession grant must cover every command. Plain strings, so the engine\nstays pure and the shell tool owns the parser.",
+        "type": "object",
+        "properties": {
+          "commands": {
+            "description": "Every simple command in source order, including those nested in a\nsubshell, a substitution or a loop body.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "opaque": {
+            "description": "The split cannot vouch for the whole line — a substitution, `eval`,\n`sh -c`, a variable assignment, an output redirect to a path, or a\nparse error — so no prefix rule or grant may allow it; deny and ask\nrules still match `commands`.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "commands"
         ]
       },
       "ToolResult": {
@@ -1420,6 +1535,159 @@
         "type": "string",
         "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
       },
+      "DecidePoint": {
+        "description": "A decision point (PL§4 \"Decision points\").",
+        "oneOf": [
+          {
+            "description": "Tier for a user turn; only down.",
+            "type": "string",
+            "const": "route"
+          },
+          {
+            "description": "Severity of a tool call; only up.",
+            "type": "string",
+            "const": "risk"
+          },
+          {
+            "description": "A caution note on the approval modal; never \"looks safe\".",
+            "type": "string",
+            "const": "approve_hint"
+          },
+          {
+            "description": "Compact now; only earlier.",
+            "type": "string",
+            "const": "compact"
+          },
+          {
+            "description": "Reorder or filter candidates; never add.",
+            "type": "string",
+            "const": "rank"
+          },
+          {
+            "description": "Salience of a memory item.",
+            "type": "string",
+            "const": "salience"
+          }
+        ]
+      },
+      "Advice": {
+        "description": "`cox_decide` output. The core applies the point's monotone rule and\nuses its local default when confidence is below `min_confidence`.",
+        "type": "object",
+        "properties": {
+          "answer": {
+            "description": "The answer.",
+            "$ref": "#/$defs/Answer"
+          },
+          "confidence": {
+            "description": "In `[0, 1]`; absent when the model gives none (a yes/no, J11).",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "note": {
+            "description": "A caution note, for `approve_hint`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
+      "Answer": {
+        "description": "The three question kinds a decision model answers.",
+        "oneOf": [
+          {
+            "description": "Indices into `Question.options`, best first.",
+            "type": "object",
+            "properties": {
+              "order": {
+                "description": "The ranking.",
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "choice"
+              }
+            },
+            "required": [
+              "kind",
+              "order"
+            ]
+          },
+          {
+            "description": "A score on the point's scale.",
+            "type": "object",
+            "properties": {
+              "value": {
+                "description": "The score.",
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "const": "score"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ]
+          },
+          {
+            "description": "A yes/no probability.",
+            "type": "object",
+            "properties": {
+              "p_yes": {
+                "description": "P(yes) in `[0, 1]`.",
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "const": "noul"
+              }
+            },
+            "required": [
+              "kind",
+              "p_yes"
+            ]
+          },
+          {
+            "description": "One score per item of a batched question (`salience`, T33.21.1):\n`Question` has no `items` field yet (that is T33.40.1's batched-ABI\ncard), so the items travel in `Question.state[\"items\"]` and the\nanswer carries one value per item, aligned by index.",
+            "type": "object",
+            "properties": {
+              "values": {
+                "description": "One score per item, same length and order as the items sent.",
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "scores"
+              }
+            },
+            "required": [
+              "kind",
+              "values"
+            ]
+          }
+        ]
+      },
       "StopReason": {
         "description": "Why a provider call or a turn stopped.\n\nReused for both `ProviderEvent::Stop` (one provider call) and\n`Event::TurnDone` (the whole turn); a provider only ever emits\n`EndTurn`/`Refusal`/`Error`, the others are added by `cox-core` once it\nhas aggregated multiple calls in a turn.",
         "oneOf": [
@@ -1665,6 +1933,47 @@
               "type",
               "id",
               "error"
+            ]
+          },
+          {
+            "description": "A subagent action was refused by a named guard — T34.2's\nconcurrency cap or T34.6's message-flood cap — shaped like\n`ToolError::Denied` so `Relay::send_message` can hand the same text\nback to whoever called it.",
+            "type": "object",
+            "properties": {
+              "why": {
+                "description": "Human-readable reason.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "denied"
+              }
+            },
+            "required": [
+              "type",
+              "why"
+            ]
+          },
+          {
+            "description": "An external agent process (EA§5, e.g. a plugin-driven CLI like\nCursor's) reported its own run as failed. Distinct from `Provider`\n(A58): the external agent stands in for a whole child session, not\ncox's own model call, so its failure must never be classified or\nretried as one — `cox-provider-http::retry::retryable` only ever\ntakes a `ProviderError`, which this variant never becomes.",
+            "type": "object",
+            "properties": {
+              "agent": {
+                "description": "The external agent's name (its plugin/preset id).",
+                "type": "string"
+              },
+              "message": {
+                "description": "The agent's own error text, already sanitized by the caller.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "external_agent"
+              }
+            },
+            "required": [
+              "type",
+              "agent",
+              "message"
             ]
           }
         ]
@@ -2138,6 +2447,19 @@
             "required": [
               "type"
             ]
+          },
+          {
+            "description": "A plugin kv write went over quota (PL§3: 64 KiB per value, 1 MiB per\nplugin across all its keys).",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "quota_exceeded"
+              }
+            },
+            "required": [
+              "type"
+            ]
           }
         ]
       }
@@ -2443,6 +2765,47 @@
         "required": [
           "type"
         ]
+      },
+      {
+        "description": "A follow-up for a background task, addressed by `TaskId` (T34.4,\nSM§1). Only ever submitted to the **parent** session: `from: None`\nis the parent/user, `Some(id)` a sibling relayed through the parent\n(SM§3). `hop` is set only by the parent and never trusted from a\ntool call (SM§5); T34.5 gives it a router, T34.6 the tool that\nproduces it.",
+        "type": "object",
+        "properties": {
+          "task": {
+            "description": "The task the message is addressed to.",
+            "$ref": "#/$defs/TaskId"
+          },
+          "from": {
+            "description": "Who it is from; `None` for the parent/user, `Some` for a sibling.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TaskId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hop": {
+            "description": "How many relays this message has been through (SM§5's loop guard).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "text": {
+            "description": "The message text.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "task_message"
+          }
+        },
+        "required": [
+          "type",
+          "task",
+          "hop",
+          "text"
+        ]
       }
     ],
     "$defs": {
@@ -2541,7 +2904,7 @@
         ]
       },
       "Tier": {
-        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.",
+        "description": "A routing tier (plan.md §1.4/D5): a job maps to a tier, a tier maps to a model.\n\nOrdered cheapest first (declaration order), the one tier ordering every\n\"never up\" rule compares with: a plugin's model-call grant clamp\n(PL§7d) and the `route` decision point (PL§4, T33.20).",
         "oneOf": [
           {
             "description": "Haiku-class or local; mechanical work, never chosen for the main coding turn.",
@@ -2565,12 +2928,17 @@
         "type": "string"
       },
       "Effort": {
-        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < High < Xhigh` so the router can clamp a tier's effort to\nthe greatest level a model supports (`docs/design/providers.md`).",
+        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < Medium < High < Xhigh` so the router can clamp a tier's\neffort to the greatest level a model supports (`docs/design/providers.md`).\nThe four levels are models.dev's own, so a catalog row maps without loss\n(T30.26).",
         "oneOf": [
           {
             "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
             "type": "string",
             "const": "low"
+          },
+          {
+            "description": "Between `Low` and `High`: models.dev's and the wires' `medium`.",
+            "type": "string",
+            "const": "medium"
           },
           {
             "description": "Default for `code`/`think` tiers.",
@@ -2700,6 +3068,11 @@
             ]
           }
         ]
+      },
+      "TaskId": {
+        "description": "TaskId: a 26-character Crockford-base32 ULID.",
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
       }
     }
   }

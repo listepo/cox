@@ -1,0 +1,117 @@
+# T34.9 e2e scenario: PINGA and PINGB ping-pong `send_message` through the
+# parent. Each relay adds one hop (`subagent::relay`'s
+# `child_hop(from) + 1`); `MAX_HOPS` is 4, so the chain runs hop 1 (PINGA
+# ping1 -> PINGB), hop 2 (PINGB pong1 -> PINGA), hop 3 (PINGA ping2 ->
+# PINGB), hop 4 (PINGB pong2 -> PINGA), then PINGA's third ping is hop 5
+# and the parent drops it with a warning notice instead of delivering it
+# — PINGB never sees it and the run ends there. `when_contains` (T34.9)
+# pins every turn to the child whose own task text carries its marker,
+# since one `Scripted` instance is shared by the parent and both children
+# and would otherwise race for "the next" unmarked turn.
+#
+# Dispatch order matters here, not just marker order: PINGB is spawned
+# first so its registry name (`talker-1`) is registered
+# (`AgentTool::call`'s `name_task`, before it ever spawns the background
+# task) before PINGA's background task can possibly run and address it —
+# a background task starts racing the instant its own dispatch call
+# returns, and a scripted provider answers near-instantly, so PINGA
+# spawned first would sometimes try to ping a `talker-2` that does not
+# exist in the registry yet. PINGA is therefore spawned *second* and
+# addresses PINGB by its actual name, `talker-1`; PINGB's own replies
+# address PINGA by its actual name, `talker-2`.
+#
+# A's own tool call always succeeds locally regardless of what the parent
+# does with it later (`relay`'s hop check runs on the parent's side, after
+# the child's `send_message` call already returned), so PINGA needs six
+# turns (three ping/close pairs) even though its third ping is dropped.
+# PINGB reacts only to a ping it actually receives (hop 1 and hop 3, the
+# ones under the cap): an opening turn before anything has arrived, then
+# a pong/close pair for each of the two pings it gets — five turns, one
+# fewer pair than PINGA because the third ping never reaches it.
+#
+# The marker sits on a *second* line of `task`, never the first: a
+# finished child's own answer is folded into the *parent's* own history
+# too, as `publish_task_result`'s pointer line, built from `spec.label`
+# which is `{preset}: {first_line(task)}` — a marker on the first line
+# would leak into the parent's own request transcript the moment that
+# child's task first completes (even just one ping/close pair in, and
+# PINGB's very first "ready" close ends its whole run since nothing has
+# arrived for it yet), and the parent's next request would then wrongly
+# match a turn still meant for that child.
+#
+# `cox run -p` used to exit the instant the parent's own top-level turn
+# ended, abandoning a still-running background chain (`main`'s
+# `std::process::exit` skips `Runtime::drop`'s usual wait for spawned
+# tasks) — fixed at the root instead of papered over here: `Session::
+# wait_idle` (`crates/cox-core/src/tasks.rs`) awaits the parent's own
+# task registry emptying out, and `crates/cox/src/run.rs`'s headless
+# `drive` loop calls it once the top-level turn's own terminal event has
+# been seen, before it lets the process exit. No sleep needed in this
+# scenario, however many hops the two children still have left to run.
+
+[[turn]]
+tool_calls = [
+    { name = "agent", input = { task = "wait for a ping and reply, then keep the exchange going until told to stop\nPINGB", preset = "talker", background = true } },
+]
+
+[[turn]]
+tool_calls = [
+    { name = "agent", input = { task = "send talker-1 a ping, then wait for a reply and keep the exchange going until told to stop\nPINGA", preset = "talker", background = true } },
+]
+
+[[turn]]
+text = "done"
+
+[[turn]]
+when_contains = "PINGA"
+tool_calls = [
+    { name = "send_message", input = { to = "talker-1", text = "ping1" } },
+]
+
+[[turn]]
+when_contains = "PINGA"
+text = "ping1 sent"
+
+[[turn]]
+when_contains = "PINGA"
+tool_calls = [
+    { name = "send_message", input = { to = "talker-1", text = "ping2" } },
+]
+
+[[turn]]
+when_contains = "PINGA"
+text = "ping2 sent"
+
+[[turn]]
+when_contains = "PINGA"
+tool_calls = [
+    { name = "send_message", input = { to = "talker-1", text = "ping3" } },
+]
+
+[[turn]]
+when_contains = "PINGA"
+text = "ping3 sent"
+
+[[turn]]
+when_contains = "PINGB"
+text = "ready"
+
+[[turn]]
+when_contains = "PINGB"
+tool_calls = [
+    { name = "send_message", input = { to = "talker-2", text = "pong1" } },
+]
+
+[[turn]]
+when_contains = "PINGB"
+text = "pong1 sent"
+
+[[turn]]
+when_contains = "PINGB"
+tool_calls = [
+    { name = "send_message", input = { to = "talker-2", text = "pong2" } },
+]
+
+[[turn]]
+when_contains = "PINGB"
+text = "pong2 sent"

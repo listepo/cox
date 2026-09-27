@@ -1,0 +1,8 @@
+# T36.1: a `git` command with a second command chained after it, so a
+# `Bash(git:*)` allow rule alone must not let `touch` run.
+[[turn]]
+text = "checking"
+tool_calls = [{ name = "bash", input = { command = "git --version; touch chained" } }]
+
+[[turn]]
+text = "done"

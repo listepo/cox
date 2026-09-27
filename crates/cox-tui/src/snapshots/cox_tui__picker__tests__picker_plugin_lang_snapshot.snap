@@ -1,0 +1,7 @@
+---
+source: crates/cox-tui/src/picker.rs
+expression: "crate::view::buffer_to_string(&buf)"
+---
+ lang:
+ ▸ rust
+   dart

@@ -24,7 +24,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ),
     (
         "effort",
-        "/effort [low|high|xhigh]",
+        "/effort [low|medium|high|xhigh]",
         "effort for the rest of the session; bare restores the tier default",
     ),
     ("compact", "/compact [focus]", "compact the context now"),
@@ -68,6 +68,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("skills", "/skills", "list skills"),
     ("hooks", "/hooks", "list hooks"),
     ("mcp", "/mcp", "MCP servers and their tools"),
+    (
+        "plugin",
+        "/plugin <new|update|remove|list|reload> ...",
+        "manage plugins (PL§13)",
+    ),
     ("doctor", "/doctor", "check the install"),
     ("clear", "/clear", "new session, same directory"),
     (
@@ -144,6 +149,9 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Ctrl+O", "transcript", Context::Idle),
     ("Ctrl+E", "expand", Context::Idle),
     ("Ctrl+G", "diff", Context::Idle),
+    // T33.25, PL§8: a plugin's `commands`/`keys` reach `state.commands`
+    // and `Keymap::declare_plugin_keys` only after this fires once.
+    ("Ctrl+K", "plugin.leader", Context::Idle),
     ("Ctrl+C", "quit", Context::Idle),
     ("Ctrl+D", "quit", Context::Idle),
     // T23.4: plain letters, so only an empty composer claims them (same
@@ -224,6 +232,54 @@ pub enum Action {
         cmd: String,
         share: bool,
     },
+    /// `/<id>:<name>` (T33.25, PL§8): a plugin command, matched in
+    /// `state.rs`'s `plugin_command` rather than here — its table is
+    /// `State.commands`, filled at runtime, not the static `COMMANDS`.
+    PluginCommand {
+        plugin: String,
+        name: String,
+        args: String,
+    },
+    /// `/plugin new <name> [--lang <lang>] [--with <cap,...>]` (T33.30,
+    /// PL§13): `lang` is `None` when `--lang` was not given, so `state.rs`
+    /// opens `Modal::Picker(Kind::PluginLang)` instead of guessing one.
+    /// `with` is `--with`'s comma list, forwarded raw — `crates/cox` is the
+    /// one place that maps both the language and each capability name back
+    /// to `plugin_new::Lang`/`Capability`, the same pair `cox plugin new`
+    /// uses, so there is only one implementation of that mapping.
+    PluginNew {
+        name: String,
+        lang: Option<String>,
+        with: Vec<String>,
+    },
+    /// `/plugin list [--json]` (T33.33): `crates/cox` calls the same
+    /// `plugin_cmd::list` `cox plugin list` does, and the answer comes back
+    /// as one `Msg::PluginMgmt` notice.
+    PluginList {
+        json: bool,
+    },
+    /// `/plugin update [<id>...] [--all] [--check] [--rollback]` (T33.33,
+    /// PL§1b): mirrors `cox plugin update`'s flags, minus `--yes` — the TUI
+    /// always runs pre-approved, since raw mode has no stdin to prompt a
+    /// widened capability list on the way the CLI's `confirm` does.
+    PluginUpdate {
+        ids: Vec<String>,
+        all: bool,
+        check: bool,
+        rollback: bool,
+    },
+    /// `/plugin remove <id> [--keep-data]` (T33.33, PL§1c): `state.rs` opens
+    /// `Modal::PluginRemove` instead of running it directly — remove is the
+    /// one irreversible plugin action, so it always confirms first.
+    PluginRemove {
+        id: String,
+        keep_data: bool,
+    },
+    /// `/plugin reload` (T33.33): means `/clear` — the plugin host only
+    /// reloads a manifest at session open, so restarting the cache prefix
+    /// is the only way to pick one up. `state.rs` adds the notice
+    /// explaining why on top of the same `Cmd::Clear` `/clear` returns.
+    PluginReload,
 }
 
 /// `None` when `line` is neither a slash command nor a `!` shell line;
@@ -273,7 +329,9 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
                 Some(effort) => Action::Submit(Submission::SetEffort {
                     effort: Some(effort),
                 }),
-                None => Action::Notice(format!("unknown effort `{level}`; low, high or xhigh")),
+                None => Action::Notice(format!(
+                    "unknown effort `{level}`; low, medium, high or xhigh"
+                )),
             },
         },
         "compact" => Action::Submit(Submission::Compact { focus: joined() }),
@@ -312,6 +370,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
             None => Action::Notice("/handoff needs an objective".into()),
         },
         "vim" => Action::Vim,
+        "plugin" => plugin_action(&args),
         "theme" => Action::Theme(joined()),
         "help" => Action::Help,
         "quit" => Action::Quit,
@@ -363,6 +422,109 @@ fn loop_start(args: &[String]) -> Option<Action> {
         prompt: words.join(" "),
         budget_usd,
     })
+}
+
+/// `/plugin <action> ...` (T33.30 adds `new`; T33.33 adds
+/// `update`/`remove`/`list`/`reload`).
+fn plugin_action(args: &[String]) -> Action {
+    match args.first().map(String::as_str) {
+        Some("new") => plugin_new_action(&args[1..]),
+        Some("update") => plugin_update_action(&args[1..]),
+        Some("remove") => plugin_remove_action(&args[1..]),
+        Some("list") => plugin_list_action(&args[1..]),
+        Some("reload") => Action::PluginReload,
+        _ => Action::Notice(PLUGIN_USAGE.into()),
+    }
+}
+
+const PLUGIN_USAGE: &str = "/plugin <new|update|remove|list|reload> ...";
+const PLUGIN_NEW_USAGE: &str = "/plugin new <name> [--lang <lang>] [--with <cap,...>]";
+const PLUGIN_UPDATE_USAGE: &str = "/plugin update [<id>...] [--all] [--check] [--rollback]";
+const PLUGIN_REMOVE_USAGE: &str = "/plugin remove <id> [--keep-data]";
+
+/// `/plugin new <name> [--lang <lang>] [--with <cap[,cap...]>]` (T33.30,
+/// PL§13): `args` is everything after `new`. An unknown flag is ignored
+/// rather than rejected — `crates/cox`'s `plugin_new::scaffold` is the one
+/// place that validates the name, the language and each capability, and
+/// reports what it refused as a notice.
+fn plugin_new_action(args: &[String]) -> Action {
+    let Some(name) = args.first() else {
+        return Action::Notice(PLUGIN_NEW_USAGE.into());
+    };
+    let mut lang = None;
+    let mut with = Vec::new();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--lang" => {
+                lang = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--with" => {
+                with = args
+                    .get(i + 1)
+                    .map(|s| s.split(',').map(str::to_string).collect())
+                    .unwrap_or_default();
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+    Action::PluginNew {
+        name: name.clone(),
+        lang,
+        with,
+    }
+}
+
+/// `/plugin update [<id>...] [--all] [--check] [--rollback]` (T33.33,
+/// PL§1b): needs either at least one id or `--all`, the same
+/// `required_unless_present`/`conflicts_with` shape `cox plugin update`'s
+/// clap grammar enforces (`crates/cox/src/cli.rs`); a call with neither, or
+/// with both, is a usage notice.
+fn plugin_update_action(args: &[String]) -> Action {
+    let mut ids = Vec::new();
+    let mut all = false;
+    let mut check = false;
+    let mut rollback = false;
+    for arg in args {
+        match arg.as_str() {
+            "--all" => all = true,
+            "--check" => check = true,
+            "--rollback" => rollback = true,
+            id => ids.push(id.to_string()),
+        }
+    }
+    if all == ids.is_empty() {
+        Action::PluginUpdate {
+            ids,
+            all,
+            check,
+            rollback,
+        }
+    } else {
+        Action::Notice(PLUGIN_UPDATE_USAGE.into())
+    }
+}
+
+/// `/plugin remove <id> [--keep-data]` (T33.33, PL§1c): no `--yes` here —
+/// `Modal::PluginRemove` is the one confirmation, always asked.
+fn plugin_remove_action(args: &[String]) -> Action {
+    let Some(id) = args.first() else {
+        return Action::Notice(PLUGIN_REMOVE_USAGE.into());
+    };
+    let keep_data = args.iter().any(|a| a == "--keep-data");
+    Action::PluginRemove {
+        id: id.clone(),
+        keep_data,
+    }
+}
+
+/// `/plugin list [--json]`.
+fn plugin_list_action(args: &[String]) -> Action {
+    Action::PluginList {
+        json: args.iter().any(|a| a == "--json"),
+    }
 }
 
 /// `<n>s` / `<n>m` / `<n>h`, or a bare `<n>` as seconds; `0` is rejected so
@@ -497,6 +659,110 @@ mod tests {
         assert_eq!(p("/loop stop"), Some(Action::LoopStop));
         assert!(matches!(p("/loop 5m"), Some(Action::Notice(_))));
         assert!(matches!(p("/loop soon go"), Some(Action::Notice(_))));
+    }
+
+    /// T33.30: `/plugin new` takes a required name and an optional
+    /// `--lang`/`--with`, in either order after the name; a bare `/plugin`
+    /// or `/plugin new` with no name is a usage notice, not a panic.
+    #[test]
+    fn plugin_new_parses_name_lang_and_with() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(
+            p("/plugin new demo"),
+            Some(Action::PluginNew {
+                name: "demo".into(),
+                lang: None,
+                with: Vec::new(),
+            })
+        );
+        assert_eq!(
+            p("/plugin new demo --lang rust --with status,hook"),
+            Some(Action::PluginNew {
+                name: "demo".into(),
+                lang: Some("rust".into()),
+                with: vec!["status".into(), "hook".into()],
+            })
+        );
+        assert!(matches!(p("/plugin new"), Some(Action::Notice(_))));
+        assert!(matches!(p("/plugin"), Some(Action::Notice(_))));
+    }
+
+    /// T33.33: `/plugin update` needs an id or `--all`, not both; `--check`
+    /// and `--rollback` are independent flags, same as `cox plugin update`.
+    #[test]
+    fn plugin_update_parses_ids_all_check_and_rollback() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(
+            p("/plugin update git-glance"),
+            Some(Action::PluginUpdate {
+                ids: vec!["git-glance".into()],
+                all: false,
+                check: false,
+                rollback: false,
+            })
+        );
+        assert_eq!(
+            p("/plugin update --all --check"),
+            Some(Action::PluginUpdate {
+                ids: Vec::new(),
+                all: true,
+                check: true,
+                rollback: false,
+            })
+        );
+        assert_eq!(
+            p("/plugin update git-glance --rollback"),
+            Some(Action::PluginUpdate {
+                ids: vec!["git-glance".into()],
+                all: false,
+                check: false,
+                rollback: true,
+            })
+        );
+        assert!(
+            matches!(p("/plugin update"), Some(Action::Notice(_))),
+            "neither an id nor --all is a usage notice"
+        );
+        assert!(
+            matches!(
+                p("/plugin update git-glance --all"),
+                Some(Action::Notice(_))
+            ),
+            "an id together with --all is a usage notice"
+        );
+    }
+
+    /// T33.33: `/plugin remove` needs an id; `--keep-data` is optional.
+    #[test]
+    fn plugin_remove_parses_id_and_keep_data() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(
+            p("/plugin remove git-glance"),
+            Some(Action::PluginRemove {
+                id: "git-glance".into(),
+                keep_data: false,
+            })
+        );
+        assert_eq!(
+            p("/plugin remove git-glance --keep-data"),
+            Some(Action::PluginRemove {
+                id: "git-glance".into(),
+                keep_data: true,
+            })
+        );
+        assert!(matches!(p("/plugin remove"), Some(Action::Notice(_))));
+    }
+
+    /// T33.33: `/plugin list [--json]`; `/plugin reload` takes no arguments.
+    #[test]
+    fn plugin_list_and_reload_parse() {
+        let p = |line| parse(line, Tier::Code);
+        assert_eq!(p("/plugin list"), Some(Action::PluginList { json: false }));
+        assert_eq!(
+            p("/plugin list --json"),
+            Some(Action::PluginList { json: true })
+        );
+        assert_eq!(p("/plugin reload"), Some(Action::PluginReload));
     }
 
     /// T25.7: `/autocompact` names the project config layer, the same data

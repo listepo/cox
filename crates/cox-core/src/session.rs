@@ -3,19 +3,21 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
+use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Archive, ArchivePut, Checkpointer, Hook, Provider, Store, Tool, Worktrees,
+    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store,
+    Tool, Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
     ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument as _;
 
@@ -84,8 +86,17 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
+    /// The tier `route` advice moved the running user turn to (T33.20);
+    /// `None` outside a turn and whenever the static pick stands.
+    pub(crate) routed: Option<Tier>,
     /// Running background tasks: label, tier and kind by id (T9.2, T27.1).
     pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
+    /// Subagents a follow-up can reach, running or finished (T34.5, SM§2).
+    pub(crate) children: HashMap<TaskId, crate::tasks::Child>,
+    /// Received-message counter per task (T34.6, SM§5):
+    /// `MAX_MESSAGES_PER_TASK` denies the 17th delivery instead of letting
+    /// a flood spin the addressee.
+    pub(crate) message_counts: HashMap<TaskId, u32>,
     /// Running calls `Submission::Background` may detach (T27.1).
     pub(crate) detach: HashMap<CallId, CancellationToken>,
     /// Facts `extract_memory` saved, awaiting surface drain (T10.2).
@@ -124,6 +135,14 @@ pub struct Session {
     pub(crate) job: Job,
     /// The tier every provider call in this session is routed to.
     pub(crate) tier: Tier,
+    /// The subagent name this session runs as (`explore-2`, T27.2), set by
+    /// `spawn_child`; `None` for the session the user is talking to. Read
+    /// by `turn::run_one` to label every `ToolCx` this session hands to a
+    /// tool call (T34.3), the same way `relay_approval` labels a relayed
+    /// approval.
+    pub(crate) agent: Option<String>,
+    /// The dispatched preset/def name (`explore`), alongside `agent`.
+    pub(crate) preset: Option<String>,
     /// Root of every turn/provider/tool span emitted by this session.
     pub(crate) telemetry_span: tracing::Span,
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
@@ -139,8 +158,55 @@ pub struct Session {
     /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
     /// installed by the surface, shared with children. Absent in tests.
     worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
+    /// Custom subagent definitions the surface discovered on disk (T34.1:
+    /// `cox_ext::agents::discover`, which this crate never calls itself);
+    /// installed like `worktrees`, empty until then. Not copied to
+    /// children — only `new`/`resume` push the `agent` tool at all.
+    agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
+    /// The task id `send_message`'s `Relay` impl stamps a child's own
+    /// message with (T34.6, SM§4), set once by `subagent::spawn` right
+    /// after the child session exists; unset for the session the user is
+    /// talking to.
+    self_task: Arc<OnceLock<TaskId>>,
+    /// Granted `[[external_agents]]` drivers the surface built (T35.5,
+    /// EA§3), offered by the `agent` tool like `agent_defs`; not copied to
+    /// children, for the same reason.
+    external_agents: Arc<OnceLock<Vec<Arc<dyn ExternalAgent>>>>,
+    /// The plugin host's event rings (T33.10, PL§5), installed once by the
+    /// surface. Not copied to children: a child writes its own rollout, so
+    /// its sequence numbers would interleave with the parent's.
+    event_tap: Arc<OnceLock<Arc<dyn EventTap>>>,
+    /// Decision-point sources (T33.20, PL§4), installed once by the surface
+    /// like the hook. Not copied to children: `route` is a main-turn point.
+    advisors: Arc<OnceLock<Vec<Arc<dyn Advisor>>>>,
+    /// The driver this child's turns run on instead of the model, set once
+    /// by `subagent::spawn` for an external-agent preset; unset otherwise.
+    external: Arc<OnceLock<Arc<dyn ExternalAgent>>>,
+    /// Exact registry name (`explore-2`) → task id (T34.6, SM§4), one map
+    /// per subagent tree: the parent owns it, `spawn_child` hands every
+    /// child the same `Arc` (T34.9) so a child's own `Relay::send_message`
+    /// resolves a sibling's name itself instead of only "parent" or a
+    /// literal `TaskId` it has no way to learn in a scripted scenario. A
+    /// child never writes it — only the parent's `name_task` does — but
+    /// nothing below the type system enforces that; see `resolve_name_or_id`.
+    pub(crate) task_names: Arc<Mutex<HashMap<String, TaskId>>>,
     /// The one "checkpoints off" warning per session has been emitted.
     pub(crate) checkpoint_warned: Arc<AtomicBool>,
+    /// Bumped by `complete_task` whenever `inner.tasks` empties out
+    /// (T34.9): `wait_idle` below awaits it instead of a caller-guessed
+    /// delay. Fresh per session — only a session built by `new`/`resume`
+    /// ever calls `register_task` on itself (a child never gets the
+    /// `agent` tool, so it never spawns a background task under its own
+    /// id), so a child's own unused copy is harmless.
+    pub(crate) tasks_idle: Arc<Notify>,
+    /// T34.2's `core.max_concurrent_subagents` cap: how many `agent` slots
+    /// this session has reserved right now. A plain atomic, not the
+    /// `inner.tasks` map: a burst of parallel `agent` calls (the core's own
+    /// `turn.rs` dispatches `Concurrency::Parallel` tools concurrently) must
+    /// check-and-reserve in one indivisible step, which an `await`-ing
+    /// `Mutex` round trip cannot give without a `Drop` guard that itself
+    /// needs to run async cleanup; a compare-exchange loop needs neither.
+    pub(crate) agent_slots: Arc<AtomicU32>,
     tx: mpsc::Sender<Event>,
     rx: Arc<StdMutex<Option<mpsc::Receiver<Event>>>>,
     pub(crate) inner: Arc<Mutex<Inner>>,
@@ -159,6 +225,30 @@ impl Session {
         archive: Arc<dyn Archive>,
         cwd: PathBuf,
     ) -> Result<Self, CoreError> {
+        Self::new_with_id(
+            SessionId::new(),
+            config,
+            provider,
+            tools,
+            store,
+            archive,
+            cwd,
+        )
+    }
+
+    /// [`Session::new`] under an id the caller picked: a surface whose
+    /// tools come from something that must see the id first (a plugin's
+    /// `cox_init`, T33.12) chooses it before the session exists, so the
+    /// tool list is complete at construction and the prefix never changes.
+    pub fn new_with_id(
+        id: SessionId,
+        config: cox_protocol::Config,
+        provider: Arc<dyn Provider>,
+        tools: Vec<Arc<dyn Tool>>,
+        store: Arc<dyn Store>,
+        archive: Arc<dyn Archive>,
+        cwd: PathBuf,
+    ) -> Result<Self, CoreError> {
         let mut session = Self::build(
             config,
             provider,
@@ -167,9 +257,12 @@ impl Session {
             archive,
             cwd,
             None,
+            id,
             None,
             Job::Main,
             Tier::Code,
+            None,
+            None,
         )?;
         let parent = session.clone();
         session
@@ -200,9 +293,12 @@ impl Session {
             archive,
             cwd,
             Some((id, history)),
+            id,
             None,
             Job::Main,
             Tier::Code,
+            None,
+            None,
         )?;
         let parent = session.clone();
         session
@@ -214,6 +310,13 @@ impl Session {
     /// A child session sharing this one's provider, store and archive
     /// (plan.md T3.9): its own rollout and budget, `parent_id` set. `cwd`
     /// is the parent's unless the child runs in a worktree (T27.3).
+    /// `resume` restores a finished child (T34.5, SM§2) with the same
+    /// job, tier and parent — the child-side twin of [`Session::resume`],
+    /// which stays top-level only. `agent` and `preset` (T34.3) are the
+    /// same `name`/preset name `relay_approval` already labels a relayed
+    /// approval with, so every `ToolCx` this child hands its tools
+    /// (`ask_user` included) carries the same label.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn spawn_child(
         &self,
         config: cox_protocol::Config,
@@ -221,6 +324,9 @@ impl Session {
         job: Job,
         tier: Tier,
         cwd: Option<PathBuf>,
+        resume: Option<(SessionId, History)>,
+        agent: String,
+        preset: String,
     ) -> Result<Self, CoreError> {
         let mut child = Self::build(
             config,
@@ -229,15 +335,21 @@ impl Session {
             self.store.clone(),
             self.archive.clone(),
             cwd.unwrap_or_else(|| self.cwd.clone()),
-            None,
+            resume,
+            SessionId::new(),
             Some(self.id),
             job,
             tier,
+            Some(agent),
+            Some(preset),
         )?;
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
         child.worktrees = self.worktrees.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
+        // T34.9: share this session's name→TaskId registry so the child can
+        // resolve a sibling by name itself (`resolve_name_or_id`).
+        child.task_names = self.task_names.clone();
         Ok(child)
     }
 
@@ -250,9 +362,13 @@ impl Session {
         archive: Arc<dyn Archive>,
         cwd: PathBuf,
         resume: Option<(SessionId, History)>,
+        // The id of a session that is not resumed.
+        fresh: SessionId,
         parent_id: Option<SessionId>,
         job: Job,
         tier: Tier,
+        agent: Option<String>,
+        preset: Option<String>,
     ) -> Result<Self, CoreError> {
         let is_resume = resume.is_some();
         // Subagents announce themselves with `SubagentStart`, not `SessionStart`.
@@ -281,7 +397,7 @@ impl Session {
                     )
                 }
                 None => (
-                    SessionId::new(),
+                    fresh,
                     Vec::new(),
                     config.permissions.mode,
                     Vec::new(),
@@ -319,13 +435,24 @@ impl Session {
             cwd: cwd.clone(),
             job,
             tier,
+            agent,
+            preset,
             telemetry_span,
             cancel: Arc::new(StdMutex::new(CancellationToken::new())),
             hook: Arc::new(OnceLock::new()),
             checkpointer: Arc::new(OnceLock::new()),
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
+            agent_defs: Arc::new(OnceLock::new()),
+            self_task: Arc::new(OnceLock::new()),
+            external_agents: Arc::new(OnceLock::new()),
+            event_tap: Arc::new(OnceLock::new()),
+            advisors: Arc::new(OnceLock::new()),
+            external: Arc::new(OnceLock::new()),
+            task_names: Arc::new(Mutex::new(HashMap::new())),
             checkpoint_warned: Arc::new(AtomicBool::new(false)),
+            tasks_idle: Arc::new(Notify::new()),
+            agent_slots: Arc::new(AtomicU32::new(0)),
             tx,
             rx: Arc::new(StdMutex::new(Some(rx))),
             inner: Arc::new(Mutex::new(Inner {
@@ -347,7 +474,10 @@ impl Session {
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
+                routed: None,
                 tasks: HashMap::new(),
+                children: HashMap::new(),
+                message_counts: HashMap::new(),
                 detach: HashMap::new(),
                 extracted: Vec::new(),
                 last_context_tokens: 0,
@@ -412,6 +542,14 @@ impl Session {
         self.inner.lock().await.history.clone()
     }
 
+    /// Emits a `Notice` found outside the loop before the first turn — a
+    /// surface's session-start check (T30.16: an LM Studio model not
+    /// trained for tool use). Goes through `emit`, so it is recorded in the
+    /// rollout like every other notice.
+    pub async fn notice(&self, level: Level, text: String) -> Result<(), CoreError> {
+        self.emit(Event::Notice { level, text }).await
+    }
+
     pub(crate) fn clone_handle(&self) -> Self {
         self.clone()
     }
@@ -428,9 +566,11 @@ impl Session {
         // keeps the original (redacting model input is out of scope).
         let scrubbed = crate::redact::scrub_event(&ev);
         let redacted = scrubbed.as_ref() != &ev && matches!(&ev, Event::ToolCallDone { .. });
-        self.store
+        let seq = self
+            .store
             .rollout_append(&self.id, scrubbed.as_ref())
             .map_err(|error| CoreError::Store { error })?;
+        self.tap(seq, scrubbed.as_ref());
         let _ = self.tx.send(ev).await;
         // T28.4: a tool result the scrub changed raises the notice right
         // behind it — PostToolUse's per-call signal, emitted where the
@@ -441,9 +581,11 @@ impl Session {
                 text: "tool output contained a secret-shaped string; redacted in the rollout"
                     .into(),
             };
-            self.store
+            let seq = self
+                .store
                 .rollout_append(&self.id, &notice)
                 .map_err(|error| CoreError::Store { error })?;
+            self.tap(seq, &notice);
             let _ = self.tx.send(notice).await;
         }
         Ok(())
@@ -472,6 +614,17 @@ impl Session {
 
     pub(crate) fn hook(&self) -> Option<Arc<dyn Hook>> {
         self.hook.get().cloned()
+    }
+
+    /// Installs the decision-point sources (T33.20); a second call is
+    /// ignored, like `set_hook`.
+    pub fn set_advisors(&self, advisors: Vec<Arc<dyn Advisor>>) {
+        let _ = self.advisors.set(advisors);
+    }
+
+    /// The advisor `[plugins.decide]` names by plugin id, if it is live.
+    pub(crate) fn advisor(&self, id: &str) -> Option<Arc<dyn Advisor>> {
+        self.advisors.get()?.iter().find(|a| a.id() == id).cloned()
     }
 
     /// Installs the pre-image source for `/rewind` (T26.1); a second call
@@ -504,6 +657,61 @@ impl Session {
 
     pub(crate) fn worktrees(&self) -> Option<Arc<dyn Worktrees>> {
         self.worktrees.get().cloned()
+    }
+
+    /// Installs the custom subagent definitions the surface discovered
+    /// (T34.1); a second call is ignored like `set_worktrees`. Discovery
+    /// happens once at session build, so the `agent` tool's schema stays
+    /// byte-stable for the rest of the session (D6e).
+    pub fn set_agent_defs(&self, defs: Vec<AgentDef>) {
+        let _ = self.agent_defs.set(defs);
+    }
+
+    pub(crate) fn agent_defs(&self) -> &[AgentDef] {
+        self.agent_defs.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Installs the granted external-agent drivers (T35.5); the surface
+    /// leaves out an entry whose CLI or key is missing (EA§7). A second
+    /// call is ignored like `set_agent_defs`, keeping `agent`'s schema
+    /// byte-stable (D6e).
+    pub fn set_external_agents(&self, agents: Vec<Arc<dyn ExternalAgent>>) {
+        let _ = self.external_agents.set(agents);
+    }
+
+    pub(crate) fn external_agents(&self) -> &[Arc<dyn ExternalAgent>] {
+        self.external_agents.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Installs the plugin host's event tap (T33.10); a second call is
+    /// ignored like `set_external_agents`, so plugins see one ordered
+    /// stream for the whole session.
+    pub fn set_event_tap(&self, tap: Arc<dyn EventTap>) {
+        let _ = self.event_tap.set(tap);
+    }
+
+    /// Hands a recorded event to the tap, which queues it and returns
+    /// (PL§5 "never blocking").
+    fn tap(&self, seq: u64, ev: &Event) {
+        if let Some(tap) = self.event_tap.get() {
+            tap.offer(seq, ev);
+        }
+    }
+
+    /// `subagent::spawn` calls this once for an external-agent child.
+    pub(crate) fn set_external(&self, agent: Arc<dyn ExternalAgent>) {
+        let _ = self.external.set(agent);
+    }
+
+    /// `subagent::spawn` calls this once, right after the child exists
+    /// (T34.6, SM§4); a second call is ignored like `set_worktrees`.
+    pub(crate) fn set_self_task(&self, task: TaskId) {
+        let _ = self.self_task.set(task);
+    }
+
+    /// `Some` only for a subagent's own session.
+    pub(crate) fn self_task(&self) -> Option<TaskId> {
+        self.self_task.get().copied()
     }
 
     /// Feeds one submission into the state machine.
@@ -610,6 +818,15 @@ impl Session {
                 let _ = hooks::fire(self, HookEvent::SessionEnd, serde_json::json!({})).await;
                 Ok(())
             }
+            // T34.5: `hop` is the parent's own count (SM§5) — a surface's
+            // message starts at 0, a relayed sibling message arrives with
+            // the hop `subagent::relay` computed, never the child's.
+            Submission::TaskMessage {
+                task,
+                from,
+                hop,
+                text,
+            } => self.deliver(task, from, hop, text).await,
             _ => Ok(()),
         }
     }
@@ -634,11 +851,19 @@ impl Session {
         job: Job,
         confirm_think: bool,
     ) -> Result<Route, RouteError> {
-        let (overrides, tier) = {
+        let (mut overrides, routed) = {
             let inner = self.inner.lock().await;
-            (inner.overrides.clone(), self.tier)
+            (inner.overrides.clone(), inner.routed)
         };
-        Router::pick(&self.config, job, tier, &overrides, confirm_think)
+        // T33.20: inside a user turn, the tier `route` advice chose stands in
+        // for the static main tier on every call of that turn (it is never
+        // above it). `step` strips earlier turns' thinking from such a turn's
+        // own `Request` (T33.40.8); history is never rewritten and no
+        // `ModelSwitched` fires.
+        if matches!(job, Job::Main) && routed.is_some() {
+            overrides.main_tier = routed;
+        }
+        Router::pick(&self.config, job, self.tier, &overrides, confirm_think)
     }
 
     /// `/model <tier> [model]` (T9.1 step 3): main turns run on `tier` with
@@ -779,6 +1004,9 @@ impl Session {
             .run_turn_inner(turn, text, confirm_think)
             .instrument(span.clone())
             .await;
+        // T33.20: `route` advice holds for its own turn only, however the
+        // turn ended.
+        self.inner.lock().await.routed = None;
         if let Err(error) = &result {
             span.record("error.type", error.to_string());
             span.record("otel.status_code", "ERROR");
@@ -874,13 +1102,15 @@ impl Session {
                 return self.finish(turn, StopReason::Error).await;
             }
         };
+        let route = self.route_turn(route, &text, confirm_think).await?;
         // §1.10 trigger, applied at the next turn's start rather than after
         // `TurnDone` so nothing follows a turn's last event (§1.3 rule 7).
         let (last, max_context) = (
             self.inner.lock().await.last_context_tokens,
             self.provider.capabilities().max_context,
         );
-        if compact::needs_compaction(last, max_context, self.config.context.compact_at) {
+        let due = compact::needs_compaction(last, max_context, self.config.context.compact_at);
+        if self.compact_now(due, last, max_context).await? {
             self.compact(compact::Trigger::Auto, None).await?;
         }
         let seq = {
@@ -909,17 +1139,23 @@ impl Session {
         // like every index write.
         let _ = self.store.rollout_index(&self.id, seq, &text);
         crate::checkpoint::mark_turn(self, seq);
-        self.emit_turn_started(turn, seq, route.tier, route.model.clone())
-            .await?;
+        let external = self.external.get().cloned();
+        let model = external
+            .as_ref()
+            .map_or_else(|| route.model.clone(), |a| ModelId(a.name().to_string()));
+        self.emit_turn_started(turn, seq, route.tier, model).await?;
         self.emit(Event::ItemStarted {
             item: user_item,
             kind: ItemKind::UserMessage {
-                text,
+                text: text.clone(),
                 attachments: vec![],
             },
         })
         .await?;
         self.emit(Event::ItemDone { item: user_item }).await?;
+        if let Some(agent) = external {
+            return self.external_turn(agent, turn, route.tier, text).await;
+        }
 
         loop {
             match self.step(turn).await? {
@@ -927,6 +1163,92 @@ impl Session {
                 Step::Done => return Ok(()),
             }
         }
+    }
+
+    /// An external-agent child's turn (T35.5, EA§3): the driver stands where
+    /// the provider would and runs its own tools inside its own sandboxed
+    /// process, so its events are recorded as they come; each answer joins
+    /// history like a model's, so `run_task` distils it unchanged. Its
+    /// `TurnDone` is held back until the usage row (EA§6: `$0`, tokens
+    /// only if reported) is written, since nothing may follow `TurnDone`.
+    async fn external_turn(
+        &self,
+        agent: Arc<dyn ExternalAgent>,
+        turn: TurnId,
+        tier: Tier,
+        prompt: String,
+    ) -> Result<(), CoreError> {
+        let (tx, mut rx) = mpsc::channel(64);
+        let started = std::time::Instant::now();
+        let (driver, cancel) = (agent.clone(), self.cancel_token());
+        let run = tokio::spawn(async move { driver.turn(turn, prompt, tx, cancel).await });
+        let mut stop = None;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                Event::TurnDone { stop: s, .. } => stop = Some(s),
+                ev => {
+                    if let Event::ItemStarted {
+                        kind: ItemKind::AssistantMessage { text },
+                        ..
+                    } = &ev
+                    {
+                        self.inner.lock().await.history.push(Message {
+                            role: Role::Assistant,
+                            content: vec![Content::Text { text: text.clone() }],
+                        });
+                    }
+                    self.emit(ev).await?;
+                }
+            }
+        }
+        let reported = match run.await {
+            Ok(Ok(reported)) => reported,
+            Ok(Err(error)) => {
+                self.emit(Event::Error {
+                    error,
+                    fatal: false,
+                })
+                .await?;
+                stop = Some(StopReason::Error);
+                None
+            }
+            Err(_) => {
+                stop = Some(StopReason::Interrupted);
+                None
+            }
+        };
+        let mut usage = reported.unwrap_or(cox_protocol::types::Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            estimated: false,
+            cost_usd: 0.0,
+            latency_ms: 0,
+        });
+        // Billed on the user's own plan, never cox's ledger (EA§6).
+        usage.cost_usd = 0.0;
+        usage.latency_ms = started.elapsed().as_millis() as u64;
+        self.store
+            .usage_insert(&cox_protocol::UsageRow {
+                session_id: self.id,
+                // One call per turn: the driver runs its own loop inside.
+                turn: 1,
+                job: self.job.clone(),
+                tier,
+                provider: ProviderId::External,
+                model: ModelId(agent.name().to_string()),
+                effort: None,
+                usage,
+            })
+            .map_err(|error| CoreError::Store { error })?;
+        self.emit(Event::Usage { turn, usage }).await?;
+        let stop = stop.unwrap_or(if self.cancel_token().is_cancelled() {
+            StopReason::Interrupted
+        } else {
+            StopReason::EndTurn
+        });
+        self.finish(turn, stop).await
     }
 
     /// One provider call and its tool batch. The turn loop is just
@@ -937,7 +1259,7 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives, startup_context) = {
+        let (history, calls_so_far, discovered, marks, archives, startup_context, routed) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -946,6 +1268,7 @@ impl Session {
                 inner.turn_marks.iter().map(|m| m.start).collect::<Vec<_>>(),
                 inner.archives.clone(),
                 inner.startup_context.clone(),
+                inner.routed.is_some(),
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -986,6 +1309,12 @@ impl Session {
                 microcompact_after,
                 &archives,
             );
+            let req_messages = match marks.last() {
+                Some(start) if routed => {
+                    crate::context::strip_thinking_before(req_messages, *start)
+                }
+                _ => req_messages,
+            };
             let mut req = assemble_with(
                 &req_messages,
                 &self.config,
@@ -1222,7 +1551,7 @@ impl Session {
             .usage_insert(&cox_protocol::UsageRow {
                 session_id: self.id,
                 turn: calls_so_far + 1,
-                job: self.job,
+                job: self.job.clone(),
                 tier: route.tier,
                 provider: self.provider.id(),
                 model: route.model.clone(),
@@ -1319,7 +1648,7 @@ impl Session {
         self.emit(Event::TurnStarted {
             turn,
             seq,
-            job: self.job,
+            job: self.job.clone(),
             tier,
             model,
         })
@@ -1455,12 +1784,14 @@ fn provider_name(provider: ProviderId) -> &'static str {
         ProviderId::OpenAi => "openai",
         ProviderId::Local => "local",
         ProviderId::Jev => "typesafe",
+        ProviderId::External => "external",
     }
 }
 
 /// In-memory store for loop tests: no SQLite, same trait.
 pub struct MemoryStore {
-    events: StdMutex<Vec<Event>>,
+    /// Every session's rollout, tagged so a resumed child reads only its own.
+    events: StdMutex<Vec<(SessionId, Event)>>,
     usage: StdMutex<Vec<cox_protocol::UsageRow>>,
     archive: StdMutex<HashMap<cox_protocol::ArchiveId, Vec<u8>>>,
     /// `(project, name)` → `(path, body)` for `memory_*` (T10.1).
@@ -1508,17 +1839,21 @@ impl Store for MemoryStore {
     fn session_create(&self, _s: &cox_protocol::SessionRow) -> Result<(), StoreError> {
         Ok(())
     }
-    fn rollout_append(&self, _id: &SessionId, ev: &Event) -> Result<u64, StoreError> {
+    fn rollout_append(&self, id: &SessionId, ev: &Event) -> Result<u64, StoreError> {
         let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
-        events.push(ev.clone());
+        events.push((*id, ev.clone()));
         Ok(events.len() as u64)
     }
-    fn rollout_read(&self, _id: &SessionId) -> Result<Vec<Event>, StoreError> {
-        Ok(self
-            .events
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone())
+    /// One session's rollout; an id that never wrote reads the whole log,
+    /// which tests use to see every session at once.
+    fn rollout_read(&self, id: &SessionId) -> Result<Vec<Event>, StoreError> {
+        let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let any = events.iter().any(|(sid, _)| sid == id);
+        Ok(events
+            .iter()
+            .filter(|(sid, _)| !any || sid == id)
+            .map(|(_, ev)| ev.clone())
+            .collect())
     }
     fn usage_insert(&self, row: &cox_protocol::UsageRow) -> Result<(), StoreError> {
         self.usage

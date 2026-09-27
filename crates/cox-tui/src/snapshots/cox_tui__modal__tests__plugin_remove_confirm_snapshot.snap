@@ -1,0 +1,7 @@
+---
+source: crates/cox-tui/src/modal.rs
+expression: "render_remove(&RemoveConfirm { id: \"git-glance\".into(), keep_data: false, })"
+---
+ remove plugin git-glance?
+ its stored data is deleted too
+ [y]es  [n]o

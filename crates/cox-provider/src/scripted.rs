@@ -1,36 +1,16 @@
-//! The `Scripted` provider: serves a TOML scenario one entry per provider
-//! call, in order, verbatim, so the loop and every test run with no network
-//! and no key (D12).
-//!
-//! **Format.** A scenario is one TOML file with one `[[turn]]` table per
-//! provider call, in the order the test wants them:
-//!
-//! ```toml
-//! [[turn]]
-//! text = "I'll read that file."
-//! [[turn.tool_calls]]
-//! name = "read"
-//! input = { path = "src/main.rs" }
-//!
-//! [[turn]]
-//! tool_calls = [
-//!   { name = "read", input = { path = "a.rs" } },
-//!   { name = "glob", input = { pattern = "*.rs" } },
-//! ]
-//! ```
-//!
-//! `input` is a TOML inline table, translated to the call's JSON input.
-//! A turn with no `tool_calls` ends the call without tool use. Per the
-//! §1.2 StopReason convention already established by the real providers, a
-//! provider only ever reports `EndTurn`/`Refusal` — tool use is detected
-//! from the `ToolUseStart` events, not from the stop reason, so `Scripted`
-//! reports `EndTurn` even on a tool-call turn.
-//!
-//! **The scenario is authoritative.** If the loop asks for more calls than
-//! the scenario supplies, `stream` returns `ProviderError::Unsupported` —
-//! the scenario is a test's expectation of exactly how many provider calls
-//! its turn should make; a silent fallthrough would be a bug credited to a
-//! network round-trip that never showed up in tests.
+//! The `Scripted` provider: serves a `cox-provider-testkit` scenario one
+//! entry per provider call, in order, verbatim, so the loop and every test
+//! run with no network and no key (D12). The scenario format
+//! ([`TurnSpec`]/[`ToolCallSpec`]/[`parse_scenario`]) and the pure event
+//! sequence a turn expands to ([`events_for`]) live in
+//! `cox-provider-testkit` (T32.11), re-exported here; this file is the
+//! `Provider` glue that estimates usage via `crate::tokens::estimate` and
+//! enforces that **the scenario is authoritative** — if the loop asks for
+//! more calls than the scenario supplies, `stream` returns
+//! `ProviderError::Unsupported`, because the scenario is a test's
+//! expectation of exactly how many provider calls its turn should make; a
+//! silent fallthrough would be a bug credited to a network round-trip that
+//! never showed up in tests.
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -38,59 +18,13 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use cox_protocol::errors::ProviderError;
-use cox_protocol::ids::CallId;
 use cox_protocol::traits::Provider;
-use cox_protocol::types::{Caps, ModelId, ProviderEvent, ProviderId, Request, StopReason, Usage};
+use cox_protocol::types::{Caps, Content, ModelId, ProviderEvent, ProviderId, Request, Usage};
+pub use cox_provider_testkit::scripted::{ToolCallSpec, TurnSpec, events_for, parse_scenario};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use figment::Figment;
-use figment::providers::{Format, Toml};
-
 use crate::tokens::estimate;
-
-/// One scripted tool call: the tool's name and its TOML inline table of
-/// arguments, already translated to JSON.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ToolCallSpec {
-    /// The tool name, matching a `ToolSpec.name`.
-    pub name: String,
-    /// The tool input.
-    #[serde(default)]
-    pub input: serde_json::Value,
-}
-
-/// One provider call in a scenario: optional assistant text, optional tool
-/// calls.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct TurnSpec {
-    /// Assistant text to stream as one `TextDelta`, if any.
-    #[serde(default)]
-    pub text: Option<String>,
-    /// Tool calls to emit for this call, in order.
-    #[serde(default)]
-    pub tool_calls: Vec<ToolCallSpec>,
-    /// If set, the stream emits `ProviderEvent::Error` after any text/tools
-    /// and `stream` returns `BadRequest` — a mid-stream failure (T2.1).
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct Scenario {
-    #[serde(default)]
-    turn: Vec<TurnSpec>,
-}
-
-/// Parses a scenario TOML document into the turns `Scripted` replays.
-pub fn parse_scenario(toml_text: &str) -> Result<Vec<TurnSpec>, ProviderError> {
-    Figment::from(Toml::string(toml_text))
-        .extract::<Scenario>()
-        .map(|s| s.turn)
-        .map_err(|e| ProviderError::BadRequest {
-            message: format!("invalid scripted scenario: {e}"),
-        })
-}
 
 /// A scripted provider: replays a [`TurnSpec`] per provider call, in order.
 /// `turns` is a `Mutex<VecDeque>` because `Provider::stream` takes `&self`
@@ -131,39 +65,6 @@ impl Scripted {
         Self::from_path(path, "")
     }
 
-    /// One scripted call's events, in wire order: message start, then per
-    /// call `Start` / `InputDelta` / `End`, then `Stop`. `Usage` is also an
-    /// event (§1.2), emitted last, echoed in the return value.
-    fn events_for(turn: &TurnSpec, model: ModelId, usage: Usage) -> Vec<ProviderEvent> {
-        let mut events = vec![ProviderEvent::MessageStart { model }];
-        if let Some(text) = &turn.text {
-            events.push(ProviderEvent::TextDelta { text: text.clone() });
-        }
-        for call in &turn.tool_calls {
-            events.push(ProviderEvent::ToolUseStart {
-                id: CallId::new(),
-                name: call.name.clone(),
-            });
-            events.push(ProviderEvent::ToolUseInputDelta {
-                text: call.input.to_string(),
-            });
-            events.push(ProviderEvent::ToolUseEnd);
-        }
-        if let Some(message) = &turn.error {
-            events.push(ProviderEvent::Error {
-                error: ProviderError::BadRequest {
-                    message: message.clone(),
-                },
-            });
-            return events;
-        }
-        events.push(ProviderEvent::Stop {
-            stop: StopReason::EndTurn,
-        });
-        events.push(ProviderEvent::Usage { usage });
-        events
-    }
-
     /// Estimated usage for the ledger for a scripted call: input = the
     /// request estimate (the same heuristic budget pre-checks use), output
     /// = bytes of the scripted text+inputs over the usual ~4 chars/token.
@@ -186,6 +87,22 @@ impl Scripted {
             latency_ms: 0,
         }
     }
+}
+
+/// T34.9: whether `pat` appears in a plain spoken `Content::Text` block of
+/// `req`'s transcript — never inside a tool call's echoed `input` JSON or a
+/// tool result's text. Both of those can otherwise leak a marker meant for
+/// one particular child into an unrelated session's own request: a
+/// background `agent` call's dispatch turn echoes its `task` argument back
+/// into the *parent's* own history as a `ToolUse`, and the "background task
+/// started" result echoes the label built from it back as a `ToolResult`.
+/// Restricting the search to `Text` keeps a scenario's markers scoped to
+/// the one subagent whose own task text (or reply) actually carries them.
+fn request_says(req: &Request, pat: &str) -> bool {
+    req.messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .any(|c| matches!(c, Content::Text { text } if text.contains(pat)))
 }
 
 #[async_trait]
@@ -212,21 +129,34 @@ impl Provider for Scripted {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
-        let turn = self
-            .turns
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pop_front()
-            .ok_or_else(|| ProviderError::Unsupported {
+        let turn = {
+            let mut turns = self.turns.lock().unwrap_or_else(|e| e.into_inner());
+            // T34.9: a turn tagged `when_contains` is reserved for whichever
+            // request's own transcript names it, found anywhere in the
+            // queue; an untagged turn is served only once no tagged turn
+            // ahead of it claims this request, so a still-unclaimed tagged
+            // turn is never stolen by an unrelated caller's plain FIFO ask
+            // (`scripted.rs`'s module doc, `cox-provider-testkit`).
+            let picked = turns
+                .iter()
+                .position(|t| {
+                    t.when_contains
+                        .as_deref()
+                        .is_some_and(|pat| request_says(&req, pat))
+                })
+                .or_else(|| turns.iter().position(|t| t.when_contains.is_none()));
+            let index = picked.ok_or_else(|| ProviderError::Unsupported {
                 feature: "scripted scenario ran out".into(),
             })?;
+            turns.remove(index).expect("index just found by position")
+        };
         let usage = Self::usage_for(&turn, &req);
         let model = if self.model.is_empty() {
             req.model.clone()
         } else {
             ModelId(self.model.clone())
         };
-        for event in Self::events_for(&turn, model, usage) {
+        for event in events_for(&turn, model, usage) {
             // Same channel discipline as the real providers: honour cancel
             // before each send; bail if the receiving end hung up.
             if cancel.is_cancelled() {
@@ -252,7 +182,7 @@ mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
 
-    use cox_protocol::types::{Effort, Job, Thinking, Tier};
+    use cox_protocol::types::{Effort, Job, StopReason, Thinking, Tier};
 
     fn req() -> Request {
         Request {
@@ -278,34 +208,6 @@ mod tests {
             events.push(e);
         }
         Ok(events)
-    }
-
-    #[test]
-    fn scripted_parses_tool_call_forms() {
-        let toml = r#"
-[[turn]]
-text = "starting."
-[[turn.tool_calls]]
-name = "read"
-input = { path = "src/main.rs" }
-
-[[turn]]
-tool_calls = [
-  { name = "read", input = { path = "a.rs" } },
-  { name = "glob", input = { pattern = "*.rs" } },
-]
-"#;
-        let turns = parse_scenario(toml).expect("parses");
-        assert_eq!(turns.len(), 2);
-        assert_eq!(turns[0].text.as_deref(), Some("starting."));
-        assert_eq!(turns[0].tool_calls[0].input["path"], "src/main.rs");
-        assert_eq!(turns[1].tool_calls.len(), 2);
-        assert_eq!(turns[1].tool_calls[1].input["pattern"], "*.rs");
-    }
-
-    #[test]
-    fn parse_scenario_rejects_bad_toml() {
-        assert!(parse_scenario("[[turn][").is_err());
     }
 
     #[tokio::test]
@@ -390,6 +292,83 @@ tool_calls = [
             .await
             .expect_err("scenario is exhausted");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
+    }
+
+    /// A request whose transcript carries one plain user text block, the
+    /// shape a subagent's own first provider call has (its task text as a
+    /// `Content::Text` message, `subagent.rs`'s `run_task`/`drive`).
+    fn req_with_text(text: &str) -> Request {
+        Request {
+            messages: vec![cox_protocol::types::Message {
+                role: cox_protocol::types::Role::User,
+                content: vec![Content::Text {
+                    text: text.to_string(),
+                }],
+            }],
+            ..req()
+        }
+    }
+
+    /// T34.9: `when_contains` lets a scenario pin a turn to one particular
+    /// caller even out of file order — the claim `request_says` restricts
+    /// the search to `Content::Text` guards: a "B"-marked turn must not
+    /// answer a request that only *mentions* "B" inside a tool call's
+    /// echoed JSON input, never in plain text.
+    #[tokio::test]
+    async fn when_contains_picks_the_marked_turn_out_of_order() {
+        let toml = "[[turn]]\ntext = \"for B\"\nwhen_contains = \"TASK-B\"\n\n\
+                    [[turn]]\ntext = \"for parent\"\n";
+        let provider = Scripted::from_toml(toml, "").expect("scenario");
+        // The parent's own request (no "TASK-B" anywhere) must fall through
+        // to the untagged turn, never stealing the one reserved for B.
+        let parent_events = drain(&provider, req()).await.expect("parent's turn");
+        assert!(parent_events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "for parent"
+        )));
+        // B's own request, asking second, still finds its marked turn.
+        let b_events = drain(&provider, req_with_text("TASK-B: reply"))
+            .await
+            .expect("b's turn");
+        assert!(b_events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "for B"
+        )));
+    }
+
+    /// The same guard the module doc calls out: a request that only echoes
+    /// the marker inside a tool call's `input` (never plain `Content::Text`)
+    /// must not match — otherwise a background `agent` dispatch's own
+    /// echoed `task` argument, or its "background task started" result,
+    /// would let the parent steal a turn reserved for the child it named.
+    #[tokio::test]
+    async fn when_contains_ignores_a_marker_inside_tool_use_or_tool_result() {
+        let toml = "[[turn]]\ntext = \"for B\"\nwhen_contains = \"TASK-B\"\n\n\
+                    [[turn]]\ntext = \"for parent\"\n";
+        let provider = Scripted::from_toml(toml, "").expect("scenario");
+        let echoing = Request {
+            messages: vec![cox_protocol::types::Message {
+                role: cox_protocol::types::Role::Assistant,
+                content: vec![
+                    Content::ToolUse {
+                        id: cox_protocol::ids::CallId::new(),
+                        name: "agent".into(),
+                        input: serde_json::json!({"task": "TASK-B: reply"}),
+                    },
+                    Content::ToolResult {
+                        call_id: cox_protocol::ids::CallId::new(),
+                        content: "background task started: TASK-B: reply".into(),
+                        is_error: false,
+                    },
+                ],
+            }],
+            ..req()
+        };
+        let events = drain(&provider, echoing).await.expect("parent's turn");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "for parent"
+        )));
     }
 
     #[tokio::test]

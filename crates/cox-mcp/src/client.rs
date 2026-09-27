@@ -522,6 +522,7 @@ mod tests {
                 args: vec![],
                 url: Some(format!("{base}/mcp")),
                 env: HashMap::new(),
+                sandbox: true,
             },
         )])
     }

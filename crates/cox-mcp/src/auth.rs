@@ -77,12 +77,25 @@ pub fn stored(server: &str) -> Result<Option<StoredCredentials>, AuthError> {
     read(&account(server))
 }
 
+/// `COX_KEYRING=off` (A49) makes every entry "not there": reads find nothing
+/// and writes fail with a message, instead of a keychain prompt.
 fn entry(account: &str) -> Result<keyring::Entry, AuthError> {
+    let switch = std::env::var(cox_protocol::config::KEYRING_ENV).ok();
+    if !cox_protocol::config::keyring_enabled(switch.as_deref()) {
+        return Err(AuthError::CredentialStoreError(format!(
+            "keyring disabled by {}",
+            cox_protocol::config::KEYRING_ENV
+        )));
+    }
     keyring::Entry::new(SERVICE, account)
         .map_err(|e| AuthError::CredentialStoreError(e.to_string()))
 }
 
 fn read(account: &str) -> Result<Option<StoredCredentials>, AuthError> {
+    let switch = std::env::var(cox_protocol::config::KEYRING_ENV).ok();
+    if !cox_protocol::config::keyring_enabled(switch.as_deref()) {
+        return Ok(None);
+    }
     match entry(account)?.get_password() {
         Ok(json) => serde_json::from_str(&json)
             .map(Some)

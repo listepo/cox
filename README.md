@@ -15,7 +15,7 @@ git clone https://github.com/listepo/cox && cd cox
 mise exec -- cargo build -p cox
 export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
 ./target/debug/cox doctor          # green except prices? you are good
-./target/debug/cox -p "create hello.txt containing hi"
+./target/debug/cox run -p "create hello.txt containing hi"
 ./target/debug/cox                 # interactive TUI: Enter sends, Esc interrupts
 ```
 

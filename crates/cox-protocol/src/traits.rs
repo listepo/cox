@@ -1,8 +1,12 @@
-//! The five traits every other crate implements against instead of a
-//! concrete type (plan.md §1.2). This is the enforcement point for
-//! AGENTS.md's rule that anything touching the network, filesystem or a
-//! process lives behind a trait defined here: `cox-core` depends only on
-//! these signatures, never on `cox-provider`/`cox-tools`/`cox-mcp`/`cox-store`.
+//! The traits every other crate implements against instead of a concrete
+//! type (plan.md §1.2). This is the enforcement point for AGENTS.md's rule
+//! that anything touching the network, filesystem or a process lives
+//! behind a trait defined here: `cox-core` depends only on these
+//! signatures, never on `cox-provider`/`cox-tools`/`cox-mcp`/`cox-store`.
+//! `Relay` (T34.6, SM§4) is the same shape for `send_message`: `cox-tools`
+//! needs no `Session` handle, only this narrow hook back into it.
+//! `ExternalAgent` (T35.5, EA§3) is the process an external-agent preset
+//! runs, spawned by the host so `cox-core` stays I/O-free.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -204,6 +208,20 @@ pub struct ToolCx {
     pub session: SessionId,
     /// This call's id.
     pub call: CallId,
+    /// The subagent name this session runs as (`explore-2`, T27.2), set
+    /// once by `Session::spawn_child`; `None` for the session the user is
+    /// talking to. `ask_user` (T34.3) turns this into the same `Source`
+    /// `relay_approval` already builds for a relayed approval.
+    pub agent: Option<String>,
+    /// The dispatched preset/def name (`explore`), alongside `agent`.
+    pub preset: Option<String>,
+    /// `send_message`'s only way into a session (T34.6), same pattern as
+    /// `agent`/`preset` (T34.3): the session that builds this `ToolCx`
+    /// (`cox-core/src/turn.rs`) fills it with itself, so a child session's
+    /// call reaches the child's own `Relay` impl (its `self_task`, never
+    /// the top-level session's) and the parent's reaches the parent's.
+    /// `None` where no session builds one (a unit test's bare `ToolCx`).
+    pub relay: Option<Arc<dyn Relay>>,
 }
 
 /// A built-in or MCP tool. Implemented by `cox-tools` (`read`, `edit`,
@@ -215,6 +233,12 @@ pub trait Tool: Send + Sync {
     /// What permission rules match this call on: the confined path, command
     /// line, URL, or namespaced MCP name.
     fn subject(&self, input: &Value) -> String;
+    /// The commands a shell subject splits into, so a rule covers each one
+    /// rather than the line's first word (T36.1). `None` — every tool that
+    /// is not a shell — keeps the subject as one unit.
+    fn segments(&self, _input: &Value) -> Option<crate::types::Segments> {
+        None
+    }
     /// This *call's* risk, which is not always the tool's. `spec().risk` is
     /// a default: `apply_patch` is an ordinary write until the patch in
     /// front of it deletes more than five files, and only the input says
@@ -276,6 +300,90 @@ pub trait Store: Send + Sync {
     fn checkpoint_insert(&self, row: &CheckpointRow) -> Result<(), StoreError>;
     /// Every checkpoint row of a session in insertion order.
     fn checkpoint_list(&self, session: &SessionId) -> Result<Vec<CheckpointRow>, StoreError>;
+}
+
+/// Where a plugin grant applies (PL§3): the whole user install, or one
+/// repository. A project plugin's grant is additionally keyed on the
+/// repository root, since a repository must not silently gain the
+/// capabilities the user already granted elsewhere (PL§1: "cloning a
+/// repository never runs its plugins").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GrantScope {
+    /// `~/.cox/plugins/<id>`: applies across every repository.
+    User,
+    /// `<git root>/.cox/plugins/<id>`: applies only to that repository.
+    Project(PathBuf),
+}
+
+/// One `plugin_grants` row (PL§3): what capabilities were approved for a
+/// plugin id at a package digest, in a scope. `capabilities` and `source`
+/// are opaque JSON here — the granted-capability shape and the install
+/// source (`{kind: "path", path, digest}`, PL§1a) are `cox-plugin`'s to
+/// define; `cox-store` only persists and returns them unchanged.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PluginGrant {
+    /// The plugin's manifest id.
+    pub plugin_id: String,
+    /// Where this grant applies.
+    pub scope: GrantScope,
+    /// The package digest this grant was decided against. Changed bytes
+    /// mean a different row, not an update of this one (PL§3).
+    pub digest: String,
+    /// The capabilities the user approved, as `cox-plugin` shapes them.
+    pub capabilities: Value,
+    /// Whether the plugin is currently enabled under this grant.
+    pub enabled: bool,
+    /// Where the plugin came from (`cox plugin install`'s source record).
+    pub source: Value,
+    /// RFC 3339 timestamp of the decision.
+    pub decided_at: String,
+}
+
+/// `plugin_kv` per-value quota (PL§3); a `PluginStore::kv_put` over it is
+/// `StoreError::QuotaExceeded`.
+pub const KV_VALUE_LIMIT: usize = 64 * 1024;
+
+/// `plugin_kv` per-plugin quota, summed across all its keys (PL§3).
+pub const KV_PLUGIN_LIMIT: usize = 1024 * 1024;
+
+/// Plugin grants and per-plugin key-value storage (PL§3, A52). Kept apart
+/// from `Store` so approving or persisting plugin state does not grow the
+/// trait every other surface implements; `cox-store`'s `Store` implements
+/// this too. Sync for the same reason as `Store` (D9).
+pub trait PluginStore: Send + Sync {
+    /// The grant on file for this plugin id, scope and digest, if any
+    /// decision was ever recorded for that exact key.
+    fn grant_get(
+        &self,
+        plugin_id: &str,
+        scope: &GrantScope,
+        digest: &str,
+    ) -> Result<Option<PluginGrant>, StoreError>;
+    /// Inserts or replaces the grant at its `(plugin_id, scope, digest)` key.
+    fn grant_put(&self, grant: &PluginGrant) -> Result<(), StoreError>;
+    /// Flips `enabled` on an existing grant without touching its
+    /// capabilities or digest (`cox plugin disable`).
+    fn grant_set_enabled(
+        &self,
+        plugin_id: &str,
+        scope: &GrantScope,
+        digest: &str,
+        enabled: bool,
+    ) -> Result<(), StoreError>;
+    /// Deletes every grant for a plugin id, across every scope and digest
+    /// (`cox plugin remove`).
+    fn grants_delete(&self, plugin_id: &str) -> Result<(), StoreError>;
+    /// Reads one kv value.
+    fn kv_get(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>, StoreError>;
+    /// Writes one kv value, rejecting it if the value or the plugin's total
+    /// stored bytes would go over quota (64 KiB per value, 1 MiB per
+    /// plugin, PL§3).
+    fn kv_put(&self, plugin_id: &str, key: &str, value: &[u8]) -> Result<(), StoreError>;
+    /// Deletes one kv value; deleting an absent key is not an error
+    /// (`cox_kv_delete`, T33.9).
+    fn kv_delete(&self, plugin_id: &str, key: &str) -> Result<(), StoreError>;
+    /// Deletes every kv row for a plugin id (`cox plugin remove`).
+    fn kv_delete_all(&self, plugin_id: &str) -> Result<(), StoreError>;
 }
 
 /// Where a tool's full, pre-truncation output is written before the model
@@ -341,12 +449,24 @@ pub trait Worktrees: Send + Sync {
     async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError>;
 }
 
-/// A hook runner (`cox-ext`): executes one hook subprocess against the
-/// Claude Code JSON protocol and reports its verdict. Never returns a
-/// `Result` — a broken hook is always a `HookOutcome::Failed`, never a
+/// A hook source (`cox-ext`'s shell hooks, `cox-plugin`'s plugin hooks, or
+/// a chain of them): reports its verdict for one hook event. Never returns
+/// a `Result` — a broken hook is always a `HookOutcome::Failed`, never a
 /// panic or a fatal error (D14/AGENTS.md: "fail open on extensions").
 #[async_trait]
 pub trait Hook: Send + Sync {
+    /// Whether an observe-only trigger (`SessionStart`, `Notification`)
+    /// should be dispatched to this source at all. The default is the
+    /// `[hooks]` config check; a source configured elsewhere (a plugin's
+    /// granted hooks, PL§6) answers for itself, or it would never run.
+    fn interested(
+        &self,
+        event: crate::types::HookEvent,
+        config: &crate::config::HooksConfig,
+    ) -> bool {
+        config.events.contains_key(event.name())
+    }
+
     /// Runs the hook for `event` with `payload`, giving up after `timeout`.
     async fn run(
         &self,
@@ -354,6 +474,111 @@ pub trait Hook: Send + Sync {
         payload: Value,
         timeout: Duration,
     ) -> crate::types::HookOutcome;
+}
+
+/// Where `send_message` (T34.6, SM§4) delivers a follow-up: implemented by
+/// `Session` (`cox-core`) so `cox-tools` needs no handle to it, only this
+/// narrow hook — the same shape as `Archive`/`Worktrees` (AGENTS.md's
+/// trust-boundary rule: anything reaching outside this crate goes through
+/// a trait defined here).
+#[async_trait]
+pub trait Relay: Send + Sync {
+    /// Sends `text` to `to` (`"parent"`, a sibling's registry name, or a
+    /// `TaskId`), stamped with the caller's own task if it is a subagent.
+    async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError>;
+}
+
+/// Where a session's events go besides its surface (PL§5, T33.10): the
+/// plugin host's per-plugin rings. `Session::emit` calls it right after the
+/// rollout append, with the scrubbed copy the rollout got and the sequence
+/// number `rollout_append` returned, so all four surfaces feed plugins from
+/// one place and in rollout order.
+pub trait EventTap: Send + Sync {
+    /// Takes one event. Must never wait on a plugin: a slow plugin loses
+    /// events, it never slows a turn.
+    fn offer(&self, seq: u64, ev: &crate::types::Event);
+}
+
+/// A granted `[[external_agents]]` entry's driver (EA§3, T35.5): another
+/// vendor's CLI agent that `agent(preset: <name>)` dispatches in place of a
+/// model. Implemented by the host, which spawns the CLI under the session's
+/// `sandbox::Policy` (EA§2) and speaks ACP or stream-json per the
+/// manifest's `mode`; `cox-core` only feeds it turns, so it never opens the
+/// process itself.
+#[async_trait]
+pub trait ExternalAgent: Send + Sync {
+    /// The dispatch name (`cursor`), also the usage row's model.
+    fn name(&self) -> &str;
+    /// Runs one turn for `prompt`, streaming the agent's work on `events`
+    /// as cox events (`StreamJsonMapper` for stream-json); a `TurnDone` it
+    /// sends ends the turn early. Returns the tokens the agent reported,
+    /// `None` when it reports none (EA§6: never estimated); an `Err` is
+    /// shown as the turn's non-fatal `Error`.
+    async fn turn(
+        &self,
+        turn: crate::ids::TurnId,
+        prompt: String,
+        events: mpsc::Sender<crate::types::Event>,
+        cancel: CancellationToken,
+    ) -> Result<Option<Usage>, crate::errors::CoreError>;
+}
+
+/// A plugin's `cox_model_call` (PL§7d, T33.15): the router, the budget gate
+/// and the ledger, reached this way because `cox-plugin` may not depend on
+/// `cox-core` (AGENTS.md's trust-boundary rule — anything that crosses a
+/// crate boundary lives behind a trait defined here). The session installs
+/// its own implementation into `HostEnv` (`cox-plugin::hostfn`), which
+/// blocks a plugin's worker thread on it rather than `.await`ing, since
+/// that thread is not a tokio runtime worker (`cox-plugin::host`).
+#[async_trait]
+pub trait ModelCaller: Send + Sync {
+    /// Runs `request` at `tier` — already resolved and clamped to the
+    /// plugin's grant, never `think` (D5) — as job `Job::Plugin(id)`: the
+    /// budget gate first (a `CoreError::Budget` refusal), then the
+    /// provider call, then one ledger row, same as any other job.
+    async fn call(
+        &self,
+        id: &str,
+        tier: crate::types::Tier,
+        request: crate::types::Request,
+    ) -> Result<Vec<crate::types::ProviderEvent>, crate::errors::CoreError>;
+}
+
+/// A plugin's `cox_invoke_tool` (PL§4, T33.13): one tool call run the way a
+/// model's is — `PreToolUse`, `Engine::decide`, the sandbox, the archive —
+/// with its approval prompt naming the plugin. A trait for the same reason
+/// as `ModelCaller`: `cox-plugin` may not depend on `cox-core`.
+#[async_trait]
+pub trait ToolInvoker: Send + Sync {
+    /// Runs tool `name` with `input` for plugin `id`. A denial, a hook's
+    /// block or an unknown tool is an `Ok` result with `ok: false`, as the
+    /// model would see it; `Err` means the session itself failed.
+    async fn invoke(
+        &self,
+        id: &str,
+        name: &str,
+        input: Value,
+    ) -> Result<crate::types::ToolResult, crate::errors::CoreError>;
+}
+
+/// A decision plugin's answers to the core's typed questions (PL§4
+/// "Decision points", T33.20): `cox-plugin`'s `PluginAdvisor` calls the
+/// guest's `cox_decide`. Not a `Hook`, on purpose — a hook's `Modify` has no
+/// monotone rule, so the core keeps the decision: it offers the options,
+/// applies the point's rule and uses its static pick on silence.
+#[async_trait]
+pub trait Advisor: Send + Sync {
+    /// The plugin id `[plugins.decide]` names this advisor by.
+    fn id(&self) -> &str;
+
+    /// Answers `question` within `budget`. Never fails: `None` is silence
+    /// (not granted for the point, a trap, a timeout, garbage), and the
+    /// core falls back to its static pick (D14, fail open).
+    async fn advise(
+        &self,
+        question: crate::plugin::Question,
+        budget: Duration,
+    ) -> Option<crate::plugin::Advice>;
 }
 
 #[cfg(test)]
@@ -371,5 +596,10 @@ mod tests {
         assert_object_safe::<dyn Tool>();
         assert_object_safe::<dyn Hook>();
         assert_object_safe::<dyn Checkpointer>();
+        assert_object_safe::<dyn Relay>();
+        assert_object_safe::<dyn ExternalAgent>();
+        assert_object_safe::<dyn EventTap>();
+        assert_object_safe::<dyn ModelCaller>();
+        assert_object_safe::<dyn ToolInvoker>();
     }
 }

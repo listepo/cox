@@ -30,6 +30,9 @@ also hands its output to the model. Headless scripts use `cox run -p`; editors u
 prints it with the slash commands. The composer's empty line shows the first
 five rows for where you are (idle, a running turn, a modal, an overlay).
 `Ctrl+C` twice quits when idle. A running turn falls back to the idle keys.
+`plugin.leader` (`Ctrl+K` by default) arms the next key for a plugin's own
+binding; a plugin's slash commands show up in the `/` palette as
+`/<id>:<name>`, after the built-ins.
 
 | Key | Action | Context |
 | --- | --- | --- |
@@ -46,6 +49,7 @@ five rows for where you are (idle, a running turn, a modal, an overlay).
 | `Ctrl+O` | transcript | idle |
 | `Ctrl+E` | expand | idle |
 | `Ctrl+G` | diff | idle |
+| `Ctrl+K` | plugin.leader | idle |
 | `Ctrl+C` | quit | idle |
 | `Ctrl+D` | quit | idle |
 | `y` | copy | idle |

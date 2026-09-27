@@ -81,6 +81,12 @@ impl ToolServer {
             output,
             session: self.cx.session,
             call: call.id,
+            // The MCP surface has no subagent notion (T34.3): every call
+            // here is the top-level session, so also no `send_message`
+            // (T34.6) — `relay: None` denies it rather than misrouting.
+            agent: None,
+            preset: None,
+            relay: None,
         };
         match tool.call(call.input, &cx).await {
             Ok(out) if out.is_error => CallToolResult::error(vec![ContentBlock::text(out.text)]),
@@ -135,6 +141,7 @@ impl ServerHandler for ToolServer {
             name,
             risk: tool.risk(&input),
             subject: tool.subject(&input),
+            segments: tool.segments(&input),
             input,
         };
         Ok(self.run_call(tool.as_ref(), call).await.into())

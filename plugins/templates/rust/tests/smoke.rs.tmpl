@@ -1,0 +1,60 @@
+//! Smoke test for the `{{id}}` plugin (`cox plugin new` scaffold): stages
+//! the wasm32 build next to `plugin.toml`, installs it into a scratch
+//! `COX_HOME` with `cox plugin install --yes`, then checks that
+//! `cox plugin list --json` reports it `loaded`. Run `just build` (or
+//! `cargo build --release --target wasm32-unknown-unknown`) first; this
+//! test only stages the artifact and shells out to whatever `cox` is on
+//! `PATH` — it never builds the module itself.
+
+use std::path::Path;
+use std::process::Command;
+
+const CRATE: &str = "{{crate_name}}";
+const ID: &str = "{{id}}";
+
+#[test]
+fn installs_and_loads_in_a_scratch_cox_home() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let wasm = manifest_dir
+        .join("target/wasm32-unknown-unknown/release")
+        .join(format!("{CRATE}.wasm"));
+    assert!(
+        wasm.is_file(),
+        "build the plugin first (just build): {} is missing",
+        wasm.display()
+    );
+
+    let package = manifest_dir.join("target/smoke-package");
+    let _ = std::fs::remove_dir_all(&package);
+    std::fs::create_dir_all(&package).expect("create the staging dir");
+    std::fs::copy(&wasm, package.join(format!("{CRATE}.wasm"))).expect("stage the module");
+    std::fs::copy(manifest_dir.join("plugin.toml"), package.join("plugin.toml"))
+        .expect("stage the manifest");
+
+    let home = manifest_dir.join("target/smoke-home");
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).expect("create the scratch COX_HOME");
+
+    let install = Command::new("cox")
+        .args(["plugin", "install", package.to_str().unwrap(), "--yes"])
+        .env("COX_HOME", &home)
+        .env("HOME", &home)
+        .status()
+        .expect("run `cox plugin install` (is cox on PATH?)");
+    assert!(install.success(), "cox plugin install failed");
+
+    let list = Command::new("cox")
+        .args(["plugin", "list", "--json"])
+        .env("COX_HOME", &home)
+        .env("HOME", &home)
+        .output()
+        .expect("run `cox plugin list`");
+    assert!(list.status.success(), "cox plugin list failed");
+    let json: serde_json::Value =
+        serde_json::from_slice(&list.stdout).expect("cox plugin list --json output");
+    let plugin = json["plugins"]
+        .as_array()
+        .and_then(|plugins| plugins.iter().find(|p| p["id"] == ID))
+        .unwrap_or_else(|| panic!("{ID} not in `cox plugin list --json`: {json}"));
+    assert_eq!(plugin["loaded"], true, "{plugin}");
+}

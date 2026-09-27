@@ -13,6 +13,7 @@ Rust is pinned with [mise](https://mise.jdx.dev/). Prefer `mise exec -- cargo â€
 git clone https://github.com/listepo/cox && cd cox
 mise exec -- cargo build -p cox
 export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
+export ANTHROPIC_WORKSPACE_ID=wrkspc_...  # only for a key not scoped to a workspace
 ./target/debug/cox doctor         # green except prices? you are good
 ./target/debug/cox -p "create hello.txt containing hi"
 ./target/debug/cox                # interactive TUI: Enter sends, Esc interrupts

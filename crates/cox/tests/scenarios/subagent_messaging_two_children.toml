@@ -1,0 +1,80 @@
+# T34.9 e2e scenario: the parent spawns two background `talker` subagents;
+# TALKA messages TALKB by its registry name, TALKB messages the parent
+# back. Every child turn is pinned with `when_contains` (T34.9) to the
+# marker embedded in its own `task` text, since one `Scripted` instance is
+# shared by the parent and both children (`cox-provider-testkit`'s module
+# doc) and would otherwise race for "the next" unmarked turn.
+#
+# Dispatch order matters here, not just marker order: TALKB (the message's
+# *recipient*) is spawned first so its registry name (`talker-1`, the
+# `agent` tool's own `{preset}-{n}` counter) is registered
+# (`AgentTool::call`'s `name_task`, before it ever spawns the background
+# task) before TALKA's background task can possibly run and address it —
+# a background task starts racing the instant its own dispatch call
+# returns, and a scripted provider answers near-instantly, so TALKA
+# spawned first would sometimes try to message a `talker-2` that does not
+# exist in the registry yet. TALKA is therefore spawned *second* and
+# addresses TALKB by its actual name, `talker-1`.
+#
+# Marker note: TALKB needs one more scripted turn than it has natural
+# things to say (3, not 2) — any message delivered to a running or
+# finished child forces exactly one more provider call before it can
+# close for good (`crates/cox-core/src/subagent.rs`'s `drive`/`park_child`/
+# `wake`), regardless of whether TALKA's message races in before or after
+# TALKB's own natural completion.
+#
+# The marker sits on a *second* line of `task`, never the first: a
+# finished child's own answer is folded into the *parent's* own history
+# too, as `publish_task_result`'s pointer line, built from `spec.label`
+# which is `{preset}: {first_line(task)}` — a marker on the first line
+# would leak into the parent's own request transcript the moment that
+# child's task first completes (even just one ping/close pair in), and
+# the parent's next request would then wrongly match a turn still meant
+# for that child.
+#
+# `cox run -p` used to exit the instant the parent's own top-level turn
+# ended, abandoning a still-running background chain (`main`'s
+# `std::process::exit` skips `Runtime::drop`'s usual wait for spawned
+# tasks) — fixed at the root instead of papered over here: `Session::
+# wait_idle` (`crates/cox-core/src/tasks.rs`) awaits the parent's own
+# task registry emptying out, and `crates/cox/src/run.rs`'s headless
+# `drive` loop calls it once the top-level turn's own terminal event has
+# been seen, before it lets the process exit. No sleep needed in this
+# scenario.
+
+[[turn]]
+tool_calls = [
+    { name = "agent", input = { task = "reply to the parent, then say you're done\nTALKB", preset = "talker", background = true } },
+]
+
+[[turn]]
+tool_calls = [
+    { name = "agent", input = { task = "send talker-1 a hello, then say you're done\nTALKA", preset = "talker", background = true } },
+]
+
+[[turn]]
+text = "done"
+
+[[turn]]
+when_contains = "TALKA"
+tool_calls = [
+    { name = "send_message", input = { to = "talker-1", text = "hi from talker-2" } },
+]
+
+[[turn]]
+when_contains = "TALKA"
+text = "talker-2 done"
+
+[[turn]]
+when_contains = "TALKB"
+tool_calls = [
+    { name = "send_message", input = { to = "parent", text = "hi from talker-1" } },
+]
+
+[[turn]]
+when_contains = "TALKB"
+text = "talker-1 done"
+
+[[turn]]
+when_contains = "TALKB"
+text = "talker-1 done again"

@@ -1,0 +1,1198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cox plugin ABI v1",
+  "description": "Payloads of the cox:host/v1 ABI (docs/design/plugins.md §4). A field marked x-cox-protocol carries that cox_protocol type unchanged; see docs/protocol.jsonschema.",
+  "$defs": {
+    "InitIn": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "The ABI major the host speaks."
+        },
+        "plugin_id": {
+          "type": "string",
+          "description": "The plugin's own id."
+        },
+        "config": {
+          "description": "The `[plugins.<id>]` config table; the plugin validates it itself."
+        },
+        "session": {
+          "$ref": "#/$defs/SessionInfo",
+          "description": "The session the plugin is loaded into."
+        },
+        "granted": {
+          "description": "The granted subset of the manifest's `[capabilities]`, same keys.\nJSON rather than `Capabilities`, which denies unknown keys: a\ncapability added in a later minor must not break an older guest."
+        }
+      },
+      "required": [
+        "api",
+        "plugin_id",
+        "config",
+        "session",
+        "granted"
+      ],
+      "description": "`cox_init` input: once per session."
+    },
+    "SessionInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The session id."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "The workspace root."
+        }
+      },
+      "required": [
+        "id",
+        "cwd"
+      ],
+      "description": "The session a plugin is initialised for."
+    },
+    "InitOut": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "x-cox-protocol": "ToolSpec"
+          },
+          "description": "Tool specs, frozen for the session (PL§7).",
+          "default": []
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CommandDecl"
+          },
+          "description": "Slash commands, shown as `/<id>:<name>`.",
+          "default": []
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KeyDecl"
+          },
+          "description": "Keys, reachable as `<leader> <key>`.",
+          "default": []
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Slot"
+          },
+          "description": "Status segments the plugin fills (`status.left`, `status.right`).",
+          "default": []
+        },
+        "panels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Slot"
+          },
+          "description": "Panel and overlay slots the plugin fills (`panel`, `overlay`).",
+          "default": []
+        },
+        "renderers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Render targets it serves: `tool:<name>` or `item:assistant_message`.",
+          "default": []
+        },
+        "subscribe": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "`Event` serde tags it wants in `cox_on_event`.",
+          "default": []
+        }
+      },
+      "description": "`cox_init` output: what the plugin contributes. Anything not granted is\ndropped by the host with a notice; every field may be omitted."
+    },
+    "CommandDecl": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name after `/<id>:`."
+        },
+        "description": {
+          "type": "string",
+          "description": "One line for the palette.",
+          "default": ""
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "description": "A slash command a plugin offers."
+    },
+    "KeyDecl": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "The key as `keybindings.toml` spells it."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name passed in `CommandIn`."
+        },
+        "description": {
+          "type": "string",
+          "description": "One line for the help overlay.",
+          "default": ""
+        }
+      },
+      "required": [
+        "key",
+        "name"
+      ],
+      "description": "A key under the plugin leader; pressing it calls `cox_key` with `name`."
+    },
+    "Slot": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "status.left",
+          "description": "Left segment of the status row."
+        },
+        {
+          "type": "string",
+          "const": "status.right",
+          "description": "Right segment of the status row."
+        },
+        {
+          "type": "string",
+          "const": "panel",
+          "description": "Rows above the composer."
+        },
+        {
+          "type": "string",
+          "const": "overlay",
+          "description": "Full-screen overlay."
+        }
+      ],
+      "description": "A TUI slot (PL§8)."
+    },
+    "EventBatch": {
+      "type": "object",
+      "properties": {
+        "first_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "description": "Sequence number of the first event in `events`."
+        },
+        "dropped": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "description": "Events dropped from the ring since the last batch."
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "x-cox-protocol": "Event"
+          },
+          "description": "Scrubbed events, in rollout order."
+        }
+      },
+      "required": [
+        "first_seq",
+        "dropped",
+        "events"
+      ],
+      "description": "`cox_on_event` input (PL§5)."
+    },
+    "Effects": {
+      "type": "object",
+      "properties": {
+        "redraw": {
+          "type": "boolean",
+          "description": "Re-render this plugin's slots.",
+          "default": false
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginNotice"
+          },
+          "description": "Notices to show.",
+          "default": []
+        }
+      },
+      "description": "`cox_on_event` output."
+    },
+    "PluginNotice": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/NoticeLevel",
+          "description": "Severity, capped at `warn`."
+        },
+        "text": {
+          "type": "string",
+          "description": "Shown sanitized."
+        }
+      },
+      "required": [
+        "level",
+        "text"
+      ],
+      "description": "A notice from a plugin."
+    },
+    "NoticeLevel": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "info",
+          "description": "Informational."
+        },
+        {
+          "type": "string",
+          "const": "warn",
+          "description": "Something degraded."
+        }
+      ],
+      "description": "The notice levels a plugin may use. Not `cox_protocol::Level`: that one\nhas `budget` and `security`, which a plugin must never raise (PL§4)."
+    },
+    "HookCall": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "description": "Which hook fired.",
+          "x-cox-protocol": "HookEvent"
+        },
+        "payload": {
+          "description": "The hook's JSON input, as shell hooks get it on stdin."
+        }
+      },
+      "required": [
+        "event",
+        "payload"
+      ],
+      "description": "`cox_hook` input (PL§6); the output is a `HookOutcome`."
+    },
+    "ToolCallIn": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The tool's name inside the plugin, without `wasm__<id>__`."
+        },
+        "input": {
+          "description": "The model's input."
+        }
+      },
+      "required": [
+        "name",
+        "input"
+      ],
+      "description": "`cox_tool_subject` / `cox_tool_risk` / `cox_tool_call` input: the `Tool`\ntrait serialised. Outputs are a string, a `Risk` and a `ToolOutput`."
+    },
+    "CommandIn": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The command or key name the plugin declared."
+        },
+        "args": {
+          "type": "string",
+          "description": "Text after the command; empty for a key.",
+          "default": ""
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "description": "`cox_command` / `cox_key` input."
+    },
+    "CommandOut": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "The prompt text."
+            },
+            "kind": {
+              "type": "string",
+              "const": "prompt"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "description": "Submitted as a `UserTurn`, like a markdown command."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "focus": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "What the summary should keep.",
+              "default": null
+            },
+            "kind": {
+              "type": "string",
+              "const": "compact"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "Compact now."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "toggle_panel"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "Show or hide the plugin's panel."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "open_overlay"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "Open the plugin's overlay."
+        },
+        {
+          "$ref": "#/$defs/PluginNotice",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "notice"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "Show a notice."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "nothing"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "Do nothing."
+        }
+      ],
+      "description": "`cox_command` / `cox_key` output. Closed on purpose: there is no\n`Submission` variant, so a plugin cannot switch the permission mode,\napprove a call or switch the model up (PL§4)."
+    },
+    "RenderIn": {
+      "type": "object",
+      "properties": {
+        "slot": {
+          "$ref": "#/$defs/Slot",
+          "description": "The slot to fill."
+        },
+        "width": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Columns available."
+        },
+        "height": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Rows available."
+        }
+      },
+      "required": [
+        "slot",
+        "width",
+        "height"
+      ],
+      "description": "`cox_render` input; the output is a `Widget`."
+    },
+    "RenderItemIn": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "The renderer target that matched."
+        },
+        "call": {
+          "description": "The call, for a `tool:<name>` target.",
+          "default": null,
+          "x-cox-protocol": "ToolCall"
+        },
+        "result": {
+          "description": "The tool's output, or the assistant item for `item:assistant_message`."
+        },
+        "width": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Columns available."
+        }
+      },
+      "required": [
+        "target",
+        "result",
+        "width"
+      ],
+      "description": "`cox_render_item` input; the output is an optional `Widget`."
+    },
+    "ProviderCall": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "description": "The provider-neutral request.",
+          "x-cox-protocol": "Request"
+        },
+        "model": {
+          "type": "string",
+          "description": "The model id to send."
+        }
+      },
+      "required": [
+        "request",
+        "model"
+      ],
+      "description": "`cox_provider_stream` input (PL§7a); the output is `Vec<ProviderEvent>`."
+    },
+    "ModelCall": {
+      "type": "object",
+      "properties": {
+        "tier": {
+          "$ref": "#/$defs/ModelTier",
+          "description": "The tier to route at; the host clamps it to the grant, never `think`."
+        },
+        "request": {
+          "description": "The request; the host sets its tier, model and job.",
+          "x-cox-protocol": "Request"
+        }
+      },
+      "required": [
+        "tier",
+        "request"
+      ],
+      "description": "`cox_model_call` input (PL§7d); the output is `Vec<ProviderEvent>`."
+    },
+    "ModelTier": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "cheap",
+          "description": "The low-cost tier."
+        },
+        {
+          "type": "string",
+          "const": "code",
+          "description": "The coding tier; must be named explicitly."
+        }
+      ],
+      "description": "The highest tier a plugin may ask the router for. `think` is not a\nvariant, so no manifest can request it (D5)."
+    },
+    "HttpReq": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "HTTP method."
+        },
+        "url": {
+          "type": "string",
+          "description": "Full URL; its host must be allowed in this context."
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Request headers.",
+          "default": {}
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "UTF-8 body.",
+          "default": null
+        }
+      },
+      "required": [
+        "method",
+        "url"
+      ],
+      "description": "`cox_http` input."
+    },
+    "HttpResp": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "HTTP status."
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Response headers; repeated ones are joined with `, `.",
+          "default": {}
+        },
+        "body": {
+          "type": "string",
+          "description": "UTF-8 body, capped at `max_http_response_bytes`.",
+          "default": ""
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "description": "`cox_http` output."
+    },
+    "Question": {
+      "type": "object",
+      "properties": {
+        "point": {
+          "$ref": "#/$defs/DecidePoint",
+          "description": "Which point asks."
+        },
+        "state": {
+          "description": "What the answer is about, redacted."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The choices the core offers (tiers for `route`, candidates for\n`rank`); empty for a score or yes/no point.",
+          "default": []
+        }
+      },
+      "required": [
+        "point",
+        "state"
+      ],
+      "description": "`cox_decide` input: the core offers the options and keeps the decision."
+    },
+    "DecidePoint": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "route",
+          "description": "Tier for a user turn; only down."
+        },
+        {
+          "type": "string",
+          "const": "risk",
+          "description": "Severity of a tool call; only up."
+        },
+        {
+          "type": "string",
+          "const": "approve_hint",
+          "description": "A caution note on the approval modal; never \"looks safe\"."
+        },
+        {
+          "type": "string",
+          "const": "compact",
+          "description": "Compact now; only earlier."
+        },
+        {
+          "type": "string",
+          "const": "rank",
+          "description": "Reorder or filter candidates; never add."
+        },
+        {
+          "type": "string",
+          "const": "salience",
+          "description": "Salience of a memory item."
+        }
+      ],
+      "description": "A decision point (PL§4 \"Decision points\")."
+    },
+    "Advice": {
+      "type": "object",
+      "properties": {
+        "answer": {
+          "$ref": "#/$defs/Answer",
+          "description": "The answer."
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "In `[0, 1]`; absent when the model gives none (a yes/no, J11).",
+          "default": null
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A caution note, for `approve_hint`.",
+          "default": null
+        }
+      },
+      "required": [
+        "answer"
+      ],
+      "description": "`cox_decide` output. The core applies the point's monotone rule and\nuses its local default when confidence is below `min_confidence`."
+    },
+    "Answer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "description": "The ranking."
+            },
+            "kind": {
+              "type": "string",
+              "const": "choice"
+            }
+          },
+          "required": [
+            "kind",
+            "order"
+          ],
+          "description": "Indices into `Question.options`, best first."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "number",
+              "format": "double",
+              "description": "The score."
+            },
+            "kind": {
+              "type": "string",
+              "const": "score"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "description": "A score on the point's scale."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "p_yes": {
+              "type": "number",
+              "format": "double",
+              "description": "P(yes) in `[0, 1]`."
+            },
+            "kind": {
+              "type": "string",
+              "const": "noul"
+            }
+          },
+          "required": [
+            "kind",
+            "p_yes"
+          ],
+          "description": "A yes/no probability."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "description": "One score per item, same length and order as the items sent."
+            },
+            "kind": {
+              "type": "string",
+              "const": "scores"
+            }
+          },
+          "required": [
+            "kind",
+            "values"
+          ],
+          "description": "One score per item of a batched question (`salience`, T33.21.1):\n`Question` has no `items` field yet (that is T33.40.1's batched-ABI\ncard), so the items travel in `Question.state[\"items\"]` and the\nanswer carries one value per item, aligned by index."
+        }
+      ],
+      "description": "The three question kinds a decision model answers."
+    },
+    "AbiError": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "not_in_this_context"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "Not allowed from the calling export (PL§4, deadlock and render caps)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "capability": {
+              "type": "string",
+              "description": "The missing capability."
+            },
+            "kind": {
+              "type": "string",
+              "const": "not_granted"
+            }
+          },
+          "required": [
+            "kind",
+            "capability"
+          ],
+          "description": "The capability is not granted."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "description": "Why."
+            },
+            "kind": {
+              "type": "string",
+              "const": "denied"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "description": "The permission engine, a hook or the user said no."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "budget"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "The budget gate refused a model call."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0,
+              "description": "The cap."
+            },
+            "kind": {
+              "type": "string",
+              "const": "too_large"
+            }
+          },
+          "required": [
+            "kind",
+            "limit"
+          ],
+          "description": "The kv quota or a size cap was hit."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "timeout"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "description": "The call's deadline passed."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "Detail."
+            },
+            "kind": {
+              "type": "string",
+              "const": "transient"
+            }
+          },
+          "required": [
+            "kind",
+            "message"
+          ],
+          "description": "Worth retrying (a 429/529 or a dropped connection)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "Detail."
+            },
+            "kind": {
+              "type": "string",
+              "const": "failed"
+            }
+          },
+          "required": [
+            "kind",
+            "message"
+          ],
+          "description": "Malformed input or any other failure."
+        }
+      ],
+      "description": "Why a host function refused or failed."
+    },
+    "Widget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Span"
+                }
+              }
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "description": "Plain lines."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "list": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "description": "The rows.",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Span"
+                    }
+                  }
+                },
+                "selected": {
+                  "description": "The highlighted row.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint",
+                  "minimum": 0,
+                  "default": null
+                }
+              },
+              "required": [
+                "items"
+              ]
+            }
+          },
+          "required": [
+            "list"
+          ],
+          "additionalProperties": false,
+          "description": "Lines with an optional highlighted index."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "table": {
+              "type": "object",
+              "properties": {
+                "header": {
+                  "description": "Column headings.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Span"
+                  }
+                },
+                "rows": {
+                  "description": "One cell per column.",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Span"
+                    }
+                  }
+                },
+                "widths": {
+                  "description": "Column widths in cells.",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint16",
+                    "minimum": 0,
+                    "maximum": 65535
+                  },
+                  "default": []
+                }
+              },
+              "required": [
+                "header",
+                "rows"
+              ]
+            }
+          },
+          "required": [
+            "table"
+          ],
+          "additionalProperties": false,
+          "description": "A table; a column without a width shares the rest equally."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "key_value": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/Span"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Span"
+                    }
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          },
+          "required": [
+            "key_value"
+          ],
+          "additionalProperties": false,
+          "description": "Aligned `key: value` rows."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gauge": {
+              "type": "object",
+              "properties": {
+                "ratio": {
+                  "description": "Fraction done.",
+                  "type": "number",
+                  "format": "double"
+                },
+                "label": {
+                  "description": "Text before the bar.",
+                  "$ref": "#/$defs/Span",
+                  "default": {
+                    "text": "",
+                    "style": "text",
+                    "bold": false,
+                    "italic": false
+                  }
+                }
+              },
+              "required": [
+                "ratio"
+              ]
+            }
+          },
+          "required": [
+            "gauge"
+          ],
+          "additionalProperties": false,
+          "description": "A one-row progress bar; `ratio` is clamped to `0..=1`."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stack": {
+              "type": "object",
+              "properties": {
+                "vertical": {
+                  "description": "Stacked top to bottom rather than left to right.",
+                  "type": "boolean"
+                },
+                "children": {
+                  "description": "The children.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Widget"
+                  }
+                },
+                "sizes": {
+                  "description": "Rows (vertical) or columns (horizontal) per child.",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint16",
+                    "minimum": 0,
+                    "maximum": 65535
+                  },
+                  "default": []
+                }
+              },
+              "required": [
+                "vertical",
+                "children"
+              ]
+            }
+          },
+          "required": [
+            "stack"
+          ],
+          "additionalProperties": false,
+          "description": "Children side by side or stacked; a child without a size shares the rest."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "block": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "description": "Title on the top border.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Span"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "child": {
+                  "description": "The content.",
+                  "$ref": "#/$defs/Widget"
+                }
+              },
+              "required": [
+                "child"
+              ]
+            }
+          },
+          "required": [
+            "block"
+          ],
+          "additionalProperties": false,
+          "description": "A bordered box around one child."
+        }
+      ],
+      "description": "The closed set of widgets (PL§8)."
+    },
+    "Span": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The text; the host sanitizes it before drawing."
+        },
+        "style": {
+          "$ref": "#/$defs/StyleToken",
+          "description": "Its colour role.",
+          "default": "text"
+        },
+        "bold": {
+          "type": "boolean",
+          "description": "Bold.",
+          "default": false
+        },
+        "italic": {
+          "type": "boolean",
+          "description": "Italic.",
+          "default": false
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "description": "A run of text with one style."
+    },
+    "StyleToken": {
+      "type": "string",
+      "enum": [
+        "text",
+        "dim",
+        "accent",
+        "user",
+        "agent",
+        "tool",
+        "ok",
+        "warn",
+        "error",
+        "diff_add",
+        "diff_del",
+        "diff_hunk",
+        "border",
+        "selection"
+      ],
+      "description": "A `Theme` field. The permission-mode tints are left out on purpose: the\ncomposer's mode colour is a trust signal a plugin must not imitate."
+    }
+  }
+}

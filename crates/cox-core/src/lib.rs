@@ -5,16 +5,19 @@
 
 #![warn(missing_docs)]
 
+mod advise;
 mod budget;
 pub mod cache_diag;
 mod checkpoint;
 mod compact;
 mod context;
 mod dedup;
+pub mod external_agent;
 mod hooks;
 pub mod init;
 pub mod memory_extract;
-pub mod permission;
+mod monotone;
+mod plugin_model;
 pub mod redact;
 mod rewind;
 mod rollout;
@@ -24,6 +27,11 @@ pub mod subagent;
 pub mod tasks;
 mod truncate;
 mod turn;
+
+/// T32.8: the permission engine moved to its own crate (guard (b), pure —
+/// `docs/design/crates.md` C8); re-exported here at the old path so
+/// `cox_core::permission::Engine` keeps working for existing callers.
+pub use cox_permission as permission;
 
 pub use context::{assemble, assemble_with, microcompact};
 pub use permission::{Engine, Outcome};

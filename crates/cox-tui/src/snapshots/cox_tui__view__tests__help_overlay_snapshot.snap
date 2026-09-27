@@ -1,5 +1,6 @@
 ---
 source: crates/cox-tui/src/view.rs
+assertion_line: 352
 expression: "buffer_to_string(&render(&state, 80, 15))"
 ---
  keys · Esc or ? closes
@@ -7,7 +8,7 @@ expression: "buffer_to_string(&render(&state, 80, 15))"
    Enter send · Shift+Tab mode cycle · @ file · / command · ? help
    Shift+Enter newline · Alt+Enter newline · Ctrl+Enter newline · Ctrl+R history
    Ctrl+T thinking · Ctrl+O transcript · Ctrl+E expand · Ctrl+G diff
-   Ctrl+C quit · Ctrl+D quit · y copy · Shift+Y copy all
+   Ctrl+K plugin leader · Ctrl+C quit · Ctrl+D quit · y copy · Shift+Y copy all
  running
    Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript
    Alt+Enter send now · Ctrl+Enter send now · Ctrl+U unqueue

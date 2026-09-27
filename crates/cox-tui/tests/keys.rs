@@ -102,6 +102,7 @@ fn approval_decided_by_a_rule_closes_the_modal() {
                 input: serde_json::json!({"command": "cargo test"}),
                 risk: Risk::Exec,
                 subject: "cargo test".into(),
+                segments: None,
             },
             why: Why::Risk { risk: Risk::Exec },
             source: None,

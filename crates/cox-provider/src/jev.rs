@@ -25,6 +25,7 @@
 //! network failure, or low confidence (T21.0).
 
 use async_trait::async_trait;
+use cox_protocol::config::Transport;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
 use cox_protocol::types::{Caps, ProviderEvent, ProviderId, Request, StopReason, Usage};
@@ -43,7 +44,8 @@ pub const DEFAULT_MODEL: &str = "jev-latest";
 /// sites (router pick, risk score, skill rank) are composed by the
 /// `cox-core` judge layer, which owns the questions and thresholds per
 /// TypeSafe's review guidance; this translator only proves the wire shape is
-/// well-formed without a key.
+/// well-formed without a key. `Request.effort` is not sent: the wire has no
+/// such field, and `cox_models::effort_for(Api::Jev, ..)` is `None` (T30.26).
 pub fn build_body(req: &Request) -> Value {
     let mut parts: Vec<&str> = Vec::new();
     for b in &req.system {
@@ -237,25 +239,31 @@ pub struct JevProvider {
     /// Backoff for transient failures before the first byte (same policy as
     /// every other network backend).
     pub retry: crate::retry::Policy,
+    /// `Caps.max_context` (T30.25): resolved once by the caller from the
+    /// model catalog (`cox_models::Catalog`, merged with `[providers.
+    /// typesafe].models`) for `model`, not looked up here — same
+    /// "resolve at construction" shape as `AnthropicProvider::max_context`.
+    /// `backend_for_with` in `crates/cox/src/session.rs` does the lookup
+    /// and falls back to 128 000 — today's literal — when the catalog has
+    /// no row for the configured model (expected: Jev/TypeSafe models have
+    /// no models.dev counterpart, so only an explicit `[providers.
+    /// typesafe].models` entry ever overrides this).
+    pub max_context: u32,
 }
 
 impl JevProvider {
-    /// Builds a provider with an already-resolved credential. Prefer this
-    /// at session startup, where the config names the env var; [`Self::new`]
-    /// (fixed `TYPESAFE_API_KEY` lookup) stays for tests and direct use.
+    /// Builds a provider from `&Transport` (`providers.typesafe`, T30.23)
+    /// with an already-resolved credential. Prefer [`Self::new`] at session
+    /// startup, where the config names the env var; this stays for tests
+    /// and any caller that already has a key.
     pub fn with_key(
-        base_url: impl Into<String>,
+        transport: &Transport,
         api_key: String,
         model: impl Into<String>,
-        timeout_s: u64,
-        max_retries: u32,
-    ) -> Self {
-        let http = reqwest::Client::builder()
-            .read_timeout(std::time::Duration::from_secs(timeout_s.max(1)))
-            .build()
-            .expect("reqwest builds with a read timeout");
-        Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+        max_context: u32,
+    ) -> Result<Self, ProviderError> {
+        Ok(Self {
+            base_url: transport.base_url.trim_end_matches('/').to_string(),
             api_key,
             model: {
                 let m = model.into();
@@ -265,33 +273,28 @@ impl JevProvider {
                     m
                 }
             },
-            http,
+            http: crate::http::client_with_timeout(transport.timeout_s)?,
             retry: crate::retry::Policy {
-                max_retries,
+                max_retries: transport.max_retries,
                 ..Default::default()
             },
-        }
+            max_context,
+        })
     }
 
-    /// Builds a provider, resolving the credential from `TYPESAFE_API_KEY`
-    /// or the keyring. Fails with [`ProviderError::Auth`] rather than
-    /// panicking when neither has one — a missing key is the fail-open
-    /// path, and it must read as auth, not as a transport failure.
+    /// Builds a provider, resolving the credential from
+    /// `transport.api_key_env` (`TYPESAFE_API_KEY` by default) or the
+    /// keyring entry `cox/typesafe` (T30.21). Fails with
+    /// [`ProviderError::Auth`] rather than panicking when neither has one —
+    /// a missing key is the fail-open path, and it must read as auth, not
+    /// as a transport failure.
     pub fn new(
-        base_url: impl Into<String>,
+        transport: &Transport,
         model: impl Into<String>,
-        timeout_s: u64,
-        max_retries: u32,
+        max_context: u32,
     ) -> Result<Self, ProviderError> {
-        let api_key =
-            crate::http::resolve_key_env_or_keyring("TYPESAFE_API_KEY", "cox", "typesafe")?;
-        Ok(Self::with_key(
-            base_url,
-            api_key,
-            model,
-            timeout_s,
-            max_retries,
-        ))
+        let api_key = crate::http::resolve_key(&transport.api_key_env, "typesafe")?;
+        Self::with_key(transport, api_key, model, max_context)
     }
 
     /// One HTTP attempt; `stream` wraps it in the retry policy. Jev answers
@@ -376,9 +379,11 @@ impl Provider for JevProvider {
             thinking: false,
             server_tools: false,
             count_tokens: false,
-            // Decisions carry state, not history: roomy enough for any
+            // Resolved by the caller from the catalog (T30.25); see
+            // `Self::max_context`'s doc. Decisions carry state, not
+            // history, so the 128 000 fallback is roomy enough for any
             // single-turn state the judge composes.
-            max_context: 128_000,
+            max_context: self.max_context,
         }
     }
 

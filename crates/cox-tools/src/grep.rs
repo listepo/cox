@@ -1,20 +1,15 @@
-//! `grep`: ripgrep-equivalent content search (plan.md T3.3). Walks a
-//! confined root with `ignore::WalkBuilder` (`.gitignore` honoured, hidden
-//! files included), searches each file with `grep-regex` + `grep-searcher`,
-//! and formats `-n --no-heading`-style output (`path:line:text`, context
-//! lines as `path-line-text` with a bare `--` between non-contiguous
-//! groups — the same shapes `rg` prints). When the match count exceeds
-//! `max_results`, the full result is archived (D6a: the archive row exists
-//! before the model sees the shortened text) and a pointer trailer line is
-//! appended, instead of silently dropping matches.
-
-use std::path::{Path, PathBuf};
+//! `grep`: ripgrep-equivalent content search (plan.md T3.3). The walk,
+//! match and format engine (`search`) moved to the pure `cox-search` crate
+//! (T32.5) — no filesystem, no `ToolCx`. [`GrepTool`] is the `Tool` impl: it
+//! resolves the root through `crate::path::confine` and, past
+//! `max_results`, archives the full result through `cx.archive` (D6a: the
+//! archive row exists before the model sees the shortened text), so it
+//! stays here rather than moving with the rest of `grep` — `confine` keeps
+//! one call site (docs/design/crates.md, AGENTS.md trust boundaries).
 
 use cox_protocol::{ArchivePut, ToolCx, ToolError, ToolOutput, ToolSpec};
 use cox_protocol::{Concurrency, Risk};
-use grep_regex::RegexMatcher;
-use grep_searcher::{Searcher, SearcherBuilder, Sink, SinkContext, SinkMatch};
-use ignore::WalkBuilder;
+use cox_search::grep::Line;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
@@ -45,84 +40,6 @@ struct GrepInput {
     /// [`DEFAULT_MAX_RESULTS`].
     #[serde(default)]
     max_results: Option<usize>,
-}
-
-/// One formatted output line plus whether it counts toward `max_results`
-/// (context/`--` break lines don't).
-struct Line {
-    text: String,
-    is_match: bool,
-}
-
-/// A `grep_searcher::Sink` that formats matched/context lines the way `rg
-/// -n --no-heading` does, prefixed with `path`.
-struct GrepSink<'a> {
-    path: &'a Path,
-    lines: Vec<Line>,
-}
-
-impl Sink for GrepSink<'_> {
-    type Error = std::io::Error;
-
-    fn matched(
-        &mut self,
-        _searcher: &Searcher,
-        mat: &SinkMatch<'_>,
-    ) -> Result<bool, std::io::Error> {
-        let Some(line_number) = mat.line_number() else {
-            return Ok(true); // line numbers are always requested; skip defensively
-        };
-        let text = String::from_utf8_lossy(mat.bytes());
-        self.lines.push(Line {
-            text: format!(
-                "{}:{}:{}",
-                self.path.display(),
-                line_number,
-                text.trim_end_matches(['\n', '\r'])
-            ),
-            is_match: true,
-        });
-        Ok(true)
-    }
-
-    fn context(
-        &mut self,
-        _searcher: &Searcher,
-        ctx: &SinkContext<'_>,
-    ) -> Result<bool, std::io::Error> {
-        let Some(line_number) = ctx.line_number() else {
-            return Ok(true);
-        };
-        let text = String::from_utf8_lossy(ctx.bytes());
-        self.lines.push(Line {
-            text: format!(
-                "{}-{}-{}",
-                self.path.display(),
-                line_number,
-                text.trim_end_matches(['\n', '\r'])
-            ),
-            is_match: false,
-        });
-        Ok(true)
-    }
-
-    fn context_break(&mut self, _searcher: &Searcher) -> Result<bool, std::io::Error> {
-        self.lines.push(Line {
-            text: "--".to_string(),
-            is_match: false,
-        });
-        Ok(true)
-    }
-}
-
-/// A file's glob filter matches either its basename (`*.rs` at any depth,
-/// gitignore-style) or its full path (patterns that spell out a directory).
-pub(crate) fn glob_allows(
-    glob: &globset::GlobMatcher,
-    entry_path: &Path,
-    file_name: &std::ffi::OsStr,
-) -> bool {
-    glob.is_match(file_name) || glob.is_match(entry_path)
 }
 
 /// Ripgrep-equivalent content search: `ignore::WalkBuilder` (`.gitignore`
@@ -166,53 +83,15 @@ impl cox_protocol::Tool for GrepTool {
             return Err(ToolError::NotFound);
         }
 
-        let matcher = match RegexMatcher::new(&input.pattern) {
-            Ok(m) => m,
-            Err(e) => return Ok(text_error(format!("invalid pattern: {e}"))),
+        let all = match cox_search::grep::search(
+            &root,
+            &input.pattern,
+            input.glob.as_deref(),
+            input.context,
+        ) {
+            Ok(lines) => lines,
+            Err(e) => return Ok(text_error(e.to_string())),
         };
-        let glob_matcher = match &input.glob {
-            Some(g) => match globset::Glob::new(g) {
-                Ok(g) => Some(g.compile_matcher()),
-                Err(e) => return Ok(text_error(format!("invalid glob: {e}"))),
-            },
-            None => None,
-        };
-
-        let mut walker = WalkBuilder::new(&root);
-        walker.hidden(false).sort_by_file_path(|a, b| a.cmp(b));
-
-        let mut all: Vec<Line> = Vec::new();
-        for entry in walker.build() {
-            let Ok(entry) = entry else { continue }; // unreadable dir entry: skip, not fatal
-            if !entry.file_type().is_some_and(|t| t.is_file()) {
-                continue;
-            }
-            let entry_path = entry.path();
-            if let Some(gm) = &glob_matcher
-                && !glob_allows(gm, entry_path, entry.file_name())
-            {
-                continue;
-            }
-
-            let mut builder = SearcherBuilder::new();
-            builder.line_number(true);
-            if let Some(n) = input.context {
-                builder.before_context(n).after_context(n);
-            }
-            let mut searcher = builder.build();
-            let mut sink = GrepSink {
-                path: entry_path,
-                lines: Vec::new(),
-            };
-            // A search error (binary content, unreadable file) just skips
-            // that file rather than failing the whole call.
-            if searcher
-                .search_path(&matcher, entry_path, &mut sink)
-                .is_ok()
-            {
-                all.extend(sink.lines);
-            }
-        }
 
         let total_matches = all.iter().filter(|l| l.is_match).count();
         let cap = input.max_results.unwrap_or(DEFAULT_MAX_RESULTS);
@@ -300,22 +179,9 @@ fn text_error(text: String) -> ToolOutput {
     }
 }
 
-/// Only used by tests below and by `glob.rs` via `super::path`; kept `pub`
-/// within the crate so `glob.rs` can build the same kind of walker without
-/// duplicating the `hidden(false)` + gitignore configuration.
-pub(crate) fn walker(root: &PathBuf) -> WalkBuilder {
-    let mut w = WalkBuilder::new(root);
-    // `require_git(false)`: a `.gitignore` states intent whether or not a
-    // `.git` directory happens to sit above it, and a worktree the agent is
-    // handed may not be a repository at all.
-    w.hidden(false)
-        .require_git(false)
-        .sort_by_file_path(|a, b| a.cmp(b));
-    w
-}
-
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::Arc;
 
@@ -377,6 +243,9 @@ mod tests {
             output: tx,
             session: SessionId::new(),
             call: cox_protocol::CallId::new(),
+            agent: None,
+            preset: None,
+            relay: None,
         }
     }
 

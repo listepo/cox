@@ -1,0 +1,9 @@
+---
+source: crates/cox-tui/src/modal.rs
+expression: "render_grant(&plugin_grant(&[\"fs.write:$WORKSPACE\"], &[],\nSome(\"/home/user/repo\")))"
+---
+ plugin Git Glance (git-glance) wants to load · digest aaaaaaaaaaaa
+ Shows a one-line git summary in the status bar
+ project plugin · repository /home/user/repo
+ wants: fs.write:$WORKSPACE
+ [y]es  [n]o

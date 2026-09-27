@@ -1,55 +1,17 @@
-//! Unconditional redaction of what leaves a session (T28.4): one pattern
-//! table and one `scrub` helper behind every output boundary — rollout
-//! lines, logs, headless output, exports. Separate module so the patterns
-//! exist exactly once and what the model needs for the task never passes
-//! through it (redacting model input is out of scope).
+//! Unconditional redaction of what leaves a session (T28.4): `scrub_event`,
+//! the per-event copy every output boundary — rollout lines, logs, headless
+//! output, exports — writes. The pattern table and `scrub` itself live in
+//! `cox_sanitize::redact` (T33.9) so they exist exactly once; what the model
+//! needs for the task never passes through either (redacting model input is
+//! out of scope).
 
 use std::borrow::Cow;
 
 use cox_protocol::types::Event;
-
-/// What a secret-shaped run becomes. The same marker `cox record --redact`
-/// (T1.5) leaves in cassettes, so redacted bytes look identical everywhere.
-pub const REDACTED: &str = "«redacted»";
-
-/// Replaces secret-shaped runs in `text` — `sk-…` keys, `Bearer …` tokens,
-/// AWS `AKIA…` key ids, GitHub `ghp_…` tokens and PEM blocks — and returns
-/// the original borrow when nothing matched, so clean output is copied by
-/// neither this function nor its callers.
-pub fn scrub(text: &str) -> Cow<'_, str> {
-    // Every shape starts with one of these; without one the scanner below
-    // cannot change anything.
-    if !["sk-", "Bearer ", "AKIA", "ghp_", "-----BEGIN "]
-        .iter()
-        .any(|marker| text.contains(marker))
-    {
-        return Cow::Borrowed(text);
-    }
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    let mut changed = false;
-    while !rest.is_empty() {
-        match secret_span(rest) {
-            Some(len) => {
-                out.push_str(REDACTED);
-                rest = &rest[len..];
-                changed = true;
-            }
-            None => {
-                let Some(ch) = rest.chars().next() else {
-                    break;
-                };
-                out.push(ch);
-                rest = &rest[ch.len_utf8()..];
-            }
-        }
-    }
-    if changed {
-        Cow::Owned(out)
-    } else {
-        Cow::Borrowed(text)
-    }
-}
+// T33.9: the pattern table moved to `cox-sanitize` so the plugin host
+// redacts with the same one; re-exported so `cox_core::redact::scrub` and
+// `REDACTED` keep working.
+pub use cox_sanitize::redact::{REDACTED, scrub};
 
 /// The copy of `ev` for output boundaries: its `TextDelta`,
 /// `ToolCallOutput` and `ToolCallDone` text scrubbed. Everything the model
@@ -96,37 +58,6 @@ fn changed(text: &str) -> Option<String> {
     (scrubbed.as_ref() != text).then(|| scrubbed.into_owned())
 }
 
-/// The byte length of the secret-shaped run at the start of `s`, if any.
-fn secret_span(s: &str) -> Option<usize> {
-    if let Some(after) = s.strip_prefix("Bearer ") {
-        // Any run to the next whitespace is a bearer token.
-        let end = after.find(char::is_whitespace).unwrap_or(after.len());
-        return Some("Bearer ".len() + end);
-    }
-    if let Some(after) = s.strip_prefix("sk-") {
-        return prefixed(3, after, 8);
-    }
-    if let Some(after) = s.strip_prefix("AKIA") {
-        return prefixed(4, after, 16);
-    }
-    if let Some(after) = s.strip_prefix("ghp_") {
-        return prefixed(4, after, 8);
-    }
-    s.starts_with("-----BEGIN ").then(|| {
-        // A PEM block runs to the end of its `-----END …-----` line; an
-        // unterminated one means the key material was pasted without a tail.
-        s.find("\n-----END ").map_or(s.len(), |at| {
-            s[at + 1..].find('\n').map_or(s.len(), |nl| at + 1 + nl)
-        })
-    })
-}
-
-/// `prefix` bytes plus at least `min` alphanumeric bytes, or no match.
-fn prefixed(prefix: usize, after: &str, min: usize) -> Option<usize> {
-    let n = after.bytes().take_while(u8::is_ascii_alphanumeric).count();
-    (n >= min).then_some(prefix + n)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -142,33 +73,6 @@ mod tests {
     use crate::{MemoryStore, Session};
 
     use super::*;
-
-    #[test]
-    fn redact_table() {
-        // The block's trailing newline stays, like every other pattern's tail.
-        let pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----";
-        let cases: &[(&str, &str)] = &[
-            ("sk-abc12345678", REDACTED),
-            ("Bearer tokensecret", REDACTED),
-            ("AKIA0123456789ABCDEF", REDACTED),
-            ("ghp_0123456789abcdef0123", REDACTED),
-            (pem, REDACTED),
-            // T1.5 parity: both shapes in one line, non-ASCII preserved.
-            (
-                "key=sk-abcdefghijk Authorization: Bearer tokensecret",
-                "key=«redacted» Authorization: «redacted»",
-            ),
-            ("café sk-abcdefghijk 日本語", "café «redacted» 日本語"),
-            // Below the length floors, and ordinary text, stay verbatim.
-            ("sk-shrt", "sk-shrt"),
-            ("AKIA0123", "AKIA0123"),
-            ("plain text 1234", "plain text 1234"),
-        ];
-        for (input, want) in cases {
-            assert_eq!(scrub(input).as_ref(), *want, "{input:?}");
-        }
-        assert!(matches!(scrub("plain text 1234"), Cow::Borrowed(_)));
-    }
 
     /// A tool whose *output* is secret-shaped: the scenario scripts the
     /// model, this scripts the tool side (a secret in `input` would be

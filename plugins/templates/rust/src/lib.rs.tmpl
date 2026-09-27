@@ -1,0 +1,164 @@
+//! `{{id}}`: a cox plugin scaffolded by `cox plugin new`. Only the exports
+//! `--with` asked for are here; `plugin.toml`'s `[capabilities]` matches
+//! them exactly. See `docs/design/plugins.md` PL§4 in the cox repository
+//! for what each export and host call does.
+
+#[cfg(target_arch = "wasm32")]
+mod guest {
+    use cox_plugin_sdk::*;
+
+    fn init(_: InitIn) -> Result<InitOut, SdkError> {
+        Ok(InitOut {
+            // cox:with=status
+            status: vec![Slot::StatusRight],
+            // cox:end
+            // cox:with=panel
+            panels: vec![Slot::Panel],
+            // cox:end
+            // cox:with=command
+            commands: vec![CommandDecl {
+                name: "hello".into(),
+                description: "Say hello".into(),
+            }],
+            // cox:end
+            // cox:with=key
+            keys: vec![KeyDecl {
+                key: "g h".into(),
+                name: "hello".into(),
+                description: "Say hello".into(),
+            }],
+            // cox:end
+            // cox:with=renderer
+            renderers: vec!["item:assistant_message".into()],
+            // cox:end
+            // cox:with=event
+            subscribe: vec!["turn_started".into()],
+            // cox:end
+            // cox:with=tool
+            tools: vec![serde_json::json!({
+                "name": "hello",
+                "description": "TODO: describe what this tool does",
+                "input_schema": { "type": "object", "properties": {} },
+            })],
+            // cox:end
+            ..InitOut::default()
+        })
+    }
+
+    // cox:with=event
+    fn on_event(_: EventBatch) -> Result<Effects, SdkError> {
+        // TODO: react to the events this plugin subscribed to in `init`.
+        Ok(Effects::default())
+    }
+    // cox:end
+
+    // cox:with=hook
+    fn hook(_: HookCall) -> Result<Value, SdkError> {
+        // TODO: inspect `call.payload` and answer with the hook's own
+        // outcome shape, e.g. `{"type": "continue"}`.
+        Ok(serde_json::json!({ "type": "continue" }))
+    }
+    // cox:end
+
+    // cox:with=tool
+    fn tool_call(input: ToolCallIn) -> Result<Value, SdkError> {
+        let _ = input;
+        // TODO: implement the `hello` tool declared in `init`.
+        Ok(serde_json::json!({ "output": "TODO: implement this tool" }))
+    }
+    // cox:end
+
+    // cox:with=provider
+    fn provider_stream(input: ProviderCall) -> Result<Vec<Value>, SdkError> {
+        let _ = input;
+        // TODO: translate `input.request` and stream `ProviderEvent`s back.
+        Ok(Vec::new())
+    }
+    // cox:end
+
+    // cox:with=command
+    fn command(c: CommandIn) -> Result<CommandOut, SdkError> {
+        if c.name != "hello" {
+            return Ok(CommandOut::Nothing);
+        }
+        Ok(CommandOut::Notice(PluginNotice {
+            level: NoticeLevel::Info,
+            text: "hello from {{id}}".into(),
+        }))
+    }
+    // cox:end
+
+    // cox:with=key
+    fn key(c: CommandIn) -> Result<CommandOut, SdkError> {
+        // TODO: react to the key named in `c.name`.
+        let _ = c;
+        Ok(CommandOut::Nothing)
+    }
+    // cox:end
+
+    // cox:with=status,panel
+    fn render(input: RenderIn) -> Result<Widget, SdkError> {
+        // cox:with=status
+        if matches!(input.slot, Slot::StatusLeft | Slot::StatusRight) {
+            return Ok(Widget::Text(vec![vec![Span {
+                text: "{{id}} ready".into(),
+                ..Span::default()
+            }]]));
+        }
+        // cox:end
+        // cox:with=panel
+        if input.slot == Slot::Panel {
+            return Ok(Widget::Text(vec![vec![Span {
+                text: "TODO: panel content".into(),
+                ..Span::default()
+            }]]));
+        }
+        // cox:end
+        Ok(Widget::Text(vec![]))
+    }
+    // cox:end
+
+    // cox:with=renderer
+    fn render_item(_: RenderItemIn) -> Result<Option<Widget>, SdkError> {
+        // TODO: return a custom widget, or `None` to fall back to the
+        // default rendering.
+        Ok(None)
+    }
+    // cox:end
+
+    cox_plugin_sdk::register!(
+        init => init,
+        // cox:with=event
+        on_event => on_event,
+        // cox:end
+        // cox:with=hook
+        hook => hook,
+        // cox:end
+        // cox:with=tool
+        tool_call => tool_call,
+        // cox:end
+        // cox:with=provider
+        provider_stream => provider_stream,
+        // cox:end
+        // cox:with=command
+        command => command,
+        // cox:end
+        // cox:with=key
+        key => key,
+        // cox:end
+        // cox:with=status,panel
+        render => render,
+        // cox:end
+        // cox:with=renderer
+        render_item => render_item,
+        // cox:end
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    // A place for this plugin's pure logic and its tests, on the host
+    // target — the pattern `plugins/examples/rust` follows (PL§13): keep
+    // decisions here as plain functions the `#[cfg(target_arch = "wasm32")]`
+    // exports above call, so `cargo test` (no wasm32 build) can check them.
+}

@@ -8,6 +8,7 @@ use cox_protocol::types::{
     Submission, Tier, ToolCall, ToolResult,
 };
 use cox_tui::color::Depth;
+use cox_tui::item_render::ItemRender;
 use cox_tui::state::{Cell, Cmd, Msg, State, update};
 use cox_tui::theme::Theme;
 use cox_tui::view::{buffer_to_string, render};
@@ -43,6 +44,7 @@ fn colour_depth_maps_every_colour_in_the_frame() {
         // syntect colours a fenced block in 24-bit.
         text: "```rust\nfn main() {}\n```".into(),
         done: true,
+        render: ItemRender::Builtin,
     });
     state.transcript.push(Cell::Notice {
         level: Level::Warn,
@@ -95,11 +97,13 @@ fn frame_mono_theme_renders_notices_and_a_tool_card() {
             input: serde_json::json!({"command": "ls"}),
             risk: Risk::Exec,
             subject: "ls".into(),
+            segments: None,
         }),
         output: "README.md\n".into(),
         result: None,
         started: 0,
         user: false,
+        render: ItemRender::Builtin,
     });
     insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 8)));
 }
@@ -123,6 +127,7 @@ fn frame_after_one_turn_replays_events() {
         input: serde_json::json!({"path": "src/main.rs"}),
         risk: Risk::ReadOnly,
         subject: "src/main.rs".into(),
+        segments: None,
     };
     let events = [
         Event::TurnStarted {
@@ -314,6 +319,7 @@ fn osc8_links_tool_paths_but_never_model_text() {
                 input: serde_json::json!({"path": "src/main.rs"}),
                 risk: Risk::ReadOnly,
                 subject: "src/main.rs".into(),
+                segments: None,
             },
         },
     ];
@@ -364,6 +370,7 @@ fn daltonized(name: &str) -> String {
             input: serde_json::json!({}),
             risk: Risk::Write,
             subject: subject.into(),
+            segments: None,
         }),
         output: String::new(),
         result: Some(ToolResult {
@@ -379,6 +386,7 @@ fn daltonized(name: &str) -> String {
         }),
         started: 0,
         user: false,
+        render: ItemRender::Builtin,
     };
     state.transcript.push(card(
         "edit",

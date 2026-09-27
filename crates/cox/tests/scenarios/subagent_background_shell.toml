@@ -1,0 +1,19 @@
+# T34.9 follow-up regression: a detached `bash` on a long `sleep`, started
+# moments before the parent's own top-level turn says its final word.
+# `Session::wait_idle` (`crates/cox-core/src/tasks.rs`) must never wait on
+# this — only `TaskKind::Agent` holds the headless exit open — but `run()`
+# (`crates/cox/src/run.rs`) must still cancel and kill it before the
+# process exits, rather than merely abandoning the OS process as an
+# orphan. `4001` is a deliberately uncommon duration so the test's own
+# `pgrep -f` check cannot mistake some unrelated process for this one. No
+# further scripted turn is needed for the shell call: unlike `agent`, a
+# detached `bash` runs the real command directly rather than driving
+# another round of this same scripted conversation.
+
+[[turn]]
+tool_calls = [
+    { name = "bash", input = { command = "sleep 4001", background = true } },
+]
+
+[[turn]]
+text = "done"

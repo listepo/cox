@@ -9,6 +9,34 @@ check:
 test: && dunnage
     mise exec -- cargo nextest run --workspace
 
+# The guest workspace (plugins/, PL§9): pure/host-target tests only — no
+# wasm32 build here, that is CI's separate step (T33.40.2).
+plugin-test:
+    mise exec -- cargo test --manifest-path plugins/Cargo.toml --workspace
+
+# Build a guest-language example (PL§13) with its own toolchain (installed
+# from plugins/mise.toml) and run its ignored e2e test, e.g.
+# `just plugin-examples dart`. The `plugin-examples` CI job runs this for
+# every language; a missing toolchain there fails the job.
+plugin-examples lang:
+    #!/usr/bin/env sh
+    set -eu
+    case "{{lang}}" in
+      dart)
+        cd plugins && mise install dart@3.13.4
+        cd examples/dart
+        mise exec -- dart pub get
+        mkdir -p build
+        mise exec -- dart compile exe bin/server.dart -o build/example_dart
+        ;;
+      *)
+        echo "plugin-examples: no {{lang}} example yet" >&2
+        exit 1
+        ;;
+    esac
+    cd "{{justfile_directory()}}"
+    mise exec -- cargo nextest run -p cox --run-ignored only -E 'test(plugin_example_{{lang}})'
+
 # Lossless cleanup of ./target (compress + dedupe); never deletes. A no-op without dunnage.
 dunnage:
     #!/usr/bin/env sh
@@ -20,10 +48,27 @@ snap:
     mise exec -- cargo insta review
 
 eval *args:
-    mise exec -- python3 evals/run.py {{args}}
+    uv run --project evals cox-evals {{args}}
 
+# Tests for the eval package; no network, no key (the e2e ones need `cargo build -p cox`).
+test-evals:
+    uv run --project evals --extra tbench pytest evals/tests -q
+
+# Vendor a file no package manager fetches (plan.md A48), e.g.
+# `just vendor anthropic-spec` or `just vendor anthropic-spec --check`.
+vendor *ARGS:
+    uv run --project scripts/vendor cox-vendor {{ARGS}}
+
+# Tests for the vendor package; no network.
+vendor-test:
+    uv run --project scripts/vendor pytest scripts/vendor/tests -q
+
+# Token economy (R§4.6), then the PL§11 plugin timings over the Rust
+# reference plugin (R§4.7; release, because they are latencies; needs the
+# wasm32 target from mise.toml).
 bench:
     mise exec -- cargo run -q -p cox --example bench
+    mise exec -- cargo run -q --release -p cox --example plugin_bench
 
 # Footprint benchmark (plan.md T30.2): cold start, first frame, replay RSS
 # peak and binary size. `--write` refreshes scripts/footprint.json (commit

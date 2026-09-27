@@ -7,7 +7,9 @@ use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
 use std::ops::Range;
 
+use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
+use cox_protocol::plugin::{CommandDecl, CommandOut, KeyDecl, NoticeLevel, RenderIn, Slot, Widget};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
     SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
@@ -22,9 +24,10 @@ use crate::color::Depth;
 use crate::commands::{self, Action, COMMANDS, Context};
 use crate::composer::{Composer, Edit};
 use crate::glyph::{self, Glyphs};
+use crate::item_render::{CellRef, ItemRender, RenderSource};
 use crate::keymap::{self, Keymap};
 use crate::markdown;
-use crate::modal::{Approval, Question, QuestionAnswer};
+use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer, RemoveConfirm};
 use crate::picker::{self, Kind, Pick, Picker};
 use crate::status::parse_todo;
 use crate::tasks;
@@ -45,6 +48,8 @@ pub enum Cell {
         item: ItemId,
         text: String,
         done: bool,
+        /// A plugin's rendering (T33.26), asked once when `done`.
+        render: ItemRender,
     },
     Thinking {
         item: ItemId,
@@ -59,6 +64,8 @@ pub enum Cell {
         started: u64,
         /// A composer `!` line (T25.3) rather than the model asked for it.
         user: bool,
+        /// A plugin's rendering (T33.26), asked once when `result` lands.
+        render: ItemRender,
     },
     Notice {
         level: Level,
@@ -72,16 +79,35 @@ pub enum Cell {
     Summary {
         text: String,
     },
+    /// A follow-up delivered to, or a reply from, a background task
+    /// (`Event::TaskMessage`, T34.4/SM§6): one line labelled like a
+    /// relayed `ApprovalRequired`'s `Source` ("X asks:", `Approval::from_agent`).
+    /// `label` and `text` are already sanitized at the boundary in
+    /// `update` (T34.4's `deliver`/`message_parent` text is model-controlled
+    /// on both ends), mirroring `Modal::Diff`'s text rather than a second
+    /// `text::sanitize` pass in `cells::cell_lines`.
+    TaskMessage {
+        label: String,
+        text: String,
+        /// `true`: the task itself spoke to the parent (`from == task`,
+        /// SM§3's `message_parent`). `false`: a message was delivered to it
+        /// (parent/user or a relayed sibling, SM§3's `deliver`).
+        from_task: bool,
+    },
 }
 
 impl Cell {
     pub fn done(&self) -> bool {
         match self {
-            Cell::User { .. } | Cell::Notice { .. } | Cell::Error { .. } | Cell::Summary { .. } => {
-                true
-            }
-            Cell::Assistant { done, .. } | Cell::Thinking { done, .. } => *done,
-            Cell::Tool { result, .. } => result.is_some(),
+            Cell::User { .. }
+            | Cell::Notice { .. }
+            | Cell::Error { .. }
+            | Cell::Summary { .. }
+            | Cell::TaskMessage { .. } => true,
+            // T33.26: a pending plugin render holds the cell in the viewport.
+            Cell::Assistant { done, render, .. } => *done && !render.pending(),
+            Cell::Thinking { done, .. } => *done,
+            Cell::Tool { result, render, .. } => result.is_some() && !render.pending(),
         }
     }
 }
@@ -115,6 +141,13 @@ pub enum Modal {
     Approval(Approval),
     /// `ask_user` (T22.1): blocks the turn until a key answers or dismisses it.
     Question(Question),
+    /// `NeedsApproval` at session open (T33.8, PL§3); more than one queues
+    /// in `pending_grants` below, since this is the same one modal slot.
+    PluginGrant(PluginGrantDialog),
+    /// `/plugin remove <id> [--keep-data]` (T33.33, PL§1c): confirms an
+    /// irreversible action before `Cmd::PluginMgmt(PluginMgmtRequest::Remove)`
+    /// reaches the runtime.
+    PluginRemove(RemoveConfirm),
     Picker(Picker),
     /// `Ctrl+G` (T15.3): the working tree's `git diff HEAD`, drawn over the
     /// transcript; `scroll` is lines from the top.
@@ -143,6 +176,13 @@ pub enum Modal {
         cells: Vec<Cell>,
         scroll: usize,
     },
+    /// `OpenOverlay` (T33.24, PL§8): `id`'s `overlay` slot, full screen like
+    /// `Diff`/`Transcript` above; `Esc` closes it. The widget itself is not
+    /// carried here — it stays cached in `plugin_status` like every other
+    /// slot's last good render, so a redraw never needs to touch `modal`.
+    Plugin {
+        id: String,
+    },
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -170,10 +210,13 @@ pub struct State {
     pub status: Status,
     pub modal: Option<Modal>,
     pub mode: PermissionMode,
-    /// `(id, label, tier, started)`: `tier` and `started` (`tick` at
-    /// `TaskCreated`) exist only so `/agents` (T27.2) can show a running
-    /// task's tier and elapsed time; `/tasks` still reads just the label.
-    pub tasks: Vec<(TaskId, String, Tier, u64)>,
+    /// `(id, label, tier, started, last_message)`: `tier` and `started`
+    /// (`tick` at `TaskCreated`) exist only so `/agents` (T27.2) can show a
+    /// running task's tier and elapsed time; `/tasks` still reads just the
+    /// label. `last_message` (T34.7) is the sanitized first line of the
+    /// most recent `Event::TaskMessage` naming this task, either way — no
+    /// new progress event stream, SM§6.
+    pub tasks: Vec<(TaskId, String, Tier, u64, Option<String>)>,
     /// Recently finished tasks as `/tasks` lines: exit code and the
     /// `/expand` id of a shell task's output (T27.1).
     pub finished_tasks: Vec<String>,
@@ -302,6 +345,32 @@ pub struct State {
     /// `/loop` (T27.4), if one is running. Named `active_loop` rather than
     /// the card's literal `loop` — a reserved word.
     pub active_loop: Option<Loop>,
+    /// `Modal::PluginGrant` dialogs still waiting (T33.8): `on_key` pops the
+    /// next one into `modal` once the current one is decided (`y`/`n`).
+    pub pending_grants: VecDeque<PluginGrantDialog>,
+    /// Plugin `status.left`/`status.right` segments (T33.23, PL§8), in
+    /// declaration order, each with its last good render. `view` only ever
+    /// reads these; `status::on_plugin` fills them from `Msg::Plugin`.
+    pub plugin_status: Vec<crate::status::PluginSegment>,
+    /// `plugin.leader` was just pressed (T33.25, PL§8): the next key, match
+    /// or not, goes to `Keymap::resolve_plugin_key` instead of anywhere
+    /// else — `<leader> <key>` is the only way a plugin key fires.
+    pub plugin_leader_armed: bool,
+    /// `TogglePanel`'s open plugin, if any (T33.24, PL§8): at most one
+    /// panel is shown at a time, the same one-band budget `todo_area`
+    /// already spends above the composer.
+    pub plugin_panel_open: Option<String>,
+    /// The last `Msg::Resize` (columns, rows), defaulted so a `panel`/
+    /// `overlay` render has an area before the terminal ever resizes
+    /// (T33.24, PL§8: "the render request carries the area size").
+    pub term: (u16, u16),
+    /// Plugin renderer targets for finished cells, `(plugin, target)` in
+    /// declaration order (T33.26, PL§8); the first match wins.
+    pub plugin_renderers: Vec<(String, String)>,
+    /// `/plugin new <name> [--with ...]` awaiting the language picker's
+    /// choice (T33.30), the same two-step shape `rewind_to` above uses for
+    /// `/rewind`'s turn-then-what picks.
+    pub pending_plugin_new: Option<(String, Vec<String>)>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -381,6 +450,8 @@ pub enum Msg {
         call: CallId,
         question: String,
         options: Vec<String>,
+        /// The subagent asking (T34.3); `None` for the session itself.
+        agent: Option<String>,
     },
     /// The terminal gained (`true`) or lost focus (T23.5).
     Focus(bool),
@@ -392,6 +463,88 @@ pub enum Msg {
     /// overlay. `crates/cox/src/session.rs` answers this for real with
     /// `Store::rollout_read`; a test can also send it directly.
     Rollout(Vec<Event>),
+    /// What the runtime learned about a plugin's UI (T33.23, PL§8).
+    Plugin(PluginUiMsg),
+    /// The runtime's answer to `Cmd::PluginMgmt` (T33.30 `New`; T33.33
+    /// `Update`/`Remove`/`List`): `Ok` is the lines `cox plugin
+    /// new`/`update`/`remove`/`list` would have printed, joined; `Err`
+    /// names why. Shown as a notice, the same as `Event::Notice`.
+    PluginMgmt(Result<String, String>),
+}
+
+/// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
+/// holds a plugin, so every render arrives here, cached in `State`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginUiMsg {
+    /// A plugin's granted slots, commands and keys after `cox_init`
+    /// (T33.25 adds the latter two). `status.left`/`status.right` render
+    /// once now, since they are always visible; `panel`/`overlay` (T33.24)
+    /// only register here and render later, when `TogglePanel`/
+    /// `OpenOverlay` actually shows them. `crates/cox` re-sends this
+    /// whenever a session re-inits the plugin, so `update` treats it as the
+    /// current, full set, not an addition to the last one.
+    Declare {
+        plugin: String,
+        slots: Vec<Slot>,
+        commands: Vec<CommandDecl>,
+        keys: Vec<KeyDecl>,
+        /// Granted `cox_render_item` targets (T33.26).
+        renderers: Vec<String>,
+    },
+    /// A `cox_render_item` answer (T33.26); `None` keeps the built-in look.
+    ItemRendered {
+        cell: CellRef,
+        widget: Option<Widget>,
+    },
+    /// `Effects.redraw` or `cox_redraw()`: render this plugin's slots again.
+    Redraw { plugin: String },
+    /// A `cox_render` answer that came back inside its deadline.
+    Rendered {
+        plugin: String,
+        slot: Slot,
+        widget: Widget,
+    },
+    /// A `cox_render` that timed out, failed or does not exist; the last
+    /// good render stays and the miss is counted.
+    Missed { plugin: String, slot: Slot },
+    /// A `cox_command`/`cox_key` answer (T33.25, PL§8); `None` is a
+    /// timeout, an error or a missing export, the same fail-open `Missed`
+    /// already gives a render.
+    Command {
+        plugin: String,
+        out: Option<CommandOut>,
+    },
+}
+
+/// What the TUI asks of a plugin; `crates/cox` serves it and answers with
+/// `Msg::Plugin`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginRequest {
+    /// Call `plugin`'s `cox_render` with `input`.
+    Render { plugin: String, input: RenderIn },
+    /// `/<id>:<name>` (T33.25, PL§8): call `plugin`'s `cox_command`.
+    Command {
+        plugin: String,
+        name: String,
+        args: String,
+    },
+    /// `<leader> <key>` (T33.25, PL§8): call `plugin`'s `cox_key`.
+    Key { plugin: String, name: String },
+    /// A finished cell (T33.26): call `plugin`'s `cox_render_item`.
+    RenderItem {
+        plugin: String,
+        cell: CellRef,
+        target: String,
+        source: RenderSource,
+        width: u16,
+    },
+    /// `/plugin remove <id>` confirmed (T33.33, PL§1c): `crates/cox` sends
+    /// this after `plugin_cmd::remove_for_tui` succeeds, over the same
+    /// channel `Render`/`Command`/`Key` already reach `plugin_ui::serve` on
+    /// — the one place holding this session's live hosts — so it can flag
+    /// `plugin`'s host stopped without a second channel. No answer rides
+    /// back on the feed; the modal's own notice already told the user.
+    Stop { plugin: String },
 }
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
@@ -403,6 +556,64 @@ pub enum Ask {
     /// `crates/cox/src/resume.rs` does for `--resume` (`Store::rollout_read`);
     /// `crates/cox/src/session.rs` answers it for real.
     Rollout(SessionId),
+}
+
+/// `Modal::PluginGrant`'s `y` (T33.8, PL§3): the full requested capability
+/// list to write at `digest` in `scope`. Carried out to `crates/cox` over a
+/// channel, the same shape `persist`'s `(String, String)` carries a
+/// `/theme` choice out to `config_cmd::set` — this crate never touches the
+/// store itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrantDecision {
+    pub plugin_id: String,
+    pub digest: String,
+    pub scope: GrantScope,
+    pub capabilities: Vec<String>,
+}
+
+/// `/plugin new`'s request to the runtime (T33.30, PL§13), carried out to
+/// `crates/cox` over a channel like `GrantDecision` above. `lang` is a
+/// string, not `plugin_new::Lang`, because `cox-tui` cannot depend on
+/// `crates/cox`'s types (plan.md §1.1); `crates/cox`'s `session.rs` maps it
+/// back with `Lang::from_str`, the one place that mapping happens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginNewRequest {
+    pub name: String,
+    pub lang: String,
+    pub with: Vec<String>,
+}
+
+/// `/plugin`'s management requests to the runtime (T33.30 `New`; T33.33
+/// `Update`/`Remove`/`List`), carried over the one channel `Cmd::PluginMgmt`
+/// reaches (`app.rs`) rather than a second channel per subcommand —
+/// `crates/cox`'s executor matches on this and calls the same
+/// `plugin_new`/`plugin_cmd` functions `cox plugin ...` uses, so there is
+/// only one implementation of each. Its answer rides the feed as
+/// `Msg::PluginMgmt`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginMgmtRequest {
+    New(PluginNewRequest),
+    /// `/plugin update [<id>...] [--all] [--check] [--rollback]` (PL§1b):
+    /// always pre-approved — the TUI's raw mode has no stdin to prompt a
+    /// widened capability list on, so `crates/cox` runs it the way `--yes`
+    /// would.
+    Update {
+        ids: Vec<String>,
+        all: bool,
+        check: bool,
+        rollback: bool,
+    },
+    /// `/plugin remove <id> [--keep-data]` (PL§1c): only reached after
+    /// `Modal::PluginRemove` confirmed it, so `crates/cox` never prompts
+    /// either.
+    Remove {
+        id: String,
+        keep_data: bool,
+    },
+    /// `/plugin list [--json]`.
+    List {
+        json: bool,
+    },
 }
 
 /// The only effects `update` may request; the runtime performs them.
@@ -439,6 +650,19 @@ pub enum Cmd {
         title: String,
         body: String,
     },
+    /// `Modal::PluginGrant`'s `y` (T33.8): `app.rs` forwards this to
+    /// `crates/cox`, which writes it. `n` never reaches here — `on_key`
+    /// alone advances `pending_grants`, since skipping writes nothing.
+    PluginGrant(GrantDecision),
+    /// A plugin call the runtime makes off-screen (T33.23); `app.rs`
+    /// forwards it to `crates/cox`, the only side that holds plugin hosts.
+    Plugin(PluginRequest),
+    /// `/plugin new|update|remove|list`'s request to the runtime (T33.30
+    /// `New`; T33.33 `Update`/`Remove`/`List`): `app.rs` forwards this to
+    /// `crates/cox`, which runs the same `plugin_new`/`plugin_cmd`
+    /// functions `cox plugin ...` calls and answers on the feed as
+    /// `Msg::PluginMgmt`.
+    PluginMgmt(PluginMgmtRequest),
 }
 
 impl State {
@@ -512,6 +736,13 @@ impl State {
             focused: true,
             mouse: true,
             active_loop: None,
+            pending_grants: VecDeque::new(),
+            plugin_status: Vec::new(),
+            plugin_leader_armed: false,
+            plugin_panel_open: None,
+            term: (80, 24),
+            plugin_renderers: Vec::new(),
+            pending_plugin_new: None,
         }
     }
 
@@ -556,6 +787,7 @@ impl State {
                                     item: ItemId::new(),
                                     text: text.clone(),
                                     done: true,
+                                    render: ItemRender::Builtin,
                                 });
                             }
                             Content::Thinking { text, .. } => {
@@ -597,7 +829,11 @@ impl State {
     pub fn context(&self) -> Context {
         match &self.modal {
             Some(
-                Modal::Diff { .. } | Modal::Help | Modal::Agents { .. } | Modal::Transcript { .. },
+                Modal::Diff { .. }
+                | Modal::Help
+                | Modal::Agents { .. }
+                | Modal::Transcript { .. }
+                | Modal::Plugin { .. },
             ) => Context::Overlay,
             Some(_) => Context::Modal,
             None if self.status.busy => Context::Running,
@@ -654,7 +890,15 @@ fn progress(state: &mut State) -> Option<Cmd> {
     }
     let want = match (state.status.busy, &state.modal) {
         (false, _) => Progress::Idle,
-        (true, Some(Modal::Approval(_) | Modal::Question(_))) => Progress::Paused,
+        (
+            true,
+            Some(
+                Modal::Approval(_)
+                | Modal::Question(_)
+                | Modal::PluginGrant(_)
+                | Modal::PluginRemove(_),
+            ),
+        ) => Progress::Paused,
         (true, _) => Progress::Busy,
     };
     (want != state.progress).then(|| {
@@ -673,9 +917,41 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
         Msg::Event(ev) => on_event(state, ev),
         Msg::Tick => {
             state.tick += 1;
+            crate::item_render::expire(state);
             loop_tick(state)
         }
-        Msg::Resize(..) => Vec::new(),
+        // PL§8: a resize is one of the three times a plugin renders; T33.24
+        // keeps the new size so a later `panel`/`overlay` render (opened by
+        // a command, not this resize) still asks for the right area.
+        Msg::Resize(w, h) => {
+            state.term = (w, h);
+            crate::status::render_requests(state, None)
+        }
+        Msg::Plugin(PluginUiMsg::ItemRendered { cell, widget }) => {
+            crate::item_render::on_rendered(state, cell, widget);
+            Vec::new()
+        }
+        // T33.25, PL§8: a `Command` answer applies `CommandOut` here, not
+        // in `status`, which only ever folds slots; everything else
+        // (`Declare`'s slots included) still goes through `on_plugin`.
+        Msg::Plugin(PluginUiMsg::Command { plugin, out }) => {
+            plugin_command_out(state, &plugin, out)
+        }
+        Msg::Plugin(msg) => {
+            if let PluginUiMsg::Declare {
+                plugin,
+                commands,
+                keys,
+                renderers,
+                ..
+            } = &msg
+            {
+                declare_plugin_commands(state, plugin, commands);
+                state.keymap.declare_plugin_keys(plugin, keys);
+                crate::item_render::declare(state, plugin, renderers);
+            }
+            crate::status::on_plugin(state, msg)
+        }
         Msg::Agents(agents) => {
             state.agents = agents;
             Vec::new()
@@ -694,9 +970,12 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             call,
             question,
             options,
+            agent,
         } => {
             let cmds = notify(state, format!("question: {question}"));
-            state.modal = Some(Modal::Question(Question::new(call, question, options)));
+            state.modal = Some(Modal::Question(
+                Question::new(call, question, options).from_agent(agent),
+            ));
             cmds
         }
         Msg::Focus(focused) => {
@@ -709,6 +988,14 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
                 cells: replay_cells(events),
                 scroll: 0,
             });
+            Vec::new()
+        }
+        Msg::PluginMgmt(result) => {
+            let (level, text) = match result {
+                Ok(text) => (Level::Info, text),
+                Err(text) => (Level::Warn, text),
+            };
+            notice(state, level, text);
             Vec::new()
         }
     }
@@ -771,9 +1058,12 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
         Some(
             Modal::Approval(_)
             | Modal::Question(_)
+            | Modal::PluginGrant(_)
+            | Modal::PluginRemove(_)
             | Modal::Help
             | Modal::Agents { .. }
-            | Modal::Transcript { .. },
+            | Modal::Transcript { .. }
+            | Modal::Plugin { .. },
         ) => {}
         None => {
             state.scroll = if up {
@@ -808,6 +1098,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     // `app.rs`'s select loop, before a `Msg::Key` ever reaches here.
     if key.kind == KeyEventKind::Repeat && matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
         return Vec::new();
+    }
+    // T33.25, PL§8: the key right after `plugin.leader` never reaches the
+    // composer, a modal or another binding, matched or not — `<leader>
+    // <key>` is the only way a plugin key fires.
+    if state.plugin_leader_armed {
+        state.plugin_leader_armed = false;
+        return match state.keymap.resolve_plugin_key(key) {
+            Some((plugin, name)) => vec![Cmd::Plugin(PluginRequest::Key {
+                plugin: plugin.to_string(),
+                name: name.to_string(),
+            })],
+            None => Vec::new(),
+        };
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     // `Ctrl+C` interrupts a running turn; when idle it must be pressed twice.
@@ -876,6 +1179,60 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                 Vec::new()
             }
         },
+        // T33.8, PL§3: `y`/`n` decide one dialog and `pending_grants`
+        // supplies the next, so the queue drains one key at a time without
+        // this crate ever writing the grant itself.
+        Some(Modal::PluginGrant(grant)) => match grant.key(key) {
+            Some(granted) => {
+                let text = if granted {
+                    format!("granted {}; it will load next session", grant.plugin_id)
+                } else {
+                    format!("skipped {} for this session", grant.plugin_id)
+                };
+                state.transcript.push(Cell::Notice {
+                    level: Level::Info,
+                    text,
+                });
+                state.modal = state.pending_grants.pop_front().map(Modal::PluginGrant);
+                if granted {
+                    vec![Cmd::PluginGrant(GrantDecision {
+                        plugin_id: grant.plugin_id,
+                        digest: grant.digest,
+                        scope: grant.scope,
+                        capabilities: grant.capabilities,
+                    })]
+                } else {
+                    Vec::new()
+                }
+            }
+            None => {
+                state.modal = Some(Modal::PluginGrant(grant));
+                Vec::new()
+            }
+        },
+        // T33.33, PL§1c: `y` reaches the runtime only from here — `act()`
+        // just opens the modal, never the request itself, so a stray
+        // `/plugin remove` can never fire without this confirmation.
+        Some(Modal::PluginRemove(confirm)) => match confirm.key(key) {
+            Some(true) => {
+                vec![Cmd::PluginMgmt(PluginMgmtRequest::Remove {
+                    id: confirm.id,
+                    keep_data: confirm.keep_data,
+                })]
+            }
+            Some(false) => {
+                notice(
+                    state,
+                    Level::Info,
+                    format!("cancelled removing {}", confirm.id),
+                );
+                Vec::new()
+            }
+            None => {
+                state.modal = Some(Modal::PluginRemove(confirm));
+                Vec::new()
+            }
+        },
         // T24.2: every key that changes the selection previews the row
         // immediately, not only `Enter` — the same live-apply the picker's
         // other kinds do not need, since none of them redraws the screen
@@ -931,6 +1288,19 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                         })];
                     }
                 }
+                // T33.30: the second (and only) step of `/plugin new`
+                // without `--lang` — `name`/`with` were stashed when the
+                // picker opened, the same way `Kind::Rewind` stashes
+                // `rewind_to` for `Kind::RewindWhat` above.
+                Pick::Chosen(choice) if picker.kind == Kind::PluginLang => {
+                    if let Some((name, with)) = state.pending_plugin_new.take() {
+                        return vec![Cmd::PluginMgmt(PluginMgmtRequest::New(PluginNewRequest {
+                            name,
+                            lang: choice,
+                            with,
+                        }))];
+                    }
+                }
                 Pick::Chosen(choice) => match picker.kind {
                     Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
                     // Resuming in place needs `app::run` to return a request;
@@ -953,9 +1323,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                             .to_string();
                         state.composer.set_text(&text);
                     }
-                    // `Themes` is intercepted by its own guarded arm above
-                    // and never reaches this generic one.
-                    Kind::Rewind | Kind::RewindWhat | Kind::Themes => {}
+                    // `Themes` and `PluginLang` are each intercepted by
+                    // their own guarded arm above and never reach this
+                    // generic one.
+                    Kind::Rewind | Kind::RewindWhat | Kind::Themes | Kind::PluginLang => {}
                     Kind::Shell => {
                         let mut line = state.composer.text();
                         let keep = line.len() - picker::last_word(&line).len();
@@ -1049,6 +1420,14 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             state.modal = Some(Modal::Transcript { cells, scroll });
             Vec::new()
         }
+        // T33.24, PL§8: `overlay`'s only key — full screen, no scroll of
+        // its own, so anything but `Esc` just keeps it open.
+        Some(Modal::Plugin { id }) => {
+            if key.code != KeyCode::Esc {
+                state.modal = Some(Modal::Plugin { id });
+            }
+            Vec::new()
+        }
         None => {
             let esc_idle_empty =
                 key.code == KeyCode::Esc && !state.status.busy && state.composer.is_empty();
@@ -1096,6 +1475,11 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
     let enter = |modifiers| KeyEvent::new(KeyCode::Enter, modifiers);
     Some(match action {
         A::Quit => vec![Cmd::Quit],
+        // T33.25, PL§8: arms `on_key`'s leader check for the very next key.
+        A::PluginLeader => {
+            state.plugin_leader_armed = true;
+            Vec::new()
+        }
         A::Thinking => toggle(&mut state.show_thinking),
         A::Transcript => toggle(&mut state.show_diffs),
         A::Expand => {
@@ -1171,7 +1555,8 @@ fn cell_text(cell: &Cell) -> &str {
         | Cell::Thinking { text, .. }
         | Cell::Notice { text, .. }
         | Cell::Error { text, .. }
-        | Cell::Summary { text } => text,
+        | Cell::Summary { text }
+        | Cell::TaskMessage { text, .. } => text,
         Cell::Tool { output, .. } => output,
     }
 }
@@ -1214,7 +1599,11 @@ fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             // T22.2: a file command's name reaches the core as
             // `Submission::Command`; the T5.5 parser owns the
             // built-ins and would answer these with a notice.
-            match file_command(&state.commands, &text).or_else(|| commands::parse(&text, tier)) {
+            // T33.25, PL§8: a `/<id>:<name>` line calls the plugin instead.
+            match file_command(&state.commands, &text)
+                .or_else(|| plugin_command(&state.commands, &text))
+                .or_else(|| commands::parse(&text, tier))
+            {
                 Some(action) => act(state, action),
                 // A turn is running: queue instead of submitting
                 // (T25.1). A slash command still runs immediately
@@ -1360,7 +1749,7 @@ fn open_rewind(state: &mut State) -> Vec<Cmd> {
 /// no resumable id on the wire yet (plan.md §3 P27).
 fn agents_rows(
     agents: &[Presence],
-    tasks: &[(TaskId, String, Tier, u64)],
+    tasks: &[(TaskId, String, Tier, u64, Option<String>)],
     tick: u64,
 ) -> Vec<(String, Option<SessionId>)> {
     let mut rows: Vec<(String, Option<SessionId>)> = agents
@@ -1374,16 +1763,23 @@ fn agents_rows(
             (text, Some(a.session))
         })
         .collect();
-    rows.extend(tasks.iter().map(|(_, label, tier, started)| {
+    rows.extend(tasks.iter().map(|(_, label, tier, started, last)| {
         let preset = label.split_once(": ").map_or("-", |(p, _)| p);
         let elapsed = tick.saturating_sub(*started);
-        let text = crate::text::sanitize(&format!(
+        let mut text = format!(
             "{label} · preset {preset} · tier {} · cost - · elapsed {}.{}s · running",
             format!("{tier:?}").to_lowercase(),
             elapsed / 10,
             elapsed % 10
-        ));
-        (text, None)
+        );
+        // T34.7/SM§6: the narrow card grows a last-message line instead of
+        // a new progress event stream — already sanitized in `update`, but
+        // re-run through `sanitize` with the rest of the row, same as the
+        // label above (`crate::text::sanitize` is idempotent).
+        if let Some(last) = last {
+            text.push_str(&format!(" · last: {last}"));
+        }
+        (crate::text::sanitize(&text), None)
     }));
     rows
 }
@@ -1391,11 +1787,13 @@ fn agents_rows(
 /// T22.2: a `/name args` line naming a file command — something
 /// `State.commands` carries beyond the built-in `COMMANDS`, which the T5.5
 /// parser owns — submits `Submission::Command` for the core, the same shape
-/// the parser already produces for built-ins without a dedicated arm.
+/// the parser already produces for built-ins without a dedicated arm. A
+/// colon-bearing name is a plugin command (T33.25) instead, never one of
+/// these: no built-in or file command name has ever contained one.
 fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Action> {
     let mut words = line.strip_prefix('/')?.split_whitespace();
     let name = words.next()?;
-    if COMMANDS.iter().any(|(n, ..)| *n == name) {
+    if COMMANDS.iter().any(|(n, ..)| *n == name) || name.contains(':') {
         return None;
     }
     commands.iter().any(|(n, ..)| n == name).then(|| {
@@ -1406,6 +1804,86 @@ fn file_command(commands: &[(String, String, String)], line: &str) -> Option<Act
             },
         })
     })
+}
+
+/// T33.25, PL§8: a `/<id>:<name>` line naming a plugin command — the colon
+/// is what tells it apart from `file_command`'s names. Guarded the same
+/// way against `COMMANDS` so a built-in still wins even over a
+/// mis-registered plugin command that dropped its `<id>:` prefix.
+fn plugin_command(commands: &[(String, String, String)], line: &str) -> Option<Action> {
+    let mut words = line.strip_prefix('/')?.split_whitespace();
+    let full = words.next()?;
+    if COMMANDS.iter().any(|(n, ..)| *n == full) {
+        return None;
+    }
+    let (plugin, name) = full.split_once(':')?;
+    commands
+        .iter()
+        .any(|(n, ..)| n == full)
+        .then(|| Action::PluginCommand {
+            plugin: plugin.to_string(),
+            name: name.to_string(),
+            args: words.collect::<Vec<_>>().join(" "),
+        })
+}
+
+/// T33.25, PL§8: a plugin's declared commands join `State.commands` after
+/// the built-ins and any file commands, as `/<id>:<name>` — appended once,
+/// a re-`Declare` never duplicates a name it already added.
+fn declare_plugin_commands(state: &mut State, plugin: &str, commands: &[CommandDecl]) {
+    for c in commands {
+        let full = format!("{plugin}:{}", crate::text::sanitize(&c.name));
+        if state.commands.iter().any(|(n, ..)| *n == full) {
+            continue;
+        }
+        state.commands.push((
+            full.clone(),
+            format!("/{full}"),
+            crate::text::sanitize(&c.description),
+        ));
+    }
+}
+
+/// T33.25, PL§8: `CommandOut`'s closed effects for a `cox_command`/
+/// `cox_key` answer. `None` — a timeout, an error or a missing export —
+/// fails open like a missed render: nothing happens, nothing is shown.
+fn plugin_command_out(state: &mut State, plugin: &str, out: Option<CommandOut>) -> Vec<Cmd> {
+    match out {
+        Some(CommandOut::Prompt { text }) => vec![Cmd::Submit(Submission::UserTurn {
+            text: crate::text::sanitize(&text),
+            attachments: Vec::new(),
+            confirm_think: false,
+        })],
+        Some(CommandOut::Compact { focus }) => vec![Cmd::Submit(Submission::Compact {
+            focus: focus.map(|f| crate::text::sanitize(&f)),
+        })],
+        // T33.24, PL§8: opening either slot is a "slot became visible"
+        // moment, one of the three times a plugin renders — `render_requests`
+        // itself decides whether `plugin` actually has that slot to render.
+        Some(CommandOut::TogglePanel) => {
+            state.plugin_panel_open = if state.plugin_panel_open.as_deref() == Some(plugin) {
+                None
+            } else {
+                Some(plugin.to_string())
+            };
+            crate::status::render_requests(state, Some(plugin))
+        }
+        Some(CommandOut::OpenOverlay) => {
+            state.modal = Some(Modal::Plugin {
+                id: plugin.to_string(),
+            });
+            crate::status::render_requests(state, Some(plugin))
+        }
+        Some(CommandOut::Notice(n)) => {
+            let level = match n.level {
+                NoticeLevel::Warn => Level::Warn,
+                NoticeLevel::Info => Level::Info,
+            };
+            notice(state, level, crate::text::sanitize(&n.text));
+            Vec::new()
+        }
+        Some(CommandOut::Nothing) | None => Vec::new(),
+    }
 }
 
 /// A slash command's effect; anything the core owns becomes a `Submit`.
@@ -1579,6 +2057,81 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             Some(_) => notice(state, Level::Info, "loop stopped".into()),
             None => notice(state, Level::Warn, "no loop running".into()),
         },
+        // T33.25, PL§8: `crates/cox`'s `plugin_ui::answer` runs
+        // `cox_command` and the answer comes back as
+        // `Msg::Plugin(PluginUiMsg::Command)`, applied in `plugin_command_out`.
+        Action::PluginCommand { plugin, name, args } => {
+            return vec![Cmd::Plugin(PluginRequest::Command { plugin, name, args })];
+        }
+        // T33.30: `--lang` already named a language, so there is nothing
+        // to pick — the request goes straight to the runtime, which is the
+        // one place that validates it (`plugin_new::scaffold`'s errors).
+        Action::PluginNew {
+            name,
+            lang: Some(lang),
+            with,
+        } => {
+            return vec![Cmd::PluginMgmt(PluginMgmtRequest::New(PluginNewRequest {
+                name,
+                lang,
+                with,
+            }))];
+        }
+        // No `--lang`: stash `name`/`with` and ask the picker, the same
+        // two-step shape `Action::Rewind` uses for its turn-then-what picks.
+        Action::PluginNew {
+            name,
+            lang: None,
+            with,
+        } => {
+            state.pending_plugin_new = Some((name, with));
+            state.modal = Some(Modal::Picker(Picker::open(
+                Kind::PluginLang,
+                picker::PLUGIN_LANGS
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            )));
+        }
+        // T33.33: `list`/`update` need no confirmation — the runtime
+        // already pre-approves them the way `--yes` would, since the TUI's
+        // raw mode has no stdin to prompt a widened capability list on.
+        Action::PluginList { json } => {
+            return vec![Cmd::PluginMgmt(PluginMgmtRequest::List { json })];
+        }
+        Action::PluginUpdate {
+            ids,
+            all,
+            check,
+            rollback,
+        } => {
+            return vec![Cmd::PluginMgmt(PluginMgmtRequest::Update {
+                ids,
+                all,
+                check,
+                rollback,
+            })];
+        }
+        // `remove` is the one irreversible plugin action, so it asks
+        // through `Modal::PluginRemove` first — `on_key`'s handler for it
+        // sends `Cmd::PluginMgmt(PluginMgmtRequest::Remove)` only on `y`.
+        Action::PluginRemove { id, keep_data } => {
+            state.modal = Some(Modal::PluginRemove(RemoveConfirm { id, keep_data }));
+        }
+        // `/plugin reload` means `/clear`: the plugin host only reloads a
+        // manifest at session open, so restarting the cache prefix is the
+        // only way to pick up a changed one — mirrors the `command.name ==
+        // "clear"` handling below, plus a notice explaining why.
+        Action::PluginReload => {
+            state.queue.clear();
+            state.active_loop = None;
+            notice(
+                state,
+                Level::Info,
+                "plugin reload: restarting session to reload plugins".into(),
+            );
+            return vec![Cmd::Clear];
+        }
     }
     Vec::new()
 }
@@ -1607,6 +2160,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 item,
                 text,
                 done: false,
+                render: ItemRender::Builtin,
             }),
             ItemKind::Thinking { text, .. } => state.transcript.push(Cell::Thinking {
                 item,
@@ -1632,6 +2186,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             {
                 *done = true;
             }
+            cmds = crate::item_render::ask(state, CellRef::Item(item));
         }
         Event::ToolCallRequested { call } => {
             let user = call.name == "bash" && state.shell.take().is_some();
@@ -1645,6 +2200,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 result: None,
                 started: state.tick,
                 user,
+                render: ItemRender::Builtin,
             });
         }
         Event::ToolCallOutput { call_id, delta } => {
@@ -1666,6 +2222,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             if let Some(todo) = todo {
                 state.todo = todo;
             }
+            cmds = crate::item_render::ask(state, CellRef::Call(call_id));
             // A `!` line has no `TurnDone`; its card closing ends it, and
             // a message queued behind it goes out as a turn would release it.
             if state.shell_call == Some(call_id) {
@@ -1715,8 +2272,11 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
+        // T33.20: the `TurnStarted` that follows already carries the
+        // advised tier and model, so the status line needs nothing more.
+        Event::Advised { .. } => {}
         Event::TaskCreated { task, label, tier } => {
-            state.tasks.push((task, label, tier, state.tick));
+            state.tasks.push((task, label, tier, state.tick, None));
         }
         Event::TaskCompleted {
             task,
@@ -1734,6 +2294,31 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                     .saturating_sub(tasks::FINISHED_KEPT);
                 state.finished_tasks.drain(..over);
             }
+        }
+        // T34.7/SM§6: `task` is always the task this message concerns —
+        // the addressee delivered to (`deliver`), or, when a child speaks
+        // to the parent (`message_parent`), its own id doubling as `from`
+        // (`tasks.rs`: "the parent has no id"). Resolved once here to the
+        // task's registered label, since a finished task is already gone
+        // from `state.tasks` by the time an in-flight reply renders.
+        Event::TaskMessage {
+            task, from, text, ..
+        } => {
+            let label = state
+                .tasks
+                .iter()
+                .find(|(t, ..)| *t == task)
+                .map_or_else(|| task.to_string(), |(_, label, ..)| label.clone());
+            let label = crate::text::sanitize(&label);
+            let text = crate::text::sanitize(&text);
+            if let Some(entry) = state.tasks.iter_mut().find(|(t, ..)| *t == task) {
+                entry.4 = Some(text.lines().next().unwrap_or("").to_string());
+            }
+            state.transcript.push(Cell::TaskMessage {
+                label,
+                from_task: from == Some(task),
+                text,
+            });
         }
         Event::Notice { level, text } => state.transcript.push(Cell::Notice { level, text }),
         Event::Error { error, fatal } => state.transcript.push(Cell::Error {
@@ -1978,6 +2563,42 @@ mod tests {
         assert!(state.modal.is_none());
     }
 
+    /// T33.30's Done-when: `/plugin new <name>` with no `--lang` opens the
+    /// language picker, and choosing a row reaches
+    /// `Cmd::PluginMgmt(PluginMgmtRequest::New)` with that language — the
+    /// one `Cmd` `crates/cox`'s executor turns into a
+    /// `plugin_new::scaffold`/`write` call, so there is no second
+    /// implementation of the mapping. `fake_executor` stands in for that
+    /// runtime executor (`cox-tui` cannot call `plugin_new::scaffold`
+    /// itself — it does not depend on `crates/cox`) and records what it
+    /// would have been called with.
+    #[test]
+    fn tui_plugin_new_calls_shared_scaffold() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        type_command(&mut state, "/plugin new demo");
+        assert!(
+            matches!(&state.modal, Some(Modal::Picker(p)) if p.kind == Kind::PluginLang),
+            "/plugin new with no --lang opens the language picker"
+        );
+
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+
+        let mut calls: Vec<(String, String, Vec<String>)> = Vec::new();
+        let fake_executor =
+            |req: &PluginNewRequest| (req.name.clone(), req.lang.clone(), req.with.clone());
+        for cmd in &cmds {
+            if let Cmd::PluginMgmt(PluginMgmtRequest::New(req)) = cmd {
+                calls.push(fake_executor(req));
+            }
+        }
+        assert_eq!(
+            calls,
+            vec![("demo".to_string(), "rust".to_string(), Vec::new())],
+            "exactly one call, with the picker's chosen language"
+        );
+        assert!(state.modal.is_none(), "the picker closes after a pick");
+    }
+
     /// T25.1 step 1/3: `Enter` while a turn runs queues instead of
     /// submitting, and each natural `TurnDone` drains the queue's head in
     /// the order the messages were typed.
@@ -2183,6 +2804,133 @@ mod tests {
         );
     }
 
+    /// T33.25, PL§8: even a plugin command mis-registered without its
+    /// `<id>:` prefix (bypassing `declare_plugin_commands`'s own naming)
+    /// never shadows a built-in — the same guard `file_command` already
+    /// gives a markdown command — and the real built-in still dispatches
+    /// with plugin commands present in the table.
+    #[test]
+    fn builtin_command_wins_over_plugin() {
+        let commands = vec![("quit".to_string(), String::new(), String::new())];
+        assert_eq!(plugin_command(&commands, "/quit"), None);
+
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state
+            .commands
+            .push(("acme:quit".into(), "/acme:quit".into(), String::new()));
+        assert_eq!(type_command(&mut state, "/quit"), vec![Cmd::Quit]);
+    }
+
+    /// T33.25, PL§8: `/<id>:<name>` calls the plugin (`Cmd::Plugin`, not
+    /// the core), and its `CommandOut::Prompt` answer submits a `UserTurn`,
+    /// like a markdown command's own text would.
+    #[test]
+    fn plugin_command_prompt_submits_user_turn() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state
+            .commands
+            .push(("acme:go".into(), "/acme:go".into(), "go".into()));
+
+        let cmds = type_command(&mut state, "/acme:go do it");
+        assert_eq!(
+            cmds,
+            vec![Cmd::Plugin(PluginRequest::Command {
+                plugin: "acme".into(),
+                name: "go".into(),
+                args: "do it".into(),
+            })]
+        );
+
+        let cmds = update(
+            &mut state,
+            Msg::Plugin(PluginUiMsg::Command {
+                plugin: "acme".into(),
+                out: Some(CommandOut::Prompt {
+                    text: "go go go".into(),
+                }),
+            }),
+        );
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserTurn {
+                text: "go go go".into(),
+                attachments: Vec::new(),
+                confirm_think: false,
+            })]
+        );
+    }
+
+    /// T33.25, PL§8: a plugin key fires only as `<leader> <key>` — the bare
+    /// key on an empty composer does nothing plugin-related, the same as
+    /// any other unbound letter.
+    #[test]
+    fn plugin_key_only_under_leader() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.keymap.declare_plugin_keys(
+            "acme",
+            &[KeyDecl {
+                key: "r".into(),
+                name: "reset".into(),
+                description: String::new(),
+            }],
+        );
+        let plugin_key = Cmd::Plugin(PluginRequest::Key {
+            plugin: "acme".into(),
+            name: "reset".into(),
+        });
+
+        let r = || Msg::Key(KeyEvent::from(KeyCode::Char('r')));
+        assert!(!update(&mut state, r()).contains(&plugin_key));
+
+        let leader = Msg::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert_eq!(update(&mut state, leader), Vec::new());
+        assert!(state.plugin_leader_armed);
+        assert_eq!(update(&mut state, r()), vec![plugin_key]);
+        assert!(!state.plugin_leader_armed, "one key disarms it");
+    }
+
+    /// T33.24, PL§8: `TogglePanel` flips `plugin_panel_open` for the
+    /// plugin that sent it (twice returns to closed); `OpenOverlay` opens
+    /// `Modal::Plugin`. Neither needs a declared slot to be safe — with
+    /// none, `render_requests` just has nothing to ask for.
+    #[test]
+    fn plugin_command_toggles_panel_and_opens_overlay() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let toggle = |state: &mut State| {
+            update(
+                state,
+                Msg::Plugin(PluginUiMsg::Command {
+                    plugin: "acme".into(),
+                    out: Some(CommandOut::TogglePanel),
+                }),
+            )
+        };
+        assert!(toggle(&mut state).is_empty());
+        assert_eq!(state.plugin_panel_open.as_deref(), Some("acme"));
+        assert!(toggle(&mut state).is_empty());
+        assert_eq!(state.plugin_panel_open, None);
+
+        update(
+            &mut state,
+            Msg::Plugin(PluginUiMsg::Command {
+                plugin: "acme".into(),
+                out: Some(CommandOut::OpenOverlay),
+            }),
+        );
+        assert_eq!(state.modal, Some(Modal::Plugin { id: "acme".into() }));
+    }
+
+    /// T33.24, PL§8: `overlay`'s only key is `Esc`; it closes with no other
+    /// side effect, the same close `Diff`/`Transcript` already have.
+    #[test]
+    fn esc_closes_plugin_overlay() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.modal = Some(Modal::Plugin { id: "acme".into() });
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert_eq!(cmds, Vec::new());
+        assert_eq!(state.modal, None);
+    }
+
     /// T27.1: `Ctrl+B` backgrounds the newest pending `bash` card; with no
     /// such card it is not swallowed as a background request.
     #[test]
@@ -2204,6 +2952,7 @@ mod tests {
                     input: serde_json::json!({"command": "sleep 5"}),
                     risk: Risk::Exec,
                     subject: "sleep 5".into(),
+                    segments: None,
                 },
             }),
         );
@@ -2246,6 +2995,7 @@ mod tests {
             input: serde_json::Value::Null,
             risk: cox_protocol::types::Risk::Exec,
             subject: "cargo test".into(),
+            segments: None,
         };
         let why = cox_protocol::types::Why::Risk {
             risk: cox_protocol::types::Risk::Exec,
@@ -2265,6 +3015,7 @@ mod tests {
             call: CallId::new(),
             question: "which?".into(),
             options: Vec::new(),
+            agent: None,
         };
         assert!(rings(&update(&mut state, question)));
 
@@ -2289,6 +3040,7 @@ mod tests {
                 input: serde_json::Value::Null,
                 risk: cox_protocol::types::Risk::Exec,
                 subject: "cargo test".into(),
+                segments: None,
             };
             let call_id = call.id;
             vec![
@@ -2426,6 +3178,7 @@ mod tests {
                     input: serde_json::json!({}),
                     risk: Risk::Exec,
                     subject: "seq 20".into(),
+                    segments: None,
                 },
             }),
         );

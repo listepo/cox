@@ -1,0 +1,28 @@
+[package]
+name = "cox-provider-openai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# Api/Capabilities/effort_for: the catalog row that picks each request's
+# effort and capabilities.
+cox-models = { path = "../cox-models", version = "0.1.2" }
+# http/retry/sse, imported at the crate root under their old `crate::` paths.
+cox-provider-http = { path = "../cox-provider-http", version = "0.1.2" }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+# T30.11: OpenAI Responses request/stream-event types (response-types
+# feature only — no HTTP client pulled in by this dependency).
+async-openai = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+wiremock = { workspace = true }

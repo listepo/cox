@@ -14,6 +14,10 @@ fn key(state: &mut State, code: KeyCode) -> Vec<Cmd> {
 }
 
 fn question_asked() -> (State, CallId) {
+    question_asked_from(None)
+}
+
+fn question_asked_from(agent: Option<String>) -> (State, CallId) {
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     let call_id = CallId::new();
     update(
@@ -22,6 +26,7 @@ fn question_asked() -> (State, CallId) {
             call: call_id,
             question: "which environment?".into(),
             options: vec!["staging".into(), "production".into()],
+            agent,
         },
     );
     (state, call_id)
@@ -30,6 +35,20 @@ fn question_asked() -> (State, CallId) {
 #[test]
 fn modal_question_with_options() {
     let (state, _) = question_asked();
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 7)));
+}
+
+/// T34.3: a subagent's `ask_user` call names it in the agent colour, the
+/// same way `approval_modal_shows_source_agent` (`approval.rs`) covers a
+/// relayed approval; the main session's own question has no prefix.
+#[test]
+fn ask_user_surface_shows_which_agent_is_asking() {
+    let (state, _) = question_asked_from(Some("explore-2".into()));
+    let Some(cox_tui::state::Modal::Question(question)) = &state.modal else {
+        panic!("question modal open");
+    };
+    let header = &question.lines(&state.glyphs, &state.theme)[0];
+    assert_eq!(header.spans[0].style.fg, Some(state.theme.agent));
     insta::assert_snapshot!(buffer_to_string(&render(&state, 60, 7)));
 }
 

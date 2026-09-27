@@ -1,0 +1,15 @@
+name: example_dart
+description: >-
+  The Dart variant of cox's shared plugin example (PL§13, T33.38): one MCP
+  tool, count, served over stdio by dart_mcp.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  dart_mcp: ^0.5.2
+
+dev_dependencies:
+  test: ^1.25.0

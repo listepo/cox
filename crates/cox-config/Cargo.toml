@@ -1,0 +1,28 @@
+[package]
+name = "cox-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# T32.16: exposes `load::ENV_LOCK`/`temp_env` to `crates/cox`'s own
+# env-mutating tests (a dev-dependency feature), so both crates share one
+# helper instead of a copy each.
+test-util = []
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# T0.3: config layering (default/user/project/env/flag) with provenance.
+figment = { workspace = true }
+# T0.3: `cox config set` edits the user file and keeps its comments.
+toml_edit = { workspace = true }
+# The CLI-flag and Claude-settings layers arrive as JSON trees; `show`
+# flattens the effective config through JSON.
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# T32.16: the config-schema drift test (`schema_for!(Config)`).
+schemars = { workspace = true }

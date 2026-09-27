@@ -1,26 +1,20 @@
-//! `glob`: find files by name (plan.md T3.3). Walks a confined root with the
-//! same `ignore::WalkBuilder` configuration `grep` uses (`.gitignore`
-//! honoured, hidden files included — see [`crate::grep::walker`]), keeps the
-//! entries a `globset` pattern matches, and returns them newest-first so the
-//! files a session has been touching sort to the top.
-//!
-//! An optional `query` re-ranks that set by `nucleo`'s fuzzy score instead of
-//! mtime, which is what makes "the auth handler, wherever it lives" a single
-//! call rather than a guess at the path.
-
-use std::path::Path;
-use std::time::SystemTime;
+//! `glob`: find files by name (plan.md T3.3). The walk and fuzzy-rank
+//! engine (`find`, `rank_by_query`, `workspace_files`) moved to the pure
+//! `cox-search` crate (T32.5) — no filesystem, no `ToolCx`. [`GlobTool`] is
+//! the `Tool` impl: it resolves the root through `crate::path::confine` and
+//! picks the mtime- or fuzzy-ranked order and the result limit, so it stays
+//! here rather than moving with the rest of `glob` — `confine` keeps one
+//! call site (docs/design/crates.md, AGENTS.md trust boundaries).
 
 use cox_protocol::{Concurrency, Risk};
 use cox_protocol::{ToolCx, ToolError, ToolOutput, ToolSpec};
-use nucleo::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo::{Config, Matcher, Utf32String};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::grep::{glob_allows, walker};
 use crate::path;
+
+pub use cox_search::glob::workspace_files;
 
 /// Keeps a bare `**/*` on a large tree from returning every file in the
 /// repository; the caller raises it deliberately.
@@ -41,12 +35,6 @@ struct GlobInput {
     /// Maximum paths to return. Defaults to [`DEFAULT_LIMIT`].
     #[serde(default)]
     limit: Option<usize>,
-}
-
-/// A candidate path with the two keys it can be ordered by.
-struct Candidate {
-    display: String,
-    mtime: SystemTime,
 }
 
 /// `glob`: name-based file lookup over the gitignore-aware walk.
@@ -87,40 +75,17 @@ impl cox_protocol::Tool for GlobTool {
             return Err(ToolError::NotFound);
         }
 
-        let matcher = match globset::Glob::new(&input.pattern) {
-            Ok(g) => g.compile_matcher(),
+        let mut found = match cox_search::glob::find(&root, &input.pattern) {
+            Ok(found) => found,
             Err(e) => {
                 return Ok(ToolOutput {
-                    text: format!("invalid glob: {e}"),
+                    text: e.to_string(),
                     is_error: true,
                     diff: None,
                     structured: None,
                 });
             }
         };
-
-        let mut found: Vec<Candidate> = Vec::new();
-        for entry in walker(&root).build() {
-            let Ok(entry) = entry else { continue }; // unreadable dir entry: skip, not fatal
-            if !entry.file_type().is_some_and(|t| t.is_file()) {
-                continue;
-            }
-            let path = entry.path();
-            if !glob_allows(&matcher, path, entry.file_name()) {
-                continue;
-            }
-            // A file that vanished between the walk and the stat, or whose
-            // mtime the platform withholds, still belongs in the list; it
-            // just sorts as oldest.
-            let mtime = entry
-                .metadata()
-                .and_then(|m| m.modified().map_err(Into::into))
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-            found.push(Candidate {
-                display: path.display().to_string(),
-                mtime,
-            });
-        }
 
         let total = found.len();
         if total == 0 {
@@ -133,7 +98,7 @@ impl cox_protocol::Tool for GlobTool {
         }
 
         match input.query.as_deref().filter(|q| !q.is_empty()) {
-            Some(query) => rank_by_query(&mut found, query),
+            Some(query) => cox_search::glob::rank_by_query(&mut found, query),
             // Newest first: the files this session has been editing lead.
             None => found.sort_by(|a, b| {
                 b.mtime
@@ -166,51 +131,12 @@ impl cox_protocol::Tool for GlobTool {
     }
 }
 
-/// Reorders `found` by `nucleo`'s fuzzy score, best first, dropping paths the
-/// query does not match at all.
-fn rank_by_query(found: &mut Vec<Candidate>, query: &str) {
-    let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
-    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
-
-    let mut scored: Vec<(u32, Candidate)> = std::mem::take(found)
-        .into_iter()
-        .filter_map(|c| {
-            let haystack = Utf32String::from(c.display.as_str());
-            pattern
-                .score(haystack.slice(..), &mut matcher)
-                .map(|score| (score, c))
-        })
-        .collect();
-    // Ties broken by path so the order is stable across runs.
-    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.display.cmp(&b.1.display)));
-    *found = scored.into_iter().map(|(_, c)| c).collect();
-}
-
-/// Every file under `root` the ignore rules allow, relative to it and sorted:
-/// the TUI's `@` picker candidates. Same walk as the tool, so what the picker
-/// offers is what `glob` would find. The binary calls this and hands the list
-/// to `cox-tui`, which may not depend on this crate (plan.md §1.1).
-pub fn workspace_files(root: &Path) -> Vec<String> {
-    let mut files: Vec<String> = walker(&root.to_path_buf())
-        .build()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
-        .filter_map(|e| {
-            e.path()
-                .strip_prefix(root)
-                .ok()
-                .map(|p| p.display().to_string())
-        })
-        .collect();
-    files.sort();
-    files
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::SystemTime;
 
     use cox_protocol::{
         Archive, ArchiveId, ArchivePut, SandboxMode, SandboxPolicy, SessionId, StoreError, Tool,
@@ -250,6 +176,9 @@ mod tests {
             output: tx,
             session: SessionId::new(),
             call: cox_protocol::CallId::new(),
+            agent: None,
+            preset: None,
+            relay: None,
         }
     }
 
