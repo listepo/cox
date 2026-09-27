@@ -145,7 +145,7 @@ extism = { version = "1.30.0", default-features = false, features = ["wasmtime-e
 # only its `wasmtime-default-features` turns on, together with the whole
 # wasmtime default set (component model, async, threads, ...). This enables
 # that one feature by feature unification; the version follows extism's pin.
-wasmtime = { version = "43", default-features = false, features = ["anyhow"] }
+wasmtime = { version = "48", default-features = false, features = ["anyhow"] }
 
 # dev-deps
 insta = { version = "1.48", features = ["json"] }
