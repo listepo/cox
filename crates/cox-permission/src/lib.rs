@@ -206,14 +206,16 @@ fn granted(call: &ToolCall, grants: &[(String, String)]) -> bool {
             .filter(|(tool, _)| rules::tool_matches(&canonical_tool(tool), &call.name))
             .map(|(_, subject)| subject.as_str())
     };
-    match call.segments {
-        None => mine().any(|g| call.subject.starts_with(g)),
-        Some(_) => covered(
-            call,
-            |line| mine().any(|g| g == line),
-            |c| mine().any(|g| rules::word_prefix(g, c)),
-        ),
-    }
+    // A call without segments is one subject (a path, a URL, an MCP name).
+    // The same word boundary as a split command: `/repo/a.rs` does not
+    // cover `/repo/a.rs.bak`, and `https://example.com` does not cover
+    // `https://example.com.evil`. An empty grant is not a prefix of every
+    // subject (`starts_with("")` is true for every string).
+    covered(
+        call,
+        |line| mine().any(|g| g == line),
+        |c| mine().any(|g| rules::word_prefix(g, c)),
+    )
 }
 
 /// The `(tool, subject)` grants an `AllowForSession` answer to `call`
