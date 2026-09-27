@@ -44,12 +44,14 @@ jobs:
           # Full history: Sonar uses blame data for new-code detection.
           fetch-depth: 0
 
-      # Same pin as ci.yml (dtolnay/rust-toolchain@1.97.1) and mise.toml.
-      - name: Rust toolchain
+      # The Rust mise.toml pins, checked like in ci.yml, plus the LLVM tools
+      # cargo-llvm-cov needs.
+      - uses: ./.github/actions/rust
         if: env.SONAR_TOKEN != ''
-        run: |
-          rustup toolchain install 1.97.1 --profile minimal --component llvm-tools-preview
-          rustup default 1.97.1
+
+      - name: llvm-tools-preview
+        if: env.SONAR_TOKEN != ''
+        run: rustup component add llvm-tools-preview
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: env.SONAR_TOKEN != ''

@@ -3,7 +3,7 @@ source: crates/cox/src/doctor.rs
 assertion_line: 413
 expression: output
 ---
-toolchain: ✓ rustc 1.97.1
+toolchain: ✓ rustc 1.98.1
 COX_HOME writable: ✓ /home/user/.cox
 db: ✓ database opens and schema is valid
 API keys: ✓ Anthropic API key found

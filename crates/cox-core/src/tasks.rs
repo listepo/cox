@@ -577,14 +577,15 @@ impl Session {
 
     /// Waits for `running` unless it is detached first. `Ok` is the call's
     /// own output (with its context unless the call panicked); `Err` is the
-    /// pointer result the model gets for a call that now runs as a task.
+    /// pointer result the model gets for a call that now runs as a task,
+    /// boxed because a `ToolResult` is far larger than the `Ok` side.
     pub(crate) async fn wait_or_detach(
         &self,
         at: Detachable,
         mut running: Running,
         detach: CancellationToken,
         pending: &mut Option<Pending>,
-    ) -> Result<(ToolOutput, Option<ToolCx>), ToolResult> {
+    ) -> Result<(ToolOutput, Option<ToolCx>), Box<ToolResult>> {
         let joined = tokio::select! {
             biased;
             joined = &mut running => Some(joined),
@@ -594,7 +595,9 @@ impl Session {
         match joined {
             Some(Ok((output, cx))) => Ok((output, Some(cx))),
             Some(Err(_)) => Ok((crate::turn::error_output(ToolError::Io), None)),
-            None => Err(self.detach_task(at, running, pending.take()).await),
+            None => Err(Box::new(
+                self.detach_task(at, running, pending.take()).await,
+            )),
         }
     }
 

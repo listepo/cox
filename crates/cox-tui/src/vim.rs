@@ -423,8 +423,10 @@ fn quote(t: &[char], at: usize, q: char, inner: bool) -> Option<(usize, usize)> 
         .map_or(t.len(), |i| at + i);
     let quotes: Vec<usize> = (start..end).filter(|&i| t[i] == q).collect();
     let (o, c) = quotes
-        .chunks_exact(2)
-        .map(|p| (p[0], p[1]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[o, c]| (o, c))
         .find(|&(_, c)| at <= c)?;
     Some(if inner { (o + 1, c) } else { (o, c + 1) })
 }
