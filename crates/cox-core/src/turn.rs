@@ -478,7 +478,7 @@ async fn run_one(
         .await
     {
         Ok(ran) => ran,
-        Err(pointer) => return (id, pointer),
+        Err(pointer) => return (id, *pointer),
     };
     if let (Some(input), Some(detail), Some(mut cx)) = (retry, sandbox_denial(&output), cx) {
         let call = ToolCall {

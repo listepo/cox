@@ -15,7 +15,11 @@ jobs:
         target: [sse, v4a_parse, frontmatter, permission_rules]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
+      # cargo-fuzz needs nightly, the one toolchain not pinned in mise.toml.
+      - name: nightly toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          echo "RUSTUP_TOOLCHAIN=nightly" >> "$GITHUB_ENV"
       - name: install cargo-fuzz
         run: cargo install cargo-fuzz --locked
       - name: fuzz ${{ matrix.target }}

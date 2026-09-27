@@ -19,12 +19,15 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+# Every job installs Rust from mise.toml, the single source of the Rust
+# version: the `rust` job through the shared listepo/infra workflow, the others
+# through .github/actions/rust. Both fail when rustc is not that pin.
 jobs:
-  # The shared listepo/infra workflow, pinned by commit, with Rust from mise.toml
-  # and a check that rustc is that pin: fmt once, then per target clippy
-  # (--all-targets --all-features), check, and nextest where the runner executes
-  # the target (Linux x86_64 and aarch64, macOS aarch64) or a build where it does
-  # not (macOS x86_64).
+  # The shared listepo/infra workflow, pinned by commit (descendant of the
+  # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
+  # fmt once, then per target clippy (--all-targets --all-features), check, and
+  # nextest where the runner executes the target (Linux x86_64 and aarch64,
+  # macOS aarch64) or a build where it does not (macOS x86_64).
   rust:
     uses: listepo/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     with:
@@ -59,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: ./.github/actions/rust
 
       - uses: Swatinem/rust-cache@v2
 
@@ -81,9 +84,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          targets: wasm32-unknown-unknown
+      # wasm32-unknown-unknown comes with the mise.toml pin.
+      - uses: ./.github/actions/rust
 
       - uses: Swatinem/rust-cache@v2
 
@@ -103,11 +105,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          # `cox`'s tests build cox-plugin-fixtures, whose build.rs compiles
-          # the guest workspace for wasm32 (T33.28).
-          targets: wasm32-unknown-unknown
+      # `cox`'s tests build cox-plugin-fixtures, whose build.rs compiles the
+      # guest workspace for wasm32 (T33.28); the target comes with the pin.
+      - uses: ./.github/actions/rust
 
       - uses: Swatinem/rust-cache@v2
 
@@ -142,7 +142,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: ./.github/actions/rust
       # cargo-audit does not read deny.toml, so its `[advisories] ignore` list
       # (each entry with its reason and review date) is passed as --ignore
       # flags: one list, one place to remove an entry.
@@ -166,7 +166,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: ./.github/actions/rust
 
       - uses: Swatinem/rust-cache@v2
 
