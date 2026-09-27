@@ -6,10 +6,13 @@ homepage: https://listepo.github.io/cox/
 install: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/cox/releases/latest/download/cox-installer.sh | sh"
 version: "0.1.0"
 accent: "#A8E06C"
+accentLight: "#3D8B3A"
+order: 3
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/shop-mvp as content/projects/cox.md on every change to main and on every v* tag.
+listepo/landing (main) as content/projects/cox.md on every change to main and on every v*
+tag; front matter follows CONTENT_CONTRACT.md in that repository.
 Sources (checked 2026-09-27): README.md, docs/ and the clap CLI in crates/cox/src/cli.rs; version
 from the latest GitHub release (v0.1.0); accent is the dark-theme --accent in
 website/assets/css/main.css. -->
