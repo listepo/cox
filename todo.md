@@ -21,25 +21,21 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.23.6. Restyle the transcript when the text size changes
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.10. Thought duration in the thinking header
 - T37.23.11. Word-level diff in the desktop hunks
-- T37.25. Token meter and token popover
-- T37.24.5. Paste into the composer
-- T37.24.6. Prompt history in the composer
+- T37.25.1. Context window size and split in the token popover
 - T37.24.7. Composer status chips
 - T37.24.8. Queue from Rust
 - T37.24.9. Caret-aware completion and the failure notice
 - T37.27.5. Pinned approval bar above the composer
 - T37.27.6. Approval Edit… and the grant preview
-- T37.27.7. "Needs you" inbox store for the sidebar
 - T37.28. Review pane and rewind timeline
-- T37.29.1. `changes()` from cox-app for the Changes tab
 - T37.29.2. Inspector Plan tab
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.5. Inspector Info tab
 - T37.29.6. Open a task's transcript from the Tasks tab
+- T37.29.7. Deleted files and created-file counts in the Changes tab
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`

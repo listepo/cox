@@ -4719,3 +4719,111 @@ Check:
 - swiftlint and swift-format are clean.
 - After merging into `p37-desktop`: CoxModel 33/33, CoxUI TasksTab and Inspector 11/11.
 Not done: opening the child transcript (T37.29.6); app wiring (T37.22.3).
+
+#### T37.24.6 Prompt history in the composer
+
+Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
+Goal: ↑ in an empty composer walks the session's earlier prompts, newest first, through a new `cox-app` call and its one-expression FFI forward (A90).
+Check: a cox-app test for the call; a UI test presses ↑ twice and gets the two earlier prompts, with the fixture client serving them without Rust.
+Status: done 2026-09-28
+Result:
+- cox-app `Workspace::prompts(session, limit)` reuses the TUI's Ctrl+R query (`Store::user_prompts`), keeps this session's prompts, newest first; `LiveSession::history(limit)` calls it. cox-ffi `SessionHandle::history(limit)` is a one-expression forward (A90).
+- Swift: `SessionClient.history(limit:)` on `LiveSession` (CoxCore) and `FixtureSession` (new `prompts:` parameter). `ComposerStore.recall(_:)`: ↑ in an empty draft starts the walk, ↓ past the newest empties the draft, typing or sending ends it. `Composer` gets `.recall(Int)`, `State.isRecalling` and an `arrow()` helper that routes ↑/↓ to the completion rows or the history.
+Deviations:
+- `ComposerFlowTests` is `@Suite(.serialized)` and `settle(until:)` runs the run loop while it polls: both old tests already failed at random on HEAD.
+- 11 files, about 110 non-test lines.
+Check:
+- `cargo nextest run -p cox-app --test app`: 8/8, including `history_is_the_sessions_own_prompts_newest_first`; `-p cox-app -p cox-ffi` 57/57 with `forward_only`.
+- CoxModel `upWalksOlderPromptsStopsAtTheOldestAndDownPastTheNewestEmptiesTheDraft`; CoxTranscript `upInTheEmptyComposerBringsBackTheEarlierPromptsNewestFirst` (real key events, fixture client); CoxCore 9/9.
+- After merging into `p37-desktop` with T37.29.1, T37.27.7, T37.24.5, T37.23.6 and T37.25: cox-app and cox-ffi 63/63, CoxModel 39/39, CoxTranscript 27/27, CoxUI 138/138, CoxPlatform 13/13.
+Not done: app wiring (T37.22.3).
+
+#### T37.29.1 `changes()` from cox-app for the Changes tab
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
+Goal: `SessionHandle::changes()` returns what `ChangesTab` shows: files with change kind, added/removed lines and the call that changed them; checkpoints with id, label and time; the worktree's branch and base commit. The FFI side is a one-expression forward (A90); CoxModel maps it to `ChangesTab`'s state.
+Check: a cox-app test over a scripted session with two edits and a checkpoint; a CoxModel test that the mapping fills the tab.
+Status: done 2026-09-28
+Result:
+- cox-app `LiveSession::changes()` returns `Changes { files, checkpoints, worktree }`, built on request by `crates/cox-app/src/changes.rs` from the timeline blocks, the store's checkpoint rows and `cox_tools::git::linked`: each file (path relative to cwd, Edited/Created/Deleted, added/removed from the diff model, last call and turn; created-then-deleted and rewound calls drop out), one checkpoint per turn that changed files (turn, label, RFC 3339 time), and the linked worktree (branch, base, short merge-base, size) or `None`.
+- cox-store `checkpoint_rows` (with `created_at`; `checkpoint_list` delegates to it); cox-tools `git::linked`.
+- cox-ffi `SessionHandle::changes` is a one-expression forward, records declared with `#[uniffi::remote]`.
+- Swift: CoxClient `Changes.swift` and `SessionClient.changes()` (also on `FixtureSession`); CoxCore `ChangesConvert.swift`; CoxModel `ChangesTabState` maps to `ChangesTab.State`; `SessionStore.changesTab()` loads it. `docs/design/desktop.md` lists `changes` on SessionHandle.
+Deviations:
+- About 330 non-test lines in 16 files: cox-store and cox-tools did not expose the time or the merge-base.
+- The merge into `p37-desktop` counts added/removed from T37.23.5's `DiffModel` lines instead of `diffstat::counts` on the unified text.
+Check:
+- `cargo nextest run -p cox-app -p cox-ffi -p cox-store`: 84, including `changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to` and `forward_only`; `-p cox-tools git::` 10.
+- CoxModel 33 (3 new ChangesTab tests), CoxCore 10 (`aChangesRecordConvertsFieldForField`).
+- After merging into `p37-desktop`: cox-app, cox-ffi and cox-store 86/86; CoxModel 39/39.
+Not done: a `deleted` glyph in CoxUI and the line count of a created file (T37.29.7); app wiring and `rewind(checkpoint:)` → `Intent.rewind` (T37.22.3).
+
+#### T37.27.7 "Needs you" inbox store for the sidebar
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxUI/…/Sidebar.swift`
+Goal: a Swift store over the app inbox gives the sidebar's "Needs you" rows, one per item, with expired rows read-only.
+Check: with the `approve-write` fixture the store lists one row, which clears once the card is answered.
+Status: done 2026-09-28
+Result:
+- CoxModel `InboxStore` (`refresh()`, `rows: [InboxRow]`, `count`) reads the inbox through a new `InboxClient` protocol (CoxClient `Inbox.swift`, with `Need.call`). Each item is one `InboxRow`: id `session#seq`, the session it opens, status waiting/idle/error, the `HostNote` text as title and what it waits for as subtitle; an expired item is read-only and reads "expired".
+- `FixtureCoreClient` implements `InboxClient` with one inbox shared by its sessions (an item appears when its note is pulled and goes once answered); `LiveCoreClient` forwards to cox-ffi `App.inbox()`.
+- CoxUI `Sidebar.Session` gains `session`, `isReadOnly` and `opens`; a read-only row is disabled. `#Preview("needs you")` and four snapshots.
+Deviations: five source files instead of three (about 140 lines).
+Check:
+- `theRecordedApprovalIsOneRowThatClearsOnceAnswered` (approve-write fixture: one row, none after `.approve`); CoxModel 35, CoxPlatform 13, CoxUI 134.
+- After merging into `p37-desktop` (with `approve-write.json` re-recorded for T37.25's usage text): CoxModel 39/39, CoxUI 138/138.
+Not done: CoxCore was not compiled by the agent (one line, reusing HostBridge's conversion; left to CI); wiring `refresh()` to host notify/badge and the rows into the sidebar (T37.22.3); dismissing news items; the fixture keeps arrival order, not urgency order.
+
+#### T37.24.5 Paste into the composer
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
+Goal: ⌘V of an image or file URLs attaches them (as T37.24.3's drop does) instead of inserting text.
+Check: a UI test pastes a PNG from a private pasteboard and the `send` intent carries it.
+Status: done 2026-09-28
+Result:
+- CoxUI `Composer.swift`: a private `ComposerPaste` view catches ⌘V in the editor's window with an app-local key-event monitor while the editor has focus (the Edit menu's Paste takes ⌘V before `onKeyPress`). File URLs go through `.drop` and `ComposerStore.attach(_ urls:)`; an image with no file behind it (PNG, or TIFF converted to PNG) sends the new `.pasteImage(Data)`; anything else, or an image that comes with text, is left to the normal paste.
+- Environment value `composerPasteboard` (default `.general`). CoxModel `ComposerStore.attach(_ data:name:type:)`, which the URL path now uses too; `SessionComposer` maps `.pasteImage` to "Pasted image.png".
+Deviations: `SessionComposer.swift` as a third file; about 85 source lines.
+Check:
+- `pastingAPNGAttachesItAndSendCarriesIt` (private `NSPasteboard`, ⌘V through `NSApp.sendEvent`; fails with the monitor off) and `pastingTextAttachesNothingAndLeavesTheKeyToTheMenu`.
+- CoxModel 33, CoxUI 132, CoxTranscript 25; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: CoxModel 39/39, CoxTranscript 27/27, CoxUI 138/138.
+Not done: a try in the real app (T37.32/T37.22.3), including text paste through the Edit menu and ⌘V on a Cyrillic layout.
+
+#### T37.23.6 Restyle the transcript when the text size changes
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: `TranscriptStyle` is rebuilt when `[desktop.transcript]` text size or line height changes, and the whole text restyles in place without losing the selection.
+Check: snapshots at two text sizes; a selection survives the change.
+Status: done 2026-09-28
+Result:
+- CoxTranscriptText `TranscriptTextView.restyle(_:)` builds the text again at the new style and copies only the attributes into the storage: characters, block ranges, selection, open thoughts and every card, prompt tile and thought header (with its hosted view) stay; fonts, decor and structure paragraph styles, `docStarts` and the inset take the new style.
+- CoxTranscript `TranscriptView.updateNSView` rebuilds `TranscriptStyle.cox` when `coxAppearance.textScale` changes and restyles inside `TailFollow.around(restyling: true)`; `TailFollow` watches the frame and keeps a reader at the bottom until the next batch.
+Deviations:
+- `[desktop.transcript]` has no text-size or line-height key, so the trigger is `Appearance.textScale` (DS§3.2, ⌘+/⌘−). `TranscriptStyle` has no line height; token line heights are not applied to the transcript text (question for the creator in `ideas.md`).
+- A test-only `textScale:` parameter on `Host.show`.
+Check:
+- CoxTranscriptText 31 (`TranscriptRestyleTests`: every character's look equals a fresh load; text, ranges, selection, open thought, attachments and inset kept).
+- CoxTranscript 26 (`TranscriptTextSizeTests` on the hosted view: selection, ranges and card survive ×1.3, font grows ×1.3, a reader at the bottom stays there; snapshots at 100 % and 130 %).
+- After merging into `p37-desktop`: CoxTranscriptText 31/31, CoxTranscript 27/27.
+Not done: ⌘+/⌘− wiring (T37.32/T37.22.3).
+
+#### T37.25 Token meter and token popover
+
+Depends: T37.12, T37.24 · Size: ~150 · Files: `…/Molecules/TokenMeter.swift`, `…/Organisms/TokenPopover.swift`
+Goal: ↑ sent, ↓ received and live tok/s with a sparkline in the composer; the popover shows turn and session breakdown, first-token time, cost and the context bar (mockup 30).
+Check: snapshots idle and streaming; VoiceOver label reads the three numbers; the UI does no arithmetic on them (values come formatted from `cox-app`).
+Status: done 2026-09-28
+Result:
+- CoxUI `Molecules/TokenMeter.swift`: ↑ sent, ↓ received, StatusDot, tok/s and a Sparkline, a CapsuleStyle button that VoiceOver reads with the core's spoken line. `Organisms/TokenPopover.swift`: heading and phase, big tok/s with sparkline, rate line (avg, first token, peak), Turn/Session grid (sent, cache read/write, uncached, received, thinking, cost), context heading with StackedBar and legend, footnote.
+- `Composer.State` gains `meter`, `tokens` and a `toggleTokens` intent; `SessionComposer` fills them from `UsageView` (`CoxTranscript/TokenMeter+Usage.swift`). The UI does no arithmetic.
+- cox-app `meter_text.rs`: `MeterText`/`MeterRow` carry every figure formatted plus the DS§8 spoken line; `Meter` tracks avg rate, peak rate and session thinking. `UsageView.text` crosses cox-ffi, CoxCore `Convert.swift` and CoxClient `Timeline.swift`.
+Deviations:
+- About 15 files and 500 non-test lines: the formatted figures cross the FFI, CoxCore and CoxClient.
+- `StackedBar` and its `Kind` are public. DESIGN.md rows and the `Usage` line in `docs/design/desktop.md` updated.
+- All three fixtures re-recorded for the usage `text` (`read-and-reply.json` in the branch, `edit.json` and `approve-write.json` at the merge).
+Check:
+- `cargo nextest run -p cox-app -p cox-ffi`: 59/59 (number formats, spoken line, avg/peak/first token in the Meter fold); clippy and fmt clean.
+- CoxCore 9/9, CoxModel 30/30, CoxTranscript 13/13, CoxUI 130/130 with new snapshots (meter idle/streaming/open, popover streaming/idle, composer with popover).
+- After merging into `p37-desktop`: cox-app and cox-ffi 63/63, CoxModel 39/39, CoxTranscript 27/27, CoxUI 138/138.
+Not done: the context window and its split (T37.25.1); app wiring (T37.22.3).

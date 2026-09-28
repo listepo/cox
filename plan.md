@@ -27,25 +27,21 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.23.6 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.9 | todo | P2 | 2 | 0% | |
 | T37.23.10 | todo | P2 | 2 | 0% | |
 | T37.23.11 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.25 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.24.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.24.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.24.8 | todo | P2 | 3 | 0% | |
 | T37.24.9 | todo | P3 | 2 | 0% | |
 | T37.27.5 | todo | P1 | 2 | 0% | |
 | T37.27.6 | todo | P2 | 3 | 0% | |
-| T37.27.7 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.28 | todo | P1 | 4 | 0% | |
-| T37.29.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.2 | todo | P2 | 3 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
 | T37.29.5 | todo | P3 | 2 | 0% | |
 | T37.29.6 | todo | P2 | 3 | 0% | |
+| T37.29.7 | todo | P3 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2758,12 +2754,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.23.6 Restyle the transcript when the text size changes
-
-Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
-Goal: `TranscriptStyle` is rebuilt when `[desktop.transcript]` text size or line height changes, and the whole text restyles in place without losing the selection.
-Check: snapshots at two text sizes; a selection survives the change.
-
 #### T37.23.9 Prompt bubble glass, elevation and hover actions
 
 Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
@@ -2783,23 +2773,11 @@ Depends: — · Size: ~80 · Files: `crates/cox-render/src/diffmodel.rs`, `crate
 Goal: `DiffLine` carries the changed word ranges of a paired del/add line, computed in `diffmodel` (so `similar` no longer needs the ratatui feature and the TUI keeps one word-diff path), and the edit card marks them.
 Check: a `diffmodel` test for a one-word change; the TUI word-diff snapshots unchanged; an edit-card snapshot with the marked words.
 
-#### T37.25 Token meter and token popover
+#### T37.25.1 Context window size and split in the token popover
 
-Depends: T37.12, T37.24 · Size: ~150 · Files: `…/Molecules/TokenMeter.swift`, `…/Organisms/TokenPopover.swift`
-Goal: ↑ sent, ↓ received and live tok/s with a sparkline in the composer; the popover shows turn and session breakdown, first-token time, cost and the context bar (mockup 30).
-Check: snapshots idle and streaming; VoiceOver label reads the three numbers; the UI does no arithmetic on them (values come formatted from `cox-app`).
+T37.25's popover shows only "Context · 76.4k" for a live session: cox-app never learns the model's context window or the system/tools/instructions/history split. `cox_core::context::breakdown` exists but is dead code, and no event carries it.
 
-#### T37.24.5 Paste into the composer
-
-Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
-Goal: ⌘V of an image or file URLs attaches them (as T37.24.3's drop does) instead of inserting text.
-Check: a UI test pastes a PNG from a private pasteboard and the `send` intent carries it.
-
-#### T37.24.6 Prompt history in the composer
-
-Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
-Goal: ↑ in an empty composer walks the session's earlier prompts, newest first, through a new `cox-app` call and its one-expression FFI forward (A90).
-Check: a cox-app test for the call; a UI test presses ↑ twice and gets the two earlier prompts, with the fixture client serving them without Rust.
+Done means: the core emits the breakdown (a `cox-protocol` event or a field on an existing one) with the window from the model catalog; the Meter fold keeps it; `MeterText` formats the share and each part; the live popover draws the StackedBar and legend the preview already shows. Check: a cox-app test over the Scripted provider sees a non-empty split and the window; a CoxUI snapshot of the live-fed popover.
 
 #### T37.24.7 Composer status chips
 
@@ -2831,23 +2809,11 @@ Depends: — · Size: ~150 · Files: `crates/cox-app/src/timeline.rs`, `desktop/
 Goal: the approval block carries the call input and what "Allow for session" would grant (`grants_for`); the card shows the grant and Edit… edits the input into `Decision.edit`.
 Check: a cox-app test that the block carries both; a UI test that an edit sends the edited JSON; a snapshot showing the grant.
 
-#### T37.27.7 "Needs you" inbox store for the sidebar
-
-Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxUI/…/Sidebar.swift`
-Goal: a Swift store over the app inbox gives the sidebar's "Needs you" rows, one per item, with expired rows read-only.
-Check: with the `approve-write` fixture the store lists one row, which clears once the card is answered.
-
 #### T37.28 Review pane and rewind timeline
 
 Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
 Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
 Check: fixture rewind restores the expected files in a scratch worktree.
-
-#### T37.29.1 `changes()` from cox-app for the Changes tab
-
-Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
-Goal: `SessionHandle::changes()` returns what `ChangesTab` shows: files with change kind, added/removed lines and the call that changed them; checkpoints with id, label and time; the worktree's branch and base commit. The FFI side is a one-expression forward (A90); CoxModel maps it to `ChangesTab`'s state.
-Check: a cox-app test over a scripted session with two edits and a checkpoint; a CoxModel test that the mapping fills the tab.
 
 #### T37.29.2 Inspector Plan tab
 
@@ -2872,6 +2838,12 @@ Check: a snapshot per cell; a cox-app test for `info()`.
 Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
 Goal: `SessionHandle::open_task(task)` returns what a Tasks-tab click opens: a subagent's child `SessionId` (from the parent session's children, no protocol change) or, for a background shell, its archived output id; the task row says which kind it is so the tab can label it. The FFI side is a one-expression forward (A90).
 Check: a cox-app test over a scripted session with one subagent and one background shell; a CoxModel test that `.open(task:)` resolves to the child session.
+
+#### T37.29.7 Deleted files and created-file counts in the Changes tab
+
+T37.29.1 left two gaps. CoxUI's `ChangedFileRow.Change` has no `deleted` case, so a `FileChange::Deleted` from `changes()` has no glyph. A `write` that creates a file carries no diff, so the row reads `+0 −0` instead of the new file's line count.
+
+Done means: a `deleted` case with its glyph and snapshot in CoxUI, the mapping in `ChangesTabState`, and a created file counted as all-added lines in `crates/cox-app/src/changes.rs`. Check: the `changes.rs` unit test covers a created file's count; a CoxUI snapshot shows a deleted row.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
