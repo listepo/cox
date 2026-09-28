@@ -682,6 +682,29 @@
         ]
       },
       {
+        "description": "The session's mode changed (`/mode`, P42), or a top-level session\nopened under a non-default one; carries the permission mode the\npreset left in force so a surface needs no second event.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The mode now in force.",
+            "$ref": "#/$defs/Mode"
+          },
+          "permission_mode": {
+            "description": "The permission mode now in force, after the preset narrowed it.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "type": {
+            "type": "string",
+            "const": "mode_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode",
+          "permission_mode"
+        ]
+      },
+      {
         "description": "The session got a title (DT G6), for the sessions list and a window\nor tab title.",
         "type": "object",
         "properties": {
@@ -1875,6 +1898,21 @@
             "description": "User-selected for a flagged large refactor.",
             "type": "string",
             "const": "xhigh"
+          }
+        ]
+      },
+      "Mode": {
+        "description": "`core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the\npermission mode and the main tier only. It never filters tools, so the\ncache prefix stays byte-stable, and it only narrows `permissions.mode`.",
+        "oneOf": [
+          {
+            "description": "The configured permission mode and main tier, unchanged.",
+            "type": "string",
+            "const": "editor"
+          },
+          {
+            "description": "`Plan` (read-only tools only) and the `think` main tier, confirmed.",
+            "type": "string",
+            "const": "architect"
           }
         ]
       },
