@@ -9,7 +9,9 @@ import CoxTranscriptText
 /// are at the bottom scrolls its new end into view; one that lands after they scrolled up leaves
 /// the view where it is, until they scroll back to the bottom. Whether to follow is decided when
 /// the view scrolls, not when a batch lands, so text that grows below a following view between
-/// batches (a card taking its height a turn after it lands) does not end the follow.
+/// batches (a card taking its height a turn after it lands) does not end the follow. A new text
+/// size lays the text out again over several passes, so after one the view moves to each new end
+/// until the next batch.
 @MainActor
 final class TailFollow: NSObject {
   private weak var text: TranscriptTextView?
@@ -18,6 +20,8 @@ final class TailFollow: NSObject {
   /// Set while a batch lands and the view follows it, so the scroll that causes is not read as
   /// the reader's.
   private var moving = false
+  /// Set by a restyle the view followed, until the next batch (`resized`).
+  private var pinned = false
 
   init(_ text: TranscriptTextView) {
     self.text = text
@@ -27,17 +31,37 @@ final class TailFollow: NSObject {
     // A selector observer goes with its object, so nothing has to remove it.
     NotificationCenter.default.addObserver(
       self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: clip)
+    text.postsFrameChangedNotifications = true
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(resized), name: NSView.frameDidChangeNotification, object: text)
   }
 
-  /// Runs `edit`, then shows the text's end if the reader was following it.
-  func around(_ edit: () -> Void) {
+  /// Runs `edit`, then shows the text's end if the reader was following it; `restyling`, keeps
+  /// showing it while the restyled text is laid out.
+  func around(restyling: Bool = false, _ edit: () -> Void) {
     let follow = following ?? atBottom
+    pinned = restyling && follow
     moving = true
     defer { moving = false }
     edit()
     guard follow, let text else { return }
     following = true
     text.scrollToEndOfDocument(nil)
+  }
+
+  /// Restyled text laid out again below a following view keeps the end in view (T37.23.6). Only
+  /// after a restyle: a batch scrolls itself, and a frame change is too common to scroll on each.
+  @objc private func resized() {
+    guard pinned, following == true, !moving, let scroll = text?.enclosingScrollView,
+      let document = scroll.documentView
+    else { return }
+    moving = true
+    defer { moving = false }
+    // The clip view, not `scrollToEndOfDocument`: while the frame changes, TextKit has not
+    // laid out the new last line that scroll would reveal, and the view stays put.
+    let clip = scroll.contentView
+    clip.scroll(to: NSPoint(x: 0, y: max(0, document.frame.maxY - clip.bounds.height)))
+    scroll.reflectScrolledClipView(clip)
   }
 
   @objc private func scrolled() {

@@ -73,6 +73,37 @@ public final class TranscriptTextView: NSTextView {
     textStorage?.setAttributedString(built.text)
   }
 
+  /// Draws the same text with `style` (T37.23.6), as when the text size
+  /// changes. The text is built again and only its attributes are copied over,
+  /// so the characters, the block ranges, the selection and each thought's
+  /// open or folded state stay; each card keeps its attachment, and with it its
+  /// view and that view's own state.
+  public func restyle(_ style: TranscriptStyle) {
+    guard style != self.style, let storage = textStorage else { return }
+    self.style = style
+    textContainerInset = style.inset
+    let shown = blockRanges.ids.compactMap { blocks[$0] }
+    let built = TranscriptText.build(shown, style: style, cards: hostedCards)
+    // Patches keep the text what a load gives (T37.43); should that ever slip, load it anew.
+    guard built.text.string == storage.string, built.ranges == blockRanges else {
+      return load(shown)
+    }
+    let selection = selectedRanges
+    storage.beginEditing()
+    let whole = NSRange(location: 0, length: built.text.length)
+    built.text.enumerateAttributes(in: whole) { attributes, range, _ in
+      var attributes = attributes
+      if attributes[.attachment] is CardAttachment {
+        let card = storage.attribute(.attachment, at: range.location, effectiveRange: nil)
+        attributes[.attachment] = (card as? CardAttachment) ?? attributes[.attachment]
+      }
+      storage.setAttributes(attributes, range: range)
+    }
+    storage.endEditing()
+    docStarts = built.docStarts
+    selectedRanges = selection
+  }
+
   public func range(of id: BlockID) -> NSRange? { blockRanges.range(of: id) }
 
   /// The block whose text holds `location` (see `BlockRanges.index(at:)`).

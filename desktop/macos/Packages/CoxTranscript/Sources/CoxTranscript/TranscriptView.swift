@@ -38,6 +38,7 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
     shared.value = appearance
     shared.locale = context.environment.locale
     let text = TranscriptTextView.make(style: .cox(textScale: appearance.textScale))
+    context.coordinator.textScale = appearance.textScale
     text.cards = TranscriptCards { [approval] block in
       CardAppearance(shared: shared) { TranscriptCard(block: block, approval: approval) }
     } thumbnail: { name in
@@ -57,9 +58,12 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
   }
 
   public func updateNSView(_ scroll: NSScrollView, context: Context) {
-    (scroll.documentView as? TranscriptTextView)?.crossBlockSelection = crossBlockSelection
-    context.coordinator.appearance.value = context.environment.coxAppearance
+    let text = scroll.documentView as? TranscriptTextView
+    text?.crossBlockSelection = crossBlockSelection
+    let appearance = context.environment.coxAppearance
+    context.coordinator.appearance.value = appearance
     context.coordinator.appearance.locale = context.environment.locale
+    text.map { context.coordinator.scale($0, to: appearance.textScale) }
   }
 
   public static func dismantleNSView(_ scroll: NSScrollView, coordinator: TranscriptCoordinator) {
@@ -74,6 +78,8 @@ public final class TranscriptCoordinator {
   let appearance = SharedAppearance()
   private weak var store: SessionStore?
   private var tail: TailFollow?
+  /// The text size the transcript was last styled at.
+  var textScale: Double?
 
   /// Splices each batch the store applies into `text`, after the store, so a block `current`
   /// returns is as the batch left it, keeping the view at the end while the reader is there
@@ -88,6 +94,15 @@ public final class TranscriptCoordinator {
   }
 
   func stop() { store?.didApply = nil }
+
+  /// Restyles `text` at a new text size (T37.23.6), staying at the end if the reader was there.
+  /// Keyed on the scale, so a SwiftUI update that leaves the size alone builds no style.
+  func scale(_ text: TranscriptTextView, to textScale: Double) {
+    guard textScale != self.textScale, let tail else { return }
+    self.textScale = textScale
+    let style = TranscriptStyle.cox(textScale: textScale)
+    tail.around(restyling: true) { text.restyle(style) }
+  }
 }
 
 /// The `coxAppearance` and locale the transcript was given, observed by every card it hosts.
