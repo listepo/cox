@@ -24,7 +24,6 @@
 - T37.23. Transcript view and the DT§9 benchmark gate
 - T37.24. Composer: mentions, commands, shell mode, attachments, queue
 - T37.25. Token meter and token popover
-- T37.26. Appearance popover and live window material
 - T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
 - T37.28. Review pane and rewind timeline
 - T37.29. Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info

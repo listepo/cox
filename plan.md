@@ -30,7 +30,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.23 | in progress | P0 | 5 | 0% | Claude Code / Opus 5.5 |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
-| T37.26 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27 | todo | P0 | 3 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | todo | P1 | 3 | 0% | |
@@ -1103,12 +1102,6 @@ Depends: T37.12, T37.24 · Size: ~150 · Files: `…/Molecules/TokenMeter.swift`
 Goal: ↑ sent, ↓ received and live tok/s with a sparkline in the composer; the popover shows turn and session breakdown, first-token time, cost and the context bar (mockup 30).
 Check: snapshots idle and streaming; VoiceOver label reads the three numbers; the UI does no arithmetic on them (values come formatted from `cox-app`).
 
-#### T37.26 Appearance popover and live window material
-
-Depends: T37.13, T37.22, T37.21.8 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
-Goal: material, transparency, blur/reflection, depth and tint change the window live and persist through `[desktop.appearance]` (mockups 28–29); Reduce Transparency disables the controls and says why.
-Check: snapshot per material; changing a slider writes the config through an intent; Reduce Transparency snapshot is Solid.
-
 #### T37.27 Approvals, questions, inbox, notifications with actions, Dock badge
 
 Depends: T37.23, T37.4 · Size: split at claim · Files: `…/Organisms/ApprovalCard.swift`, `desktop/macos/Packages/CoxPlatform/…`
@@ -1208,13 +1201,13 @@ Check: snapshots at 1440 and 1100 pt wide; the transcript column keeps its width
 #### T37.22.2 Sidebar and inspector shortcuts; the bypass strip
 
 Depends: T37.26 · Size: ~100 · Files: `…/Screens/MainScreen.swift`, `desktop/design/DESIGN.md`, `docs/design/desktop.md`
-Goal: the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts (A74), and DS§4 and DT§5 say the same; the bypass-mode strip sits under the toolbar (A74), and DS§4 says so.
+Goal: the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts (A74), and DS§4 and DT§5 say the same; the bypass-mode strip sits under the toolbar (A74), and DS§4 says so. The Appearance popover's ⌘⌥A (DS) is bound too.
 Check: snapshot with bypass on; the toolbar tooltips name the shortcuts; DS§4 and DT§5 agree.
 
 #### T37.22.3 App window setup and the public CoxUI surface
 
 Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
-Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`.
+Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named.
 Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
 
 #### T37.42.1 `SessionStore` keeps the reply text current while it streams

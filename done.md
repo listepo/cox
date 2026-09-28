@@ -3737,3 +3737,35 @@ Deviations:
 - The white glyphs on the edit, search and write tiles cannot get lighter, so the tile tops darken instead.
 Check: `just desktop-tokens` exits 0 and prints "166 pairs pass" per mode; a second run leaves no diff. A broken file fails the check with a named pair ("text.secondary on surface.window: 2.57:1 is below 7:1"). `Tokens.swift` is byte-identical; every Any and Dark colorset entry is JSON-identical to before; no snapshot is affected.
 Not done: turning the specular sweep off and raising window opacity under Increase Contrast. These are `material.*` numbers in CoxUI's `Appearance`, not colour tokens, and move to T37.19.6.
+
+#### T37.26 Appearance popover and live window material
+
+Depends: T37.13, T37.22, T37.21.8 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
+Goal: material, transparency, blur/reflection, depth and tint change the window live and persist through `[desktop.appearance]` (mockups 28–29); Reduce Transparency disables the controls and says why.
+Check: snapshot per material; changing a slider writes the config through an intent; Reduce Transparency snapshot is Solid.
+Status: done 2026-09-28
+Result:
+- `CoxUI/Organisms/AppearancePopover.swift` follows mockups 28–29. It sits on readable popover glass at e4 and holds:
+  - a title with the ⌘⌥A key cap and a `MaterialPicker`;
+  - sliders for transparency, blur ("Reflection" for Glossy) and Depth;
+  - a wallpaper-tint toggle and a note.
+- The popover takes plain `State` and reports one `Intent` per `[desktop.appearance]` key. `State.applied(to:)` and `State.apply(_:)` let the window follow a slider at once.
+- `MainScreen` gains `appearance` state and an `.appearance(_)` intent, and shows the popover under the toolbar's Appearance button.
+- Under Reduce Transparency the glass controls are disabled with a one-line reason, and the window renders Solid.
+- `CoxModel/AppearanceSettings.swift` adds `AppearanceEdit`, which maps a change to its config key. `SettingsStore.apply(_:)` writes the change through `set`. `SettingsStore.appearance` reads the section back, including the blur range from the schema.
+- Fixtures are in `Previews/PreviewState+AppearancePopover.swift`. DESIGN.md §6.4 has the row.
+Deviations:
+- The mockup's "Keep text panels readable" switch is left out: it has no config key, and DS§3.5 keeps text readable at every setting.
+- Choosing Solid disables transparency and blur. Reduce Transparency leaves Depth enabled.
+- The 1× window-snapshot helper moved into the shared `Snapshot.swift`, which gains a `reduceTransparency` flag.
+- About 230 source lines in 5 files, against the card's ~150.
+Check:
+- There is no app target yet, so the config write is tested in CoxModel: `aSliderChangeWritesItsKeyThroughTheClient` round-trips `desktop.appearance.opacity=0.3` through the fixture client. CoxModel: 16/16.
+- CoxUI has popover snapshots per material in each light/dark × Solid/Frosted cell, and main-screen snapshots per material. Reduce Transparency has its own snapshots, plus a pixel-equality test that a Frosted window under it draws exactly as Solid.
+- The full CoxUI suite passed twice without re-recording: 98 tests in 32 suites.
+- `swiftlint --strict` and `swift-format lint --strict` are clean.
+Not done:
+- Blur and tint are only saved. Drawing them, wiring intents to the store in the app, value texts, and dismissing the popover moved to T37.22.3.
+- Binding ⌘⌥A moved to T37.22.2.
+- The dimmed look for disabled controls is in T37.19.5.
+- Disabling controls locked by a higher config layer moved to T37.22.3.
