@@ -31,6 +31,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.23.15 | todo | P3 | 2 | 0% | |
 | T37.23.16 | in progress | P3 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.17 | todo | P3 | 1 | 0% | |
+| T37.23.18 | todo | P2 | 2 | 0% | |
 | T37.25.1 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.25.2 | todo | P2 | 2 | 0% | |
 | T37.25.3 | todo | P2 | 2 | 0% | |
@@ -39,6 +40,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.28.2 | todo | P2 | 3 | 0% | |
 | T37.28.3 | todo | P2 | 3 | 0% | |
 | T37.28.4 | todo | P3 | 2 | 0% | |
+| T37.28.5 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
@@ -2787,6 +2789,12 @@ Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json` (and the gene
 Goal (A97): a `quote.bar` token (width about 3 pt, a colour stronger than the hairline, with light, dark and high-contrast variants) in DESIGN.md's tables; T37.23.12's `QuoteFragment` draws its bars from it instead of the thought's hairline.
 Check: the token build's own check; CoxTranscriptText light and dark snapshots of a nested quote.
 
+#### T37.23.18 Edit and resend rewinds the conversation
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/…` (`ComposerStore`, `SessionStore`), `desktop/macos/Packages/CoxTranscript/…`
+Goal (A102): a prompt's Edit and resend (T37.23.9) fills the composer with the prompt and sends `Intent.rewind(toTurn:code: false, conversation: true)` to the turn before that prompt, so the resent prompt does not see the old reply and no file changes; restoring code stays an explicit choice in the rewind timeline.
+Check: a CoxModel test over the fixture that Edit on the second prompt fills the composer and sends one conversation-only rewind to the turn before it.
+
 #### T37.25.1 Core emits the context window and its split
 
 Depends: — · Size: ~150 · Files: `crates/cox-protocol/…` (event), `docs/protocol.jsonschema`, `crates/cox-core/…` (context, session), `crates/cox-app/…` (Meter fold, `MeterText`)
@@ -2819,13 +2827,13 @@ Check: `ComposerFlowTests` paste tests and `PinnedDecisionTests` pass unchanged.
 #### T37.28.2 Review pane: files by turn and their diff
 
 Depends: T37.28.1 · Size: ~180 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs` (new), CoxModel mapping
-Goal: DT§5.4's split view — on the left the files grouped by turn with +/− counts and the RewindTimeline ("Rewind to here"), on the right the selected file's unified `DiffModel` through `DiffHunkView`, with the ⌘⌥D side-by-side toggle.
+Goal (A101): DT§5.4's split view — on the left the files grouped by turn with +/− counts and the RewindTimeline ("Rewind to here"), on the right the selected file's unified `DiffModel` through `DiffHunkView`, with the ⌘⌥D side-by-side toggle. After a code-only rewind the diff is the net difference between the checkpoint copy and the file on disk, not the model's calls one by one. The Changes tab's plain Rewind (`.rewind(checkpoint:)`) restores code only (DT§5.2 "Restore code to here"); the three scopes stay in the timeline.
 Check: a cox-app test gives the per-file diff after two edits; a snapshot per cell.
 
 #### T37.28.3 Revert one file to before turn N
 
 Depends: T37.28.1 · Size: ~120 · Files: `crates/cox-protocol/…` (a new `Submission`), `crates/cox-core/src/rewind.rs`, the cox-app intent
-Goal: DT§5.4's per-file revert and ChangesTab's existing `.revert(path:)`: restore one file to its checkpoint before turn N, checkpointing it first so the revert can itself be undone. Changes the protocol, so it needs a `plan.md` amendment before it is claimed.
+Goal (A101): DT§5.4's per-file revert and ChangesTab's existing `.revert(path:)`: restore one file to its checkpoint before turn N, checkpointing it first so the revert can itself be undone. A new `Submission` approved by A101.
 Check: a cox-app test reverts one file and leaves the other.
 
 #### T37.28.4 Line comments sent to the agent
@@ -2833,6 +2841,12 @@ Check: a cox-app test reverts one file and leaves the other.
 Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs`
 Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
 Check: a cox-app test of the message; a snapshot of a draft.
+
+#### T37.28.5 A skipped restore says why
+
+Depends: — · Size: ~80 · Files: `crates/cox-protocol/…` (`Event::Rewound`'s skipped entries), `docs/protocol.jsonschema`, `crates/cox-core/src/rewind.rs`
+Goal (A101): each file a code rewind could not restore carries its reason — too large, outside the workspace roots, or the I/O error — and the notice counts them by reason (`2 too large to restore, 1 failed: <error>`) instead of calling every failure too large.
+Check: the protocol-schema drift test; a cox-core test where one file is over the size cap and one is unreadable gives two reasons and the matching notice.
 
 #### T37.29.3 Inspector Context & Cost tab
 
@@ -3049,6 +3063,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A98 T37.25.1, T37.25.2, T37.25.3 — the core emits a new `Event::ContextBreakdown` (context window and its system, tools, instructions and history split) after assembling each request, and both the desktop and the TUI show it, by the creator (2026-09-28). Why: neither surface knew the window or the split; `cox_core::context::breakdown` existed but nothing called it. A separate event, not fields on the usage event, because the split is known before the request is sent and usage only after the reply.
 - A99 T50.7 — `just test` runs only the tests of the crates a change touches and their dependents (`--changed-since <ref>`, default the merge-base with `origin/main`); the full run becomes `just check-all`, by the creator (2026-09-28). Why: several agents share one machine, and a full workspace run per task wastes it; CI still runs everything.
 - A100 T37.19.6 — under Increase Contrast, window and pane glass keeps a quarter of its transparency (`material.highContrast.glassKeep = 0.25`), the rule A89 already applies to the palette, by the creator (2026-09-28). Why: one contrast rule for colours and materials; `material.readableFloor` (0.8) was the other option.
+- A101 T37.28.2, T37.28.3, T37.28.5 — review and rewind, by the creator (2026-09-28): the Changes tab's plain Rewind restores code only; after a code-only rewind Review shows the net diff between the checkpoint copy and disk; a new `Submission` reverts one file to before turn N, checkpointing it first; a skipped restore carries its real reason instead of "too large". Why: the recommendations of T37.28.1's report, accepted as proposed.
+- A102 T37.23.18 — Edit and resend fills the composer and rewinds the conversation only (not code) to before that prompt, by the creator (2026-09-28). Why: DT§5.2's rewind, without silently discarding file changes; code is restored only from the timeline.
 
 ## 7. Risk register
 

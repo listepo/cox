@@ -25,6 +25,7 @@
 - T37.23.15. Per-level transcript heading sizes
 - T37.23.16. Theme colours for syntax runs in edit cards
 - T37.23.17. A stronger quote bar from its own token
+- T37.23.18. Edit and resend rewinds the conversation
 - T37.25.1. Core emits the context window and its split
 - T37.25.2. Context split in the desktop token popover
 - T37.25.3. Context split in the TUI
@@ -33,6 +34,7 @@
 - T37.28.2. Review pane: files by turn and their diff
 - T37.28.3. Revert one file to before turn N
 - T37.28.4. Line comments sent to the agent
+- T37.28.5. A skipped restore says why
 - T37.29.3. Inspector Context & Cost tab
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
