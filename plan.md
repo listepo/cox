@@ -6,6 +6,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T22.10 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
@@ -806,6 +807,14 @@ Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding
 Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape. T21.1–T21.2 (below) are the implementation the gate allowed: provider wiring only, no call sites yet.
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
+
+#### T22.10 A project config may only tighten the permission rules
+
+Depends: — · Size: ~80 · Files: `crates/cox-config/src/load.rs`, its tests, `docs/design` guard-list text if it names the keys
+Goal: A122. Today a project `.cox/config.toml` replaces `permissions.allow`, `permissions.ask` and `permissions.deny` wholesale (figment replaces arrays, and none of them is on the guard list), so a cloned repository can drop the default `Read(~/.ssh/**)` deny or allow `Bash`. After this card the effective lists are: `deny` and `ask` = the lists without the project layer plus the project's extra rules (the project cannot remove one); `allow` = the list without the project layer (a project `allow` that differs is reverted). Each reverted or dropped rule is a `GuardViolation` with its own reason line ("A project may not allow a tool call" / "A project may not remove a deny or ask rule"), reported the way the other guarded keys are, and `GUARDED_KEYS` names the three keys so `--sources` reads their provenance right.
+Check: `cox-config` tests: a project `allow = ["Bash"]` is reverted with a violation; a project `deny = []` keeps the default deny and reports it; a project `deny = ["Bash(rm:*)"]` is appended to the user's deny; the same for `ask`; the config-schema drift test unchanged.
+
+Plan (Claude Code / opus-5.5): extend the guard pass in `load.rs` next to the `permissions.mode` guard — read the three arrays from the pre-project and full figments, merge as above, push violations; add the reasons to `GuardViolation::reason` and the keys to `GUARDED_KEYS`; tests at the bottom of `load.rs`. No build or test run (no-build rule); the verification pass runs the Check.
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
@@ -3366,6 +3375,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A119 T37.44.4–T37.44.8 — faster layout work, by the creator (2026-09-28): layout fixes iterate in the CoxUI package alone (it depends on neither the Rust core nor the XCFramework), compare a snapshot with its frame by a pixel-diff command, and split the Figma comparison by page so agents work on separate screens in parallel. Why: each layout check was rebuilding the XCFramework and the app and one agent at a time owned every screen.
 - A120 T37.45.1–T37.45.5 — by the creator (2026-09-28, "do what is best"): controls the mockups show and the design doc already names but the app lacks — settings filter, provider keys and model pop-ups, permission rules editor and session grants, MCP status and log, the onboarding drop zone — become cards; the settings sidebar stays the floating glass one of DESIGN.md §6.5, not the mockups' flush 220 pt one; the M2/M3 mockups (24–27) stay out of scope. Why: the design pass (T37.44.5) found them missing, and they are features, not layout.
 - A121 §3 (new P51: T51.1–T51.21, P52: T52.1–T52.22, P53: T53.1–T53.9), `roadmap.md`, by the creator (2026-09-28): every `roadmap.md` item moves into the plan as described cards — desktop M2 and the dark glass theme as P51, desktop M3 as P52 (the ACP host no longer waits for a blocked card, A67 §11 Q8), plugin install from git or a URL and the publishing of `cox-plugin-api`, `cox-plugin-sdk` and the Go module as P53. The approved looks are mockups 24-terminal-pane-m2, 25-browser-preview-m2, 26-menu-bar-extra-m2 and 27-external-agents-acp-m3 in `desktop/design/mockups/mockups.html`, which T37.44.11 and A120 left out of P37. One agent implements the cards serially without building or running tests (the creator's instruction); a later verification pass runs each card's Check, builds and tests, and only then does the card merge and move to `done.md`. Decisions taken with them: business logic stays in Rust (`cox-app`), `cox-ffi` stays a one-expression forwarder (D11, A90), Swift never spawns a process; the terminal pane runs the user's login shell in the session cwd under the session's own `cox_sandbox::sandbox::Policy`; browser page text reaching the model is untrusted and passes `cox_sanitize::sanitize` and the archive; remote SSH sessions never send API keys or forward the ssh agent; install from a URL needs a pinned sha256 and from git a named ref, and both end in the existing local-directory install and per-digest grant; publishing stops at a dry run — `cargo publish` and tag pushes are the creator's. New dependencies: SwiftTerm (research.md §9.5.2) and KeyboardShortcuts (§9.5.7) in Swift, `portable-pty` promoted from a dev-dependency to a `cox-app` dependency; each gets its §1.1 and `toolchain.md` rows in the implementing commit. Plugin install from git or a URL reverses PL§12's "out of scope" line for those two sources only (T53.1). Why: the creator approved these items in `roadmap.md` and asked to have all of them planned; `roadmap.md` is left with no items.
+- A122 T22.10 — by the creator (2026-09-28): a project config may only tighten `permissions.allow`/`ask`/`deny`: it can add `deny` and `ask` rules, never remove one, and its `allow` is reverted with a notice. Why: T37.45.3 found that a project config replaced the lists wholesale, so a cloned repository could drop the default `~/.ssh` deny or allow `Bash` without a prompt.
 
 ## 7. Risk register
 
