@@ -38,7 +38,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.10 | todo | P0 | 4 | 0% | |
 | T37.11 | todo | P1 | 2 | 0% | |
 | T37.12 | todo | P1 | 3 | 0% | |
-| T37.13 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.14 | todo | P0 | 4 | 0% | |
 | T37.15 | todo | P0 | 3 | 0% | |
 | T37.16 | todo | P0 | 3 | 0% | |
@@ -1157,12 +1156,6 @@ Check: a test with a fake shell script returns its exported `PATH`; a timeout fa
 Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/usage.rs`, `crates/cox-app/src/timeline.rs`
 Goal: the token meter's data (DS§7): sent and received per turn and per session from the ledger, live tok/s estimated from output deltas over a rolling window and replaced by the exact figure when usage arrives, time to first token, and the context breakdown the TUI already shows (P28).
 Check: a scripted stream with known timings yields the expected tok/s within 5 %; per-turn and session totals equal the ledger rows.
-
-#### T37.13 `[desktop.appearance]` config section
-
-Depends: — · Size: ~100 · Files: `crates/cox-config/src/…`, `docs/config.jsonschema`
-Goal: `[desktop.appearance]` — `material` (frosted | glossy | solid), `opacity`, `blur`, `depth`, `tint` with defaults from `desktop/design/tokens/base.json` (DS§3.5) — and `[desktop.transcript] cross_block_selection` (default `true`, A67), owned by `cox-config` like every other setting.
-Check: the config-schema drift test passes; `cox config set desktop.appearance.material glossy` round-trips; an out-of-range value is rejected.
 
 #### T37.14 `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
 

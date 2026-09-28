@@ -2984,3 +2984,17 @@ Deviations: more than 3 files (trait, catalog flag, config field and schema, thr
 Check: `cargo nextest run -p cox-core -p cox-models -p cox-provider-anthropic -p cox-provider-openai -p cox-provider -p cox-protocol` 467 passed, 1 skipped — snapshots `anthropic_request_user_image`, `responses_request_user_image`; `chat_accepts_images_only_where_a_model_declares_them`; `image_on_a_text_only_wire_is_held_back_with_a_notice`; config schema drift test green; clippy and fmt clean. Commit 3b6ee4c.
 
 Not done (follow-ups): PDFs and other binary files are held back (needs a document `Content` variant); resume rebuilds history without attachments; an external-agent child turn does not forward them.
+
+#### T37.13 `[desktop.appearance]` config section
+
+Depends: — · Size: ~100 · Files: `crates/cox-config/src/…`, `docs/config.jsonschema`
+Goal: `[desktop.appearance]` — `material` (frosted | glossy | solid), `opacity`, `blur`, `depth`, `tint` with defaults from `desktop/design/tokens/base.json` (DS§3.5) — and `[desktop.transcript] cross_block_selection` (default `true`, A67), owned by `cox-config` like every other setting.
+Check: the config-schema drift test passes; `cox config set desktop.appearance.material glossy` round-trips; an out-of-range value is rejected.
+Status: done 2026-09-28
+Result: `Config.desktop` (`DesktopConfig`, `cox-protocol/src/config.rs`) adds `[desktop.appearance]` — `material` (`frosted`|`glossy`|`solid`), `opacity` (default 0.42 = `material.frosted.windowOpacity`), `blur` (34 = `material.frosted.blur`, max 60 pt), `depth` (1.0: elevation tokens as designed, DS§3.4), `tint` (true) — and `[desktop.transcript] cross_block_selection` (true). Ranges (opacity and depth 0..=1, blur 0..=60, NaN rejected) are enforced while deserializing, so a bad value fails `load` with the usual `CoreError::Config { key, .. }`; the schema carries minimum/maximum. `default.toml`, `docs/config.jsonschema` and `docs/config.md` regenerated.
+
+Deviations: the types live in `cox-protocol/src/config.rs` with every other section (cox-config owns loading and editing only); 5 files, two of them generated docs.
+
+Check: `cargo nextest run -p cox-protocol -p cox-config` 84/84, including the schema and `config.md` drift tests, `config_set_desktop_material_round_trips` and `config_rejects_out_of_range_desktop_appearance`; `-p cox --test docs` 1/1; `-p cox --bin cox -E 'test(config) | test(doctor)'` 33/33; clippy and fmt clean. Real binary (`COX_HOME` scratch): `config set desktop.appearance.material glossy` → `config get` prints `glossy`, `show --sources` marks it `# user`; opacity 1.5 → exit 1, `1.5 is out of range 0..=1`. Re-checked after merging with T37.6's schema change: 84/84. Commit 97e9f77.
+
+Not done: `cox config set` does not validate ranges before writing (no key does today); the error appears on the next load.

@@ -32,7 +32,6 @@
 - T37.10. `cox-app`: workspace, inbox, status, intents, completion
 - T37.11. Login-shell environment resolution in `cox-session`
 - T37.12. `cox-app`: usage and throughput view state
-- T37.13. `[desktop.appearance]` config section
 - T37.14. `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
 - T37.15. XCFramework script, `just` recipes, macOS CI job
 - T37.16. Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
