@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Empty on purpose (DT-6, DT§7): no App Sandbox, because a sandboxed host cannot nest the
+  agent's own sandbox-exec or read arbitrary repositories. A plugin runtime's JIT entitlement
+  is added only if the first signed build shows it is needed (DT§11 Q5, T37.32.2).
+-->
+<plist version="1.0">
+<dict/>
+</plist>

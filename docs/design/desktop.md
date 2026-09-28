@@ -329,7 +329,7 @@ Rules:
 | `CoxTranscriptText` | `TranscriptTextView`: the transcript as one TextKit 2 `NSTextView`, every timeline block a tracked text range (`BlockRanges`: id → range, location → id), styled by a `TranscriptStyle` the caller builds from tokens (each Rust `StyleToken` maps to a style colour, never a literal); a reply's text is built from its `StyledDoc` spans, and `apply` splices each timeline patch into its own block's range instead of rebuilding the text (`AppendText`, `DocTail`, upsert, remove); tool, approval, question and subagent cards are view-backed attachments (one character each) hosting the SwiftUI views the caller passes as `TranscriptCards`, so it depends on no CoxUI (T37.40, T37.41, T37.43, DT§5.2, `research.md` §9.5.13) | `CoxModel`'s `CoxClient` |
 | `CoxTranscript` | `TranscriptView`: a `SessionStore`'s timeline in `CoxTranscriptText`'s view, a tool, tool-group or task block as CoxUI's `ToolCard`, an approval or question in a caller's slot, with `TranscriptStyle.cox` built from CoxUI's tokens; it follows the store through `SessionStore.didApply`, so each patch batch the store applies is spliced into the text. The one place the three meet, so CoxUI and `CoxTranscriptText` stay independent (T37.23). Also `SessionComposer`: CoxUI's `Composer` over CoxModel's `ComposerStore` (T37.24) | `CoxModel`, `CoxTranscriptText`, `CoxUI` |
 | `CoxPlatform` | `Host` implementation, notifications with actions, Sparkle, OAuth handoff, `NSWorkspace` "open in editor", SwiftTerm and `WebView` panes (M2) | `CoxModel` |
-| App target | `@main`, scenes, menus, entitlements, Info.plist, assets | all |
+| App target | `@main`, scenes, menus, entitlements, Info.plist, assets; `project.yml` for XcodeGen, `just desktop-app` builds an ad-hoc signed Debug `Cox.app` (T37.32.1) | all |
 
 **What Swift may do:** lay out, animate, localize dates and numbers, map a
 `StyleToken` to a color, keep UI-only state (scroll position, which blocks
@@ -594,8 +594,8 @@ apps/cox/
 │  ├─ cox-render/                  + neutral StyledDoc; ratatui behind a feature
 │  └─ cox/                         TUI, run, ACP call cox-session; deps.rs rules
 ├─ desktop/macos/             NEW
-│  ├─ Cox.xcodeproj                thin: app target, entitlements, Info.plist, assets
-│  ├─ App/                         CoxApp.swift (@main, scenes, commands)
+│  ├─ project.yml                  XcodeGen spec of the thin Cox.xcodeproj (generated, gitignored): the app target only
+│  ├─ App/                         CoxApp.swift (@main, scenes, commands), entitlements, Info.plist, assets
 │  ├─ Packages/
 │  │  ├─ CoxCore/                  Package.swift (binaryTarget ../../build/CoxFFI.xcframework)
 │  │  ├─ CoxModel/                 stores + Tests/
@@ -606,11 +606,13 @@ apps/cox/
 │  ├─ Fixtures/                    patch streams recorded from scripted scenarios
 │  └─ UITests/
 ├─ scripts/desktop/xcframework.sh  NEW  cargo (aarch64) → xcodebuild -create-xcframework
-└─ justfile                        + desktop-xcframework, desktop-test, desktop-bench
+├─ scripts/desktop/app.sh          NEW  xcodegen → xcodebuild: build/Cox.app, Debug, ad-hoc signed
+└─ justfile                        + desktop-xcframework, desktop-app, desktop-test, desktop-bench
 ```
 
 The app keeps all Swift code in local Swift packages so the `.xcodeproj`
-stays small and merge-friendly; only the app target lives in it.
+stays small and merge-friendly; only the app target lives in it. XcodeGen
+generates it from `project.yml`, so only that spec is in git (T37.32.1).
 
 ## 7. Build, packaging, distribution
 
