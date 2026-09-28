@@ -73,14 +73,14 @@ public struct TokenPopover: View {
           KeyValueGrid.Row(label: $0.label, values: [$0.turn, $0.session], isDetail: $0.isDetail)
         })
       context
-      // The mockup's 11 pt regular note: `footnote` has its weight, `micro` is medium.
+      // The mockup's 11 pt regular note.
       Text(state.footnote)
-        .textStyle(.footnote)
+        .textStyle(.detail)
         .foregroundStyle(Color(.textTertiary))
         .fixedSize(horizontal: false, vertical: true)
     }
     .padding(.horizontal, Space.xl)
-    .padding(.vertical, Space.l)
+    .padding(.vertical, Space.popover)
     .frame(width: Size.tokenPopoverWidth)
     .glassPane(shape, surface: Color(.surfacePopover), role: .readable)
     .hairline(in: shape)
@@ -100,7 +100,7 @@ public struct TokenPopover: View {
         Spacer(minLength: Space.l)
         Sparkline(state.sparkline).frame(width: Self.sparkWidth, height: Self.sparkHeight)
       }
-      Text(state.rateDetail).textStyle(.footnote, tabularDigits: true)
+      Text(state.rateDetail).textStyle(.detail, tabularDigits: true)
         .foregroundStyle(Color(.textSecondary))
     }
   }
@@ -120,7 +120,7 @@ public struct TokenPopover: View {
             legend(Array(state.parts.dropFirst(half)))
           }
         }
-        .textStyle(.micro, tabularDigits: true)
+        .textStyle(.legend, tabularDigits: true)
         .foregroundStyle(Color(.textSecondary))
       }
     }
@@ -131,7 +131,7 @@ public struct TokenPopover: View {
     HStack(spacing: Space.m) {
       ForEach(parts, id: \.legend) { part in
         HStack(spacing: Space.xs) {
-          RoundedRectangle(cornerRadius: Radius.xs).fill(part.kind.colour)
+          RoundedRectangle(cornerRadius: Radius.swatch).fill(part.kind.colour)
             .frame(width: Self.swatch, height: Self.swatch)
           Text(part.legend).fixedSize()
         }

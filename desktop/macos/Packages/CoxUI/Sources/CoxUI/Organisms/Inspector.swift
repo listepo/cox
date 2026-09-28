@@ -77,18 +77,18 @@ private struct TabButton: View {
   @EffectiveAppearance private var appearance
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: Radius.tab, style: .continuous)
     let isLifted = isSelected && appearance.material != .solid
     Button(action: action) {
       Text(title)
-        .textStyle(.control)
+        .textStyle(.segment)
         .foregroundStyle(Color(isSelected ? .textPrimary : .textSecondary))
-        .padding(.horizontal, Space.m)
+        .padding(.horizontal, Space.tab)
         .padding(.vertical, Space.xs)
         .background {
           if isSelected { shape.fill(Color(isLifted ? .surfaceWindow : .fillSecondary)) }
         }
-        .elevation(isLifted ? .e1 : .e0, cornerRadius: Radius.s)
+        .elevation(isLifted ? .e1 : .e0, cornerRadius: Radius.tab)
         .contentShape(shape)
     }
     .buttonStyle(.plain)

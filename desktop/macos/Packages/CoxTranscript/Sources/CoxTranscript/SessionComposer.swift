@@ -31,7 +31,8 @@ public struct SessionComposer: View {
       composer
     }
     // Off the column's edges, as the mockup's `.composer` margin keeps it.
-    .padding([.horizontal, .bottom], Space.xl)
+    .padding(.horizontal, Space.xl)
+    .padding(.bottom, Space.composerBottom)
   }
 
   /// An Allow, Deny or answer from the bar, sent as the card sends it; a failure shows as the

@@ -32,7 +32,7 @@ struct CostCapsule: View {
         ProgressRing(fraction)
         Text(cost).textStyle(.control, tabularDigits: true)
         Text("· ctx \(context)")
-          .textStyle(.control, tabularDigits: true)
+          .textStyle(.compact, tabularDigits: true)
           .foregroundStyle(Color(.textSecondary))
       }
     }

@@ -43,9 +43,8 @@ public struct CompletionList: View {
     self.pick = pick
   }
 
-  /// The mockup's `.pop`, 470 px wide: no size token is that wide, and a path and its detail
-  /// need the room.
-  static let width: CGFloat = 470
+  /// The mockup's `.pop`: a path and its detail need the room.
+  static let width = Size.completionWidth
 
   public var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)

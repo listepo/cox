@@ -45,7 +45,7 @@ import Testing
   ) throws {
     try assertCoxWindowSnapshot(
       OnboardingScreen(state: state) { _ in }, variant,
-      size: CGSize(width: Size.windowMinWidth, height: Size.windowMinHeight), testName: test)
+      size: CGSize(width: Size.windowSmallWidth, height: Size.windowMinHeight), testName: test)
   }
 }
 

@@ -5,8 +5,8 @@
 
 import SwiftUI
 
-/// An optional `SectionHeader` over `content`'s rows on a `fill.primary` card of `Radius.xl`, each row
-/// after the first under a hairline.
+/// An optional title in `font.title.group` over `content`'s rows on a `fill.primary` card of
+/// `Radius.xl`, each row after the first under a hairline.
 struct SettingsGroupBox<Content: View>: View {
   /// The header, or `nil` for a box its rows explain, as the first-run window's.
   let title: String?
@@ -21,7 +21,14 @@ struct SettingsGroupBox<Content: View>: View {
     let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
     VStack(alignment: .leading, spacing: Space.s) {
       // Level with the rows' text inside the card.
-      if let title { SectionHeader(title).padding(.horizontal, Space.xs) }
+      if let title {
+        // The mockup's `.gtitle`: sentence case in `text.secondary`, not a sidebar `SectionHeader`.
+        Text(title)
+          .textStyle(.titleGroup)
+          .foregroundStyle(Color(.textSecondary))
+          .accessibilityAddTraits(.isHeader)
+          .padding(.horizontal, Space.xs)
+      }
       Group(subviews: content) { rows in
         VStack(spacing: 0) {
           ForEach(rows) { row in row.hairline(row.id == rows.first?.id ? [] : .top) }

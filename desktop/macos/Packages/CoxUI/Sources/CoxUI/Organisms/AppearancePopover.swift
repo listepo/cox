@@ -116,7 +116,7 @@ public struct AppearancePopover: View {
         .fixedSize(horizontal: false, vertical: true)
     }
     .padding(.horizontal, Space.xl)
-    .padding(.top, Space.l)
+    .padding(.top, Space.popover)
     .padding(.bottom, Space.xl)
     .frame(width: Size.popoverWidth)
     .glassPane(shape, surface: Color(.surfacePopover), role: .readable)
