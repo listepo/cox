@@ -41,6 +41,7 @@ A checkout configured for Claude Code or Codex works with cox unchanged:
 | MCP elicitation | yes (TUI, `--plain`) | form mode through the question modal; `cox run -p` declares none and declines |
 | Worktree isolation | yes | `--worktree <name>` and `agent(isolation: "worktree")`; `_worktrees/<repo>-<name>`, branch `<name>`, locked for its owner |
 | MCP resources/prompts, image input | no | deferred to v0.2 |
+| MCP Apps (`_meta.ui.resourceUri`) | no | UI resource ignored; a tool's text and structured result are kept unchanged (T55.1, P55 option (a)) |
 
 ## Gemini over its OpenAI-compatible endpoint (P39)
 
