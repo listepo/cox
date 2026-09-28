@@ -53,6 +53,9 @@ public final class SidebarStore {
   @ObservationIgnored private let workspace: (any WorkspaceClient)?
   @ObservationIgnored private let inbox: InboxStore?
   @ObservationIgnored private let locale: Locale
+  /// Called after each successful read; the app re-syncs its Spotlight index from `listed`
+  /// (T51.16).
+  @ObservationIgnored public var didRefresh: (@MainActor () -> Void)?
 
   /// A fixture launch has no workspace, a recording no inbox: the list shows what there is.
   public init(
@@ -77,6 +80,7 @@ public final class SidebarStore {
         projects.flatMap(\.sessions).map { ($0.id, workspace.activity(session: $0.id)) },
         uniquingKeysWith: { first, _ in first })
       (readAt, failure) = (now, nil)
+      didRefresh?()
     } catch {
       failure = String(describing: error)
     }
@@ -127,6 +131,16 @@ public final class SidebarStore {
       if let entry = sessions.first(where: { $0.id == session }) { return (entry, project) }
     }
     return nil
+  }
+
+  /// Every session the list read, with its project and its last write; Spotlight mirrors it
+  /// (T51.16).
+  public var listed: [(session: SessionEntry, project: Project, updated: Date?)] {
+    projects.flatMap { entry in
+      entry.sessions.map {
+        (session: $0, project: entry.project, updated: ChangesTabState.date($0.updatedAt))
+      }
+    }
   }
 
   /// The inbox's items as the core sent them; the menu bar reads them (T51.14).

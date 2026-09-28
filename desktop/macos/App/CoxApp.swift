@@ -3,7 +3,8 @@
 // picks the core at launch, hosts the windows and joins stores to screens. The session window
 // hides its title bar (DS§4); a session pops out into its own window or a native tab (T51.11);
 // Settings opens from the app menu (⌘,); the menu-bar extra shows what needs you (T51.14);
-// two recorded global hotkeys open that menu and a new session (T51.15).
+// two recorded global hotkeys open that menu and a new session (T51.15); session titles are
+// in Spotlight, and a result opens its session (T51.16).
 
 import AppKit
 import CoxClient
@@ -28,7 +29,7 @@ struct CoxApp: App {
 
   var body: some Scene {
     WindowGroup("Cox", id: Self.mainWindow) {
-      SessionWindow(model: model).opensWindowsForHotkeys(model)
+      SessionWindow(model: model).opensWindowsForHotkeys(model).opensSpotlightResults()
     }
     .windowStyle(.hiddenTitleBar)
     .commands { ShellCommands() }
@@ -66,6 +67,8 @@ final class AppModel {
   /// A scene's `openWindow`, for the hotkeys, which fire outside every view (T51.15); `nil`
   /// until the first window or the menu-bar label appears.
   var openWindow: OpenWindowAction?
+  /// The listed sessions' titles in Spotlight (T51.16).
+  private let spotlight = SpotlightIndex(store: CoreSpotlightStore())
   private var loginEnv: Task<Void, Never>?
   private var sessions: [String: WeakSession] = [:]
   private var responder: NotificationResponder?
@@ -84,6 +87,17 @@ final class AppModel {
     UNUserNotificationCenter.current().delegate = responder
     self.responder = responder
     Hotkeys.register(self)
+    sidebar.didRefresh = { [weak self] in self?.indexSessions() }
+  }
+
+  /// Mirrors the sidebar's last read into Spotlight: titles, projects and times only.
+  private func indexSessions() {
+    spotlight.sync(
+      sidebar.listed.map {
+        SpotlightRow(
+          session: $0.session.id, title: $0.session.title ?? "", project: $0.project.name,
+          lastActivity: $0.updated)
+      })
   }
 
   /// Reads the login shell's environment into the process once per launch, before the first
