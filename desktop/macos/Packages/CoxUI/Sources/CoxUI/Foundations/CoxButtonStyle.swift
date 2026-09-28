@@ -1,6 +1,6 @@
-// `CoxButtonStyle` (DS§6.1): every push button, the mockup's `.pb`, `.pb.pri` and `.pb.dan`.
-// Separate so a button's face, label colour, lift and states come from one place, built on
-// `elevation`, `specular`, `hairline` and `textStyle`.
+// `CoxButtonStyle` (DS§6.1): every push button, the mockup's `.pb`, `.pb.pri` and `.pb.dan`,
+// and the composer's round Send, `.send`. Separate so a button's face, label colour, lift and
+// states come from one place, built on `elevation`, `specular`, `hairline` and `textStyle`.
 
 import SwiftUI
 
@@ -112,6 +112,24 @@ extension CoxButtonStyle.Role {
     switch faceRole(state) {
     case .secondary, .danger: true
     case .primary, .plain: false
+    }
+  }
+}
+
+/// Send, the mockup's `.send`: a round accent face at the regular button height (the mockup's
+/// 30 px has no token); disabled, `fill.secondary` with a readable glyph (DS§8).
+struct SendButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    ControlStateReader(isPressed: configuration.isPressed) { state in
+      configuration.label
+        .foregroundStyle(state == .disabled ? Color(.textSecondary) : Color(.textOnAccent))
+        .frame(width: Size.buttonHeight, height: Size.buttonHeight)
+        .background { Circle().fill(state.tint) }
+        .background {
+          Circle().fill(state == .disabled ? Color(.fillSecondary) : Color(.accent))
+        }
+        .elevation(state.elevation(.e1), cornerRadius: Radius.capsule)
+        .contentShape(Circle())
     }
   }
 }

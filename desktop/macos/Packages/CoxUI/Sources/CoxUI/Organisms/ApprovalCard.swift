@@ -8,8 +8,8 @@
 import SwiftUI
 
 /// Pending: a header with a warning symbol and the risk, the command in a code well, the
-/// reasons in `text.secondary`, then the buttons on `fill.primary` under a hairline — a readable
-/// face at e1 with an orange edge. Decided: a `NoticeRow`, "Allowed by you · for session".
+/// reasons in `text.secondary`, then the buttons and the session grant on `fill.primary` under a
+/// hairline — a readable face at e1 with an orange edge. Decided: a `NoticeRow`, "Allowed by you · for session".
 /// Editing: the input as JSON in the well, Run edited and Cancel; the draft is the card's own
 /// until it is sent.
 public struct ApprovalCard: View {
@@ -93,27 +93,52 @@ public struct ApprovalCard: View {
         VStack(alignment: .leading, spacing: Space.xs) {
           DecisionReason(label: "Why you are asked:", text: content.reason)
           if let source = content.source { DecisionReason(label: "Asked by:", text: source) }
-          if let grant = content.grant {
-            DecisionReason(label: "Allow for session grants:", text: grant)
-          }
         }
       } actions: {
         if draft != nil {
           Button("Run edited", action: runEdited)
-            .buttonStyle(CoxButtonStyle(.primary, size: .small))
+            .buttonStyle(CoxButtonStyle(.primary))
             .disabled(EditedInput(draft).json == nil)
-          Button("Cancel") { draft = nil }.buttonStyle(CoxButtonStyle(.secondary, size: .small))
+          Button("Cancel") { draft = nil }.buttonStyle(CoxButtonStyle(.secondary))
+          Spacer(minLength: 0)
         } else {
-          Button("Allow") { act(.allow) }.buttonStyle(CoxButtonStyle(.primary, size: .small))
-          Button("Allow for session") { act(.allowForSession) }
-            .buttonStyle(CoxButtonStyle(.secondary, size: .small))
-          Button("Deny") { act(.deny) }.buttonStyle(CoxButtonStyle(.danger, size: .small))
-          if let input = content.input, edit != nil {
-            Button("Edit…") { draft = input }.buttonStyle(CoxButtonStyle(.plain, size: .small))
+          // The mockup's `.grant` stands at the row's trailing end; a grant too long for the
+          // line goes under the buttons whole, since it says what Allow for session allows.
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: Space.m) {
+              buttons
+              Spacer(minLength: Space.m)
+              grant
+            }
+            VStack(alignment: .leading, spacing: Space.m) {
+              HStack(spacing: Space.m) { buttons }
+              grant
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
           }
         }
-        Spacer(minLength: 0)
       }
+    }
+  }
+
+  /// Allow, Allow for session, Edit… and Deny, in the mockup's order.
+  @ViewBuilder private var buttons: some View {
+    Button("Allow") { act(.allow) }.buttonStyle(CoxButtonStyle(.primary))
+    Button("Allow for session") { act(.allowForSession) }
+      .buttonStyle(CoxButtonStyle(.secondary))
+    if let input = content.input, edit != nil {
+      Button("Edit…") { draft = input }.buttonStyle(CoxButtonStyle(.secondary))
+    }
+    Button("Deny") { act(.deny) }.buttonStyle(CoxButtonStyle(.danger))
+  }
+
+  /// What Allow for session would grant, `Session grant: git push *`.
+  @ViewBuilder private var grant: some View {
+    if let grant = content.grant {
+      Text("Session grant: \(grant)")
+        .textStyle(.footnote)
+        .foregroundStyle(Color(.textSecondary))
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 
@@ -177,7 +202,8 @@ struct DecisionFrame<Body: View, Actions: View>: View {
         .padding(.leading, Space.xxl)
         .padding(.trailing, Space.xl)
       HStack(spacing: Space.m) { actions }
-        .padding(.vertical, Space.ml)
+        .padding(.top, Space.ml)
+        .padding(.bottom, Space.l)
         .padding(.leading, Space.xxl)
         .padding(.trailing, Space.xl)
         .background(Color(.fillPrimary))

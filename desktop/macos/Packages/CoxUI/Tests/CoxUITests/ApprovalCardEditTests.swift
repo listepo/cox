@@ -12,7 +12,7 @@ import Testing
 @MainActor
 @Suite(.serialized) struct ApprovalCardEditTests {
   /// The action row's buttons, leading first: pending, then editing.
-  private let edit = 3
+  private let edit = 2
   private let runEdited = 0
 
   @Test func editingTheInputSendsTheEditedJSON() throws {

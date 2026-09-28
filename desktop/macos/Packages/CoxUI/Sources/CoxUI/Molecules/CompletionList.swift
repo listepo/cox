@@ -5,8 +5,8 @@
 
 import SwiftUI
 
-/// A header over the rows on readable popover glass at e4; the selected row sits on
-/// `accent.soft` at e1, as a selected sidebar row does. A click picks a row.
+/// A header over the rows on readable popover glass at e4; the selected row is the mockup's
+/// `.it.on`, `text.onAccent` on an `accent` face. A click picks a row.
 public struct CompletionList: View {
   public struct State: Equatable, Sendable {
     /// What the rows are, `Files` or `Commands`.
@@ -81,20 +81,19 @@ struct CompletionRow: View {
       HStack(spacing: Space.ml) {
         Text(row.title)
           .textStyle(.body)
-          .foregroundStyle(Color(.textPrimary))
+          .foregroundStyle(isSelected ? Color(.textOnAccent) : Color(.textPrimary))
           .lineLimit(1)
           .truncationMode(.middle)
         Spacer(minLength: Space.m)
         Text(row.detail)
           .textStyle(.footnote)
-          .foregroundStyle(Color(.textSecondary))
+          .foregroundStyle(isSelected ? Color(.textOnAccent) : Color(.textSecondary))
           .lineLimit(1)
           .truncationMode(.middle)
       }
       .padding(.horizontal, Space.ml)
       .padding(.vertical, Space.s)
-      .background { if isSelected { shape.fill(Color(.accentSoft)) } }
-      .elevation(isSelected ? .e1 : .e0, cornerRadius: Radius.m)
+      .background { if isSelected { shape.fill(Color(.accent)) } }
       .contentShape(shape)
     }
     .buttonStyle(.plain)
