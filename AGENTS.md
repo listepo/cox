@@ -1,6 +1,6 @@
 # cox — instructions for agents
 
-**What this is.** A modular terminal coding agent in Rust (the coxswain steers and calls the strokes). One binary, four surfaces: `cox` (TUI), `cox run -p` (headless, `--output-format stream-json`), `cox acp` (Agent Client Protocol server for Zed/JetBrains), `cox mcp` (built-in tools exposed as an MCP server); and a native macOS app (`desktop/macos/`, P37) that links `cox-ffi` as a static library. Every surface consumes the same `Event` stream from `cox-core`.
+**What this is.** A modular terminal coding agent in Rust (the coxswain steers and calls the strokes). One binary, four surfaces: `cox` (TUI), `cox run -p` (headless, `--output-format stream-json`), `cox acp` (Agent Client Protocol server for Zed/JetBrains), `cox mcp` (built-in tools exposed as an MCP server); and a native macOS app (`desktop/macos/`, P37) that links `cox-ffi` as a static library and reaches a remote host's sessions through `cox app-server --stdio` over ssh (`docs/app-server.md`). Every surface consumes the same `Event` stream from `cox-core`.
 
 **Before you start.** Delegate one-off shell (build, test, git, cargo), API/HTTP calls, and file listings to a low-cost model; do not run those from the main context. `plan.md` §0 lists the decisions; do not re-argue them in a task.
 
