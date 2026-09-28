@@ -5483,3 +5483,13 @@ Check:
 - CoxModel 66, CoxCore 13, CoxUI 167 (4 new `contextTabWhileATurnRuns` snapshots).
 - After merging into `p37-desktop`: the same runs as T37.29.3.2.
 Not done: the app target passes `SettingsStore.cacheHitScope` into the tab (T37.22.3).
+
+#### T37.28.6 Review comments queue while a turn runs
+
+Depends: T37.28.4 · Size: ~80 · Files: `desktop/macos/Packages/CoxModel/…/ReviewDraft.swift`, `crates/cox-config/…`
+Goal: A108 — "Send to agent" in the Review pane queues its message while a turn runs, the same way the composer queues a prompt (`Intent::Queue`), or sends it at once, as a config key owned by `cox-config` picks (queue by default; schema and drift test, so the generated Settings window shows it).
+Check: CoxModel tests that a running turn queues the review message by default and sends it with the other setting; the config drift test.
+Status: done 2026-09-28
+**Result:** `[desktop.review] send = "queue" | "now"` (default `queue`, A108): `ReviewSend` and `DesktopReviewConfig` in `cox-protocol` config.rs, a `default.toml` line, regenerated `docs/config.jsonschema` and `docs/config.md`. CoxModel: `ReviewSend`, `SettingsStore.reviewSend`, `SessionStore.sendReview(_:)` posts `Intent.queue` while a turn runs and the setting is `queue`, else `Intent.send`; `SessionStore.isTurnRunning` is the one "turn running" check, which `ComposerStore.isRunning` now reads. Wiring the setting into the Review pane's button waits for the app target (T37.32.1/T37.22.3).
+
+**Check:** config drift tests 2/2; `just test --changed-since p37-desktop` 1535 passed, 5 skipped (new `config_set_desktop_review_send_round_trips`); clippy and fmt clean; CoxModel 68 passed (`whileATurnRunsSendQueuesByDefaultAndSendsAtOnceWithNow`, `theReviewSendSettingReadsBackFromTheSettings`); swift-format and swiftlint strict clean. Three CoxTranscript tests failed under load (~36) with and without the change and pass on a quiet machine.

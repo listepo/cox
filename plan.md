@@ -29,7 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 80% | |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
-| T37.28.6 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.32.2 | todo | P1 | 3 | 0% | |
@@ -2753,12 +2752,6 @@ Check: a snapshot per cell; cox-app tests for each new call.
 Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
 Goal: the configured cap and the spend as `$0.42 of $5.00` with a gauge. On hold by the creator (2026-09-28). Needs the creator's choice before it is claimed: where the cap comes from (a config key or the existing budget setting), whether it is per session or per day, and what the tab shows with no cap.
 Check: a cox-app test for the figure; snapshots with and without a cap.
-
-#### T37.28.6 Review comments queue while a turn runs
-
-Depends: T37.28.4 · Size: ~80 · Files: `desktop/macos/Packages/CoxModel/…/ReviewDraft.swift`, `crates/cox-config/…`
-Goal: A108 — "Send to agent" in the Review pane queues its message while a turn runs, the same way the composer queues a prompt (`Intent::Queue`), or sends it at once, as a config key owned by `cox-config` picks (queue by default; schema and drift test, so the generated Settings window shows it).
-Check: CoxModel tests that a running turn queues the review message by default and sends it with the other setting; the config drift test.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 

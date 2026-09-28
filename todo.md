@@ -23,7 +23,6 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.3.4. Context tab: budget cap and how close it is
-- T37.28.6. Review comments queue while a turn runs
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.32.1. App target and an unsigned dev build
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
