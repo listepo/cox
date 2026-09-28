@@ -891,6 +891,13 @@ pub enum Submission {
         /// The decision.
         decision: Decision,
     },
+    /// The person's reply to a `QuestionAsked` (DT G4).
+    Answer {
+        /// The `ask_user` call being answered.
+        call_id: CallId,
+        /// The answer; `None` dismisses the question unanswered.
+        text: Option<String>,
+    },
     /// Cancel the running turn; tools get the shared cancellation token.
     Interrupt,
     /// Compact the session now, optionally focused on something specific.
@@ -1042,6 +1049,20 @@ pub enum Event {
         why: Why,
         /// Who is asking (T27.2); `None` only on rollout lines written
         /// before the field existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<Source>,
+    },
+    /// `ask_user` waits for the person (DT G4); a `Submission::Answer`
+    /// with the same `call_id` resumes it.
+    QuestionAsked {
+        /// The `ask_user` call asking.
+        call_id: CallId,
+        /// The question text.
+        question: String,
+        /// Suggested answers, possibly empty.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        options: Vec<String>,
+        /// The subagent asking; `None` for the session the person talks to.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<Source>,
     },
@@ -1540,6 +1561,7 @@ mod tests {
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Plan, effort: Some(Effort::Low) })]
+    #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "which?".into(), options: vec!["a".into()], source: None })]
     #[case::title_set(Event::TitleSet { title: "Fix the ledger".into() })]
     #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
@@ -1569,6 +1591,8 @@ mod tests {
     #[rstest]
     #[case::user_turn(Submission::UserTurn { text: "fix the bug".into(), attachments: vec![], confirm_think: false })]
     #[case::approve(Submission::Approve { call_id: CallId::new(), decision: Decision::Deny { reason: "no".into() } })]
+    #[case::answer(Submission::Answer { call_id: CallId::new(), text: Some("yes".into()) })]
+    #[case::answer_dismissed(Submission::Answer { call_id: CallId::new(), text: None })]
     #[case::interrupt(Submission::Interrupt)]
     #[case::compact(Submission::Compact { focus: Some("auth flow".into()) })]
     #[case::switch_model(Submission::SwitchModel { tier: Tier::Code, model: Some(ModelId("claude-opus-5".into())) })]
@@ -1622,6 +1646,7 @@ mod tests {
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None, structured: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Default, effort: None })]
+    #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "q".into(), options: vec![], source: None })]
     #[case::title_set(Event::TitleSet { title: "t".into() })]
     fn event_tags_are_snake_case(#[case] event: Event) {
         let json = serde_json::to_value(&event).expect("serialize");

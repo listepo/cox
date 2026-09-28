@@ -641,12 +641,12 @@ fn screen_question_modal() {
     start_turn(&mut state);
     update(
         &mut state,
-        Msg::Question {
-            call: CallId::new(),
+        Msg::Event(Event::QuestionAsked {
+            call_id: CallId::new(),
             question: "which environment?".into(),
             options: vec!["staging".into(), "production".into()],
-            agent: None,
-        },
+            source: None,
+        }),
     );
     insta::assert_snapshot!(shot("question_modal", &mut state));
 }

@@ -194,6 +194,47 @@
         ]
       },
       {
+        "description": "`ask_user` waits for the person (DT G4); a `Submission::Answer`\nwith the same `call_id` resumes it.",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The `ask_user` call asking.",
+            "$ref": "#/$defs/CallId"
+          },
+          "question": {
+            "description": "The question text.",
+            "type": "string"
+          },
+          "options": {
+            "description": "Suggested answers, possibly empty.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "description": "The subagent asking; `None` for the session the person talks to.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Source"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "question_asked"
+          }
+        },
+        "required": [
+          "type",
+          "call_id",
+          "question"
+        ]
+      },
+      {
         "description": "A pending approval was decided.",
         "type": "object",
         "properties": {
@@ -2645,6 +2686,31 @@
           "type",
           "call_id",
           "decision"
+        ]
+      },
+      {
+        "description": "The person's reply to a `QuestionAsked` (DT G4).",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The `ask_user` call being answered.",
+            "$ref": "#/$defs/CallId"
+          },
+          "text": {
+            "description": "The answer; `None` dismisses the question unanswered.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "answer"
+          }
+        },
+        "required": [
+          "type",
+          "call_id"
         ]
       },
       {

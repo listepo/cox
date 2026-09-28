@@ -15,7 +15,6 @@ use cox_protocol::ids::SessionId;
 use cox_protocol::traits::Store as _;
 use cox_protocol::types::{Event, Level, Submission};
 use cox_store::Store;
-use cox_tools::ask_user::Question as AskUserQuestion;
 use cox_tui::state::{Ask, GitStatus, Msg, PluginMgmtRequest, PluginNewRequest, State};
 
 use crate::cli::Cli;
@@ -36,8 +35,8 @@ pub(crate) use cox_session::{
 /// Loads config from `cli` for `cwd`, lets `tweak` adjust it, then builds
 /// the session with `cox_session::open` and prints the warnings it returns.
 /// `answer` is what `ask_user` returns when no one is there to ask;
-/// `questions` (T22.1) lets a surface — only `run_tui` and `--plain` have
-/// one — take `ask_user` over instead. `interactive` says a person is at
+/// `questions` (T22.1, DT G4) says the surface — only `run_tui` and
+/// `--plain` are one — answers `Event::QuestionAsked` instead. `interactive` says a person is at
 /// the terminal, so an MCP server's 401 may open a browser login (T22.5).
 /// `plugin_ui` (T33.23, T33.44) — only `run_tui` has one — takes the TUI's
 /// plugin feed and render requests, so the live plugins can be rendered
@@ -47,7 +46,7 @@ pub async fn open(
     cli: &Cli,
     cwd: &Path,
     answer: Option<String>,
-    questions: Option<tokio::sync::mpsc::Sender<AskUserQuestion>>,
+    questions: bool,
     tweak: impl FnOnce(&mut Config),
     resume: Option<(SessionId, History)>,
     interactive: bool,
@@ -504,7 +503,7 @@ pub(crate) fn resume_from_flags(
 /// existing `AGENTS.md` without `--force`) or denied.
 pub fn run_init(cli: &Cli, cwd: &Path, force: bool) -> anyhow::Result<i32> {
     let rt = tokio::runtime::Runtime::new()?;
-    let (session, _) = rt.block_on(open(cli, cwd, None, None, |_| {}, None, false, None))?;
+    let (session, _) = rt.block_on(open(cli, cwd, None, false, |_| {}, None, false, None))?;
     let mut events = session
         .events()
         .ok_or_else(|| anyhow::anyhow!("session events already taken"))?;
@@ -567,9 +566,6 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let mut announce: Option<(Level, String)> = None;
     loop {
         let seed = resume_spec.as_ref().map(|(_, history)| history.clone());
-        // T22.1: the TUI is the only surface with somewhere to show a
-        // question, so it is the only `open` caller that passes one.
-        let (question_tx, mut question_rx) = tokio::sync::mpsc::channel::<AskUserQuestion>(1);
         // T33.23/T33.44: made before `open`, which hands the feed and the
         // `Cmd::Plugin` requests to the live plugins it starts.
         let (feed, feed_rx) = tokio::sync::mpsc::channel(4);
@@ -603,7 +599,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             cli,
             cwd,
             None,
-            Some(question_tx),
+            true,
             |_| {},
             resume_spec.take(),
             true,
@@ -755,7 +751,6 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             .map(cox_tui::state::Modal::PluginGrant);
         state.pending_grants = pending_grants;
         let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
-        let (surfaced, surfaced_rx) = tokio::sync::mpsc::channel(1);
         let (grant_tx, mut grant_rx) =
             tokio::sync::mpsc::channel::<cox_tui::state::GrantDecision>(4);
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
@@ -812,21 +807,6 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                             }
                             None => break,
                         },
-                        // T22.1: `ask_user`'s surface; the reply sender rides
-                        // along so `cox_tui::app::run` can answer it once the
-                        // modal resolves the question.
-                        Some(q) = question_rx.recv() => {
-                            let forwarded = cox_tui::app::Question {
-                                call: q.call,
-                                question: q.question,
-                                options: q.options,
-                                reply: q.reply,
-                                agent: q.source.and_then(|s| s.agent),
-                            };
-                            if surfaced.send(forwarded).await.is_err() {
-                                break;
-                            }
-                        }
                         // T33.8: `Modal::PluginGrant`'s `y`, written here —
                         // the one place in this surface that opens the
                         // store, same reasoning as `Ask::Rollout` above.
@@ -863,7 +843,6 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             state,
             feed_rx,
             ask,
-            surfaced_rx,
             persist_tx.clone(),
             grant_tx,
             plugin_tx,

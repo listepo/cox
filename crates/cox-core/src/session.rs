@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::agent::AgentDef;
-use cox_protocol::errors::{CoreError, ProviderError, StoreError};
+use cox_protocol::errors::{CoreError, ProviderError, StoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
     Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store,
@@ -71,6 +71,9 @@ pub(crate) struct Inner {
     grants: Vec<(String, String)>,
     /// Calls parked in `AwaitingApproval`, answered by `Submission::Approve`.
     pending: HashMap<CallId, oneshot::Sender<Decision>>,
+    /// `ask_user` calls waiting in `QuestionAsked`, resumed by
+    /// `Submission::Answer` (DT G4).
+    questions: HashMap<CallId, oneshot::Sender<Option<String>>>,
     /// Provider rounds so far in this session; the dedup window counts these.
     round: u32,
     dedup: Dedup,
@@ -474,6 +477,7 @@ impl Session {
                 permission_mode,
                 grants,
                 pending: HashMap::new(),
+                questions: HashMap::new(),
                 round: 0,
                 dedup,
                 discovered: Vec::new(),
@@ -768,6 +772,22 @@ impl Session {
                     }
                 }
             }
+            Submission::Answer { call_id, text } => {
+                let waiter = self.inner.lock().await.questions.remove(&call_id);
+                match waiter {
+                    Some(tx) => {
+                        let _ = tx.send(text);
+                        Ok(())
+                    }
+                    None => {
+                        self.emit(Event::Notice {
+                            level: Level::Warn,
+                            text: format!("no question pending for call {call_id}"),
+                        })
+                        .await
+                    }
+                }
+            }
             Submission::SetEffort { effort } => {
                 let changed = {
                     let mut inner = self.inner.lock().await;
@@ -929,6 +949,29 @@ impl Session {
     /// Parks a subagent's call (T27.2) until this session's surface answers
     /// it. Unlike `await_decision` the state stays as it is: this session
     /// is still running the `agent` call that owns the child.
+    /// `Relay::ask` for this session: parks the call, raises
+    /// `QuestionAsked` and waits for `Submission::Answer`. A session that
+    /// closes first dismisses it.
+    pub(crate) async fn raise_question(
+        &self,
+        call_id: CallId,
+        question: &str,
+        options: &[String],
+        source: Option<cox_protocol::types::Source>,
+    ) -> Result<Option<String>, ToolError> {
+        let (tx, rx) = oneshot::channel();
+        self.inner.lock().await.questions.insert(call_id, tx);
+        self.emit(Event::QuestionAsked {
+            call_id,
+            question: question.to_string(),
+            options: options.to_vec(),
+            source,
+        })
+        .await
+        .map_err(|_| ToolError::Io)?;
+        Ok(rx.await.unwrap_or(None))
+    }
+
     pub(crate) async fn relay_decision(&self, call_id: CallId) -> oneshot::Receiver<Decision> {
         let (tx, rx) = oneshot::channel();
         self.inner.lock().await.pending.insert(call_id, tx);

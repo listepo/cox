@@ -441,17 +441,6 @@ pub enum Msg {
     Git(Option<GitStatus>),
     /// The runtime's answer to `Ask::GitDiff` (T15.3); `None` outside a repo.
     Diff(Option<String>),
-    /// A model's `ask_user` call, surfaced by the runtime (T22.1). The
-    /// reply's `oneshot` sender stays in `app.rs`, not here: `State` and
-    /// `Modal` must stay `Clone`/`PartialEq` for tests and snapshots, and a
-    /// `oneshot::Sender` is neither.
-    Question {
-        call: CallId,
-        question: String,
-        options: Vec<String>,
-        /// The subagent asking (T34.3); `None` for the session itself.
-        agent: Option<String>,
-    },
     /// The terminal gained (`true`) or lost focus (T23.5).
     Focus(bool),
     /// A wheel tick or click (T22.4); `app.rs` only forwards these once
@@ -629,11 +618,6 @@ pub enum Cmd {
     Handoff(String),
     Copy(String),
     Ask(Ask),
-    /// `ask_user`'s answer for `call`; `None` is `Esc` (dismissed). The
-    /// runtime looks up the matching reply sender itself — it drops it
-    /// rather than sending empty text, so the tool call fails instead of
-    /// succeeding silently.
-    Answer(CallId, Option<String>),
     /// `/theme` (T24.2): a picker choice writes `key` in the user config
     /// with `cox config set` semantics. `cox-tui` has no `toml_edit`-editing
     /// path of its own (only `crates/cox` owns the config file); the
@@ -965,18 +949,6 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll: 0 });
             Vec::new()
         }
-        Msg::Question {
-            call,
-            question,
-            options,
-            agent,
-        } => {
-            let cmds = notify(state, format!("question: {question}"));
-            state.modal = Some(Modal::Question(
-                Question::new(call, question, options).from_agent(agent),
-            ));
-            cmds
-        }
         Msg::Focus(focused) => {
             state.focused = focused;
             Vec::new()
@@ -1171,8 +1143,15 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             }
         },
         Some(Modal::Question(mut question)) => match question.key(key) {
-            Some(QuestionAnswer::Text(text)) => vec![Cmd::Answer(question.call, Some(text))],
-            Some(QuestionAnswer::Dismissed) => vec![Cmd::Answer(question.call, None)],
+            // `None` (Esc) dismisses, so the tool call fails instead of
+            // succeeding with empty text.
+            Some(answer) => vec![Cmd::Submit(Submission::Answer {
+                call_id: question.call,
+                text: match answer {
+                    QuestionAnswer::Text(text) => Some(text),
+                    QuestionAnswer::Dismissed => None,
+                },
+            })],
             None => {
                 state.modal = Some(Modal::Question(question));
                 Vec::new()
@@ -2271,6 +2250,18 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
+        // T22.1, DT G4: `ask_user` (or a subagent's, T34.3) waits in a modal.
+        Event::QuestionAsked {
+            call_id,
+            question,
+            options,
+            source,
+        } => {
+            cmds = notify(state, format!("question: {question}"));
+            state.modal = Some(Modal::Question(
+                Question::new(call_id, question, options).from_agent(source.and_then(|s| s.agent)),
+            ));
+        }
         // The core's word on mode and effort replaces what a key or a
         // slash command set ahead of it (DT G5).
         Event::StateChanged { mode, effort } => {
@@ -3018,12 +3009,12 @@ mod tests {
         assert!(
             matches!(&cmds[..], [Cmd::Notify { body, .. }] if body == "approval: bash cargo test")
         );
-        let question = Msg::Question {
-            call: CallId::new(),
+        let question = Msg::Event(Event::QuestionAsked {
+            call_id: CallId::new(),
             question: "which?".into(),
             options: Vec::new(),
-            agent: None,
-        };
+            source: None,
+        });
         assert!(rings(&update(&mut state, question)));
 
         update(&mut state, Msg::Focus(true));

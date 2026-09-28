@@ -484,16 +484,32 @@ pub trait Hook: Send + Sync {
     ) -> crate::types::HookOutcome;
 }
 
-/// Where `send_message` (T34.6, SM§4) delivers a follow-up: implemented by
-/// `Session` (`cox-core`) so `cox-tools` needs no handle to it, only this
-/// narrow hook — the same shape as `Archive`/`Worktrees` (AGENTS.md's
-/// trust-boundary rule: anything reaching outside this crate goes through
-/// a trait defined here).
+/// The session a tool talks back to: where `send_message` (T34.6, SM§4)
+/// delivers a follow-up and where `ask_user` raises its question (DT G4).
+/// Implemented by `Session` (`cox-core`) so `cox-tools` needs no handle to
+/// it, only this narrow hook — the same shape as `Archive`/`Worktrees`
+/// (AGENTS.md's trust-boundary rule: anything reaching outside this crate
+/// goes through a trait defined here).
 #[async_trait]
 pub trait Relay: Send + Sync {
     /// Sends `text` to `to` (`"parent"`, a sibling's registry name, or a
     /// `TaskId`), stamped with the caller's own task if it is a subagent.
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError>;
+
+    /// Emits `Event::QuestionAsked` and waits for the matching
+    /// `Submission::Answer`; `Ok(None)` means the person dismissed it.
+    async fn ask(
+        &self,
+        call_id: CallId,
+        question: &str,
+        options: &[String],
+        source: Option<crate::types::Source>,
+    ) -> Result<Option<String>, ToolError> {
+        let _ = (call_id, question, options, source);
+        Err(ToolError::Denied {
+            why: "no surface is listening for questions".into(),
+        })
+    }
 }
 
 /// Where a session's events go besides its surface (PL§5, T33.10): the

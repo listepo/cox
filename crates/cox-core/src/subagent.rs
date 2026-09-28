@@ -31,7 +31,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use cox_protocol::errors::{CoreError, ToolError};
-use cox_protocol::ids::{ItemId, SessionId, TaskId};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::traits::{ExternalAgent, Relay, Tool, ToolCx, Worktree};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Level, Message,
@@ -641,6 +641,28 @@ async fn relay_approval(parent: &Session, child: &Session, call: ToolCall, why: 
     });
 }
 
+/// DT G4: a child's `QuestionAsked` has no surface either, so the parent
+/// raises it on its own stream (the tool already labelled `source`) and
+/// hands the parent's `Submission::Answer` back to the child.
+fn relay_question(
+    parent: &Session,
+    child: &Session,
+    call_id: CallId,
+    question: String,
+    options: Vec<String>,
+    source: Option<Source>,
+) {
+    let (parent, child) = (parent.clone(), child.clone());
+    tokio::spawn(async move {
+        let text = parent
+            .raise_question(call_id, &question, &options, source)
+            .await
+            .ok()
+            .flatten();
+        let _ = child.submit(Submission::Answer { call_id, text }).await;
+    });
+}
+
 /// What one child run produced, foreground or background.
 struct TaskOutcome {
     answer: String,
@@ -896,6 +918,17 @@ pub(crate) async fn relay(
 /// call is hop 0, direct, no relay hop-count.
 #[async_trait]
 impl Relay for Session {
+    async fn ask(
+        &self,
+        call_id: CallId,
+        question: &str,
+        options: &[String],
+        source: Option<Source>,
+    ) -> Result<Option<String>, ToolError> {
+        self.raise_question(call_id, question, options, source)
+            .await
+    }
+
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError> {
         match self.self_task() {
             Some(me) => {
@@ -999,6 +1032,12 @@ async fn run_task(
                 Some(Event::ApprovalRequired { call, why, .. }) => {
                     relay_approval(parent, &child, call, why, io).await;
                 }
+                Some(Event::QuestionAsked {
+                    call_id,
+                    question,
+                    options,
+                    source,
+                }) => relay_question(parent, &child, call_id, question, options, source),
                 // Closes the prompt the relay opened on the parent's surface;
                 // a rule's verdict never opened one.
                 Some(ev @ Event::ApprovalDecided { by: DecidedBy::User, .. }) => {

@@ -16,7 +16,6 @@ use cox_protocol::ids::SessionId;
 use cox_protocol::traits::{Hook, Store as _};
 use cox_protocol::types::Level;
 use cox_store::Store;
-use cox_tools::ask_user::Question as AskUserQuestion;
 use cox_tools::send_message::SendMessageTool;
 
 #[cfg(feature = "plugins")]
@@ -106,8 +105,9 @@ pub struct SessionSpec {
     pub worktree: bool,
     /// What `ask_user` returns when no one is there to ask.
     pub answer: Option<String>,
-    /// T22.1: a surface that shows `ask_user` questions itself.
-    pub questions: Option<tokio::sync::mpsc::Sender<AskUserQuestion>>,
+    /// T22.1, DT G4: the surface answers `Event::QuestionAsked` with
+    /// `Submission::Answer`, so `ask_user` asks it instead of using `answer`.
+    pub questions: bool,
     /// The session to reopen and its rebuilt history.
     pub resume: Option<(SessionId, History)>,
     /// T22.5: with a person present, how an MCP server's 401 hands them the
@@ -229,8 +229,8 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
     ));
     warnings.extend(agents_found.notices.into_iter().map(Warning::Agent));
     let mut all = tools(answer, &store, mdir);
-    if let Some(tx) = questions {
-        all = tools::with_question_surface(all, tx);
+    if questions {
+        all = tools::with_question_surface(all);
     }
     // T34.6: stateless — the session that builds each call's own `ToolCx`
     // (`cox-core/src/turn.rs`) stamps `ToolCx.relay` with itself, so this
@@ -411,7 +411,7 @@ mod tests {
             home: home.path().to_path_buf(),
             worktree: false,
             answer: None,
-            questions: None,
+            questions: false,
             resume: None,
             mcp_login: None,
             plugin_ui: None,

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use cox_protocol::traits::Tool;
 use cox_store::Store;
-use cox_tools::ask_user::{Answers, AskUserTool, Question as AskUserQuestion};
+use cox_tools::ask_user::{Answers, AskUserTool};
 use cox_tools::bash::BashTool;
 use cox_tools::edit::EditTool;
 use cox_tools::expand::ExpandTool;
@@ -87,19 +87,17 @@ pub(crate) fn with_tool_search_index(tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn T
         .collect()
 }
 
-/// Swaps the fixed-answer `ask_user` `tools()` built for one that surfaces
-/// each question instead (T22.1): only a surface with somewhere to show it.
+/// Swaps the fixed-answer `ask_user` `tools()` built for one that raises
+/// each question as `Event::QuestionAsked` instead (T22.1, DT G4): only a
+/// surface that answers with `Submission::Answer`.
 /// Same swap-by-name shape as `with_client_tools`; the spec is unchanged
 /// (`AskUserTool::spec` never reads `answers`), so `tool_search`'s cached
 /// schema, built from the pre-swap tools, still matches.
-pub(crate) fn with_question_surface(
-    tools: Vec<Arc<dyn Tool>>,
-    tx: tokio::sync::mpsc::Sender<AskUserQuestion>,
-) -> Vec<Arc<dyn Tool>> {
+pub(crate) fn with_question_surface(tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn Tool>> {
     tools
         .into_iter()
         .map(|t| match t.spec().name.as_str() {
-            "ask_user" => Arc::new(AskUserTool::new(Answers::Surface(tx.clone()))) as Arc<dyn Tool>,
+            "ask_user" => Arc::new(AskUserTool::new(Answers::Surface)) as Arc<dyn Tool>,
             _ => t,
         })
         .collect()
@@ -129,17 +127,40 @@ mod tests {
         }
     }
 
+    /// Answers every question with "b", as a surface's `Submission::Answer`
+    /// would through the session.
+    struct AnsweringRelay;
+
+    #[async_trait::async_trait]
+    impl cox_protocol::Relay for AnsweringRelay {
+        async fn send_message(
+            &self,
+            _to: &str,
+            _text: &str,
+        ) -> Result<(), cox_protocol::ToolError> {
+            Ok(())
+        }
+        async fn ask(
+            &self,
+            _call_id: cox_protocol::CallId,
+            question: &str,
+            _options: &[String],
+            _source: Option<cox_protocol::types::Source>,
+        ) -> Result<Option<String>, cox_protocol::ToolError> {
+            assert_eq!(question, "pick one");
+            Ok(Some("b".into()))
+        }
+    }
+
     /// T22.1: `open` with `questions` swaps `tools()`'s fixed-answer `ask_user`
-    /// for one whose answers surface on the channel it is given, so a
-    /// question the tool asks reaches whoever is listening on `tx` and the
-    /// reply they send back is what the call returns.
+    /// for one that asks through the session (`cx.relay`), so the answer a
+    /// surface submits is what the call returns.
     #[tokio::test]
     async fn tui_question_surface_is_wired() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let store = Arc::new(Store::open(tmp.path()).expect("open store"));
         let mdir = tmp.path().join("memory");
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        let built = with_question_surface(tools(None, &store, mdir), tx);
+        let built = with_question_surface(tools(None, &store, mdir));
         let ask_user = built
             .iter()
             .find(|t| t.spec().name == "ask_user")
@@ -147,7 +168,7 @@ mod tests {
             .clone();
 
         let (out_tx, _out_rx) = tokio::sync::mpsc::channel(1);
-        let cx = cox_tools::tool_cx(
+        let mut cx = cox_tools::tool_cx(
             vec![tmp.path().to_path_buf()],
             tmp.path().to_path_buf(),
             cox_protocol::SandboxPolicy {
@@ -163,15 +184,7 @@ mod tests {
             SessionId::new(),
             cox_protocol::ids::CallId::new(),
         );
-
-        let surface = tokio::spawn(async move {
-            let q = rx
-                .recv()
-                .await
-                .expect("question surfaced on the swapped channel");
-            assert_eq!(q.question, "pick one");
-            let _ = q.reply.send("b".into());
-        });
+        cx.relay = Some(Arc::new(AnsweringRelay));
         let out = ask_user
             .call(
                 serde_json::json!({"question": "pick one", "options": ["a", "b"]}),
@@ -180,6 +193,5 @@ mod tests {
             .await
             .expect("answered through the surface");
         assert_eq!(out.text, "b");
-        surface.await.expect("surface task");
     }
 }

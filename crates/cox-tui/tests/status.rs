@@ -74,12 +74,12 @@ fn status_line_shows_question_in_the_mode_slot_while_the_modal_is_open() {
     let mut state = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
     update(
         &mut state,
-        Msg::Question {
-            call: CallId::new(),
+        Msg::Event(Event::QuestionAsked {
+            call_id: CallId::new(),
             question: "which environment?".into(),
             options: vec![],
-            agent: None,
-        },
+            source: None,
+        }),
     );
     let line = cox_tui::status::line(&state).to_string();
     assert!(line.contains("[question]"), "{line}");

@@ -17,9 +17,8 @@ use cox_protocol::Event;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::types::{Decision, ItemKind, Level, StopReason, Submission, Tier, ToolResult};
 use cox_sanitize::sanitize;
-use cox_tools::ask_user::Question;
 use cox_tui::commands::{self, Action};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::cli::Cli;
@@ -34,9 +33,9 @@ const APPROVE: &str = "approve? [1] allow [2] session [3] deny ";
 enum Ask {
     Approval(CallId),
     Question {
+        call_id: CallId,
         text: String,
         options: Vec<String>,
-        reply: oneshot::Sender<String>,
     },
 }
 
@@ -53,13 +52,12 @@ pub fn run(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
     let resume = session::resume_from_flags(cli, &home, cwd)?;
     let resumed = resume.as_ref().map(|(id, _)| *id);
-    // T22.1's surface: `ask_user` questions come here instead of `--answer`.
-    let (question_tx, questions) = mpsc::channel(1);
     let (session, loaded) = rt.block_on(session::open(
         cli,
         cwd,
         None,
-        Some(question_tx),
+        // T22.1's surface: `ask_user` questions come here instead of `--answer`.
+        true,
         |_| {},
         resume,
         true,
@@ -93,7 +91,7 @@ pub fn run(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         .ok()
         .and_then(|ms| ms.parse().ok())
         .map(Duration::from_millis);
-    rt.block_on(plain.drive(cli.prompt.clone(), questions, quiet))?;
+    rt.block_on(plain.drive(cli.prompt.clone(), quiet))?;
     rt.block_on(session.submit(Submission::Shutdown))?;
     Ok(())
 }
@@ -123,7 +121,6 @@ impl Plain {
     async fn drive(
         &mut self,
         first: Option<String>,
-        mut questions: mpsc::Receiver<Question>,
         quiet: Option<Duration>,
     ) -> anyhow::Result<()> {
         let mut events = self
@@ -150,12 +147,6 @@ impl Plain {
             let reading = !eof && (busy.is_none() || !self.asks.is_empty());
             tokio::select! {
                 Some(ev) = events.recv() => self.event(ev)?,
-                Some(q) = questions.recv() => {
-                    self.asks.push_back(Ask::Question { text: q.question, options: q.options, reply: q.reply });
-                    if self.asks.len() == 1 {
-                        self.show_ask()?;
-                    }
-                }
                 done = join(&mut busy), if busy.is_some() => {
                     busy = None;
                     // `submit` returns after `TurnDone` is sent; print what is
@@ -294,12 +285,17 @@ impl Plain {
                     self.raw(&row)?;
                 }
             }
-            Event::ApprovalRequired { call, .. } => {
-                self.asks.push_back(Ask::Approval(call.id));
-                if self.asks.len() == 1 {
-                    self.show_ask()?;
-                }
-            }
+            Event::ApprovalRequired { call, .. } => self.push_ask(Ask::Approval(call.id))?,
+            Event::QuestionAsked {
+                call_id,
+                question,
+                options,
+                ..
+            } => self.push_ask(Ask::Question {
+                call_id,
+                text: question,
+                options,
+            })?,
             Event::Usage { usage, .. } => {
                 self.turn_usd += usage.cost_usd;
                 self.turn_tokens[0] += usage.context_tokens();
@@ -345,6 +341,15 @@ impl Plain {
         Ok(())
     }
 
+    /// Queues `ask`; shown now when nothing else waits.
+    fn push_ask(&mut self, ask: Ask) -> std::io::Result<()> {
+        self.asks.push_back(ask);
+        if self.asks.len() == 1 {
+            self.show_ask()?;
+        }
+        Ok(())
+    }
+
     /// Shows the oldest pending ask; a question prints its numbered options.
     fn show_ask(&mut self) -> std::io::Result<()> {
         let lines = match self.asks.front() {
@@ -385,17 +390,22 @@ impl Plain {
                     .await?;
             }
             // A number picks an option, anything else is the answer; an
-            // empty line drops the sender, which `ask_user` reads as dismissed.
-            Some(Ask::Question { options, reply, .. }) => {
+            // empty line dismisses, which `ask_user` reports as unanswered.
+            Some(Ask::Question {
+                call_id, options, ..
+            }) => {
                 let picked = text
                     .parse::<usize>()
                     .ok()
                     .and_then(|n| n.checked_sub(1))
                     .and_then(|i| options.get(i).cloned());
                 let answer = picked.unwrap_or_else(|| text.to_string());
-                if !answer.is_empty() {
-                    let _ = reply.send(answer);
-                }
+                self.session
+                    .submit(Submission::Answer {
+                        call_id,
+                        text: (!answer.is_empty()).then_some(answer),
+                    })
+                    .await?;
             }
             None => {}
         }
@@ -405,15 +415,19 @@ impl Plain {
     /// Interrupt or EOF: deny what waits for approval, dismiss questions.
     async fn cancel_asks(&mut self) -> anyhow::Result<()> {
         for ask in std::mem::take(&mut self.asks) {
-            if let Ask::Approval(call_id) = ask {
-                let reason = "interrupted before a decision".to_string();
-                self.session
-                    .submit(Submission::Approve {
-                        call_id,
-                        decision: Decision::Deny { reason },
-                    })
-                    .await?;
-            }
+            let sub = match ask {
+                Ask::Approval(call_id) => Submission::Approve {
+                    call_id,
+                    decision: Decision::Deny {
+                        reason: "interrupted before a decision".to_string(),
+                    },
+                },
+                Ask::Question { call_id, .. } => Submission::Answer {
+                    call_id,
+                    text: None,
+                },
+            };
+            self.session.submit(sub).await?;
         }
         Ok(())
     }
