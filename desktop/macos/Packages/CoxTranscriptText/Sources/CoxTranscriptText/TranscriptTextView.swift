@@ -21,6 +21,10 @@ public final class TranscriptTextView: NSTextView {
   public var crossBlockSelection = true
   /// The block a clamped drag started in, while the drag runs.
   var dragAnchor: Int?
+  /// The block a ⇧-click in the gutter extends from (`BlockSelection.swift`).
+  var gutterAnchor: BlockID?
+  /// Where "Copy as Markdown" writes; tests pass a private one.
+  var markdownPasteboard = NSPasteboard.general
   /// The views card blocks show (T37.41); set before `load`.
   public var cards = TranscriptCards.summary
 
@@ -38,6 +42,7 @@ public final class TranscriptTextView: NSTextView {
     view.isHorizontallyResizable = false
     view.autoresizingMask = [.width]
     view.textContainer?.widthTracksTextView = true
+    view.addGutterClick()
     return view
   }
 
