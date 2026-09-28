@@ -334,6 +334,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         cwd,
         &mut plugin_warnings,
     ));
+    let all = tools::with_lsp(all, &config, &writable);
     let all = tools::with_tool_search_index(all);
     let session = match resume {
         Some((id, history)) => Session::resume(
