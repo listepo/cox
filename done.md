@@ -5648,3 +5648,16 @@ Deviations: a closed session has no core, so cox-app `App::rename` (cox-ffi `ren
 Check: nextest cox-protocol, cox-core, cox-store, cox-tui, cox-app, cox-ffi, cox 934 passed (incl. `status_line_shows_the_session_title_and_rename_submits_it`, `a_user_rename_survives_a_later_generated_title`, `rename_is_a_user_title_and_no_generated_title_follows`, `a_rename_reaches_the_session_list_open_or_closed`); clippy and fmt clean; Swift CoxModel 80, CoxUI 182, CoxCore 13, swift-format and swiftlint strict clean; screenshot of three titled sessions in the sidebar (scripted provider). On the merged tree (with T37.22.7): 18 title/rename/schema tests and cox-app + cox-ffi 110 passed, clippy clean.
 
 Not done: the screenshot shows no in-app rename (osascript keystrokes did not reach the app); rename in the app is covered by tests only.
+
+#### T37.22.12 Model pill drops a trailing "(latest)"
+
+Depends: — · Size: ~15 · Files: `CoxModel/ModelName.swift`, its tests
+Goal: A116. `ModelName.short` also drops a trailing ` (latest)`, so models.dev's "Claude Haiku 4.5 (latest)" reads `Haiku 4.5`.
+Check: a `ModelNameTests` case for the haiku name and one where "(latest)" is not at the end and stays.
+Plan: strip a trailing " (latest)" in `ModelName.short`, add two `ModelNameTests` cases; verify with CoxModel tests and the linters. Done by the same agent as T37.22.11.
+Status: done 2026-09-28
+Result: `ModelName.short` (`CoxModel/ModelName.swift`) drops a trailing " (latest)" before the vendor prefix (A116), so models.dev's "Claude Haiku 4.5 (latest)" reads `Haiku 4.5`; a name that is only " (latest)" is kept.
+
+Deviations: none.
+
+Check: `aTrailingLatestIsDroppedButOneInsideTheNameStays` (haiku, and "GPT (latest) Mini" stays whole); CoxModel 84 passed; swift-format and swiftlint strict clean.
