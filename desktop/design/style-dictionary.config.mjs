@@ -66,6 +66,14 @@ const px = (dim, where) => {
   return dim.value;
 };
 
+// Tracking scales with the font size (`.tracking(token.tracking * size)`), so a typography token's
+// `letterSpacing` is in em and FontToken keeps the multiple; a missing one means no tracking.
+const em = (dim, where) => {
+  if (dim === undefined) return 0;
+  if (dim?.unit !== 'em' || typeof dim.value !== 'number') fail(`${where}: expected an em letterSpacing`);
+  return dim.value;
+};
+
 // macOS has named weights only; DS§3.2 reads 650 as semibold, so a weight rounds down.
 const WEIGHTS = ['ultraLight', 'thin', 'light', 'regular', 'medium', 'semibold', 'bold', 'heavy', 'black'];
 const DESIGNS = { 'SF Pro Text': '.default', 'SF Mono': '.monospaced' };
@@ -87,7 +95,7 @@ const swiftValue = {
     const design = DESIGNS[v.fontFamily?.[0]] ?? fail(`${w}: unknown family ${v.fontFamily?.[0]}`);
     return [
       'FontToken',
-      `FontToken(size: ${px(v.fontSize, w)}, weight: .${weight}, design: ${design}, lineHeight: ${v.lineHeight}, tracking: ${v.letterSpacing?.value ?? 0})`,
+      `FontToken(size: ${px(v.fontSize, w)}, weight: .${weight}, design: ${design}, lineHeight: ${v.lineHeight}, tracking: ${em(v.letterSpacing, w)})`,
     ];
   },
   shadow: (v, w) => {
