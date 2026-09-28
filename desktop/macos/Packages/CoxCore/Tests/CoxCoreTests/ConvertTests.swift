@@ -47,6 +47,15 @@ import Testing
   #expect(CoxFFIBindings.Intent(.setEffort(effort: nil)) == .setEffort(effort: nil))
 }
 
+@Test func aQueuedIntentKeepsItsAttachmentsAndTheStatusKeepsTheCount() {
+  let shot = CoxClient.Attachment(name: "shot.png", mediaType: "image/png", dataB64: "iVBO")
+  let want = CoxFFIBindings.Intent.queue(
+    text: "look", attachments: [.init(name: "shot.png", mediaType: "image/png", dataB64: "iVBO")])
+  #expect(CoxFFIBindings.Intent(.queue(text: "look", attachments: [shot])) == want)
+  let live = CoxFFIBindings.TimelinePatch.status(status: .init(queued: 2))
+  #expect(CoxClient.TimelinePatch(live) == .status(status: .init(queued: 2)))
+}
+
 @Test func aChangesRecordConvertsFieldForField() {
   let live = CoxFFIBindings.Changes(
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],

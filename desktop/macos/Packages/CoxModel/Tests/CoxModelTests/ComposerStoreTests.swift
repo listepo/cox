@@ -129,51 +129,52 @@ private func usage(done: Bool) -> UsageView {
   return UsageView(session: tally, turn: turn, contextTokens: 0)
 }
 
-private func user(_ turn: UInt32) -> TimelinePatch {
-  .upsert(
-    block: Block(id: "u\(turn)", turn: turn, kind: .user(text: "", attachments: [])), after: nil)
-}
-
 @MainActor
-@Test func whileATurnRunsReturnQueuesAndTheCountDropsAsQueuedTurnsStart() async {
+@Test func whileATurnRunsReturnQueuesAndTheCountIsTheCoresStatus() async {
   let (store, session) = composer()
-  store.session.apply([user(1), .usage(usage: usage(done: false))])
+  store.session.apply([.usage(usage: usage(done: false))])
   #expect(store.isRunning)
 
   store.edit("next")
   await store.submit()
   store.edit("after that")
   await store.submit()
-  #expect(session.sent == [.queue(text: "next"), .queue(text: "after that")])
-  #expect(store.queued == 2)
+  #expect(
+    session.sent == [
+      .queue(text: "next", attachments: []), .queue(text: "after that", attachments: []),
+    ])
+  #expect(store.queued == 0, "the count is the core's, not the store's")
 
-  store.session.apply([
-    .upsert(
-      block: Block(id: "u2", turn: 2, kind: .user(text: "next", attachments: [])), after: "u1")
-  ])
+  store.session.apply([.status(status: Status(queued: 2))])
+  #expect(store.queued == 2)
+  store.session.apply([.status(status: Status(queued: 1))])
   #expect(store.queued == 1)
   store.session.apply([.usage(usage: usage(done: true))])
   #expect(!store.isRunning)
 }
 
 @MainActor
-@Test func commandReturnInterruptsAndSendsNowAndAttachmentsNeverQueue() async throws {
+@Test func aDraftWithAttachmentsQueuesWithThemAndCommandReturnSendsNow() async throws {
   let (store, session) = composer()
-  store.session.apply([user(1), .usage(usage: usage(done: false))])
+  store.session.apply([.usage(usage: usage(done: false))])
   let file = FileManager.default.temporaryDirectory.appending(path: "cox-t37.24-\(UUID()).txt")
   try Data("x".utf8).write(to: file)
   defer { try? FileManager.default.removeItem(at: file) }
+  let sent = Attachment(
+    name: file.lastPathComponent, mediaType: "text/plain",
+    dataB64: Data("x".utf8).base64EncodedString())
+
   await store.attach([file])
   store.edit("look")
-
   await store.submit()
-  #expect(session.sent.isEmpty)
-  #expect(store.failure != nil)
+  #expect(session.sent == [.queue(text: "look", attachments: [sent])])
+  #expect(store.attachments.isEmpty && store.failure == nil)
 
+  await store.attach([file])
+  store.edit("now")
   await store.submitNow()
-  #expect(session.sent.first == .interrupt)
-  #expect(session.sent.count == 2)
-  #expect(store.queued == 0 && store.attachments.isEmpty)
+  #expect(session.sent.suffix(2) == [.interrupt, .send(text: "now", attachments: [sent])])
+  #expect(store.attachments.isEmpty)
 }
 
 @MainActor

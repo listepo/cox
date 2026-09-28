@@ -7,7 +7,7 @@ public enum Intent: Equatable, Sendable {
   case approve(call: String, decision: Decision)
   case answer(question: String, text: String?)
   case interrupt
-  case queue(text: String)
+  case queue(text: String, attachments: [Attachment])
   case compact(focus: String?)
   case setMode(mode: PermissionMode)
   case switchModel(tier: Tier, model: String?)

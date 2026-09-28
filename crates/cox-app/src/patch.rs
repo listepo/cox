@@ -179,6 +179,18 @@ pub enum TimelinePatch {
     Usage {
         usage: Box<UsageView>,
     },
+    /// The session's status beside the block list (DT§4.3); a queue keeps
+    /// only the latest.
+    Status {
+        status: Status,
+    },
+}
+
+/// What the composer shows about the session, not about any one block.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Status {
+    /// Turns queued behind the running one that have not started yet.
+    pub queued: u32,
 }
 
 /// The last `TAIL_LINES` lines of `text`, a trailing newline kept so the

@@ -211,7 +211,7 @@ enum TimelinePatch {
   AppendText { id: BlockId, text: String }      // thinking, tool output tail
   DocTail { id: BlockId, from: u32, blocks: Vec<DocBlock> }  // markdown: closed blocks are frozen, only the tail is re-sent
   Remove { id: BlockId }
-  Status { status: Status }
+  Status { status: Status }                     // beside the list: `queued`, the turns waiting behind the running one (T37.24.8); a queue keeps only the latest
   Usage { usage: UsageView }                    // token meter (DS§7): ledger totals, tok/s, TTFT, and `text` (MeterText, T37.25): every figure formatted; a queue keeps only the latest
 }
 ```
@@ -224,7 +224,7 @@ first, with `session`, `source` and an expiry flag. Drives the "Needs you"
 section, the Dock badge and notifications.
 
 **Intents.** `Send{text, attachments}`, `Approve{call, decision}`,
-`Answer{question, text}`, `Interrupt`, `Queue{text}`, `Compact`, `SetMode`,
+`Answer{question, text}`, `Interrupt`, `Queue{text, attachments}`, `Compact`, `SetMode`,
 `SwitchModel`, `SetEffort`, `Rewind`, `Redo`, `Fork{turn}`, `Handoff`,
 `Background{call}`, `Shell{command, share}`, `Command{line}` (parsed by the
 shared command table). `send` never awaits a turn: `UserTurn` is spawned, as
@@ -323,7 +323,7 @@ Rules:
 | Package | Contents | Depends on |
 | --- | --- | --- |
 | `CoxCore` | `binaryTarget` `CoxFFI.xcframework`; generated `cox_ffi.swift` (target `CoxFFIBindings`, Swift 5 mode, a symlink into `build/bindings/`); `LiveCoreClient` converting its values to `CoxClient`'s | `CoxModel`'s `CoxClient` |
-| `CoxModel` | Target `CoxClient`: the timeline and intent values, the `CoreClient` protocol and `FixtureCoreClient` — here, not in `CoxCore`, because a package declaring the binary target does not load before the XCFramework is built (T37.16). Target `CoxModel`: `@Observable @MainActor` stores: `AppStore` (projects, sessions, inbox, badge), `SessionStore` (ordered blocks by id, status), `ComposerStore` (the draft, shell mode, picked `@` files, attachments, the rows `SessionClient.complete` returns — the fixture client answers from a fixed list — and the prompts queued while a turn runs, counted down as each queued turn starts, T37.24), `SettingsStore`. `apply(_ patches:)` and `send(_ intent:)` only | swift-collections |
+| `CoxModel` | Target `CoxClient`: the timeline and intent values, the `CoreClient` protocol and `FixtureCoreClient` — here, not in `CoxCore`, because a package declaring the binary target does not load before the XCFramework is built (T37.16). Target `CoxModel`: `@Observable @MainActor` stores: `AppStore` (projects, sessions, inbox, badge), `SessionStore` (ordered blocks by id, status), `ComposerStore` (the draft, shell mode, picked `@` files, attachments, the rows `SessionClient.complete` returns — the fixture client answers from a fixed list — and the count of prompts queued while a turn runs, read from the core's `status` patch, T37.24, T37.24.8), `SettingsStore`. `apply(_ patches:)` and `send(_ intent:)` only | swift-collections |
 | `CoxUI` | Views and the design system (DT§5.9); imports no other cox package, so a card is built from plain values | — |
 | `CoxTranscriptText` | `TranscriptTextView`: the transcript as one TextKit 2 `NSTextView`, every timeline block a tracked text range (`BlockRanges`: id → range, location → id), styled by a `TranscriptStyle` the caller builds from tokens (each Rust `StyleToken` maps to a style colour, never a literal); a reply's text is built from its `StyledDoc` spans, and `apply` splices each timeline patch into its own block's range instead of rebuilding the text (`AppendText`, `DocTail`, upsert, remove); tool, approval, question and subagent cards are view-backed attachments (one character each) hosting the SwiftUI views the caller passes as `TranscriptCards`, so it depends on no CoxUI (T37.40, T37.41, T37.43, DT§5.2, `research.md` §9.5.13) | `CoxModel`'s `CoxClient` |
 | `CoxTranscript` | `TranscriptView`: a `SessionStore`'s timeline in `CoxTranscriptText`'s view, a tool, tool-group or task block as CoxUI's `ToolCard`, an approval or question in a caller's slot, with `TranscriptStyle.cox` built from CoxUI's tokens; it follows the store through `SessionStore.didApply`, so each patch batch the store applies is spliced into the text. The one place the three meet, so CoxUI and `CoxTranscriptText` stay independent (T37.23). Also `SessionComposer`: CoxUI's `Composer` over CoxModel's `ComposerStore` (T37.24) | `CoxModel`, `CoxTranscriptText`, `CoxUI` |

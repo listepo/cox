@@ -64,6 +64,7 @@ extension CoxClient.TimelinePatch {
       self = .docTail(id: id, from: from, blocks: blocks.map { CoxClient.DocBlock($0) })
     case .remove(let id): self = .remove(id: id)
     case .usage(let usage): self = .usage(usage: .init(usage))
+    case .status(let status): self = .status(status: .init(queued: status.queued))
     }
   }
 }
@@ -348,15 +349,12 @@ extension CoxFFIBindings.Intent {
   init(_ value: CoxClient.Intent) {
     switch value {
     case .send(let text, let attachments):
-      self = .send(
-        text: text,
-        attachments: attachments.map {
-          .init(name: $0.name, mediaType: $0.mediaType, dataB64: $0.dataB64)
-        })
+      self = .send(text: text, attachments: attachments.map { .init($0) })
     case .approve(let call, let decision): self = .approve(call: call, decision: .init(decision))
     case .answer(let question, let text): self = .answer(question: question, text: text)
     case .interrupt: self = .interrupt
-    case .queue(let text): self = .queue(text: text)
+    case .queue(let text, let attachments):
+      self = .queue(text: text, attachments: attachments.map { .init($0) })
     case .compact(let focus): self = .compact(focus: focus)
     case .setMode(let mode):
       switch mode {
@@ -383,5 +381,11 @@ extension CoxFFIBindings.Intent {
     case .shell(let command, let share): self = .shell(command: command, share: share)
     case .command(let line): self = .command(line: line)
     }
+  }
+}
+
+extension CoxFFIBindings.Attachment {
+  init(_ value: CoxClient.Attachment) {
+    self.init(name: value.name, mediaType: value.mediaType, dataB64: value.dataB64)
   }
 }

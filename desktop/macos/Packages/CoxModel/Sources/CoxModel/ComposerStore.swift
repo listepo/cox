@@ -176,30 +176,17 @@ public final class ComposerStore {
   /// A turn runs, as the core's usage view says (`TurnStarted` until `TurnDone`).
   public var isRunning: Bool { session.usage?.turn.map { !$0.done } ?? false }
 
-  /// Prompts queued behind the running turn that have not started: each starts its own turn,
-  /// so every turn begun since the first was queued takes one off.
-  public var queued: Int {
-    guard let queue else { return 0 }
-    return max(0, queue.count - Int(latestTurn) + Int(queue.turn))
-  }
-
-  /// The turn that ran when the queue began, and how many prompts joined it.
-  private var queue: (turn: UInt32, count: Int)?
-
-  private var latestTurn: UInt32 { session.blocks.values.last?.turn ?? 0 }
+  /// Prompts queued behind the running turn that have not started, as the core counts them.
+  public var queued: Int { Int(session.status.queued) }
 
   /// Sends the draft: a shell line, a `/` command line for the core's command table, or a
-  /// turn with the attachments — queued behind the running turn, where `Intent.queue` carries
-  /// text only, so a draft with attachments waits for ⌘⏎. The draft clears once the core took
-  /// it; attachments stay for a shell or command line, which cannot carry them.
+  /// turn with the attachments — queued behind the running turn while one runs. The draft
+  /// clears once the core took it; attachments stay for a shell or command line, which cannot
+  /// carry them.
   public func submit() async {
     guard canSend else { return }
     let turn = !isShell && !text.hasPrefix("/")
-    guard !(turn && isRunning && !attachments.isEmpty) else {
-      failure = "Attachments cannot wait in the queue; ⌘⏎ sends them now."
-      return
-    }
-    await send(turn && isRunning ? .queue(text: text) : draftIntent)
+    await send(turn && isRunning ? .queue(text: text, attachments: attachments) : draftIntent)
   }
 
   /// ⌘⏎: interrupts the running turn, then sends the draft as a turn of its own.
@@ -223,10 +210,7 @@ public final class ComposerStore {
     do {
       _ = try await session.send(intent)
       switch intent {
-      case .send: attachments = []
-      case .queue:
-        let count = queued
-        queue = count == 0 ? (latestTurn, 1) : queue.map { ($0.turn, $0.count + 1) }
+      case .send, .queue: attachments = []
       default: break
       }
       (text, mentions, completions, isShell, failure) = ("", [], [], false, nil)

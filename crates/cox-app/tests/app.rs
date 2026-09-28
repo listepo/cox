@@ -14,7 +14,7 @@ use cox_app::live::LiveSession;
 use cox_app::{BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Need};
 use cox_app::{TaskKind, TaskTarget, tasks};
 use cox_protocol::traits::{Archive as _, Store as _};
-use cox_protocol::types::{Decision, StopReason};
+use cox_protocol::types::{Attachment, Decision, StopReason};
 
 /// Reads `notes.md`, then replies in markdown.
 const READ_AND_REPLY: &str = r#"
@@ -34,6 +34,19 @@ tool_calls = [{ name = "write", input = { path = "out.txt", content = "approved\
 
 [[turn]]
 text = "Done."
+"#;
+
+/// A write held for approval, then a reply for the turn queued behind it.
+const WRITE_THEN_REPLY: &str = r#"
+[[turn]]
+text = "Writing it."
+tool_calls = [{ name = "write", input = { path = "out.txt", content = "approved\n" } }]
+
+[[turn]]
+text = "Done."
+
+[[turn]]
+text = "Seen."
 "#;
 
 /// Two plain replies: one per turn.
@@ -237,6 +250,60 @@ async fn an_approval_reaches_the_inbox_and_the_host_and_the_intent_answers_it() 
         [0],
         "the Dock badge falls"
     );
+}
+
+#[tokio::test]
+async fn a_queued_turn_carries_its_attachments_and_counts_until_it_starts() {
+    let dir = scratch(Some(WRITE_THEN_REPLY));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session.send(send("write it")).await.expect("send");
+    let queue = Intent::Queue {
+        text: "look".into(),
+        attachments: vec![Attachment {
+            name: "shot.png".into(),
+            media_type: "image/png".into(),
+            data_b64: "iVBORw0KGgo=".into(),
+        }],
+    };
+    session.send(queue).await.expect("queue");
+    // The write waits for approval, so the queued turn cannot start first.
+    let (mut queued, mut ended) = (Vec::new(), 0);
+    while ended < 2 {
+        let batch = session.next_patches().await.expect("open stream");
+        for patch in &batch {
+            match patch {
+                TimelinePatch::Status { status } => queued.push(status.queued),
+                TimelinePatch::Upsert { block, .. } => {
+                    if let BlockKind::Approval {
+                        call,
+                        decision: None,
+                        ..
+                    } = &block.kind
+                    {
+                        let decision = Decision::Allow;
+                        let approve = Intent::Approve {
+                            call: *call,
+                            decision,
+                        };
+                        session.send(approve).await.expect("approve");
+                    }
+                }
+                _ => {}
+            }
+        }
+        ended += batch.iter().filter(|p| ends_turn(p)).count();
+    }
+    assert_eq!(queued, [1, 0]);
+    let users: Vec<_> = session
+        .snapshot()
+        .into_iter()
+        .filter_map(|b| match b.kind {
+            BlockKind::User { text, attachments } => Some((text, attachments)),
+            _ => None,
+        })
+        .collect();
+    let shot = vec!["shot.png".to_string()];
+    assert_eq!(users, [("write it".into(), vec![]), ("look".into(), shot)]);
 }
 
 #[tokio::test]

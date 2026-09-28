@@ -55,6 +55,15 @@ public enum TimelinePatch: Equatable, Sendable {
   case docTail(id: BlockID, from: UInt32, blocks: [DocBlock])
   case remove(id: BlockID)
   case usage(usage: UsageView)
+  case status(status: Status)
+}
+
+/// `cox_app::Status`: what the session reports beside its blocks.
+public struct Status: Equatable, Sendable, Decodable {
+  /// Turns queued behind the running one that have not started yet.
+  public var queued: UInt32
+
+  public init(queued: UInt32 = 0) { self.queued = queued }
 }
 
 public enum ToolState: String, Equatable, Sendable, Decodable { case running, done, failed }

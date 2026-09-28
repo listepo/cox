@@ -98,8 +98,7 @@ import Testing
     host.type("next")
     host.press(.return)
     await host.settle(until: { !session.sent.isEmpty })
-    #expect(session.sent == [.queue(text: "next")])
-    #expect(store.queued == 1)
+    #expect(session.sent == [.queue(text: "next", attachments: [])])
 
     host.type("now")
     host.press(.commandReturn)
