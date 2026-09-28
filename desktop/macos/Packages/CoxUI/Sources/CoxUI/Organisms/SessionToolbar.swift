@@ -8,7 +8,7 @@ import SwiftUI
 
 /// `Breadcrumb` at the leading end; the capsules, Stop and the icon buttons at the trailing
 /// end, `Size.toolbarHeight` tall on the window's own glass. It owns no session state. While
-/// the mode is Bypass a `status.danger` strip runs under the whole bar (DS§3.1, A74).
+/// the mode is Bypass a `status.danger` strip runs under the whole bar (DS§3.1, A89).
 struct SessionToolbar: View {
   /// The popover a capsule or button opens; the one open marks its capsule active.
   enum Popover: Equatable, Sendable {
@@ -107,7 +107,7 @@ struct SessionToolbar: View {
 
 /// A shell toggle's key and the glyphs a tooltip names it by. The sidebar and inspector keys are
 /// the defaults of the system `SidebarCommands` (⌃⌘S) and `InspectorCommands` (⌃⌘I), so the
-/// app's View menu items and these buttons answer the same keys (A74); Appearance is DS§3.5's.
+/// app's View menu items and these buttons answer the same keys (A89); Appearance is DS§3.5's.
 struct ShellShortcut: Sendable {
   let key: KeyboardShortcut
   let glyphs: String

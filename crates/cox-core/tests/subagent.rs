@@ -54,12 +54,12 @@ impl Worktrees for Fake {
 /// T27.3: `isolation: "worktree"` asks the provider for a worktree named
 /// after the task id and owned by the parent session, and the answer ends
 /// with its path and branch. Without a provider the call is refused.
+/// Worktree isolation is `Destructive` (T44.1), so an allow rule lets it run.
 #[tokio::test]
 async fn subagent_worktree_isolation_runs_child_in_its_worktree() {
-    let (session, _store, mut rx) = open(
-        &scenario("subagent_worktree"),
-        cox_protocol::Config::default(),
-    );
+    let mut config = cox_protocol::Config::default();
+    config.permissions.allow = vec!["agent(shell)".into()];
+    let (session, _store, mut rx) = open(&scenario("subagent_worktree"), config.clone());
     let fake = Arc::new(Fake(Mutex::new(Vec::new())));
     session.set_worktrees(fake.clone());
     let running = spawn_turn(&session, "subagent_worktree");
@@ -87,10 +87,7 @@ async fn subagent_worktree_isolation_runs_child_in_its_worktree() {
         )]
     );
 
-    let (session, _store, mut rx) = open(
-        &scenario("subagent_worktree"),
-        cox_protocol::Config::default(),
-    );
+    let (session, _store, mut rx) = open(&scenario("subagent_worktree"), config);
     let running = spawn_turn(&session, "no provider");
     let events = drain(&mut rx).await;
     running.await.expect("join").expect("turn");
@@ -420,4 +417,135 @@ text = "done"
         Some(Tier::Code),
         "a higher request is clamped to the parent's own tier (D5: never up)"
     );
+}
+
+/// T45.1: an `auto`-configured parent switched to `Default` spawns a child
+/// that asks before a `Risk::Write` call, as the parent would; a child built
+/// from the configured mode ran it unasked.
+#[tokio::test]
+async fn child_of_default_parent_does_not_run_auto() {
+    let toml = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "touch it", preset = "shell", tools = ["touch"] } }]
+[[turn]]
+tool_calls = [{ name = "touch", input = { path = "/tmp/cox-turn/t45-1" } }]
+[[turn]]
+text = "touched"
+[[turn]]
+text = "done"
+"#;
+    let mut config = cox_protocol::Config::default();
+    config.permissions.mode = cox_protocol::types::PermissionMode::Auto;
+    let (session, _store, mut rx) = open(toml, config);
+    session
+        .submit(Submission::SetPermissionMode {
+            mode: cox_protocol::types::PermissionMode::Default,
+        })
+        .await
+        .expect("set mode");
+    let running = spawn_turn(&session, "touch it");
+    let mut child_asked = false;
+    loop {
+        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("event timeout")
+            .expect("event stream closed");
+        match ev {
+            Event::ApprovalRequired { call, source, .. } => {
+                child_asked |= source.is_some_and(|s| s.agent.is_some());
+                session
+                    .submit(Submission::Approve {
+                        call_id: call.id,
+                        decision: Decision::Allow,
+                    })
+                    .await
+                    .expect("approve");
+            }
+            Event::TurnDone { .. } => break,
+            _ => {}
+        }
+    }
+    running.await.expect("join").expect("turn");
+    assert!(child_asked, "the child's write ran without asking");
+}
+
+/// T50.2: a finished child woken by `TaskMessage` is never wider than its
+/// parent's live mode. The child ran under `Default`; the parent then
+/// switched to Plan, so the woken child's write is denied without asking.
+/// Before the fix the child was rebuilt from its rollout in `Default` and
+/// asked instead.
+#[tokio::test]
+async fn woken_child_keeps_parent_plan_mode() {
+    let toml = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "wait", preset = "shell", tools = ["touch"] } }]
+[[turn]]
+text = "ready"
+[[turn]]
+text = "done"
+[[turn]]
+tool_calls = [{ name = "touch", input = { path = "/tmp/cox-turn/t50-2" } }]
+[[turn]]
+text = "blocked"
+"#;
+    let (session, _store, mut rx) = open(toml, cox_protocol::Config::default());
+    let running = spawn_turn(&session, "wait");
+    let mut task = None;
+    loop {
+        match next(&mut rx).await {
+            Event::TaskCreated { task: t, .. } => task = Some(t),
+            Event::ApprovalRequired { call, .. } => {
+                let decision = Decision::Allow;
+                let sub = Submission::Approve {
+                    call_id: call.id,
+                    decision,
+                };
+                session.submit(sub).await.expect("approve");
+            }
+            Event::TurnDone { .. } => break,
+            _ => {}
+        }
+    }
+    running.await.expect("join").expect("turn");
+    let task = task.expect("the child was created");
+    let plan = cox_protocol::types::PermissionMode::Plan;
+    let sub = Submission::SetPermissionMode { mode: plan };
+    session.submit(sub).await.expect("set mode");
+    let text = "write it now".to_string();
+    let (from, hop) = (None, 0);
+    let sub = Submission::TaskMessage {
+        task,
+        from,
+        hop,
+        text,
+    };
+    session.submit(sub).await.expect("deliver");
+    let mut child_asked = false;
+    loop {
+        match next(&mut rx).await {
+            Event::ApprovalRequired { call, source, .. } => {
+                child_asked |= source.is_some_and(|s| s.agent.is_some());
+                let reason = "test".to_string();
+                let decision = Decision::Deny { reason };
+                let sub = Submission::Approve {
+                    call_id: call.id,
+                    decision,
+                };
+                session.submit(sub).await.expect("deny");
+            }
+            Event::TaskCompleted { task: t, .. } if t == task => break,
+            _ => {}
+        }
+    }
+    assert!(
+        !child_asked,
+        "the woken child asked as in Default, not Plan"
+    );
+}
+
+async fn next(rx: &mut tokio::sync::mpsc::Receiver<Event>) -> Event {
+    tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("event timeout")
+        .expect("event stream closed")
 }

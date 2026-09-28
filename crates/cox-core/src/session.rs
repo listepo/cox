@@ -25,13 +25,13 @@ use tracing::Instrument as _;
 use crate::budget;
 use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
-use crate::context::assemble_with;
+use crate::context::assemble_with_skills;
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
 use crate::rollout::History;
 use crate::router::{Overrides, Route, RouteError, Router};
-use crate::turn::{consume_provider, results_message, run_tools};
+use crate::turn::{consume_provider, results_message, run_signed_tools, run_tools};
 
 /// Loop states from plan.md §1.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,6 +182,14 @@ pub struct Session {
     /// installed like `worktrees`, empty until then. Not copied to
     /// children — only `new`/`resume` push the `agent` tool at all.
     agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
+    /// The `AGENTS.md`/`CLAUDE.md` block (T50.1) the surface read once
+    /// with `cox_ext::instructions::load` — this crate reads no files.
+    /// Shared with children: a subagent follows the same project rules.
+    instructions: Arc<OnceLock<String>>,
+    /// The `system[2]` skills index (T22.2, T50.1), installed with
+    /// `instructions`. Not copied to children: a child's tool list may
+    /// have no `skill` tool for the index to point at.
+    skills_index: Arc<OnceLock<String>>,
     /// The task id `send_message`'s `Relay` impl stamps a child's own
     /// message with (T34.6, SM§4), set once by `subagent::spawn` right
     /// after the child session exists; unset for the session the user is
@@ -365,6 +373,7 @@ impl Session {
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
         child.worktrees = self.worktrees.clone();
+        child.instructions = self.instructions.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
         // T34.9: share this session's name→TaskId registry so the child can
         // resolve a sibling by name itself (`resolve_name_or_id`).
@@ -411,7 +420,9 @@ impl Session {
                     (
                         id,
                         history.messages,
-                        history.permission_mode,
+                        // T50.4: a rollout with no mode record (written
+                        // before T50.2/T50.4) resumes in the configured mode.
+                        history.permission_mode.unwrap_or(config.permissions.mode),
                         history.grants,
                         turn_marks,
                         truncated_notice,
@@ -468,6 +479,8 @@ impl Session {
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
+            instructions: Arc::new(OnceLock::new()),
+            skills_index: Arc::new(OnceLock::new()),
             self_task: Arc::new(OnceLock::new()),
             external_agents: Arc::new(OnceLock::new()),
             event_tap: Arc::new(OnceLock::new()),
@@ -530,6 +543,25 @@ impl Session {
                 })
                 .map_err(|error| CoreError::Store { error })?;
             session.store.rollout_append(&id, &started).ok();
+        }
+        // T50.4: a top-level session records the mode it opens in, fresh or
+        // resumed, so resume never falls back to a wider mode and a flag
+        // that overrides the record on resume is itself recorded. Rollout
+        // only, like the persisted `SessionStarted`: every surface already
+        // has the opening mode from the config it built the session with.
+        // A child's mode is its parent's (T45.1, T50.2 `restart`). Effort is
+        // `None` here: a session opens with no override.
+        if !is_child {
+            session
+                .store
+                .rollout_append(
+                    &id,
+                    &Event::StateChanged {
+                        mode: permission_mode,
+                        effort: None,
+                    },
+                )
+                .map_err(|error| CoreError::Store { error })?;
         }
         let _ = session.tx.try_send(started);
         if let Some(notice) = truncated_notice {
@@ -708,6 +740,14 @@ impl Session {
 
     pub(crate) fn agent_defs(&self) -> &[AgentDef] {
         self.agent_defs.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Installs the instruction-file block and the skills index `system[2]`
+    /// carries (T50.1), read once by the surface at session build. A second
+    /// call is ignored, so the cached prefix cannot change mid-session (§1.9).
+    pub fn set_instructions(&self, block: String, skills_index: String) {
+        let _ = self.instructions.set(block);
+        let _ = self.skills_index.set(skills_index);
     }
 
     /// Installs the granted external-agent drivers (T35.5); the surface
@@ -1031,6 +1071,12 @@ impl Session {
     /// Remembers where a tool result is archived for microcompaction (T8.2).
     pub(crate) async fn remember_archive(&self, call: CallId, archive: ArchiveRef) {
         self.inner.lock().await.archives.insert(call, archive);
+    }
+
+    /// The live mode (`SetPermissionMode` changes it; the configured one
+    /// is only the starting value), which a subagent inherits (T45.1).
+    pub(crate) async fn permission_mode(&self) -> PermissionMode {
+        self.inner.lock().await.permission_mode
     }
 
     /// What this session has spent so far, in USD.
@@ -1405,7 +1451,7 @@ impl Session {
                 }
                 _ => req_messages,
             };
-            let mut req = assemble_with(
+            let mut req = assemble_with_skills(
                 &req_messages,
                 &self.config,
                 route.tier,
@@ -1413,6 +1459,8 @@ impl Session {
                 &discovered,
                 &self.cwd,
                 "",
+                self.instructions.get().map_or("", String::as_str),
+                self.skills_index.get().map_or("", String::as_str),
             );
             req.model = route.model.clone();
             // T22.3: `SessionStart` hook context goes into `system[3]` — the
@@ -1685,6 +1733,14 @@ impl Session {
                         });
                     }
                     for (id, name, input) in &streamed.calls {
+                        // T39.2: the signature sits right before its call,
+                        // the order `run_signed_tools` writes to the rollout.
+                        if let Some(sig) = streamed.signatures.get(id) {
+                            blocks.push(Content::Thinking {
+                                text: String::new(),
+                                signature: Some(sig.clone()),
+                            });
+                        }
                         blocks.push(Content::ToolUse {
                             id: *id,
                             name: name.clone(),
@@ -1696,7 +1752,7 @@ impl Session {
             });
             inner.state = State::RunningTools;
         }
-        let results = run_tools(self, turn, streamed.calls).await?;
+        let results = run_signed_tools(self, turn, streamed.calls, &streamed.signatures).await?;
         if self.cancel_token().is_cancelled() {
             self.set_state(State::Interrupted).await;
             self.finish(turn, StopReason::Interrupted).await?;

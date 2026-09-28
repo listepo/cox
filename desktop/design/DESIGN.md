@@ -200,7 +200,7 @@ names map one-to-one:
   sidebar is hidden. The app window hides its title bar and puts the behind-window blur under the
   window pane.
 - The sidebar and inspector toggles answer ⌃⌘S and ⌃⌘I, the default keys of the system
-  `SidebarCommands` and `InspectorCommands` (A74), and the Appearance button answers ⌘⌥A. The buttons
+  `SidebarCommands` and `InspectorCommands` (A89), and the Appearance button answers ⌘⌥A. The buttons
   carry the keys (`ShellShortcut`) and their tooltips name them; the app's View menu shows the same
   items on the same keys.
 - While the session is in Bypass mode a 3 pt `status.danger` strip runs under the toolbar, along the
@@ -310,7 +310,7 @@ component.
 | `ToolCard(content, isExpanded:)` | ToolHeader + one detail: the edit's DiffHunkViews or a TerminalTail. A running call shows its tail under a flat header; a finished one folds the detail behind the chevron (open state is the card's own); opened, a readable face at e2 with a hairline rim, `radius.l`. Public with the value types it takes (T37.23) | `.tool`, `.tool.exp` |
 | `ApprovalCard` | header, command well, reasons, CoxButtonStyle row | `.appr` |
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |
-| `TurnView` | UserBubble, ThinkingDisclosure, ToolCard, AssistantMessage, TurnMeta. Not a view of its own under A72: a turn is the run of blocks it owns in `TranscriptView`'s one text, the user message and the thought styled text ranges, the tool calls ToolCards (T37.23) | `.turn` |
+| `TurnView` | UserBubble, ThinkingDisclosure, ToolCard, AssistantMessage, TurnMeta. Not a view of its own under A87: a turn is the run of blocks it owns in `TranscriptView`'s one text, the user message and the thought styled text ranges, the tool calls ToolCards (T37.23) | `.turn` |
 | `TranscriptView(store:crossBlockSelection:approval:)` | one TextKit 2 text (`CoxTranscriptText`) of the store's blocks, kept in step by the patches the store applies; tool, tool-group and task blocks are ToolCards hosted as one character each, approvals and questions the `approval` slot; prose in `font.transcript`, code in `font.mono.code`, readable text colours only. Package `CoxTranscript`, where CoxUI, the text view and the store meet (T37.23) | `.scroll` |
 | `Composer` | text field, ComposerChip, TokenMeter, send button | `.composer` |
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
@@ -357,7 +357,7 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
 - VoiceOver rotors: Approvals, Tool calls, Errors. The token meter reads as "218 thousand tokens sent,
   9.8 thousand received, 71 tokens per second".
 - Honour Reduce Transparency, Reduce Motion and Increase Contrast (§1.6). `high-contrast.mjs` derives
-  the Increase Contrast palettes `color.*-hc.json` (A74) and checks them in `just desktop-tokens`: text
+  the Increase Contrast palettes `color.*-hc.json` (A89) and checks them in `just desktop-tokens`: text
   at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque.
 
 ## 9. Rules for agents generating SwiftUI

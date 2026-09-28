@@ -33,7 +33,7 @@ extension Variant {
       MainScreenSample(state: PreviewState.main), Variant.all[1], size: Self.narrow)
   }
 
-  /// Bypass is on: the red strip runs under the toolbar (A74), with the sidebar out and in.
+  /// Bypass is on: the red strip runs under the toolbar (A89), with the sidebar out and in.
   @Test func mainScreenInBypass() throws {
     var state = PreviewState.main
     state.toolbar.mode = .bypass

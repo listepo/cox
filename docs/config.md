@@ -190,6 +190,31 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `timeout_s` = `30`
 - `deferred` = `true`
 - `servers` = `{}` — [mcp.servers.<name>] command/args/url/env/sandbox — same shape as .mcp.json, plus sandbox=false to opt a named stdio server out of the sandbox wrap (default true, T33.42)
+## `[lsp]`
+
+- `enabled` = `true` — the deferred ReadOnly `diagnostics` tool (P41): one sandboxed stdio LSP server per language per session, killed when the session ends
+- `timeout_s` = `30` — seconds per diagnostics request
+- `quiet_ms` = `500` — after the last pushed publishDiagnostics, wait this long before taking the result as complete
+## `[lsp.servers.rust]`
+
+- `command` = `"rust-analyzer"` — program to spawn, found on PATH, under the same sandbox wrap as an MCP stdio server; [lsp.servers.<name>] is user config only — a project config cannot set lsp.servers (a repository must not choose a program cox runs)
+- `args` = `[]` — arguments to command
+- `extensions` = `["rs"]` — file extensions, without the dot, this server is asked about
+## `[lsp.servers.typescript]`
+
+- `command` = `"typescript-language-server"`
+- `args` = `["--stdio"]`
+- `extensions` = `["ts", "tsx", "js", "jsx"]`
+## `[lsp.servers.python]`
+
+- `command` = `"pyright-langserver"`
+- `args` = `["--stdio"]`
+- `extensions` = `["py"]`
+## `[lsp.servers.go]`
+
+- `command` = `"gopls"`
+- `args` = `[]`
+- `extensions` = `["go"]`
 ## `[plugins]`
 
 - `enabled` = `true` — WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins. A [plugins.<id>] table is that plugin's own config, passed unchanged to its cox_init as InitIn.config; the plugin validates it

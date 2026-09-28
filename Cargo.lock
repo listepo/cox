@@ -1232,6 +1232,7 @@ name = "cox-protocol"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "cox-plugin-api",
  "figment",
  "insta",
@@ -1490,6 +1491,7 @@ dependencies = [
  "serde_json",
  "similar 3.2.0",
  "tempfile",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-util",
 ]
@@ -1499,6 +1501,7 @@ name = "cox-tui"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "cox-core",
  "cox-protocol",
  "cox-render",

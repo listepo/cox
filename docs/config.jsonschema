@@ -213,6 +213,52 @@
         "servers": {}
       }
     },
+    "lsp": {
+      "description": "`[lsp]`",
+      "$ref": "#/$defs/LspConfig",
+      "default": {
+        "enabled": true,
+        "timeout_s": 30,
+        "quiet_ms": 500,
+        "servers": {
+          "go": {
+            "command": "gopls",
+            "args": [],
+            "extensions": [
+              "go"
+            ]
+          },
+          "python": {
+            "command": "pyright-langserver",
+            "args": [
+              "--stdio"
+            ],
+            "extensions": [
+              "py"
+            ]
+          },
+          "rust": {
+            "command": "rust-analyzer",
+            "args": [],
+            "extensions": [
+              "rs"
+            ]
+          },
+          "typescript": {
+            "command": "typescript-language-server",
+            "args": [
+              "--stdio"
+            ],
+            "extensions": [
+              "ts",
+              "tsx",
+              "js",
+              "jsx"
+            ]
+          }
+        }
+      }
+    },
     "plugins": {
       "description": "`[plugins]`",
       "$ref": "#/$defs/PluginsConfig",
@@ -1465,6 +1511,104 @@
           "description": "Whether a stdio server runs under `sandbox::Policy` (T33.42,\n`docs/design/plugins.md` §14 decision 4). `false` opts this named\nserver out, for setups that need it; irrelevant to a `url` server.",
           "type": "boolean",
           "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "LspConfig": {
+      "description": "`[lsp]` (P41, A72): the deferred `diagnostics` tool's servers and\ntimings. A project config cannot set `servers` (the guard in\n`cox-config`'s `load.rs`): a repository must not choose a program cox\nruns. A `BTreeMap` so every listing of the servers has one order.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether the `diagnostics` tool is offered at all.",
+          "type": "boolean",
+          "default": true
+        },
+        "timeout_s": {
+          "description": "Deadline for one `diagnostics` request, in seconds.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 30
+        },
+        "quiet_ms": {
+          "description": "Quiet period, in milliseconds, after the last pushed\n`publishDiagnostics` before the result is taken as complete.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 500
+        },
+        "servers": {
+          "description": "`[lsp.servers.<name>]` entries.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/LspServerConfig"
+          },
+          "default": {
+            "go": {
+              "command": "gopls",
+              "args": [],
+              "extensions": [
+                "go"
+              ]
+            },
+            "python": {
+              "command": "pyright-langserver",
+              "args": [
+                "--stdio"
+              ],
+              "extensions": [
+                "py"
+              ]
+            },
+            "rust": {
+              "command": "rust-analyzer",
+              "args": [],
+              "extensions": [
+                "rs"
+              ]
+            },
+            "typescript": {
+              "command": "typescript-language-server",
+              "args": [
+                "--stdio"
+              ],
+              "extensions": [
+                "ts",
+                "tsx",
+                "js",
+                "jsx"
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LspServerConfig": {
+      "description": "One `[lsp.servers.<name>]` entry (T41.1): a stdio language server and\nthe file extensions it covers. The name is the TOML key.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Program to spawn; looked up on `PATH` like an MCP stdio `command`.",
+          "type": "string",
+          "default": ""
+        },
+        "args": {
+          "description": "Arguments to `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "extensions": {
+          "description": "File extensions, without the dot, this server is asked about.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "additionalProperties": false

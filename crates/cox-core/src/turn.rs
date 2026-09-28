@@ -10,9 +10,9 @@ use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, TurnId};
 use cox_protocol::traits::{Relay, Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
-    ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall, ToolOutput,
-    ToolResult, Usage, Why,
+    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, ItemKind, Level,
+    Message, ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall,
+    ToolOutput, ToolResult, Usage, Why,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -40,6 +40,8 @@ pub(crate) struct Streamed {
     pub text: String,
     pub thinking: String,
     pub calls: Vec<(CallId, String, Value)>,
+    /// Thought signatures by call id (T39.1); opaque, for replay only.
+    pub signatures: HashMap<CallId, String>,
     pub usage: Option<Usage>,
     pub response_model: Option<ModelId>,
     pub stop: Option<StopReason>,
@@ -92,6 +94,11 @@ pub(crate) async fn consume_provider(
                     input: String::new(),
                 });
             }
+            P::ToolUseSignature { signature } => {
+                if let Some(acc) = current.as_ref() {
+                    out.signatures.insert(acc.id, signature);
+                }
+            }
             P::ToolUseInputDelta { text } => {
                 if let Some(acc) = current.as_mut() {
                     acc.input.push_str(&text);
@@ -134,6 +141,19 @@ pub(crate) async fn run_tools(
     turn: TurnId,
     calls: Vec<(CallId, String, Value)>,
 ) -> Result<Vec<(CallId, ToolResult)>, CoreError> {
+    run_signed_tools(session, turn, calls, &HashMap::new()).await
+}
+
+/// [`run_tools`] for a model batch whose calls may carry thought signatures
+/// (T39.2): a signed call's `ToolCallRequested` is preceded by an empty
+/// signed `Thinking` item, so the rollout rebuilds the block in the same
+/// place the live history put it (§1.15 invariant 6).
+pub(crate) async fn run_signed_tools(
+    session: &Session,
+    turn: TurnId,
+    calls: Vec<(CallId, String, Value)>,
+    signatures: &HashMap<CallId, String>,
+) -> Result<Vec<(CallId, ToolResult)>, CoreError> {
     let tools: HashMap<String, Arc<dyn Tool>> = session
         .tools
         .iter()
@@ -157,6 +177,15 @@ pub(crate) async fn run_tools(
         })
         .collect();
     for call in &calls {
+        if let Some(signature) = signatures.get(&call.id) {
+            let item = ItemId::new();
+            let kind = ItemKind::Thinking {
+                text: String::new(),
+                signature: Some(signature.clone()),
+            };
+            session.emit(Event::ItemStarted { item, kind }).await?;
+            session.emit(Event::ItemDone { item }).await?;
+        }
         session
             .emit(Event::ToolCallRequested { call: call.clone() })
             .await?;
@@ -655,5 +684,64 @@ pub(crate) fn results_message(results: Vec<(CallId, ToolResult)>) -> Message {
                 is_error: !result.ok,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use cox_protocol::types::ProviderEvent;
+    use cox_provider::scripted::Scripted;
+
+    use super::*;
+    use crate::MemoryStore;
+
+    /// T39.1: a signature the wire streamed between a call's start and end
+    /// is kept under that call's id, and the call itself still commits.
+    #[tokio::test]
+    async fn consume_provider_keeps_signature_by_call_id() {
+        let store = Arc::new(MemoryStore::new());
+        let session = Session::new(
+            cox_protocol::Config::default(),
+            Arc::new(Scripted::from_toml("", "").expect("scenario")),
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-turn-signature"),
+        )
+        .expect("session");
+        let (tx, mut rx) = mpsc::channel(8);
+        let signed = CallId::new();
+        let unsigned = CallId::new();
+        for ev in [
+            ProviderEvent::ToolUseStart {
+                id: signed,
+                name: "read".into(),
+            },
+            ProviderEvent::ToolUseSignature {
+                signature: "sig-1".into(),
+            },
+            ProviderEvent::ToolUseInputDelta {
+                text: r#"{"path":"a.rs"}"#.into(),
+            },
+            ProviderEvent::ToolUseEnd,
+            ProviderEvent::ToolUseStart {
+                id: unsigned,
+                name: "read".into(),
+            },
+            ProviderEvent::ToolUseEnd,
+        ] {
+            tx.send(ev).await.expect("send");
+        }
+        drop(tx);
+        let streamed = consume_provider(&session, &mut rx, ItemId::new())
+            .await
+            .expect("stream");
+        assert_eq!(streamed.calls.len(), 2);
+        assert_eq!(
+            streamed.signatures,
+            HashMap::from([(signed, "sig-1".to_string())])
+        );
     }
 }

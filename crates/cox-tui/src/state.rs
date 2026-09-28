@@ -2451,7 +2451,7 @@ mod tests {
         let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
         state.transcript_from_history(&History {
             messages: messages.to_vec(),
-            permission_mode: PermissionMode::Default,
+            permission_mode: None,
             grants: Vec::new(),
             truncated: false,
             turns: 4,

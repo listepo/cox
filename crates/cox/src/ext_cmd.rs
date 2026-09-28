@@ -93,14 +93,8 @@ pub fn report(cli: &Cli, cwd: &Path) -> String {
         .unwrap_or_default();
     let cox_home = cli.home.clone().unwrap_or_else(cox_home);
     let claude_home = home_dir().join(".claude");
-    let git_root = find_git_root(cwd);
-    let project = git_root.clone().unwrap_or_else(|| cwd.to_path_buf());
-    let roots = instructions::Roots {
-        cox_home: Some(cox_home.clone()),
-        claude_home: Some(claude_home.clone()),
-        git_root,
-        cwd: cwd.to_path_buf(),
-    };
+    let roots = cox_session::instruction_roots(&cox_home, &claude_home, cwd);
+    let project = roots.git_root.clone().unwrap_or_else(|| cwd.to_path_buf());
     let mut out = String::new();
     let loaded = instructions::load(&roots, u32::MAX);
     section(

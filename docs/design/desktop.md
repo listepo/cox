@@ -508,7 +508,7 @@ current project and slash commands. The whole app is keyboard-drivable:
 | ⌘. | Interrupt |
 | ⏎ / ⌘⏎ / ⎋ | On a pending approval: allow / allow for session / deny |
 | ⌘⇧R | Review |
-| ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A74) |
+| ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A89) |
 | ⌘⌥A | Appearance popover |
 | ⌘⇧F | Search all sessions |
 | ⌘[ / ⌘] | Previous / next turn in the transcript |

@@ -13,9 +13,7 @@ use cox_protocol::Config;
 #[cfg(feature = "plugins")]
 use cox_protocol::GrantScope;
 use cox_protocol::traits::{Provider, Store as _};
-#[cfg(feature = "plugins")]
-use cox_protocol::types::ProviderId;
-use cox_protocol::types::Submission;
+use cox_protocol::types::{ProviderId, Submission};
 use cox_store::Store;
 
 /// A session over a scripted provider playing `scenario`, with no tools.
@@ -142,13 +140,11 @@ pub fn install_granted(home: &Path, id: &str, extra_toml: &str, wasm: &str) {
 }
 
 /// T33.12: every request a scripted session sends, for prefix checks.
-#[cfg(feature = "plugins")]
 pub struct Recorder {
     pub inner: cox_provider::scripted::Scripted,
     pub sent: std::sync::Mutex<Vec<cox_protocol::types::Request>>,
 }
 
-#[cfg(feature = "plugins")]
 #[async_trait::async_trait]
 impl Provider for Recorder {
     fn id(&self) -> ProviderId {
