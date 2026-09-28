@@ -5,11 +5,12 @@
 //! because these are data only. Ids and paths cross as strings; the one
 //! type UniFFI cannot carry as-is (a span's `[u8; 3]` colour) crosses as
 //! the local `Span`, and the two records only this surface has (`Project`,
-//! `OpenRequest`) are declared here too.
+//! `OpenRequest`) are declared here too, with `Project`'s one conversion.
 
 use std::path::PathBuf;
 
 use cox_app::Holder;
+use cox_app::ProjectRow;
 use cox_app::SessionInfo;
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
@@ -93,6 +94,18 @@ pub struct Project {
     pub sessions: u64,
     pub cost_usd: f64,
     pub updated_at: String,
+}
+
+impl From<ProjectRow> for Project {
+    fn from(row: ProjectRow) -> Self {
+        Self {
+            root: row.root,
+            name: row.name,
+            sessions: u64::try_from(row.sessions).unwrap_or(u64::MAX),
+            cost_usd: row.cost_usd,
+            updated_at: row.updated_at,
+        }
+    }
 }
 
 /// What `App::open` opens: a new session in `cwd`, or `resume`'s.

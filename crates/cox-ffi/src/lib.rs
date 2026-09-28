@@ -63,8 +63,9 @@ impl From<WorkspaceError> for AppError {
 }
 
 /// The one runtime (DT§4.5), made on first use; nothing blocks on it.
+static RUNTIME: OnceLock<std::io::Result<Runtime>> = OnceLock::new();
+
 fn runtime() -> Result<&'static Runtime, AppError> {
-    static RUNTIME: OnceLock<std::io::Result<Runtime>> = OnceLock::new();
     RUNTIME
         .get_or_init(|| {
             tokio::runtime::Builder::new_multi_thread()
@@ -111,40 +112,40 @@ impl App {
     /// `home` is `COX_HOME`; `None` means `~/.cox`.
     #[uniffi::constructor]
     pub fn new(home: Option<String>, host: Arc<dyn AppHost>) -> Result<Arc<Self>, AppError> {
-        let owner = Owner::new(home.map(PathBuf::from), Arc::new(host::Bridge(host)))?;
-        Ok(Arc::new(Self { owner }))
+        Ok(Arc::new(Self {
+            owner: Owner::new(home.map(PathBuf::from), Arc::new(host::Bridge(host)))?,
+        }))
     }
 
     pub fn projects(&self, limit: u32) -> Result<Vec<Project>, AppError> {
-        let rows = self.owner.workspace().projects(i64::from(limit))?;
-        Ok(rows
+        Ok(self
+            .owner
+            .workspace()
+            .projects(i64::from(limit))?
             .into_iter()
-            .map(|row| Project {
-                root: row.root,
-                name: row.name,
-                sessions: u64::try_from(row.sessions).unwrap_or(u64::MAX),
-                cost_usd: row.cost_usd,
-                updated_at: row.updated_at,
-            })
+            .map(Project::from)
             .collect())
     }
 
     pub fn sessions(&self, project: String, limit: u32) -> Result<Vec<SessionEntry>, AppError> {
-        let project = PathBuf::from(project);
         Ok(self
             .owner
             .workspace()
-            .sessions(&project, i64::from(limit))?)
+            .sessions(Path::new(&project), i64::from(limit))?)
     }
 
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>, AppError> {
         Ok(self.owner.workspace().search(&query, i64::from(limit))?)
     }
 
-    pub async fn worktrees(&self, project: String) -> Result<Vec<WorktreeInfo>, AppError> {
-        let owner = Arc::clone(&self.owner);
-        let project = PathBuf::from(project);
-        Ok(on_runtime(async move { owner.workspace().worktrees(&project).await }).await??)
+    pub async fn worktrees(
+        self: Arc<Self>,
+        project: String,
+    ) -> Result<Vec<WorktreeInfo>, AppError> {
+        Ok(
+            on_runtime(async move { self.owner.workspace().worktrees(Path::new(&project)).await })
+                .await??,
+        )
     }
 
     /// Most urgent first, oldest first within a rank.
@@ -180,10 +181,17 @@ impl App {
         Ok(self.owner.set_setting(Path::new(&cwd), &key, &value)?)
     }
 
-    pub async fn open(&self, request: OpenRequest) -> Result<Arc<SessionHandle>, AppError> {
-        let owner = Arc::clone(&self.owner);
-        let OpenRequest { cwd, resume, theme } = request;
-        let live = on_runtime(async move { owner.open(cwd.into(), resume, theme).await });
-        Ok(SessionHandle::new(live.await??))
+    pub async fn open(
+        self: Arc<Self>,
+        request: OpenRequest,
+    ) -> Result<Arc<SessionHandle>, AppError> {
+        Ok(SessionHandle::new(
+            on_runtime(async move {
+                self.owner
+                    .open(request.cwd.into(), request.resume, request.theme)
+                    .await
+            })
+            .await??,
+        ))
     }
 }
