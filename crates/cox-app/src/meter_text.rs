@@ -4,6 +4,7 @@
 //! numbers; this only turns a folded `UsageView`, plus the few rates the fold
 //! keeps aside, into strings.
 
+use cox_protocol::types::ContextBreakdown;
 use serde::{Deserialize, Serialize};
 
 use crate::summary::{plural, seconds};
@@ -34,6 +35,12 @@ pub struct MeterText {
     pub rows: Vec<MeterRow>,
     /// `Context · 76.4k`, the last call's context.
     pub context: String,
+    /// `7.6% of 1M`, that context's share of the model's window (A98);
+    /// empty until a request was sent to a model with a known window.
+    pub context_share: String,
+    /// System, tools, instructions and history, in that order; empty
+    /// until the first request.
+    pub context_parts: Vec<ContextPart>,
     /// `Cache hit 94% this turn · counts from the provider's usage, …`.
     pub footnote: String,
 }
@@ -48,6 +55,21 @@ pub struct MeterRow {
     pub detail: bool,
 }
 
+/// One part of the context bar and its legend row.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextPart {
+    /// `system`, `tools`, `instructions` or `history`: the part's colour
+    /// role (`context.<kind>`).
+    pub kind: String,
+    /// `System`.
+    pub label: String,
+    /// `7.6k`.
+    pub tokens: String,
+    /// The part's width in the bar, a fraction of the window (of the whole
+    /// context when the window is unknown).
+    pub share: f64,
+}
+
 /// Figures the fold keeps beside `UsageView` for the popover alone.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Rates {
@@ -55,6 +77,7 @@ pub(crate) struct Rates {
     pub avg: Option<f64>,
     pub peak: Option<f64>,
     pub session_thinking: u32,
+    pub context: Option<ContextBreakdown>,
 }
 
 impl MeterText {
@@ -132,8 +155,72 @@ impl MeterText {
             rate_detail: detail.into_iter().flatten().collect::<Vec<_>>().join(" · "),
             rows,
             context: format!("Context · {}", tokens(view.context_tokens)),
+            context_share: rates
+                .context
+                .and_then(|b| share(&b, view.context_tokens))
+                .unwrap_or_default(),
+            context_parts: rates
+                .context
+                .map(|b| parts(&b, view.context_tokens))
+                .unwrap_or_default(),
             footnote,
         }
+    }
+}
+
+/// The context the split is scaled to: the last call's reported context
+/// (the `Context` figure), or the core's estimate before any call reported.
+fn used(b: &ContextBreakdown, last_context: u32) -> u32 {
+    if last_context > 0 {
+        last_context
+    } else {
+        b.total
+    }
+}
+
+/// `7.6% of 1M`; `None` when the window is unknown.
+fn share(b: &ContextBreakdown, last_context: u32) -> Option<String> {
+    let window = b.window.filter(|w| *w > 0)?;
+    let pct = f64::from(used(b, last_context)) / f64::from(window) * 100.0;
+    let pct = if pct < 10.0 {
+        format!("{pct:.1}%")
+    } else {
+        format!("{pct:.0}%")
+    };
+    Some(format!("{pct} of {}", window_size(window)))
+}
+
+/// The core's split scaled to `used`, so the legend sums to the `Context`
+/// figure beside it and the bar's filled length is the share.
+fn parts(b: &ContextBreakdown, last_context: u32) -> Vec<ContextPart> {
+    let used = f64::from(used(b, last_context));
+    let scale = used / f64::from(b.total.max(1));
+    let whole = b.window.filter(|w| *w > 0).map_or(used, f64::from).max(1.0);
+    [
+        ("system", "System", b.system),
+        ("tools", "Tools", b.tools),
+        ("instructions", "Instructions", b.instructions),
+        ("history", "History", b.history),
+    ]
+    .into_iter()
+    .map(|(kind, label, n)| {
+        let n = f64::from(n) * scale;
+        ContextPart {
+            kind: kind.into(),
+            label: label.into(),
+            tokens: tokens(n.round() as u32),
+            share: n / whole,
+        }
+    })
+    .collect()
+}
+
+/// A window as it is marketed: `1M`, `200k`, else as `tokens` shows it.
+fn window_size(n: u32) -> String {
+    match n {
+        _ if n >= 1_000_000 && n.is_multiple_of(1_000_000) => format!("{}M", n / 1_000_000),
+        _ if n < 1_000_000 && n.is_multiple_of(1000) => format!("{}k", n / 1000),
+        _ => tokens(n),
     }
 }
 
@@ -164,7 +251,10 @@ fn per_second(rate: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use cox_protocol::ids::TurnId;
+    use cox_protocol::types::Usage;
 
     use super::*;
     use crate::usage::TurnUsage;
@@ -216,6 +306,7 @@ mod tests {
             avg: Some(64.2),
             peak: Some(77.0),
             session_thinking: 3_100,
+            context: None,
         };
         let text = MeterText::of(&view, rates);
         assert_eq!(
@@ -250,6 +341,72 @@ mod tests {
             "{}",
             text.footnote
         );
+    }
+
+    /// A98: the Meter keeps the latest split, and the text scales it to
+    /// the last call's context so the legend sums to the `Context` figure.
+    #[test]
+    fn the_context_split_is_scaled_to_the_last_call_and_shared_of_the_window() {
+        let turn = TurnId::new();
+        let mut breakdown = ContextBreakdown {
+            window: Some(1_000_000),
+            total: 100_000,
+            system: 10_000,
+            tools: 30_000,
+            instructions: 10_000,
+            history: 50_000,
+            cached: 0,
+        };
+        let mut meter = crate::usage::Meter::default();
+        let split = |b| cox_protocol::types::Event::ContextBreakdown { turn, breakdown: b };
+        assert!(meter.apply(&split(breakdown), Duration::ZERO));
+        let text = &meter.view().text;
+        assert_eq!(
+            text.context_share, "10% of 1M",
+            "the estimate before a reply"
+        );
+        assert_eq!(text.context_parts[3].tokens, "50.0k");
+        let usage = Usage {
+            input_tokens: 400,
+            output_tokens: 10,
+            cache_read_tokens: 76_000,
+            cache_write_tokens: 0,
+            estimated: false,
+            cost_usd: 0.0,
+            latency_ms: 1,
+        };
+        meter.apply(
+            &cox_protocol::types::Event::Usage { turn, usage },
+            Duration::ZERO,
+        );
+        let text = &meter.view().text;
+        assert_eq!(text.context, "Context · 76.4k");
+        assert_eq!(text.context_share, "7.6% of 1M");
+        let shown: Vec<_> = text
+            .context_parts
+            .iter()
+            .map(|p| (p.kind.as_str(), p.label.as_str(), p.tokens.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("system", "System", "7.6k"),
+                ("tools", "Tools", "22.9k"),
+                ("instructions", "Instructions", "7.6k"),
+                ("history", "History", "38.2k"),
+            ]
+        );
+        let filled: f64 = text.context_parts.iter().map(|p| p.share).sum();
+        assert!((filled - 0.0764).abs() < 1e-9, "{filled}");
+
+        breakdown.window = None;
+        meter.apply(&split(breakdown), Duration::ZERO);
+        let text = &meter.view().text;
+        assert_eq!(text.context_share, "", "no window, no share");
+        let filled: f64 = text.context_parts.iter().map(|p| p.share).sum();
+        assert!((filled - 1.0).abs() < 1e-9, "the bar is the whole context");
+        assert_eq!(window_size(200_000), "200k");
+        assert_eq!(window_size(262_144), "262.1k");
     }
 
     #[test]

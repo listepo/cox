@@ -32,7 +32,7 @@ pub use inbox::{Activity, Inbox, InboxItem, Need};
 pub use info::{ConfigSource, Info};
 pub use intent::{Dispatch, Intent, IntentError, dispatch};
 pub use mcp_login::{McpLogin, McpServer};
-pub use meter_text::{MeterRow, MeterText};
+pub use meter_text::{ContextPart, MeterRow, MeterText};
 pub use onboarding::{CheckId, CheckRow, CheckStatus};
 pub use patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 pub use settings::{Dropped, Layer, Setting, SettingKind, SettingsError, SettingsView};

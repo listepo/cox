@@ -375,6 +375,29 @@
         ]
       },
       {
+        "description": "A request was assembled and is about to be sent (A98): the window\nand how the request fills it. Output only; the request is unchanged.",
+        "type": "object",
+        "properties": {
+          "turn": {
+            "description": "The turn the request belongs to.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "breakdown": {
+            "description": "The window and the split.",
+            "$ref": "#/$defs/ContextBreakdown"
+          },
+          "type": {
+            "type": "string",
+            "const": "context_breakdown"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "breakdown"
+        ]
+      },
+      {
         "description": "Compaction ran and replaced older items with a summary.",
         "type": "object",
         "properties": {
@@ -1576,6 +1599,65 @@
           "estimated",
           "cost_usd",
           "latency_ms"
+        ]
+      },
+      "ContextBreakdown": {
+        "description": "Where the context of the request about to be sent goes (A98): the\nmodel's window and the request's estimated tokens split into the four\nparts both surfaces draw. Emitted before the reply, so it cannot ride on\n`Usage`, which only exists after it.",
+        "type": "object",
+        "properties": {
+          "window": {
+            "description": "The model's context window in tokens; `None` when neither the model\ncatalog nor the provider knows it.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "total": {
+            "description": "The request's estimated tokens; the four parts sum to it exactly.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "system": {
+            "description": "The system prompt and the volatile environment block.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tools": {
+            "description": "The tool schemas.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "instructions": {
+            "description": "Instruction files and the skills index.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "history": {
+            "description": "The conversation: verbatim turns, archive pointers and summaries.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "cached": {
+            "description": "Tokens the last call served from cache, as its usage reported.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "total",
+          "system",
+          "tools",
+          "instructions",
+          "history",
+          "cached"
         ]
       },
       "CompactReason": {

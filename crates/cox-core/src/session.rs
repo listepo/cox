@@ -14,9 +14,9 @@ use cox_protocol::traits::{
     Tool, Worktrees,
 };
 use cox_protocol::types::{
-    ArchiveRef, Attachment, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level,
-    Message, ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier,
-    ToolCall,
+    ArchiveRef, Attachment, Content, ContextBreakdown, Decision, Event, HookEvent, HookOutcome,
+    ItemKind, Job, Level, Message, ModelId, PermissionMode, ProviderId, Request, Role, SandboxMode,
+    StopReason, Submission, Tier, ToolCall,
 };
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -113,6 +113,11 @@ pub(crate) struct Inner {
     pub(crate) redone: Option<u32>,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
+    /// The last main call's usage: `ContextBreakdown.cached` (A98).
+    last_usage: Option<cox_protocol::types::Usage>,
+    /// The model catalog `ContextBreakdown.window` is read from (A98),
+    /// loaded from this session's config on the first request.
+    catalog: Option<cox_models::Catalog>,
     /// Whether this turn already compacted after a context-length error.
     retried_after_too_long: bool,
     /// `SessionStart` source awaiting its one dispatch (T22.3): armed by
@@ -519,6 +524,8 @@ impl Session {
                 detach: HashMap::new(),
                 extracted: Vec::new(),
                 last_context_tokens: 0,
+                last_usage: None,
+                catalog: None,
                 retried_after_too_long: false,
                 startup: (!is_child).then_some(if is_resume { "resume" } else { "startup" }),
                 startup_context: String::new(),
@@ -1553,6 +1560,9 @@ impl Session {
             }
             budget::Decision::Proceed => {}
         }
+        let breakdown = self.context_breakdown(&req).await;
+        self.emit(Event::ContextBreakdown { turn, breakdown })
+            .await?;
         // `consume_provider` starts this item once any streamed thought is
         // over (A91), so the thought is listed ahead of the reply.
         let assistant_item = ItemId::new();
@@ -1661,11 +1671,15 @@ impl Session {
             retry_count = streamed.retries,
             "provider request completed"
         );
-        self.inner.lock().await.last_context_tokens = usage
-            .input_tokens
-            .saturating_add(usage.cache_read_tokens)
-            .saturating_add(usage.cache_write_tokens)
-            .saturating_add(usage.output_tokens);
+        {
+            let mut inner = self.inner.lock().await;
+            inner.last_context_tokens = usage
+                .input_tokens
+                .saturating_add(usage.cache_read_tokens)
+                .saturating_add(usage.cache_write_tokens)
+                .saturating_add(usage.output_tokens);
+            inner.last_usage = Some(usage);
+        }
         // T8.3: cache share for the status line; a 0-read after a hit diffs
         // the prefix hashes and names the block that broke it.
         let miss = {
@@ -1777,6 +1791,28 @@ impl Session {
     /// only moves when a user item lands.
     async fn next_seq(&self) -> u32 {
         self.inner.lock().await.turn_seq + 1
+    }
+
+    /// A98: `req`'s window and split, emitted just before it is sent. The
+    /// window is the catalog row of `req.model`, else the provider's own
+    /// finite `max_context` (a plugin model or a served window the core's
+    /// config-only catalog does not carry). The total is the same byte
+    /// heuristic compaction weighs a request with, since this crate may not
+    /// call the provider's estimator. Reads `req`, never changes it.
+    async fn context_breakdown(&self, req: &Request) -> ContextBreakdown {
+        let max = self.provider.capabilities().max_context;
+        let mut inner = self.inner.lock().await;
+        let catalog = inner.catalog.get_or_insert_with(|| {
+            // Fail open: the built-in rows are embedded, so a failed load
+            // leaves only the provider's number, never a failed turn.
+            cox_models::Catalog::load(&self.config, &[], None).unwrap_or_default()
+        });
+        let window = catalog
+            .get(&req.model.0)
+            .and_then(|row| row.context_window)
+            .or((max > 0 && max < u32::MAX).then_some(max));
+        crate::context::breakdown(req, compact::estimate(req), inner.last_usage.as_ref())
+            .parts(window)
     }
 
     async fn emit_turn_started(

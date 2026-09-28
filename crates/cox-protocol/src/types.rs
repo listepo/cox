@@ -750,6 +750,29 @@ impl Usage {
     }
 }
 
+/// Where the context of the request about to be sent goes (A98): the
+/// model's window and the request's estimated tokens split into the four
+/// parts both surfaces draw. Emitted before the reply, so it cannot ride on
+/// `Usage`, which only exists after it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextBreakdown {
+    /// The model's context window in tokens; `None` when neither the model
+    /// catalog nor the provider knows it.
+    pub window: Option<u32>,
+    /// The request's estimated tokens; the four parts sum to it exactly.
+    pub total: u32,
+    /// The system prompt and the volatile environment block.
+    pub system: u32,
+    /// The tool schemas.
+    pub tools: u32,
+    /// Instruction files and the skills index.
+    pub instructions: u32,
+    /// The conversation: verbatim turns, archive pointers and summaries.
+    pub history: u32,
+    /// Tokens the last call served from cache, as its usage reported.
+    pub cached: u32,
+}
+
 /// A parsed `.claude/commands/*.md`-style slash command the surface could
 /// not resolve to a built-in `Submission` variant, forwarded to `cox-ext`
 /// for execution.
@@ -1109,6 +1132,14 @@ pub enum Event {
         turn: TurnId,
         /// The recorded usage.
         usage: Usage,
+    },
+    /// A request was assembled and is about to be sent (A98): the window
+    /// and how the request fills it. Output only; the request is unchanged.
+    ContextBreakdown {
+        /// The turn the request belongs to.
+        turn: TurnId,
+        /// The window and the split.
+        breakdown: ContextBreakdown,
     },
     /// Compaction ran and replaced older items with a summary.
     Compacted {
@@ -1574,6 +1605,7 @@ mod tests {
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None, structured: None } })]
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
     #[case::usage(Event::Usage { turn: TurnId::new(), usage: sample_usage() })]
+    #[case::context_breakdown(Event::ContextBreakdown { turn: TurnId::new(), breakdown: ContextBreakdown { window: Some(200_000), total: 900, system: 100, tools: 500, instructions: 200, history: 100, cached: 0 } })]
     #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200, reason: CompactReason::PreCall })]
     #[case::checkpoint(Event::Checkpoint { turn: TurnId::new(), call: Some(CallId::new()), files: vec![CheckpointFile { path: PathBuf::from("/w/a.rs"), kind: CheckpointKind::Pre }] })]
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]

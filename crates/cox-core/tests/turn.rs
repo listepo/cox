@@ -46,6 +46,16 @@ fn redact(value: &mut serde_json::Value) {
                     *v = serde_json::json!(0);
                 } else if k == "cost_usd" {
                     *v = serde_json::json!(0.0);
+                } else if k == "breakdown" {
+                    // A98: the split is a byte heuristic over the prompt and
+                    // tool schemas, so any wording change would move it; the
+                    // numbers are checked in `turn_every_request_emits_its_context_breakdown`.
+                    if let serde_json::Value::Object(parts) = v {
+                        parts
+                            .iter_mut()
+                            .filter(|(part, _)| *part != "window")
+                            .for_each(|(_, n)| *n = serde_json::json!(0));
+                    }
                 } else {
                     redact(v);
                 }
@@ -397,6 +407,45 @@ async fn turn_every_request_has_a_usage_row() {
         .count();
     assert_eq!(usage_events, store.usage_rows().len());
     assert_eq!(usage_events, 2);
+}
+
+/// A98: each request is preceded by its window, taken from the model
+/// catalog, and a split that is not empty and sums to its total.
+#[tokio::test]
+async fn turn_every_request_emits_its_context_breakdown() {
+    let config = cox_protocol::Config::default();
+    let catalog = cox_models::Catalog::load(&config, &[], None).expect("catalog");
+    let window = catalog
+        .get(&config.tiers.code.model)
+        .and_then(|row| row.context_window);
+    assert!(window.is_some(), "the default code model has a catalog row");
+    let (events, _, _) = run("one_tool").await;
+    let splits: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::ContextBreakdown { breakdown, .. } => Some(*breakdown),
+            _ => None,
+        })
+        .collect();
+    let usages = events
+        .iter()
+        .filter(|e| matches!(e, Event::Usage { .. }))
+        .count();
+    assert_eq!((splits.len(), usages), (2, 2), "one per request");
+    for b in &splits {
+        assert_eq!(b.window, window);
+        assert!(b.system > 0 && b.tools > 0 && b.history > 0, "{b:?}");
+        assert_eq!(b.system + b.tools + b.instructions + b.history, b.total);
+    }
+    assert!(
+        splits[1].history > splits[0].history,
+        "the tool round grew it"
+    );
+    let first_split = events
+        .iter()
+        .position(|e| matches!(e, Event::ContextBreakdown { .. }));
+    let first_usage = events.iter().position(|e| matches!(e, Event::Usage { .. }));
+    assert!(first_split < first_usage, "emitted before the reply");
 }
 
 #[tokio::test]

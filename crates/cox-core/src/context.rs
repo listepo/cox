@@ -11,7 +11,8 @@ use base64::engine::general_purpose::STANDARD;
 use cox_protocol::ids::CallId;
 use cox_protocol::traits::Tool;
 use cox_protocol::types::{
-    ArchiveRef, Attachment, Content, Job, Message, ModelId, Request, SystemBlock, Tier, Usage,
+    ArchiveRef, Attachment, Content, ContextBreakdown, Job, Message, ModelId, Request, SystemBlock,
+    Tier, Usage,
 };
 
 /// The first line of `system[2]`; the loaded instruction files and the
@@ -297,7 +298,6 @@ pub fn strip_thinking_before(mut messages: Vec<Message>, turn_start: usize) -> V
 /// `ItemKind::Summary` replays as one) and could not fill `summary` below.
 const SUMMARY_HEADER: &str = "[Compacted summary of ";
 
-#[allow(dead_code)]
 /// Where the next request's tokens go (T25.7 `/context`): the §1.9 segments
 /// plus the whole and the cached share. `total` is the T1.8 estimator's
 /// request total verbatim — cox-core may not depend on cox-provider, so the
@@ -317,9 +317,25 @@ pub struct Breakdown {
     pub cached_estimate: u32,
 }
 
-#[allow(dead_code)]
 impl Breakdown {
+    /// The four parts the surfaces draw (A98), with the model's `window`.
+    /// The volatile block counts as system, skills and memory as
+    /// instructions (both are appended to those blocks today), and the
+    /// summary and archive pointers as history.
+    pub fn parts(&self, window: Option<u32>) -> ContextBreakdown {
+        ContextBreakdown {
+            window,
+            total: self.total,
+            system: self.system + self.volatile,
+            tools: self.tools,
+            instructions: self.instructions + self.skills + self.memory,
+            history: self.history_verbatim + self.history_pointers + self.summary,
+            cached: self.cached_estimate,
+        }
+    }
+
     /// The `structured` payload `/context`'s notice carries (T25.7 step 2).
+    #[allow(dead_code)]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "tools": self.tools, "system": self.system, "instructions": self.instructions,
@@ -335,7 +351,6 @@ impl Breakdown {
 /// summing to `total` exactly, so the modal's bars never disagree with the
 /// estimate. `last_usage` supplies `cached_estimate` from its
 /// `cache_read_tokens` — what the last call actually served from cache.
-#[allow(dead_code)]
 pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Breakdown {
     // Byte weights per segment (index order is `Breakdown`'s); the
     // estimator's byte term is itself a heuristic, so attributing each
