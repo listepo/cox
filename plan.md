@@ -79,7 +79,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T47.2 | todo | P2 | 4 | 0% | |
 | T47.3 | todo | P2 | 2 | 0% | |
 | T47.4 | todo | P3 | 2 | 0% | |
-| T47.5 | in progress | P1 | 2 | 10% | Claude Code / opus-5.5 |
 | T48.1 | todo | P2 | 2 | 0% | |
 | T48.2 | todo | P2 | 2 | 0% | |
 | T49.1 | todo | P2 | 3 | 0% | |
@@ -2550,23 +2549,6 @@ mise exec -- cargo nextest run -p cox-mcp url_elicitation punycode_host file_sch
 ```
 Done when: tests pass; `docs/tools.md` gains the URL-mode paragraph.
 Out of scope: tracking out-of-band completion (removed from the 2026-07-28 spec; the retry carries it).
-
-### T47.5. The browser opener runs no shell on Windows
-
-Model: opus-5.5 · Status: in progress · Depends: — · Size: ~50 · Priority: P1 · Complexity: 2
-Goal: `cox_mcp::auth::open_browser` (T22.5) runs `cmd /C start "" <url>` on Windows, so a URL from an MCP server (OAuth or a T47.4 URL elicitation) carrying `& | ^ < > " %` is read by cmd.exe as syntax — command injection. The opener must hand the URL to the platform as one argument with no shell in between, on every platform, and refuse anything that is not an `http(s)` URL (a URL protocol handler also runs `file:` paths, and a leading `-` would read as an option to `open`/`xdg-open`).
-Files: `crates/cox-mcp/src/auth.rs`.
-Steps:
-1. No crate: `open`/`webbrowser` are not in `Cargo.lock` or `rust.md`, and the stdlib covers it. Windows runs `rundll32 url.dll,FileProtocolHandler <url>` (no cmd.exe, so nothing in the URL is syntax); macOS `open <url>` and Linux `xdg-open <url>` are unchanged.
-2. Split a pure `opener(os, url) -> Option<Command>` that builds the argv (`None` for a non-`http(s)` URL); `open_browser` keeps the `DISPLAY`/`WAYLAND_DISPLAY` check and runs it.
-3. Test `opener_passes_the_url_as_one_argument_without_a_shell`: for a URL with `& | ^ < > " %`, the Windows program is `rundll32` and the URL is its own last argument (fails with the `cmd /C start` form); macOS/Linux keep `open`/`xdg-open`; `file:`, `javascript:` and `-a Calculator` give `None`.
-4. Follow-up for the T47.4 owner (branch `t47.1`, not touched here): `elicit::url_prompt` may drop its Windows `CMD_SYNTAX` decline once this lands.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-mcp opener_passes_the_url
-```
-Done when: the test passes and no platform opens a URL through a shell.
-Out of scope: `ShellExecuteW` bindings (a `windows-sys` dependency for the same effect); relaxing the T47.4 decline on its branch.
 
 ### P48 — `trycmd` fixtures for `cox run -p` (goal: the full output of `cox run -p` in text, json, stream-json, a denied write and a bad format is a reviewed fixture, not hand-parsed asserts)
 

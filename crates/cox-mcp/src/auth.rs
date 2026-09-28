@@ -260,25 +260,46 @@ pub async fn logout(store: Arc<dyn CredentialStore>) -> Result<(), AuthError> {
 /// Hands the URL to the platform opener; `false` when nothing could be
 /// started, in which case the printed URL is all the person has.
 pub fn open_browser(url: &str) -> bool {
-    let mut cmd = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-    } else if cfg!(target_os = "windows") {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", "start", ""]);
-        c
-    } else {
-        if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
-            return false;
-        }
-        std::process::Command::new("xdg-open")
+    let os = std::env::consts::OS;
+    if os != "macos"
+        && os != "windows"
+        && std::env::var_os("DISPLAY").is_none()
+        && std::env::var_os("WAYLAND_DISPLAY").is_none()
+    {
+        return false;
+    }
+    let Some(mut cmd) = opener(os, url) else {
+        return false;
     };
-    cmd.arg(url)
-        .stdin(std::process::Stdio::null())
+    cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// The platform opener for `os` with the URL as its one last argument and no
+/// shell in between: the URL comes from an MCP server, and `cmd /C start`
+/// would read `& | ^ < > " %` in it as commands (T47.5). `None` unless the
+/// URL is `http(s)`, since a protocol handler also runs `file:` paths and a
+/// leading `-` would reach `open`/`xdg-open` as an option.
+fn opener(os: &str, url: &str) -> Option<std::process::Command> {
+    let lower = url.to_ascii_lowercase();
+    if !lower.starts_with("https://") && !lower.starts_with("http://") {
+        return None;
+    }
+    let mut cmd = match os {
+        "macos" => std::process::Command::new("open"),
+        "windows" => {
+            let mut c = std::process::Command::new("rundll32");
+            c.arg("url.dll,FileProtocolHandler");
+            c
+        }
+        _ => std::process::Command::new("xdg-open"),
+    };
+    cmd.arg(url);
+    Some(cmd)
 }
 
 /// What `doctor` prints for a server's credentials.
@@ -390,6 +411,34 @@ mod tests {
                 expires_in: Some(Duration::ZERO)
             }
         );
+    }
+
+    #[test]
+    fn opener_passes_the_url_as_one_argument_without_a_shell() {
+        use std::ffi::OsStr;
+        // `cmd /C start` would run `calc` here; every opener must see one URL.
+        let url = "https://example.com/cb?a=1&b=2|calc^x<y>\"%PATH%";
+        let cases: [(&str, &[&str]); 3] = [
+            ("windows", &["rundll32", "url.dll,FileProtocolHandler", url]),
+            ("macos", &["open", url]),
+            ("linux", &["xdg-open", url]),
+        ];
+        for (os, argv) in cases {
+            let cmd = opener(os, url).expect("http(s) URL");
+            let got: Vec<&OsStr> = std::iter::once(cmd.get_program())
+                .chain(cmd.get_args())
+                .collect();
+            let want: Vec<&OsStr> = argv.iter().map(OsStr::new).collect();
+            assert_eq!(got, want, "{os}");
+        }
+        for url in [
+            "file:///C:/Windows/System32/calc.exe",
+            "javascript:alert(1)",
+            "-a Calculator",
+        ] {
+            assert!(opener("windows", url).is_none(), "{url}");
+            assert!(opener("macos", url).is_none(), "{url}");
+        }
     }
 
     #[tokio::test]
