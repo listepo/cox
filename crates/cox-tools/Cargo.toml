@@ -35,8 +35,12 @@ schemars = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
 nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
+# T41.3: path <-> `file://` URI conversion for the LSP wire (A81).
+url = { workspace = true }
 
 [dev-dependencies]
+# T41.4: paused time, so the LSP quiet-period tests are exact, not timed.
+tokio = { workspace = true, features = ["test-util"] }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
