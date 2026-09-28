@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Double, Nullable, Text};
 
-use cox_protocol::{SessionId, StoreError};
+use cox_protocol::{SessionId, StoreError, UsageRow};
 
 use super::Store;
 use crate::fts::SessionInfo;
@@ -49,6 +49,14 @@ struct ProjectTotalsRow {
     /// Summed `context_tokens`.
     #[diesel(sql_type = Nullable<BigInt>)]
     tokens: Option<i64>,
+}
+
+/// One `usage` row as [`Store::usage_ledger`] returns it: the call and
+/// when it was written (RFC 3339 UTC, `2026-09-02T10:11:12.345Z`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LedgerRow {
+    pub usage: UsageRow,
+    pub created_at: String,
 }
 
 /// One [`Store::sessions_tree`] row: a session and how deep it nests.

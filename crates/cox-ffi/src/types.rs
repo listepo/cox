@@ -15,10 +15,10 @@ use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange}
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, Dropped,
-    FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow,
-    MeterText, Need, Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally,
-    TaskKind, TaskTarget, TurnUsage, UsageView,
+    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, CostRow,
+    Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer,
+    MeterRow, MeterText, Need, Project, SearchHit, SessionEntry, Setting, SettingKind,
+    SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -602,6 +602,20 @@ pub struct Info {
     pub worktree: Option<Linked>,
     pub config: Vec<ConfigSource>,
     pub rollout: PathBuf,
+}
+
+#[uniffi::remote(Record)]
+pub struct TurnCosts {
+    pub columns: Vec<String>,
+    pub rows: Vec<CostRow>,
+    pub total: CostRow,
+}
+
+#[uniffi::remote(Record)]
+pub struct CostRow {
+    pub label: String,
+    pub values: Vec<String>,
+    pub detail: bool,
 }
 
 #[uniffi::remote(Record)]

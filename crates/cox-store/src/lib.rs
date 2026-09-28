@@ -39,6 +39,7 @@ use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT};
 use models::{
     CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow, UsageDbRow,
 };
+use queries::LedgerRow;
 use rollout::RolloutWriter;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -157,8 +158,10 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 /// Serializes a fieldless/transparent `cox_protocol` type (`Job`, `Tier`,
 /// `ProviderId`) to the bare snake_case string its `serde` derive already
 /// produces, so the ledger's text columns stay in lock-step with the wire
-/// format instead of a hand-maintained second mapping.
-fn to_tag<T: serde::Serialize>(value: &T) -> String {
+/// format instead of a hand-maintained second mapping. `pub` so the
+/// desktop's cost history (T37.29.3.2) names a tier or job as the ledger
+/// stores it.
+pub fn to_tag<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
         _ => String::new(),
@@ -915,10 +918,25 @@ impl Store {
     /// Every usage row for one session, in turn order — what
     /// `cox stats --session <id>` prints (T1.7).
     pub fn usage_for_session(&self, session_id: &SessionId) -> Result<Vec<UsageRow>, StoreError> {
+        let mut rows: Vec<UsageRow> = self
+            .usage_ledger(session_id)?
+            .into_iter()
+            .map(|r| r.usage)
+            .collect();
+        // Stable, so calls that share a number keep the order they were written in.
+        rows.sort_by_key(|r| r.turn);
+        Ok(rows)
+    }
+
+    /// Every usage row for one session in the order it was written, with
+    /// its time: the inspector's cost history (T37.29.3.2) finds turns by
+    /// it, because `turn` is a call's ordinal within its turn and restarts
+    /// at 1 with each turn.
+    pub fn usage_ledger(&self, session_id: &SessionId) -> Result<Vec<LedgerRow>, StoreError> {
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
         let rows: Vec<UsageDbRow> = schema::usage::table
             .filter(schema::usage::session_id.eq(session_id.to_string()))
-            .order_by(schema::usage::turn.asc())
+            .order_by(schema::usage::id.asc())
             .select(UsageDbRow::as_select())
             .load(&mut *conn)
             .map_err(|_| StoreError::Sqlite)?;
@@ -929,7 +947,7 @@ impl Store {
                 let corrupt = || StoreError::Corrupt {
                     path: self.home.join("cox.db"),
                 };
-                Ok(UsageRow {
+                let usage = UsageRow {
                     session_id: r.session_id.parse().map_err(|_| corrupt())?,
                     turn: r.turn as u32,
                     job: from_tag(&r.job).ok_or_else(corrupt)?,
@@ -950,6 +968,10 @@ impl Store {
                         cost_usd: r.cost_usd,
                         latency_ms: r.latency_ms as u64,
                     },
+                };
+                Ok(LedgerRow {
+                    usage,
+                    created_at: r.created_at,
                 })
             })
             .collect()

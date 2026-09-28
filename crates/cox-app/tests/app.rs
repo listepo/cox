@@ -91,6 +91,22 @@ tool_calls = [{ name = "bash", input = { command = "echo built", background = tr
 text = "Done."
 "#;
 
+/// A turn that delegates to a subagent, then a plain second turn.
+const DELEGATE_THEN_REPLY: &str = r#"
+[[turn]]
+text = "Delegating."
+tool_calls = [{ name = "agent", input = { task = "find x", preset = "explore" } }]
+
+[[turn]]
+text = "result: x"
+
+[[turn]]
+text = "Found it."
+
+[[turn]]
+text = "Two."
+"#;
+
 /// The Keychain as a map; remembers what it was asked and told.
 #[derive(Default)]
 struct MemoryHost {
@@ -667,4 +683,30 @@ async fn info_names_the_session_its_cwd_rollout_and_the_user_config_it_read() {
         .join(format!("user/.cox/sessions/{}.jsonl", session.id()));
     assert_eq!(info.rollout, rollout);
     assert!(info.rollout.is_file(), "the turn was appended to it");
+}
+
+#[tokio::test]
+async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() {
+    let dir = scratch(Some(DELEGATE_THEN_REPLY));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session.send(send("delegate")).await.expect("send");
+    finish(&session).await;
+    session.send(send("again")).await.expect("send");
+    finish(&session).await;
+
+    let costs = session.turn_costs().expect("costs");
+    let rows: Vec<_> = costs
+        .rows
+        .iter()
+        .map(|r| (r.label.as_str(), r.detail))
+        .collect();
+    assert_eq!(
+        rows,
+        [("1 · code", false), ("explore", true), ("2 · code", false)]
+    );
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let own = store.usage_ledger(&session.id()).expect("ledger");
+    assert_eq!(own.len(), 3, "two calls in turn 1, one in turn 2");
+    assert_eq!(costs.total.label, "Session");
+    assert_ne!(costs.total.values[0], "0", "{:?}", costs.total);
 }

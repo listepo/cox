@@ -2,13 +2,14 @@
 // Cost): the inspector's third tab — how the model's window is split between system, tools,
 // instruction files and history, what is left, the turn's cache hit, and "Compact now". Separate
 // so the `Inspector` frame stays a slot and each tab is its own view, fed plain values the app
-// copies from the core's token meter (T37.29.3.1). Per-turn cost and the budget come later.
+// copies from the core's token meter (T37.29.3.1) and cost history (T37.29.3.2). The budget
+// comes later.
 
 import SwiftUI
 
 /// An `InspectorSection` headed by the context and its share of the window: the StackedBar, a
-/// legend row per part and one for what is free, and "Compact now"; then the cache hit. Before
-/// the core sent the split, one quiet line.
+/// legend row per part and one for what is free, and "Compact now"; then the cache hit and the
+/// cost by turn. Before the core sent anything, one quiet line.
 struct ContextTab: View {
   /// What the tab shows, formatted by the core.
   struct State: Equatable, Sendable {
@@ -20,6 +21,11 @@ struct ContextTab: View {
     var free = ""
     /// `94% this turn`.
     var cacheHit = ""
+    /// `In`, `Out`, `Cache r/w`, `$`: the cost grid's value columns.
+    var costColumns: [String] = []
+    /// A row per turn, its subagents indented under it, the session total last; none hides
+    /// the section.
+    var costs: [KeyValueGrid.Row] = []
   }
 
   /// A part of the window: its colour role and share of the bar, `System` and `7.6k`.
@@ -58,7 +64,12 @@ struct ContextTab: View {
       if !state.cacheHit.isEmpty {
         SectionHeader("Cache hit") { figure(state.cacheHit) }
       }
-      if state.parts.isEmpty && state.cacheHit.isEmpty {
+      if !state.costs.isEmpty {
+        InspectorSection("Cost by turn") {
+          KeyValueGrid(columns: state.costColumns, rows: state.costs)
+        }
+      }
+      if state.parts.isEmpty && state.cacheHit.isEmpty && state.costs.isEmpty {
         Text("No context yet")
           .textStyle(.caption)
           .foregroundStyle(Color(.textSecondary))
@@ -97,6 +108,7 @@ struct ContextTab: View {
 }
 
 #Preview("context") { PreviewMatrix { ContextInspectorSample(state: PreviewState.contextTab) } }
+#Preview("costs") { PreviewMatrix { ContextInspectorSample(state: PreviewState.contextCosts) } }
 #Preview("no window") {
   PreviewMatrix { ContextInspectorSample(state: PreviewState.contextNoWindow) }
 }

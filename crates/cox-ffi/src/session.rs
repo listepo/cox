@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use cox_app::diffmodel::DiffModel;
 use cox_app::live::LiveSession;
-use cox_app::{Block, Changes, Completion, Info, Intent, TaskTarget, TimelinePatch};
+use cox_app::{Block, Changes, Completion, Info, Intent, TaskTarget, TimelinePatch, TurnCosts};
 use cox_protocol::ids::{SessionId, TaskId};
 use cox_protocol::types::TodoItem;
 
@@ -83,6 +83,11 @@ impl SessionHandle {
     /// What the inspector's Info tab lists (T37.29.5).
     pub async fn info(self: Arc<Self>) -> Result<Info, AppError> {
         Ok(on_runtime(async move { self.live.info().await }).await??)
+    }
+
+    /// The Context tab's cost history (T37.29.3.2).
+    pub async fn turn_costs(self: Arc<Self>) -> Result<TurnCosts, AppError> {
+        Ok(on_runtime(async move { self.live.turn_costs() }).await??)
     }
 
     /// `/` commands and `@` files for the composer's token.

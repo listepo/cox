@@ -66,6 +66,10 @@ final class LiveSession: SessionClient {
   }
   func info() async throws -> CoxClient.Info { CoxClient.Info(try await handle.info()) }
 
+  func turnCosts() async throws -> CoxClient.TurnCosts {
+    CoxClient.TurnCosts(try await handle.turnCosts())
+  }
+
   func close() { handle.close() }
 }
 

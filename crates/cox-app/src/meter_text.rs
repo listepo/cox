@@ -242,8 +242,8 @@ fn window_size(n: u32) -> String {
     }
 }
 
-/// `950`, `9.8k`, `218.5k`, `1.2M`.
-fn tokens(n: u32) -> String {
+/// `950`, `9.8k`, `218.5k`, `1.2M`; the cost history's figures too.
+pub(crate) fn tokens(n: u32) -> String {
     match n {
         0..1000 => n.to_string(),
         1000..1_000_000 => format!("{:.1}k", f64::from(n) / 1e3),

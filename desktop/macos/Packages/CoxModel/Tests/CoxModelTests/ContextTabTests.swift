@@ -1,6 +1,6 @@
 // The Context tab's state from the token meter (T37.29.3.1): the recorded fixture's context split
 // reaches the tab through SessionStore, a part of an unknown kind is left out, and "Compact now"
-// sends one manual compaction.
+// sends one manual compaction; the cost by turn (T37.29.3.2) reaches it with the total last.
 
 import CoxClient
 import Foundation
@@ -43,4 +43,26 @@ import Testing
   let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
   try await SessionStore(session: session).compactNow()
   #expect(session.sent == [.compact(focus: nil)])
+}
+
+@MainActor
+@Test func theCostHistoryIsTheTurnsThenTheSessionTotal() async throws {
+  let costs = TurnCosts(
+    columns: ["In", "Out", "Cache r/w", "$"],
+    rows: [
+      CostRow(label: "1 · code", values: ["31.4k", "2.2k", "28.0k/3.1k", "0.29"]),
+      CostRow(label: "explore", values: ["9.8k", "600", "0/9.8k", "0.03"], detail: true),
+    ],
+    total: CostRow(label: "Session", values: ["41.2k", "2.8k", "28.0k/12.9k", "0.32"]))
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []), costs: costs)
+  let history = try await SessionStore(session: session).costHistory()
+  #expect(history.columns == costs.columns)
+  #expect(history.rows.map(\.label) == ["1 · code", "explore", "Session"])
+  #expect(history.rows.map(\.isDetail) == [false, true, false])
+  #expect(history.rows.last?.values == ["41.2k", "2.8k", "28.0k/12.9k", "0.32"])
+}
+
+@Test func anEmptyLedgerHidesTheCostHistory() {
+  let empty = TurnCosts(columns: ["In"], total: CostRow(label: "Session"))
+  #expect(CostHistoryState(empty) == CostHistoryState())
 }

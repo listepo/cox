@@ -20,6 +20,7 @@ use tokio::task::JoinHandle;
 
 use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
+use crate::costs::{self, TurnCosts};
 use crate::info::{self, Info};
 use crate::review;
 use crate::status::StatusFold;
@@ -213,6 +214,19 @@ impl LiveSession {
                 .ok()
                 .and_then(|e| tasks::first_prompt(&e))
         }))
+    }
+
+    /// The Context tab's cost history (T37.29.3.2): this session's ledger
+    /// rows by turn, with its subagents' rows from their child sessions.
+    pub fn turn_costs(&self) -> Result<TurnCosts, AppError> {
+        let store = self.app.workspace().store();
+        let own = store.usage_ledger(&self.id())?;
+        let children = store.children(&self.id())?;
+        let children = children
+            .iter()
+            .map(|child| store.usage_ledger(child))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(costs::build(&own, &children))
     }
 
     /// What the inspector's Info tab lists (T37.29.5): the id, cwd and
