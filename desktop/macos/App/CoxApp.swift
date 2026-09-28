@@ -2,7 +2,8 @@
 // they share. Thin by design — every view and store lives in the local packages; this target
 // picks the core at launch, hosts the windows and joins stores to screens. The session window
 // hides its title bar (DS§4); a session pops out into its own window or a native tab (T51.11);
-// Settings opens from the app menu (⌘,); the menu-bar extra shows what needs you (T51.14).
+// Settings opens from the app menu (⌘,); the menu-bar extra shows what needs you (T51.14);
+// two recorded global hotkeys open that menu and a new session (T51.15).
 
 import AppKit
 import CoxClient
@@ -27,7 +28,7 @@ struct CoxApp: App {
 
   var body: some Scene {
     WindowGroup("Cox", id: Self.mainWindow) {
-      SessionWindow(model: model)
+      SessionWindow(model: model).opensWindowsForHotkeys(model)
     }
     .windowStyle(.hiddenTitleBar)
     .commands { ShellCommands() }
@@ -36,6 +37,7 @@ struct CoxApp: App {
       MenuBarContent(model: model)
     } label: {
       Text(model.sidebar.inboxItems.isEmpty ? "cx" : "cx \(model.sidebar.inboxItems.count)")
+        .opensWindowsForHotkeys(model)
     }
     .menuBarExtraStyle(.window)
     // One session popped out of a window, alone or as a native tab (T51.11).
@@ -61,6 +63,9 @@ final class AppModel {
   let sidebar: SidebarStore
   /// The open sessions every window shares (T51.11).
   let registry = AppStore()
+  /// A scene's `openWindow`, for the hotkeys, which fire outside every view (T51.15); `nil`
+  /// until the first window or the menu-bar label appears.
+  var openWindow: OpenWindowAction?
   private var loginEnv: Task<Void, Never>?
   private var sessions: [String: WeakSession] = [:]
   private var responder: NotificationResponder?
@@ -78,6 +83,7 @@ final class AppModel {
     // The centre holds its delegate weakly; this model lives as long as the app.
     UNUserNotificationCenter.current().delegate = responder
     self.responder = responder
+    Hotkeys.register(self)
   }
 
   /// Reads the login shell's environment into the process once per launch, before the first

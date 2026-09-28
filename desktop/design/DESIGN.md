@@ -404,7 +404,10 @@ Permissions `systemOrange`, Sandbox `systemGreen`, Budget `systemTeal`, MCP Serv
 Plugins `systemIndigo`, Appearance `systemPink`, Advanced `systemBrown`; the values are SwiftUI's
 colours resolved on macOS 27.0 per scheme and contrast (checked 2026-09-28). The MCP page opens with a
 `Logins` `SettingsGroupBox`: per server a `TitledSetting` with its login line and a small
-`CoxButtonStyle` Log in (primary) or Log out (secondary) button, from `SettingsStore.logins`. A page
+`CoxButtonStyle` Log in (primary) or Log out (secondary) button, from `SettingsStore.logins`. The General
+page ends with a `Shortcuts` `SettingsGroupBox` (T51.15): per global hotkey a `TitledSetting` whose
+control is the app's recorder, passed in as `SettingsScreen(state:recorder:send:)`'s slot because CoxUI
+does not link the hotkey library; with no recorder the box is left out. A page
 whose keys the project file tried to weaken opens with a `Dropped from the project` `SettingsGroupBox`:
 per value a `TitledSetting` with the key, the guard's reason and a warning `Badge` (`999 → 5`), from
 `SettingsStore.dropped(in:)`.
