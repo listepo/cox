@@ -276,7 +276,20 @@
           "hex": "#0a7cff",
           "alpha": 0.12
         },
-        "$description": "Selected row, focus halo"
+        "$description": "A selected inspector or completion row, focus halo, chips and badges"
+      },
+      "selected": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.9176,
+            0.9529,
+            1.0
+          ],
+          "hex": "#eaf3ff"
+        },
+        "$description": "The selected session row: text.primary and text.secondary hold 4.5:1 on it in every material (A115)"
       }
     },
     "status": {

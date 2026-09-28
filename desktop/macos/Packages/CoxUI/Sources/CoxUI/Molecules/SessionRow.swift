@@ -5,7 +5,8 @@
 import SwiftUI
 
 /// A `StatusDot` centred on the title line, the title over a subtitle, the cost at the far
-/// edge; selected, it takes `InspectorRow`'s `rowSelection` (DS§3.4).
+/// edge; selected, it takes `InspectorRow`'s `rowSelection` on `accent.selected`, where both its
+/// text colours hold DS§8's 4.5:1 in every material (DS§3.4, A115).
 public struct SessionRow: View {
   /// What the row shows, formatted by the core.
   public struct Item: Equatable, Sendable {
@@ -55,7 +56,7 @@ public struct SessionRow: View {
     .lineLimit(1)
     .padding(.horizontal, Space.ml)
     .padding(.vertical, Space.s)
-    .rowSelection(isSelected)
+    .rowSelection(isSelected, fill: .accentSelected)
   }
 }
 

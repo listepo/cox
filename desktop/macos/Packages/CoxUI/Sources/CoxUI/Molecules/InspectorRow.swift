@@ -69,20 +69,21 @@ extension InspectorRow where Glyph == SymbolGlyph {
 
 extension View {
   /// A list row's selection, shared by `InspectorRow` and `SessionRow`: selected, it sits on
-  /// `accent.soft` lifted to e1 in a `radius.l` shape; VoiceOver reads the row as one element
-  /// marked selected.
-  func rowSelection(_ isSelected: Bool) -> some View {
-    modifier(RowSelection(isSelected: isSelected))
+  /// `fill` (`accent.soft`, or the session row's `accent.selected`, A115) lifted to e1 in a
+  /// `radius.l` shape; VoiceOver reads the row as one element marked selected.
+  func rowSelection(_ isSelected: Bool, fill: ColorResource = .accentSoft) -> some View {
+    modifier(RowSelection(isSelected: isSelected, fill: fill))
   }
 }
 
 private struct RowSelection: ViewModifier {
   let isSelected: Bool
+  let fill: ColorResource
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
     content
-      .background { if isSelected { shape.fill(Color(.accentSoft)) } }
+      .background { if isSelected { shape.fill(Color(fill)) } }
       .elevation(isSelected ? .e1 : .e0, cornerRadius: Radius.l)
       .contentShape(shape)
       .accessibilityElement(children: .combine)

@@ -40,7 +40,7 @@ const RULES = [
   {
     fg: WORDS,
     bg: [...PAGE, 'fill.primary@surface.window', 'accent.soft@surface.window', 'accent.soft@surface.sidebar',
-      'status.warningSoft@surface.window', 'status.dangerSoft@surface.window'],
+      'accent.selected@surface.sidebar', 'status.warningSoft@surface.window', 'status.dangerSoft@surface.window'],
     min: TEXT,
   },
   // Code and diff lines; a changed line's number is `text.primary` on its gutter (DS§6).

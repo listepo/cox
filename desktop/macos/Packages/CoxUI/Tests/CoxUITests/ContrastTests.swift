@@ -1,7 +1,7 @@
-// DS§8's text contrast on glass (T37.21.11, A112): each text pair T37.21.11 fixed, measured on
-// the glass laid over the window fill — the worst case cox can predict, since the wallpaper
-// behind the window is unknown — in every material and both appearances. Separate from the
-// snapshots because a render shows the snapshot wallpaper, and this checks the rule itself.
+// DS§8's text contrast on glass (T37.21.11, A112): each text pair T37.21.11 and T37.22.11 fixed,
+// measured on the glass laid over the window fill — the worst case cox can predict, since the
+// wallpaper behind the window is unknown — in every material and both appearances. Separate from
+// the snapshots because a render shows the snapshot wallpaper, and this checks the rule itself.
 
 import AppKit
 import Testing
@@ -38,6 +38,13 @@ import Testing
       name: "filter prompt in its well", text: .textPlaceholder,
       layers: [.pane(.surfaceSidebar), .fill(.fillPrimary)]),
     Pair(name: "Stop's key cap on its face", text: .surfaceWindow, layers: [.fill(.textPrimary)]),
+    // A115: the selected session row's own fill, under its title and its subtitle and cost.
+    Pair(
+      name: "selected session row's title", text: .textPrimary,
+      layers: [.pane(.surfaceSidebar), .fill(.accentSelected)]),
+    Pair(
+      name: "selected session row's subtitle", text: .textSecondary,
+      layers: [.pane(.surfaceSidebar), .fill(.accentSelected)]),
   ]
 
   @Test func fixedTextPairsHoldDS8OnGlassOverTheWindowFill() throws {

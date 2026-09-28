@@ -98,7 +98,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | text | `primary`, `secondary`, `tertiary`, `placeholder`, `terminal`, `terminalOk`, `onAccent` | Foregrounds; `placeholder` is the hint in an empty field, stronger than `tertiary` so it holds §8 on glass (A112); `onAccent` is the label on an accent or status fill (primary button, Bypass segment), white, and High Contrast holds it to 7:1 on those fills |
 | line | `separator` | 0.5 pt hairlines |
 | quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
-| intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
+| intent | `accent`, `accent.soft`, `accent.selected`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode; `accent.selected` fills the selected session row only, paler than `accent.soft` so `text.primary` and `text.secondary` hold §8 on it in every material (A115) |
 | role | `role.project` (+ `Soft`) | The project config layer's badge: the mockup's purple, lightened in dark mode to hold 4.5:1 (§8) |
 | risk | `risk.low/medium/high` (+ `Soft`) | A RiskChip's label and face per level: low quiet (`text.secondary` on `fill.secondary`), medium the mockup's `.risk` orange, high `status.danger`; their own roles so a level can change without moving the status colours |
 | diff | `add`, `addGutter`, `del`, `delGutter` | Diff lines and gutters |
@@ -319,7 +319,7 @@ component.
 
 | Molecule | Built from | CSS |
 | --- | --- | --- |
-| `SessionRow(item, isSelected:)` | StatusDot, title, subtitle, cost; selected with InspectorRow's `rowSelection` (`accent.soft` at e1) | `.row` |
+| `SessionRow(item, isSelected:)` | StatusDot, title, subtitle, cost; selected with InspectorRow's `rowSelection` on `accent.selected` at e1 (A115) | `.row` |
 | `SessionFilter(text:, prompt:, shortcut:)` | search field in an `insetWell`, the prompt and magnifier in `text.placeholder` (§8, A112), KeyCap | `.filter` |
 | `Breadcrumb(title, project:, branch:)` | title, project, branch | `.crumb` |
 | `ModelCapsule(model, isOpen:)`, `CostCapsule(cost:, context:, fraction:, isOpen:)` | CapsuleStyle (active while open), ProgressRing | `.cap` |

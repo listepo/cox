@@ -10,7 +10,7 @@
 :root,.dark{
   --win:var(--c-surface-window);--side:var(--c-surface-sidebar);
   --text:var(--c-text-primary);--sec:var(--c-text-secondary);--ter:var(--c-text-tertiary);--sep:var(--c-separator);--fill:var(--c-fill-primary);--fill2:var(--c-fill-secondary);
-  --accent:var(--c-accent);--accent-soft:var(--c-accent-soft);--orange:var(--c-status-warning);--orange-soft:var(--c-status-warningSoft);
+  --accent:var(--c-accent);--accent-soft:var(--c-accent-soft);--accent-selected:var(--c-accent-selected);--orange:var(--c-status-warning);--orange-soft:var(--c-status-warningSoft);
   --green:var(--c-status-success);--green-soft:var(--c-status-successSoft);--red:var(--c-status-danger);--red-soft:var(--c-status-dangerSoft);--blue:var(--c-status-plan);
   --add:var(--c-diff-add);--add-g:var(--c-diff-addGutter);--del:var(--c-diff-del);--del-g:var(--c-diff-delGutter);
   --code-bg:var(--c-surface-code);--glass:var(--c-surface-capsule);--glass-b:var(--c-surface-capsuleBorder);
@@ -42,7 +42,7 @@ body.dark{background:radial-gradient(1200px 700px at 15% 10%,#2b3a66,transparent
 .sect .cnt{background:var(--orange);color:#fff;border-radius:8px;padding:0 6px;font-size:10px;line-height:16px}
 .proj{padding:6px 14px 2px 16px;font-weight:600;font-size:12px;color:var(--sec);display:flex;align-items:center;gap:6px}
 .row{margin:1px 8px;padding:6px 10px;border-radius:9px;display:flex;gap:9px;align-items:flex-start}
-.row.act{background:var(--accent-soft)}
+.row.act{background:var(--accent-selected)}
 .row .dot{width:9px;height:9px;border-radius:50%;margin-top:4px;flex:none}
 .row .t{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .s{font-size:11px;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

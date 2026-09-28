@@ -62,6 +62,7 @@
   --c-quote-bar: rgba(161, 161, 166, 1);
   --c-accent: rgba(10, 124, 255, 1);
   --c-accent-soft: rgba(10, 124, 255, 0.12);
+  --c-accent-selected: rgba(234, 243, 255, 1);
   --c-status-success: rgba(31, 157, 69, 1);
   --c-status-successSoft: rgba(52, 199, 89, 0.14);
   --c-status-warning: rgba(240, 138, 0, 1);
@@ -159,6 +160,7 @@
   --c-quote-bar: rgba(108, 108, 114, 1);
   --c-accent: rgba(59, 155, 255, 1);
   --c-accent-soft: rgba(59, 155, 255, 0.18);
+  --c-accent-selected: rgba(59, 155, 255, 0.14);
   --c-status-success: rgba(59, 208, 106, 1);
   --c-status-successSoft: rgba(48, 209, 88, 0.16);
   --c-status-warning: rgba(255, 165, 58, 1);
@@ -256,6 +258,7 @@
   --c-quote-bar: rgba(139, 139, 144, 1);
   --c-accent: rgba(6, 71, 145, 1);
   --c-accent-soft: rgba(10, 124, 255, 0.12);
+  --c-accent-selected: rgba(234, 243, 255, 1);
   --c-status-success: rgba(17, 84, 37, 1);
   --c-status-successSoft: rgba(52, 199, 89, 0.14);
   --c-status-warning: rgba(108, 62, 0, 1);
@@ -353,6 +356,7 @@
   --c-quote-bar: rgba(122, 122, 127, 1);
   --c-accent: rgba(176, 215, 255, 1);
   --c-accent-soft: rgba(59, 155, 255, 0.18);
+  --c-accent-selected: rgba(59, 155, 255, 0.14);
   --c-status-success: rgba(145, 229, 172, 1);
   --c-status-successSoft: rgba(48, 209, 88, 0.16);
   --c-status-warning: rgba(255, 201, 136, 1);
