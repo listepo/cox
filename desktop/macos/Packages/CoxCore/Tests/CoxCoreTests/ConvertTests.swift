@@ -58,3 +58,15 @@ import Testing
     worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
   #expect(CoxClient.Changes(live) == want)
 }
+
+@Test func aTodoItemConvertsWithEachState() {
+  let live: [CoxFFIBindings.TodoItem] = [
+    .init(id: "1", text: "Read", state: .done), .init(id: "2", text: "Test", state: .inProgress),
+    .init(id: "3", text: "Push", state: .pending),
+  ]
+  let want: [CoxClient.TodoItem] = [
+    .init(id: "1", text: "Read", state: .done), .init(id: "2", text: "Test", state: .inProgress),
+    .init(id: "3", text: "Push", state: .pending),
+  ]
+  #expect(live.map { CoxClient.TodoItem($0) } == want)
+}

@@ -56,6 +56,8 @@ final class LiveSession: SessionClient {
     CoxClient.Changes(try await handle.changes())
   }
 
+  func plan() -> [CoxClient.TodoItem] { handle.plan().map { CoxClient.TodoItem($0) } }
+
   func close() { handle.close() }
 }
 

@@ -1,5 +1,6 @@
-// The Changes tab's records from cox-ffi into CoxClient's (T37.29.1), apart from `Convert.swift`'s
-// timeline so each file stays one concern. Field for field; nothing is decided here.
+// The Changes tab's records (T37.29.1) and the Plan tab's todo items (T37.29.2) from cox-ffi into
+// CoxClient's, apart from `Convert.swift`'s timeline so each file stays one concern. Field for
+// field; nothing is decided here.
 
 import CoxClient
 import CoxFFIBindings
@@ -15,6 +16,18 @@ extension CoxClient.Changes {
         CoxClient.Linked(
           path: $0.path, branch: $0.branch, base: $0.base, commit: $0.commit, bytes: $0.bytes)
       })
+  }
+}
+
+extension CoxClient.TodoItem {
+  init(_ item: CoxFFIBindings.TodoItem) {
+    let state: CoxClient.TodoItem.State =
+      switch item.state {
+      case .pending: .pending
+      case .inProgress: .inProgress
+      case .done: .done
+      }
+    self.init(id: item.id, text: item.text, state: state)
   }
 }
 

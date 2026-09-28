@@ -24,7 +24,8 @@ use cox_protocol::plugin::ui::StyleToken;
 use cox_protocol::traits::WorktreeInfo;
 use cox_protocol::types::{
     ApprovalPolicy, ArchiveRef, Attachment, CompactReason, DecidedBy, Decision, Effort, Level,
-    ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, ToolCall, Usage, Why,
+    ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, TodoItem, TodoState,
+    ToolCall, Usage, Why,
 };
 use serde_json::Value;
 
@@ -501,6 +502,20 @@ pub struct ChangedFile {
     pub removed: u32,
     pub call: CallId,
     pub turn: u32,
+}
+
+#[uniffi::remote(Record)]
+pub struct TodoItem {
+    pub id: String,
+    pub text: String,
+    pub state: TodoState,
+}
+
+#[uniffi::remote(Enum)]
+pub enum TodoState {
+    Pending,
+    InProgress,
+    Done,
 }
 
 #[uniffi::remote(Enum)]

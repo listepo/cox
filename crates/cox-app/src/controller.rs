@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use cox_protocol::types::Event;
+use cox_protocol::types::{Event, TodoItem};
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -104,6 +104,11 @@ impl Controller {
             .queue
             .retain(|p| matches!(p, TimelinePatch::Usage { .. }));
         state.timeline.blocks().to_vec()
+    }
+
+    /// The todo list the latest `todo` call left (T37.29.2).
+    pub fn plan(&self) -> Vec<TodoItem> {
+        self.shared.lock().timeline.plan().to_vec()
     }
 
     /// The next coalesced batch, waiting until there is one; `None` once the
