@@ -2774,6 +2774,12 @@ Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: other slow tests.
 
+Plan:
+1. Reproduce first: build the test binary, run the test in a loop (`--test-threads` high, several copies at once) while the machine is under the parallel agents' build load, and record which assertion fails (the 10 s `elapsed` bound, the machine-wide `pgrep -f "sleep 4001"` leak check, or the 30 s `run_scripted` timeout) and where the run spends its time (process start, turns, `end()` + `wait_tasks_cleared(SHELL_CANCEL_GRACE)`).
+2. Write the root cause down here before changing anything.
+3. Fix at the responsible layer: in `crates/cox/tests/subagent_messaging.rs`, replace any fixed wall-clock bound that load can break with a bound that holds under load and still proves the claim (the shell sleeps for 4001 s, so "did not wait" is any exit far below that), and make the leak check see only this run's process (a command line unique to the run, like T38.2's `sleep 4011.<pid>`, polled with a deadline). If the repro shows a real bug in `crates/cox/src/run.rs` or `crates/cox-core/src/tasks.rs` (e.g. the shell outliving the run), fix the code instead and keep the test strict.
+4. Verify: the test 20 times in a row under load, then fmt, clippy, full nextest.
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
