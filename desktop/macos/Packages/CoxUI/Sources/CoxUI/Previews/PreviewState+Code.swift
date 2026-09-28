@@ -1,5 +1,5 @@
-// `PreviewState` fixtures for the code molecules (T37.21.2, T37.21.3): the retry-jitter diff and
-// code from mockup screen 28, as highlighted runs the core would send. Separate from
+// `PreviewState` fixtures for the code molecules (T37.21.2, T37.21.3): the retry-jitter diff from
+// mockup screen 28 and the test the turn adds for its cap, as highlighted runs the core would send. Separate from
 // `PreviewState.swift` so molecules built in parallel add their fixtures without editing one file.
 
 import SwiftUI
@@ -49,6 +49,29 @@ extension PreviewState {
       ]),
     .init(kind: .context, number: "46", runs: [.init("}")]),
   ]
+
+  static let codeLanguage = "rust"
+
+  /// The cap test the turn writes, with a line longer than the reading column.
+  static let code: [[CodeRun]] = [
+    [.init("#[test]", .function)],
+    [
+      .init("fn", .keyword), .init(" "), .init("delay_never_exceeds_cap", .function), .init("() {"),
+    ],
+    [
+      .init("    "), .init("let", .keyword), .init(" backoff = "), .init("Backoff", .type),
+      .init("::new("), .init("Duration", .type), .init("::from_millis("), .init("100", .number),
+      .init("), "), .init("Duration", .type), .init("::from_secs("), .init("30", .number),
+      .init("), "), .init("StdRng", .type), .init("::seed_from_u64("), .init("7", .number),
+      .init("));"),
+    ],
+    [
+      .init("    "), .init("assert!", .function), .init("(backoff.delay("), .init("40", .number),
+      .init(") <= "), .init("Duration", .type), .init("::from_secs("), .init("30", .number),
+      .init(")); "), .init("// capped", .comment),
+    ],
+    [.init("}")],
+  ]
 }
 
 /// The mockup's first line of each kind across the reading column.
@@ -65,6 +88,16 @@ struct DiffLineSample: View {
 struct DiffHunkSample: View {
   var body: some View {
     DiffHunkView(header: PreviewState.hunkHeader, lines: PreviewState.hunk)
+      .frame(width: Size.readingWidth)
+  }
+}
+
+/// The cap test in a block across the reading column, with or without its language.
+struct CodeBlockSample: View {
+  let language: String?
+
+  var body: some View {
+    CodeBlockView(language: language, lines: PreviewState.code) {}
       .frame(width: Size.readingWidth)
   }
 }

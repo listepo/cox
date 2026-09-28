@@ -19,6 +19,11 @@ import Testing
     try check(DiffHunkSample(), variant)
   }
 
+  @Test(arguments: Variant.all) func codeBlock(_ variant: Variant) throws {
+    try check(CodeBlockSample(language: PreviewState.codeLanguage), variant, "language")
+    try check(CodeBlockSample(language: nil), variant, "plain")
+  }
+
   /// One image per molecule variant, named `<variant>.<cell>`, or `<cell>` for a one-look
   /// molecule, at its ideal size (see `ShellMoleculeSnapshotTests`).
   private func check(
