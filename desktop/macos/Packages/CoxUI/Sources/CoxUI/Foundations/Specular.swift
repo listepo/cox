@@ -1,12 +1,15 @@
 // `.specular(_:in:)` (DS§3.5, DS§6.1): the diagonal sweep and streak that make glass read as
 // glass, the mockup's `.window:after`. Separate so the sweep's shape lives in one place; it
 // draws nothing when the effective appearance has no specular — Solid, so Reduce Transparency
-// removes it too, and Increase Contrast (A89).
+// removes it too, and Increase Contrast (A89). It lights the glass, never what sits on it: drawn
+// over the content, its white corner washed every pane's text out (T37.22.10).
 
 import SwiftUI
 
 extension View {
-  /// Overlays the highlight at `strength` (a `MaterialToken.*Specular`), clipped to `shape`.
+  /// Backs the view with the highlight at `strength` (a `MaterialToken.*Specular`), clipped to
+  /// `shape`: under the content and over any surface the caller adds after it, so text and
+  /// icons keep their token colour at every point of the sweep.
   func specular(_ strength: Double, in shape: some Shape = Rectangle()) -> some View {
     modifier(Specular(strength: strength, shape: shape))
   }
@@ -18,7 +21,9 @@ private struct Specular<S: Shape>: ViewModifier {
   @EffectiveAppearance private var appearance
 
   func body(content: Content) -> some View {
-    content.overlay {
+    // A background, not an overlay: a translucent white over the content would lighten it by
+    // up to `strength`, most at the top leading corner where each pane's first lines sit.
+    content.background {
       if appearance.specular > 0, strength > 0 {
         shape.fill(sweep).allowsHitTesting(false)
       }

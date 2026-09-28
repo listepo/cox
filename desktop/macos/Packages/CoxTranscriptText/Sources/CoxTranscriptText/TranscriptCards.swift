@@ -79,6 +79,9 @@ final class CardAttachment: NSTextAttachment {
   private let role: Role
   private var host: CardHost?
 
+  /// The card's view once made, while it is out of a window (`placeCards`).
+  var unplaced: CardHost? { host?.window == nil ? host : nil }
+
   init(_ block: Block, cards: TranscriptCards, role: Role = .card) {
     (self.block, self.cards, self.role) = (block, cards, role)
     super.init(data: nil, ofType: nil)
@@ -176,6 +179,10 @@ struct CardFrame: View {
 /// again when it shrinks, so both paths check.
 final class CardHost: NSHostingView<CardFrame> {
   var onResize: (() -> Void)?
+  /// How often `placeCards` laid this card's line out again since the view was last in a
+  /// window, and whether it is about to.
+  var placings = 0
+  var placing = false
   private var measured: CGFloat?
   private var pending = false
 
@@ -196,6 +203,11 @@ final class CardHost: NSHostingView<CardFrame> {
     checkHeight()
   }
 
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window != nil { placings = 0 }
+  }
+
   private func checkHeight() {
     guard let measured, !pending, intrinsicContentSize.height != measured else { return }
     // Not inside TextKit's layout pass that asked for the size.
@@ -213,6 +225,16 @@ final class CardHost: NSHostingView<CardFrame> {
 @MainActor
 func nextTurn(_ body: @escaping @MainActor () -> Void) {
   RunLoop.main.perform { MainActor.assumeIsolated { body() } }
+}
+
+/// Runs `body` once the run loop wakes from its next wait, so after the display pass that
+/// ends the current turn — which `nextTurn` can run ahead of, and the pass that left a card's
+/// view out would then leave it out again. A timer in the common modes, so a nested run loop
+/// fires it too.
+@MainActor
+func afterDisplay(_ body: @escaping @MainActor () -> Void) {
+  let timer = Timer(timeInterval: 0, repeats: false) { _ in MainActor.assumeIsolated { body() } }
+  RunLoop.main.add(timer, forMode: .common)
 }
 
 extension TranscriptTextView {
@@ -237,6 +259,51 @@ extension TranscriptTextView {
       manager.invalidateLayout(for: text)
     }
     manager.textViewportLayoutController.layoutViewport()
+  }
+
+  /// TextKit 2 adds a card's view to the element view that draws its line only while it lays
+  /// that line out. At launch the viewport settles over several passes, and one that swapped in
+  /// a new element view for a line whose layout it kept left the view out: the card showed as a
+  /// blank gap until the next full re-layout, such as a window resize (T37.22.10).
+  public override func textViewportLayoutControllerDidLayout(
+    _ controller: NSTextViewportLayoutController
+  ) {
+    super.textViewportLayoutControllerDidLayout(controller)
+    placeCards()
+  }
+
+  /// A card TextKit never places stops being laid out again after this many tries in a row.
+  static var maxPlacings: Int { 8 }
+
+  /// Lays out again the line of each card in the viewport whose view has no window.
+  func placeCards() {
+    guard window != nil, let storage = textStorage, let manager = textLayoutManager,
+      let content = manager.textContentManager,
+      let viewport = manager.textViewportLayoutController.viewportRange
+    else { return }
+    let start = content.offset(from: content.documentRange.location, to: viewport.location)
+    let end = min(
+      content.offset(from: content.documentRange.location, to: viewport.endLocation),
+      storage.length)
+    guard start >= 0, end > start else { return }
+    var lost: [(host: CardHost, range: NSRange)] = []
+    let shown = NSRange(location: start, length: end - start)
+    storage.enumerateAttribute(.attachment, in: shown) { value, range, _ in
+      guard let host = (value as? CardAttachment)?.unplaced, !host.placing,
+        host.placings < Self.maxPlacings
+      else { return }
+      (host.placing, host.placings) = (true, host.placings + 1)
+      lost.append((host, range))
+    }
+    guard !lost.isEmpty else { return }
+    afterDisplay { [weak self] in
+      for card in lost { card.host.placing = false }
+      guard let self, let manager = self.textLayoutManager else { return }
+      for card in lost {
+        if let text = self.textRange(card.range) { manager.invalidateLayout(for: text) }
+      }
+      manager.textViewportLayoutController.layoutViewport()
+    }
   }
 
   /// `range` as TextKit 2 locations.

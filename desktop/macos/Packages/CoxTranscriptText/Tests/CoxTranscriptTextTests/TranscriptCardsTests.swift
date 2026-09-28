@@ -155,6 +155,27 @@ struct TranscriptCardsTests {
     #expect(view.range(of: "b") == next)
   }
 
+  /// T37.22.10: a viewport pass that swapped in a new element view for a card's line left the
+  /// card's view out, a blank gap on launch until the window was resized. The offscreen window
+  /// draws every line anew and puts the view back itself, so this checks the pass's follow-up:
+  /// one re-layout of the card's line per turn, none for a card in place.
+  @Test func aCardAViewportPassLeftOutIsLaidOutAgainOncePerTurn() throws {
+    let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
+    defer { screen.close() }
+    #expect(screen.wait { cardHosts(in: screen.view).count == 1 })
+    let host = try #require(cardHosts(in: screen.view).first)
+    screen.view.placeCards()
+    #expect(!host.placing, "a card in place is left alone")
+
+    host.removeFromSuperview()
+    screen.view.placeCards()
+    screen.view.placeCards()
+
+    #expect(host.placing && host.placings == 1, "one re-layout for the turn")
+    #expect(screen.wait { host.window != nil && !host.placing }, "the card's view is back")
+    #expect(host.placings == 0)
+  }
+
   @Test func dragAcrossACardSelectsTheWholeCard() throws {
     let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
     defer { screen.close() }
