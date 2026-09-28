@@ -1,6 +1,6 @@
-// The model pill's name (T37.22.7, A111): the catalog's name loses its vendor prefix, a model
-// without a name shows its id, and the recorded `approve-write` session's pill reads
-// `Sonnet 5 · high`.
+// The model pill's name (T37.22.7, A111, A116): the catalog's name loses its vendor prefix and a
+// trailing ` (latest)`, a model without a name shows its id, and the recorded `approve-write`
+// session's pill reads `Sonnet 5 · high`.
 
 import CoxClient
 import Foundation
@@ -14,6 +14,11 @@ import Testing
   #expect(ModelName.short("DeepSeek V4 Pro", id: "deepseek-v4-pro") == "DeepSeek V4 Pro")
   // A name that is only the prefix keeps it rather than showing nothing.
   #expect(ModelName.short("Claude ", id: "claude") == "Claude ")
+}
+
+@Test func aTrailingLatestIsDroppedButOneInsideTheNameStays() {
+  #expect(ModelName.short("Claude Haiku 4.5 (latest)", id: "claude-haiku-4-5") == "Haiku 4.5")
+  #expect(ModelName.short("GPT (latest) Mini", id: "gpt-mini") == "GPT (latest) Mini")
 }
 
 @Test func aModelWithoutANameShowsItsId() {
