@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use cox_protocol::traits::{Store as _, Worktree, WorktreeInfo, Worktrees};
+use cox_protocol::traits::{FileStat, Store as _, Worktree, WorktreeInfo, Worktrees};
 use cox_protocol::{SessionId, StoreError, WorktreeError};
 use cox_store::Store;
 use cox_store::fts::SessionInfo;
@@ -205,6 +205,22 @@ impl Workspace {
         owner: &str,
     ) -> Result<Worktree, WorkspaceError> {
         Ok(self.worktrees.add(project, name, owner).await?)
+    }
+
+    /// What the worktree at `path` changed against its base (T52.10).
+    pub(crate) async fn diffstat(&self, path: &Path) -> Result<Vec<FileStat>, WorkspaceError> {
+        Ok(self.worktrees.diffstat(path).await?)
+    }
+
+    /// Removes the worktree at `path` locked for `owner`; `discard` only
+    /// after the person confirmed a second time (T52.10).
+    pub(crate) async fn remove_worktree(
+        &self,
+        path: &Path,
+        owner: &str,
+        discard: bool,
+    ) -> Result<(), WorkspaceError> {
+        Ok(self.worktrees.remove(path, owner, discard).await?)
     }
 
     pub(crate) fn groups(&self) -> &Groups {

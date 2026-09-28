@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use cox_protocol::errors::WorktreeError;
-use cox_protocol::traits::{Worktree, WorktreeInfo, Worktrees};
+use cox_protocol::traits::{FileStat, Worktree, WorktreeInfo, Worktrees};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
@@ -242,6 +242,18 @@ fn resolve_worktrees_root(
 /// list, a lock that does not start with `owner`, and a tree with
 /// uncommitted or untracked files — never with `--force`.
 pub async fn worktree_remove(path: &Path, owner: &str) -> Result<(), WorktreeError> {
+    remove(path, owner, false).await
+}
+
+/// [`worktree_remove`] that also removes a tree with uncommitted or
+/// untracked files, with `--force` (T52.10). Only for a removal the person
+/// confirmed a second time after being told those changes go; every other
+/// refusal stands.
+pub async fn worktree_discard(path: &Path, owner: &str) -> Result<(), WorktreeError> {
+    remove(path, owner, true).await
+}
+
+async fn remove(path: &Path, owner: &str, discard: bool) -> Result<(), WorktreeError> {
     let main = main_checkout(path).await?;
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if path == main {
@@ -253,13 +265,67 @@ pub async fn worktree_remove(path: &Path, owner: &str) -> Result<(), WorktreeErr
     if let Some(reason) = record.locked.filter(|r| !r.starts_with(owner)) {
         return Err(WorktreeError::LockedByOther { path, reason });
     }
-    if !is_clean(&path).await.unwrap_or(false) {
+    if !discard && !is_clean(&path).await.unwrap_or(false) {
         return Err(WorktreeError::Dirty { path });
     }
     let path_s = path.display().to_string();
     let _ = git(&main, &["worktree", "unlock", &path_s]).await;
-    git_or_err(&main, &["worktree", "remove", &path_s]).await?;
+    let mut args = vec!["worktree", "remove"];
+    if discard {
+        args.push("--force");
+    }
+    args.push(&path_s);
+    git_or_err(&main, &args).await?;
     Ok(())
+}
+
+/// What the worktree at `dir` changed against the commit it was cut from —
+/// its merge base with the ref [`worktree_add`] cuts from — committed or
+/// not, with each untracked file counted as all added (T52.10).
+pub async fn worktree_diffstat(dir: &Path) -> Result<Vec<FileStat>, WorktreeError> {
+    let main = main_checkout(dir).await?;
+    let base = base_ref(&main).await;
+    let from = git(dir, &["merge-base", "HEAD", &base])
+        .await
+        .map_or_else(|| "HEAD".to_string(), |out| out.trim().to_string());
+    let tracked = git_or_err(dir, &["diff", "--numstat", &from]).await?;
+    let mut stats = file_stats(&tracked);
+    let untracked = git(dir, &["ls-files", "--others", "--exclude-standard", "-z"])
+        .await
+        .unwrap_or_default();
+    for path in untracked.split('\0').filter(|p| !p.is_empty()) {
+        let added = std::fs::read(dir.join(path)).map_or(0, |bytes| lines(&bytes));
+        stats.push(FileStat {
+            path: PathBuf::from(path),
+            added,
+            removed: 0,
+        });
+    }
+    Ok(stats)
+}
+
+/// `git diff --numstat`, one row per file; a binary file's `-` counts as 0.
+fn file_stats(out: &str) -> Vec<FileStat> {
+    out.lines()
+        .filter_map(|line| {
+            let mut cols = line.splitn(3, '\t');
+            let count = |c: Option<&str>| c.and_then(|c| c.parse::<u32>().ok()).unwrap_or(0);
+            let (added, removed) = (count(cols.next()), count(cols.next()));
+            let path = cols.next().filter(|p| !p.is_empty())?;
+            Some(FileStat {
+                path: PathBuf::from(path),
+                added,
+                removed,
+            })
+        })
+        .collect()
+}
+
+/// Lines in a new file, a last line without a newline included.
+fn lines(bytes: &[u8]) -> u32 {
+    let newlines = bytes.iter().filter(|b| **b == b'\n').count();
+    let partial = usize::from(bytes.last().is_some_and(|b| *b != b'\n'));
+    u32::try_from(newlines + partial).unwrap_or(u32::MAX)
 }
 
 /// `Some(true)` when `git status --porcelain` prints nothing; `None`
@@ -281,6 +347,14 @@ impl Worktrees for GitWorktrees {
 
     async fn list(&self, from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
         worktree_list(from).await
+    }
+
+    async fn diffstat(&self, path: &Path) -> Result<Vec<FileStat>, WorktreeError> {
+        worktree_diffstat(path).await
+    }
+
+    async fn remove(&self, path: &Path, owner: &str, discard: bool) -> Result<(), WorktreeError> {
+        remove(path, owner, discard).await
     }
 }
 
@@ -798,6 +872,57 @@ mod tests {
             worktree_remove(&wt.path, OWNER_PREFIX).await,
             Err(WorktreeError::NotRegistered { .. } | WorktreeError::NotARepository { .. })
         ));
+    }
+
+    #[test]
+    fn file_stats_reads_each_numstat_row_and_counts_binary_as_zero() {
+        let out = "3\t1\tsrc/a.rs\n-\t-\tlogo.png\n0\t4\tdocs/old.md\n";
+        let rows: Vec<(String, u32, u32)> = file_stats(out)
+            .into_iter()
+            .map(|s| (s.path.display().to_string(), s.added, s.removed))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("src/a.rs".to_string(), 3, 1),
+                ("logo.png".to_string(), 0, 0),
+                ("docs/old.md".to_string(), 0, 4),
+            ]
+        );
+    }
+
+    #[test]
+    fn lines_counts_a_last_line_without_a_newline() {
+        assert_eq!(lines(b""), 0);
+        assert_eq!(lines(b"a\nb\n"), 2);
+        assert_eq!(lines(b"a\nb"), 2);
+    }
+
+    /// A dirty tree the plain removal refuses goes with `discard` (T52.10),
+    /// and the diffstat saw its untracked file first.
+    #[tokio::test]
+    async fn worktree_discard_removes_a_dirty_tree_it_owns() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let wt = worktree_add(&main, "t52", "cox / best-of-x")
+            .await
+            .expect("add");
+        std::fs::write(wt.path.join("new.txt"), "one\ntwo\n").expect("write");
+        let stats = worktree_diffstat(&wt.path).await.expect("diffstat");
+        assert!(
+            stats
+                .iter()
+                .any(|s| s.path == Path::new("new.txt") && s.added == 2)
+        );
+        assert!(matches!(
+            worktree_remove(&wt.path, OWNER_PREFIX).await,
+            Err(WorktreeError::Dirty { .. })
+        ));
+        worktree_discard(&wt.path, OWNER_PREFIX)
+            .await
+            .expect("discard");
+        assert!(!wt.path.exists());
     }
 
     #[test]

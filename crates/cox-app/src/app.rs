@@ -329,6 +329,30 @@ impl App {
         Ok(launch)
     }
 
+    /// Best-of-n group `id`'s candidates as the compare view shows them
+    /// (T52.10): state, files changed with `+n −m`, cost and duration.
+    pub async fn compare(
+        &self,
+        id: &crate::best_of::BestOfId,
+    ) -> Result<Vec<crate::best_of::CandidateView>, AppError> {
+        crate::best_of::compare(self, id).await
+    }
+
+    /// Keeps candidate `keep` of group `id` and prunes the other worktrees
+    /// the person confirmed (T52.10); `discard` is their second
+    /// confirmation for worktrees with changes, which are otherwise left
+    /// and listed.
+    pub async fn pick(
+        &self,
+        id: &crate::best_of::BestOfId,
+        keep: u32,
+        discard: bool,
+    ) -> Result<crate::best_of::Picked, AppError> {
+        let picked = crate::best_of::pick(self, id, keep, discard).await?;
+        self.listed.notify_waiters();
+        Ok(picked)
+    }
+
     /// The Settings screen for a session in `cwd` (DT§5.7), with each MCP
     /// server's login read from the token store.
     pub async fn settings(&self, cwd: &Path) -> Result<SettingsView, AppError> {

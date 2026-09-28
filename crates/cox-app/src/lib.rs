@@ -38,7 +38,10 @@ pub mod usage;
 pub mod wire;
 pub mod workspace;
 
-pub use best_of::{BestOf, BestOfError, BestOfId, BestOfRequest, Candidate, Launch, Launched};
+pub use best_of::{
+    BestOf, BestOfError, BestOfId, BestOfRequest, Candidate, CandidateState, CandidateView, Launch,
+    Launched, Picked,
+};
 pub use browser::{Browser, BrowserError, PageText};
 pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
 pub use complete::{Completer, Completion};
