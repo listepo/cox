@@ -163,6 +163,11 @@ wasmtime = { version = "43", default-features = false, features = ["anyhow"] }
 # Only cox-voice depends on it, and cox-voice only behind `crates/cox`'s
 # `voice` feature (off by default): the C++ build needs cmake (mise.toml).
 whisper-rs = "0.16"
+# T54.3 (A123): the default input device on every desktop OS (CoreAudio,
+# ALSA, WASAPI); Linux builds need the ALSA headers (libasound2-dev).
+cpal = "0.18"
+# T54.3 (A123): the device rate (often 44.1/48 kHz) to whisper's 16 kHz.
+rubato = "5"
 
 # dev-deps
 insta = { version = "1.48", features = ["json"] }

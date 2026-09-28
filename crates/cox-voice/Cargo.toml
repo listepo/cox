@@ -10,6 +10,10 @@ license.workspace = true
 # routes whisper.cpp's and ggml's own logging into `tracing` instead of
 # stderr, which would paint over the TUI.
 whisper-rs = { workspace = true, features = ["tracing_backend"] }
+# T54.3: microphone capture from the default input device.
+cpal = { workspace = true }
+# T54.3: resampling the device rate to whisper's 16 kHz.
+rubato = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

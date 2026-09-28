@@ -52,6 +52,7 @@ Programs the project uses and the direct packages from its manifests.
 | bytes | local | https://crates.io/crates/bytes | T1.2: turns a reqwest byte stream into SSE frames (`sse.rs`) and drives the in-memory fixture parser (`parse_sse_str`) through the same code path. |
 | chrono | local (`clock`) | https://crates.io/crates/chrono | cox-app: local midnight and week start for the desktop's project spend (T37.29.3.3) |
 | clap | local | https://crates.io/crates/clap | cox (CLI) |
+| cpal | local | https://github.com/RustAudio/cpal | cox-voice: the default microphone (CoreAudio, ALSA, WASAPI) for push-to-talk, in memory only (T54.3, A123); Linux builds need the ALSA headers (libasound2-dev) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal I/O |
 | diesel | local | https://crates.io/crates/diesel | cox-store diesel/diesel_migrations pinned "2.2" per plan.md D9 resolve to the latest 2.x compatible release (2.3.x) on crates.io as of 2026-09-02; verified no semver-breaking API change vs. 2.2 for the sqlite backend used here. |
 | diesel_migrations | local | https://crates.io/crates/diesel_migrations | SQLite migrations |
@@ -88,6 +89,7 @@ Programs the project uses and the direct packages from its manifests.
 | reqwest | local | https://crates.io/crates/reqwest | cox-provider |
 | url | local | https://crates.io/crates/url | cox-tools: LSP `file://` URI ↔ path (T41.3) |
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
+| rubato | local | https://github.com/HEnquist/rubato | cox-voice: the microphone's rate (often 44.1 or 48 kHz) to whisper's 16 kHz (T54.3, A123) |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
 | schemars | local | https://crates.io/crates/schemars | Rust dependency |
 | schemars 0.8 | local (build-dependency) | https://crates.io/crates/schemars | cox-provider `build.rs`: typify 0.8's `TypeSpace` takes schemars 0.8 schema types |
