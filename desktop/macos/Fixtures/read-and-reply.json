@@ -1,0 +1,698 @@
+{
+  "batches": [
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3K24XPKDARZ6H6W97BVVD2N",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": null,
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 0,
+            "received": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 0,
+            "cost_usd": 0.0,
+            "calls": 0,
+            "estimated": false
+          },
+          "turn": {
+            "turn": "01M3K24XPKDARZ6H6W97BVVD2N",
+            "tally": {
+              "sent": 0,
+              "received": 0,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 0,
+              "cost_usd": 0.0,
+              "calls": 0,
+              "estimated": false
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": null,
+            "tok_per_s": null,
+            "exact": false,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 0
+        }
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3K24XPKQZ02GC3HQ183BKHG",
+          "turn": 1,
+          "kind": {
+            "type": "user",
+            "text": "Read the notes",
+            "attachments": []
+          }
+        },
+        "after": "turn:01M3K24XPKDARZ6H6W97BVVD2N"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3K24XPP8JCSXNA0WX9W97Q5",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "",
+            "doc": {
+              "blocks": []
+            }
+          }
+        },
+        "after": "item:01M3K24XPKQZ02GC3HQ183BKHG"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3K24XPKDARZ6H6W97BVVD2N",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 7363,
+              "output_tokens": 35,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": {
+              "type": "end_turn"
+            }
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3K24XPP8JCSXNA0WX9W97Q5",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Reading the notes.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Reading the notes."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3K24XPKQZ02GC3HQ183BKHG"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3K24XPPTS6WN0Y6WFP45W6B",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "read",
+            "summary": "Read `notes.md` · 1 line",
+            "icon": "read",
+            "risk": "read_only",
+            "state": "done",
+            "tail": "1\thello\n\n[1 lines total]",
+            "archive": {
+              "id": "01M3K24XPR752T4WTJSF31KE11",
+              "bytes": 24
+            },
+            "diff": null,
+            "duration_ms": 0
+          }
+        },
+        "after": "item:01M3K24XPP8JCSXNA0WX9W97Q5"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3K24XPSE4DEY6HJAVWJJTQP",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "## Notes\n\nThe file says **hello**. Run it with:\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": {
+                    "heading": 2
+                  },
+                  "lines": [
+                    [
+                      {
+                        "text": "## ",
+                        "bold": true
+                      },
+                      {
+                        "text": "Notes",
+                        "bold": true
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "The file says "
+                      },
+                      {
+                        "text": "hello",
+                        "bold": true
+                      },
+                      {
+                        "text": ". Run it with:"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "type": "code",
+                  "lang": "rust",
+                  "lines": [
+                    [
+                      {
+                        "text": "fn",
+                        "rgb": [
+                          180,
+                          142,
+                          173
+                        ]
+                      },
+                      {
+                        "text": " ",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "main",
+                        "rgb": [
+                          143,
+                          161,
+                          179
+                        ]
+                      },
+                      {
+                        "text": "(",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": ")",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": " ",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "{",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      }
+                    ],
+                    [
+                      {
+                        "text": "    ",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "println!",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "(",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "\"",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "hello",
+                        "rgb": [
+                          163,
+                          190,
+                          140
+                        ]
+                      },
+                      {
+                        "text": "\"",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": ")",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": ";",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      }
+                    ],
+                    [
+                      {
+                        "text": "}",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "call:01M3K24XPPTS6WN0Y6WFP45W6B"
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 7363,
+            "received": 35,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 7363,
+            "cost_usd": 0.0,
+            "calls": 2,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3K24XPKDARZ6H6W97BVVD2N",
+            "tally": {
+              "sent": 7363,
+              "received": 35,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 7363,
+              "cost_usd": 0.0,
+              "calls": 2,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 2870923.2889297195,
+            "exact": true,
+            "sparkline": [],
+            "done": true
+          },
+          "context_tokens": 3691
+        }
+      }
+    ]
+  ],
+  "snapshot": [
+    {
+      "id": "turn:01M3K24XPKDARZ6H6W97BVVD2N",
+      "turn": 1,
+      "kind": {
+        "type": "turn_meta",
+        "model": "claude-sonnet-5",
+        "tier": "code",
+        "usage": {
+          "input_tokens": 7363,
+          "output_tokens": 35,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "estimated": true,
+          "cost_usd": 0.0,
+          "latency_ms": 0
+        },
+        "stop": {
+          "type": "end_turn"
+        }
+      }
+    },
+    {
+      "id": "item:01M3K24XPKQZ02GC3HQ183BKHG",
+      "turn": 1,
+      "kind": {
+        "type": "user",
+        "text": "Read the notes",
+        "attachments": []
+      }
+    },
+    {
+      "id": "item:01M3K24XPP8JCSXNA0WX9W97Q5",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "Reading the notes.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "Reading the notes."
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "call:01M3K24XPPTS6WN0Y6WFP45W6B",
+      "turn": 1,
+      "kind": {
+        "type": "tool",
+        "tool": "read",
+        "summary": "Read `notes.md` · 1 line",
+        "icon": "read",
+        "risk": "read_only",
+        "state": "done",
+        "tail": "1\thello\n\n[1 lines total]",
+        "archive": {
+          "id": "01M3K24XPR752T4WTJSF31KE11",
+          "bytes": 24
+        },
+        "diff": null,
+        "duration_ms": 0
+      }
+    },
+    {
+      "id": "item:01M3K24XPSE4DEY6HJAVWJJTQP",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "## Notes\n\nThe file says **hello**. Run it with:\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": {
+                "heading": 2
+              },
+              "lines": [
+                [
+                  {
+                    "text": "## ",
+                    "bold": true
+                  },
+                  {
+                    "text": "Notes",
+                    "bold": true
+                  }
+                ]
+              ]
+            },
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "The file says "
+                  },
+                  {
+                    "text": "hello",
+                    "bold": true
+                  },
+                  {
+                    "text": ". Run it with:"
+                  }
+                ]
+              ]
+            },
+            {
+              "type": "code",
+              "lang": "rust",
+              "lines": [
+                [
+                  {
+                    "text": "fn",
+                    "rgb": [
+                      180,
+                      142,
+                      173
+                    ]
+                  },
+                  {
+                    "text": " ",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "main",
+                    "rgb": [
+                      143,
+                      161,
+                      179
+                    ]
+                  },
+                  {
+                    "text": "(",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": ")",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": " ",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "{",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "text": "    ",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "println!",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "(",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "\"",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "hello",
+                    "rgb": [
+                      163,
+                      190,
+                      140
+                    ]
+                  },
+                  {
+                    "text": "\"",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": ")",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": ";",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "text": "}",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

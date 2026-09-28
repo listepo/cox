@@ -156,10 +156,21 @@ pub struct Opened {
     pub warnings: Vec<Warning>,
 }
 
+/// T37.14: where a surface keeps provider keys instead of the OS keyring
+/// (the macOS app asks the Keychain through Swift): section → key. The
+/// section's env var still wins, as with the keyring.
+pub type Keys = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 /// Opens the store under `spec.home`, picks the provider (`COX_PROVIDER`
 /// test doubles first) and builds the session with every tool, hook and
 /// plugin it gets.
 pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
+    open_with_keys(spec, None).await
+}
+
+/// [`open`], with the main provider's key looked up in `keys` rather than
+/// the OS keyring when given.
+pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Opened, SessionError> {
     let SessionSpec {
         config: mut base,
         cwd,
@@ -234,12 +245,20 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
                 &plugin_models,
             )?
         }
-        None => provider::provider_for_served(
-            &config,
-            cox_provider::http::resolve_key,
-            None,
-            &plugin_models,
-        )?,
+        None => match keys {
+            Some(keys) => provider::provider_for_served(
+                &config,
+                |var, section| cox_provider::http::resolve_key_with(var, section, |s| keys(s)),
+                None,
+                &plugin_models,
+            )?,
+            None => provider::provider_for_served(
+                &config,
+                cox_provider::http::resolve_key,
+                None,
+                &plugin_models,
+            )?,
+        },
     };
     let mdir = memory_dir_for(&base, &home, cwd);
     // T27.3: a worktree session's project is still the main checkout, so

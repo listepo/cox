@@ -558,3 +558,25 @@ fn app_has_no_terminal_or_cli() {
         assert!(!deps.contains(banned), "cox-app must not pull {banned}");
     }
 }
+
+/// T37.14 (D1, DT§4.2): the app's FFI layer is the one crate built on
+/// UniFFI, and the `cox` binary does not link it.
+#[test]
+fn only_ffi_depends_on_uniffi() {
+    for (crate_name, crate_deps) in &all_deps() {
+        if crate_name != "cox-ffi" {
+            assert!(
+                !crate_deps.contains("uniffi"),
+                "{crate_name} must not depend on uniffi; only cox-ffi does"
+            );
+        }
+    }
+    assert!(all_deps()["cox-ffi"].contains("uniffi"));
+    let cli = tree("cox", &[]);
+    for banned in ["cox-ffi", "uniffi"] {
+        assert!(
+            !cli.contains(banned),
+            "the cox binary must not pull {banned}"
+        );
+    }
+}

@@ -1,0 +1,8 @@
+# Test scenario (T37.14): a write the default policy asks about, so the
+# inbox gets an approval and the host a notification.
+[[turn]]
+text = "Writing it."
+tool_calls = [{ name = "write", input = { path = "out.txt", content = "approved\n" } }]
+
+[[turn]]
+text = "Done."

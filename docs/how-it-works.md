@@ -306,7 +306,7 @@ An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` 
 
 `cox --worktree t42` runs the session in `_worktrees/<repo>-t42` on branch `t42`, creating both when they do not exist. The location and the name follow the workspace `worktrees` rule: the nearest ancestor of the repository that already holds `_worktrees/` (else a new one next to the repository, or `WT_ROOT`), a lower-case branch cut from a freshly fetched `origin/<default>` with no upstream, and a lock whose reason names the owner (`cox / pid 123 | t42 | 2026-09-22`). The main checkout stays a second workspace root, so the model can read it but every edit lands in the worktree; the status line shows `⎇ t42 +3 −1 · ⧉ t42`, and the presence record carries the worktree path. `/quit` on a clean worktree asks whether to remove it; a dirty one is kept and said so. The branch is never deleted — merging is the user's action. A subagent gets the same thing with `agent(isolation: "worktree")`: its worktree is named after the task id, its answer ends with `[worktree <path>, branch <name>]`, and the worktree outlives the task. Another owner's lock (`Cursor / grok | …`) is never reused or removed.
 
-## The four surfaces (one stream each)
+## The four surfaces, and the macOS app (one stream each)
 
 | Surface | Command | What it does with `Event`s |
 |---|---|---|
@@ -314,6 +314,7 @@ An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` 
 | Headless | `cox run -p … --output-format text\|json\|stream-json` | prints the stream for scripts |
 | Editor | `cox acp` | maps `Event` → ACP `session/update` (see `docs/ide.md`) |
 | Other agents | `cox mcp [--allow-write] [--tools a,b]` | serves built-in tools, not the loop (see `docs/compat.md`) |
+| macOS app | `Cox.app` (links `cox-ffi` as a static library) | `cox-app` folds them into keyed blocks; Swift pulls `TimelinePatch` batches through UniFFI (see `docs/design/desktop.md`) |
 
 Useful companions: `cox sessions --grep <q>` (find a rollout),
 `cox doctor` (keys, sandbox, stale price rows, a configured model with no
