@@ -176,7 +176,7 @@ names map one-to-one:
 | gear | `gearshape` | shield | `shield` |
 | lock | `lock` | dollar | `dollarsign.circle` |
 | plug | `powerplug` | cpu | `cpu` |
-| — (Settings › Advanced) | `slider.horizontal.3` | | |
+| — (Settings › Advanced) | `slider.horizontal.3` | — (Changes › deleted file) | `trash` |
 
 ## 4. Layout
 
@@ -296,7 +296,7 @@ component.
 | `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
 | `MaterialPicker(selection:)` | three swatch tiles (Frosted, Glossy, Solid) on readable glass at e1 with a hairline, the selected one ringed in `accent`; each shows a pane of its own material over a wallpaper, lifted to e2 at the user's Depth | `.mat` |
 | `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
-| `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
+| `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text`/`trash` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
 | `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel | `.group .gr` |
 | `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent | `.sel`, Add key |
 | `ChecklistRow(title, detail:, status:, symbol:, action:, perform:)` | status symbol in its colour (passed `checkmark` in `status.success`, warning, missing `xmark.octagon` in `status.danger`, a step to take in `accent`) in one `size.iconTile` column, SettingLabel, then the fix button (`CoxButtonStyle` small: primary for a step, secondary for a fix); SettingRow's insets | onboarding `.group .gr` |

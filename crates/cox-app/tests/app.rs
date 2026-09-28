@@ -430,7 +430,7 @@ async fn changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to() 
     assert_eq!(
         got,
         [
-            (Some("new.rs"), FileChange::Created, 0, 0, 1),
+            (Some("new.rs"), FileChange::Created, 1, 0, 1),
             (Some("notes.md"), FileChange::Edited, 1, 1, 1),
         ]
     );
