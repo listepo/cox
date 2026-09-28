@@ -1696,7 +1696,7 @@ mod tests {
 
     #[test]
     fn config_default_toml_carries_compatible_providers_with_models() {
-        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the four
+        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the five
         // Type-2 sections land in `custom` (not rejected as unknown fields),
         // each with a models list the router can clamp efforts against.
         use figment::providers::Format as _;
@@ -1704,11 +1704,24 @@ mod tests {
             figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
                 .extract()
                 .expect("default.toml parses");
-        for name in ["deepseek", "openrouter", "moonshot", "z-ai"] {
+        for name in ["deepseek", "openrouter", "moonshot", "z-ai", "gemini"] {
             let section = cfg.providers.custom.get(name).expect("section present");
             assert_eq!(section.api, "chat");
             assert!(!section.models.is_empty(), "{name} lists models");
         }
+        let gemini = cfg.providers.custom["gemini"].transport();
+        assert_eq!(gemini.api_key_env, "GEMINI_API_KEY");
+        assert_eq!(
+            gemini.base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+        // Every Gemini 3 model always reasons, so each one takes the field.
+        assert!(
+            cfg.providers
+                .models_for("gemini")
+                .iter()
+                .all(|m| m.reasoning_effort == Some(true))
+        );
         let deepseek = &cfg.providers.custom["deepseek"];
         assert_eq!(deepseek.model, "deepseek-v4-pro");
         // `models_for` resolves native sections and custom entries alike;
