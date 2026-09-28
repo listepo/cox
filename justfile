@@ -6,7 +6,18 @@ check:
     mise exec -- cargo fmt --check
     mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 
-test: && dunnage
+# Only the tests a change can break (A99): the crates that own the files
+# changed since REF, and every crate depending on them. REF defaults to the
+# merge-base with origin/main; uncommitted and untracked files count. A
+# Cargo.toml/Cargo.lock/.cargo/mise.toml/justfile change runs everything.
+# `just test --changed-since HEAD`, `just test --dry-run` (print the command),
+# other flags go to nextest.
+[positional-arguments]
+test *args:
+    @uv run --no-project python scripts/changed_tests.py "$@"
+
+# The whole workspace, then the dunnage cleanup; CI runs the same suite.
+check-all: && dunnage
     mise exec -- cargo nextest run --workspace
 
 # The guest workspace (plugins/, PL§9): pure/host-target tests only — no
