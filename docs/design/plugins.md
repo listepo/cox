@@ -62,13 +62,25 @@ If both locations have the same id, the user plugin wins and the project plugin 
 
 The global switch is `plugins.enabled`, as a config key, an env var and `--no-plugins` (D13).
 
-**Install sources in v1: a local directory only.** Fewer is better:
+**Install sources: a local directory, an https URL, or a git repository (A121 §3, P53).** Fewer is better, so the added sources end in the same install this section already describes — validate the manifest, digest the tree, copy into `versions/<digest12>/`, ask for the grant — no second path, no plugin runs before its grant:
 
-- a local path needs no network, no download UX and no trust-on-first-download;
-- it is enough for the dev loop (`new` → build → `install` or `link`) and for every test;
-- a URL with a pinned `sha256` and a git tag are listed in §12 as out of scope.
+- **A local directory:** `cox plugin install <dir>`, as above. No network, no download UX, no trust-on-first-download; the dev loop (`new` → build → `install` or `link`) and every test.
+- **An https URL:** `cox plugin install <https-url> --sha256 <hex>` fetches a `.tar.gz` archive. `--sha256` is required — a URL with none, `http://`, `file://` and every other scheme are all refused before a byte is fetched — and the download is refused the moment its digest fails to match, before anything is unpacked.
+- **A git repository:** `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]`. `--rev` is required and must name a tag or a commit; a branch name is refused, so `update` (§1b) never follows a moving target silently. `--path` selects a subdirectory of the clone as the package root, confined inside the clone.
 
-`install` records `{kind: "path", path, digest}`, and `update` re-reads that path.
+Both downloads land under `~/.cox/plugins/.staging/` first, removed on every exit — success, refusal or a crash — before anything moves into `versions/<digest12>/`. A downloaded archive or a cloned repository is repository content, and repository content is untrusted (D14): nothing in it runs during install, and any symlink or path entry that resolves outside the staging directory is refused, for the archive's entries and the clone's alike.
+
+Git is shelled to exactly as `crates/cox-tools/src/git.rs` shells to it for the status line and worktrees (A13, `git_or_err`/`git`, `crates/cox-tools/src/git.rs:511-529`): `git` found on `PATH` through `Command::new("git")`, never linked in via `git2` or `gix`, and never read from a cloned repository's own config for how to run git itself. Install runs `git clone --depth 1 --no-recurse-submodules --branch <tag>` (or a fetch of a commit when `--rev` is not a tag) with `GIT_TERMINAL_PROMPT=0`, so a private repository fails instead of prompting, into the staging directory; the resolved commit is what gets recorded. Archive extraction reuses the `tar` shell-out `crates/cox/src/self_update.rs` already runs to unpack a release (`unpack_cox`, `std::process::Command::new("tar")`, `crates/cox/src/self_update.rs:118-155`) rather than adding a second extraction path.
+
+`install` records the source it used:
+
+- local: `{kind: "path", path, digest}`
+- URL: `{kind: "url", url, sha256}`
+- git: `{kind: "git", url, rev, commit, path}`
+
+`update` (§1b) re-reads that recorded source, per kind: a local path is re-read from disk, as today; a URL source is re-fetched at the same URL and the same hash — a changed file at that URL is a hash mismatch, refused, never a silent update, and a new version is a new `install` with a new hash; a git source is re-fetched at the same tag or commit — a tag that now resolves to a different commit yields a new digest and asks for the grant again with the capability diff, exactly like a bytes-changed local update. `--check` (§1b) applies to all three: fetch, compute, print, change nothing.
+
+No new dependency: the URL source reuses the `reqwest` client and the SHA-256 helper `crates/cox/src/self_update.rs` already has, archive extraction reuses its `tar` shell-out, and git is already shelled to the same way (A13).
 
 ### 1b. Update and rollback
 
@@ -429,7 +441,6 @@ The compilation cache uses `with_cache_config` (P7), pointed at `~/.cox/cache/wa
 **Out of scope.**
 
 - A marketplace or registry.
-- Install from a URL (with a sha256) or from git (with a tag).
 - Signatures.
 - The component model and WIT.
 - Plugin-to-plugin calls.
