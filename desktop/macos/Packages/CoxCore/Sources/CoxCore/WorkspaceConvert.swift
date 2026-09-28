@@ -61,7 +61,7 @@ extension CoxClient.SessionEntry {
     self.init(
       id: value.info.id, title: value.info.title, cwd: value.info.cwd,
       updatedAt: value.info.updatedAt, turns: value.info.turns, costUsd: value.info.costUsd,
-      isHeld: value.heldBy != nil, agent: value.agent)
+      isHeld: value.heldBy != nil, agent: value.agent, bestOf: value.bestOf)
   }
 }
 

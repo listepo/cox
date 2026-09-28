@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
+use cox_app::best_of::{BestOfId, BestOfRequest, CandidateView, Picked};
 use cox_app::onboarding::CheckRow;
 use cox_app::remote::RemoteError;
 use cox_app::terminal::TerminalError;
@@ -31,7 +32,7 @@ pub mod types;
 pub use host::AppHost;
 pub use remote::{RemoteHandle, RemoteSessionHandle};
 pub use session::{SessionHandle, TerminalHandle};
-pub use types::{BrowserFailure, OpenRequest};
+pub use types::{BestOfLaunch, BrowserFailure, OpenRequest};
 
 uniffi::setup_scaffolding!();
 
@@ -308,6 +309,36 @@ impl App {
         Ok(RemoteHandle::new(
             on_runtime(async move { self.owner.connect_remote(&host).await }).await??,
         ))
+    }
+
+    /// Best of n (T52.9): one worktree and one session per candidate, each
+    /// sent the same prompt; a candidate that cannot start is listed with
+    /// why and the others run.
+    pub async fn best_of(
+        self: Arc<Self>,
+        request: BestOfRequest,
+        theme: String,
+    ) -> Result<BestOfLaunch, AppError> {
+        Ok(BestOfLaunch::from(
+            on_runtime(async move { self.owner.best_of(request, theme).await }).await??,
+        ))
+    }
+
+    /// Group `id`'s compare view (T52.10): one column per candidate. It
+    /// runs `git diff` per worktree, so it runs off the caller's thread.
+    pub async fn compare(self: Arc<Self>, id: BestOfId) -> Result<Vec<CandidateView>, AppError> {
+        Ok(on_runtime(async move { self.owner.compare(&id).await }).await??)
+    }
+
+    /// Keeps candidate `keep` of group `id` and prunes the others (T52.10);
+    /// `discard` is the second confirmation for worktrees with changes.
+    pub async fn pick(
+        self: Arc<Self>,
+        id: BestOfId,
+        keep: u32,
+        discard: bool,
+    ) -> Result<Picked, AppError> {
+        Ok(on_runtime(async move { self.owner.pick(&id, keep, discard).await }).await??)
     }
 
     pub async fn open(

@@ -4,14 +4,19 @@
 //! fails this build instead of drifting. Separate from the exported objects
 //! because these are data only. Ids and paths cross as strings; the one
 //! type UniFFI cannot carry as-is (a span's `[u8; 3]` colour) crosses as
-//! the local `Span`, and the one record only this surface has
-//! (`OpenRequest`) is declared here too.
+//! the local `Span`, and the records only this surface has (`OpenRequest`,
+//! and `BestOfLaunch`, which carries session handles) are declared here too.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use cox_app::AgentChoice;
 use cox_app::Holder;
 use cox_app::SessionInfo;
+use cox_app::best_of::{
+    BestOf, BestOfId, BestOfRequest, Candidate, CandidateState, CandidateView, Launch, Launched,
+    Picked,
+};
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
@@ -29,13 +34,15 @@ use cox_app::{PermissionRule, RuleKind, SessionGrant};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::Slot;
 use cox_protocol::plugin::ui::StyleToken;
-use cox_protocol::traits::WorktreeInfo;
+use cox_protocol::traits::{FileStat, Worktree, WorktreeInfo};
 use cox_protocol::types::{
     ApprovalPolicy, ArchiveRef, Attachment, CompactReason, DecidedBy, Decision, Effort, Level,
     ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, TodoItem, TodoState,
     ToolCall, Usage, Why,
 };
 use serde_json::Value;
+
+use crate::session::SessionHandle;
 
 macro_rules! string_ids {
     ($($id:ident),*) => {$(
@@ -1101,6 +1108,114 @@ impl From<BrowserFailure> for BrowserError {
         match e {
             BrowserFailure::NoPage => Self::NoPage,
             BrowserFailure::Page { message } => Self::Page(message),
+        }
+    }
+}
+
+// Best of n (T52.9, T52.10, T52.11): the launch, the compare view's columns
+// and what a pick did.
+uniffi::custom_type!(BestOfId, String, {
+    remote,
+    lower: |id| id.0,
+    try_lift: |s| Ok(BestOfId(s)),
+});
+
+#[uniffi::remote(Enum)]
+pub enum Candidate {
+    Cox { model: Option<String> },
+    Agent { name: String },
+}
+
+#[uniffi::remote(Record)]
+pub struct BestOfRequest {
+    pub project: PathBuf,
+    pub prompt: String,
+    pub candidates: Vec<Candidate>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Worktree {
+    pub path: PathBuf,
+    pub branch: String,
+    pub main: PathBuf,
+}
+
+#[uniffi::remote(Record)]
+pub struct Launched {
+    pub candidate: Candidate,
+    pub worktree: Option<Worktree>,
+    pub session: Option<SessionId>,
+    pub failed: Option<String>,
+    pub started_ms: u64,
+    pub pruned: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct BestOf {
+    pub id: BestOfId,
+    pub project: PathBuf,
+    pub prompt: String,
+    pub candidates: Vec<Launched>,
+    pub kept: Option<u32>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum CandidateState {
+    Running,
+    WaitingOnYou,
+    Done,
+    Failed { why: String },
+    Kept,
+    Pruned,
+}
+
+#[uniffi::remote(Record)]
+pub struct FileStat {
+    pub path: PathBuf,
+    pub added: u32,
+    pub removed: u32,
+}
+
+#[uniffi::remote(Record)]
+pub struct CandidateView {
+    pub candidate: Candidate,
+    pub label: String,
+    pub state: CandidateState,
+    pub session: Option<SessionId>,
+    pub worktree: Option<PathBuf>,
+    pub branch: Option<String>,
+    pub files: Vec<FileStat>,
+    pub added: u32,
+    pub removed: u32,
+    pub cost_usd: f64,
+    pub duration_ms: u64,
+}
+
+#[uniffi::remote(Record)]
+pub struct Picked {
+    pub pruned: Vec<PathBuf>,
+    pub dirty: Vec<PathBuf>,
+    pub refused: Vec<String>,
+}
+
+/// `cox_app::Launch` as Swift sees it: the group, and a handle on each
+/// candidate session that started, in candidate order, for the windows.
+/// Local because a `LiveSession` crosses only inside a `SessionHandle`.
+#[derive(uniffi::Record)]
+pub struct BestOfLaunch {
+    pub group: BestOf,
+    pub sessions: Vec<Arc<SessionHandle>>,
+}
+
+impl From<Launch> for BestOfLaunch {
+    fn from(launch: Launch) -> Self {
+        Self {
+            group: launch.group,
+            sessions: launch
+                .sessions
+                .into_iter()
+                .map(SessionHandle::new)
+                .collect(),
         }
     }
 }

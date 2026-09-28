@@ -28,13 +28,17 @@ public struct SessionEntry: Equatable, Sendable {
   public var isHeld: Bool
   /// The external ACP agent that drove it (T52.6); `nil` for cox.
   public var agent: String?
+  /// The best-of-n group it was launched in (T52.9); the sidebar shows a group as one.
+  public var bestOf: String?
 
   public init(
     id: String, title: String? = nil, cwd: String = "", updatedAt: String = "", turns: Int64 = 0,
-    costUsd: Double = 0, isHeld: Bool = false, agent: String? = nil
+    costUsd: Double = 0, isHeld: Bool = false, agent: String? = nil,
+    bestOf: String? = nil
   ) {
     (self.id, self.title, self.cwd, self.updatedAt) = (id, title, cwd, updatedAt)
     (self.turns, self.costUsd, self.isHeld, self.agent) = (turns, costUsd, isHeld, agent)
+    self.bestOf = bestOf
   }
 }
 
