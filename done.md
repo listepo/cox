@@ -6093,3 +6093,196 @@ Deviations: none.
 Check: `rustfmt --check` clean. Not run (no-build rule, 2026-09-29).
 
 Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_stream)'` and clippy on `cox-provider-openai`. The Chat fixtures still carry no sentinel; adding one to a fixture would cover the whole stream path.
+
+### T42.1. Mode type, `narrower` and the resolved gate table
+
+Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~90 · Priority: P2 · Complexity: 2
+
+Goal: the shared vocabulary the other P42 cards and T45.2 build on — a `Mode` enum, a `ModeChanged` event, and one pure function that picks the narrower of two permission modes.
+
+Files:
+- `crates/cox-protocol/src/types.rs`
+- `crates/cox-permission/src/lib.rs`
+- `docs/design/v0.2-modes.md`
+
+Steps:
+1. `types.rs`: add `#[serde(rename_all = "snake_case")] pub enum Mode { #[default] Editor, Architect }` with `JsonSchema`, next to `PermissionMode` (line ~356); add `Event::ModeChanged { mode: Mode, permission_mode: PermissionMode }`. Regenerate `docs/protocol.jsonschema` through its drift test.
+2. `cox-permission/src/lib.rs`: add `pub fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode` with the order `Plan < Default < Auto < Bypass`; a private `rank()` so the order has one definition.
+3. Tests in `cox-permission`: `narrower_never_returns_the_wider_mode` (all 16 pairs), `narrower_is_commutative`.
+4. `v0.2-modes.md`: add a "Resolved (P42)" section — architect = `Plan` + main tier `think`, editor = the configured mode + configured tier; tool schemas are never filtered by mode (cache prefix); the "every Exec asks" row is superseded by plan's deny (pending open question 1).
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-permission narrower_
+mise exec -- cargo nextest run -p cox-protocol
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: `Mode`, `Event::ModeChanged` and `narrower` exist with the tests above; the protocol schema is regenerated; the gate doc records the resolved table.
+
+Out of scope: applying the mode (T42.3), config/flag (T42.2), any TUI.
+Status: done 2026-09-29
+Result: `types::Mode` (Editor default, Architect) and `Event::ModeChanged { mode, permission_mode }` with rstest cases (`crates/cox-protocol/src/types.rs`); `cox_permission::narrower` over one private `rank` (Plan < Default < Auto < Bypass) with `narrower_never_returns_the_wider_mode` and `narrower_is_commutative`; a "Resolved (P42)" section in `docs/design/v0.2-modes.md`.
+
+Deviations: `docs/protocol.jsonschema` edited by hand to the shape schemars emits; a no-op `ModeChanged` arm in `crates/cox-tui/src/state.rs` (the `Event` match is exhaustive), replaced by T42.4.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `cargo nextest run -p cox-permission -E 'test(narrower_)'`, `-p cox-protocol` (`protocol_jsonschema_matches_committed_file`; regenerate if it drifts), `-p cox-tui`, clippy.
+
+### T42.2. `core.mode` config key and `--mode` flag
+
+Model: claude-sonnet-5 · Status: open · Depends: T42.1 · Size: ~70 · Priority: P2 · Complexity: 2
+
+Goal: `--mode architect|editor` and `core.mode` are one setting (invariant 12, `every_flag_has_a_config_key`).
+
+Files:
+- `crates/cox-protocol/src/config.rs`
+- `crates/cox/src/cli.rs`
+- `crates/cox/src/config_load.rs`
+
+Steps:
+1. `config.rs`: `CoreConfig.mode: Mode` (default `Editor`), doc comment naming the flag. Regenerate `docs/config.jsonschema`, `docs/config.md`, `config/default.toml`.
+2. `cli.rs`: `#[arg(long = "mode", global = true)] pub mode: Option<String>` next to `permission_mode` (line ~41), value parser limited to `architect|editor`.
+3. `config_load.rs`: `flag_key_map()` gains `"mode" => "core.mode"`; `flag_overrides(cli)` sets it through `set_dotted`.
+4. Decide guard status: `core.mode = architect` only narrows, so it is **not** added to `GUARDED_KEYS` (a project config may set it). Note this in the doc comment.
+5. Tests: `mode_flag_maps_to_core_mode` in `config_load.rs`; `every_flag_has_a_config_key` stays green.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox mode_flag_maps_to_core_mode every_flag_has_a_config_key
+mise exec -- cargo nextest run -p cox-config
+COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- --mode architect config get core.mode
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the flag and the key round-trip, the schema drift test passes, the scratch run prints `architect`.
+
+Out of scope: acting on the value (T42.3).
+Status: done 2026-09-29
+Result: `CoreConfig.mode` (`crates/cox-protocol/src/config.rs`); a global `--mode` flag limited to architect|editor (`crates/cox/src/cli.rs`); `flag_key_map`/`flag_overrides` wiring and `mode_flag_maps_to_core_mode` (`crates/cox/src/config_load.rs`); the key in `default.toml` and `docs/config.md`. Not in `GUARDED_KEYS`, as the card says; the doc comment says why.
+
+Deviations: `docs/config.jsonschema` and `docs/config.md` edited by hand.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox -E 'test(mode_flag_maps_to_core_mode) | test(config_every_flag_has_a_config_key) | test(docs_config_covers_every_key)'`, `-p cox-config -E 'test(config_jsonschema_matches_committed_file)'` (regenerate on drift), `-p cox-protocol`, and `COX_HOME=/tmp/cox-scratch cargo run -- --mode architect config get core.mode` → `architect`.
+
+### T42.3. Core applies the mode at build and on `/mode`
+
+Model: claude-opus-5.5 · Status: open · Depends: T42.1, T42.2 · Size: ~180 · Priority: P2 · Complexity: 4
+
+Goal: one core path turns a `Mode` into a live permission mode and a main-tier override, at session build and on `Submission::Command { name: "mode" }`, and emits `ModeChanged`.
+
+Files:
+- `crates/cox-core/src/mode.rs` (new)
+- `crates/cox-core/src/lib.rs`
+- `crates/cox-core/src/session.rs`
+
+Steps:
+1. `mode.rs` (`//!` header: "mode presets over permission mode and main tier; the top-session counterpart of `subagent::PRESETS`"): `pub struct ModePreset { pub mode: Mode, pub permission: Option<PermissionMode>, pub main_tier: Option<Tier> }`, consts `EDITOR` (both `None`) and `ARCHITECT` (`Some(Plan)`, `Some(Tier::Think)`); `pub fn apply(preset, configured: PermissionMode) -> PermissionMode` = `preset.permission.map_or(configured, |p| cox_permission::narrower(configured, p))`.
+2. `lib.rs`: `pub mod mode;`.
+3. `session.rs` `build` (line ~366): after `permission_mode` is set from config, apply `config.core.mode`; set `Inner.overrides.main_tier` from the preset. Store the active `Mode` in `Inner`.
+4. `session.rs` `Submission::Command` dispatch (~819): `"mode"` with arg `architect|editor` (unknown → `Event::Notice` Warn listing both). Idle-only like `compact`. Architect: `permission_mode = apply(ARCHITECT, current)`, `overrides.main_tier = Some(Think)`. Editor: restore `config.permissions.mode` narrowed by nothing and clear `main_tier` only if the mode set it (a `/model`-set override survives — keep a `mode_set_tier: bool`). Emit `ModeChanged`.
+5. The router still returns `RouteError::NeedsConfirm` for Think without `confirm_think`; do not bypass it here (invariant 9). The mode never touches `tools`, so system[0..2] stay byte-identical.
+6. Tests (bottom of `session.rs` or `mode.rs`): `architect_denies_write_through_the_engine`, `architect_never_widens_a_plan_config`, `editor_restores_the_configured_mode`, `mode_switch_keeps_prefix_bytes_identical`, `architect_think_still_requires_confirmation`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core architect_ editor_restores mode_switch_keeps_prefix prefix_bytes_identical_between_turns think_requires_confirmation
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the five tests pass; invariants 1 and 9 still pass; no tool list is filtered by mode.
+
+Out of scope: TUI affordances (T42.4), headless consent (T42.5), children (T45.1 inherits the live mode).
+Status: done 2026-09-29
+Result: `crates/cox-core/src/mode.rs` (`ModePreset`, `EDITOR`/`ARCHITECT`, `preset`, `apply`, `parse`). `session.rs` `build` opens a top-level session in `core.mode` (children never take it from config) and sends `ModeChanged` when it is not the default. `/mode` is refused mid-turn, warns on an unknown argument, narrows the live permission mode (editor restores the configured one), sets or restores the main-tier override, strips thinking when the tier changes (as `/model`), and emits `StateChanged` then `ModeChanged`. Five tests at the bottom of `session.rs`, two in `mode.rs`.
+
+Deviations: the override the mode replaced is stored, not a bool, so a `/model` pick made before architect comes back after editor; `StateChanged` is emitted too because resume rebuilds the permission mode from it (T50.4); ~320 LOC, including a third copy of a request-recording test provider (advise.rs and subagent.rs have one each).
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox-core -E 'test(architect_) | test(editor_restores) | test(mode_switch_keeps_prefix) | test(prefix_bytes_identical_between_turns) | test(think_requires_confirmation) | test(parse_takes)'` and clippy (dead code on the new `Inner` fields). In architect, Shift+Tab (`SetPermissionMode`) can still widen the permission mode past plan — not covered by the cards, a question for the creator.
+
+### T42.4. TUI `/mode` and the mode badge
+
+Model: claude-sonnet-5 · Status: open · Depends: T42.3 · Size: ~120 · Priority: P2 · Complexity: 3
+
+Goal: the user switches mode from the composer, sees it on the status line, and confirms the think price once per architect stretch.
+
+Files:
+- `crates/cox-tui/src/commands.rs`
+- `crates/cox-tui/src/state.rs`
+- `crates/cox-tui/src/status.rs`
+
+Steps:
+1. `commands.rs`: `COMMANDS` row `("mode", "/mode architect|editor", "switch between planning and editing")`; the generic arm already submits `Submission::Command`.
+2. `state.rs`: handle `Event::ModeChanged` → `state.mode`; entering architect opens the existing price confirmation (same text as `/think`, `THINK_PRICE`) once; after a yes, `UserTurn.confirm_think = true` while `state.mode == Architect`; a no sends `/mode editor`.
+3. `status.rs`: `[architect]` segment before the permission-mode segment; nothing in editor.
+4. Snapshot tests: `status_line_shows_architect_badge`, `mode_command_is_listed_in_help`; unit test `architect_confirmation_is_asked_once`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui status_line_shows_architect_badge mode_command_is_listed architect_confirmation_is_asked_once
+mise exec -- cargo insta review
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the snapshots are reviewed and committed; a real TUI run against `COX_HOME=/tmp/cox-scratch` shows the badge after `/mode architect`.
+
+Out of scope: ACP session modes (open question 10).
+Status: done 2026-09-29
+Result: the `/mode` row in `crates/cox-protocol/src/commands.rs`; `State.session_mode` in `crates/cox-tui/src/state.rs` (`State.mode` is the permission mode); entering architect asks the think price (`THINK_PRICE`) once per stretch — a yes makes every TUI turn carry `confirm_think` while in architect (the five turn builders go through one `user_turn`), a no submits `/mode editor`; `status.rs` shows `[architect] [plan]`.
+
+Deviations: the TUI had no price confirmation to reuse (`/think` submits directly), so the `ask_user` Question modal is reused and its answer kept local by id; 4 files. Merge: its test sits beside T39.4's in `state.rs`.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox-tui -E 'test(status_line_shows_architect_badge) | test(mode_command_is_listed) | test(architect_confirmation_is_asked_once) | test(command_help_lists_every_command)'`, records `status_line_shows_architect_badge` and `mode_command_is_listed_in_help` and re-records `screenshots__screen_help_overlay`; a real TUI run shows the badge after `/mode architect`.
+
+### T42.5. Headless `--mode` consent, e2e and docs
+
+Model: claude-sonnet-5 · Status: open · Depends: T42.3 · Size: ~100 · Priority: P3 · Complexity: 2
+
+Goal: `cox run -p --mode architect` works end to end; only the explicit flag counts as think consent, like `--deep`.
+
+Files:
+- `crates/cox/src/run.rs`
+- `crates/cox/tests/run_cli.rs`
+- `docs/how-it-works.md`
+
+Steps:
+1. `run.rs`: `confirm_think = deep || cli.mode == Some("architect")`; a `core.mode = architect` from a config file alone does not confirm — the run fails with the existing `NeedsConfirm` message naming `--mode architect` (pending open question 2).
+2. `run_cli.rs`: `run_architect_denies_write_with_scripted_provider` (scripted provider requests `write`; the stream-json shows a plan-mode denial), `run_config_architect_without_flag_asks_for_confirmation`.
+3. `how-it-works.md`: a "Modes" paragraph: the table, "mode never widens permissions", "tools are not filtered".
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox run_architect_ run_config_architect_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: both e2e tests pass without network or keys; docs describe modes.
+
+Out of scope: ACP.
+
+---
+Status: done 2026-09-29
+Result: `crates/cox/src/run.rs` sets `confirm_think = --deep || --mode architect`; with architect from config only, the core refuses the run (exit 2) and the driver prints a stderr line naming `--mode architect`; `--deep`'s `SwitchModel` moved from `drive` into `run`, once per run. Two e2e tests in `run_cli.rs`; a "Modes" section in `docs/how-it-works.md`.
+
+Deviations: the hint comes from the headless driver; the core's shared notice text is unchanged.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox -E 'test(run_architect_) | test(run_config_architect_)'`, then the phase's full nextest, clippy and fmt.
