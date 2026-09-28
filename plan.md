@@ -31,7 +31,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.41 | todo | P0 | 3 | 0% | |
 | T37.42 | todo | P0 | 3 | 0% | |
 | T37.43 | todo | P0 | 4 | 0% | |
-| T37.20 | todo | P0 | 3 | 0% | |
+| T37.20 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.21 | todo | P0 | 4 | 0% | |
 | T37.22 | todo | P0 | 3 | 0% | |
 | T37.23 | todo | P0 | 5 | 0% | |
