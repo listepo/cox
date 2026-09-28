@@ -1,8 +1,8 @@
 // The Settings screen's check (T37.30.1, DT§5.7): the Models & Providers page in every
 // light/dark × Solid/Frosted cell — the tier the project's config sets is read-only, names the
 // project file and carries the `project` badge, and the provider's key field is empty — the
-// Appearance page's controls, and the sidebar, group box and field per cell; the sidebar's
-// coloured page tiles also in High Contrast (T37.30.5).
+// Appearance and Permissions pages' controls, and the sidebar, group box and field per cell; the
+// sidebar's coloured page tiles also in High Contrast (T37.30.5).
 
 import SwiftUI
 import Testing
@@ -19,6 +19,11 @@ import Testing
 
   @Test func appearancePage() throws {
     try check(PreviewState.settingsAppearance, Variant.all[0])
+  }
+
+  /// Mockup screen 19 (T37.44.5).
+  @Test func permissionsPage() throws {
+    try check(PreviewState.settingsPermissions, Variant.all[0])
   }
 
   @Test(arguments: Variant.all) func settingsSidebar(_ variant: Variant) throws {

@@ -41,7 +41,8 @@ public enum SettingsScreenIntent: Equatable, Sendable {
   case setLogin(server: String, Bool)
 }
 
-/// The Settings window: `SettingsSidebar` beside a column of `SettingsGroupBox`es.
+/// The Settings window: `SettingsSidebar` beside the selected page's title over a column of
+/// `SettingsGroupBox`es.
 public struct SettingsScreen: View {
   let state: SettingsScreenState
   let send: (SettingsScreenIntent) -> Void
@@ -60,6 +61,12 @@ public struct SettingsScreen: View {
         ShellPane(.column) {
           ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
+              // The mockup's `.set-main h1`; its 20 pt bold has no token, so the nearest
+              // heading style.
+              Text(state.selection.title)
+                .textStyle(.transcriptH1)
+                .foregroundStyle(Color(.textPrimary))
+                .accessibilityAddTraits(.isHeader)
               if !state.dropped.isEmpty { DroppedBox(values: state.dropped) }
               if !state.logins.isEmpty { LoginsBox(logins: state.logins, send: send) }
               ForEach(state.tables) { TableBox(table: $0, send: send) }

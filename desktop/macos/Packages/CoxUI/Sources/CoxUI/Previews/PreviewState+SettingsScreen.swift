@@ -1,8 +1,8 @@
 // `PreviewState` fixtures for the Settings screen (T37.30.1): mockup screen 18's Models &
 // Providers page — a provider's box with its key field, and a tier the project's config sets —
-// and an Appearance page with a choice, a slider and a switch. Separate from
-// `PreviewState+Settings.swift`, which holds the setting molecules' fixtures, so each card adds
-// its fixtures without editing another's file.
+// an Appearance page with a choice, a slider and a switch, and screen 19's Permissions page.
+// Separate from `PreviewState+Settings.swift`, which holds the setting molecules' fixtures, so
+// each card adds its fixtures without editing another's file.
 
 import SwiftUI
 
@@ -51,6 +51,29 @@ extension PreviewState {
         ])
     ],
     userFile: userFile)
+
+  /// Mockup screen 19's Permissions page: the mode and approval policy at their defaults, a
+  /// switch the user set, and the rules as the list Settings shows but does not edit.
+  static let settingsPermissions = SettingsScreenState(
+    pages: SettingsPage.allCases, selection: .permissions,
+    tables: [
+      .init(
+        id: "permissions",
+        fields: [
+          field(
+            "permissions.mode", .default,
+            .choice("default", options: ["default", "plan", "auto"]),
+            detail: "For new sessions"),
+          field(
+            "permissions.approval", .default,
+            .choice("on-request", options: ["on-request", "never"])),
+          field(
+            "permissions.allow_for_session_persists", .user, .toggle(false),
+            detail: "Whether an allow-for-session grant outlives the session"),
+          field("permissions.deny", .default, .json(#"["Read(~/.ssh/**)", "Bash(rm -rf /*)"]"#)),
+        ])
+    ],
+    userFile: userFile, projectFile: projectFile)
 
   private static func field(
     _ key: String, _ source: SettingSource, _ control: SettingsScreen.Control,

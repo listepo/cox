@@ -31,10 +31,12 @@ struct LoginsBox: View {
   var body: some View {
     SettingsGroupBox("Logins") {
       ForEach(logins) { login in
-        TitledSetting(title: login.id, detail: login.detail, control: button(login))
-          // `SettingRow`'s insets; a login has no config layer, so no badge.
-          .padding(.horizontal, Space.l)
-          .padding(.vertical, Space.ml)
+        TitledSetting(
+          title: login.id, detail: login.detail, namesItem: true, control: button(login)
+        )
+        // `SettingRow`'s insets; a login has no config layer, so no badge.
+        .padding(.horizontal, Space.l)
+        .padding(.vertical, Space.ml)
       }
     }
   }

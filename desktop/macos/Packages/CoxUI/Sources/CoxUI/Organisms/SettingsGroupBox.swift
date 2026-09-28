@@ -5,13 +5,14 @@
 
 import SwiftUI
 
-/// A `SectionHeader` over `content`'s rows on a `fill.primary` card of `Radius.xl`, each row
+/// An optional `SectionHeader` over `content`'s rows on a `fill.primary` card of `Radius.xl`, each row
 /// after the first under a hairline.
 struct SettingsGroupBox<Content: View>: View {
-  let title: String
+  /// The header, or `nil` for a box its rows explain, as the first-run window's.
+  let title: String?
   let content: Content
 
-  init(_ title: String, @ViewBuilder content: () -> Content) {
+  init(_ title: String?, @ViewBuilder content: () -> Content) {
     self.title = title
     self.content = content()
   }
@@ -20,7 +21,7 @@ struct SettingsGroupBox<Content: View>: View {
     let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
     VStack(alignment: .leading, spacing: Space.s) {
       // Level with the rows' text inside the card.
-      SectionHeader(title).padding(.horizontal, Space.xs)
+      if let title { SectionHeader(title).padding(.horizontal, Space.xs) }
       Group(subviews: content) { rows in
         VStack(spacing: 0) {
           ForEach(rows) { row in row.hairline(row.id == rows.first?.id ? [] : .top) }
