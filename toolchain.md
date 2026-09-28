@@ -142,13 +142,6 @@ Programs the project uses and the direct packages from its manifests.
 | pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the vendor package |
 | tomlkit | local | https://github.com/sdispater/tomlkit | Comment-preserving TOML edits for `cox-vendor models` (T30.20) |
 
-## SwiftPM (`desktop/macos/Packages/CoxUI`)
-
-| Package | Where | Source | Why here |
-| --- | --- | --- | --- |
-| SwiftLintPlugins | local (build-tool plugin) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.19: runs SwiftLint (same version as `mise.toml`) on every `swift build`/`swift test` of CoxUI with `desktop/macos/.swiftlint.yml` |
-| swift-snapshot-testing | local (test target) | https://github.com/pointfreeco/swift-snapshot-testing | T37.19: image snapshots of the CoxUI Foundations and components (DS§9, A67) |
-
 ## npm (`desktop/design`)
 
 | Package | Where | Source | Why here |
@@ -160,4 +153,5 @@ Programs the project uses and the direct packages from its manifests.
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
 | swift-collections | local (`CoxModel`) | https://github.com/apple/swift-collections | T37.16: `OrderedDictionary` keeps the timeline store in block order (research.md §9.5.6) |
-| SwiftLintPlugins | local (`CoxModel`, `CoxCore`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |
+| SwiftLintPlugins | local (`CoxModel`, `CoxCore`, `CoxUI`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |
+| swift-snapshot-testing | local (`CoxUI` tests) | https://github.com/pointfreeco/swift-snapshot-testing | T37.19: image snapshots of the CoxUI Foundations and components (DS§9, A67) |

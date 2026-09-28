@@ -21,7 +21,10 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.19. `CoxUI` Foundations
+- T37.19.1. `CoxButtonStyle`
+- T37.19.2. `CapsuleStyle`
+- T37.19.3. `SegmentedStyle`
+- T37.19.4. `CoxToggleStyle` and `CoxSliderStyle`
 - T37.20. `CoxUI` Atoms
 - T37.21. `CoxUI` Molecules
 - T37.22. Window shell: split view, sidebar, toolbar, inspector frame

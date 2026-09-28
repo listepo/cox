@@ -3336,3 +3336,17 @@ Deviations: `CoreClient` and the fixture client live in `CoxModel`, not `CoxCore
 Check: `swift test` in `CoxModel` 7/7, including `replayingAFixtureEndsAtItsSnapshot` for each `Fixtures/*.json` (blocks, keys and usage equal the recorded snapshot), upsert order, AppendText with `\r\n`, DocTail/Remove, send, the tail helper; `swift test` in `CoxCore` 3/3 conversion tests (xcframework built once, 4m39s); `swift build` clean; `swift-format lint --strict` and `swiftlint lint --strict` (0.65.1) pass on both packages, also with `build/` absent. Commits b0068ef, 79ade0f.
 
 Not done: tests with the plugin attached did not run locally — SwiftPM stalls fetching the SwiftLintPlugins artifact bundle, so lint ran through the CLI and `swift test` once with the plugin lines removed; CI runs the real thing. `AppStore`/`SettingsStore` wait for T37.22, T37.27 and T37.30; mirroring `InboxItem` is left to the inbox card.
+
+#### T37.19 `CoxUI` Foundations
+
+Depends: T37.17, T37.18 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`
+Goal: every DS§6.1 modifier and style — `elevation`, `glassPane`, `specular`, `hairline`, `insetWell`, `textStyle`, button, capsule, segmented, toggle and slider styles — with Depth scaling, the readable floor and Reduce Transparency/Motion handled once, here.
+Check: snapshot per modifier × light/dark × Solid/Frosted; Reduce Transparency renders Solid.
+Status: done 2026-09-28
+Result: first part of the Foundations (split at claim; the button, capsule, segmented, toggle and slider styles moved to T37.19.1–T37.19.4). New package `desktop/macos/Packages/CoxUI` (tools 6.2, macOS 26, `Colors.xcassets` as a resource, SwiftLintPlugins, no other cox package). `Sources/CoxUI/Foundations/`: `Elevation`, `GlassPane`, `Specular`, `Hairline`, `InsetWell`, `TextStyle` and `Appearance.swift`, the one place settings resolve — Reduce Transparency forces Solid, the readable floor holds, Depth scales every level but e5, text scale applies, `coxTransition` cross-fades under Reduce Motion. Modifiers are `internal`; the public API is `Appearance`, `GlassMaterial` and the `coxAppearance` environment value. DESIGN.md §2/§5/§6.1/§9 updated. Also `T37.17: Tokens.swift passes swift-format lint`: the generator emits `// swift-format-ignore-file` and a scoped `swiftlint:disable line_length`.
+
+Deviations: ~380 source lines in 8 files. Swift headers use `//` (SwiftLint's `comment_spacing` rejects `//!`). SwiftPM generates `ColorResource` symbols, so views write `Color(.surfaceWindow)` (DESIGN.md says so). New dependency swift-snapshot-testing 1.19.6 (latest, named by A67). `ImageRenderer` drops glass, so snapshots render through a window-hosted `NSHostingView` at 2×.
+
+Check: `swift build` ok; `swift test` first run recorded 24 snapshots (6 modifiers × light/dark × Solid/Frosted), second run 10 tests / 34 cases pass with nothing re-recorded, including Frosted under Reduce Transparency pixel-identical to Solid; `swiftlint lint --strict` and `swift-format lint --strict --recursive` (LintFixtures, CoxUI) pass. Built and tested without the plugin lines locally (SwiftPM stalls fetching the plugin's artifact bundle); the committed manifest keeps the plugin. Commits 112cb7e, 5786619.
+
+Not done: no `#Preview`s (snapshots cover the Foundations). Snapshots were recorded on macOS 27 / Xcode 27 while CI runs macos-26; glass and font rendering may exceed the 0.98 tolerance there and need re-recording on CI's OS.

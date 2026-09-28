@@ -13,6 +13,3 @@ desktop/macos/build/
 desktop/macos/Packages/*/.build/
 desktop/macos/Packages/*/.swiftpm/
 desktop/design/node_modules/
-# SwiftPM build output of the desktop packages (T37.16).
-desktop/macos/Packages/*/.build/
-desktop/macos/Packages/*/.swiftpm/

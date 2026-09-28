@@ -27,7 +27,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.19 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.19.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.19.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.19.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.19.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20 | todo | P0 | 3 | 0% | |
 | T37.21 | todo | P0 | 4 | 0% | |
 | T37.22 | todo | P0 | 3 | 0% | |
@@ -100,7 +103,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-session` | session assembly as a library (T37.1; split out of `cox`): `open(SessionSpec)` → session, effective config and typed `Warning`s — provider, tools, MCP, skills, hooks, plugins, fork/handoff/resume lineage, external agents; login-shell environment (T37.11). No clap, no anyhow, no printing | async-trait, tokio-util, agent-client-protocol (moved from `cox` with the external-agent code), nix `signal` (T37.11: process-group kill of a slow login shell) |
 | `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui` |
 | `cox-ffi` | the macOS app's UniFFI surface (T37.14): one tokio runtime, `App` and `SessionHandle` objects, the foreign `AppHost` trait, `#[uniffi::remote]` mirrors of cox-app types, a fixture recorder. `staticlib` + `lib`; the only crate that depends on uniffi | uniffi 0.32.2 (proc-macros, no UDL; default features off) |
-| `desktop/` | the macOS app (P37, not a Cargo crate): Swift packages under `desktop/macos/Packages/`, the design tokens and their generator under `desktop/design/` | node 24.21.0 (mise) with npm `style-dictionary` 5.5.5 (T37.17: DTCG tokens → Swift, asset colours, CSS); SwiftLint 0.65.1 (mise, aqua; T37.18: DS§9 no-literal rules) and SwiftLintPlugins at the same version in each package; `swift-format` from the Xcode toolchain; swift-collections 1.7.1 (T37.16: `OrderedDictionary` timeline store) |
+| `desktop/` | the macOS app (P37, not a Cargo crate): Swift packages under `desktop/macos/Packages/`, the design tokens and their generator under `desktop/design/` | node 24.21.0 (mise) with npm `style-dictionary` 5.5.5 (T37.17: DTCG tokens → Swift, asset colours, CSS); SwiftLint 0.65.1 (mise, aqua; T37.18: DS§9 no-literal rules) and SwiftLintPlugins at the same version in each package; `swift-format` from the Xcode toolchain; swift-collections 1.7.1 (T37.16: `OrderedDictionary` timeline store); swift-snapshot-testing 1.19.6 (T37.19: `CoxUI` snapshot tests) |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
@@ -1076,15 +1079,33 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.19 `CoxUI` Foundations
+#### T37.19.1 `CoxButtonStyle`
 
-Depends: T37.17, T37.18 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`
-Goal: every DS§6.1 modifier and style — `elevation`, `glassPane`, `specular`, `hairline`, `insetWell`, `textStyle`, button, capsule, segmented, toggle and slider styles — with Depth scaling, the readable floor and Reduce Transparency/Motion handled once, here.
-Check: snapshot per modifier × light/dark × Solid/Frosted; Reduce Transparency renders Solid.
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: primary, secondary, danger and plain buttons in each DS§6.1 size, built on the Foundations (`elevation`, `specular`, `textStyle`) with hover, pressed and disabled states.
+Check: snapshot per role × size × light/dark × Solid/Frosted; the disabled state keeps the readable floor.
+
+#### T37.19.2 `CapsuleStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: the plain and active capsules of DS§6.1 (chips, filters), built on the Foundations.
+Check: snapshot per state × light/dark × Solid/Frosted.
+
+#### T37.19.3 `SegmentedStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: the segmented control of DS§6.1 with the lifted e1 selection, built on the Foundations; selection moves with `coxTransition`.
+Check: snapshot per selection × light/dark × Solid/Frosted; Reduce Motion cross-fades.
+
+#### T37.19.4 `CoxToggleStyle` and `CoxSliderStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: the DS§6.1 toggle and slider with the 3D knob, built on the Foundations.
+Check: snapshot per on/off and slider value × light/dark × Solid/Frosted.
 
 #### T37.20 `CoxUI` Atoms
 
-Depends: T37.19 · Size: split at claim · Files: `…/CoxUI/Atoms/*`, `…/CoxUI/Previews/PreviewState.swift`
+Depends: T37.19.1–T37.19.4 · Size: split at claim · Files: `…/CoxUI/Atoms/*`, `…/CoxUI/Previews/PreviewState.swift`
 Goal: every DS§6.2 atom, one file each, with previews and snapshots for every variant.
 Check: snapshot suite green; lint green; each atom's file names a DS§6.2 row.
 
