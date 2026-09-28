@@ -82,7 +82,7 @@ struct SnapshotHost<Sample: View> {
     AnyView(
       sample
         .padding(Space.xxl)
-        .background(SnapshotBackdrop())
+        .background(PreviewBackdrop())
         .environment(\.colorScheme, settings.variant.scheme)
         .environment(\.coxAppearance, Appearance(material: settings.variant.material))
         .environment(\._accessibilityReduceMotion, settings.reduceMotion)
@@ -102,13 +102,4 @@ func assertCoxSnapshot(
   assertSnapshot(
     of: image, as: .image(precision: 0.995, perceptualPrecision: 0.98), named: name,
     fileID: fileID, file: filePath, testName: testName, line: line)
-}
-
-/// Colour behind every sample, so glass and shadows show what they do to it.
-private struct SnapshotBackdrop: View {
-  var body: some View {
-    LinearGradient(
-      colors: [Color(.accent), Color(.statusPlan), Color(.statusSuccess)],
-      startPoint: .topLeading, endPoint: .bottomTrailing)
-  }
 }

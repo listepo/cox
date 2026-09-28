@@ -20,12 +20,12 @@ private struct CapsuleSample: View {
   let emphasis: CapsuleStyle.Emphasis
 
   var body: some View {
-    HStack(spacing: Space.l) {
-      ForEach(ControlState.allCases, id: \.self) { state in
-        CapsuleFace(label: Text("claude-opus-5"), emphasis: emphasis, state: state)
+    PreviewPane {
+      HStack(spacing: Space.l) {
+        ForEach(ControlState.allCases, id: \.self) { state in
+          CapsuleFace(label: Text("claude-opus-5"), emphasis: emphasis, state: state)
+        }
       }
     }
-    .padding(Space.xl)
-    .glassPane(RoundedRectangle(cornerRadius: Radius.pane, style: .continuous))
   }
 }

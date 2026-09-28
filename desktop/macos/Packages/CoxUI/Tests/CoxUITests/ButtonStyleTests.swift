@@ -68,12 +68,12 @@ private struct ButtonSample: View {
   let size: ButtonSize
 
   var body: some View {
-    HStack(spacing: Space.m) {
-      ForEach(ControlState.allCases, id: \.self) { state in
-        ButtonFace(label: Text("Allow"), role: role, size: size, state: state)
+    PreviewPane {
+      HStack(spacing: Space.m) {
+        ForEach(ControlState.allCases, id: \.self) { state in
+          ButtonFace(label: Text("Allow"), role: role, size: size, state: state)
+        }
       }
     }
-    .padding(Space.xl)
-    .glassPane(RoundedRectangle(cornerRadius: Radius.pane, style: .continuous))
   }
 }

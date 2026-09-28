@@ -241,11 +241,11 @@ component.
 | Atom | Variants / states | CSS |
 | --- | --- | --- |
 | `StatusDot` | running, waiting, idle, error | `.dot .d-*` |
-| `IconTile` | neutral, edit, shell, search, write | `.tool .ic.c-*` |
+| `IconTile(kind, symbol)` | neutral, edit, shell, search, write; the tool picks the DS§3.7 symbol | `.tool .ic.c-*` |
 | `KeyCap` | — | `.kbd` |
 | `Badge` | neutral, user, project, env, default, warning, danger | `.badge .b-*` |
 | `CountBadge` | — | `.sect .cnt` |
-| `RiskChip` | low, medium, high | `.risk` |
+| `RiskChip(text, level)` | low, medium, high — drawn as a `Badge`: neutral, warning, danger | `.risk` |
 | `Spinner`, `ProgressRing(fraction)` | — | `.spin`, `.ring` |
 | `Sparkline(samples)` | tint | `svg` in `.meter` |
 | `StackedBar(segments)` | — | `.tokpop .bar` |
