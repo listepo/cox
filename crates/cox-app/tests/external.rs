@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use cox_app::app::{App, AppError, Host};
 use cox_app::live::LiveSession;
-use cox_app::{BlockKind, InboxItem, Intent, TimelinePatch};
-use cox_protocol::Config;
-use cox_protocol::types::StopReason;
+use cox_app::{BlockKind, InboxItem, Intent, Need, TimelinePatch};
+use cox_protocol::types::{Decision, StopReason};
+use cox_protocol::{CallId, Config};
 use cox_session::acp_session::AcpOpenError;
 
 const THEME: &str = "base16-ocean.dark";
@@ -34,14 +34,17 @@ fn fake_agent() -> PathBuf {
 }
 
 /// A scratch home whose user config names `command` as the agent `fake`,
-/// and a project to run it in.
+/// and a project to run it in. `make deploy` always asks, so the fake's
+/// permission request reaches the user whatever the sandbox would allow.
 fn scratch(command: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let home = dir.path().join("user");
     std::fs::create_dir_all(home.join(".cox")).expect("home");
     std::fs::create_dir_all(dir.path().join("project")).expect("project");
-    let config =
-        format!("[external_agents.fake]\ncommand = {command:?}\nkey_env = \"COX_FAKE_ACP_KEY\"\n");
+    let config = format!(
+        "[permissions]\nask = [\"Bash(make deploy:*)\"]\n\n\
+         [external_agents.fake]\ncommand = {command:?}\nkey_env = \"COX_FAKE_ACP_KEY\"\n"
+    );
     std::fs::write(home.join(".cox/config.toml"), config).expect("config");
     // SAFETY: first thing in this test's own process (nextest).
     unsafe {
@@ -59,8 +62,15 @@ fn wraps(dir: &Path) -> bool {
     cox_session::agent_argv(&fake_agent(), &[], &Config::default(), &roots).is_ok()
 }
 
+fn app(dir: &Path) -> Arc<App> {
+    App::new(Some(dir.join("user/.cox")), Arc::new(Keys)).expect("app")
+}
+
 async fn open(dir: &Path) -> Result<Arc<LiveSession>, AppError> {
-    let app = App::new(Some(dir.join("user/.cox")), Arc::new(Keys)).expect("app");
+    open_in(&app(dir), dir).await
+}
+
+async fn open_in(app: &Arc<App>, dir: &Path) -> Result<Arc<LiveSession>, AppError> {
     app.open_agent(dir.join("project"), "fake", THEME.into())
         .await
 }
@@ -91,6 +101,34 @@ async fn turn_end(live: &LiveSession) -> (String, StopReason) {
     panic!("the stream closed before the turn ended");
 }
 
+/// Pulls until an approval block that is still open; its call.
+async fn asked(live: &LiveSession) -> CallId {
+    while let Some(batch) = live.next_patches().await {
+        for patch in batch {
+            if let TimelinePatch::Upsert { block, .. } = patch
+                && let BlockKind::Approval {
+                    call,
+                    decision: None,
+                    ..
+                } = block.kind
+            {
+                return call;
+            }
+        }
+    }
+    panic!("the stream closed before the agent asked");
+}
+
+fn texts(live: &LiveSession) -> Vec<String> {
+    live.snapshot()
+        .into_iter()
+        .filter_map(|b| match b.kind {
+            BlockKind::User { text, .. } | BlockKind::Assistant { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
 /// T52.4 Check: a prompt reaches the agent over `session/prompt`, with the
 /// key from the host, and its message streams into the same timeline a cox
 /// session uses, under the "<agent> · ACP" chip.
@@ -106,15 +144,7 @@ async fn external_session_streams_into_the_timeline() {
     let (model, stop) = turn_end(&live).await;
     assert_eq!(model, "fake · ACP");
     assert_eq!(stop, StopReason::EndTurn);
-    let texts: Vec<String> = live
-        .snapshot()
-        .into_iter()
-        .filter_map(|b| match b.kind {
-            BlockKind::User { text, .. } | BlockKind::Assistant { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(texts, ["hi", "hello from the fake agent with a key"]);
+    assert_eq!(texts(&live), ["hi", "hello from the fake agent with a key"]);
     live.end();
 }
 
@@ -174,4 +204,62 @@ async fn missing_agent_program_is_one_warning() {
         warning.contains("cox-no-such-acp-agent") && warning.contains("not on PATH"),
         "{warning}"
     );
+}
+
+/// T52.5 Check: the agent's `session/request_permission`, which the engine
+/// escalates, is an inbox item for this session with the agent as its
+/// source, and an approval block in its timeline.
+#[tokio::test]
+async fn external_ask_becomes_an_inbox_item() {
+    let dir = scratch(&fake_agent().display().to_string());
+    if !wraps(dir.path()) {
+        return;
+    }
+    let app = app(dir.path());
+    let live = open_in(&app, dir.path()).await.expect("the agent starts");
+    live.send(send("ask")).await.expect("sent");
+    let call = asked(&live).await;
+    let inbox = app.inbox();
+    let item = inbox
+        .iter()
+        .find(|i| matches!(&i.need, Need::Approval { call: c, .. } if c.id == call))
+        .expect("the ask is in the inbox");
+    assert_eq!(item.session, live.id());
+    assert!(!item.expired);
+    let source = item.source.as_ref().expect("a source");
+    assert_eq!(source.agent.as_deref(), Some("fake"));
+    assert_eq!(source.session, live.id());
+    live.end();
+}
+
+/// T52.5 Check: the user's answer goes back to the agent as the option it
+/// stands for (allow once → `once`), the agent's turn goes on, and the
+/// inbox item is gone.
+#[tokio::test]
+async fn external_answer_reaches_the_agent() {
+    let dir = scratch(&fake_agent().display().to_string());
+    if !wraps(dir.path()) {
+        return;
+    }
+    let app = app(dir.path());
+    let live = open_in(&app, dir.path()).await.expect("the agent starts");
+    live.send(send("ask")).await.expect("sent");
+    let call = asked(&live).await;
+    let approve = Intent::Approve {
+        call,
+        decision: Decision::Allow,
+    };
+    live.send(approve).await.expect("answered");
+    assert_eq!(turn_end(&live).await.1, StopReason::EndTurn);
+    assert!(
+        texts(&live).iter().any(|t| t == "answered once"),
+        "{:?}",
+        texts(&live)
+    );
+    let open = app
+        .inbox()
+        .into_iter()
+        .any(|i| matches!(&i.need, Need::Approval { call: c, .. } if c.id == call));
+    assert!(!open, "a decided ask leaves the inbox");
+    live.end();
 }

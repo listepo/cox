@@ -9,8 +9,13 @@
 //! from what the agent reports, with the `TurnStarted` and user item the
 //! agent does not echo put in front of each prompt. ACP allows one prompt
 //! in flight, so a prompt sent while one runs waits here in order.
+//!
+//! What the agent asks cox for with `session/request_permission` and the
+//! engine escalates becomes an `ApprovalRequired` in the same stream, with
+//! the agent as its source, so it lands in the inbox like any other ask
+//! (T52.5); the user's answer comes back through [`AcpSession::approve`].
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -27,20 +32,27 @@ use cox_plugin::external_agent::ExternalAgentCommand;
 use cox_plugin_api::AgentMode;
 use cox_protocol::Config;
 use cox_protocol::errors::{CoreError, ProviderError};
-use cox_protocol::ids::{ItemId, TurnId};
-use cox_protocol::types::{Event, ItemKind, Job, ModelId, Tier};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
+use cox_protocol::types::{
+    DecidedBy, Decision, Event, ItemKind, Job, ModelId, Source, Tier, ToolCall, Why,
+};
 use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
-use crate::external_agents::{Reap, RefuseAsk, Spawn, acp_host, stderr_tail};
+use crate::external_agents::{Reap, Spawn, acp_host, stderr_tail};
 
 /// The core's own event bound (DT§4.5).
 const EVENTS: usize = 256;
 /// How long a failed prompt waits for the agent's stderr to close, so the
 /// error can name what the agent said before it died.
 const TAIL_WAIT: Duration = Duration::from_millis(500);
+/// How long one of the agent's asks waits in the inbox before it is denied
+/// (DT§3.3.1: "a timeout answers deny"). The agent's own turn is blocked on
+/// the answer meanwhile, so the ask cannot wait forever; long enough for
+/// someone who stepped away for a coffee.
+const ASK_WAIT: Duration = Duration::from_secs(15 * 60);
 
 /// Why an agent session did not open.
 #[derive(Debug, thiserror::Error)]
@@ -61,8 +73,10 @@ enum Input {
 
 /// The running agent. Ending it, or dropping it, kills its process group.
 pub struct AcpSession {
+    id: SessionId,
     agent: String,
     input: mpsc::UnboundedSender<Input>,
+    asks: Arc<Asks>,
     process: Mutex<Option<(Child, Reap)>>,
 }
 
@@ -73,9 +87,20 @@ pub struct OpenedAcp {
 }
 
 impl AcpSession {
+    /// cox's id for this session: the `Source` its asks carry, and its row.
+    pub fn id(&self) -> SessionId {
+        self.id
+    }
+
     /// The agent's name, as its entry declares it.
     pub fn agent(&self) -> &str {
         &self.agent
+    }
+
+    /// The user's answer to the agent's ask `call`. False when nothing waits
+    /// under that id: answered already, timed out, or the session closed.
+    pub fn approve(&self, call: CallId, decision: Decision) -> bool {
+        self.asks.answer(call, decision, DecidedBy::User)
     }
 
     /// Sends `text` as the next prompt, after the one in flight if any.
@@ -87,11 +112,18 @@ impl AcpSession {
     /// `session/cancel` for the prompt in flight; prompts waiting behind it
     /// are dropped. The turn ends when the agent answers `cancelled`.
     pub fn cancel(&self) -> bool {
+        // ACP: after `session/cancel` the client answers every pending
+        // permission request; a deny is the closest `Decision` to that.
+        self.asks
+            .settle(|| String::from("the turn was interrupted"), false);
         self.input.send(Input::Cancel).is_ok()
     }
 
     /// Kills the agent's process group now (closing the session, or quit).
+    /// Its asks still in the inbox are denied first, and no new one opens.
     pub fn end(&self) {
+        self.asks
+            .settle(|| String::from("the session closed"), true);
         let process = self
             .process
             .lock()
@@ -126,9 +158,8 @@ pub fn agents(
 
 /// Starts `agent` in `cwd` under its wrap and opens an ACP session with it.
 /// `path` is where a bare program name is looked up; `key` resolves the
-/// entry's `key_env` (a test passes its own, never the OS keychain);
-/// `approver` answers the engine's `Ask` verdicts, and without one they
-/// are refused with the way out named, as for a subagent.
+/// entry's `key_env` (a test passes its own, never the OS keychain). The
+/// engine's `Ask` verdicts go to the user as inbox items.
 pub async fn open(
     agent: ExternalAgentCommand,
     config: &Config,
@@ -136,7 +167,6 @@ pub async fn open(
     writable: &[PathBuf],
     path: Option<&OsStr>,
     key: impl Fn(&str, &str) -> Result<String, ProviderError>,
-    approver: Option<Arc<dyn Approver>>,
 ) -> Result<OpenedAcp, AcpOpenError> {
     let name = agent.name().to_string();
     let unavailable = |why: String| {
@@ -167,27 +197,31 @@ pub async fn open(
         return Err(spawn.error("no stdio pipes".into()).into());
     };
     let tail = tokio::spawn(stderr_tail(stderr));
-    let (tx, updates) = mpsc::unbounded_channel();
-    let client = host.client(approver.unwrap_or_else(|| Arc::new(RefuseAsk)), tx);
+    let client = move |asks, updates| host.client(asks, updates);
     let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
-    let mut opened = connect(name, transport, client, updates, Some(tail)).await?;
+    let mut opened = connect(name, transport, client, Some(tail)).await?;
     opened.session.process = Mutex::new(Some((child, reap)));
     Ok(opened)
 }
 
 /// [`open`] over any transport: `initialize`, `session/new` in the host's
 /// cwd, then the session loop. A test passes one end of a duplex channel.
-/// `updates` is the receiving end of `host.updates`.
+/// `host` builds the client from the approver that turns the engine's asks
+/// into inbox items and the sender its `session/update`s go to.
 pub async fn connect(
     agent: String,
     transport: impl ConnectTo<Client> + Send + 'static,
-    host: ClientHost,
-    updates: mpsc::UnboundedReceiver<SessionUpdate>,
+    host: impl FnOnce(Arc<dyn Approver>, mpsc::UnboundedSender<SessionUpdate>) -> ClientHost,
     tail: Option<JoinHandle<String>>,
 ) -> Result<OpenedAcp, CoreError> {
+    let id = SessionId::new();
     let (input_tx, input) = mpsc::unbounded_channel();
     let (events_tx, events) = mpsc::channel(EVENTS);
     let (ready_tx, ready) = oneshot::channel::<Result<(), String>>();
+    let (updates_tx, updates) = mpsc::unbounded_channel();
+    let (notes_tx, notes) = mpsc::unbounded_channel();
+    let asks = Arc::new(Asks::new(agent.clone(), id, notes_tx));
+    let host = host(Arc::clone(&asks) as Arc<dyn Approver>, updates_tx);
     let (cwd, sandboxed) = (host.cwd.clone(), host.sandbox.is_some());
     let driver = Driver {
         fold: UpdateFold::new(agent.clone(), TurnId::new()),
@@ -216,7 +250,7 @@ pub async fn connect(
             }
         };
         let _ = ready_tx.send(Ok(()));
-        driver.run(cx, session, input, updates).await;
+        driver.run(cx, session, input, updates, notes).await;
         Ok(())
     });
     // The driver reports a failed prompt itself; a connection that fails
@@ -231,8 +265,10 @@ pub async fn connect(
     match ready.await {
         Ok(Ok(())) => Ok(OpenedAcp {
             session: AcpSession {
+                id,
                 agent: agent.clone(),
                 input: input_tx,
+                asks,
                 process: Mutex::new(None),
             },
             events,
@@ -264,17 +300,20 @@ impl Driver {
         session: AcpId,
         mut input: mpsc::UnboundedReceiver<Input>,
         mut updates: mpsc::UnboundedReceiver<SessionUpdate>,
+        mut notes: mpsc::UnboundedReceiver<Event>,
     ) {
         let (stop_tx, mut stops) = mpsc::unbounded_channel::<Stopped>();
         loop {
             // Updates first: a prompt's response follows its last update on
-            // the wire, so it must not overtake them here.
+            // the wire, so it must not overtake them here; nor may an ask
+            // overtake the `tool_call` update it is about.
             let alive = tokio::select! {
                 biased;
                 Some(update) = updates.recv() => {
                     let events = self.fold.update(update, self.now());
                     self.emit(events).await
                 }
+                Some(note) = notes.recv() => self.emit(vec![note]).await,
                 Some(stopped) = stops.recv() => {
                     let mut alive = self.stopped(&mut updates, stopped).await;
                     if alive && let Some(next) = self.waiting.pop_front() {
@@ -395,5 +434,201 @@ impl Driver {
 
     fn now(&self) -> u64 {
         u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+}
+
+/// A `Decision` and who made it, as one ask waits for it.
+type Answer = (Decision, DecidedBy);
+
+/// The approver behind a top-level agent session (T52.5, DT§3.3.1): each
+/// `Ask` the engine returns for the agent's `session/request_permission`
+/// waits here under its call id while its `ApprovalRequired` sits in the
+/// inbox. The events go through the driver's `notes`, not straight to the
+/// surface, so an ask never overtakes the update it follows.
+struct Asks {
+    agent: String,
+    session: SessionId,
+    notes: mpsc::UnboundedSender<Event>,
+    /// `None` once the session closed: a new ask is denied at once.
+    pending: Mutex<Option<HashMap<CallId, oneshot::Sender<Answer>>>>,
+    wait: Duration,
+}
+
+impl Asks {
+    fn new(agent: String, session: SessionId, notes: mpsc::UnboundedSender<Event>) -> Self {
+        Self {
+            agent,
+            session,
+            notes,
+            pending: Mutex::new(Some(HashMap::new())),
+            wait: ASK_WAIT,
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<HashMap<CallId, oneshot::Sender<Answer>>>> {
+        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Hands `decision` to the ask waiting under `call`; false if none does.
+    fn answer(&self, call: CallId, decision: Decision, by: DecidedBy) -> bool {
+        let waiting = self
+            .lock()
+            .as_mut()
+            .and_then(|pending| pending.remove(&call));
+        waiting.is_some_and(|tx| tx.send((decision, by)).is_ok())
+    }
+
+    /// Denies every ask still waiting with `reason`; `close` also refuses
+    /// every later one.
+    fn settle(&self, reason: impl Fn() -> String, close: bool) {
+        let waiting: Vec<_> = {
+            let mut pending = self.lock();
+            let waiting = pending
+                .as_mut()
+                .map(|p| p.drain().map(|(_, tx)| tx).collect())
+                .unwrap_or_default();
+            if close {
+                *pending = None;
+            }
+            waiting
+        };
+        for tx in waiting {
+            let _ = tx.send((Decision::Deny { reason: reason() }, DecidedBy::Policy));
+        }
+    }
+
+    fn forget(&self, call: CallId) {
+        if let Some(pending) = self.lock().as_mut() {
+            pending.remove(&call);
+        }
+    }
+
+    fn deny(reason: &str) -> Decision {
+        Decision::Deny {
+            reason: reason.to_string(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Approver for Asks {
+    async fn approve(&self, call: ToolCall, why: Why) -> Decision {
+        let id = call.id;
+        let (tx, rx) = oneshot::channel();
+        match self.lock().as_mut() {
+            Some(pending) => {
+                pending.insert(id, tx);
+            }
+            None => return Self::deny("the session closed"),
+        }
+        let source = Source {
+            session: self.session,
+            agent: Some(self.agent.clone()),
+            preset: None,
+        };
+        let asked = Event::ApprovalRequired {
+            call,
+            why,
+            source: Some(source),
+        };
+        if self.notes.send(asked).is_err() {
+            // Nobody would ever see the ask, so nobody could answer it.
+            self.forget(id);
+            return Self::deny("the session closed");
+        }
+        let (decision, by) = match tokio::time::timeout(self.wait, rx).await {
+            Ok(Ok(answer)) => answer,
+            Ok(Err(_)) => (Self::deny("the session closed"), DecidedBy::Policy),
+            Err(_) => {
+                self.forget(id);
+                let minutes = self.wait.as_secs() / 60;
+                let reason = format!("no answer within {minutes} minutes");
+                (Self::deny(&reason), DecidedBy::Policy)
+            }
+        };
+        let _ = self.notes.send(Event::ApprovalDecided {
+            call_id: id,
+            decision: decision.clone(),
+            by,
+        });
+        decision
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cox_protocol::types::Risk;
+    use serde_json::Value;
+
+    fn call() -> ToolCall {
+        ToolCall {
+            id: CallId::new(),
+            name: "bash".into(),
+            input: Value::Null,
+            risk: Risk::Exec,
+            subject: "make deploy".into(),
+            segments: None,
+        }
+    }
+
+    fn asks() -> (Arc<Asks>, mpsc::UnboundedReceiver<Event>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Arc::new(Asks::new("fake".into(), SessionId::new(), tx)), rx)
+    }
+
+    fn why() -> Why {
+        Why::Risk { risk: Risk::Exec }
+    }
+
+    #[tokio::test]
+    async fn external_closed_session_denies() {
+        let (asks, mut notes) = asks();
+        let waiting = tokio::spawn({
+            let asks = Arc::clone(&asks);
+            async move { asks.approve(call(), why()).await }
+        });
+        let Some(Event::ApprovalRequired { source, .. }) = notes.recv().await else {
+            panic!("the ask reaches the stream first");
+        };
+        assert_eq!(source.and_then(|s| s.agent).as_deref(), Some("fake"));
+        asks.settle(|| String::from("the session closed"), true);
+        let decision = waiting.await.ok();
+        assert!(
+            matches!(decision, Some(Decision::Deny { .. })),
+            "{decision:?}"
+        );
+        let Some(Event::ApprovalDecided { by, .. }) = notes.recv().await else {
+            panic!("the deny is recorded");
+        };
+        assert_eq!(by, DecidedBy::Policy);
+        let late = asks.approve(call(), why()).await;
+        assert!(
+            matches!(late, Decision::Deny { .. }),
+            "a closed session asks no one"
+        );
+        assert!(notes.try_recv().is_err(), "and shows nothing");
+    }
+
+    #[tokio::test]
+    async fn external_ask_answered_by_the_user_is_recorded_as_theirs() {
+        let (asks, mut notes) = asks();
+        let waiting = tokio::spawn({
+            let asks = Arc::clone(&asks);
+            async move { asks.approve(call(), why()).await }
+        });
+        let Some(Event::ApprovalRequired { call, .. }) = notes.recv().await else {
+            panic!("the ask reaches the stream first");
+        };
+        assert!(asks.answer(call.id, Decision::Allow, DecidedBy::User));
+        assert!(
+            !asks.answer(call.id, Decision::Allow, DecidedBy::User),
+            "answered once"
+        );
+        assert_eq!(waiting.await.ok(), Some(Decision::Allow));
+        let Some(Event::ApprovalDecided { by, .. }) = notes.recv().await else {
+            panic!("the answer is recorded");
+        };
+        assert_eq!(by, DecidedBy::User);
     }
 }

@@ -166,7 +166,8 @@ impl LiveSession {
     ) -> Result<Arc<Self>, AppError> {
         let config = app.config(&cwd)?;
         let (opened, roots) = crate::external::open(&app, &config, &cwd, agent).await?;
-        let id = SessionId::new();
+        // The session's asks already carry this id as their source (T52.5).
+        let id = opened.session.id();
         let events = tee(Arc::clone(&app), id, opened.events);
         let (asks, _) = mpsc::channel(1);
         let owner = Arc::clone(&app);

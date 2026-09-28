@@ -188,14 +188,17 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
 
 /// What a session driven by an external ACP agent does with an intent
 /// (T52.4, DT§3.3.1): the agent owns the model, mode, history and files, so
-/// only a prompt, a cancel and a rename mean anything; the rest is refused
-/// by name.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// only a prompt, a cancel, an answer to its own permission request (T52.5)
+/// and a rename mean anything; the rest is refused by name.
+#[derive(Debug, Clone, PartialEq)]
 pub enum AgentDispatch {
     /// `session/prompt`, after the one in flight.
     Prompt(String),
     /// `session/cancel`.
     Cancel,
+    /// The user's answer to one of the agent's `session/request_permission`
+    /// asks, waiting in the inbox (T52.5).
+    Approve { call: CallId, decision: Decision },
     /// The session's title in `cox.db`, as for any session.
     Rename(String),
     /// Not available in an agent's session; the intent's name.
@@ -229,7 +232,7 @@ pub fn agent_dispatch(intent: Intent) -> Result<AgentDispatch, IntentError> {
         Intent::Interrupt => AgentDispatch::Cancel,
         Intent::Rename { title } if title.trim().is_empty() => return Err(IntentError::Empty),
         Intent::Rename { title } => AgentDispatch::Rename(title),
-        Intent::Approve { .. } => AgentDispatch::Refused("Approve"),
+        Intent::Approve { call, decision } => AgentDispatch::Approve { call, decision },
         Intent::Answer { .. } => AgentDispatch::Refused("Answer"),
         Intent::Compact { .. } => AgentDispatch::Refused("Compact"),
         Intent::SetMode { .. } => AgentDispatch::Refused("SetMode"),

@@ -312,10 +312,6 @@ fn pick(options: &[PermissionOption], decision: &Decision) -> RequestPermissionO
         })
 }
 
-/// The agent's tool call in the shape the engine judges. Its kind picks the
-/// cox tool whose rules apply; an unknown kind cannot be shown read-only, so
-/// it is judged as `bash`. The subject is sanitized because the approval
-/// prompt shows it.
 /// The cox tool and risk an ACP tool kind stands for. Shared by the
 /// permission request here and the update fold (`client_events`), so a call
 /// is rated the same whether the agent asks about it or only reports it.
@@ -330,6 +326,10 @@ pub(crate) fn kind_tool(kind: Option<ToolKind>) -> (&'static str, Risk) {
     }
 }
 
+/// The agent's tool call in the shape the engine judges. Its kind picks the
+/// cox tool whose rules apply; an unknown kind cannot be shown read-only, so
+/// it is judged as `bash`. The subject is sanitized because the approval
+/// prompt shows it.
 fn tool_call_for(host: &ClientHost, req: &RequestPermissionRequest) -> ToolCall {
     let f = &req.tool_call.fields;
     let (name, risk) = kind_tool(f.kind);

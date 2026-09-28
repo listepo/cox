@@ -3,7 +3,8 @@
 //! to it. The process, the ACP connection and the event fold are
 //! `cox_session::acp_session`'s; `live.rs` runs the result like any other
 //! session, so the timeline, inbox and controller do not know the
-//! difference (DT-7).
+//! difference (DT-7). The agent's permission asks reach the inbox the
+//! same way, and an `Approve` intent answers them (T52.5).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -46,7 +47,7 @@ pub(crate) async fn open(
             .ok_or(ProviderError::Auth)
     };
     let path = std::env::var_os("PATH");
-    let opened = acp_session::open(agent, config, cwd, &roots, path.as_deref(), key, None).await?;
+    let opened = acp_session::open(agent, config, cwd, &roots, path.as_deref(), key).await?;
     Ok((opened, roots))
 }
 
@@ -60,6 +61,12 @@ pub(crate) fn send(
     let delivered = match agent_dispatch(intent)? {
         AgentDispatch::Prompt(text) => acp.prompt(text),
         AgentDispatch::Cancel => acp.cancel(),
+        // A stale answer (the ask timed out, or was answered from another
+        // window) finds nothing waiting; the inbox already shows it decided.
+        AgentDispatch::Approve { call, decision } => {
+            acp.approve(call, decision);
+            true
+        }
         AgentDispatch::Rename(title) => return app.rename(id, &title).map(|_| ()),
         AgentDispatch::Refused(intent) => {
             return Err(AppError::Unsupported {
