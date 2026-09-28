@@ -353,7 +353,8 @@ component.
 | `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
 | `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text`/`trash` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
 | `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel; a row that names a thing (an MCP server, a check) sets its title semibold (`namesItem`, the mockup's `<b>`) | `.group .gr` |
-| `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent | `.sel`, Add key |
+| `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent. Its well is `settingWell(width:)`, which `KeySheet`'s field shares | text well |
+| `SettingPopUp(label, selection:, options:, title:)` | the selection's title in `font.control` and a micro `chevron.down` on `surface.window`, `radius.s`, a hairline, e1, `size.buttonHeightSmall` high; a menu with the selection checked. `SettingsStore` gives an enum with more than three options, or a tier's model from the catalog, this instead of CoxSegmented (T37.45.2) | `.sel` |
 | `ChecklistRow(title, detail:, status:, symbol:, action:, perform:)` | status symbol in its colour (passed `checkmark` in `status.success`, warning, missing `xmark.octagon` in `status.danger`, a step to take in `accent`) in one `size.iconTile` column, SettingLabel, then the fix button (`CoxButtonStyle` small: primary for a step, secondary for a fix); SettingRow's insets | onboarding `.group .gr` |
 
 ### 6.4 Organisms
@@ -392,8 +393,10 @@ It holds no styling of its own; it takes `MainScreenState` and reports `MainScre
 
 `SettingsScreen` = `ShellPane(.window)` holding `SettingsSidebar` + `ShellPane(.column)` with the page's
 title (`font.transcript.h1`: the mockup's 20 pt `h1` has no token) over one
-`SettingsGroupBox` per config table of the selected page: the provider's `SettingField` key row, then a
-`SettingRow` per setting (LabeledToggle, LabeledSlider, CoxSegmented or SettingField). It takes
+`SettingsGroupBox` per config table of the selected page: the provider's `KeyRow` — whether the Keychain
+holds a key, never the key, and Add key (primary) or Change key (secondary) opening `KeySheet`, a secure
+field whose value goes only to `.storeKey` — then a `SettingRow` per setting (LabeledToggle, LabeledSlider,
+CoxSegmented, SettingPopUp or SettingField). It takes
 `SettingsScreenState` and reports `SettingsScreenIntent`; `CoxModel`'s `SettingsStore.tables(in:)` holds
 the titles, details and controls the app copies into that state. Each page's tile is a macOS system
 colour, flat as in the mockup (A96): General `systemGray`, Models & Providers `systemPurple`,

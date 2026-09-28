@@ -64,6 +64,8 @@ struct SettingsWindow: View {
         dragged[field.id].map { .slider($0, range: range, text: $0.formatted()) }
           ?? .slider(value, range: range, text: text)
       case .choice(let value, let options): .choice(value, options: options)
+      case .menu(let value, let options):
+        .menu(value, options: options.map { .init(value: $0.value, title: $0.title) })
       case .field(let text): .field(text)
       case .json(let text): .json(text)
       }

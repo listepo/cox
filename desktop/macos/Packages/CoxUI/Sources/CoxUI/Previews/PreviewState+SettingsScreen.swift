@@ -75,7 +75,7 @@ extension PreviewState {
     ],
     userFile: userFile, projectFile: projectFile)
 
-  private static func field(
+  static func field(
     _ key: String, _ source: SettingSource, _ control: SettingsScreen.Control,
     detail: String? = nil
   ) -> SettingsScreen.Field {
