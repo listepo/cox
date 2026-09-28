@@ -28,6 +28,11 @@
 - T37.33. Performance budget suite
 - T37.44.2. Style the app from the Figma file
 - T37.44.3. Figma text in SF Pro and SF Mono
+- T37.44.4. Pixel diff of a CoxUI snapshot against its Figma or mockup frame
+- T37.44.5. Settings and onboarding screens match the Figma frames
+- T37.44.6. Inspector and review screens match the Figma frames
+- T37.44.7. Approval and composer screens match the Figma frames
+- T37.44.8. Navigation screens match the Figma frames
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows

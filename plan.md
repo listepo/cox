@@ -34,6 +34,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.44.3 | todo | P3 | 2 | 0% | |
+| T37.44.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T37.44.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.44.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.44.7 | todo | P2 | 3 | 0% | |
+| T37.44.8 | todo | P2 | 3 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2783,6 +2788,36 @@ Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and
 Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
 Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
 
+#### T37.44.4 Pixel diff of a CoxUI snapshot against its Figma or mockup frame
+
+Depends: — · Size: ~120 · Files: `desktop/design` (a script, its test, `package.json`), `DESIGN.md` §2
+Goal: A119. One command takes a CoxUI snapshot PNG and the matching frame (a Figma export or `mockups/screens/<id>.png`), scales them to the same size and writes a diff image plus a short report: the share of differing pixels and the bounding boxes of the largest differing regions, so an agent sees where spacing, colour or type drift without comparing by eye. Prefer a maintained library (e.g. `pixelmatch`) over custom code.
+Check: a test with two small PNGs that differ in one known rectangle reports that rectangle; the command runs on a real CoxUI snapshot and its mockup frame; `DESIGN.md` §2 says how to use it.
+
+#### T37.44.5 Settings and onboarding screens match the Figma frames
+
+Depends: T37.44.1 · Size: ~150 · Files: CoxUI settings and first-run views, their snapshots
+Goal: A114, A119. The Figma page "Settings & onboarding" frames are compared with the CoxUI snapshots of the same screens; every difference in layout, spacing, radius, colour or type is fixed through the tokens (no raw values), snapshots re-recorded on purpose. Iterate in CoxUI alone (no XCFramework).
+Check: per screen, the snapshot next to the frame matches by eye (or by the T37.44.4 diff once it exists); CoxUI tests pass; swift-format and swiftlint strict clean.
+
+#### T37.44.6 Inspector and review screens match the Figma frames
+
+Depends: T37.44.1 · Size: ~150 · Files: CoxUI inspector, review and diff views, their snapshots
+Goal: A114, A119. The Figma page "Inspector & review" frames are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. Iterate in CoxUI alone.
+Check: as T37.44.5.
+
+#### T37.44.7 Approval and composer screens match the Figma frames
+
+Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI approval, decision and composer views, their snapshots
+Goal: A114, A119. The Figma pages "Approvals" and "Composer" are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2, which touches the same main-screen parts.
+Check: as T37.44.5.
+
+#### T37.44.8 Navigation screens match the Figma frames
+
+Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI sidebar, inbox, palette and navigation views, their snapshots
+Goal: A114, A119. The Figma page "Navigation" is compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2.
+Check: as T37.44.5.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -2962,6 +2997,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A116 T37.22.12 — by the creator (2026-09-28): the model pill also drops a trailing " (latest)" from a models.dev name. Why: haiku read `Haiku 4.5 (latest)`.
 - A117 T37.22.13 — by the creator (2026-09-28): the catalog is refreshed with a full `cox-vendor models` run, accepting the new `medium` efforts and the OpenRouter deepseek-v4-pro price. Why: T37.22.7 wrote only names and left the rest of models.dev's changes pending.
 - A118 T37.44.3 — by the creator (2026-09-28): the Figma file uses SF Pro and SF Mono, which the creator installs locally; no substitute font. Why: the app draws in SF, and a substitute would change the metrics being compared in T37.44.2.
+- A119 T37.44.4–T37.44.8 — faster layout work, by the creator (2026-09-28): layout fixes iterate in the CoxUI package alone (it depends on neither the Rust core nor the XCFramework), compare a snapshot with its frame by a pixel-diff command, and split the Figma comparison by page so agents work on separate screens in parallel. Why: each layout check was rebuilding the XCFramework and the app and one agent at a time owned every screen.
 
 ## 7. Risk register
 
