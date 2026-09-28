@@ -6713,3 +6713,225 @@ Deviations: the field existed (T37.6); only its doc changed, and `docs/config.js
 Check: `cargo fmt` only (no-build rule, 2026-09-29).
 
 Not done: the verification pass runs `nextest -p cox-provider-openai` and `-p cox-protocol` (the schema drift test; regenerate if it fails).
+
+### T43.0. Amend the repo-map gate doc to the creator's decision
+
+Model: claude-haiku · Status: open · Depends: - · Size: ~40 · Priority: P2 · Complexity: 1
+
+Goal: the gate doc matches what P43 builds.
+
+Files:
+- `docs/design/v0.2-repomap.md`
+
+Steps:
+1. Replace "ranked by nucleo against recent prompts" with git-recency ranking (uncommitted files first, then `git log` order, path order outside git).
+2. Replace "rebuild on edit/write" with: built once at session start; `/repomap refresh` or compaction only; never mid-turn, never automatic.
+3. Add: the map text is archived and recorded by `Event::RepoMapBuilt` so resume rebuilds the same bytes (invariant 6); default budget 0 (off) until T43.6.
+4. Add falsifier 3: stale map after many edits leads to wrong lookups — then the refresh trigger, not placement, changes.
+
+Check:
+```bash
+grep -n "recent prompts\|rebuild on" docs/design/v0.2-repomap.md && exit 1 || true
+mise exec -- cargo nextest run -p cox docs
+```
+
+Done when: the doc states the decision and cites §6 A74.
+
+Out of scope: code.
+Status: done 2026-09-29
+Result: `docs/design/v0.2-repomap.md` rewritten to A74: git-recency ranking, last in system[2], files the Engine denies left out, built once per session (changes only on `/repomap refresh` or compaction), archived and replayed on resume, budget 0 until T43.6. §1.9 carries A74's two cache-prefix exceptions.
+
+Deviations: none.
+
+Check: `grep -E 'recent prompts|rebuild on' docs/design/v0.2-repomap.md` finds nothing.
+
+Not done: none.
+
+### T43.1. Repo-map builder in `cox-tools`
+
+Model: claude-sonnet-5 · Status: open · Depends: T43.0 · Size: ~180 · Priority: P2 · Complexity: 3
+
+Goal: a pure-ish builder that returns deterministic map text for a root, a byte budget and an admit filter.
+
+Files:
+- `crates/cox-tools/src/repomap.rs` (new)
+- `crates/cox-tools/src/git.rs`
+- `crates/cox-tools/src/lib.rs`
+
+Steps:
+1. `git.rs`: `pub async fn recent_changes(dir: &Path, commits: usize) -> Vec<String>` via the private `git()` helper: `status --porcelain -z` paths first, then `log -n <commits> --name-only --format=` in order, deduplicated; empty outside a git repo.
+2. `repomap.rs` (`//!` header: "the session repo map; separate because it is the only whole-tree reader in cox-tools"): `pub async fn build(root: &Path, budget_bytes: usize, admit: &dyn Fn(&Path) -> bool) -> String`. Order = `recent_changes` ∩ `cox_search::glob::workspace_files(root)`, then the remaining files by path. Each path goes through `crate::path::confine` (skip on error) and `admit`; skip binaries and files over the `read` size cap; append `path\n` + `outline(path, content)` indented; stop before `budget_bytes`, then one line `… N more files`.
+3. Output is a pure function of (file bytes, git order, budget): no timestamps, sorted ties.
+4. `lib.rs`: `pub mod repomap;`.
+5. Tests with a temp git repo: `repomap_lists_recently_changed_files_first`, `repomap_is_byte_identical_for_the_same_tree`, `repomap_respects_the_byte_budget`, `repomap_skips_files_the_filter_rejects`, `repomap_without_git_falls_back_to_path_order`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tools repomap_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the five tests pass; no new dependency (`deps.rs` unchanged).
+
+Out of scope: wiring into the session (T43.4).
+Status: done 2026-09-29
+Result: `crates/cox-tools/src/repomap.rs` `build(root, budget_bytes, admit)`: uncommitted files first, then `git log` order, then path; each file through `confine` and `admit`; binary and over-cap files skipped; cut at the byte budget with a `… N more files` line. `git::recent_changes` and `porcelain_paths` in `git.rs`.
+
+Deviations: 4 files (`read.rs` exposes its size caps as `pub(crate)`).
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-tools -E 'test(repomap_) | test(porcelain_paths)'` and clippy `-p cox-tools`.
+
+### T43.2. Protocol and config for the map
+
+Model: claude-sonnet-5 · Status: open · Depends: T43.0 · Size: ~80 · Priority: P2 · Complexity: 2
+
+Goal: the trait, event and budget key the core needs, with no I/O in core.
+
+Files:
+- `crates/cox-protocol/src/traits.rs`
+- `crates/cox-protocol/src/types.rs`
+- `crates/cox-protocol/src/config.rs`
+
+Steps:
+1. `traits.rs`: `#[async_trait] pub trait RepoMapper: Send + Sync { async fn build(&self, root: &Path, budget_bytes: usize, admit: &(dyn Fn(&Path) -> bool + Send + Sync)) -> String; }` next to `Worktrees`/`Checkpointer`.
+2. `types.rs`: `pub enum RepoMapReason { SessionStart, Refresh, Compaction }`; `Event::RepoMapBuilt { archive: ArchiveId, bytes: u64, reason: RepoMapReason }`.
+3. `config.rs`: `ContextConfig.repomap_budget_tokens: u32`, default `0` (off) until T43.6 (open question 4). Regenerate schemas.
+4. Tests: protocol schema drift passes; `repomap_budget_defaults_to_off`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-protocol repomap_budget_defaults_to_off
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: types exist and all drift tests pass.
+
+Out of scope: implementation of the trait (T43.4 wires `cox-tools`).
+Status: done 2026-09-29
+Result: a `RepoMapper` trait, `RepoMapReason` and `Event::RepoMapBuilt{archive,bytes,reason}`; config `context.repomap_budget_tokens`, default 0.
+
+Deviations: over the file limit (default.toml, docs/config.md, both schemas, the TUI match arm); the schemas and config.md were edited by hand.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-protocol` (`repomap_budget_defaults_to_off` and the config.jsonschema, config.md and protocol.jsonschema drift tests; regenerate if they fail).
+
+### T43.3. system[2] carries the map
+
+Model: claude-sonnet-5 · Status: open · Depends: T43.2 · Size: ~150 · Priority: P2 · Complexity: 3
+
+Goal: `context::assemble` places stable text in system[2] with the map last, without growing the argument list.
+
+Files:
+- `crates/cox-core/src/context.rs`
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/cache_diag.rs`
+
+Steps:
+1. `context.rs`: `pub struct Stable<'a> { pub skills_index: &'a str, pub repomap: &'a str }`; `assemble_with_skills` takes `&Stable` instead of `skills_index: &str`; system[2] = instructions, skills index, then `"<repo_map>\n{map}\n</repo_map>"` when non-empty. `is_minimal(config)` drops the map like it drops the skills index. Breakpoint stays after system[2] (`breakpoints()` unchanged).
+2. `Breakdown` gains `repomap` tokens; `cache_diag.rs` names index 2 as "system[2] instructions + repo map" when a map is present, so a prefix miss after a refresh is attributed.
+3. `session.rs`: `Inner.repomap: Option<String>` (empty for now), passed through the one call site (~1340).
+4. Tests: `repomap_sits_last_in_system_two`, `minimal_profile_omits_repomap`, `prefix_bytes_identical_between_turns` extended with a map, `breakdown_counts_repomap_tokens`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core repomap_sits_last minimal_profile_omits_repomap prefix_bytes_identical_between_turns breakdown_counts_repomap
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the tests pass and no existing request snapshot changes while the map is empty.
+
+Out of scope: building the map (T43.4); instruction files (open question 8).
+Status: done 2026-09-29
+Result: `assemble_with_skills` takes `Stable{instructions, skills_index, repomap}`; the map goes last in system[2] inside `<repo_map>…</repo_map>`, dropped in minimal mode; `Breakdown` gains `repomap` (images and the map share its ten segments after the T40.3 merge); the cache-miss diagnosis names the map.
+
+Deviations: `Stable` carries the instruction files too, since they already live in system[2].
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-core -E 'test(context::)'` plus `cache_diag_names_the_repo_map` and `breakdown_counts_images` (merged with T40.3 by hand).
+
+### T43.4. Build the map once at session start; resume replays it
+
+Model: claude-opus-5.5 · Status: open · Depends: T43.1, T43.3 · Size: ~190 · Priority: P2 · Complexity: 4
+
+Goal: the first request of a session carries the map; the map never changes afterwards on its own; a resumed session sends the same bytes.
+
+Files:
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/rollout.rs`
+- `crates/cox/src/session.rs`
+
+Steps:
+1. Core: `Session::set_repo_mapper(Arc<dyn RepoMapper>)` (`OnceLock`, like `set_worktrees`).
+2. On the first submit, in the same slot as the SessionStart hook (`Inner.startup`), before the first request: if `repomap_budget_tokens > 0`, a mapper is installed, the session is a top session (`agent.is_none()`, open question 5) and no map was restored — build with `budget × 4` bytes and an `admit` closure that calls `self.engine.decide` on a synthetic `read { path }` call in the live mode (Deny ⇒ skip), so the map never shows a file the user denied. Archive the text (`Archive::put`, archive row before use), set `Inner.repomap`, emit `RepoMapBuilt { reason: SessionStart }`.
+3. `rollout.rs`: `History.repomap: Option<ArchiveId>` = the last `RepoMapBuilt` not dropped; resume fetches it from the archive and sets `Inner.repomap` without rebuilding (invariant 6). Missing archive ⇒ `Notice` Warn, no map (fail open).
+4. `crates/cox/src/session.rs`: install `cox_tools::repomap` behind a small `RepoMapper` impl next to `set_worktrees`.
+5. Tests: `repomap_is_built_once_per_session`, `repomap_is_not_rebuilt_after_edit`, `resume_builds_identical_request` extended with a map, `repomap_skips_denied_paths`, `subagent_gets_no_repomap`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core repomap_ resume_builds_identical_request subagent_gets_no_repomap
+COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- config set context.repomap_budget_tokens 2000
+COX_HOME=/tmp/cox-scratch COX_PROVIDER=scripted mise exec -- cargo run -- run -p hi --output-format stream-json | grep RepoMapBuilt
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the tests pass; the scratch run shows exactly one `RepoMapBuilt`; the Engine is the only filter (no second path check).
+
+Out of scope: refresh and compaction (T43.5).
+Status: done 2026-09-29
+Result: `crates/cox-core/src/repomap.rs` builds the map on a top-level session's first submit, after SessionStart, archives it before use and records `RepoMapBuilt`; resume reads it back from `History.repomap` (missing archive: a warning, no map); files are admitted through `Engine::decide` as a synthetic `read`; subagents get none; `cox-session` installs a `ToolsRepoMapper`.
+
+Deviations: over the file limit; installed in `cox-session` (session assembly moved there in T37.1). Merge with T42.3: the resume tuple gained `repomap_archive` beside the mode preset.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-core -E 'test(repomap_) | test(subagent_gets_no_repomap) | test(resume_)'`, clippy `-p cox-core -p cox-session -p cox-tui` and a real-binary run with a scripted provider and `context.repomap_budget_tokens` set.
+
+### T43.5. `/repomap refresh` and the compaction rebuild
+
+Model: claude-sonnet-5 · Status: open · Depends: T43.4 · Size: ~140 · Priority: P2 · Complexity: 3
+
+Goal: the only two ways the map changes mid-session, each announced as a deliberate prefix change.
+
+Files:
+- `crates/cox-tui/src/commands.rs`
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/compact.rs`
+
+Steps:
+1. `commands.rs`: row `("repomap", "/repomap [refresh]", "show or rebuild the repo map")`; generic submit.
+2. `session.rs` `"repomap"` command: without args ⇒ `Notice` with byte size and archive id (`cox expand <id>`); `refresh` ⇒ idle-only; rebuild through one private `rebuild_repomap(reason)` shared with step 3; if bytes are unchanged ⇒ `Notice` "repo map unchanged, cache kept" and no event; if changed ⇒ archive, `RepoMapBuilt { reason: Refresh }`, `Notice` "repo map refreshed; the cached prefix restarts on the next request".
+3. `compact.rs`: at step 5 (instruction files re-read) call the same rebuild with `Compaction`; compaction already emits a new prefix, so no extra notice.
+4. Tests: `repomap_refresh_with_changed_tree_emits_one_event`, `repomap_refresh_unchanged_keeps_prefix_bytes`, `repomap_refresh_is_refused_mid_turn`, `compaction_rebuilds_repomap`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core repomap_refresh_ compaction_rebuilds_repomap compaction_keeps_last_two_turns_verbatim
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests pass; no other code path writes `Inner.repomap`.
+
+Out of scope: automatic refresh of any kind.
+Status: done 2026-09-29
+Result: `/repomap` shows the map's size and archive id; `/repomap refresh` runs only when idle (refused mid-turn), announces a changed map and records nothing when the bytes match; compaction rebuilds the map after the PostCompact hooks.
+
+Deviations: the command row lives in `cox-protocol/src/commands.rs`; `install_repomap` returns whether it installed.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-core -E 'test(repomap_refresh_) | test(compaction_)'`, `--test compact`, the cox-tui and cox-app completion tests, and re-records `screen_help_overlay` (new `/repomap` row).
