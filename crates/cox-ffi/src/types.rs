@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use cox_app::Holder;
 use cox_app::SessionInfo;
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
-use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
+use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, Dropped, FileChange,
@@ -284,7 +284,7 @@ pub struct StyledDoc {
 pub enum DocBlock {
     Text {
         kind: TextKind,
-        lines: Vec<Vec<StyledSpan>>,
+        lines: Vec<TextLine>,
     },
     Code {
         lang: String,
@@ -294,6 +294,14 @@ pub enum DocBlock {
         rows: Vec<Vec<String>>,
     },
     Rule,
+}
+
+#[uniffi::remote(Record)]
+pub struct TextLine {
+    pub quote: u8,
+    pub depth: u8,
+    pub marker: String,
+    pub spans: Vec<StyledSpan>,
 }
 
 #[uniffi::remote(Enum)]

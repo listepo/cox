@@ -22,7 +22,7 @@ private func reply(_ id: BlockID, _ blocks: [DocBlock]) -> Block {
 }
 
 private func paragraph(_ text: String) -> DocBlock {
-  .text(kind: .paragraph, lines: [[spans(text)]])
+  .text(kind: .paragraph, lines: [TextLine([spans(text)])])
 }
 
 private func thought(_ id: BlockID, _ text: String) -> Block {
@@ -43,7 +43,7 @@ func largeFixture(_ count: Int) -> [Block] {
           spans(" step ran before the compaction and what the model saw next. "),
         ]
       }
-      return reply(id, [.text(kind: .paragraph, lines: [sentences])])
+      return reply(id, [.text(kind: .paragraph, lines: [TextLine(sentences)])])
     case 1:
       let lines = (0..<(3 + index % 9)).map { line in
         [spans("let value\(line) = compute(block: \(index), line: \(line)) // step \(line)")]

@@ -197,7 +197,8 @@ final class DecorFragment: NSTextLayoutFragment {
   }
 }
 
-/// Gives a decorated paragraph its `DecorFragment`; holds no state, so every
+/// Gives a decorated paragraph its `DecorFragment` and a quote line its
+/// `QuoteFragment` (`TranscriptStructure.swift`); holds no state, so every
 /// transcript shares one.
 final class DecorLayout: NSObject, NSTextLayoutManagerDelegate {
   @MainActor static let shared = DecorLayout()
@@ -213,8 +214,9 @@ final class DecorLayout: NSObject, NSTextLayoutManagerDelegate {
       }
       ?? false
     let range = textElement.elementRange
-    return decorated
-      ? DecorFragment(textElement: textElement, range: range)
+    if decorated { return DecorFragment(textElement: textElement, range: range) }
+    return QuoteFragment.quoted(text)
+      ? QuoteFragment(textElement: textElement, range: range)
       : NSTextLayoutFragment(textElement: textElement, range: range)
   }
 }

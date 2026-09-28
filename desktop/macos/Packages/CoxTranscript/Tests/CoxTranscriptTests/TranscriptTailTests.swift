@@ -7,7 +7,7 @@ import CoxClient
 import Testing
 
 private func paragraph(_ text: String) -> DocBlock {
-  .text(kind: .paragraph, lines: [[Span(text: text)]])
+  .text(kind: .paragraph, lines: [TextLine([Span(text: text)])])
 }
 
 private func reply(_ id: BlockID, _ text: String) -> Block {

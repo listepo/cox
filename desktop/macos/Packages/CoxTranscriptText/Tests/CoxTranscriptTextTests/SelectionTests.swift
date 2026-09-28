@@ -26,7 +26,7 @@ let transcript: [Block] = [
     kind: .assistant(
       text: replySource,
       doc: StyledDoc(blocks: [
-        .text(kind: .paragraph, lines: [[Span(text: "Fixed it:")]]),
+        .text(kind: .paragraph, lines: [TextLine([Span(text: "Fixed it:")])]),
         .code(lang: "sh", lines: [[Span(text: "cargo nextest run -p cox-core")]]),
       ]))),
   Block(id: "k", turn: 2, kind: .thinking(text: "Next turn.")),
@@ -176,8 +176,8 @@ struct SelectionTests {
 
   @Test func aReplyWithoutItsSourceCopiesFromItsDoc() {
     let doc = StyledDoc(blocks: [
-      .text(kind: .heading(2), lines: [[Span(text: "Plan")]]),
-      .text(kind: .paragraph, lines: [[bold("Run"), Span(text: " it")]]),
+      .text(kind: .heading(2), lines: [TextLine([Span(text: "Plan")])]),
+      .text(kind: .paragraph, lines: [TextLine([bold("Run"), Span(text: " it")])]),
       .code(lang: "", lines: [[Span(text: "a ``` b")]]),
       .table(rows: [["k", "v"], ["x", "1"]]),
       .rule,

@@ -4,7 +4,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR14RG31MWHWW0RJZS6VQS",
+          "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -30,7 +30,7 @@
             "estimated": false
           },
           "turn": {
-            "turn": "01M3KR14RG31MWHWW0RJZS6VQS",
+            "turn": "01M3KS3FDK76M30R4RDNJ7E63X",
             "tally": {
               "sent": 0,
               "received": 0,
@@ -110,7 +110,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR14RGCVZC85VJGPRRA08S",
+          "id": "item:01M3KS3FDKGE0HCTHSCKMZSHGJ",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -118,29 +118,43 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KR14RG31MWHWW0RJZS6VQS"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KR14RM8G1X0GBER3C37ZC0",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "",
-            "doc": {
-              "blocks": []
-            }
-          }
-        },
-        "after": "item:01M3KR14RGCVZC85VJGPRRA08S"
+        "after": "turn:01M3KS3FDK76M30R4RDNJ7E63X"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR14RG31MWHWW0RJZS6VQS",
+          "id": "item:01M3KS3FDN3357G1STSSFR5VV7",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Writing the module.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "Writing the module."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KS3FDKGE0HCTHSCKMZSHGJ"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -163,34 +177,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR14RM8G1X0GBER3C37ZC0",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "Writing the module.",
-            "doc": {
-              "blocks": [
-                {
-                  "type": "text",
-                  "kind": "paragraph",
-                  "lines": [
-                    [
-                      {
-                        "text": "Writing the module."
-                      }
-                    ]
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        "after": "item:01M3KR14RGCVZC85VJGPRRA08S"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KR14RMTYEBKZH820T9HP3B",
+          "id": "call:01M3KS3FDPRPDQVSDTVZMR1DZ9",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -201,14 +188,14 @@
             "state": "done",
             "tail": "wrote /project/src/lib.rs (152 bytes)",
             "archive": {
-              "id": "01M3KR14RQ1MXZQ6T2SADDN2SM",
+              "id": "01M3KS3FDRR0BT2RCVC7JXR6Z9",
               "bytes": 104
             },
             "diff": null,
             "duration_ms": 1
           }
         },
-        "after": "item:01M3KR14RM8G1X0GBER3C37ZC0"
+        "after": "item:01M3KS3FDN3357G1STSSFR5VV7"
       },
       {
         "op": "upsert",
@@ -222,12 +209,12 @@
             ]
           }
         },
-        "after": "call:01M3KR14RMTYEBKZH820T9HP3B"
+        "after": "call:01M3KS3FDPRPDQVSDTVZMR1DZ9"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR14RSN14HKRMWN9JFENC1",
+          "id": "item:01M3KS3FDSABMPZZMVGQVBE2V8",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -238,11 +225,13 @@
                   "type": "text",
                   "kind": "paragraph",
                   "lines": [
-                    [
-                      {
-                        "text": "Capping the wait."
-                      }
-                    ]
+                    {
+                      "spans": [
+                        {
+                          "text": "Capping the wait."
+                        }
+                      ]
+                    }
                   ]
                 }
               ]
@@ -265,7 +254,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KR14RG31MWHWW0RJZS6VQS",
+            "turn": "01M3KS3FDK76M30R4RDNJ7E63X",
             "tally": {
               "sent": 7504,
               "received": 100,
@@ -278,7 +267,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 1948186.5284974093,
+            "tok_per_s": 2207401.8410670673,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -287,12 +276,12 @@
           "text": {
             "sent": "7.5k",
             "received": "100",
-            "rate": "1948187",
-            "spoken": "7.5 thousand tokens sent, 100 received, 1948187 tokens per second",
+            "rate": "2207402",
+            "spoken": "7.5 thousand tokens sent, 100 received, 2207402 tokens per second",
             "heading": "This turn · 2 requests",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 279785 tok/s · first token 0 ms · peak 1948187 tok/s",
+            "rate_detail": "avg 428725 tok/s · first token 0 ms · peak 2207402 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -345,7 +334,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KR14RSRQ86C3B18FRPKQAS",
+          "id": "call:01M3KS3FDS6E3PTGD89Q36ECBE",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -356,7 +345,7 @@
             "state": "done",
             "tail": "edited /project/src/lib.rs",
             "archive": {
-              "id": "01M3KR14S3EFFVNBXY1RNYFRA2",
+              "id": "01M3KS3FE4RS04A8MGDCTT3E1V",
               "bytes": 93
             },
             "diff": {
@@ -995,10 +984,10 @@
                 }
               ]
             },
-            "duration_ms": 2
+            "duration_ms": 1
           }
         },
-        "after": "item:01M3KR14RSN14HKRMWN9JFENC1"
+        "after": "item:01M3KS3FDSABMPZZMVGQVBE2V8"
       },
       {
         "op": "upsert",
@@ -1012,29 +1001,43 @@
             ]
           }
         },
-        "after": "call:01M3KR14RSRQ86C3B18FRPKQAS"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KR14S4PF1JHP918X26NYSF",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "",
-            "doc": {
-              "blocks": []
-            }
-          }
-        },
-        "after": "checkpoint:17"
+        "after": "call:01M3KS3FDS6E3PTGD89Q36ECBE"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR14RG31MWHWW0RJZS6VQS",
+          "id": "item:01M3KS3FE5P3WKMFW1CEWGS63T",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "The backoff is capped at five seconds.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "The backoff is capped at five seconds."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "checkpoint:17"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -1057,33 +1060,6 @@
         "after": null
       },
       {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KR14S4PF1JHP918X26NYSF",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "The backoff is capped at five seconds.",
-            "doc": {
-              "blocks": [
-                {
-                  "type": "text",
-                  "kind": "paragraph",
-                  "lines": [
-                    [
-                      {
-                        "text": "The backoff is capped at five seconds."
-                      }
-                    ]
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        "after": "checkpoint:17"
-      },
-      {
         "op": "usage",
         "usage": {
           "session": {
@@ -1097,7 +1073,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KR14RG31MWHWW0RJZS6VQS",
+            "turn": "01M3KS3FDK76M30R4RDNJ7E63X",
             "tally": {
               "sent": 11375,
               "received": 110,
@@ -1110,7 +1086,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 363081.8386464309,
+            "tok_per_s": 304182.5095057034,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -1119,12 +1095,12 @@
           "text": {
             "sent": "11.4k",
             "received": "110",
-            "rate": "363082",
-            "spoken": "11 thousand tokens sent, 110 received, 363082 tokens per second",
+            "rate": "304183",
+            "spoken": "11 thousand tokens sent, 110 received, 304183 tokens per second",
             "heading": "Last turn · 3 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 285745 tok/s · first token 0 ms · peak 1948187 tok/s",
+            "rate_detail": "avg 413340 tok/s · first token 0 ms · peak 2207402 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -1179,7 +1155,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KR14RG31MWHWW0RJZS6VQS",
+      "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -1200,7 +1176,7 @@
       }
     },
     {
-      "id": "item:01M3KR14RGCVZC85VJGPRRA08S",
+      "id": "item:01M3KS3FDKGE0HCTHSCKMZSHGJ",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -1209,7 +1185,7 @@
       }
     },
     {
-      "id": "item:01M3KR14RM8G1X0GBER3C37ZC0",
+      "id": "item:01M3KS3FDN3357G1STSSFR5VV7",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1220,11 +1196,13 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Writing the module."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Writing the module."
+                    }
+                  ]
+                }
               ]
             }
           ]
@@ -1232,7 +1210,7 @@
       }
     },
     {
-      "id": "call:01M3KR14RMTYEBKZH820T9HP3B",
+      "id": "call:01M3KS3FDPRPDQVSDTVZMR1DZ9",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1243,7 +1221,7 @@
         "state": "done",
         "tail": "wrote /project/src/lib.rs (152 bytes)",
         "archive": {
-          "id": "01M3KR14RQ1MXZQ6T2SADDN2SM",
+          "id": "01M3KS3FDRR0BT2RCVC7JXR6Z9",
           "bytes": 104
         },
         "diff": null,
@@ -1261,7 +1239,7 @@
       }
     },
     {
-      "id": "item:01M3KR14RSN14HKRMWN9JFENC1",
+      "id": "item:01M3KS3FDSABMPZZMVGQVBE2V8",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1272,11 +1250,13 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Capping the wait."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Capping the wait."
+                    }
+                  ]
+                }
               ]
             }
           ]
@@ -1284,7 +1264,7 @@
       }
     },
     {
-      "id": "call:01M3KR14RSRQ86C3B18FRPKQAS",
+      "id": "call:01M3KS3FDS6E3PTGD89Q36ECBE",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1295,7 +1275,7 @@
         "state": "done",
         "tail": "edited /project/src/lib.rs",
         "archive": {
-          "id": "01M3KR14S3EFFVNBXY1RNYFRA2",
+          "id": "01M3KS3FE4RS04A8MGDCTT3E1V",
           "bytes": 93
         },
         "diff": {
@@ -1934,7 +1914,7 @@
             }
           ]
         },
-        "duration_ms": 2
+        "duration_ms": 1
       }
     },
     {
@@ -1948,7 +1928,7 @@
       }
     },
     {
-      "id": "item:01M3KR14S4PF1JHP918X26NYSF",
+      "id": "item:01M3KS3FE5P3WKMFW1CEWGS63T",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1959,11 +1939,13 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "The backoff is capped at five seconds."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "The backoff is capped at five seconds."
+                    }
+                  ]
+                }
               ]
             }
           ]

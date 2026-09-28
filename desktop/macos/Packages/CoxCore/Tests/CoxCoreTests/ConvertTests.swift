@@ -25,17 +25,21 @@ import Testing
   #expect(CoxClient.TimelinePatch(live) == want)
 }
 
-@Test func aDocTailKeepsSpanStyleAndColour() {
+@Test func aDocTailKeepsSpanStyleColourAndLineStructure() {
   let span = CoxFFIBindings.Span(
     text: "fn", token: .accent, rgb: 0xB48EAD, bold: true, italic: false, strike: false,
     underline: false, link: nil)
   let live = CoxFFIBindings.TimelinePatch.docTail(
     id: "item:2", from: 1,
-    blocks: [.code(lang: "rust", lines: [[span]]), .text(kind: .heading(2), lines: [])])
+    blocks: [
+      .code(lang: "rust", lines: [[span]]), .text(kind: .heading(2), lines: []),
+      .text(kind: .list, lines: [.init(quote: 1, depth: 2, marker: "3.", spans: [span])]),
+    ])
   var want = CoxClient.Span(text: "fn")
   (want.token, want.rgb, want.bold) = (.accent, 0xB48EAD, true)
   let blocks: [CoxClient.DocBlock] = [
     .code(lang: "rust", lines: [[want]]), .text(kind: .heading(2), lines: []),
+    .text(kind: .list, lines: [CoxClient.TextLine([want], quote: 1, depth: 2, marker: "3.")]),
   ]
   #expect(CoxClient.TimelinePatch(live) == .docTail(id: "item:2", from: 1, blocks: blocks))
 }

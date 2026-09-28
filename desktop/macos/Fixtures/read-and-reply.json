@@ -4,7 +4,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR1BVWA35A3X1F64NEY4Z9",
+          "id": "turn:01M3KS3NPK253W43VG6ES27B4F",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -30,7 +30,7 @@
             "estimated": false
           },
           "turn": {
-            "turn": "01M3KR1BVWA35A3X1F64NEY4Z9",
+            "turn": "01M3KS3NPK253W43VG6ES27B4F",
             "tally": {
               "sent": 0,
               "received": 0,
@@ -110,7 +110,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR1BVWVCYS0VG2KDRG6KDV",
+          "id": "item:01M3KS3NPK3YV2KS3Q272CBKQ5",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -118,29 +118,43 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KR1BVWA35A3X1F64NEY4Z9"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KR1BVZCACK8CZH4VVR5AMX",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "",
-            "doc": {
-              "blocks": []
-            }
-          }
-        },
-        "after": "item:01M3KR1BVWVCYS0VG2KDRG6KDV"
+        "after": "turn:01M3KS3NPK253W43VG6ES27B4F"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR1BVWA35A3X1F64NEY4Z9",
+          "id": "item:01M3KS3NPPR2Q3AQXV6GHEVK7V",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Reading the notes.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "Reading the notes."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KS3NPK3YV2KS3Q272CBKQ5"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KS3NPK253W43VG6ES27B4F",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -165,34 +179,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR1BVZCACK8CZH4VVR5AMX",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "Reading the notes.",
-            "doc": {
-              "blocks": [
-                {
-                  "type": "text",
-                  "kind": "paragraph",
-                  "lines": [
-                    [
-                      {
-                        "text": "Reading the notes."
-                      }
-                    ]
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        "after": "item:01M3KR1BVWVCYS0VG2KDRG6KDV"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KR1BVZDS8A4FWJ5ZSXHR8J",
+          "id": "call:01M3KS3NPP2GC9MTT01HQHKVG3",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -203,19 +190,19 @@
             "state": "done",
             "tail": "1\thello\n\n[1 lines total]",
             "archive": {
-              "id": "01M3KR1BW2ETMPSAXXGPBP8DDB",
+              "id": "01M3KS3NPRGFVPJJ004X0BWHR5",
               "bytes": 24
             },
             "diff": null,
             "duration_ms": 1
           }
         },
-        "after": "item:01M3KR1BVZCACK8CZH4VVR5AMX"
+        "after": "item:01M3KS3NPPR2Q3AQXV6GHEVK7V"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR1BW32XABHFDKBWWWYRHN",
+          "id": "item:01M3KS3NPSCD46AZB8MMKC9P73",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -228,34 +215,34 @@
                     "heading": 2
                   },
                   "lines": [
-                    [
-                      {
-                        "text": "## ",
-                        "bold": true
-                      },
-                      {
-                        "text": "Notes",
-                        "bold": true
-                      }
-                    ]
+                    {
+                      "spans": [
+                        {
+                          "text": "Notes",
+                          "bold": true
+                        }
+                      ]
+                    }
                   ]
                 },
                 {
                   "type": "text",
                   "kind": "paragraph",
                   "lines": [
-                    [
-                      {
-                        "text": "The file says "
-                      },
-                      {
-                        "text": "hello",
-                        "bold": true
-                      },
-                      {
-                        "text": ". Run it with:"
-                      }
-                    ]
+                    {
+                      "spans": [
+                        {
+                          "text": "The file says "
+                        },
+                        {
+                          "text": "hello",
+                          "bold": true
+                        },
+                        {
+                          "text": ". Run it with:"
+                        }
+                      ]
+                    }
                   ]
                 },
                 {
@@ -426,7 +413,7 @@
             }
           }
         },
-        "after": "call:01M3KR1BVZDS8A4FWJ5ZSXHR8J"
+        "after": "call:01M3KS3NPP2GC9MTT01HQHKVG3"
       },
       {
         "op": "usage",
@@ -442,7 +429,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KR1BVWA35A3X1F64NEY4Z9",
+            "turn": "01M3KS3NPK253W43VG6ES27B4F",
             "tally": {
               "sent": 7437,
               "received": 35,
@@ -455,7 +442,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 672639.7072671994,
+            "tok_per_s": 718555.9898827316,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -464,12 +451,12 @@
           "text": {
             "sent": "7.4k",
             "received": "35",
-            "rate": "672640",
-            "spoken": "7.4 thousand tokens sent, 35 received, 672640 tokens per second",
+            "rate": "718556",
+            "spoken": "7.4 thousand tokens sent, 35 received, 718556 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 113223 tok/s · first token 0 ms · peak 672640 tok/s",
+            "rate_detail": "avg 161570 tok/s · first token 0 ms · peak 718556 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -524,7 +511,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KR1BVWA35A3X1F64NEY4Z9",
+      "id": "turn:01M3KS3NPK253W43VG6ES27B4F",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -545,7 +532,7 @@
       }
     },
     {
-      "id": "item:01M3KR1BVWVCYS0VG2KDRG6KDV",
+      "id": "item:01M3KS3NPK3YV2KS3Q272CBKQ5",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -554,7 +541,7 @@
       }
     },
     {
-      "id": "item:01M3KR1BVZCACK8CZH4VVR5AMX",
+      "id": "item:01M3KS3NPPR2Q3AQXV6GHEVK7V",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -565,11 +552,13 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Reading the notes."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Reading the notes."
+                    }
+                  ]
+                }
               ]
             }
           ]
@@ -577,7 +566,7 @@
       }
     },
     {
-      "id": "call:01M3KR1BVZDS8A4FWJ5ZSXHR8J",
+      "id": "call:01M3KS3NPP2GC9MTT01HQHKVG3",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -588,7 +577,7 @@
         "state": "done",
         "tail": "1\thello\n\n[1 lines total]",
         "archive": {
-          "id": "01M3KR1BW2ETMPSAXXGPBP8DDB",
+          "id": "01M3KS3NPRGFVPJJ004X0BWHR5",
           "bytes": 24
         },
         "diff": null,
@@ -596,7 +585,7 @@
       }
     },
     {
-      "id": "item:01M3KR1BW32XABHFDKBWWWYRHN",
+      "id": "item:01M3KS3NPSCD46AZB8MMKC9P73",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -609,34 +598,34 @@
                 "heading": 2
               },
               "lines": [
-                [
-                  {
-                    "text": "## ",
-                    "bold": true
-                  },
-                  {
-                    "text": "Notes",
-                    "bold": true
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Notes",
+                      "bold": true
+                    }
+                  ]
+                }
               ]
             },
             {
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "The file says "
-                  },
-                  {
-                    "text": "hello",
-                    "bold": true
-                  },
-                  {
-                    "text": ". Run it with:"
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "The file says "
+                    },
+                    {
+                      "text": "hello",
+                      "bold": true
+                    },
+                    {
+                      "text": ". Run it with:"
+                    }
+                  ]
+                }
               ]
             },
             {

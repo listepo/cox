@@ -4,7 +4,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR18M43JTT58E5V107FSEW",
+          "id": "turn:01M3KS3JKNW4R7TGQD5DP6PN8Q",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -30,7 +30,7 @@
             "estimated": false
           },
           "turn": {
-            "turn": "01M3KR18M43JTT58E5V107FSEW",
+            "turn": "01M3KS3JKNW4R7TGQD5DP6PN8Q",
             "tally": {
               "sent": 0,
               "received": 0,
@@ -110,7 +110,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR18M40KAGJJT9S9RWEMTW",
+          "id": "item:01M3KS3JKN11N51BYX4DV1B32J",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -118,29 +118,43 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KR18M43JTT58E5V107FSEW"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KR18M8XZQD0DES5BXD3Q2Z",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "",
-            "doc": {
-              "blocks": []
-            }
-          }
-        },
-        "after": "item:01M3KR18M40KAGJJT9S9RWEMTW"
+        "after": "turn:01M3KS3JKNW4R7TGQD5DP6PN8Q"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR18M43JTT58E5V107FSEW",
+          "id": "item:01M3KS3JKQMMZJ6TFG7CCRJN2C",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Writing the summary.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "Writing the summary."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KS3JKN11N51BYX4DV1B32J"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KS3JKNW4R7TGQD5DP6PN8Q",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -174,7 +188,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KR18M43JTT58E5V107FSEW",
+            "turn": "01M3KS3JKNW4R7TGQD5DP6PN8Q",
             "tally": {
               "sent": 3710,
               "received": 16,
@@ -186,8 +200,8 @@
               "estimated": true
             },
             "thinking_tokens": 0,
-            "ttft_ms": 0,
-            "tok_per_s": 63639.292490165746,
+            "ttft_ms": 1,
+            "tok_per_s": 66701.40698280354,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -196,12 +210,12 @@
           "text": {
             "sent": "3.7k",
             "received": "16",
-            "rate": "63639",
-            "spoken": "3.7 thousand tokens sent, 16 received, 63639 tokens per second",
+            "rate": "66701",
+            "spoken": "3.7 thousand tokens sent, 16 received, 66701 tokens per second",
             "heading": "This turn · 1 request",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 63639 tok/s · first token 0 ms · peak 63639 tok/s",
+            "rate_detail": "avg 66701 tok/s · first token 1 ms · peak 66701 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -254,34 +268,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR18M8XZQD0DES5BXD3Q2Z",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "Writing the summary.",
-            "doc": {
-              "blocks": [
-                {
-                  "type": "text",
-                  "kind": "paragraph",
-                  "lines": [
-                    [
-                      {
-                        "text": "Writing the summary."
-                      }
-                    ]
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        "after": "item:01M3KR18M40KAGJJT9S9RWEMTW"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KR18M9NWHNQ8ZNC80TNZ76",
+          "id": "call:01M3KS3JKQ7FMFNW078QDS33Q8",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -296,16 +283,16 @@
             "duration_ms": 0
           }
         },
-        "after": "item:01M3KR18M8XZQD0DES5BXD3Q2Z"
+        "after": "item:01M3KS3JKQMMZJ6TFG7CCRJN2C"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KR18M9NWHNQ8ZNC80TNZ76",
+          "id": "approval:01M3KS3JKQ7FMFNW078QDS33Q8",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3KR18M9NWHNQ8ZNC80TNZ76",
+            "call": "01M3KS3JKQ7FMFNW078QDS33Q8",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -320,24 +307,24 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3KR18G4A88XQ3BMX8AE3HXX"
+              "session": "01M3KS3JFZBNMNN2XCXF6T8BVQ"
             },
             "decision": null,
             "by": null
           }
         },
-        "after": "call:01M3KR18M9NWHNQ8ZNC80TNZ76"
+        "after": "call:01M3KS3JKQ7FMFNW078QDS33Q8"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KR18M9NWHNQ8ZNC80TNZ76",
+          "id": "approval:01M3KS3JKQ7FMFNW078QDS33Q8",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3KR18M9NWHNQ8ZNC80TNZ76",
+            "call": "01M3KS3JKQ7FMFNW078QDS33Q8",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -352,7 +339,7 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3KR18G4A88XQ3BMX8AE3HXX"
+              "session": "01M3KS3JFZBNMNN2XCXF6T8BVQ"
             },
             "decision": {
               "type": "allow"
@@ -360,7 +347,7 @@
             "by": "user"
           }
         },
-        "after": "call:01M3KR18M9NWHNQ8ZNC80TNZ76"
+        "after": "call:01M3KS3JKQ7FMFNW078QDS33Q8"
       },
       {
         "op": "upsert",
@@ -374,12 +361,12 @@
             ]
           }
         },
-        "after": "approval:01M3KR18M9NWHNQ8ZNC80TNZ76"
+        "after": "approval:01M3KS3JKQ7FMFNW078QDS33Q8"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KR18M9NWHNQ8ZNC80TNZ76",
+          "id": "call:01M3KS3JKQ7FMFNW078QDS33Q8",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -390,19 +377,19 @@
             "state": "done",
             "tail": "wrote /project/summary.md (6 bytes)",
             "archive": {
-              "id": "01M3KR18MY01CD04FZR9Q1752Z",
+              "id": "01M3KS3JMBR7G5HXC2W9NB4QMB",
               "bytes": 102
             },
             "diff": null,
             "duration_ms": 1
           }
         },
-        "after": "item:01M3KR18M8XZQD0DES5BXD3Q2Z"
+        "after": "item:01M3KS3JKQMMZJ6TFG7CCRJN2C"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KR18MZS5WS4ZQVE19KD2A4",
+          "id": "item:01M3KS3JMCEQZXCVGVYCF9C7AR",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -413,18 +400,20 @@
                   "type": "text",
                   "kind": "paragraph",
                   "lines": [
-                    [
-                      {
-                        "text": "Wrote "
-                      },
-                      {
-                        "text": "summary.md",
-                        "token": "accent"
-                      },
-                      {
-                        "text": "."
-                      }
-                    ]
+                    {
+                      "spans": [
+                        {
+                          "text": "Wrote "
+                        },
+                        {
+                          "text": "summary.md",
+                          "token": "accent"
+                        },
+                        {
+                          "text": "."
+                        }
+                      ]
+                    }
                   ]
                 }
               ]
@@ -436,7 +425,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KR18M43JTT58E5V107FSEW",
+          "id": "turn:01M3KS3JKNW4R7TGQD5DP6PN8Q",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -472,7 +461,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KR18M43JTT58E5V107FSEW",
+            "turn": "01M3KS3JKNW4R7TGQD5DP6PN8Q",
             "tally": {
               "sent": 7465,
               "received": 21,
@@ -484,8 +473,8 @@
               "estimated": true
             },
             "thinking_tokens": 0,
-            "ttft_ms": 0,
-            "tok_per_s": 116729.7007050474,
+            "ttft_ms": 1,
+            "tok_per_s": 246402.52316183716,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -494,12 +483,12 @@
           "text": {
             "sent": "7.5k",
             "received": "21",
-            "rate": "116730",
-            "spoken": "7.5 thousand tokens sent, 21 received, 116730 tokens per second",
+            "rate": "246403",
+            "spoken": "7.5 thousand tokens sent, 21 received, 246403 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 71368 tok/s · first token 0 ms · peak 116730 tok/s",
+            "rate_detail": "avg 80717 tok/s · first token 1 ms · peak 246403 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -555,14 +544,14 @@
     {
       "batch": 1,
       "item": {
-        "session": "01M3KR18G4A88XQ3BMX8AE3HXX",
+        "session": "01M3KS3JFZBNMNN2XCXF6T8BVQ",
         "source": {
-          "session": "01M3KR18G4A88XQ3BMX8AE3HXX"
+          "session": "01M3KS3JFZBNMNN2XCXF6T8BVQ"
         },
         "need": {
           "type": "approval",
           "call": {
-            "id": "01M3KR18M9NWHNQ8ZNC80TNZ76",
+            "id": "01M3KS3JKQ7FMFNW078QDS33Q8",
             "name": "write",
             "input": {
               "content": "hello\n",
@@ -584,7 +573,7 @@
   ],
   "snapshot": [
     {
-      "id": "turn:01M3KR18M43JTT58E5V107FSEW",
+      "id": "turn:01M3KS3JKNW4R7TGQD5DP6PN8Q",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -605,7 +594,7 @@
       }
     },
     {
-      "id": "item:01M3KR18M40KAGJJT9S9RWEMTW",
+      "id": "item:01M3KS3JKN11N51BYX4DV1B32J",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -614,7 +603,7 @@
       }
     },
     {
-      "id": "item:01M3KR18M8XZQD0DES5BXD3Q2Z",
+      "id": "item:01M3KS3JKQMMZJ6TFG7CCRJN2C",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -625,11 +614,13 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Writing the summary."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Writing the summary."
+                    }
+                  ]
+                }
               ]
             }
           ]
@@ -637,7 +628,7 @@
       }
     },
     {
-      "id": "call:01M3KR18M9NWHNQ8ZNC80TNZ76",
+      "id": "call:01M3KS3JKQ7FMFNW078QDS33Q8",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -648,7 +639,7 @@
         "state": "done",
         "tail": "wrote /project/summary.md (6 bytes)",
         "archive": {
-          "id": "01M3KR18MY01CD04FZR9Q1752Z",
+          "id": "01M3KS3JMBR7G5HXC2W9NB4QMB",
           "bytes": 102
         },
         "diff": null,
@@ -656,11 +647,11 @@
       }
     },
     {
-      "id": "approval:01M3KR18M9NWHNQ8ZNC80TNZ76",
+      "id": "approval:01M3KS3JKQ7FMFNW078QDS33Q8",
       "turn": 1,
       "kind": {
         "type": "approval",
-        "call": "01M3KR18M9NWHNQ8ZNC80TNZ76",
+        "call": "01M3KS3JKQ7FMFNW078QDS33Q8",
         "tool": "write",
         "summary": "summary.md",
         "input": {
@@ -675,7 +666,7 @@
           "risk": "write"
         },
         "source": {
-          "session": "01M3KR18G4A88XQ3BMX8AE3HXX"
+          "session": "01M3KS3JFZBNMNN2XCXF6T8BVQ"
         },
         "decision": {
           "type": "allow"
@@ -694,7 +685,7 @@
       }
     },
     {
-      "id": "item:01M3KR18MZS5WS4ZQVE19KD2A4",
+      "id": "item:01M3KS3JMCEQZXCVGVYCF9C7AR",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -705,18 +696,20 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Wrote "
-                  },
-                  {
-                    "text": "summary.md",
-                    "token": "accent"
-                  },
-                  {
-                    "text": "."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Wrote "
+                    },
+                    {
+                      "text": "summary.md",
+                      "token": "accent"
+                    },
+                    {
+                      "text": "."
+                    }
+                  ]
+                }
               ]
             }
           ]

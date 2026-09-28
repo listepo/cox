@@ -18,7 +18,7 @@ private func span(_ text: String, _ token: StyleToken = .text, bold: Bool = fals
 }
 
 private func paragraph(_ text: String) -> DocBlock {
-  .text(kind: .paragraph, lines: [[span(text)]])
+  .text(kind: .paragraph, lines: [TextLine([span(text)])])
 }
 
 private func reply(_ id: BlockID, _ blocks: [DocBlock]) -> Block {
@@ -39,7 +39,7 @@ private func transcript(_ count: Int) -> [Block] {
           span(" step ran before the compaction and what the model saw next. "),
         ]
       }
-      return reply(id, [.text(kind: .paragraph, lines: [sentences])])
+      return reply(id, [.text(kind: .paragraph, lines: [TextLine(sentences)])])
     case 1:
       let lines = (0..<(3 + index % 9)).map { line in
         [span("let value\(line) = compute(block: \(index), line: \(line)) // step \(line)")]

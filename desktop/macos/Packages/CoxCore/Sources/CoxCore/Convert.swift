@@ -81,7 +81,14 @@ extension CoxClient.DocBlock {
   init(_ value: CoxFFIBindings.DocBlock) {
     let spans = { (lines: [[CoxFFIBindings.Span]]) in lines.map { $0.map { CoxClient.Span($0) } } }
     switch value {
-    case .text(let kind, let lines): self = .text(kind: .init(kind), lines: spans(lines))
+    case .text(let kind, let lines):
+      self = .text(
+        kind: .init(kind),
+        lines: lines.map {
+          .init(
+            $0.spans.map { CoxClient.Span($0) }, quote: $0.quote, depth: $0.depth,
+            marker: $0.marker)
+        })
     case .code(let lang, let lines): self = .code(lang: lang, lines: spans(lines))
     case .table(let rows): self = .table(rows: rows)
     case .rule: self = .rule

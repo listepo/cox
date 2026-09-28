@@ -22,7 +22,7 @@ private let turn: [Block] = [
     kind: .assistant(
       text: replySource,
       doc: StyledDoc(blocks: [
-        .text(kind: .paragraph, lines: [[Span(text: "Fixed it:")]]),
+        .text(kind: .paragraph, lines: [TextLine([Span(text: "Fixed it:")])]),
         .code(lang: "sh", lines: [[Span(text: "cargo nextest run -p cox-core")]]),
       ]))),
 ]

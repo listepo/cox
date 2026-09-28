@@ -20,7 +20,7 @@ use unicode_width::UnicodeWidthStr;
 
 #[cfg(feature = "ratatui")]
 use crate::Look;
-use crate::doc::{Block, StyleToken, StyledDoc, StyledLine, StyledSpan, TextKind};
+use crate::doc::{Block, StyleToken, StyledDoc, StyledLine, StyledSpan, TextKind, TextLine};
 use crate::glyph::Glyphs;
 
 static SYNTAXES: LazyLock<syntect::parsing::SyntaxSet> =
@@ -69,7 +69,7 @@ pub fn themes() -> Vec<String> {
 }
 
 /// Parses `text` into a `StyledDoc`: code blocks highlight with the syntect
-/// `theme`, list bullets and quote bars come from `glyphs`.
+/// `theme`, list bullets come from `glyphs`.
 pub fn parse(text: &str, theme: &str, glyphs: &Glyphs) -> StyledDoc {
     let mut r = Renderer {
         theme,
@@ -91,9 +91,13 @@ pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     for block in parse(text, look.theme, &look.glyphs).blocks {
         match block {
-            Block::Text { lines, .. } | Block::Code { lines, .. } => {
-                out.extend(lines.iter().map(to_line));
+            Block::Text { kind, lines } => {
+                for (i, line) in lines.iter().enumerate() {
+                    let kind = if i == 0 { kind } else { TextKind::Paragraph };
+                    out.push(to_line(&prefixed(line, kind, &look.glyphs)));
+                }
             }
+            Block::Code { lines, .. } => out.extend(lines.iter().map(to_line)),
             Block::Table { rows } => {
                 out.extend(table_lines(&rows, &look.glyphs, usize::from(look.width)));
             }
@@ -120,6 +124,11 @@ struct Renderer<'a> {
     /// What the next `Block::Text` opens as; `None` reads as a paragraph.
     kind: Option<TextKind>,
     cur: StyledLine,
+    /// The next line is flushed even with no runs: a heading's or an item's
+    /// first line, which a terminal still prints for its `#` run or marker.
+    due: bool,
+    /// The open item's depth and marker, until its first line is flushed.
+    item: Option<(u8, String)>,
     /// Inherited run style, innermost last; its `text` is unused.
     pens: Vec<StyledSpan>,
     /// Next number per open ordered list (`None` for bullets), innermost last.
@@ -185,21 +194,18 @@ impl Renderer<'_> {
     }
 
     fn flush(&mut self) {
-        if self.cur.is_empty() {
+        if self.cur.is_empty() && !self.due {
             return;
         }
-        let mut line = std::mem::take(&mut self.cur);
-        if self.quote > 0 {
-            let bars = format!("{} ", self.glyphs.quote).repeat(self.quote);
-            let token = StyleToken::Dim;
-            line.insert(
-                0,
-                StyledSpan {
-                    token,
-                    ..StyledSpan::plain(bars)
-                },
-            );
-        }
+        self.due = false;
+        let depth = small(self.lists.len().saturating_sub(1));
+        let (depth, marker) = self.item.take().unwrap_or((depth, String::new()));
+        let line = TextLine {
+            quote: small(self.quote),
+            depth,
+            marker,
+            spans: std::mem::take(&mut self.cur),
+        };
         if !self.open {
             let kind = self.kind.unwrap_or(TextKind::Paragraph);
             self.blocks.push(Block::Text {
@@ -255,8 +261,7 @@ impl Renderer<'_> {
                 self.blank();
                 self.kind = Some(TextKind::Heading(level as u8));
                 self.push(|p| p.bold = true);
-                let hashes = "#".repeat(level as usize);
-                self.cur.push(self.run(format!("{hashes} ")));
+                self.due = true;
             }
             Tag::Paragraph if self.lists.is_empty() && self.quote == 0 => {
                 self.kind = Some(TextKind::Paragraph);
@@ -288,14 +293,14 @@ impl Renderer<'_> {
                 let depth = self.lists.len().saturating_sub(1);
                 let marker = match self.lists.last_mut() {
                     Some(Some(n)) => {
-                        let m = format!("{n}. ");
+                        let m = format!("{n}.");
                         *n += 1;
                         m
                     }
-                    _ => format!("{} ", self.glyphs.bullet),
+                    _ => self.glyphs.bullet.to_string(),
                 };
-                self.cur
-                    .push(StyledSpan::plain(format!("{}{marker}", "  ".repeat(depth))));
+                self.item = Some((small(depth), marker));
+                self.due = true;
             }
             Tag::Emphasis => self.push(|p| p.italic = true),
             Tag::Strong => self.push(|p| p.bold = true),
@@ -324,6 +329,8 @@ impl Renderer<'_> {
             TagEnd::Heading(_) => {
                 self.pens.pop();
                 self.blank();
+                // What follows is not the heading: only its first line takes the `#` run.
+                self.kind = None;
             }
             // Inside a list or quote a paragraph break is just a line break.
             TagEnd::Paragraph if self.lists.is_empty() && self.quote == 0 => self.blank(),
@@ -345,6 +352,8 @@ impl Renderer<'_> {
                 self.lists.pop();
                 if self.lists.is_empty() {
                     self.blank();
+                    // A quote the list sat in goes on as a quote.
+                    self.kind = (self.quote > 0).then_some(TextKind::Quote);
                 }
             }
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => {
@@ -370,6 +379,40 @@ impl Renderer<'_> {
             _ => {}
         }
     }
+}
+
+/// A depth or count as a `TextLine` field; nesting past 255 saturates.
+fn small(n: usize) -> u8 {
+    u8::try_from(n).unwrap_or(u8::MAX)
+}
+
+/// `line` as a terminal prints it (T5.3): its quote bars, then its item's
+/// indent and marker or, on a heading's first line, its `#` run, then its
+/// runs. A GUI draws these itself (A92).
+#[cfg(feature = "ratatui")]
+fn prefixed(line: &TextLine, kind: TextKind, glyphs: &Glyphs) -> StyledLine {
+    let mut out = Vec::with_capacity(line.spans.len() + 2);
+    if line.quote > 0 {
+        let bars = format!("{} ", glyphs.quote).repeat(usize::from(line.quote));
+        let token = StyleToken::Dim;
+        out.push(StyledSpan {
+            token,
+            ..StyledSpan::plain(bars)
+        });
+    }
+    if !line.marker.is_empty() {
+        let indent = "  ".repeat(usize::from(line.depth));
+        out.push(StyledSpan::plain(format!("{indent}{} ", line.marker)));
+    }
+    if let TextKind::Heading(level) = kind {
+        let hashes = "#".repeat(usize::from(level));
+        out.push(StyledSpan {
+            bold: true,
+            ..StyledSpan::plain(format!("{hashes} "))
+        });
+    }
+    out.extend(line.spans.iter().cloned());
+    out
 }
 
 /// `rows` through syntect, as one run so a multi-line string or comment

@@ -1,7 +1,7 @@
-// A reply's structure in the text (T37.23.8): a heading in the heading font, list
-// and quote lines hanging past the markers `cox-render` sends as text, a table on
-// tab stops, a rule as one character, and a streamed reply with the same paragraph
-// styles a whole load gives it.
+// A reply's structure in the text (T37.23.8, A92): a heading in the heading font
+// without its `#` run, a list item's marker in the gutter before its text, a quote
+// line past a bar per quote, a table on tab stops, a rule as one character, and a
+// streamed reply with the same paragraph styles a whole load gives it.
 
 import AppKit
 import CoxClient
@@ -15,18 +15,23 @@ private func span(_ text: String, token: StyleToken = .text, bold: Bool = false)
   return span
 }
 
-/// A reply as `cox-render` lays it out: markers are the lines' first spans.
+/// A reply as `cox-render` sends it: level, depth and marker apart from the text.
 private let structured: [DocBlock] = [
-  .text(kind: .heading(2), lines: [[span("## ", bold: true), span("Plan", bold: true)]]),
-  .text(kind: .list, lines: [[span("• "), span("one")], [span("  • "), span("two")]]),
-  .text(kind: .quote, lines: [[span("│ ", token: .dim), span("quoted")]]),
+  .text(kind: .heading(2), lines: [TextLine([span("Plan", bold: true)])]),
+  .text(
+    kind: .list,
+    lines: [TextLine([span("one")], marker: "•"), TextLine([span("two")], depth: 1, marker: "•")]),
+  .text(kind: .quote, lines: [TextLine([span("quoted")], quote: 1)]),
+  .text(kind: .quote, lines: [TextLine([span("deeper")], quote: 2)]),
   .rule,
   .table(rows: [["k", "value"], ["key", "v"]]),
 ]
 
 @MainActor private let style: TranscriptStyle = {
   var style = TranscriptStyle.system
-  (style.heading, style.indent) = (.preferredFont(forTextStyle: .title3), 20)
+  (style.heading, style.indent, style.thought.indent) = (
+    .preferredFont(forTextStyle: .title3), 20, 12
+  )
   return style
 }()
 
@@ -43,18 +48,22 @@ private func paragraph(_ view: TranscriptTextView, at text: String) -> NSParagra
 
 @MainActor
 struct TranscriptStructureTests {
-  @Test func listAndQuoteLinesHangPastTheirMarkersAndAHeadingTakesItsFont() throws {
+  @Test func markersSitInTheGutterQuotesPastTheirBarsAndHeadingsInTheirFont() throws {
     let view = TranscriptTextView.make(style: style)
     view.load([reply(structured)])
 
-    let font = view.textStorage?.attribute(.font, at: 3, effectiveRange: nil) as? NSFont
+    #expect(view.string.hasPrefix("Plan\n"), "a heading shows without its `#` run")
+    let font = view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     #expect(font == style.heading)
-    let one = try #require(paragraph(view, at: "• one"))
-    let two = try #require(paragraph(view, at: "  • two"))
-    #expect(one.firstLineHeadIndent == style.indent && one.headIndent > style.indent)
-    #expect(two.headIndent > one.headIndent, "a deeper item hangs past its longer marker")
-    let quote = try #require(paragraph(view, at: "│ quoted"))
-    #expect(quote.firstLineHeadIndent == 0 && quote.headIndent > 0)
+    let one = try #require(paragraph(view, at: "\t•\tone"))
+    #expect(one.firstLineHeadIndent == 0 && one.headIndent == style.indent)
+    #expect(one.tabStops.map(\.location).last == style.indent, "the text starts past the gutter")
+    let two = try #require(paragraph(view, at: "\t•\ttwo"))
+    #expect(two.firstLineHeadIndent == style.indent && two.headIndent == 2 * style.indent)
+    let quote = try #require(paragraph(view, at: "quoted"))
+    #expect(quote.firstLineHeadIndent == 12 && quote.headIndent == 12)
+    #expect(try #require(paragraph(view, at: "deeper")).headIndent == 24, "a bar per quote")
+    #expect(!view.string.contains("│") && !view.string.contains("#"))
     #expect(try #require(paragraph(view, at: "k\tvalue")).tabStops.count == 1)
     #expect(view.string.contains("\n\u{FFFC}\n"), "a rule is one character on its own line")
   }
@@ -80,7 +89,24 @@ struct TranscriptStructureTests {
   @Test func aDocCopiesAsMarkdownWithItsMarkersAsMarkdowns() {
     #expect(
       StyledDoc(blocks: structured).markdown
-        == "## Plan\n\n- one\n  - two\n\n> quoted\n\n---\n\n| k | value |\n| --- | --- |\n| key | v |"
+        == "## Plan\n\n- one\n  - two\n\n> quoted\n\n> > deeper\n\n---\n\n"
+        + "| k | value |\n| --- | --- |\n| key | v |"
     )
+  }
+
+  @Test func aQuoteLineLaysOutWithItsBarsAndProseWithout() throws {
+    let view = TranscriptTextView.make(style: style)
+    view.load([reply(structured)])
+    let manager = try #require(view.textLayoutManager)
+    manager.ensureLayout(for: manager.documentRange)
+    var quoted: [String] = []
+    manager.enumerateTextLayoutFragments(from: manager.documentRange.location) { fragment in
+      let text = (fragment.textElement as? NSTextParagraph)?.attributedString.string
+      if fragment is QuoteFragment, let text {
+        quoted.append(text.trimmingCharacters(in: .newlines))
+      }
+      return true
+    }
+    #expect(quoted == ["quoted", "deeper"])
   }
 }
