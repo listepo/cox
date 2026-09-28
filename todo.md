@@ -26,7 +26,6 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.20.5. Atom tokens: project purple, RiskChip colours, named constants
 - T37.21.11. Molecule legibility and small fixes
 - T37.22.3. App window setup and the public CoxUI surface
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call

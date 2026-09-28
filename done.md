@@ -5517,3 +5517,15 @@ Status: done 2026-09-28
 **Deviations:** more than 3 files (tokens, generated output, config, snapshots). The faint pill-end bars show only when a `.continuous` stroke is captured through `NSView.cacheDisplay`, not through `ImageRenderer`, `.drawingGroup()` or `.circular`; left as is, not checked on a physical screen.
 
 **Check:** `just test --changed-since p37-desktop` 1535 passed, 5 skipped; clippy and fmt clean; schema drift passes. CoxModel 67; CoxUI 131 dark snapshots re-recorded on purpose (4 subtle-highlight sets and the dark e1 renders), second run 173 passed; CoxTranscript 2 dark approval snapshots re-recorded, 48 passed; no light snapshot changed. After the merge with T37.28.6: config crates 126 passed with both round-trip tests, CoxModel 69, CoxTranscript 48.
+
+#### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
+
+Depends: T37.19.5 · Size: ~100 · Files: `desktop/design/tokens/*.json`, `…/Atoms/…`
+Goal: a purple `role.project` token for the project badge (mockup value), RiskChip low/medium/high colours, and tokens for the values the atoms keep as named constants (badge and inline-code radius 5, CountBadge height 16, StatusDot halo 3 and idle ring 1.5, project tint 0.13).
+Check: the affected atom snapshots are re-recorded on purpose; no named constant remains for a value that now has a token.
+Status: done 2026-09-28
+**Result:** `role.project` and `role.projectSoft` (light: the mockup's `#8e44d8` at its 0.13 tint), `risk.low/medium/high` each with a `Soft` face, in `desktop/design/tokens/color.{light,dark}.json`; `radius.badge` 5, `size.countBadge` 16, `size.statusDotHalo` 3, `size.statusDotRing` 1.5 in `base.json`; `high-contrast.mjs` holds each new label to 7:1 on its tint and the pages. Generated through `just desktop-tokens` (Tokens.swift, 8 colorsets, tokens.css, the -hc JSON). Badge, RiskChip, CountBadge, InlineCode and StatusDot keep no named constant for these values; RiskChip goes through a Badge init with explicit colours. DESIGN.md §3.1, §3.3, §6.2 updated; the mockup reads the purple from the tokens.
+
+**Deviations:** dark purple `#bc90e8` instead of the mockup value (3.1:1 on the dark window): the smallest lightening that holds 4.5:1 on every dark surface and its own tint. Light purple stays the mockup value (4.41:1 on its own tint). The mockup has only the medium risk colour, so the three risk roles keep the grey/orange/red DS§6.2 used; the chip looks the same. 7 hand-edited source files.
+
+**Check:** `just desktop-tokens`; `node high-contrast.mjs --check` 216 pairs pass in light-hc and dark-hc. CoxUI: 15 snapshots re-recorded on purpose (the project badge, SettingRow read-only, three Settings screen tests), second run 173 passed. CoxTranscript 50 passed (two ComposerFlow/PinnedDecision tests fail only under full-suite load, pass alone 3/3). swiftlint and swift-format strict clean.

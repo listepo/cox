@@ -32,8 +32,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.20.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.11 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.11 | todo | P2 | 2 | 90% | |
 | T37.22.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2771,17 +2770,13 @@ On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
-#### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
-
-Depends: T37.19.5 · Size: ~100 · Files: `desktop/design/tokens/*.json`, `…/Atoms/…`
-Goal: a purple `role.project` token for the project badge (mockup value), RiskChip low/medium/high colours, and tokens for the values the atoms keep as named constants (badge and inline-code radius 5, CountBadge height 16, StatusDot halo 3 and idle ring 1.5, project tint 0.13).
-Check: the affected atom snapshots are re-recorded on purpose; no named constant remains for a value that now has a token.
-
 #### T37.21.11 Molecule legibility and small fixes
 
 Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/DESIGN.md`
 Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`'s selected-row styling; `DiffStat` hides "−0" for add-only files; section headers and the filter prompt stay readable on Frosted (not `text.tertiary` there); the `KeyCap` inside `StopButton` is visible on the inverted capsule.
 Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
+
+Waits for the creator: the filter prompt's `text.secondary` is 4.19:1 on the light sidebar filter well (4.5 needs about `#69696e`) — `text.primary`, a new placeholder token, a darker light `text.secondary`, or accept; and which backdrop DS§8's Frosted and Glossy contrast is measured on (over the snapshot backdrop no text token but light `text.primary` reaches 4.5:1). The finished work for all five items is kept as a patch by the orchestrator.
 
 #### T37.22.3 App window setup and the public CoxUI surface
 
