@@ -32,10 +32,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.44.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T37.44.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.9 | todo | P2 | 3 | 0% | |
 | T37.44.10 | todo | P2 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
@@ -2780,13 +2778,6 @@ On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
-#### T37.44.2 Style the app from the Figma file
-
-Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
-Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
-Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
-Plan: first run every Swift package's tests on the base (the merged T37.22.7/9/11/12 tree); re-sync the Figma variables for `accent.selected`; build and screenshot the app and compare with Figma, screen 28 first (`get_design_context`, `get_variable_defs`, `get_screenshot`); fix token-level differences (layout, spacing, radius, colour, type) in CoxUI, leaving glass and window chrome to T37.22.10 and merging it when it lands; re-record snapshots on purpose; lint.
-
 #### T37.44.3 Figma text in SF Pro and SF Mono
 
 Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
@@ -2799,13 +2790,6 @@ Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI approval, decision and
 Goal: A114, A119. The Figma pages "Approvals" and "Composer" are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2, which touches the same main-screen parts.
 Check: as T37.44.5.
 Plan: as T37.44.5 for the "Approvals" and "Composer" pages, touching only approval, decision-bar and composer views; merge p37-desktop when T37.44.2 lands.
-
-#### T37.44.8 Navigation screens match the Figma frames
-
-Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI sidebar, inbox, palette and navigation views, their snapshots
-Goal: A114, A119. The Figma page "Navigation" is compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2.
-Check: as T37.44.5.
-Plan: as T37.44.5 for the "Navigation" page, touching only sidebar, inbox, palette and navigation views; merge p37-desktop when T37.44.2 lands.
 
 #### T37.44.9 Main-screen states and glass variants match the mockups
 

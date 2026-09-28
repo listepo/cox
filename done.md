@@ -5765,3 +5765,33 @@ Deviations: five source files, each a few lines.
 Check: CoxUI 183/183 after recording, affected suites again after a format fix; swift-format and swiftlint strict clean; Changes tab vs frame 01 3.64 % differing at threshold 0.3 (text rows). On the merged tree with T37.44.5: CoxUI 184/184.
 
 Not done: values with no token (inspector width 330 vs 324, 12 pt medium tab label, tab padding 9 and radius 7, 12.5 pt row text, 15 pt plan checkbox, radius 2 legend swatch, review file list 260 wide with 10/6 insets) → T37.44.10; features (plan update time and note, cache and budget gauges, auto-compact button, cost-table rules, task cards with Show output/Kill, review Unified/Split, Revert, Open in Zed, split diff, comment cards and bubbles).
+
+#### T37.44.8 Navigation screens match the Figma frames
+
+Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI sidebar, inbox, palette and navigation views, their snapshots
+Goal: A114, A119. The Figma page "Navigation" is compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2.
+Check: as T37.44.5.
+Plan: as T37.44.5 for the "Navigation" page, touching only sidebar, inbox, palette and navigation views; merge p37-desktop when T37.44.2 lands.
+Status: done 2026-09-28
+Result: the Figma file holds only the "Main" page, so navigation was compared with mockup renders. Of screens 12, 13, 16 and 17 no view exists yet in CoxUI or the app (command palette, search all sessions, new-session sheet, worktrees manager); the one navigation view, the sidebar's "Needs you" inbox, was diffed against the mockup-22 sidebar (4.34 % at threshold 0.3, fixture text and shared row metrics). Fixed: an expired inbox row was a disabled `.plain` button that SwiftUI faded below DS§8; it is now a plain row and `SessionRow` shows a disabled title in `text.secondary` (`Sidebar.swift`, `SessionRow.swift`, DESIGN.md `Sidebar` row). New snapshot `expiredItemRowStaysReadable` (fails without the fix); `needsYouSidebar` re-recorded.
+
+Deviations: DESIGN.md is a fourth file.
+
+Check: filtered SidebarInbox/MainScreenSnapshot/ShellMolecule suites pass; the new test fails with the fix reverted; CoxUI 184/184; swift-format and swiftlint strict clean; 2 Figma `get_metadata` calls.
+
+Not done: screens 12, 13, 16, 17 are features not built (their mockup sizes — palette 640 wide with 18 pt query, search field 40 high at 15 pt, sheet 600 wide with 130 pt label column, manager 880 wide — have no tokens); main-screen sidebar metrics went to T37.44.2; inbox rows show item text where the mockup shows session title and "project · reason" (cox-app content, T37.27.7).
+
+#### T37.44.2 Style the app from the Figma file
+
+Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
+Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
+Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
+Plan: first run every Swift package's tests on the base (the merged T37.22.7/9/11/12 tree); re-sync the Figma variables for `accent.selected`; build and screenshot the app and compare with Figma, screen 28 first (`get_design_context`, `get_variable_defs`, `get_screenshot`); fix token-level differences (layout, spacing, radius, colour, type) in CoxUI, leaving glass and window chrome to T37.22.10 and merging it when it lands; re-record snapshots on purpose; lint.
+Status: done 2026-09-28
+Result: screen 28 compared with Figma node 4:2 and the mockup render. `Foundations/TextStyle.swift`: a token's line height now applies to a single line too, through `lineHeight(.exact(points:))` (macOS 26) instead of `lineSpacing`, which only added space between lines — every label was shorter than designed; sidebar rows now sit ~49 pt apart as in the mockup (were 44), and composer, popovers, diff lines and labels grow the same way. `Organisms/Composer.swift`: `Space.s` above and below the chips (was 4 pt). New `TextStyleTests` (6 cases). Figma: `color/text/placeholder` and `color/accent/selected` added to the Color collection (95 variables).
+
+Deviations: the worktree could not merge p37-desktop (the permission classifier refused), so its 683 CoxUI and 14 CoxTranscript re-recordings were made on the older base; the orchestrator merged it with 292 snapshot conflicts taken from this branch and re-recorded on the merged tree.
+
+Check: baseline on the merged T37.22.7/9/11/12 tree — CoxModel 84, CoxPlatform 13, CoxUI 182, CoxTranscriptText 36, CoxTranscript 50, CoxCore 13; after the fix CoxUI 184/184, CoxTranscript 50/50; swiftlint and swift-format strict clean; app rebuilt and screenshotted (`t37.44.2-app-before/after.png`); Figma calls: 1 `use_figma`, `get_design_context`, `get_screenshot`, `get_metadata`.
+
+Not done: values with no token (row title 13/500, subtitle 11, composer chip 26, text area min height 46, composer bottom margin 18) → T37.44.10; deliberate differences kept (row cost in `text.secondary`, selected title `text.primary` per A115, accent toggles, `status.plan` sparkle); features (send button active on an empty draft, attach chip, bolt on "think", "Keep text panels readable" in Appearance, Stop as plain "⌘." text); transcript column (mockup 760 centred with 32 pt sides and 24 pt top, turn-number gutter) and the other main-screen states → T37.44.9.
