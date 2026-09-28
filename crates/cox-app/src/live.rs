@@ -27,7 +27,8 @@ const EVENTS: usize = 256;
 pub struct LiveSession {
     app: Arc<App>,
     session: Session,
-    controller: Controller,
+    /// Shared with each queued turn, which reports when it starts.
+    controller: Arc<Controller>,
     completer: Completer,
     cwd: PathBuf,
     theme: String,
@@ -73,7 +74,7 @@ impl LiveSession {
         let claude_home = cox_config::load::home_dir().join(".claude");
         Ok(Arc::new(Self {
             completer: Completer::load(&cwd, &app.home, &claude_home),
-            controller: Controller::spawn(timeline, events),
+            controller: Arc::new(Controller::spawn(timeline, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
             turn: Mutex::new(None),
             app,
@@ -166,14 +167,22 @@ impl LiveSession {
         self.close();
     }
 
-    /// Spawns a turn (R9.4.3); `queued` waits for the one spawned last.
+    /// Spawns a turn (R9.4.3); `queued` waits for the one spawned last and
+    /// counts in the status patch until it starts.
     fn spawn(&self, submission: Submission, queued: bool) {
         let session = self.session.clone();
+        let controller = queued.then(|| Arc::clone(&self.controller));
         let mut last = self.turn.lock().unwrap_or_else(PoisonError::into_inner);
         let before = last.take().filter(|_| queued);
+        if let Some(controller) = &controller {
+            controller.enqueue();
+        }
         *last = Some(tokio::spawn(async move {
             if let Some(before) = before {
                 let _ = before.await;
+            }
+            if let Some(controller) = controller {
+                controller.dequeue();
             }
             // A turn that fails says so in the event stream.
             let _ = session.submit(submission).await;

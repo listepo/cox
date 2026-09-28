@@ -10,8 +10,9 @@ use crate::patch::{Block, BlockId, BlockKind, TimelinePatch, tail};
 /// when that yields the state the two would give applied in turn.
 pub fn push(queue: &mut Vec<TimelinePatch>, patch: TimelinePatch) {
     let patch = match patch {
+        // What sits beside the list outlives a reset of it.
         TimelinePatch::Reset { .. } => {
-            queue.clear();
+            queue.retain(beside);
             patch
         }
         TimelinePatch::Upsert { block, after } => {
@@ -46,8 +47,21 @@ pub fn push(queue: &mut Vec<TimelinePatch>, patch: TimelinePatch) {
             queue.retain(|p| !matches!(p, TimelinePatch::Usage { .. }));
             patch
         }
+        TimelinePatch::Status { .. } => {
+            queue.retain(|p| !matches!(p, TimelinePatch::Status { .. }));
+            patch
+        }
     };
     queue.push(patch);
+}
+
+/// The meter and the status: whole states beside the block list, which no
+/// block patch or reset changes.
+pub(crate) fn beside(patch: &TimelinePatch) -> bool {
+    matches!(
+        patch,
+        TimelinePatch::Usage { .. } | TimelinePatch::Status { .. }
+    )
 }
 
 /// Applies `patch` to a consumer's block list the way a UI does (DT§4.3).
@@ -69,8 +83,9 @@ pub fn apply(blocks: &mut Vec<Block>, patch: TimelinePatch) {
             blocks.insert(at, *block);
         }
         TimelinePatch::Remove { id } => blocks.retain(|b| b.id != id),
-        // The meter sits beside the list; a UI keeps it on its own.
-        TimelinePatch::Usage { .. } => {}
+        // The meter and the status sit beside the list; a UI keeps them on
+        // its own.
+        TimelinePatch::Usage { .. } | TimelinePatch::Status { .. } => {}
         TimelinePatch::AppendText { .. } | TimelinePatch::DocTail { .. } => {
             let found = target(&patch).and_then(|id| blocks.iter().position(|b| &b.id == id));
             if let Some(i) = found {
@@ -83,10 +98,12 @@ pub fn apply(blocks: &mut Vec<Block>, patch: TimelinePatch) {
 }
 
 /// The block a patch changes; `None` for `Reset`, which changes them all,
-/// and for `Usage`, which changes none.
+/// and for `Usage` and `Status`, which change none.
 fn target(patch: &TimelinePatch) -> Option<&BlockId> {
     match patch {
-        TimelinePatch::Reset { .. } | TimelinePatch::Usage { .. } => None,
+        TimelinePatch::Reset { .. }
+        | TimelinePatch::Usage { .. }
+        | TimelinePatch::Status { .. } => None,
         TimelinePatch::Upsert { block, .. } => Some(&block.id),
         TimelinePatch::AppendText { id, .. }
         | TimelinePatch::DocTail { id, .. }
@@ -295,6 +312,16 @@ mod tests {
         };
         let queue = coalesced(&[meter(1), append("t", "a"), meter(2), append("t", "b")]);
         assert_eq!(queue, vec![append("t", "ab"), meter(2)]);
+    }
+
+    #[test]
+    fn only_the_latest_status_stays_queued_and_a_reset_keeps_it() {
+        let status = |queued| TimelinePatch::Status {
+            status: crate::Status { queued },
+        };
+        let reset = TimelinePatch::Reset { blocks: vec![] };
+        let queue = coalesced(&[status(1), append("t", "a"), status(2), reset.clone()]);
+        assert_eq!(queue, vec![status(2), reset]);
     }
 
     #[test]

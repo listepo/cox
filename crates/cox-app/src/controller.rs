@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::coalesce;
-use crate::patch::{Block, TimelinePatch};
+use crate::patch::{Block, Status, TimelinePatch};
 use crate::timeline::Timeline;
 use crate::usage::Meter;
 
@@ -38,6 +38,7 @@ struct Shared {
 struct State {
     timeline: Timeline,
     meter: Meter,
+    status: Status,
     /// The meter's clock origin; tokio's, so a paused-time test scripts it.
     opened: Instant,
     queue: Vec<TimelinePatch>,
@@ -61,6 +62,7 @@ impl Controller {
             state: Mutex::new(State {
                 timeline,
                 meter: Meter::default(),
+                status: Status::default(),
                 opened: Instant::now(),
                 queue: Vec::new(),
                 closed: false,
@@ -96,14 +98,33 @@ impl Controller {
     }
 
     /// The whole block list. Patches queued so far are already in it, so
-    /// they are dropped — all but the meter's, which is not: the next pull
-    /// continues from this state.
+    /// they are dropped — all but the meter's and the status, which are not:
+    /// the next pull continues from this state.
     pub fn snapshot(&self) -> Vec<Block> {
         let mut state = self.shared.lock();
-        state
-            .queue
-            .retain(|p| matches!(p, TimelinePatch::Usage { .. }));
+        state.queue.retain(coalesce::beside);
         state.timeline.blocks().to_vec()
+    }
+
+    /// A turn joined the queue behind the running one.
+    pub fn enqueue(&self) {
+        self.status(|s| s.queued += 1);
+    }
+
+    /// A queued turn started.
+    pub fn dequeue(&self) {
+        self.status(|s| s.queued = s.queued.saturating_sub(1));
+    }
+
+    /// Changes the status and queues the whole of it for the next pull.
+    fn status(&self, change: impl FnOnce(&mut Status)) {
+        {
+            let mut state = self.shared.lock();
+            change(&mut state.status);
+            let status = state.status.clone();
+            coalesce::push(&mut state.queue, TimelinePatch::Status { status });
+        }
+        self.shared.ready.notify_one();
     }
 
     /// The next coalesced batch, waiting until there is one; `None` once the
@@ -195,5 +216,20 @@ mod tests {
         assert_eq!(second.len(), 2);
         assert_eq!(controller.next_patches().await, None);
         assert_eq!(controller.snapshot().len(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_status_patch_counts_turns_queued_and_not_yet_started() {
+        let (_tx, rx) = mpsc::channel(1);
+        let controller = Controller::spawn(Timeline::default(), rx);
+        let status = |queued| TimelinePatch::Status {
+            status: Status { queued },
+        };
+        controller.enqueue();
+        controller.enqueue();
+        assert_eq!(controller.next_patches().await, Some(vec![status(2)]));
+        controller.dequeue();
+        assert!(controller.snapshot().is_empty(), "no block");
+        assert_eq!(controller.next_patches().await, Some(vec![status(1)]));
     }
 }

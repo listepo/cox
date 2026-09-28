@@ -17,7 +17,8 @@ use cox_core::Session;
 use cox_protocol::errors::WorktreeError;
 use cox_protocol::traits::{Store as _, Worktree, WorktreeInfo, Worktrees};
 use cox_protocol::types::{
-    Decision, Effort, Event, ItemKind, PermissionMode, SlashCommand, StopReason, Submission, Tier,
+    Attachment, Decision, Effort, Event, ItemKind, PermissionMode, SlashCommand, StopReason,
+    Submission, Tier,
 };
 use cox_protocol::{CallId, Config};
 use cox_provider::scripted::Scripted;
@@ -361,6 +362,11 @@ fn every_intent_maps_to_its_submission() {
             spawn: true,
         })
     };
+    let shot = Attachment {
+        name: "shot.png".into(),
+        media_type: "image/png".into(),
+        data_b64: "iVBORw0KGgo=".into(),
+    };
     let cases: Vec<(Intent, Result<Dispatch, IntentError>)> = vec![
         (
             Intent::Send {
@@ -400,8 +406,27 @@ fn every_intent_maps_to_its_submission() {
         (
             Intent::Queue {
                 text: "next".into(),
+                attachments: vec![],
             },
             Ok(Dispatch::Queue(turn("next"))),
+        ),
+        (
+            Intent::Queue {
+                text: String::new(),
+                attachments: vec![shot.clone()],
+            },
+            Ok(Dispatch::Queue(Submission::UserTurn {
+                text: String::new(),
+                attachments: vec![shot],
+                confirm_think: false,
+            })),
+        ),
+        (
+            Intent::Queue {
+                text: " ".into(),
+                attachments: vec![],
+            },
+            Err(IntentError::Empty),
         ),
         (
             Intent::Compact { focus: None },

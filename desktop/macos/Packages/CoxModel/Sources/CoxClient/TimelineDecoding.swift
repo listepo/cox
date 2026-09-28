@@ -91,6 +91,7 @@ extension TimelinePatch: Decodable {
     case "doc_tail": self = try .docTail(id: keys("id"), from: keys("from"), blocks: keys("blocks"))
     case "remove": self = try .remove(id: keys("id"))
     case "usage": self = try .usage(usage: keys("usage"))
+    case "status": self = try .status(status: keys("status"))
     default: throw keys.unknown(tag)
     }
   }

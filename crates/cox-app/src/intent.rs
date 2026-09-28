@@ -30,6 +30,7 @@ pub enum Intent {
     /// Sent while a turn runs: becomes the next turn when it ends.
     Queue {
         text: String,
+        attachments: Vec<Attachment>,
     },
     Compact {
         focus: Option<String>,
@@ -100,17 +101,11 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
         })
     };
     match intent {
-        Intent::Send { text, attachments } => {
-            if text.trim().is_empty() && attachments.is_empty() {
-                return Err(IntentError::Empty);
-            }
-            Ok(Dispatch::Submit {
-                submission: turn(text, attachments),
-                spawn: true,
-            })
-        }
-        Intent::Queue { text } if text.trim().is_empty() => Err(IntentError::Empty),
-        Intent::Queue { text } => Ok(Dispatch::Queue(turn(text, Vec::new()))),
+        Intent::Send { text, attachments } => Ok(Dispatch::Submit {
+            submission: turn(text, attachments)?,
+            spawn: true,
+        }),
+        Intent::Queue { text, attachments } => Ok(Dispatch::Queue(turn(text, attachments)?)),
         Intent::Approve { call, decision } => now(Submission::Approve {
             call_id: call,
             decision,
@@ -143,12 +138,16 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
     }
 }
 
-fn turn(text: String, attachments: Vec<Attachment>) -> Submission {
-    Submission::UserTurn {
+/// A turn needs text or an attachment.
+fn turn(text: String, attachments: Vec<Attachment>) -> Result<Submission, IntentError> {
+    if text.trim().is_empty() && attachments.is_empty() {
+        return Err(IntentError::Empty);
+    }
+    Ok(Submission::UserTurn {
         text,
         attachments,
         confirm_think: false,
-    }
+    })
 }
 
 fn shell(command: String, share: bool) -> Result<Dispatch, IntentError> {

@@ -13,7 +13,7 @@ use cox_app::Holder;
 use cox_app::SessionInfo;
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
-use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
+use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, Dropped, FileChange, Icon, InboxItem,
     Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need, Project, SearchHit,
@@ -142,6 +142,14 @@ pub enum TimelinePatch {
     Usage {
         usage: Box<UsageView>,
     },
+    Status {
+        status: Status,
+    },
+}
+
+#[uniffi::remote(Record)]
+pub struct Status {
+    pub queued: u32,
 }
 
 #[uniffi::remote(Record)]
@@ -368,6 +376,7 @@ pub enum Intent {
     Interrupt,
     Queue {
         text: String,
+        attachments: Vec<Attachment>,
     },
     Compact {
         focus: Option<String>,
