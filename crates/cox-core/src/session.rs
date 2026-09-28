@@ -1457,7 +1457,7 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives, startup_context, routed) = {
+        let (history, calls_so_far, discovered, marks, archives, startup_context, routed, mode) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -1467,6 +1467,9 @@ impl Session {
                 inner.archives.clone(),
                 inner.startup_context.clone(),
                 inner.routed.is_some(),
+                // T50.3: the live mode, so the model is told what the engine
+                // enforces after a `SetPermissionMode`.
+                inner.permission_mode,
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -1523,6 +1526,7 @@ impl Session {
                 "",
                 self.instructions.get().map_or("", String::as_str),
                 self.skills_index.get().map_or("", String::as_str),
+                mode,
             );
             req.model = route.model.clone();
             // T22.3: `SessionStart` hook context goes into `system[3]` — the
@@ -2344,5 +2348,77 @@ mod tests {
         assert_eq!(payload["title"], "Turn done");
         assert_eq!(payload["message"], "end_turn");
         assert_eq!(payload["hook_event_name"], "Notification");
+    }
+
+    /// The script, plus every request's system blocks, so a test can
+    /// compare the cached prefix and read the volatile block.
+    struct Systems {
+        script: Scripted,
+        seen: StdMutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for Systems {
+        fn id(&self) -> ProviderId {
+            self.script.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.script.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: Request,
+            sink: mpsc::Sender<cox_protocol::types::ProviderEvent>,
+            cancel: CancellationToken,
+        ) -> Result<cox_protocol::types::Usage, ProviderError> {
+            let blocks = req.system.iter().map(|b| b.text.clone()).collect();
+            self.seen.lock().expect("lock").push(blocks);
+            self.script.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+            self.script.count_tokens(req).await
+        }
+    }
+
+    /// T50.3 Check: after `SetPermissionMode` the next request's volatile
+    /// block names the live mode, and the cached prefix does not move.
+    #[tokio::test]
+    async fn volatile_block_shows_the_live_permission_mode() {
+        let script = "[[turn]]\ntext = \"one\"\n[[turn]]\ntext = \"two\"\n";
+        let provider = Arc::new(Systems {
+            script: Scripted::from_toml(script, "").expect("scenario"),
+            seen: StdMutex::new(Vec::new()),
+        });
+        let store = Arc::new(MemoryStore::new());
+        let session = Session::new(
+            cox_protocol::Config::default(),
+            provider.clone(),
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-mode"),
+        )
+        .expect("session");
+        let turn = |text: &str| Submission::UserTurn {
+            text: text.into(),
+            attachments: vec![],
+            confirm_think: false,
+        };
+        session.submit(turn("first")).await.expect("turn");
+        let mode = Submission::SetPermissionMode {
+            mode: PermissionMode::Plan,
+        };
+        session.submit(mode).await.expect("set mode");
+        session.submit(turn("second")).await.expect("turn");
+        let seen = provider.seen.lock().expect("lock").clone();
+        assert_eq!(seen.len(), 2, "{seen:?}");
+        let configured = format!("{:?}", cox_protocol::Config::default().permissions.mode);
+        assert!(seen[0][3].contains(&format!("permission_mode={configured}\n")));
+        assert!(
+            seen[1][3].contains("permission_mode=Plan\n"),
+            "{}",
+            seen[1][3]
+        );
+        assert_eq!(seen[0][..3], seen[1][..3], "cached prefix moved");
     }
 }

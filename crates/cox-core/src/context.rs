@@ -11,8 +11,8 @@ use base64::engine::general_purpose::STANDARD;
 use cox_protocol::ids::CallId;
 use cox_protocol::traits::Tool;
 use cox_protocol::types::{
-    ArchiveRef, Attachment, Content, ContextBreakdown, Job, Message, ModelId, Request, SystemBlock,
-    Tier, Usage,
+    ArchiveRef, Attachment, Content, ContextBreakdown, Job, Message, ModelId, PermissionMode,
+    Request, SystemBlock, Tier, Usage,
 };
 
 /// The first line of `system[2]`; the loaded instruction files and the
@@ -74,7 +74,18 @@ pub fn assemble_with(
     cwd: &Path,
     date: &str,
 ) -> Request {
-    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "", "")
+    assemble_with_skills(
+        history,
+        config,
+        tier,
+        tools,
+        discovered,
+        cwd,
+        date,
+        "",
+        "",
+        config.permissions.mode,
+    )
 }
 
 /// `assemble_with` plus the `system[2]` instruction-file block (T50.1) and
@@ -83,7 +94,9 @@ pub fn assemble_with(
 /// prefix bytes of every earlier session and `system[0..=2]` stays
 /// byte-stable across turns either way (D6e). The surface reads both once
 /// (`cox_ext::instructions::load`, `cox_ext::skills::index`) and hands them
-/// to `Session::set_instructions`; this crate reads no files.
+/// to `Session::set_instructions`; this crate reads no files. `mode` is the
+/// session's live permission mode (T50.3); it goes into the volatile
+/// `system[3]` only, so a mode switch never moves the cached prefix.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_with_skills(
     history: &[Message],
@@ -95,6 +108,7 @@ pub fn assemble_with_skills(
     date: &str,
     instructions: &str,
     skills_index: &str,
+    mode: PermissionMode,
 ) -> Request {
     let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
     let deferring = config.context.deferred_tools;
@@ -160,9 +174,8 @@ pub fn assemble_with_skills(
         },
         SystemBlock {
             text: format!(
-                "date={date}\ncwd={}\npermission_mode={:?}\n",
+                "date={date}\ncwd={}\npermission_mode={mode:?}\n",
                 cwd.display(),
-                config.permissions.mode
             ),
             cache: false,
         },
@@ -668,6 +681,7 @@ mod tests {
             "d",
             "",
             index,
+            config.permissions.mode,
         );
         assert!(
             first.system[2].text.ends_with(index),
@@ -708,6 +722,7 @@ mod tests {
             "d",
             "",
             index,
+            config.permissions.mode,
         );
         assert!(
             serde_json::to_string(&second)
@@ -733,6 +748,7 @@ mod tests {
             "d",
             "",
             "",
+            config.permissions.mode,
         );
         assert_eq!(
             serde_json::to_vec(&plain.system[0..=2]).expect("plain"),
@@ -759,6 +775,7 @@ mod tests {
                 "d",
                 block,
                 index,
+                config.permissions.mode,
             )
             .system[2]
                 .text
