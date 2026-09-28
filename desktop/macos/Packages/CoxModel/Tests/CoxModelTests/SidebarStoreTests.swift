@@ -140,6 +140,36 @@ private final class Growing: WorkspaceClient, @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(10))
     lock.withLock { count += 1 }
   }
+  func rename(session: String, title: String) -> Bool { false }
+}
+
+/// One session whose title a rename sets, as `cox.db` keeps it.
+private final class Titled: WorkspaceClient, @unchecked Sendable {
+  private let lock = NSLock()
+  private var title: String?
+  private let project = Project(root: "/src/cox", name: "cox")
+
+  func projects(limit: UInt32) -> [Project] { [project] }
+  func sessions(project: String, limit: UInt32) -> [SessionEntry] {
+    lock.withLock { [SessionEntry(id: "s1", title: title)] }
+  }
+  func activity(session: String) -> Activity { .idle }
+  func changed() async throws { try await Task.sleep(for: .seconds(86_400)) }
+  func rename(session: String, title: String) -> Bool {
+    lock.withLock { self.title = title }
+    return true
+  }
+}
+
+/// A113: a sidebar rename reads the list again, so the row and the toolbar show the new title.
+@MainActor
+@Test func aRenameShowsTheNewTitleInTheRowAndTheToolbar() {
+  let store = SidebarStore(workspace: Titled(), inbox: nil)
+  store.refresh()
+  #expect(store.sections.first?.rows.first?.title == "Untitled session")
+  store.rename("s1", to: "Fix the ledger")
+  #expect(store.sections.first?.rows.first?.title == "Fix the ledger")
+  #expect(store.entry("s1")?.session.name == "Fix the ledger")
 }
 
 @MainActor

@@ -1,7 +1,8 @@
 // `Sidebar` (DS§6.4 row `Sidebar`, the mockup's `.sidebar`; DT§5.1): the session list — the
 // filter, the status sections ("Needs you", "Running"), the projects as disclosure groups, and
 // the footer with New session and the providers' health. A "Needs you" row is one inbox item
-// (T37.27.7), which opens its session and, once expired, is read-only. Separate so the window
+// (T37.27.7), which opens its session and, once expired, is read-only. A row's context menu
+// renames its session (A113). Separate so the window
 // shell shows sessions from one value the core fills, and reports what the person does as intents.
 
 import SwiftUI
@@ -59,10 +60,20 @@ public struct Sidebar: View {
     case toggle(Group.ID)
     case newSession
     case hide
+    /// The session and the title typed for it in the row's Rename… sheet (A113).
+    case rename(Session.ID, String)
   }
 
   let state: State
   let send: (Intent) -> Void
+  /// The row whose Rename… alert is open.
+  @SwiftUI.State private var renaming: Session?
+  @SwiftUI.State private var draft = ""
+
+  init(state: State, send: @escaping (Intent) -> Void) {
+    self.state = state
+    self.send = send
+  }
 
   public var body: some View {
     ShellPane(.sidebar) {
@@ -92,7 +103,9 @@ public struct Sidebar: View {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: Space.xxs) {
             ForEach(state.groups) {
-              SidebarGroup(group: $0, selection: state.selection, send: send)
+              SidebarGroup(group: $0, selection: state.selection, send: send) { session in
+                (renaming, draft) = (session, session.row.title)
+              }
             }
           }
           .padding(.bottom, Space.m)
@@ -104,6 +117,20 @@ public struct Sidebar: View {
     }
     .frame(width: Size.sidebarWidth)
     .coxTransition(.move(edge: .leading).combined(with: .opacity))
+    .alert("Rename session", isPresented: isRenaming) {
+      TextField("Title", text: $draft)
+      Button("Rename") {
+        let title = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let renaming, !title.isEmpty, title != renaming.row.title {
+          send(.rename(renaming.opens, title))
+        }
+      }
+      Button("Cancel", role: .cancel) {}
+    }
+  }
+
+  private var isRenaming: Binding<Bool> {
+    Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
   }
 }
 
@@ -121,6 +148,8 @@ private struct SidebarGroup: View {
   let group: Sidebar.Group
   let selection: Sidebar.Session.ID?
   let send: (Sidebar.Intent) -> Void
+  /// Opens the Rename… alert for a row.
+  let rename: (Sidebar.Session) -> Void
 
   var body: some View {
     switch group.kind {
@@ -160,6 +189,10 @@ private struct SidebarGroup: View {
       }
       .buttonStyle(.plain)
       .disabled(session.isReadOnly)
+      .contextMenu {
+        // A session's own row; an inbox row's text is the item's, not the session's title.
+        if session.session == nil { Button("Rename…") { rename(session) } }
+      }
       .padding(.horizontal, Space.m)
     }
   }

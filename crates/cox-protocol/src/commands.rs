@@ -48,6 +48,7 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ),
     ("resume", "/resume", "pick an earlier session to resume"),
     ("sessions", "/sessions", "this project's recent sessions"),
+    ("rename", "/rename <title>", "name this session"),
     (
         "expand",
         "/expand <id>",

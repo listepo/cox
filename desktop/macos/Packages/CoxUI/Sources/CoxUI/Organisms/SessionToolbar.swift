@@ -1,6 +1,7 @@
 // `SessionToolbar` (DS§6.4 row `SessionToolbar`, the mockup's `.toolbar`; DT§5.1): the open
-// session's bar above the transcript — where it lives, its model, mode and cost, Stop while a
-// turn runs, the Appearance and inspector buttons with their shortcuts, and the Bypass strip.
+// session's bar above the transcript — where it lives, its title renamed by a double-click
+// (A113), its model, mode and cost, Stop while a turn runs, the Appearance and inspector buttons
+// with their shortcuts, and the Bypass strip.
 // Separate so the window shell shows the session from one value the core fills, and reports what
 // the person does as intents.
 
@@ -47,6 +48,8 @@ public struct SessionToolbar: View {
     case mode(SessionMode)
     case stop
     case toggleInspector
+    /// The title the person typed after double-clicking it (A113).
+    case rename(String)
   }
 
   let state: State
@@ -81,7 +84,9 @@ public struct SessionToolbar: View {
           send(.showSidebar)
         }
       }
-      Breadcrumb(state.title, project: state.project, branch: state.branch)
+      Breadcrumb(state.title, project: state.project, branch: state.branch) {
+        send(.rename($0))
+      }
       Spacer(minLength: Space.ml)
       ModelCapsule(state.model, isOpen: state.popover == .model) { send(.open(.model)) }
         .anchorPreference(key: ModelCapsuleAnchor.self, value: .bounds) { $0 }

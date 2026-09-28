@@ -399,3 +399,27 @@ fn state_changed_from_the_core_sets_mode_and_effort() {
     assert_eq!(state.mode, PermissionMode::Plan);
     assert_eq!(state.status.effort, None);
 }
+
+/// A113 (T37.22.9): the title a `TitleSet` carries shows before the mode
+/// badge, and `/rename` submits the user's title to the core.
+#[test]
+fn status_line_shows_the_session_title_and_rename_submits_it() {
+    let mut state = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 0.41, 60_000);
+    update(
+        &mut state,
+        Msg::Event(Event::TitleSet {
+            title: "Fix the ledger".into(),
+            by_user: false,
+        }),
+    );
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 120, 3)));
+    let rename = Submission::Rename {
+        title: "Ledger fix".into(),
+    };
+    assert!(submit(&mut state, "/rename Ledger fix").contains(&Cmd::Submit(rename)));
+    assert!(matches!(
+        commands::parse("/rename", Tier::Code),
+        Some(Action::Notice(_))
+    ));
+}

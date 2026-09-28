@@ -173,6 +173,25 @@ impl App {
         }
     }
 
+    /// Renames a session no window here has open (A113): the same user
+    /// title a `Rename` intent sets, written to `cox.db` directly because
+    /// no core runs it. Returns whether a title was stored; one without
+    /// text is not.
+    pub fn rename(&self, session: SessionId, title: &str) -> Result<bool, AppError> {
+        let Some(title) = cox_core::title::user_title(title) else {
+            return Ok(false);
+        };
+        let stored = self.workspace.store().session_title_set(
+            &session,
+            &title,
+            cox_store::TitleSource::User,
+        )?;
+        // Written on the workspace's own connection, which its change
+        // token does not see.
+        self.listed.notify_waiters();
+        Ok(stored)
+    }
+
     /// A new session in `cwd`, or `resume`'s with its blocks; `theme` is the
     /// syntect theme code blocks are highlighted with. Call on a tokio
     /// runtime: the session's drain and inbox tasks are spawned there.
@@ -255,7 +274,9 @@ impl App {
             let moved = inbox.activity(session) != was;
             (fresh, count(inbox.badge()), inbox.badge() < before, moved)
         };
-        if moved || fell || !fresh.is_empty() {
+        // A113: a title the core just stored renames the sidebar's row.
+        let titled = matches!(event, Event::TitleSet { .. });
+        if moved || fell || titled || !fresh.is_empty() {
             self.listed.notify_waiters();
         }
         for item in fresh {

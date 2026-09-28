@@ -81,6 +81,11 @@ pub enum Intent {
     Command {
         line: String,
     },
+    /// The user's title for the session (A113): the toolbar's or a
+    /// sidebar row's rename, as `/rename` sends it.
+    Rename {
+        title: String,
+    },
 }
 
 /// What the controller does with an intent.
@@ -157,6 +162,7 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
         Intent::Background { call } => now(Submission::Background { call_id: call }),
         Intent::Shell { command, share } => shell(command, share),
         Intent::Command { line } => command(&line),
+        Intent::Rename { title } => rename(title),
     }
 }
 
@@ -173,6 +179,17 @@ fn turn(
         text,
         attachments,
         confirm_think,
+    })
+}
+
+/// A rename needs a title; the core keeps its first line, sanitized.
+fn rename(title: String) -> Result<Dispatch, IntentError> {
+    if title.trim().is_empty() {
+        return Err(IntentError::Empty);
+    }
+    Ok(Dispatch::Submit {
+        submission: Submission::Rename { title },
+        spawn: false,
     })
 }
 
@@ -204,6 +221,9 @@ fn command(line: &str) -> Result<Dispatch, IntentError> {
         .ok_or_else(|| IntentError::NotACommand(line.to_string()))?
         .split_whitespace();
     let name = words.next().ok_or(IntentError::Empty)?.to_string();
+    if name == "rename" {
+        return rename(words.collect::<Vec<_>>().join(" "));
+    }
     let args = words.map(str::to_string).collect();
     Ok(Dispatch::Submit {
         submission: Submission::Command {

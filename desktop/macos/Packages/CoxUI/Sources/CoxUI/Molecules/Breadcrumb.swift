@@ -5,25 +5,56 @@
 import SwiftUI
 
 /// The title in `font.title.window`, a chevron, then the project and branch in `text.secondary`.
+/// With `rename`, a double-click on the title edits it in place (A113): Return or a click away
+/// commits, Escape cancels.
 struct Breadcrumb: View {
   let title: String
   let project: String
   /// The worktree's branch, or `nil` outside git.
   let branch: String?
+  /// Receives the edited title when it has text and differs; `nil` keeps the title read-only.
+  let rename: ((String) -> Void)?
+  /// The title being edited; `nil` while it is not.
+  @State private var draft: String?
+  @FocusState private var isFocused: Bool
 
-  init(_ title: String, project: String, branch: String? = nil) {
+  init(
+    _ title: String, project: String, branch: String? = nil,
+    rename: ((String) -> Void)? = nil
+  ) {
     self.title = title
     self.project = project
     self.branch = branch
+    self.rename = rename
   }
 
   var body: some View {
     HStack(spacing: Space.s) {
-      Text(title)
+      if draft != nil {
+        TextField(
+          "Session title", text: Binding(get: { draft ?? "" }, set: { draft = $0 })
+        )
+        .textFieldStyle(.plain)
         .textStyle(.titleWindow)
         .foregroundStyle(Color(.textPrimary))
-        .lineLimit(1)
-        .layoutPriority(1)
+        .focused($isFocused)
+        .onSubmit(commit)
+        .onExitCommand { draft = nil }
+        .onAppear { isFocused = true }
+        .onChange(of: isFocused) { if !isFocused { commit() } }
+        .frame(minWidth: Size.sidebarWidth / 2)
+        .fixedSize()
+      } else {
+        Text(title)
+          .textStyle(.titleWindow)
+          .foregroundStyle(Color(.textPrimary))
+          .lineLimit(1)
+          .layoutPriority(1)
+          .onTapGesture(count: 2) { if rename != nil { draft = title } }
+          .help(rename == nil ? "" : "Double-click to rename")
+          .accessibilityLabel([title, project, branch].compactMap(\.self).joined(separator: ", "))
+          .accessibilityAction(named: "Rename") { if rename != nil { draft = title } }
+      }
       Group {
         Image(systemName: "chevron.right").symbolStyle(.micro)
         Text(project).textStyle(.control)
@@ -33,9 +64,15 @@ struct Breadcrumb: View {
         }
       }
       .foregroundStyle(Color(.textSecondary))
+      .accessibilityHidden(true)
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel([title, project, branch].compactMap(\.self).joined(separator: ", "))
+  }
+
+  /// Ends the edit, handing a changed title with text to `rename`.
+  private func commit() {
+    guard let text = draft?.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+    draft = nil
+    if !text.isEmpty && text != title { rename?(text) }
   }
 }
 

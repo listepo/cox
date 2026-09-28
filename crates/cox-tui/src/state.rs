@@ -308,6 +308,9 @@ pub struct State {
     /// The `--worktree` name (T27.3); the status line shows it after the
     /// branch, and only then.
     pub worktree: Option<String>,
+    /// The session's title (A113): generated after the first turn or set
+    /// with `/rename`; the runtime seeds a resumed session's from the store.
+    pub title: Option<String>,
     /// The `/rewind` timeline (T26.2): one row per user turn, oldest first.
     pub turns: Vec<TurnRow>,
     /// The `seq` of the turn in flight, from `TurnStarted`.
@@ -724,6 +727,7 @@ impl State {
             past_prompts: Vec::new(),
             git: None,
             worktree: None,
+            title: None,
             theme_rows: Vec::new(),
             theme_catalog: Vec::new(),
             syntax_names: Vec::new(),
@@ -2293,8 +2297,8 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             state.mode = mode;
             state.status.effort = effort;
         }
-        // No title row in the TUI yet; the sessions picker reads the store.
-        Event::TitleSet { .. } => {}
+        // A113: the status line shows it; the sessions picker reads the store.
+        Event::TitleSet { title, .. } => state.title = Some(title),
         // A98: the status line's share and the `/context` overlay.
         Event::ContextBreakdown { breakdown, .. } => {
             if let Some(window) = breakdown.window.filter(|w| *w > 0) {

@@ -1048,6 +1048,13 @@ pub enum Submission {
     },
     /// Wind down the session cleanly.
     Shutdown,
+    /// `/rename`, or a rename in the app (A113, T37.22.9): the session's
+    /// title, set by the user. The core answers with a `TitleSet` marked
+    /// `by_user`, which a generated title never replaces.
+    Rename {
+        /// The new title; the core keeps its first line, sanitized.
+        title: String,
+    },
     /// A follow-up for a background task, addressed by `TaskId` (T34.4,
     /// SM§1). Only ever submitted to the **parent** session: `from: None`
     /// is the parent/user, `Some(id)` a sibling relayed through the parent
@@ -1291,6 +1298,10 @@ pub enum Event {
     TitleSet {
         /// The title, one line.
         title: String,
+        /// Set by `Submission::Rename`: the store keeps it over any later
+        /// generated title (A113). Absent in rollouts before T37.22.9.
+        #[serde(default)]
+        by_user: bool,
     },
     /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
     /// for every answer, used or not, so replay and `cox stats` see which
@@ -1671,7 +1682,8 @@ mod tests {
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Plan, effort: Some(Effort::Low) })]
     #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "which?".into(), options: vec!["a".into()], source: None })]
-    #[case::title_set(Event::TitleSet { title: "Fix the ledger".into() })]
+    #[case::title_set(Event::TitleSet { title: "Fix the ledger".into(), by_user: false })]
+    #[case::title_set_by_user(Event::TitleSet { title: "Mine".into(), by_user: true })]
     #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
@@ -1745,6 +1757,7 @@ mod tests {
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
     #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
+    #[case::rename(Submission::Rename { title: "Fix the ledger".into() })]
     #[case::task_message(Submission::TaskMessage { task: TaskId::new(), from: None, hop: 0, text: "follow up".into() })]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");
@@ -1788,7 +1801,7 @@ mod tests {
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Default, effort: None })]
     #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "q".into(), options: vec![], source: None })]
-    #[case::title_set(Event::TitleSet { title: "t".into() })]
+    #[case::title_set(Event::TitleSet { title: "t".into(), by_user: true })]
     fn event_tags_are_snake_case(#[case] event: Event) {
         let json = serde_json::to_value(&event).expect("serialize");
         let tag = json
@@ -1855,6 +1868,20 @@ mod tests {
                 text: "a".into(),
                 state: TodoState::InProgress,
             }])
+        );
+    }
+
+    /// A113: a `TitleSet` written before T37.22.9 has no `by_user` and
+    /// reads as a generated title.
+    #[test]
+    fn title_set_without_by_user_reads_as_generated() {
+        let old = r#"{"type":"title_set","title":"Fix the ledger"}"#;
+        assert_eq!(
+            serde_json::from_str::<Event>(old).expect("old rollout line"),
+            Event::TitleSet {
+                title: "Fix the ledger".into(),
+                by_user: false
+            }
         );
     }
 }

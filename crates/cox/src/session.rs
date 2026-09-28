@@ -675,6 +675,12 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         state.cwd = cwd.to_path_buf();
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
         state.worktree = cli.worktree.clone();
+        // A113: a resumed session's title, including a rename the app wrote
+        // straight to the store; a `TitleSet` later replaces it.
+        state.title = Store::open(&home)
+            .and_then(|store| store.session_info(&session.id()))
+            .ok()
+            .and_then(|info| info.title);
         state.sessions = project_sessions(&home, cwd);
         state.past_prompts = project_prompts(&home, cwd, session.id());
         state.composer.set_vim(config.tui.vim);

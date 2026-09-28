@@ -666,6 +666,11 @@
             "description": "The title, one line.",
             "type": "string"
           },
+          "by_user": {
+            "description": "Set by `Submission::Rename`: the store keeps it over any later\ngenerated title (A113). Absent in rollouts before T37.22.9.",
+            "type": "boolean",
+            "default": false
+          },
           "type": {
             "type": "string",
             "const": "title_set"
@@ -3152,6 +3157,24 @@
         },
         "required": [
           "type"
+        ]
+      },
+      {
+        "description": "`/rename`, or a rename in the app (A113, T37.22.9): the session's\ntitle, set by the user. The core answers with a `TitleSet` marked\n`by_user`, which a generated title never replaces.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The new title; the core keeps its first line, sanitized.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "rename"
+          }
+        },
+        "required": [
+          "type",
+          "title"
         ]
       },
       {

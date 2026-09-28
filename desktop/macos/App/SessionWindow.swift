@@ -3,7 +3,8 @@
 // first-run checklist comes first on a first launch (DT§5.8), after the login shell's
 // environment is read (DT§4.8). Wiring only — the stores decide and the packages draw. The
 // sidebar lists the workspace's sessions and opens one here, the toolbar shows the open one's
-// title, model, mode and cost and stops its turn, its model popover switches the session's model
+// title, model, mode and cost and stops its turn, the toolbar's title and a sidebar row's menu
+// rename a session (A113), its model popover switches the session's model
 // as `/model` does, the inspector's tabs read the open session,
 // Review replaces the transcript column, the shell's panes fold and the Appearance popover writes
 // `[desktop.appearance]`.
@@ -168,6 +169,7 @@ struct SessionWindow: View {
       // DT§5.1: the cost pill opens Context & Cost.
       (screen.inspectorTab, screen.isInspectorVisible) = (.context, true)
     case .open(.model): screen.popover = screen.popover == .model ? nil : .model
+    case .rename(let title): send(.rename(title: title))
     }
   }
 
@@ -177,6 +179,13 @@ struct SessionWindow: View {
     case .filter(let text): model.sidebar.filter = text
     case .toggle(let project): model.sidebar.toggle(project)
     case .newSession: Task { await open(resume: nil) }
+    case .rename(let session, let title):
+      // An open session renames through its core; the store takes a closed one's directly.
+      if let store = opened[session]?.store {
+        send(.rename(title: title), to: store)
+      } else {
+        model.sidebar.rename(session, to: title)
+      }
     case .select(let session):
       reviewing = nil
       if opened[session] != nil {
@@ -244,6 +253,10 @@ struct SessionWindow: View {
 
   private func send(_ intent: Intent) {
     guard let store = showing?.store else { return }
+    send(intent, to: store)
+  }
+
+  private func send(_ intent: Intent, to store: SessionStore) {
     Task {
       do {
         _ = try await store.send(intent)
