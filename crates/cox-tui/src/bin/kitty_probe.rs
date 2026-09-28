@@ -213,6 +213,7 @@ async fn main() {
         grant_tx,
         plugin_tx,
         plugin_mgmt_tx,
+        None,
     )
     .await;
 }

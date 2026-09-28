@@ -60,6 +60,9 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Ctrl+O", "transcript", Context::Idle),
     ("Ctrl+E", "expand", Context::Idle),
     ("Ctrl+G", "diff", Context::Idle),
+    // T54.6: push-to-talk; a running turn falls back to this row, so a
+    // transcript can queue like `Enter`.
+    ("Alt+V", "voice", Context::Idle),
     // T33.25, PL§8: a plugin's `commands`/`keys` reach `state.commands`
     // and `Keymap::declare_plugin_keys` only after this fires once.
     ("Ctrl+K", "plugin.leader", Context::Idle),

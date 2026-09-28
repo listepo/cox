@@ -1755,7 +1755,7 @@ mode.cycle = \"shift+tab\"
 ```
 
 - Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, \
-`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. \
+`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`, `voice`. \
 `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
 - `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable \
 only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two \

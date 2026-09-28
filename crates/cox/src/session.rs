@@ -1096,6 +1096,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             grant_tx,
             plugin_tx,
             plugin_mgmt_tx,
+            // T54.7 passes the `voice` feature's dictation here.
+            None,
         ))?;
         poll.abort();
         // `/handoff`'s summary is the parent's `compact` call, so it runs
