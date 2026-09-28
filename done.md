@@ -5255,3 +5255,58 @@ Check:
 - CoxModel 53 (the Check test replays `two-prompts.json`, takes the second user block from the replay, and finds the composer filled and exactly one conversation-only rewind to its turn), CoxTranscript 45, CoxTranscriptText 33 of 34 (the load-sensitive launch budget); swiftlint clean.
 - After merging into `p37-desktop`: CoxModel 53, CoxTranscript 45.
 Not done: app wiring (T37.32). With a turn running the core refuses the rewind ("interrupt it first") and the draft is still filled; the client does not interrupt.
+
+#### T37.25.3 Context split in the TUI
+
+Depends: T37.25.1 · Size: ~120 · Files: `crates/cox-tui/src/…` (state, status, a `/context` overlay)
+Goal (A98): the TUI shows what the desktop popover shows: its status-line context share takes the window from `Event::ContextBreakdown` instead of a fixed default, and a `/context` overlay lists the window, the share and the system, tools, instructions and history parts with a bar in the same colour roles.
+Check: `insta` snapshots of the status line and the `/context` overlay in dark, light and no-colour; a state test that the event updates the window.
+Status: done 2026-09-28
+Result:
+- The TUI `/context` overlay and the status line's context share read `Event::ContextBreakdown` (A98): the overlay lists each part with its tokens and share of the window, and the status share comes from the event's window rather than a local estimate (commit fb65f7fc).
+- `cox-core/src/context.rs` drops the stale `/context` dead-code note and the unused `Breakdown::to_json`.
+Deviations: none.
+Check:
+- `just test --changed-since` over the merged batch: 900 passed, 2 skipped; clippy on cox-core and cox-tui clean.
+Not done: `cox --plain` still takes the window from its own estimate, not from `ContextBreakdown`.
+
+#### T37.25.2 Context split in the desktop token popover
+
+Depends: T37.25.1 · Size: ~100 · Files: `crates/cox-ffi/src/types.rs` (mirror only), `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxUI/…` (token popover), `desktop/design/DESIGN.md`
+Goal (A98): the live token popover shows the context share of the window and the StackedBar with its legend (`context.system/tools/instructions/history`) that the preview already draws, fed from T37.25.1's Meter; DESIGN.md's context-bar note stops claiming the TUI already showed the split.
+Check: a CoxModel test that the fixture's breakdown reaches the popover state; a CoxUI snapshot of the live-fed popover; fixtures re-recorded.
+Status: done 2026-09-28
+Result:
+- The desktop token popover shows the context split as a `StackedBar` with the window share (A98, commit 8e162483). The one mapping from `ContextPart` lives in CoxTranscript `TokenPopover.Part.init?(ContextPart)`.
+- Meter types moved to `CoxClient/Meter.swift` and their conversion to `CoxCore/Convert+Meter.swift`.
+- The pinned approval bar's snapshots were re-recorded, because the meter now shows the window share from the recorded fixture (commit 48762171).
+Deviations: the meter types moved into their own files, because SwiftLint's 400-line limit was hit.
+Check:
+- After merging into `p37-desktop`: CoxCore 12 (dev XCFramework), CoxModel 54, CoxTranscriptText 35, CoxTranscript 48 (with Benchmark skipped; PinnedDecision re-recorded, and a second run passed), CoxUI 161.
+Not done: none.
+
+#### T37.23.15 Per-level transcript heading sizes
+
+Depends: — · Size: ~60 · Files: `desktop/design/tokens/base.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A94): tokens `font.transcript.h1` (17 pt semibold) and `font.transcript.h4` (13 pt semibold) beside `font.transcript.h3`, documented in DESIGN.md's type table; T37.23.12's heading paragraphs take their size from the heading level as DT§5.9 maps it instead of one `h3` size.
+Check: the token build's own check; a CoxTranscriptText snapshot of every heading level in light and dark.
+Status: done 2026-09-28
+Result:
+- CoxTranscriptText maps markdown headings to three sizes (A94): level 1 → `font.transcript.h1` (17 pt), level 2 → h3, levels 3–6 → `font.transcript.h4` (13 pt semibold). Commits 14d9d1d9 and 8b73b8b0; the second fixed an earlier mapping in which `####` came out larger than `###`.
+Deviations: none.
+Check:
+- After merging into `p37-desktop`: CoxTranscriptText 35, CoxTranscript 48 (with Benchmark skipped), CoxUI 161.
+Not done: none.
+
+#### T37.23.17 A stronger quote bar from its own token
+
+Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json` (and the generated outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…/TranscriptStructure.swift`
+Goal (A97): a `quote.bar` token (width about 3 pt, a colour stronger than the hairline, with light, dark and high-contrast variants) in DESIGN.md's tables; T37.23.12's `QuoteFragment` draws its bars from it instead of the thought's hairline.
+Check: the token build's own check; CoxTranscriptText light and dark snapshots of a nested quote.
+Status: done 2026-09-28
+Result:
+- New token `quote.bar` (A97), using the text.tertiary value: light #a1a1a6, dark #6c6c72, high contrast #8b8b90 / #7a7a7f. New size `size.quoteBar` = 3 pt. Block quotes in the transcript draw their bar with both (commit eb8a38d1).
+Deviations: none.
+Check:
+- After merging into `p37-desktop`: CoxTranscriptText 35, CoxTranscript 48, CoxUI 161.
+Not done: none.
