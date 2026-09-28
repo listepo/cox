@@ -15,9 +15,10 @@ use cox_app::live::LiveSession;
 use cox_app::{
     BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Layer, Need,
 };
+use cox_app::{Browser, BrowserError, PageText};
 use cox_app::{TaskKind, TaskTarget, tasks};
 use cox_protocol::traits::{Archive as _, Store as _};
-use cox_protocol::types::{Attachment, Decision, StopReason};
+use cox_protocol::types::{Attachment, Decision, Event, StopReason};
 
 /// Reads `notes.md`, then replies in markdown.
 const READ_AND_REPLY: &str = r#"
@@ -107,6 +108,16 @@ text = "Found it."
 text = "Two."
 "#;
 
+/// Reads the page open in the browser pane (T51.7).
+const BROWSE: &str = r#"
+[[turn]]
+text = "Reading the page."
+tool_calls = [{ name = "browser_read", input = {} }]
+
+[[turn]]
+text = "Read it."
+"#;
+
 /// The Keychain as a map; remembers what it was asked and told.
 #[derive(Default)]
 struct MemoryHost {
@@ -114,6 +125,27 @@ struct MemoryHost {
     asked: Mutex<Vec<String>>,
     notes: Mutex<Vec<(InboxItem, u32)>>,
     badges: Mutex<Vec<u32>>,
+    browser: Option<Arc<dyn Browser>>,
+}
+
+/// A browser pane showing one page of text.
+struct Page(String);
+
+#[async_trait::async_trait]
+impl Browser for Page {
+    async fn load(&self, _: &str) -> Result<(), BrowserError> {
+        Ok(())
+    }
+    async fn text(&self) -> Result<PageText, BrowserError> {
+        Ok(PageText {
+            title: "Long".into(),
+            url: "http://localhost:3000/".into(),
+            text: self.0.clone(),
+        })
+    }
+    async fn snapshot(&self) -> Result<Vec<u8>, BrowserError> {
+        Err(BrowserError::NoPage)
+    }
 }
 
 impl Host for MemoryHost {
@@ -127,6 +159,9 @@ impl Host for MemoryHost {
     fn secret(&self, section: &str) -> Option<String> {
         self.asked.lock().expect("asked").push(section.into());
         self.secrets.get(section).cloned()
+    }
+    fn browser(&self) -> Option<Arc<dyn Browser>> {
+        self.browser.clone()
     }
 }
 
@@ -890,4 +925,35 @@ async fn terminal_output_is_not_in_the_rollout() {
     assert!(!json.contains("TERM-MARK"), "{json}");
     let blocks = format!("{:?}", session.snapshot());
     assert!(!blocks.contains("TERM-MARK"), "{blocks}");
+}
+
+/// T51.7: a page over the tool cap reaches the model shortened, and the
+/// archive holds every byte of it before that (the lossless rule).
+#[tokio::test]
+async fn browser_read_over_cap_is_archived_first() {
+    let dir = scratch(Some(BROWSE));
+    let page: String = (0..2000).map(|i| format!("line {i}\n")).collect();
+    let host = Arc::new(MemoryHost {
+        browser: Some(Arc::new(Page(page.clone()))),
+        ..MemoryHost::default()
+    });
+    let session = open(dir.path(), host).await.expect("open");
+    session.send(send("read the page")).await.expect("send");
+    finish(&session).await;
+
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let rollout = store.rollout_read(&session.id()).expect("rollout");
+    let result = rollout.iter().find_map(|e| match e {
+        Event::ToolCallDone { result, .. } => Some(result.clone()),
+        _ => None,
+    });
+    let result = result.expect("browser_read finished");
+    assert!(result.ok, "{}", result.visible);
+    let archive = result.archive.expect("the full text is archived");
+    let full = store.get(&archive.id).await.expect("archived bytes");
+    let full = String::from_utf8(full).expect("text");
+    assert!(full.starts_with("Title: Long\nURL: http://localhost:3000/\n"));
+    assert!(full.ends_with(&page), "every line of the page is archived");
+    assert!(result.visible.len() < full.len(), "the model sees less");
+    assert!(!result.visible.contains("line 1000\n"));
 }

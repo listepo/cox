@@ -119,6 +119,7 @@ Programs the project uses and the direct packages from its manifests.
 | typify | local (build-dependency) | https://github.com/oxidecomputer/typify | cox-provider `build.rs`: Anthropic request and stream types generated from the vendored `schema/anthropic-openapi.json` (T30.10, T30.12) |
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
+| url | local | https://crates.io/crates/url | Rust dependency: T51.7, `cox-app`'s browser tools parse a URL and pass only http/https (2.5.8, the latest release, 2026-01-05) |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |

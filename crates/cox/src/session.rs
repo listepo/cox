@@ -83,6 +83,7 @@ pub async fn open(
         plugin_ui: serve_ui(plugin_ui),
         client: None,
         surface: surface.into(),
+        tools: Vec::new(),
     })
     .await?;
     for warning in &opened.warnings {

@@ -5,6 +5,7 @@
 //! it later and no UI toolkit leaks in (`crates/cox/tests/deps.rs`).
 
 pub mod app;
+pub mod browser;
 pub mod changes;
 pub mod coalesce;
 pub mod complete;
@@ -29,6 +30,7 @@ pub mod timeline;
 pub mod usage;
 pub mod workspace;
 
+pub use browser::{Browser, BrowserError, PageText};
 pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;

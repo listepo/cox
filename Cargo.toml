@@ -44,6 +44,10 @@ tokio-util = "0.7"
 # also `cox-tui`'s OSC 52 clipboard write, which replaced its own encoder, and
 # `cox-core`'s attached text file (T37.6).
 base64 = "0.23"
+# T51.7: the browser tools parse the URL they are given and pass only
+# http/https (`cox-app/src/browser.rs`). 2.5.8, the latest release
+# (2026-01-05); already in the tree through reqwest.
+url = "2.5.8"
 
 # cox-core
 tokio = { version = "1", features = ["full"] }

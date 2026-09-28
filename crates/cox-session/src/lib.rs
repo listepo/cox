@@ -13,7 +13,7 @@ use cox_core::{History, Session};
 use cox_protocol::Config;
 use cox_protocol::errors::{CoreError, ProviderError};
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{Hook, Store as _};
+use cox_protocol::traits::{Hook, Store as _, Tool};
 use cox_protocol::types::Level;
 use cox_store::Store;
 use cox_tools::send_message::SendMessageTool;
@@ -144,6 +144,10 @@ pub struct SessionSpec {
     /// T37.34: who drives the session (`tui`, `plain`, `headless`, `acp`,
     /// `app`), named to a second process that tries to open it.
     pub surface: String,
+    /// T51.7: tools only this surface can back (the app's `browser_*`),
+    /// added before the `tool_search` index is built so the deferred ones
+    /// are found. Fixed at open, so the tool set stays byte-stable.
+    pub tools: Vec<Arc<dyn Tool>>,
 }
 
 /// The ACP client's side of a session (T11.1): the link its proxy tools
@@ -191,6 +195,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         plugin_ui,
         client,
         surface,
+        tools: surface_tools,
     } = spec;
     let cwd = cwd.as_path();
     let mut warnings = Vec::new();
@@ -334,6 +339,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         cwd,
         &mut plugin_warnings,
     ));
+    all.extend(surface_tools);
     let all = tools::with_tool_search_index(all);
     let session = match resume {
         Some((id, history)) => Session::resume(
@@ -523,6 +529,7 @@ mod tests {
             plugin_ui: None,
             client: None,
             surface: "test".into(),
+            tools: Vec::new(),
         };
         let scenario = scenario.display().to_string();
         let vars = [

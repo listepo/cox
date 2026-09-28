@@ -41,6 +41,12 @@ pub trait Host: Send + Sync {
     /// The stored secret for a provider section (`anthropic`, `openai`, a
     /// `[providers.<name>]`); its env var, when set, wins.
     fn secret(&self, section: &str) -> Option<String>;
+    /// T51.7: the page the agent drives (the app's browser pane). With one,
+    /// each session opened after gets the `browser_*` tools; `None`, the
+    /// default, leaves the tool set as it was.
+    fn browser(&self) -> Option<Arc<dyn crate::browser::Browser>> {
+        None
+    }
 }
 
 /// What opening, resuming or driving a session can fail with.

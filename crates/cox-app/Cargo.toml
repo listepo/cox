@@ -51,12 +51,15 @@ cox-models = { path = "../cox-models", version = "0.1.2" }
 # tests), and closing it signals its process groups (nix, as `bash` does).
 portable-pty = { workspace = true }
 nix = { workspace = true, features = ["signal", "process"] }
+# T51.7: the browser tools are `Tool`s and the host's `Browser` is async;
+# `url` parses what `browser_open` is given.
+async-trait = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and
 # reuse cox-core's test harness (`tests/scenarios.rs`).
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
-async-trait = { workspace = true }
 insta = { workspace = true }
 # Paused time: a consumer that naps 2 s per pull stays a fast test.
 tokio = { workspace = true, features = ["test-util"] }

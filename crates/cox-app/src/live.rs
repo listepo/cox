@@ -81,6 +81,7 @@ impl LiveSession {
             plugin_ui: None,
             client: None,
             surface: "app".into(),
+            tools: crate::browser::browser_tools(app.host.browser()),
         };
         let keys: cox_session::Keys = Arc::new(move |section: &str| keys.secret(section));
         let opened = cox_session::open_with_keys(spec, Some(keys)).await?;
