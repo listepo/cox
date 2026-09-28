@@ -307,64 +307,89 @@ fn headless_run_waits_for_background_subagents() {
 /// T34.9 follow-up: `wait_idle` (`crates/cox-core/src/tasks.rs`) must stay
 /// blind to `TaskKind::Shell` — only a backgrounded `agent` should hold the
 /// headless exit open. A detached `bash` (a dev server, a long `sleep`) is
-/// meant to outlive the *run* exactly as it always has; if `wait_idle` ever
-/// started counting it too, this would hang for the full harness timeout
-/// instead of exiting in well under a second. But outliving the run is not
-/// the same as outliving the *process*: `run()` (`crates/cox/src/run.rs`)
-/// now cancels and kills any still-running shell task before it exits
-/// (`Session::interrupt` + `wait_tasks_cleared`), so this also checks that
-/// the real OS process is gone afterward, not merely orphaned (ppid 1) —
-/// that was the actual bug in an earlier version of this same fix, caught
-/// only by the coordinator finding ten leaked `sleep` processes from these
-/// very test runs and killing them by hand. `pgrep -f` (the same check
-/// used by hand) is more robust here than capturing the child's own pid
-/// would be: a pid written by the scripted command's first statement
-/// would race the cancellation this test is proving happens promptly, and
-/// could lose that race for reasons that have nothing to do with whether
-/// the process actually died. The scenario's `4001`-second `sleep` is a
-/// deliberately uncommon duration so this can't mistake an unrelated
-/// process for this test's own. `--permission-mode bypass` is what
-/// actually lets the scripted `bash` call run rather than being denied by
-/// the default headless mode — the same flag
-/// `tui_ctrl_b_backgrounds_sleep_and_composer_accepts_input`, in
-/// `tui_e2e.rs`, uses for the same reason. A denied call would prove
-/// nothing here, so this also asserts the `task_created` event for the
-/// shell task actually appears.
+/// meant to outlive the *run*; if `wait_idle` ever started counting it too,
+/// the run would last as long as the shell's 4001-second `sleep`. But
+/// outliving the run is not the same as outliving the *process*: `run()`
+/// (`crates/cox/src/run.rs`) ends the session and kills any still-running
+/// shell task before it exits (`Session::end` + `wait_tasks_cleared`), so
+/// this also checks that the real OS process is gone afterward, not merely
+/// orphaned (ppid 1) — the actual bug in an earlier version of this fix.
+///
+/// T50.6: both checks are built to hold under full-workspace load. The
+/// bound is `DID_NOT_WAIT`, a fraction of the shell's own duration, not a
+/// guess at how fast the run is: idle it takes about 1.5 s, but under the
+/// parallel agents' builds process start-up and the `git` spawns of the
+/// workspace checkpoint around the call took it past 10 s and even 30 s,
+/// none of which is waiting on the shell. The leak check looks for this
+/// run's own command line (`sleep 4001.<test pid>`, written into a copy of
+/// the scenario), since a machine-wide `sleep 4001` also matched the same
+/// test running at that moment in another worktree, and it polls until a
+/// deadline because the killed `sleep` is reaped asynchronously.
+/// `--permission-mode bypass` is what actually lets the scripted `bash`
+/// call run rather than being denied by the default headless mode (as in
+/// `tui_e2e.rs`'s `tui_ctrl_b_backgrounds_sleep_and_composer_accepts_input`);
+/// a denied call would prove nothing, so the `task_created` event for the
+/// shell task is asserted too.
 #[test]
 #[cfg(unix)]
 fn headless_run_does_not_wait_for_a_background_shell() {
+    /// Far above any load-induced slowness seen, far below the 4001 s the
+    /// run would take if it waited on the shell.
+    const DID_NOT_WAIT: Duration = Duration::from_secs(300);
     let work = tempfile::tempdir().expect("work tempdir");
     let home = tempfile::tempdir().expect("home tempdir");
-    let started = std::time::Instant::now();
+    let command = format!("sleep 4001.{}", std::process::id());
+    let reap = KillOnDrop(command.replace('.', "\\."));
+    let scenario = home.path().join("scenario.toml");
+    let template = std::fs::read_to_string(BACKGROUND_SHELL).expect("read scenario");
+    assert!(
+        template.contains("\"sleep 4001\""),
+        "scenario lost its command"
+    );
+    std::fs::write(&scenario, template.replace("sleep 4001", &command)).expect("write scenario");
     let (code, out) = run_scripted(
         work.path(),
         home.path(),
-        BACKGROUND_SHELL,
-        Duration::from_secs(30),
+        scenario.to_str().expect("utf8 path"),
+        DID_NOT_WAIT,
         &["--permission-mode", "bypass"],
     );
-    let elapsed = started.elapsed();
     assert_eq!(code, 0, "{out}");
     let events = events(&out);
     assert!(
         events.iter().any(|e| e["type"] == "task_created"
-            && e["label"].as_str().is_some_and(|l| l.starts_with("bash:"))),
+            && e["label"].as_str().is_some_and(|l| l.contains(&command))),
         "the detached shell's task_created never reached stream-json: {events:#?}"
     );
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while running(&reap.0) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
     assert!(
-        elapsed < Duration::from_secs(10),
-        "headless run waited on a background shell task instead of exiting promptly: {elapsed:?}"
+        !running(&reap.0),
+        "`{command}` outlived the headless run instead of being killed"
     );
+}
 
-    // The process itself must be gone too, not merely abandoned as an
-    // orphan (ppid 1): `pgrep -f` exits 0 if it finds a match, 1 if not.
-    let leaked = Command::new("pgrep")
-        .args(["-f", "sleep 4001"])
+/// Whether a process whose command line matches `pattern` is alive:
+/// `pgrep -f` exits 0 if it finds a match, 1 if not.
+#[cfg(unix)]
+fn running(pattern: &str) -> bool {
+    Command::new("pgrep")
+        .args(["-f", pattern])
         .status()
         .expect("run pgrep")
-        .success();
-    assert!(
-        !leaked,
-        "a `sleep 4001` process outlived the headless run instead of being killed"
-    );
+        .success()
+}
+
+/// Kills whatever still matches the pattern when the test ends, pass or
+/// panic, so a failed run never leaves a 4001-second `sleep` behind.
+#[cfg(unix)]
+struct KillOnDrop(String);
+
+#[cfg(unix)]
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = Command::new("pkill").args(["-f", &self.0]).status();
+    }
 }

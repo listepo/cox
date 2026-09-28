@@ -90,7 +90,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
-| T50.6 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
 
@@ -2761,24 +2760,6 @@ Check: a test drives the plain surface through `/permissions plan` and finds `pl
 Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
-
-### T50.6. `headless_run_does_not_wait_for_a_background_shell` is not timing-flaky
-
-Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~60 · Files: the test file that holds it (`crates/cox/tests/subagent_messaging.rs`), plus the code under test only if the test exposes a real bug
-
-Goal: the e2e test fails under full-workspace load (seen by T40.1 and T41.2 on 2026-09-28: 3 of 3 failures when run alone under load at 10–20 s, passes in ~3 s when idle). Find whether it is a fixed wall-clock bound, a race with the detached shell's teardown (T38.2 changed session-end cancellation), or a real bug; make the test wait on an event or a deadline that holds under load, never on a fixed sleep; fix the code instead if it is a real bug.
-
-Check: the test passes 20 times in a row under load (e.g. `cargo nextest run --workspace` in parallel with a second nextest run, or `stress`-style repeat with `--test-threads` high); the root cause is written in the done.md entry.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: other slow tests.
-
-Plan:
-1. Reproduce first: build the test binary, run the test in a loop (`--test-threads` high, several copies at once) while the machine is under the parallel agents' build load, and record which assertion fails (the 10 s `elapsed` bound, the machine-wide `pgrep -f "sleep 4001"` leak check, or the 30 s `run_scripted` timeout) and where the run spends its time (process start, turns, `end()` + `wait_tasks_cleared(SHELL_CANCEL_GRACE)`).
-2. Write the root cause down here before changing anything.
-3. Fix at the responsible layer: in `crates/cox/tests/subagent_messaging.rs`, replace any fixed wall-clock bound that load can break with a bound that holds under load and still proves the claim (the shell sleeps for 4001 s, so "did not wait" is any exit far below that), and make the leak check see only this run's process (a command line unique to the run, like T38.2's `sleep 4011.<pid>`, polled with a deadline). If the repro shows a real bug in `crates/cox/src/run.rs` or `crates/cox-core/src/tasks.rs` (e.g. the shell outliving the run), fix the code instead and keep the test strict.
-4. Verify: the test 20 times in a row under load, then fmt, clippy, full nextest.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
