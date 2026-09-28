@@ -363,6 +363,13 @@ pub struct ProviderModel {
     /// §4.3.3), so it is opt-in per model rather than per wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<bool>,
+    /// Whether this model takes image input (T37.6). Read only by an
+    /// `api = "chat"` section, where one server hosts both vision and
+    /// text-only models: unset means "not declared", and an attached image
+    /// is then held back with a notice rather than sent to a model that
+    /// would reject it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
 }
 
 /// `[providers]` (plan.md §1.6).

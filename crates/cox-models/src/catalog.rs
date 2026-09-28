@@ -35,6 +35,9 @@ pub struct Capabilities {
     /// `ProviderModel.reasoning_effort` (T30.26); read by
     /// [`crate::effort_for`] for the Chat wire.
     pub reasoning_effort_param: Option<bool>,
+    /// Accepts image input. Declared per model by `ProviderModel.images`
+    /// (T37.6); read by the Chat wire's `Provider::accepts_images`.
+    pub images: Option<bool>,
 }
 
 impl Capabilities {
@@ -44,6 +47,7 @@ impl Capabilities {
     pub fn declared_by(model: &ProviderModel) -> Self {
         Self {
             reasoning_effort_param: model.reasoning_effort,
+            images: model.images,
             ..Self::default()
         }
     }
@@ -362,8 +366,12 @@ impl Catalog {
             row.efforts = model.efforts.clone();
         }
         // Like `efforts`: an entry that declares nothing keeps the row's.
-        if let Some(param) = Capabilities::declared_by(model).reasoning_effort_param {
+        let declared = Capabilities::declared_by(model);
+        if let Some(param) = declared.reasoning_effort_param {
             row.capabilities.reasoning_effort_param = Some(param);
+        }
+        if let Some(images) = declared.images {
+            row.capabilities.images = Some(images);
         }
     }
 

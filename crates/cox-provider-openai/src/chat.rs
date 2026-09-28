@@ -484,6 +484,15 @@ impl Provider for OpenAiChatProvider {
         ProviderId::Local
     }
 
+    /// Only a `models` entry that declares `images = true`: a local server
+    /// hosts text-only models too, and they reject an `image_url` part.
+    fn accepts_images(&self, model: &str) -> bool {
+        self.models
+            .iter()
+            .find(|m| m.id == model)
+            .is_some_and(|m| Capabilities::declared_by(m).images == Some(true))
+    }
+
     fn capabilities(&self) -> Caps {
         Caps {
             cache: false,
@@ -1071,6 +1080,33 @@ mod tests {
         )
         .expect("client builds");
         assert_eq!(bare.capabilities().max_context, 32_768);
+    }
+
+    /// T37.6 Check: a local Chat model takes images only when its
+    /// `models` entry declares them; anything else gets the core's notice.
+    #[test]
+    fn chat_accepts_images_only_where_a_model_declares_them() {
+        use cox_protocol::config::ProviderModel;
+        let client = OpenAiChatProvider::new(
+            &transport("http://localhost:11434/v1"),
+            None,
+            vec![
+                ProviderModel {
+                    id: "llava".into(),
+                    images: Some(true),
+                    ..Default::default()
+                },
+                ProviderModel {
+                    id: "qwen3-coder".into(),
+                    ..Default::default()
+                },
+            ],
+            32_768,
+        )
+        .expect("client builds");
+        assert!(client.accepts_images("llava"));
+        assert!(!client.accepts_images("qwen3-coder"));
+        assert!(!client.accepts_images("unlisted"));
     }
 
     #[test]
