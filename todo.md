@@ -22,9 +22,8 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.23.9. Prompt bubble glass, elevation and hover actions
-- T37.23.10. Thought duration in the thinking header
-- T37.23.12. Heading and quote structure from StyledDoc
 - T37.23.13. Transcript text size and line height from config and tokens
+- T37.23.14. Empty signed thinking items close like streamed thoughts
 - T37.25.1. Context window size and split in the token popover
 - T37.24.7. Composer status chips
 - T37.27.8. One app-local key monitor for the composer and the decision bar

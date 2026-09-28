@@ -4979,3 +4979,43 @@ Check:
 - CoxUI 140 (Info snapshots), CoxModel 42 (3 new), CoxCore 10.
 - After merging into `p37-desktop` with T37.29.2 and T37.29.6: cox-app, cox-ffi and cox-store 101/101; CoxCore 12/12; CoxModel 44/44; CoxUI InfoTab 2/2; CoxTranscript builds with its tests.
 Not done: app wiring (T37.22.3).
+
+#### T37.23.10 Thought duration in the thinking header
+
+Depends: — · Size: ~150 · Files: `crates/cox-protocol/…`, `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
+Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
+Decided by the creator (A91): `cox-core` gives streamed reasoning its own `Thinking` item (`ItemStarted` → deltas → `ItemDone`) and emits `Event::ThinkingDone { item, duration_ms }` with the first-to-last-delta time, which the rollout keeps; `Timeline` folds the live deltas and the duration. Today live reasoning deltas are keyed to the reply's `AssistantMessage` item and `Timeline` drops them (`cox-core/src/turn.rs`). Regenerate `docs/protocol.jsonschema` through its drift test.
+Status: done 2026-09-28
+Result:
+- `cox-protocol`: new `Event::ThinkingDone { item, duration_ms }` (A91); `docs/protocol.jsonschema` regenerated through its drift test.
+- `cox-core/src/turn.rs`: `consume_provider` opens a `Thinking` item on the first reasoning delta and closes it with `ThinkingDone` then `ItemDone` before any other provider event, or at stream end; the duration runs from the first to the last delta (`Instant`, as tool durations do; cox-core has no clock trait). The rollout keeps `ThinkingDone`, so a replay reads the same value. The reply's `AssistantMessage` `ItemStarted` moved from `session.rs` into `consume_provider`, after the thought closes.
+- cox-app (`patch.rs`, `timeline.rs`, `coalesce.rs`): `BlockKind::Thinking { text, duration_ms }`, set by `ThinkingDone`; cox-ffi mirrors the field.
+- Swift: `.thinking(text:durationMs:)`; `TranscriptCards.thoughtTitle` reads "Thinking" while the thought streams and "Thought for N s" once it ends (rounded, never 0); `TranscriptView` passes it to `ThinkingHeader`. DT Thinking row names the new events.
+Deviations:
+- Every surface now lists the thought before the reply, and the TUI and plain surfaces no longer mix reasoning into the reply text; without reasoning the event order is unchanged. The TUI needed an explicit `ThinkingDone` arm.
+- 22 files, +323/−36 with tests and snapshots.
+Check:
+- nextest: cox-protocol 102; cox-core and cox-app 337 (`streamed_thought_is_its_own_item_closed_before_the_reply`, `folded_thought_records_its_duration_and_replay_keeps_it`); cox-acp and cox-tui 265; cox 143; cox-ffi and cox-app 64 with `forward_only`. `cargo check` on every crate that matches on `Event`; clippy and fmt clean.
+- CoxTranscriptText 32 (header-title test), CoxModel 39, CoxTranscript 28 (`ThoughtHeaderSnapshotTests` light/dark, both states), CoxCore 10.
+- After merging into `p37-desktop`: cox-protocol, cox-core, cox-app and cox-ffi 457/457; with T37.23.12, cox-render, cox-app, cox-ffi and cox-tui 378/378; CoxCore 12/12 (dev-profile XCFramework), CoxModel 44/44, CoxPlatform 13/13, CoxTranscriptText 33/33, CoxTranscript 37/37.
+Not done: an empty signed `Thinking` item (T39.2, Gemini over Chat) still opens a block with no `ThinkingDone` (T37.23.14).
+
+#### T37.23.12 Heading and quote structure from StyledDoc
+
+Depends: — · Size: ~150 · Files: `crates/cox-render/src/…` (`StyledDoc`), `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A92): each `StyledDoc` block carries its kind (heading, quote, list item, …), level or depth and marker apart from the text, so the desktop draws a heading without its `#` markers, a quote with a real bar at its depth and a list item with its marker in the gutter. The TUI keeps printing as today. "Copy as Markdown" still returns the source Markdown.
+Check: a `cox-render` test that a heading, a nested quote and a list item carry level and marker and their text without them; a TUI snapshot unchanged; CoxTranscriptText light/dark snapshots of a reply with each kind; a copy test that returns the Markdown source.
+Status: done 2026-09-28
+Result:
+- `cox-render/src/doc.rs`: each line of a `Block::Text` is a `TextLine { quote, depth, marker, spans }`; a heading's `#` run leaves the text and its level stays in `TextKind::Heading` (A92). `markdown.rs` fills the fields; the ratatui `render` puts the bars, marker and `#` run back, so the TUI prints as before. Two parser fixes: the kind resets after a heading ends, and a quote that goes on after a list inside it is a quote again.
+- cox-ffi declares `TextLine` as `#[uniffi::remote(Record)]`.
+- Swift: CoxClient `TextLine` and its decoding; CoxCore `Convert.swift`; `DocMarkdown` rebuilds `#`, `-` or the number and `>` from the fields (no more guessing from the text). CoxTranscriptText draws a heading without `#`, a list marker right-aligned in the gutter, and a quote line indented past one bar per level: a new `QuoteFragment` in `TranscriptStructure.swift`, hooked into `DecorLayout` (`TranscriptDecor.swift`), in the thought's rule colour and width.
+Deviations:
+- About 350 source lines in 10 files: the line type crosses cox-render, cox-ffi, CoxClient, CoxCore and CoxTranscriptText.
+- The three fixtures re-recorded (and again at the merge); the cox-render doc snapshot and 12 cox-app scenario snapshots changed shape only.
+Check:
+- `cargo nextest run -p cox-render -p cox-app -p cox-ffi -p cox-tui`: 366, including `headings_quotes_and_items_carry_level_and_marker_apart_from_their_text` and `a_list_in_a_quote_keeps_its_bars_and_the_quote_resumes_after_it`; no cox-tui snapshot changed; clippy and fmt clean.
+- CoxModel 39, CoxTranscriptText 32 (`aQuoteLineLaysOutWithItsBarsAndProseWithout`), CoxTranscript 32 (`replyWithEveryBlockKind` light/dark re-recorded and looked at; `copyAsMarkdownGivesTheStructureBack`, new `copyAsMarkdownOfALoadedReplyGivesItsSource`), CoxCore 10.
+- After merging into `p37-desktop`: cox-render, cox-app, cox-ffi and cox-tui 378/378; CoxCore 12/12, CoxModel 44/44, CoxPlatform 13/13, CoxTranscriptText 33/33, CoxTranscript 37/37.
+Not done: per-level heading sizes (pending token decision); the quote bar uses the thought's hairline, faint in light mode (token question in `ideas.md`).

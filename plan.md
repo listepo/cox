@@ -28,9 +28,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.9 | todo | P2 | 2 | 0% | |
-| T37.23.10 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.23.12 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.13 | todo | P3 | 2 | 0% | |
+| T37.23.14 | todo | P3 | 2 | 0% | |
 | T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.27.8 | todo | P3 | 1 | 0% | |
@@ -2756,24 +2755,17 @@ Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/�
 Goal: the user bubble drawn by `DecorFragment` gets DS§6.3's glass sweep and e2 elevation from tokens, with a gap between the prompt text and its tile row; hovering a prompt shows its Edit-and-resend and Copy actions, which reach the composer and the pasteboard.
 Check: light/dark snapshots of a prompt at rest and hovered; a test that Copy puts the prompt text on the pasteboard and Edit fills the composer.
 
-#### T37.23.10 Thought duration in the thinking header
-
-Depends: — · Size: ~150 · Files: `crates/cox-protocol/…`, `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
-Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
-Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
-Decided by the creator (A91): `cox-core` gives streamed reasoning its own `Thinking` item (`ItemStarted` → deltas → `ItemDone`) and emits `Event::ThinkingDone { item, duration_ms }` with the first-to-last-delta time, which the rollout keeps; `Timeline` folds the live deltas and the duration. Today live reasoning deltas are keyed to the reply's `AssistantMessage` item and `Timeline` drops them (`cox-core/src/turn.rs`). Regenerate `docs/protocol.jsonschema` through its drift test.
-
-#### T37.23.12 Heading and quote structure from StyledDoc
-
-Depends: — · Size: ~150 · Files: `crates/cox-render/src/…` (`StyledDoc`), `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
-Goal (A92): each `StyledDoc` block carries its kind (heading, quote, list item, …), level or depth and marker apart from the text, so the desktop draws a heading without its `#` markers, a quote with a real bar at its depth and a list item with its marker in the gutter. The TUI keeps printing as today. "Copy as Markdown" still returns the source Markdown.
-Check: a `cox-render` test that a heading, a nested quote and a list item carry level and marker and their text without them; a TUI snapshot unchanged; CoxTranscriptText light/dark snapshots of a reply with each kind; a copy test that returns the Markdown source.
-
 #### T37.23.13 Transcript text size and line height from config and tokens
 
 Depends: — · Size: ~100 · Files: `crates/cox-config/…` (`[desktop.transcript]`), `docs/config.jsonschema`, `docs/config.md`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscriptText/…`
 Goal (A93): `[desktop.transcript]` gets `text_size` and `line_height`; the desktop builds `TranscriptStyle` from them together with `Appearance.textScale` (⌘+/⌘−) and applies the token line heights to the transcript text, restyling in place through T37.23.6's `restyle(_:)`.
 Check: the config-schema drift test; a CoxModel test that the keys reach the style; CoxTranscriptText snapshots at two sizes and line heights.
+
+#### T37.23.14 Empty signed thinking items close like streamed thoughts
+
+Depends: — · Size: ~60 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`
+Goal: T39.2 keeps a tool call's signature as an empty signed `Thinking` item (Gemini over Chat). Since T37.23.10 a streamed thought is closed with `ThinkingDone`, but these empty items open a Timeline thinking block that never gets a duration; the desktop only hides it because its text is empty. Either the core closes them the same way or `Timeline` does not open a block for a signature-only item.
+Check: a cox-app test folding a signature-only thinking item leaves no open thinking block; the T39.2 chat-wire test still passes.
 
 #### T37.25.1 Context window size and split in the token popover
 
