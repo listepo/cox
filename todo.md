@@ -27,6 +27,7 @@
 - T37.29.3.2. Context tab: per-turn cost history
 - T37.29.3.3. Context tab: project totals
 - T37.29.3.4. Context tab: budget cap and how close it is
+- T37.29.3.5. Context tab: cache hit per turn or per session, Compact now waits for the turn
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`
