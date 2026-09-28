@@ -21,3 +21,10 @@ import Testing
       .rewind(toTurn: 2, code: true, conversation: true),
     ])
 }
+
+@MainActor
+@Test func theChangesTabsPlainRewindRestoresCodeOnly() async throws {
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+  try await SessionStore(session: session).rewind(checkpoint: "3")
+  #expect(session.sent == [.rewind(toTurn: 3, code: true, conversation: false)])
+}

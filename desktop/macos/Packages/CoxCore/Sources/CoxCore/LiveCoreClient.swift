@@ -56,6 +56,10 @@ final class LiveSession: SessionClient {
     CoxClient.Changes(try await handle.changes())
   }
 
+  func review(_ path: String) async throws -> CoxClient.DiffModel? {
+    try await handle.review(path: path).map { CoxClient.DiffModel($0) }
+  }
+
   func plan() -> [CoxClient.TodoItem] { handle.plan().map { CoxClient.TodoItem($0) } }
   func openTask(_ task: String) throws -> CoxClient.TaskTarget? {
     try handle.openTask(task: task).map { CoxClient.TaskTarget($0) }

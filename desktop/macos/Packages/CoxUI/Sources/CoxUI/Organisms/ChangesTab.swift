@@ -26,7 +26,8 @@ struct ChangesTab: View {
     case open(path: String)
     /// Restore this file to before the session changed it.
     case revert(path: String)
-    /// Rewind the session to the checkpoint with this id.
+    /// Restore the session's code to the checkpoint with this id (DT§5.2, A101); the
+    /// conversation stays. `RewindTimeline` offers the other scopes.
     case rewind(checkpoint: String)
   }
 

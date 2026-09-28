@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use cox_app::diffmodel::DiffModel;
 use cox_app::live::LiveSession;
 use cox_app::{Block, Changes, Completion, Info, Intent, TaskTarget, TimelinePatch};
 use cox_protocol::ids::{SessionId, TaskId};
@@ -60,6 +61,12 @@ impl SessionHandle {
     /// What the inspector's Changes tab lists (T37.29.1).
     pub async fn changes(self: Arc<Self>) -> Result<Changes, AppError> {
         Ok(on_runtime(async move { self.live.changes().await }).await??)
+    }
+
+    /// Review's diff of one changed file (T37.28.2): its checkpoint copy
+    /// against the file on disk.
+    pub async fn review(self: Arc<Self>, path: String) -> Result<Option<DiffModel>, AppError> {
+        Ok(on_runtime(async move { self.live.review(&path).await }).await??)
     }
 
     /// What the inspector's Plan tab lists (T37.29.2).
