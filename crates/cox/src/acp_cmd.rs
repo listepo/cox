@@ -38,7 +38,7 @@ impl cox_acp::SessionFactory for AcpFactory {
             home: self.cli.home.clone().unwrap_or_else(config_load::cox_home),
             worktree: false,
             answer: self.answer.clone(),
-            questions: None,
+            questions: false,
             resume: None,
             // No terminal to print a login URL on: a 401 is a notice.
             mcp_login: None,
@@ -48,6 +48,7 @@ impl cox_acp::SessionFactory for AcpFactory {
                 fs: req.client_fs,
                 terminal: req.client_terminal,
             }),
+            surface: "acp".into(),
         })
         .await?;
         // stdout carries the protocol: warnings reach the client as notices,

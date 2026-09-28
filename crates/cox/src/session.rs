@@ -51,6 +51,13 @@ pub async fn open(
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
+    // T37.34: only the TUI renders plugins and only `--plain` and the TUI
+    // ask questions, so these name the surface to a second opener.
+    let surface = match (&plugin_ui, questions) {
+        (Some(_), _) => "tui",
+        (None, true) => "plain",
+        (None, false) => "headless",
+    };
     let opened = cox_session::open(cox_session::SessionSpec {
         config: loaded.config.clone(),
         cwd: cwd.to_path_buf(),
@@ -62,6 +69,7 @@ pub async fn open(
         mcp_login: interactive.then(mcp_login),
         plugin_ui: serve_ui(plugin_ui),
         client: None,
+        surface: surface.into(),
     })
     .await?;
     for warning in &opened.warnings {
