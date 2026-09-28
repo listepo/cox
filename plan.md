@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.3 | todo | P3 | 2 | 0% | |
-| T37.44.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.10 | todo | P2 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
 | T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
@@ -2831,12 +2830,6 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
 Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
 Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
-
-#### T37.44.9 Main-screen states and glass variants match the mockups
-
-Depends: T37.44.2 · Size: ~150 · Files: CoxUI main-screen organisms and screens, their snapshots
-Goal: A114, A119. Mockups 01-main-session-streaming, 02-main-session-dark, 14-rewind-edit-resend, 15-bypass-mode-budget-stop, 22-empty-session, 29-main-glass-glossy and 30-main-glass-tokens are compared with the CoxUI snapshots of the same states (`npm run diff`); every difference is fixed through the tokens, snapshots re-recorded on purpose. Iterate in CoxUI alone.
-Check: per screen, the diff at `--threshold 0.3` shows no layout or type region left unexplained; CoxUI tests pass; swift-format and swiftlint strict clean.
 
 #### T37.44.10 Tokens for the type sizes and window sizes the mockups use
 

@@ -27,7 +27,6 @@
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.44.3. Figma text in SF Pro and SF Mono
-- T37.44.9. Main-screen states and glass variants match the mockups
 - T37.44.10. Tokens for the type sizes and window sizes the mockups use
 - T37.44.11. The running app matches the mockups end to end
 - T37.45.3. Settings: permission rules editor and session grants
