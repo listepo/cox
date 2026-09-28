@@ -23,7 +23,9 @@ struct ModelCapsule: View {
       HStack(spacing: Space.s) {
         Image(systemName: "sparkle")
           .symbolStyle(.body)
-          .foregroundStyle(Color(.statusPlan))
+          // The mockup's `--purple`, which the tokens name `role.project`; `status.plan` is
+          // its `--blue`, the Plan segment's colour.
+          .foregroundStyle(Color(.roleProject))
         Text(model).lineLimit(1)
         Image(systemName: "chevron.down").symbolStyle(.micro)
       }

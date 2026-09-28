@@ -5,7 +5,7 @@
 import SwiftUI
 
 /// A floating `ShellPane(.inspector)` of `Size.inspectorWidth`: the title, the tabs with the
-/// selected one lifted, then `content` for the selected tab (`ChangesTab`, …), scrolling.
+/// selected one marked, then `content` for the selected tab (`ChangesTab`, …), scrolling.
 struct Inspector<Content: View>: View {
   let selection: InspectorTab
   let select: (InspectorTab) -> Void
@@ -67,22 +67,28 @@ public enum InspectorTab: CaseIterable, Sendable {
   }
 }
 
-/// One tab: a quiet label, or lifted on the window surface while selected.
+/// One tab: a quiet label, or, while selected, lifted on the window surface on glass and a
+/// `fill.secondary` well on Solid — the mockup's `.glass .tabs span.on` and `.tabs span.on`
+/// (screens 28–30 and 01–02); a lifted white tab on a white Solid pane reads only by its shadow.
 private struct TabButton: View {
   let title: String
   let isSelected: Bool
   let action: () -> Void
+  @EffectiveAppearance private var appearance
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
+    let isLifted = isSelected && appearance.material != .solid
     Button(action: action) {
       Text(title)
         .textStyle(.control)
         .foregroundStyle(Color(isSelected ? .textPrimary : .textSecondary))
         .padding(.horizontal, Space.m)
         .padding(.vertical, Space.xs)
-        .background { if isSelected { shape.fill(Color(.surfaceWindow)) } }
-        .elevation(isSelected ? .e1 : .e0, cornerRadius: Radius.s)
+        .background {
+          if isSelected { shape.fill(Color(isLifted ? .surfaceWindow : .fillSecondary)) }
+        }
+        .elevation(isLifted ? .e1 : .e0, cornerRadius: Radius.s)
         .contentShape(shape)
     }
     .buttonStyle(.plain)
