@@ -291,6 +291,7 @@ component.
 | `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
 | `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel | `.group .gr` |
 | `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent | `.sel`, Add key |
+| `ChecklistRow(title, detail:, status:, symbol:, action:, perform:)` | status symbol in its colour (passed `checkmark` in `status.success`, warning, missing `xmark.octagon` in `status.danger`, a step to take in `accent`) in one `size.iconTile` column, SettingLabel, then the fix button (`CoxButtonStyle` small: primary for a step, secondary for a fix); SettingRow's insets | onboarding `.group .gr` |
 
 ### 6.4 Organisms
 
@@ -323,6 +324,12 @@ It holds no styling of its own; it takes `MainScreenState` and reports `MainScre
 `SettingsScreenState` and reports `SettingsScreenIntent`; `CoxModel`'s `SettingsStore.tables(in:)` holds
 the titles, details and controls the app copies into that state. The mockup's coloured page tiles need
 colour tokens that do not exist yet, so pages show the plain symbol.
+
+`OnboardingScreen` = `ShellPane(.window)` holding a `SettingsGroupBox` with the Open a project step and
+one with a `ChecklistRow` per check (DT§5.8). It takes `OnboardingScreenState` (the rows `cox-app`'s
+`checklist` returns: provider key, git, sandbox, shell environment, each with what is missing and an
+optional fix) and reports `OnboardingScreenIntent` (`chooseFolder`, `openSettings`, `retry`). The
+mockup's welcome hero needs a title token and the app icon, which do not exist yet.
 
 ## 7. Data shown in the token meter
 

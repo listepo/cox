@@ -534,7 +534,9 @@ status per server, Log in / Log out; login opens the browser via `Host`.
 
 First launch: "Open a project" (folder picker or drop a folder), then a
 checklist from the doctor checks — provider key found, git available,
-sandbox works, shell environment resolved — each with a fix button. Offer to
+sandbox works, shell environment resolved — each with a fix button. The
+rows come from `cox-app`'s `checklist`, which runs `cox doctor`'s own checks
+(`cox_session::doctor`), so the app and the CLI never disagree. Offer to
 import Claude Code settings. Empty transcript: three example prompts built
 from the project (e.g. "Explain the architecture of <name>"). An error state
 always names the cause and one action.

@@ -1,0 +1,97 @@
+// `OnboardingScreen` (DS§6.5; DT§5.8): the first-run window — open a project, then the checklist
+// from `cox doctor`'s checks (provider key, git, sandbox, login-shell environment), each saying
+// what is missing and offering its fix. Composition only (DS§5): the rows, their status and what
+// is missing arrive in `state` from `cox-app`'s checklist; the app binds `send`.
+
+import SwiftUI
+
+/// The checklist rows, in the order `cox-app` returns them.
+struct OnboardingScreenState: Equatable, Sendable {
+  var checks: [OnboardingScreen.Check] = []
+}
+
+/// Every intent the first-run window reports.
+enum OnboardingScreenIntent: Equatable, Sendable {
+  /// The folder picker, for the project the first session runs in.
+  case chooseFolder
+  /// Settings, to store a provider key.
+  case openSettings
+  /// Run the checks again, after the person fixed something outside the app.
+  case retry
+}
+
+/// The first-run window: a project step over a `SettingsGroupBox` of `ChecklistRow`s.
+struct OnboardingScreen: View {
+  let state: OnboardingScreenState
+  let send: (OnboardingScreenIntent) -> Void
+
+  var body: some View {
+    ShellPane(.window) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: Space.xl) {
+          SettingsGroupBox("Project") {
+            ChecklistRow(
+              "Open a project", detail: "Choose a folder. A git repository is recommended.",
+              status: .step, symbol: "folder", action: "Choose Folder…"
+            ) { send(.chooseFolder) }
+          }
+          SettingsGroupBox("Checks") {
+            ForEach(state.checks) { check in
+              ChecklistRow(
+                check.title, detail: check.detail, status: check.status, action: check.fix?.title
+              ) { if let fix = check.fix { send(fix.intent) } }
+            }
+          }
+        }
+        .frame(maxWidth: Size.readingWidth)
+        .padding(Space.huge)
+        .frame(maxWidth: .infinity)
+      }
+    }
+  }
+}
+
+extension OnboardingScreen {
+  struct Check: Identifiable, Equatable, Sendable {
+    /// The check's stable id from `cox-app` (`provider_key`, `git`, `sandbox`, `shell_env`).
+    let id: String
+    var title: String
+    /// What was found, or what is missing.
+    var detail: String
+    var status: ChecklistRow.Status
+    var fix: Fix?
+  }
+
+  /// The button a check that is not ok offers.
+  enum Fix: Equatable, Sendable {
+    case openSettings, retry
+
+    var title: String {
+      switch self {
+      case .openSettings: "Open Settings"
+      case .retry: "Check Again"
+      }
+    }
+
+    var intent: OnboardingScreenIntent {
+      switch self {
+      case .openSettings: .openSettings
+      case .retry: .retry
+      }
+    }
+  }
+}
+
+#Preview("no provider") {
+  OnboardingScreen(state: PreviewState.onboardingNoProvider) { _ in }
+    .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    .padding(Space.xxl)
+    .background(PreviewBackdrop())
+}
+
+#Preview("all green") {
+  OnboardingScreen(state: PreviewState.onboardingAllGreen) { _ in }
+    .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    .padding(Space.xxl)
+    .background(PreviewBackdrop())
+}

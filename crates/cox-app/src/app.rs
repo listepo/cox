@@ -77,7 +77,9 @@ pub async fn load_login_env() -> Option<String> {
         // so cox's own threads are idle; Rust's env reads share std's lock.
         unsafe { std::env::set_var(key, value) };
     }
-    warning.map(|w| w.to_string())
+    let warning = warning.map(|w| w.to_string());
+    crate::onboarding::remember_login(warning.as_deref());
+    warning
 }
 
 /// One per process.
@@ -147,6 +149,13 @@ impl App {
     /// Sets `key` to `json` in this home's `config.toml`; the new view.
     pub fn set_setting(&self, cwd: &Path, key: &str, json: &str) -> Result<SettingsView, AppError> {
         Ok(crate::settings::set(&self.user_config(), cwd, key, json)?)
+    }
+
+    /// The config a session in `cwd` runs with. The Claude-settings layer
+    /// is read only by `crates/cox`.
+    pub(crate) fn config(&self, cwd: &Path) -> Result<cox_protocol::Config, AppError> {
+        let flags = serde_json::Value::Object(serde_json::Map::new());
+        Ok(cox_config::load::load_in(&self.user_config(), cwd, &flags, |_| None)?.config)
     }
 
     /// This home's `config.toml`, what sessions and Settings both read.

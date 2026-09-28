@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use cox_app::app::{App, AppError, Host};
 use cox_app::live::LiveSession;
-use cox_app::{BlockKind, InboxItem, Intent, Need, TimelinePatch};
+use cox_app::{BlockKind, CheckId, CheckStatus, InboxItem, Intent, Need, TimelinePatch};
 use cox_protocol::types::{Decision, StopReason};
 
 /// Reads `notes.md`, then replies in markdown.
@@ -242,4 +242,30 @@ async fn the_host_supplies_the_provider_key_and_its_absence_fails() {
     keyed.secrets.insert("anthropic".into(), "sk-test".into());
     let session = open(dir.path(), Arc::new(keyed)).await;
     assert!(session.is_ok(), "{:?}", session.err());
+}
+
+#[test]
+fn the_checklist_asks_the_host_for_the_provider_key() {
+    let dir = scratch(None);
+    let project = dir.path().join("project");
+    let empty = Arc::new(MemoryHost::default());
+    let rows = app(dir.path(), Arc::clone(&empty))
+        .checklist(&project)
+        .expect("checklist");
+    assert_eq!(rows[0].id, CheckId::ProviderKey);
+    assert_eq!(rows[0].status, CheckStatus::Fail, "{}", rows[0].detail);
+    assert_eq!(*empty.asked.lock().expect("asked"), ["anthropic"]);
+    // `load_login_env` never ran in this process.
+    let shell = rows.last().expect("shell row");
+    assert_eq!(
+        (shell.id, shell.status),
+        (CheckId::ShellEnv, CheckStatus::Warn)
+    );
+
+    let mut keyed = MemoryHost::default();
+    keyed.secrets.insert("anthropic".into(), "sk-test".into());
+    let rows = app(dir.path(), Arc::new(keyed))
+        .checklist(&project)
+        .expect("checklist");
+    assert_eq!(rows[0].status, CheckStatus::Ok, "{}", rows[0].detail);
 }
