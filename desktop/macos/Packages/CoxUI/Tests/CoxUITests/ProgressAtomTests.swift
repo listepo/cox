@@ -26,11 +26,12 @@ import Testing
   }
 
   @Test func spinnerTurns() throws {
-    #expect(try frames(reduceMotion: false).count > 1)
+    #expect(try spinnerMoves(reduceMotion: false, within: 10))
   }
 
+  /// A turning spinner draws a new frame many times over in this span.
   @Test func spinnerHoldsStillUnderReduceMotion() throws {
-    #expect(try frames(reduceMotion: true).count == 1)
+    #expect(try !spinnerMoves(reduceMotion: true, within: Motion.durationSlow * 4))
   }
 
   @Test func progressRingClampsItsFraction() {
@@ -39,17 +40,15 @@ import Testing
     #expect(ProgressRing(.nan).fraction == 0)
   }
 
-  /// The distinct frames a spinner draws over more than half a turn.
-  private func frames(reduceMotion: Bool) throws -> Set<Data> {
+  /// Whether a spinner draws a frame unlike its first within `limit` seconds. The wait ends on
+  /// the first changed frame, not on a clock, so load slows the test but cannot fail it
+  /// (T37.21: the fixed sampling window could close before a second frame was drawn).
+  private func spinnerMoves(reduceMotion: Bool, within limit: TimeInterval) throws -> Bool {
     let host = SnapshotHost(
       PreviewPane { Spinner() }, Variant(scheme: .light, material: .solid),
       reduceMotion: reduceMotion)
-    var frames: Set<Data> = []
-    let end = Date().addingTimeInterval(Motion.durationSlow * 2)
-    while Date() < end {
-      RunLoop.main.run(until: Date().addingTimeInterval(Motion.durationFast))
-      if let frame = try host.bitmap().tiffRepresentation { frames.insert(frame) }
-    }
-    return frames
+    let start = try host.bitmap().tiffRepresentation
+    let later = try host.bitmap(until: { $0.tiffRepresentation != start }, limit: limit)
+    return later.tiffRepresentation != start
   }
 }

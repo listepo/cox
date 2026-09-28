@@ -64,6 +64,22 @@ struct SnapshotHost<Sample: View> {
     return bitmap
   }
 
+  /// The first frame for which `done` holds, rendered as the main run loop turns. The wait
+  /// ends on what is drawn, not on a clock, so load can slow a test but not change the frame
+  /// it reads. `limit` only bounds a wait that would never end: then the last frame comes back
+  /// and the caller's expectation fails on it.
+  func bitmap(
+    until done: (NSBitmapImageRep) throws -> Bool, limit: TimeInterval = 10
+  ) throws -> NSBitmapImageRep {
+    let deadline = Date().addingTimeInterval(limit)
+    var frame = try bitmap()
+    while try !done(frame), Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(Motion.durationFast))
+      frame = try bitmap()
+    }
+    return frame
+  }
+
   /// The current frame as an image, for `assertSnapshot`.
   func image() throws -> NSImage {
     let bitmap = try bitmap()
