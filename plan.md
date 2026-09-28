@@ -28,15 +28,13 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.1 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.2 | todo | P1 | 2 | 0% | |
+| T37.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
-| T37.11 | todo | P1 | 2 | 0% | |
 | T37.12 | todo | P1 | 3 | 0% | |
 | T37.14 | todo | P0 | 4 | 0% | |
 | T37.15 | todo | P0 | 3 | 0% | |
@@ -58,7 +56,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.34 | todo | P0 | 4 | 0% | |
+| T37.34 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.37 | todo | P0 | 3 | 0% | |
 
 ## Reference
@@ -114,6 +112,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 |-------|------|------|
 | `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
+| `cox-session` | session assembly as a library (T37.1; split out of `cox`): `open(SessionSpec)` → session, effective config and typed `Warning`s — provider, tools, MCP, skills, hooks, plugins, fork/handoff/resume lineage, external agents; login-shell environment (T37.11). No clap, no anyhow, no printing | async-trait, tokio-util, agent-client-protocol (moved from `cox` with the external-agent code), nix `signal` (T37.11: process-group kill of a slow login shell) |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
@@ -1095,12 +1094,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.1 Extract `cox-session` from `crates/cox/src/session.rs`
-
-Depends: — · Size: ~200 · Files: `crates/cox-session/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/tests/deps.rs`
-Goal: session assembly (provider, tools, MCP, skills, hooks, plugins, checkpointer, worktrees) is a library with no `Cli`, no `anyhow`, no `eprintln!`; warnings are returned as data (DT§4.2).
-Check: `cargo nextest run --workspace` green; `deps.rs` asserts `cox-session` does not depend on `clap` or `anyhow`; the TUI and `run -p` e2e snapshots are unchanged.
-
 #### T37.2 Route `cox acp` through `cox-session`
 
 Depends: T37.1 · Size: ~80 · Files: `crates/cox-acp/src/lib.rs`, `crates/cox/src/main.rs`
@@ -1142,12 +1135,6 @@ Check: `slow_consumer_never_stalls_the_core` — a consumer that sleeps 2 s per 
 Depends: T37.1, T37.8, T37.35 · Size: ~200 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-app/src/inbox.rs`, `crates/cox-app/src/intent.rs`
 Goal: projects, sessions, search, worktrees with disk size, the "needs you" inbox, and one intent enum the app sends (DT§4.3).
 Check: unit tests per intent against a scratch `COX_HOME`; inbox ordering test.
-
-#### T37.11 Login-shell environment resolution in `cox-session`
-
-Depends: T37.1 · Size: ~80 · Files: `crates/cox-session/src/env.rs`
-Goal: an app launched from Finder sees the user's login-shell `PATH` and env, like a terminal launch.
-Check: a test with a fake shell script returns its exported `PATH`; a timeout falls back to the process env with a warning.
 
 #### T37.12 `cox-app`: usage and throughput view state
 

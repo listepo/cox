@@ -18,6 +18,7 @@ use cox_protocol::types::Level;
 use cox_store::Store;
 use cox_tools::send_message::SendMessageTool;
 
+pub mod env;
 #[cfg(feature = "plugins")]
 pub mod external_agents;
 pub mod lineage;
@@ -73,11 +74,14 @@ pub enum Warning {
     Agent(String),
     /// An MCP server that did not start, or runs unsandboxed (T7.6, T33.42).
     Mcp(String),
+    /// The login shell's environment could not be read; the process's own
+    /// environment stands in (T37.11, DT§4.8).
+    Env(String),
 }
 
 impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (Self::Skill(text) | Self::Agent(text) | Self::Mcp(text)) = self;
+        let (Self::Skill(text) | Self::Agent(text) | Self::Mcp(text) | Self::Env(text)) = self;
         f.write_str(text)
     }
 }

@@ -344,7 +344,7 @@ G2–G6 change `cox-protocol`, so the schema test regenerates
 An app launched from Finder or the Dock does not get the user's shell `PATH`,
 so `bash` would not find `cargo`, `mise` or `node`, and env-var API keys are
 invisible. `cox-session` resolves the environment once at startup: run the
-user's login shell (`$SHELL -l -i -c` printing `env -0`) with a 3 s timeout,
+user's login shell (`$SHELL -l -i -c` printing `env -0`) with a 10 s timeout,
 parse, and use it as the base environment for tools; on timeout fall back to
 `launchd`'s environment and show a notice. The CLI keeps its inherited
 environment. Keys the app itself stores live in the Keychain.

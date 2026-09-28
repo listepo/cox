@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
-- T37.1. Extract `cox-session` from `crates/cox/src/session.rs`
 - T37.2. Route `cox acp` through `cox-session`
 - T37.3. `ToolResult.structured`; TUI and ACP drop their todo re-parsers
 - T37.4. `QuestionAsked` / `Answer` replace the `ask_user` side channel
@@ -30,7 +29,6 @@
 - T37.8. `cox-app`: timeline fold with snapshots per scripted scenario
 - T37.9. `cox-app`: drain task, coalescer, never-stall
 - T37.10. `cox-app`: workspace, inbox, status, intents, completion
-- T37.11. Login-shell environment resolution in `cox-session`
 - T37.12. `cox-app`: usage and throughput view state
 - T37.14. `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
 - T37.15. XCFramework script, `just` recipes, macOS CI job

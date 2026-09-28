@@ -3022,3 +3022,29 @@ Result: `Store::open` runs `refuse_newer_schema` inside the same IMMEDIATE trans
 Deviations: the variant lives in `cox-protocol/src/errors.rs`, so `docs/protocol.jsonschema` was regenerated (two files beyond the card). `doctor_human_output` unchanged; new snapshot `doctor_reports_a_newer_schema`.
 
 Check: `older_binary_refuses_newer_schema`; nextest `-p cox-store -p cox-protocol` 91 passed (re-run after merge: 91 passed, 1 skipped); `-p cox` doctor tests 24; clippy and fmt clean. Real binary with a scratch `COX_HOME`: doctor ✓, then ✗ with the new line after a future migration row was inserted; `cox stats` printed the SchemaNewer error. Commit a6e839e.
+
+#### T37.1 Extract `cox-session` from `crates/cox/src/session.rs`
+
+Depends: — · Size: ~200 · Files: `crates/cox-session/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/tests/deps.rs`
+Goal: session assembly (provider, tools, MCP, skills, hooks, plugins, checkpointer, worktrees) is a library with no `Cli`, no `anyhow`, no `eprintln!`; warnings are returned as data (DT§4.2).
+Check: `cargo nextest run --workspace` green; `deps.rs` asserts `cox-session` does not depend on `clap` or `anyhow`; the TUI and `run -p` e2e snapshots are unchanged.
+Status: done 2026-09-28
+Result: new library crate `crates/cox-session`: `open(SessionSpec) -> Result<Opened, SessionError>` takes a loaded `Config` and returns the session, the effective config and a typed `Vec<Warning>` (`Skill`, `Agent`, `Mcp`) — no clap, no anyhow, no printing. Modules `provider`, `tools`, `plugins`, `mcp`, `sandbox`, `lineage` (fork, handoff, resume) and `testing` (feature `test-util`); `external_agents.rs` and `write_grant` moved in unchanged. `crates/cox/src/session.rs` went from 3714 to 1119 lines (flag layer, TUI loop, `cox init`, `--worktree`, plugin dialogs, printing) and re-exports the old `session::` paths. The `plugins` feature is forwarded, so the slim build still drops the WASM runtime. `deps.rs` rule `session_has_no_cli_or_terminal`; AGENTS.md layout row.
+
+Deviations: more than 3 files and ~300–500 lines of new code (spec, error and warning types, wrapper, headers) beyond the moved code; warnings now print after `open` returns, so after an MCP browser-login prompt rather than before, and not at all if `open` fails after discovery; `async-trait`, `tokio-util` and `agent-client-protocol` moved from `crates/cox` to `cox-session` with the external-agent code.
+
+Check: clippy `-p cox-session -p cox --all-targets` clean (also `--no-default-features --features cox/otel`); `nextest -p cox-session` 33/33 incl. `open_returns_skill_warnings_as_data`; `-p cox --bin cox --test tui_e2e --test run_cli --test plain --test deps --test no_real_keychain_in_tests --test plugins --test external_agents_cursor` 112/112, no snapshot changed; `--test ide --test mcp_serve --test subagent_messaging` 6/6; real binary with a scratch `COX_HOME` and a broken skill printed `cox: warning: skill … skipped` and the scripted reply. After merging with T37.6/T37.13/T37.36: clippy clean, `cox-session` 33/33, `deps` + `run_cli` 23/23. The workspace-wide nextest is left to CI. Commit d26b6d0.
+
+Not done: ~13 comments in other crates still name `crates/cox/src/session.rs`.
+
+#### T37.11 Login-shell environment resolution in `cox-session`
+
+Depends: T37.1 · Size: ~80 · Files: `crates/cox-session/src/env.rs`
+Goal: an app launched from Finder sees the user's login-shell `PATH` and env, like a terminal launch.
+Check: a test with a fake shell script returns its exported `PATH`; a timeout falls back to the process env with a warning.
+Status: done 2026-09-28
+Result: `crates/cox-session/src/env.rs`: `login_env(timeout)` runs `$SHELL` (or `/bin/zsh` on macOS, `/bin/sh` elsewhere) as `-l -i -c` with a fixed script printing `env -0` between two markers; `resolve(shell, timeout)` takes the shell path so tests pass a fake one. Returns `(Env, Option<Warning>)`, `Env` a sorted map of `OsString`s. On timeout the shell's process group gets SIGKILL. `parse(&[u8])` is pure and ignores rc-file noise around the markers. Any failure (spawn, timeout, no markers) falls back to the process env with the new `Warning::Env`. Library only; the CLI's startup is unchanged; the app wires it in through cox-ffi.
+
+Deviations: `-l -i` as DT§4.8 says (PATH is often set in `.zshrc`, which only an interactive shell reads; stdin is empty so it cannot wait for input); `nix` (`signal`, workspace version) added to cox-session for the group kill, as `cox-ext` hooks do (§1.1 row). The timeout became 10 s instead of 3 s after merge: a real `zsh -l -i -c` took ~2.0 s on a loaded machine (DT§4.8 updated).
+
+Check: `cargo nextest run -p cox-session` 38/38 (5 new: a fake shell's exported PATH comes back through junk output; a 30 s sleeper against a 200 ms timeout falls back with a "timed out" warning; a missing shell falls back; `parse` keeps multi-line values and ignores junk; `parse` returns nothing without markers); re-run after the timeout change 38/38; clippy and fmt clean. Commits 8cda296, 57783af.
