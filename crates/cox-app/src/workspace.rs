@@ -46,6 +46,9 @@ pub struct SessionEntry {
     pub info: SessionInfo,
     /// Another process drives it (T37.34): open it read-only or fork it.
     pub held_by: Option<Holder>,
+    /// The external ACP agent that drove it (T52.6); `None` for cox.
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 /// One full-text hit, with the session it belongs to.
@@ -116,11 +119,18 @@ impl Workspace {
             if project_of(Path::new(&info.cwd)) != project {
                 continue;
             }
-            let held_by = match info.id.parse::<SessionId>() {
-                Ok(id) => self.store.session_holder(&id)?,
-                Err(_) => None,
+            let (held_by, agent) = match info.id.parse::<SessionId>() {
+                Ok(id) => (
+                    self.store.session_holder(&id)?,
+                    self.store.session_agent(&id)?.map(|a| a.agent),
+                ),
+                Err(_) => (None, None),
             };
-            out.push(SessionEntry { info, held_by });
+            out.push(SessionEntry {
+                info,
+                held_by,
+                agent,
+            });
         }
         Ok(out)
     }

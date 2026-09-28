@@ -61,7 +61,17 @@ extension CoxClient.SessionEntry {
     self.init(
       id: value.info.id, title: value.info.title, cwd: value.info.cwd,
       updatedAt: value.info.updatedAt, turns: value.info.turns, costUsd: value.info.costUsd,
-      isHeld: value.heldBy != nil)
+      isHeld: value.heldBy != nil, agent: value.agent)
+  }
+}
+
+extension LiveCoreClient: AgentsClient {
+  public func agents(cwd: String) async throws -> [CoxClient.AgentChoice] {
+    try await app.agents(cwd: cwd).map {
+      CoxClient.AgentChoice(
+        name: $0.name, label: $0.label, origin: $0.origin, launch: $0.launch,
+        unavailable: $0.unavailable)
+    }
   }
 }
 

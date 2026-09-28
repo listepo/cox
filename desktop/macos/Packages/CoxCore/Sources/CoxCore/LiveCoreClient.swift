@@ -20,7 +20,8 @@ public final class LiveCoreClient: CoreClient {
 
   public func open(_ request: OpenSession) async throws -> any SessionClient {
     let handle = try await app.open(
-      request: OpenRequest(cwd: request.cwd, resume: request.resume, theme: request.theme))
+      request: OpenRequest(
+        cwd: request.cwd, resume: request.resume, theme: request.theme, agent: request.agent))
     return LiveSession(handle)
   }
 }

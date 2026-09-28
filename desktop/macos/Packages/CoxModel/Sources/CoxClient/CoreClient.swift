@@ -8,14 +8,17 @@ import Foundation
 import Synchronization
 
 /// What `CoreClient.open` opens: a new session in `cwd`, or `resume`'s.
-/// `theme` is the syntect theme code blocks are highlighted with.
+/// `theme` is the syntect theme code blocks are highlighted with. `agent` names the external
+/// ACP agent a new session is driven by, `nil` for cox (T52.7); a resumed session keeps the
+/// agent it was stored with.
 public struct OpenSession: Equatable, Sendable {
   public var cwd: String
   public var resume: String?
   public var theme: String
+  public var agent: String?
 
-  public init(cwd: String, resume: String? = nil, theme: String) {
-    (self.cwd, self.resume, self.theme) = (cwd, resume, theme)
+  public init(cwd: String, resume: String? = nil, theme: String, agent: String? = nil) {
+    (self.cwd, self.resume, self.theme, self.agent) = (cwd, resume, theme, agent)
   }
 }
 

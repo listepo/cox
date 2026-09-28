@@ -26,13 +26,15 @@ public struct SessionEntry: Equatable, Sendable {
   public var costUsd: Double
   /// Another process drives it (T37.34).
   public var isHeld: Bool
+  /// The external ACP agent that drove it (T52.6); `nil` for cox.
+  public var agent: String?
 
   public init(
     id: String, title: String? = nil, cwd: String = "", updatedAt: String = "", turns: Int64 = 0,
-    costUsd: Double = 0, isHeld: Bool = false
+    costUsd: Double = 0, isHeld: Bool = false, agent: String? = nil
   ) {
     (self.id, self.title, self.cwd, self.updatedAt) = (id, title, cwd, updatedAt)
-    (self.turns, self.costUsd, self.isHeld) = (turns, costUsd, isHeld)
+    (self.turns, self.costUsd, self.isHeld, self.agent) = (turns, costUsd, isHeld, agent)
   }
 }
 

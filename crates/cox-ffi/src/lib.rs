@@ -14,7 +14,8 @@ use cox_app::onboarding::CheckRow;
 use cox_app::remote::RemoteError;
 use cox_app::terminal::TerminalError;
 use cox_app::{
-    Activity, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry,
+    Activity, AgentChoice, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit,
+    SessionEntry,
 };
 use cox_app::{RuleKind, SessionGrant, SettingsView};
 use cox_protocol::ids::SessionId;
@@ -292,6 +293,13 @@ impl App {
         Ok(on_runtime(async move { self.owner.checklist(Path::new(&cwd)) }).await??)
     }
 
+    /// The agents a new session in `cwd` can be driven by, cox first, each
+    /// with why it cannot start (T52.7); it loads the granted plugins, so it
+    /// runs off the caller's thread.
+    pub async fn agents(self: Arc<Self>, cwd: String) -> Result<Vec<AgentChoice>, AppError> {
+        Ok(on_runtime(async move { self.owner.agents(Path::new(&cwd)) }).await??)
+    }
+
     /// A remote host's workspace over the person's own ssh (T52.20).
     pub async fn connect_remote(
         self: Arc<Self>,
@@ -309,7 +317,12 @@ impl App {
         Ok(SessionHandle::new(
             on_runtime(async move {
                 self.owner
-                    .open(request.cwd.into(), request.resume, request.theme)
+                    .open_as(
+                        request.cwd.into(),
+                        request.resume,
+                        request.agent,
+                        request.theme,
+                    )
                     .await
             })
             .await??,

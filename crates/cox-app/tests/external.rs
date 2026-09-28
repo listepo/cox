@@ -333,3 +333,54 @@ async fn external_session_resumes_with_load_session() {
     assert_eq!(texts(&reopened), ["hi", greeting, "hi", greeting]);
     reopened.end();
 }
+
+/// T52.7 Check: the picker lists cox first, then each configured agent
+/// with why it cannot start: a program on no `PATH` directory is named.
+#[tokio::test]
+async fn agents_list_cox_first_and_why_an_agent_cannot_start() {
+    let dir = scratch("cox-no-such-acp-agent");
+    if !wraps(dir.path()) {
+        return;
+    }
+    let agents = app(dir.path())
+        .agents(&dir.path().join("project"))
+        .expect("agents");
+    let names: Vec<Option<&str>> = agents.iter().map(|a| a.name.as_deref()).collect();
+    assert_eq!(names, [None, Some("fake")]);
+    assert_eq!(agents[0].unavailable, None);
+    let why = agents[1].unavailable.as_deref().unwrap_or_default();
+    assert!(why.contains("not on PATH"), "{why}");
+    assert!(
+        agents[1].launch.contains("COX_FAKE_ACP_KEY"),
+        "{}",
+        agents[1].launch
+    );
+}
+
+/// T52.7 Check: an agent whose program runs and whose key the host holds
+/// can start, and a session opened for it lists with its name.
+#[tokio::test]
+async fn an_available_agent_session_lists_with_its_agent() {
+    let dir = scratch(&fake_agent().display().to_string());
+    if !wraps(dir.path()) {
+        return;
+    }
+    let app = app(dir.path());
+    let project = dir.path().join("project");
+    let agents = app.agents(&project).expect("agents");
+    assert_eq!(agents[1].unavailable, None, "{:?}", agents[1]);
+    let live = app
+        .open_as(project.clone(), None, Some("fake".into()), THEME.into())
+        .await
+        .expect("opens");
+    // The project as the list groups it, so the test does not guess how.
+    let projects = app.workspace().projects(10).expect("projects");
+    let root = &projects.first().expect("one project").root;
+    let listed = app.workspace().sessions(root, 10).expect("list");
+    let row = listed
+        .iter()
+        .find(|e| e.info.id == live.id().to_string())
+        .expect("listed");
+    assert_eq!(row.agent.as_deref(), Some("fake"));
+    live.end();
+}

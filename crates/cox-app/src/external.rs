@@ -16,10 +16,12 @@ use std::sync::Arc;
 
 use cox_protocol::errors::{CoreError, ProviderError};
 use cox_protocol::ids::SessionId;
+use cox_protocol::plugin::AgentMode;
 use cox_protocol::types::{Event, ItemKind};
 use cox_protocol::{Config, SessionRow, Store as _};
 use cox_session::acp_session::{self, AcpOpenError, AcpResume, AcpSession, OpenedAcp};
 use cox_store::{SessionAgent, Store};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::app::{App, AppError};
@@ -27,6 +29,83 @@ use crate::intent::{AgentDispatch, Intent, agent_dispatch};
 
 /// The core's own event bound (DT§4.5).
 const EVENTS: usize = 256;
+
+/// One row of the New-session sheet's agent picker and of Settings' Agents
+/// list (T52.7, DT§3.3.1, mockup 27): cox itself first, then every entry
+/// that resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentChoice {
+    /// What `OpenRequest.agent` takes; `None` for cox itself.
+    pub name: Option<String>,
+    /// What the UI calls it.
+    pub label: String,
+    /// `built-in`, `user config` or `plugin <id>`.
+    pub origin: String,
+    /// The program, its args, key, network and writable directories, as
+    /// the Agents list shows them; empty for cox.
+    pub launch: String,
+    /// Why it cannot start here (EA§7); `None` when it can.
+    pub unavailable: Option<String>,
+}
+
+/// The display names DT§3.3.1's launch table gives the known adapters, by
+/// program. Claude's is "Claude Agent", never "Claude Code" (the creator's
+/// decision 5). Any other entry is shown by its own name.
+const LABELS: &[(&str, &str)] = &[
+    ("claude-agent-acp", "Claude Agent"),
+    ("codex-acp", "Codex"),
+    ("gemini", "Gemini CLI"),
+];
+
+/// Every agent a new session in `cwd` could be driven by, each with why it
+/// cannot start when it cannot; the key is looked up as [`start`] does.
+pub(crate) fn choices(app: &App, config: &Config, cwd: &Path) -> Vec<AgentChoice> {
+    let roots = writable_roots(config, cwd);
+    let (agents, _) = acp_session::agents(config, &app.home, cwd, &roots);
+    let path = std::env::var_os("PATH");
+    let cox = AgentChoice {
+        name: None,
+        label: String::from("cox"),
+        origin: String::from("built-in"),
+        launch: String::new(),
+        unavailable: None,
+    };
+    let external = agents.iter().map(|agent| {
+        let keyed = std::env::var(agent.key_env()).is_ok_and(|v| !v.is_empty())
+            || app.host.secret(agent.name()).is_some();
+        let unavailable = if agent.mode() != AgentMode::Acp {
+            Some(String::from("it speaks stream-json, not ACP"))
+        } else if let Some(cli) = agent.missing_cli(path.as_deref()) {
+            Some(format!("`{}` is not on PATH", cli.display()))
+        } else if !keyed {
+            Some(format!("{} is not set", agent.key_env()))
+        } else {
+            None
+        };
+        AgentChoice {
+            name: Some(agent.name().to_string()),
+            label: label(&agent.launch_line(), agent.name()),
+            origin: agent.origin(),
+            launch: agent.launch_line(),
+            unavailable,
+        }
+    });
+    std::iter::once(cox).chain(external).collect()
+}
+
+/// The label for the agent `name` whose launch line is `launch`: the
+/// launch table's, by the program the line starts with, else its name.
+fn label(launch: &str, name: &str) -> String {
+    let program = launch.split(' ').next().unwrap_or_default();
+    let program = Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    LABELS
+        .iter()
+        .find(|(known, _)| *known == program)
+        .map_or_else(|| name.to_string(), |(_, label)| label.to_string())
+}
 
 /// An agent session as `live.rs` runs it.
 pub(crate) struct Opened {
@@ -214,5 +293,18 @@ fn writable_roots(config: &Config, cwd: &Path) -> Vec<PathBuf> {
     match config.core.workspace_roots.is_empty() {
         true => vec![cox_config::load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())],
         false => config.core.workspace_roots.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_adapter_is_labelled_claude_agent_never_claude_code() {
+        let launch = "/opt/bin/claude-agent-acp --hide-claude-auth · key ANTHROPIC_API_KEY";
+        assert_eq!(label(launch, "claude"), "Claude Agent");
+        assert_eq!(label("codex-acp · key CODEX_API_KEY", "codex"), "Codex");
+        assert_eq!(label("my-agent --acp · key K", "mine"), "mine");
     }
 }

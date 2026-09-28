@@ -94,6 +94,7 @@ pub async fn open(dir: &Path, host: Arc<MemoryHost>) -> Result<Arc<SessionHandle
         cwd: cwd.to_string_lossy().into_owned(),
         resume: None,
         theme: "base16-ocean.dark".into(),
+        agent: None,
     };
     app.open(request).await
 }

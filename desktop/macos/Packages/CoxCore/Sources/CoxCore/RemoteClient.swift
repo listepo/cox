@@ -34,7 +34,9 @@ final class LiveRemote: RemoteWorkspace {
   func open(_ request: OpenSession) async throws -> any SessionClient {
     RemoteSession(
       try await handle.open(
-        request: OpenRequest(cwd: request.cwd, resume: request.resume, theme: request.theme)))
+        // The remote wire opens cox sessions only (T52.7): an agent runs where it is installed.
+        request: OpenRequest(
+          cwd: request.cwd, resume: request.resume, theme: request.theme, agent: nil)))
   }
 }
 

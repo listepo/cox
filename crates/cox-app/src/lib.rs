@@ -42,6 +42,7 @@ pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;
 pub use costs::{CostRow, DaySummary, TurnCosts};
+pub use external::AgentChoice;
 pub use inbox::{Activity, Inbox, InboxItem, Need};
 pub use info::{ConfigSource, Info};
 pub use intent::{AgentDispatch, Dispatch, Intent, IntentError, agent_dispatch, dispatch};

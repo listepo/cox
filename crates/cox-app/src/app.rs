@@ -20,7 +20,7 @@ use crate::live::LiveSession;
 use crate::mcp_login::{LoginError, McpAuth};
 use crate::mcp_status::McpRun;
 use crate::{Activity, Inbox, InboxItem, IntentError, SettingsError, SettingsView};
-use crate::{RuleKind, SessionGrant};
+use crate::{AgentChoice, RuleKind, SessionGrant};
 use crate::{Workspace, WorkspaceError};
 
 /// The project `cwd` is in, as MCP discovery finds it: its git root.
@@ -252,6 +252,30 @@ impl App {
             None => None,
         };
         LiveSession::open(Arc::clone(self), cwd, resume, theme).await
+    }
+
+    /// What `OpenRequest` opens (T52.7): a new session driven by `agent`
+    /// when one is named, else [`App::open`]'s. A stored session reopens
+    /// with the agent it was stored with, whatever `agent` says (T52.6).
+    pub async fn open_as(
+        self: &Arc<Self>,
+        cwd: PathBuf,
+        resume: Option<SessionId>,
+        agent: Option<String>,
+        theme: String,
+    ) -> Result<Arc<LiveSession>, AppError> {
+        match (agent, resume) {
+            (Some(agent), None) => self.open_agent(cwd, &agent, theme).await,
+            (_, resume) => self.open(cwd, resume, theme).await,
+        }
+    }
+
+    /// The agents a new session in `cwd` can be driven by, cox first, each
+    /// with why it cannot start when it cannot (T52.7). Loads the granted
+    /// plugins to read their entries, so call it off the main thread.
+    pub fn agents(&self, cwd: &Path) -> Result<Vec<AgentChoice>, AppError> {
+        let config = self.config(cwd)?;
+        Ok(crate::external::choices(self, &config, cwd))
     }
 
     /// A new session in `cwd` driven by the external agent `agent` (T52.4,

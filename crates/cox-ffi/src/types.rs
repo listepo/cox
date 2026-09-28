@@ -9,6 +9,7 @@
 
 use std::path::PathBuf;
 
+use cox_app::AgentChoice;
 use cox_app::Holder;
 use cox_app::SessionInfo;
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
@@ -121,12 +122,23 @@ pub struct Project {
 
 /// What `App::open` opens: a new session in `cwd`, or `resume`'s.
 /// `theme` is the syntect theme code blocks are highlighted with; a diff
-/// takes its dark and light variant (A95).
+/// takes its dark and light variant (A95). `agent` names the external ACP
+/// agent a new session is driven by, `None` for cox (T52.7).
 #[derive(uniffi::Record)]
 pub struct OpenRequest {
     pub cwd: String,
     pub resume: Option<SessionId>,
     pub theme: String,
+    pub agent: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct AgentChoice {
+    pub name: Option<String>,
+    pub label: String,
+    pub origin: String,
+    pub launch: String,
+    pub unavailable: Option<String>,
 }
 
 /// `StyledSpan` with its theme colours as `0xRRGGBB`.
@@ -616,6 +628,7 @@ pub enum Activity {
 pub struct SessionEntry {
     pub info: SessionInfo,
     pub held_by: Option<Holder>,
+    pub agent: Option<String>,
 }
 
 #[uniffi::remote(Record)]
