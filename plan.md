@@ -36,8 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.21.5 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.6 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.7 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.8 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.9 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.10 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23 | todo | P0 | 5 | 0% | |
@@ -1139,18 +1137,6 @@ Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only
 
 Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
 Goal: the composer's mention, attachment and command chips with remove affordance. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.8 `MaterialPicker`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: the appearance popover's glass picker (frosted, glossy, solid) with depth preview. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.9 `ChangedFileRow` and `CheckpointRow`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: a changed file with diff stat and actions, and a rewind checkpoint row. Built only from atoms and foundations (DS§6.3).
 Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
 
 #### T37.21.10 `SettingRow`

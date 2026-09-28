@@ -30,8 +30,6 @@
 - T37.21.5. `UserBubble` and `ThinkingDisclosure`
 - T37.21.6. `NoticeRow`, `TurnDivider` and `TurnMeta`
 - T37.21.7. `ComposerChip`
-- T37.21.8. `MaterialPicker`
-- T37.21.9. `ChangedFileRow` and `CheckpointRow`
 - T37.21.10. `SettingRow`
 - T37.22. Window shell: split view, sidebar, toolbar, inspector frame
 - T37.23. Transcript view and the DT§9 benchmark gate

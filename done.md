@@ -3546,3 +3546,31 @@ Deviations: ~590 source lines in 17 files. SessionRow cost uses `text.secondary`
 Check: the reworked Reduce Motion test fails with the gate removed from `coxMatchedGeometry`, the spinner test with it removed from `coxSpin`; timing tests pass three runs under 12 CPU burners; full `swift test` 62 tests in 16 suites pass twice with nothing re-recorded; `swiftlint --strict` and `swift-format lint --strict` clean (plugin-free manifest locally). Commits b9dacd8, 8b7d55c, be87348.
 
 Not done: T37.21.1–T37.21.10; TokenMeter stays with T37.25.
+
+#### T37.21.8 `MaterialPicker`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the appearance popover's glass picker (frosted, glossy, solid) with depth preview. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `Molecules/MaterialPicker.swift` — `MaterialPicker(selection: Binding<GlassMaterial>)`: three swatch tiles in the mockup's order (frosted, glossy, solid) over the existing `GlassMaterial` values; tiles are readable glass at e1 with a hairline, the selected one with an `accent` ring; each swatch shows a small pane in its own material over a wallpaper, lifted to e2 at the user's Depth (`Appearance.swatch(_:)` keeps depth and text size); VoiceOver sees a picker. Fixture `Previews/PreviewState+Appearance.swift`; tests `MaterialPickerTests.swift` (20 snapshots, 2 unit tests); DS§6.3 row updated.
+
+Deviations: not built on `CoxSegmented` (capsule-high text segments cannot show glass); tile padding `Space.xs`, swatch radius `Radius.m` (concentric, DS§3.3); swatch height 40 pt as a private constant; a hairline rim keeps tiles visible at Flat.
+
+Check: snapshot per selected material plus Flat × light/dark × Solid/Frosted; SwiftUI-only imports; full suite 69 tests in 20 suites pass twice without re-recording; `swiftlint --strict`, `swift-format lint --strict` clean (plugin-free manifest locally). Commit 3eb1f80.
+
+Not done: nothing.
+
+#### T37.21.9 `ChangedFileRow` and `CheckpointRow`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a changed file with diff stat and actions, and a rewind checkpoint row. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `Molecules/ChangedFileRow.swift` and `Molecules/CheckpointRow.swift` over a shared `Molecules/InspectorRow.swift` (also `RowAction`: title, symbol, `@MainActor` perform). The changed-file row shows `pencil`/`doc.text` for edited/created, the path with its folder dimmed so the file name survives truncation, and a `DiffStat`; the checkpoint row a clock, label and time. Selected rows sit on `accent.soft` at e1 like `SessionRow`; action icons appear on hover or selection with tooltips and as VoiceOver actions. Fixtures `Previews/PreviewState+Inspector.swift`; tests `InspectorRowTests.swift` (16 snapshots, 2 path-split unit tests); DS§6.3 row updated.
+
+Deviations: the shared layout is a third file; the time uses `text.secondary` (readable on frosted glass, DS§8); `DiffStat` shows "−0" for add-only files (atom unchanged); the clock is SF Symbol `clock`, not yet in DS§3.7.
+
+Check: snapshot per variant × light/dark × Solid/Frosted; SwiftUI-only imports; full suite as in T37.21.8. Commit a0a83a6.
+
+Not done: `clock` in the DS§3.7 symbol table; `SessionRow` could reuse the shared selected-row styling.
