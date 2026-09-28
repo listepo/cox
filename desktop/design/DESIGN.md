@@ -267,7 +267,7 @@ component.
 | `ModeSegmented(selection:)` | CoxSegmented; ask, plan, auto, bypass (offered only while on) | `.seg` |
 | `StopButton` | KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
 | `ToolHeader(item, isExpanded:)` | IconTile, summary (subject bold, monospaced for a command), DiffStat, RiskChip, Spinner / check / cross and duration, disclosure chevron; expanded on `fill.primary` over a hairline | `.tool .h` |
-| `DiffLineView`, `DiffHunkView` | gutter, syntax runs | `.diff .ln`, `.hh` |
+| `DiffLineView(line, widestNumber:)`, `DiffHunkView(header:, lines:)` | gutter number (`text.secondary`, `text.primary` on a `diff.*Gutter`), sign, `CodeRun` syntax runs on `diff.add` / `diff.del`; the hunk: header on `fill.primary`, one gutter width, `surface.code` | `.diff .ln`, `.hh` |
 | `CodeBlockView` | header, copy button, highlighted runs | `.codeblock` |
 | `TerminalTail` | insetWell, lines | `.tail` |
 | `UserBubble` | text, Thumbnail | `.user` |
