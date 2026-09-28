@@ -255,6 +255,12 @@ impl Plain {
             Event::TurnStarted { model, .. } => {
                 self.tui.status.model = model.to_string();
             }
+            // T50.5: `/permissions` and `/effort` change the session; the
+            // status line follows the event, as the TUI's does.
+            Event::StateChanged { mode, effort } => {
+                self.tui.mode = mode;
+                self.tui.status.effort = effort;
+            }
             Event::ItemStarted { item, kind } => match kind {
                 ItemKind::AssistantMessage { text } => {
                     self.texts.insert(item, ("cox", text));
@@ -676,5 +682,47 @@ mod tests {
         let (label, rest) = result_lines(&result);
         assert_eq!(label, "failed, 1 line");
         assert_eq!(rest, ["  boom"]);
+    }
+
+    /// T50.5 Check: `/permissions plan` reaches the status line through the
+    /// session's `StateChanged`, not the configured mode.
+    #[tokio::test]
+    async fn permissions_command_updates_the_plain_status_mode() {
+        let home = tempfile::tempdir().expect("home");
+        let work = tempfile::tempdir().expect("work");
+        let scenario = "[[turn]]\ntext = \"ok\"\n";
+        let (session, _store) =
+            cox_session::testing::scripted_session(home.path(), work.path(), scenario);
+        let mut events = session.events().expect("events");
+        let config = cox_protocol::Config::default();
+        let mut plain = Plain {
+            session,
+            full_thinking: false,
+            texts: HashMap::new(),
+            asks: VecDeque::new(),
+            prompt: None,
+            armed: false,
+            turn_usd: 0.0,
+            turn_tokens: [0, 0],
+            session_usd: 0.0,
+            tui: cox_tui::state::State::new(config.permissions.mode, config.sandbox.mode),
+        };
+        let before = cox_tui::status::plain_text(&plain.tui);
+        assert!(!before.contains("plan"), "{before}");
+        plain.input("/permissions plan").expect("input");
+        let changed = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match events.recv().await {
+                    Some(ev @ Event::StateChanged { .. }) => break ev,
+                    Some(_) => {}
+                    None => panic!("event stream closed"),
+                }
+            }
+        })
+        .await
+        .expect("StateChanged");
+        plain.event(changed).expect("event");
+        let after = cox_tui::status::plain_text(&plain.tui);
+        assert!(after.contains("plan"), "{after}");
     }
 }
