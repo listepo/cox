@@ -5735,3 +5735,18 @@ Deviations: none.
 Check: new `withoutNSTextViewsOwnPassCardsArePlacedAndSuperIsNotCalled` runs the macOS 26 path and asserts the viewport controller's delegate is the view; a probe on macOS 27 showed `-[NSTextView layout]` → `layoutViewport` → the override; CoxTranscriptText 38/38, CoxTranscript 51/52 (`streamingAtTwoHundredTokensASecondKeepsTheMainThreadMostlyFree` is a frame-time benchmark that failed at load ~45 and passes alone); swift-format and swiftlint strict clean.
 
 Not done: no run on a real macOS 26 system; that the delegate is the text view on 26 is inferred from the SDK, and the new test's delegate assertion would fail on a macOS 26 runner if it is wrong.
+
+#### T37.44.5 Settings and onboarding screens match the Figma frames
+
+Depends: T37.44.1 · Size: ~150 · Files: CoxUI settings and first-run views, their snapshots
+Goal: A114, A119. The Figma page "Settings & onboarding" frames are compared with the CoxUI snapshots of the same screens; every difference in layout, spacing, radius, colour or type is fixed through the tokens (no raw values), snapshots re-recorded on purpose. Iterate in CoxUI alone (no XCFramework).
+Check: per screen, the snapshot next to the frame matches by eye (or by the T37.44.4 diff once it exists); CoxUI tests pass; swift-format and swiftlint strict clean.
+Plan: map the Figma page's frames to CoxUI snapshot tests (add a snapshot where a screen has none), compare each with `get_screenshot`/`get_design_context`, fix differences through tokens in CoxUI, re-record, lint; iterate in CoxUI only.
+Status: done 2026-09-28
+Result: settings and onboarding compared with mockup screens 18–21 (the Figma page's frames are those renders) by eye and with `npm run diff`. The Settings sidebar's selected page sits on `accent` with `text.onAccent` (`rowSelection(fill: .accent)` in `SettingsSidebar` only); each settings page has its title above the group boxes (`font.transcript.h1`, the nearest token to the mockup's 20 pt bold); `SettingLabel`/`TitledSetting` take `namesItem` for a semibold item name (MCP logins, first-run checklist); `SettingsGroupBox` takes a `nil` title, so onboarding drops its "Project" and "Checks" headers with `Space.xxl` between boxes; new `permissionsPage` snapshot (screen 19). Mapping: 18 → `aSettingTheProjectOverridesIsReadOnlyWithItsLayer` + sidebar/group box/field, 19 → `permissionsPage`, 20 → `SettingsLoginTests`, 21 → `noProvider`, `allGreen`, `checklistRows`.
+
+Deviations: small optional parameters on shared `SettingLabel`, `TitledSetting` and `SettingsGroupBox` (default off); no token changed.
+
+Check: filtered settings/onboarding suites recorded once then passed twice (20/20); CoxUI 184/184; swift-format and swiftlint strict clean; 2 Figma reads (only the "Main" page came back, so the comparison used the mockup renders).
+
+Not done: the floating 252 pt glass sidebar stays (DESIGN.md §6.5) where the mockup has a flush 220 pt one; the sidebar search field, pop-up menus, Change/Add key buttons, rules editor, session grants, MCP "Show log"/status badges and the onboarding drop zone are features, not layout; type with no token (20 pt bold `h1`, 12 pt semibold `.gtitle`, 26 pt onboarding title) and the 980 pt small window size.
