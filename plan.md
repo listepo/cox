@@ -1055,6 +1055,11 @@ Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: changing turn-scoped cancellation for foreground tools.
 
+Plan:
+1. `crates/cox-core/src/session.rs`: a session-scoped `CancellationToken` (`ended`) next to the turn token. Every turn token becomes `ended.child_token()` (at build and at each reset: `run_turn_inner`, `user_shell`, and `ToolInvoker::invoke` in `plugin_model.rs`, through one `renew_cancel` helper), so a detached shell's `ToolCx::cancel` clone from any older turn is still a descendant of `ended`. `pub fn end()` cancels it; `interrupt()` stays turn-scoped. `spawn_child` roots a child's `ended` under the parent's, so a subagent's detached shell dies too.
+2. `crates/cox/src/run.rs` and `crates/cox/src/session.rs`: the two session-exit sites (headless `run`/`--loop`; TUI quit, `/clear`, fork, handoff) call `end()` instead of `interrupt()` before `wait_tasks_cleared(SHELL_CANCEL_GRACE)`; comments that describe the old limit are corrected. The bash kill-group path (`cox-tools` `bash::run`) is reused as is: it already SIGTERM→SIGKILLs the group when its token fires.
+3. Regression test `ending_the_session_kills_a_shell_detached_in_an_older_turn` in `crates/cox-core/tests/bash_tasks.rs` (real `BashTool`, scripted provider): turn 1 detaches a `sleep` that writes its pid, turn 2 runs, `end()` + `wait_tasks_cleared`, then polls `kill -0 -<pgid>` with a deadline of the grace period. Run once with `end()` aliased to `interrupt()` to see it fail.
+4. Verify: the Check test, the manual `sleep 4003` repro with the real binary against a scratch `COX_HOME`, then fmt, clippy, nextest.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
