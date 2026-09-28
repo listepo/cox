@@ -324,7 +324,10 @@ It holds no styling of its own; it takes `MainScreenState` and reports `MainScre
 the titles, details and controls the app copies into that state. The mockup's coloured page tiles need
 colour tokens that do not exist yet, so pages show the plain symbol. The MCP page opens with a
 `Logins` `SettingsGroupBox`: per server a `TitledSetting` with its login line and a small
-`CoxButtonStyle` Log in (primary) or Log out (secondary) button, from `SettingsStore.logins`.
+`CoxButtonStyle` Log in (primary) or Log out (secondary) button, from `SettingsStore.logins`. A page
+whose keys the project file tried to weaken opens with a `Dropped from the project` `SettingsGroupBox`:
+per value a `TitledSetting` with the key, the guard's reason and a warning `Badge` (`999 → 5`), from
+`SettingsStore.dropped(in:)`.
 
 ## 7. Data shown in the token meter
 

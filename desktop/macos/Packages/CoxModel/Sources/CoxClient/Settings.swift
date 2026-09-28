@@ -57,13 +57,17 @@ public struct SettingsView: Equatable, Sendable {
   public var projectFile: String?
   /// The MCP servers in effect and their logins, sorted by name.
   public var mcp: [McpServer]
+  /// Project values the guard list threw out.
+  public var dropped: [Dropped]
 
   public init(
-    settings: [Setting], userFile: String, projectFile: String? = nil, mcp: [McpServer] = []
+    settings: [Setting], userFile: String, projectFile: String? = nil, mcp: [McpServer] = [],
+    dropped: [Dropped] = []
   ) {
     (self.settings, self.userFile, self.projectFile, self.mcp) = (
       settings, userFile, projectFile, mcp
     )
+    self.dropped = dropped
   }
 }
 

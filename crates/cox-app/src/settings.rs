@@ -99,6 +99,21 @@ pub struct SettingsView {
     pub project_file: Option<PathBuf>,
     /// The MCP servers in effect for `cwd` and their logins (T37.30.3).
     pub mcp: Vec<McpServer>,
+    /// Project values the guard list threw out (T37.30.4).
+    pub dropped: Vec<Dropped>,
+}
+
+/// A value the project's `.cox/config.toml` set and the guard list threw
+/// out (`plan.md` §1.6), so the person sees why their setting still holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Dropped {
+    /// Dotted; `mcp.servers.*.sandbox` names the servers in `value`.
+    pub key: String,
+    /// What the project set.
+    pub value: String,
+    /// What is in effect instead.
+    pub kept: String,
+    pub reason: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -156,6 +171,16 @@ pub fn view_of(
         user_file: user_file.to_path_buf(),
         project_file: cox_config::load::project_config_path(cwd).filter(|p| p.exists()),
         mcp: Vec::new(),
+        dropped: loaded
+            .violations
+            .iter()
+            .map(|v| Dropped {
+                key: v.key.to_string(),
+                value: v.project_value.clone(),
+                kept: v.reverted_to.clone(),
+                reason: v.reason().to_string(),
+            })
+            .collect(),
     })
 }
 
@@ -320,6 +345,13 @@ mod tests {
                 "core.workspace_roots",
             ]
         ));
+    }
+
+    #[test]
+    fn a_project_value_the_guard_drops_is_listed_with_its_reason() {
+        let (_dir, user, project) = scratch();
+        let view = view(&user, &project).expect("view");
+        insta::assert_json_snapshot!(view.dropped);
     }
 
     #[test]

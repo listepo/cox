@@ -14,8 +14,9 @@ use cox_app::SessionInfo;
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, Completion, Icon, InboxItem, Intent, Layer, McpLogin, McpServer, Need, Project,
-    SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TurnUsage, UsageView,
+    Activity, Completion, Dropped, Icon, InboxItem, Intent, Layer, McpLogin, McpServer, Need,
+    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TurnUsage,
+    UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -466,6 +467,15 @@ pub struct SettingsView {
     pub user_file: PathBuf,
     pub project_file: Option<PathBuf>,
     pub mcp: Vec<McpServer>,
+    pub dropped: Vec<Dropped>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Dropped {
+    pub key: String,
+    pub value: String,
+    pub kept: String,
+    pub reason: String,
 }
 
 #[uniffi::remote(Record)]

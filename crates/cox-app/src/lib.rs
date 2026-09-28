@@ -25,7 +25,7 @@ pub use inbox::{Activity, Inbox, InboxItem, Need};
 pub use intent::{Dispatch, Intent, IntentError, dispatch};
 pub use mcp_login::{McpLogin, McpServer};
 pub use patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
-pub use settings::{Layer, Setting, SettingKind, SettingsError, SettingsView};
+pub use settings::{Dropped, Layer, Setting, SettingKind, SettingsError, SettingsView};
 pub use summary::Icon;
 pub use timeline::Timeline;
 pub use usage::{Meter, Tally, TurnUsage, UsageView};

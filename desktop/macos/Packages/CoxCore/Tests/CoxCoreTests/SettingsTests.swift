@@ -1,6 +1,7 @@
 // Settings through the real Rust core (T37.30): a scratch home, an edit that
-// lands in its `config.toml` and comes back with the `user` layer, and an MCP
-// server's login (T37.30.3). The host has no secrets and `COX_KEYRING=off`
+// lands in its `config.toml` and comes back with the `user` layer, an MCP
+// server's login (T37.30.3) and a project value the guard list drops
+// (T37.30.4). The host has no secrets and `COX_KEYRING=off`
 // keeps Rust's MCP token reads away from the Keychain (A49).
 
 import CoxClient
@@ -64,4 +65,21 @@ func scratch() throws -> (URL, LiveCoreClient) {
   } throws: { error in
     if case AppError.Settings = error { true } else { false }
   }
+}
+
+@Test func aProjectBudgetRaiseComesThroughAsDropped() async throws {
+  let (home, client) = try scratch()
+  defer { try? FileManager.default.removeItem(at: home) }
+  let project = home.appending(path: "project")
+  for dir in [".git", ".cox"] {
+    try FileManager.default.createDirectory(
+      at: project.appending(path: dir), withIntermediateDirectories: true)
+  }
+  try Data("[budget]\nsession_usd = 999.0\n".utf8)
+    .write(to: project.appending(path: ".cox/config.toml"))
+
+  let view = try await client.settings(cwd: project.path())
+  let dropped = try #require(view.dropped.first { $0.key == "budget.session_usd" })
+  #expect(dropped.value == "999")
+  #expect(dropped.reason == "A project may not raise a budget above your own")
 }

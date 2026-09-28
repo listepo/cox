@@ -16,6 +16,8 @@ struct SettingsScreenState: Equatable, Sendable {
   var projectFile: String?
   /// The MCP servers' logins, on the MCP page.
   var logins: [SettingsScreen.Login] = []
+  /// The page's project values the guard list threw out.
+  var dropped: [SettingsScreen.DroppedValue] = []
 }
 
 /// Every intent the Settings screen reports.
@@ -44,6 +46,7 @@ struct SettingsScreen: View {
         ShellPane(.column) {
           ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
+              if !state.dropped.isEmpty { DroppedBox(values: state.dropped) }
               if !state.logins.isEmpty { LoginsBox(logins: state.logins, send: send) }
               ForEach(state.tables) { TableBox(table: $0, send: send) }
             }

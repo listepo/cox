@@ -525,7 +525,9 @@ hand-tuned grouping: General, Models & Providers, Permissions, Sandbox,
 Budget, MCP Servers, Plugins, Appearance, Advanced. Each field shows a
 provenance badge — *default*, *user*, *project*, *env*, *flag* — from
 `source_of`; a field overridden by the project config shows the project file
-and is read-only here (project guard keys stay guarded). Edits go through
+and is read-only here (project guard keys stay guarded). A project value the
+guard list threw out is listed on its page with the guard's reason and the
+value that holds instead. Edits go through
 `cox-config`'s comment-preserving `set` (user file only). Provider keys are
 entered in a secure field and go to the Keychain through `SecretStore`. MCP:
 status per server, Log in / Log out; login opens the browser via `Host`.
