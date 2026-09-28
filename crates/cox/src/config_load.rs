@@ -58,6 +58,7 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("tier", "tiers.<tier>.model"),
         ("sandbox", "sandbox.mode"),
         ("permission-mode", "permissions.mode"),
+        ("mode", "core.mode"),
         ("approve", "permissions.approval"),
         ("budget", "budget.session_usd"),
         ("profile", "core.profile"),
@@ -158,6 +159,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
             keys["permission-mode"],
             JsonValue::from(mode.clone()),
         );
+    }
+    if let Some(mode) = &cli.mode {
+        set_dotted(&mut root, keys["mode"], JsonValue::from(mode.clone()));
     }
     if let Some(approve) = &cli.approve {
         set_dotted(&mut root, keys["approve"], JsonValue::from(approve.clone()));
@@ -270,6 +274,27 @@ mod tests {
         assert!(
             missing.is_empty(),
             "flags missing a config-key mapping: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn mode_flag_maps_to_core_mode() {
+        use clap::Parser;
+
+        let cli = Cli::parse_from(["cox", "--mode", "architect"]);
+        let layer = flag_overrides(&cli);
+        assert_eq!(layer["core"]["mode"], JsonValue::from("architect"));
+        assert_eq!(flag_key_map()["mode"], "core.mode");
+
+        let parsed: cox_protocol::config::CoreConfig =
+            serde_json::from_value(layer["core"].clone()).expect("core layer parses");
+        assert_eq!(parsed.mode, cox_protocol::types::Mode::Architect);
+
+        assert!(Cli::try_parse_from(["cox", "--mode", "chaos"]).is_err());
+        assert!(
+            flag_overrides(&Cli::parse_from(["cox"]))
+                .get("core")
+                .is_none()
         );
     }
 }

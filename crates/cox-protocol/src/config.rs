@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    ApprovalPolicy, Effort, LinuxBackend, PermissionMode, SandboxMode, Thinking, Tier,
+    ApprovalPolicy, Effort, LinuxBackend, Mode, PermissionMode, SandboxMode, Thinking, Tier,
 };
 
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
@@ -167,6 +167,12 @@ pub struct CoreConfig {
     /// a ≤300-token system prompt, no skills or memory index;
     /// `cox --profile minimal`).
     pub profile: String,
+    /// `core.mode` (P42): the session's starting mode, `editor` (default)
+    /// or `architect`; also `cox --mode`, and `/mode` switches it live.
+    /// Not in the project-config guard list: architect only narrows
+    /// `permissions.mode` and its think tier still needs confirmation, so a
+    /// project config may set it.
+    pub mode: Mode,
 }
 
 impl Default for CoreConfig {
@@ -179,6 +185,7 @@ impl Default for CoreConfig {
             max_concurrent_subagents: 8,
             log_level: "info".to_string(),
             profile: String::new(),
+            mode: Mode::Editor,
         }
     }
 }
