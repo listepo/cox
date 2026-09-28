@@ -120,4 +120,22 @@ extension LiveCoreClient: SettingsClient {
   public func mcpLogin(cwd: String, server: String, login: Bool) async throws {
     try await app.mcpLogin(cwd: cwd, name: server, login: login)
   }
+
+  public func setPermissionRule(
+    cwd: String, kind: CoxClient.RuleKind, old: String?, new: String?
+  ) async throws -> ClientSettings {
+    do {
+      return ClientSettings(
+        try await app.setPermissionRule(cwd: cwd, kind: .init(kind), old: old, new: new))
+    } catch AppError.Settings(let message) {
+      // The grammar's or the layer's refusal, shown under the add row as Rust wrote it.
+      throw RuleRefused(message)
+    }
+  }
+
+  public func revokeGrant(
+    cwd: String, grant: CoxClient.SessionGrant
+  ) async throws -> ClientSettings {
+    ClientSettings(try await app.revokeGrant(cwd: cwd, grant: .init(grant)))
+  }
 }

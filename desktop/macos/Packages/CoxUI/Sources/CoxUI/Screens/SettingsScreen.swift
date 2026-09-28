@@ -1,6 +1,6 @@
 // `SettingsScreen` (DS§6.5; DT§5.7): the Settings window — the page list, and the selected
 // page's config tables as boxes of `SettingRow`s, each value with the layer it comes from, and
-// a secure key field in each provider's box. Composition only (DS§5): what each field shows,
+// a key row in each provider's box (`SettingsScreen+Keys.swift`). Composition only (DS§5): what each field shows,
 // whether it is read-only and which file sets it arrive in `state`; the app binds `state` and
 // `send` to `SettingsStore`, through the public types below.
 
@@ -18,6 +18,10 @@ public struct SettingsScreenState: Equatable, Sendable {
   public var logins: [SettingsScreen.Login] = []
   /// The page's project values the guard list threw out.
   public var dropped: [SettingsScreen.DroppedValue] = []
+  /// The sidebar's search; `pages` and `tables` arrive narrowed to it, and labels mark it.
+  public var filter = ""
+  /// The rules and session grants, on the Permissions page.
+  public var permissions: SettingsScreen.Permissions?
   /// The global shortcuts the person records, on the General page (T51.15).
   public var shortcuts: [SettingsScreen.Shortcut] = []
 
@@ -25,23 +29,32 @@ public struct SettingsScreenState: Equatable, Sendable {
     pages: [SettingsPage] = [], selection: SettingsPage = .general,
     tables: [SettingsScreen.Table] = [], userFile: String = "", projectFile: String? = nil,
     logins: [SettingsScreen.Login] = [], dropped: [SettingsScreen.DroppedValue] = [],
+    filter: String = "",
+    permissions: SettingsScreen.Permissions? = nil,
     shortcuts: [SettingsScreen.Shortcut] = []
   ) {
     (self.pages, self.selection, self.tables) = (pages, selection, tables)
     (self.userFile, self.projectFile) = (userFile, projectFile)
-    (self.logins, self.dropped, self.shortcuts) = (logins, dropped, shortcuts)
+    (self.logins, self.dropped, self.filter) = (logins, dropped, filter)
+    (self.permissions, self.shortcuts) = (permissions, shortcuts)
   }
 }
 
 /// Every intent the Settings screen reports.
 public enum SettingsScreenIntent: Equatable, Sendable {
   case select(SettingsPage)
+  /// The search typed in the sidebar; Esc sends an empty one.
+  case filter(String)
   /// A new value for `key`; a slider reports it while it moves.
   case set(key: String, SettingsScreen.Edit)
   /// A key typed for a provider section, bound for its `SecretStore`.
   case storeKey(provider: String, secret: String)
   /// Log in to (`true`) or out of an MCP server.
   case setLogin(server: String, Bool)
+  /// Add (`old` nil), replace or remove (`new` nil) one permission rule in the user config.
+  case editRule(SettingsScreen.RuleKind, old: String?, new: String?)
+  /// Revoke the session grant with this id.
+  case revokeGrant(id: String)
 }
 
 /// The Settings window: `SettingsSidebar` beside the selected page's title over a column of
@@ -66,15 +79,14 @@ public struct SettingsScreen: View {
       HStack(spacing: Size.paneGap) {
         SettingsSidebar(
           pages: state.pages, selection: state.selection, userFile: state.userFile,
-          projectFile: state.projectFile
-        ) { send(.select($0)) }
+          projectFile: state.projectFile, filter: state.filter, search: { send(.filter($0)) },
+          select: { send(.select($0)) })
         ShellPane(.column) {
           ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
-              // The mockup's `.set-main h1`; its 20 pt bold has no token, so the nearest
-              // heading style.
+              // The mockup's `.set-main h1`.
               Text(state.selection.title)
-                .textStyle(.transcriptH1)
+                .textStyle(.titlePage)
                 .foregroundStyle(Color(.textPrimary))
                 .accessibilityAddTraits(.isHeader)
               if !state.dropped.isEmpty { DroppedBox(values: state.dropped) }
@@ -83,11 +95,15 @@ public struct SettingsScreen: View {
                 ShortcutsBox(shortcuts: state.shortcuts, recorder: recorder)
               }
               ForEach(state.tables) { TableBox(table: $0, send: send) }
+              if let permissions = state.permissions {
+                PermissionsBoxes(permissions: permissions, send: send)
+              }
             }
             .frame(maxWidth: Size.readingWidth)
             .padding(Space.xxl)
             .frame(maxWidth: .infinity)
           }
+          .environment(\.settingsFilter, state.filter)
         }
       }
       .padding(Size.paneGap)
@@ -139,10 +155,21 @@ extension SettingsScreen {
   public enum Control: Equatable, Sendable {
     case toggle(Bool)
     case slider(Double, range: ClosedRange<Double>, text: String)
+    /// A few options, side by side.
     case choice(String, options: [String])
+    /// A pop-up of more options, each with the title the menu shows.
+    case menu(String, options: [Option])
     case field(String)
     /// A value Settings shows but does not edit.
     case json(String)
+  }
+
+  public struct Option: Hashable, Sendable {
+    /// What a pick sends.
+    var value: String
+    var title: String
+
+    public init(value: String, title: String) { (self.value, self.title) = (value, title) }
   }
 
   public enum Edit: Equatable, Sendable {
@@ -160,17 +187,7 @@ private struct TableBox: View {
 
   var body: some View {
     SettingsGroupBox(table.id) {
-      if let key = table.key {
-        TitledSetting(
-          title: "API key", detail: key.isStored ? "Stored in the Keychain" : "No key",
-          control: SettingField(
-            "", prompt: key.isStored ? "Replace key" : "Add key", isSecure: true
-          ) { send(.storeKey(provider: key.provider, secret: $0)) }
-        )
-        // `SettingRow`'s insets; a key has no config layer, so no badge.
-        .padding(.horizontal, Space.l)
-        .padding(.vertical, Space.ml)
-      }
+      if let key = table.key { KeyRow(key: key, send: send) }
       ForEach(table.fields) { FieldRow(field: $0, send: send) }
     }
   }
@@ -198,6 +215,13 @@ private struct FieldRow: View {
           LocalizedStringKey(field.title), selection: binding(selection) { .text($0) },
           options: options, title: { Text($0) })
       }
+    case .menu(let selection, let options):
+      SettingRow(field.title, detail: field.detail, source: field.source) {
+        SettingPopUp(
+          LocalizedStringKey(field.title), selection: binding(selection) { .text($0) },
+          options: options.map(\.value),
+          title: { value in options.first { $0.value == value }?.title ?? value })
+      }
     case .field(let text):
       SettingRow(field.title, detail: field.detail, source: field.source) {
         SettingField(text, prompt: field.title) { send(.set(key: field.id, .text($0))) }
@@ -218,6 +242,13 @@ private struct FieldRow: View {
 
 #Preview("models") {
   SettingsScreen(state: PreviewState.settingsModels) { _ in }
+    .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    .padding(Space.xxl)
+    .background(PreviewBackdrop())
+}
+
+#Preview("filtered") {
+  SettingsScreen(state: PreviewState.settingsFiltered) { _ in }
     .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
     .padding(Space.xxl)
     .background(PreviewBackdrop())

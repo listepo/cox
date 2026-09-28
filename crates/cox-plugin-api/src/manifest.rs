@@ -29,10 +29,11 @@ pub struct PluginManifest {
     #[serde(default)]
     pub description: String,
     /// The module to load, relative to the package directory. Absent only
-    /// when the package's sole capability is an `[[mcp]]` stdio/HTTP server
-    /// (PL§13/§14, T33.38): `validate` then requires `capabilities` to be
-    /// its default and `provider`/`models`/`external_agents` to be empty,
-    /// since every other capability class needs a wasm export to back it.
+    /// for a data-only package — `[[mcp]]` servers and/or `[[agents]]`
+    /// files (PL§13/§14, T33.38, T45.3): `validate` then requires
+    /// `capabilities` to be its default and `provider`/`models`/
+    /// `external_agents` to be empty, since every other capability class
+    /// needs a wasm export to back it.
     pub wasm: Option<String>,
     /// True for wasip1 guests; no preopens unless `capabilities.fs` grants them.
     #[serde(default)]
@@ -57,6 +58,11 @@ pub struct PluginManifest {
     /// `docs/design/external-agents.md`).
     #[serde(default)]
     pub external_agents: Vec<ExternalAgentDecl>,
+    /// `[[agents]]` subagent definition files the package ships (T45.3);
+    /// each is one approval line, and a local definition of the same name
+    /// wins over it.
+    #[serde(default)]
+    pub agents: Vec<AgentDecl>,
 }
 
 /// `[limits]`. Absent means "the host default".
@@ -279,6 +285,19 @@ pub struct ExternalAgentDecl {
     pub key_env: String,
 }
 
+/// An `[[agents]]` entry (T45.3): a subagent definition (`.md` with
+/// frontmatter, the same format as `.cox/agents/*.md`) inside the package.
+/// Data, not code: the host reads it only for a granted plugin.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AgentDecl {
+    /// The `agent(preset: "<name>")` dispatch name.
+    pub name: String,
+    /// The definition file, relative to the package directory, ending in
+    /// `.md`; no `..` component.
+    pub file: String,
+}
+
 /// The headless protocol an `[[external_agents]]` entry speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -318,9 +337,17 @@ pub enum ManifestError {
     #[error("key_env {0:?} must be an env var name such as CURSOR_API_KEY, not a value")]
     KeyEnv(String),
     /// `wasm` is absent, but the manifest declares something besides
-    /// `[[mcp]]` servers: only an `[[mcp]]`-only package may omit `wasm`.
-    #[error("wasm is required unless the package's only capability is [[mcp]] (PL§13/§14)")]
+    /// `[[mcp]]` servers and `[[agents]]` files: only a data-only package
+    /// may omit `wasm`.
+    #[error("wasm is required unless the package only declares [[mcp]] and [[agents]] (PL§13/§14)")]
     MissingWasm,
+    /// An `[[agents]]` file is absolute, climbs out with `..`, or is not a
+    /// `.md` file.
+    #[error("[[agents]] file {0:?} must be a relative .md path inside the package, with no ..")]
+    AgentFile(String),
+    /// Two `[[agents]]` entries share a name.
+    #[error("[[agents]] name {0:?} is declared twice")]
+    DuplicateAgent(String),
 }
 
 impl PluginManifest {
@@ -333,11 +360,12 @@ impl PluginManifest {
             return Err(ManifestError::Id(self.id.clone()));
         }
         if self.wasm.is_none() {
-            let mcp_only = self.capabilities == Capabilities::default()
+            // `[[mcp]]` and `[[agents]]` need no wasm export to back them.
+            let data_only = self.capabilities == Capabilities::default()
                 && self.provider.is_empty()
                 && self.models.is_empty()
                 && self.external_agents.is_empty();
-            if !mcp_only {
+            if !data_only {
                 return Err(ManifestError::MissingWasm);
             }
         }
@@ -391,8 +419,31 @@ impl PluginManifest {
                 return Err(ManifestError::KeyEnv(agent.key_env.clone()));
             }
         }
+        let mut seen = std::collections::BTreeSet::new();
+        for agent in &self.agents {
+            if !is_tool_name(&format!("{}-{}", self.id, agent.name)) {
+                return Err(ManifestError::ToolName(agent.name.clone()));
+            }
+            if !is_package_md(&agent.file) {
+                return Err(ManifestError::AgentFile(agent.file.clone()));
+            }
+            if !seen.insert(agent.name.as_str()) {
+                return Err(ManifestError::DuplicateAgent(agent.name.clone()));
+            }
+        }
         Ok(())
     }
+}
+
+/// A `.md` path inside the package: `/`-separated, relative, no empty,
+/// `..`, `\` or `:` (a Windows drive) component. The loader still confines
+/// the joined path under the package directory (T45.4); this refuses an
+/// escape before approval shows it.
+fn is_package_md(s: &str) -> bool {
+    s.ends_with(".md")
+        && !s.starts_with('/')
+        && s.split('/')
+            .all(|c| !c.is_empty() && c != ".." && !c.contains(['\\', ':']))
 }
 
 /// `^[a-z][a-z0-9-]{1,23}$`. The charset has no `_`, which is what keeps the
@@ -696,6 +747,66 @@ name = "count"
             let m = parse(&toml).expect("structurally valid manifest");
             assert_eq!(m.validate(), Err(ManifestError::MissingWasm));
         }
+    }
+
+    /// T45.3: an `[[agents]]` entry, appended to the PL§2 fixture.
+    const AGENT: &str = r#"
+[[agents]]
+name = "reviewer"
+file = "agents/reviewer.md"
+"#;
+
+    #[test]
+    fn manifest_agents_reject_parent_dir_file() {
+        let m = parse(&format!("{EXAMPLE}\n{AGENT}")).expect("parses");
+        assert_eq!(
+            m.agents,
+            vec![AgentDecl {
+                name: "reviewer".into(),
+                file: "agents/reviewer.md".into(),
+            }]
+        );
+        assert_eq!(m.validate(), Ok(()));
+        for bad in [
+            "../reviewer.md",
+            "agents/../../x.md",
+            "/etc/agent.md",
+            "agents\\..\\x.md",
+            "C:/x.md",
+            "agents//x.md",
+            "agents/reviewer.txt",
+        ] {
+            let mut m = m.clone();
+            m.agents[0].file = bad.into();
+            assert_eq!(m.validate(), Err(ManifestError::AgentFile(bad.into())));
+        }
+        let mut twice = m.clone();
+        twice.agents.push(twice.agents[0].clone());
+        assert_eq!(
+            twice.validate(),
+            Err(ManifestError::DuplicateAgent("reviewer".into()))
+        );
+        let mut long = m;
+        long.agents[0].name = "r".repeat(64);
+        assert_eq!(
+            long.validate(),
+            Err(ManifestError::ToolName("r".repeat(64)))
+        );
+    }
+
+    /// T45.3: agent files are data, so a package of only `[[agents]]` (and
+    /// `[[mcp]]`) needs no `plugin.wasm`.
+    #[test]
+    fn manifest_agents_only_package_needs_no_wasm() {
+        let toml = format!(
+            "api = 1\nid = \"review-kit\"\nversion = \"0.1.0\"\nname = \"review\"\n{AGENT}"
+        );
+        let m = parse(&toml).expect("a wasm-less agents-only manifest parses");
+        assert_eq!(m.wasm, None);
+        assert_eq!(m.validate(), Ok(()));
+        let with_tool = format!("{toml}\n[capabilities]\ntools = [\"summarise\"]\n");
+        let m = parse(&with_tool).expect("structurally valid");
+        assert_eq!(m.validate(), Err(ManifestError::MissingWasm));
     }
 
     /// EA§1's `plugin.toml` example, appended to the PL§2 fixture.

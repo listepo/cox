@@ -69,7 +69,7 @@ private struct Segment: View {
   var body: some View {
     Button(action: select) {
       title
-        .textStyle(.control)
+        .textStyle(.segment)
         .foregroundStyle(look?.label ?? Color(.textSecondary))
         .padding(.horizontal, Space.ml)
         .frame(maxHeight: .infinity)

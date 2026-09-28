@@ -36,6 +36,9 @@ enum Ask {
         call_id: CallId,
         text: String,
         options: Vec<String>,
+        /// Who asks when it is not the model (T47.3): a subagent's name or
+        /// `mcp:<server>` for an MCP elicitation.
+        from: Option<String>,
     },
 }
 
@@ -252,15 +255,17 @@ impl Plain {
             Event::TurnStarted { model, .. } => {
                 self.tui.status.model = model.to_string();
             }
-            Event::ItemStarted { item, kind } => match kind {
-                ItemKind::AssistantMessage { text } => {
-                    self.texts.insert(item, ("cox", text));
+            // T50.5: `/permissions` and `/effort` change the session; the
+            // status line follows the event, as the TUI's does.
+            Event::StateChanged { mode, effort } => {
+                self.tui.mode = mode;
+                self.tui.status.effort = effort;
+            }
+            Event::ItemStarted { item, kind } => {
+                if let Some(entry) = buffered(kind, self.full_thinking) {
+                    self.texts.insert(item, entry);
                 }
-                ItemKind::Thinking { text, .. } if self.full_thinking => {
-                    self.texts.insert(item, ("thinking", text));
-                }
-                _ => {}
-            },
+            }
             Event::TextDelta { item, text } | Event::ThinkingDelta { item, text } => {
                 if let Some((_, buf)) = self.texts.get_mut(&item) {
                     buf.push_str(&text);
@@ -290,11 +295,12 @@ impl Plain {
                 call_id,
                 question,
                 options,
-                ..
+                source,
             } => self.push_ask(Ask::Question {
                 call_id,
                 text: question,
                 options,
+                from: source.and_then(|s| s.agent),
             })?,
             Event::Usage { usage, .. } => {
                 self.turn_usd += usage.cost_usd;
@@ -355,8 +361,16 @@ impl Plain {
         let lines = match self.asks.front() {
             None => return Ok(()),
             Some(Ask::Approval(_)) => return self.show_prompt(APPROVE),
-            Some(Ask::Question { text, options, .. }) => {
-                let mut lines = vec![format!("question: {}", sanitize(text))];
+            Some(Ask::Question {
+                text,
+                options,
+                from,
+            }) => {
+                let label = match from {
+                    Some(from) => format!("question from {}", sanitize(from)),
+                    None => "question".to_string(),
+                };
+                let mut lines = vec![format!("{label}: {}", sanitize(text))];
                 for (i, option) in options.iter().enumerate() {
                     lines.push(format!("  [{}] {}", i + 1, sanitize(option)));
                 }
@@ -603,9 +617,44 @@ fn spawn_sigint() -> mpsc::Receiver<()> {
     rx
 }
 
+/// The label and opening text of a started item that is printed whole at
+/// `ItemDone`; `None` for an item shown some other way or not at all.
+fn buffered(kind: ItemKind, full_thinking: bool) -> Option<(&'static str, String)> {
+    match kind {
+        ItemKind::AssistantMessage { text } => Some(("cox", text)),
+        // T39.2 keeps a tool call's signature as an empty signed item for
+        // the provider's history: a replay token, not something the model
+        // said. A streamed thought also starts empty, but unsigned.
+        ItemKind::Thinking {
+            text,
+            signature: Some(_),
+        } if text.is_empty() => None,
+        ItemKind::Thinking { text, .. } if full_thinking => Some(("thinking", text)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_skips_empty_signed_thinking() {
+        let thinking = |text: &str, signature: Option<&str>| ItemKind::Thinking {
+            text: text.into(),
+            signature: signature.map(Into::into),
+        };
+        assert_eq!(buffered(thinking("", Some("sig")), true), None);
+        assert_eq!(
+            buffered(thinking("", None), true),
+            Some(("thinking", String::new()))
+        );
+        assert_eq!(
+            buffered(thinking("why", Some("sig")), true),
+            Some(("thinking", "why".into()))
+        );
+        assert_eq!(buffered(thinking("why", None), false), None);
+    }
 
     #[test]
     fn markdown_table_reads_as_header_value_rows() {
@@ -664,5 +713,47 @@ mod tests {
         let (label, rest) = result_lines(&result);
         assert_eq!(label, "failed, 1 line");
         assert_eq!(rest, ["  boom"]);
+    }
+
+    /// T50.5 Check: `/permissions plan` reaches the status line through the
+    /// session's `StateChanged`, not the configured mode.
+    #[tokio::test]
+    async fn permissions_command_updates_the_plain_status_mode() {
+        let home = tempfile::tempdir().expect("home");
+        let work = tempfile::tempdir().expect("work");
+        let scenario = "[[turn]]\ntext = \"ok\"\n";
+        let (session, _store) =
+            cox_session::testing::scripted_session(home.path(), work.path(), scenario);
+        let mut events = session.events().expect("events");
+        let config = cox_protocol::Config::default();
+        let mut plain = Plain {
+            session,
+            full_thinking: false,
+            texts: HashMap::new(),
+            asks: VecDeque::new(),
+            prompt: None,
+            armed: false,
+            turn_usd: 0.0,
+            turn_tokens: [0, 0],
+            session_usd: 0.0,
+            tui: cox_tui::state::State::new(config.permissions.mode, config.sandbox.mode),
+        };
+        let before = cox_tui::status::plain_text(&plain.tui);
+        assert!(!before.contains("plan"), "{before}");
+        plain.input("/permissions plan").expect("input");
+        let changed = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match events.recv().await {
+                    Some(ev @ Event::StateChanged { .. }) => break ev,
+                    Some(_) => {}
+                    None => panic!("event stream closed"),
+                }
+            }
+        })
+        .await
+        .expect("StateChanged");
+        plain.event(changed).expect("event");
+        let after = cox_tui::status::plain_text(&plain.tui);
+        assert!(after.contains("plan"), "{after}");
     }
 }

@@ -91,7 +91,7 @@ public struct ReviewPane: View {
   public var body: some View {
     HStack(spacing: 0) {
       ScrollView { files }
-        .frame(width: Size.inspectorWidth)
+        .frame(width: Size.reviewFileListWidth)
         .hairline(.trailing)
       VStack(spacing: 0) {
         diff.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -139,7 +139,7 @@ public struct ReviewPane: View {
       }
       RewindTimeline(state: state.timeline) { send(.timeline($0)) }
     }
-    .padding(.horizontal, Space.xl)
+    .padding(.horizontal, Space.ml)
     .padding(.vertical, Space.l)
     .frame(maxWidth: .infinity, alignment: .leading)
   }

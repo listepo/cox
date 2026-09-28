@@ -40,8 +40,7 @@ struct ComposerChip: View {
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.capsule, style: .continuous)
-    // The mockup's 5 px gap and 26 px height take the nearest steps, `Space.xs` and the small
-    // button height.
+    // The mockup's 5 px gap takes the nearest step, `Space.xs`.
     HStack(spacing: Space.xs) {
       if let symbol = kind.symbol { Image(systemName: symbol).symbolStyle(.caption) }
       // An empty label leaves the symbol alone, the paperclip's chip.
@@ -56,7 +55,7 @@ struct ComposerChip: View {
     }
     .foregroundStyle(kind.foreground)
     .padding(.horizontal, Space.ml)
-    .frame(height: Size.buttonHeightSmall)
+    .frame(height: Size.chipHeight)
     // Face behind the label, so the glass sweep never washes out the text (DS§8).
     .background {
       shape.fill(kind.tint).glassPane(shape, surface: Color(.surfaceCapsule), role: .readable)

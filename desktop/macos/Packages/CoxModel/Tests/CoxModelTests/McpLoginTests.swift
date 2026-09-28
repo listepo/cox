@@ -54,6 +54,23 @@ final class OpenRecorder: PlatformHost {
     #expect(store.failure == nil)
   }
 
+  /// T37.45.4: the badge and log Rust decided reach the row unchanged.
+  @Test func aRowCarriesItsStatusAndLog() async {
+    let view = SettingsView(
+      settings: [], userFile: "/u/config.toml",
+      mcp: [
+        McpServer(
+          name: "sentry", source: ".mcp.json", login: .stdio, status: .failed,
+          log: ["skipped: spawn uvx: not found"])
+      ])
+    let store = SettingsStore(
+      client: FixtureSettingsClient(view: view, host: host), secrets: MemorySecretStore(),
+      cwd: "/p")
+    await store.load()
+    #expect(store.logins.first?.status == .failed)
+    #expect(store.logins.first?.log == ["skipped: spawn uvx: not found"])
+  }
+
   @Test func aStdioServerHasNoLoginToRun() async {
     let store = store()
     await store.load()

@@ -23,11 +23,12 @@ use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
 use crate::costs::{self, TurnCosts};
 use crate::info::{self, Info};
+use crate::mcp_status::McpRun;
 use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
 use crate::terminal::{self, TerminalHandle, TerminalSpec};
-use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
+use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, SessionGrant, Timeline};
 use crate::{TimelinePatch, dispatch};
 
 /// The core's own bound (DT§4.5).
@@ -68,6 +69,13 @@ impl LiveSession {
                 status.apply(&event);
             }
         }
+        let tried: Vec<String> = match config.mcp.enabled {
+            true => cox_session::mcp_servers(&config, &cwd)
+                .servers
+                .into_keys()
+                .collect(),
+            false => Vec::new(),
+        };
         let (login, keys) = (Arc::clone(&app.host), Arc::clone(&app.host));
         let spec = SessionSpec {
             config,
@@ -85,13 +93,23 @@ impl LiveSession {
         };
         let keys: cox_session::Keys = Arc::new(move |section: &str| keys.secret(section));
         let opened = cox_session::open_with_keys(spec, Some(keys)).await?;
+        let notices: Vec<String> = opened
+            .warnings
+            .iter()
+            .filter_map(|w| match w {
+                cox_session::Warning::Mcp(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        app.record_mcp(&cwd, McpRun::new(tried, &notices));
         let session = opened.session;
         // Review's hunk revert (T51.19): cox-render's diff, which the core cannot reach.
         session.set_hunk_reverter(crate::review::RenderHunks::shared());
         let events = session.events().ok_or(AppError::EventsTaken)?;
         let events = tee(Arc::clone(&app), session.id(), events);
         let claude_home = cox_config::load::home_dir().join(".claude");
-        Ok(Arc::new(Self {
+        let owner = Arc::clone(&app);
+        let live = Arc::new(Self {
             completer: Completer::load(&cwd, &app.home, &claude_home),
             controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
@@ -102,7 +120,9 @@ impl LiveSession {
             session,
             cwd,
             theme,
-        }))
+        });
+        owner.register(&live);
+        Ok(live)
     }
 
     pub fn id(&self) -> SessionId {
@@ -292,6 +312,35 @@ impl LiveSession {
             rows,
         };
         Ok(terminal::open(&spec)?)
+    }
+
+    /// This session's `AllowForSession` grants, as its core holds them
+    /// (T37.45.3), with its title for the Settings row.
+    pub async fn grants(&self) -> Vec<SessionGrant> {
+        let (session, store) = (self.id(), self.app.workspace().store());
+        // A session with no ledger row yet has no title to show.
+        let title = store.session_info(&session).ok().and_then(|i| i.title);
+        self.session
+            .grants()
+            .await
+            .into_iter()
+            .map(|(tool, subject)| SessionGrant {
+                session,
+                title: title.clone(),
+                tool,
+                subject,
+            })
+            .collect()
+    }
+
+    /// Revokes a grant through the core (`Submission::RevokeGrant`), so the
+    /// engine asks for the next call it covered.
+    pub async fn revoke(&self, tool: &str, subject: &str) -> Result<(), AppError> {
+        let revoke = Submission::RevokeGrant {
+            tool: tool.to_string(),
+            subject: subject.to_string(),
+        };
+        Ok(self.session.submit(revoke).await?)
     }
 
     /// `/` commands and `@` files for the composer's token.

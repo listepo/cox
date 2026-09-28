@@ -11,6 +11,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `max_concurrent_subagents` = `8` — cap on running TaskKind::Agent tasks, foreground + background (T34.2)
 - `log_level` = `"info"` — tracing filter; file log at ~/.cox/logs/cox.log
 - `profile` = `""` — "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
+- `mode` = `"editor"` — editor (default) | architect (P42: plan + think); also `cox --mode`, `/mode`
 ## `[tiers.cheap]`
 
 - `provider` = `"anthropic"`
@@ -129,6 +130,15 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `timeout_s` = `120`
 - `max_retries` = `4`
 - `models` = `[{id="glm-5.2", display_name="GLM-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", display_name="GLM-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.gemini]`
+
+- `base_url` = `"https://generativelanguage.googleapis.com/v1beta/openai"` — client appends /chat/completions
+- `api_key_env` = `"GEMINI_API_KEY"` — else keyring entry "cox/gemini"
+- `api` = `"chat"` — Google calls its OpenAI compatibility beta: https://ai.google.dev/gemini-api/docs/openai
+- `model` = `"gemini-3.8-flash"`
+- `timeout_s` = `120`
+- `max_retries` = `4`
+- `models` = `[{id="gemini-3.8-flash", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.1-pro-preview", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.5-flash-lite", context_window=0, efforts=[], reasoning_effort=true}]`
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
@@ -142,13 +152,14 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `memory_budget_tokens` = `800`
 - `deferred_tools` = `true`
 - `system_prompt` = `"default"` — default | minimal (T30.1); `core.profile = "minimal"` implies it
+- `repomap_budget_tokens` = `0` — repo map in system[2] (P43); 0 = off until the T43.6 bench
 ## `[permissions]`
 
 - `mode` = `"default"` — default | plan | auto | bypass (bypass only via flag)
 - `approval` = `"on-request"` — untrusted | on-request | on-failure | never
-- `allow` = `[]` — rule strings, §1.8
-- `ask` = `[]`
-- `deny` = `["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]`
+- `allow` = `[]` — rule strings, §1.8; a project config cannot set allow (its list is ignored)
+- `ask` = `[]` — a project config adds rules to this list, never replaces it
+- `deny` = `["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]` — a project config adds rules to this list, never replaces it
 - `import_claude_settings` = `true`
 - `allow_for_session_persists` = `false`
 ## `[sandbox]`
@@ -181,6 +192,11 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `notify` = `"auto"` — auto | always | off — OSC 9 (OSC 777 on VTE) plus BEL when a turn ends, an approval waits or ask_user asks; auto only while the terminal is unfocused (focus reporting), always regardless, off never (T23.5)
 - `motion` = `"full"` — full | reduced — reduced draws a running tool's spinner as one still glyph and replaces its ticking elapsed time with `running` (T24.7)
 - `caps` = `{}` — [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
+## `[tui.status_line]`
+
+- `command` = `""` — a /bin/sh -c command fed the status JSON (Claude Code's statusLine field names) on stdin; its first output line is one row above the status line, re-run 300 ms after the status changes; runs sandboxed read-only without network, output passes sanitize (colours and links stripped); "" is off; a project config cannot set it (T46.1)
+- `refresh_s` = `0` — also re-run every this many seconds (0 = off, at most 3600)
+- `timeout_ms` = `2000` — a run that takes longer is killed and the row goes blank (100 to 10000)
 ## `[hooks]`
 
 - `timeout_s` = `60` — seconds per [[hooks.<Event>]] process (a hook's own timeout_s overrides); stdin carries the Claude Code JSON payload, exit 2 blocks, stdout may carry updatedInput or additionalContext
@@ -290,3 +306,23 @@ mode.cycle = "shift+tab"
 - `tui.motion = "reduced"` stops everything that moves by itself. A running tool shows one still glyph and `running` instead of a spinner and a ticking clock.
 - `tui.theme = "cox-dark-daltonized"` or `"cox-light-daltonized"` are the built-in themes without a red/green pair. Added lines and success are blue; removed lines and failure are orange. Every state also keeps its glyph (`✓`, `✗`, `+`, `−`), so colour is never the only signal. `/theme` previews both.
 - `NO_COLOR` (set and non-empty, while `tui.color` is `"auto"`), or `tui.color = "none"`, prints no colour at all and leaves the terminal's own.
+
+## Status line command
+
+`[tui.status_line]` (T46.4) runs your own command and draws the first line it prints as one row above the built-in status line; the built-in segments stay. An empty `command` is off.
+
+- stdin is one JSON object with Claude Code's statusline field names, so an existing script runs unchanged: `session_id`, `cwd`, `workspace.current_dir`, `workspace.project_dir`, `model.id`, `model.display_name`, `cost.total_cost_usd`, `context_window.used_percentage`, `context_window.context_window_size` and `version`. cox adds `permission_mode`, `sandbox_mode`, `git.branch` and `busy`. `COLUMNS` is the terminal width.
+- It runs 300 ms after any of those or the width changes, a newer change kills a run still going, and with `refresh_s` set it also re-runs on that period.
+- A run longer than `timeout_ms`, a non-zero exit or empty output blanks the row; it is never fatal.
+- It runs under the sandbox, read-only and without network (the session's own policy only under `danger-full-access`), with the environment cleared to the child allowlist plus `COLUMNS`. A host with no sandbox backend gets one warning and no row; the command never runs bare.
+- Its output is untrusted: every escape sequence is stripped, so colours and links are dropped, and the row is drawn dim.
+- A project `.cox/config.toml` cannot set `command`: it would run on every start in a cloned repository, so the value is reverted with a warning, like the other guarded keys.
+
+## Theme editor
+
+`Ctrl+E` on a colour row of the `/theme` picker (T46.7) opens that theme's 17 tokens with a swatch and the current value. `Up`/`Down` (or `Tab`) move, typing edits the selected value, and every colour that parses is drawn at once; one that does not is marked `invalid colour` and not applied. `Esc` puts back what was drawn before `/theme` opened.
+
+- `Enter` (or `Ctrl+S`) writes `~/.cox/themes/<stem>.toml`, selects it as `tui.theme` and lists it in `/theme` without a restart. It edits each token's half for the background in use (`dark` or `light`).
+- A built-in is never overwritten: its edits go to `<name>-custom.toml`, which starts as a copy of the built-in's own file. A user theme is edited in place, keeping its comments and every other key.
+- A stem must match `[a-z0-9][a-z0-9._-]{0,63}` with no `..`; any other is refused with a warning, and a failed write is a warning too.
+- The file: optional `variant = "dark"` (or `"light"`) and `syntax = "<.tmTheme name>"`, then `[tokens]` with `<token> = { dark = "<colour>", light = "<colour>" }`. A colour is `#rrggbb`, an ANSI index `0`-`255` or one of the sixteen ANSI names. The tokens are text, dim, accent, user, agent, tool, ok, warn, error, diff_add, diff_del, diff_hunk, border, selection, mode_plan, mode_auto and mode_bypass.

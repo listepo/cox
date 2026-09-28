@@ -239,7 +239,10 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         Some(_) => vec![cwd.to_path_buf()],
         None => config.core.workspace_roots.clone(),
     };
-    let plugins = load_plugins(&config, &home, cwd, store.clone(), Some(&writable));
+    let mut plugins = load_plugins(&config, &home, cwd, store.clone(), Some(&writable));
+    // T45.4: taken now, before `catalog_rows` borrows `plugins`; merged
+    // into the discovered definitions below.
+    let plugin_agent_defs = std::mem::take(&mut plugins.agent_defs);
     config.providers.custom.extend(plugins.providers.clone());
     // T33.44: granted plugins' `[[models]]` join the catalog the provider
     // reads its context window from (PL§7b).
@@ -291,11 +294,16 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     // build, the same roots `cox ext list` reads — never inside `cox-core`,
     // which does no filesystem I/O of its own (`agent_defs` on `Session`
     // is set below, after construction, like `set_worktrees`).
-    let agents_found = cox_ext::agents::discover(&cox_ext::agents::agent_dirs(
+    let mut agents_found = cox_ext::agents::discover(&cox_ext::agents::agent_dirs(
         Some(&home),
         Some(&claude_home),
         Some(&project),
     ));
+    // T45.4: granted plugins' definitions join after the files, so a local
+    // definition of the same name wins (PL§14 decision 15).
+    for (id, defs) in plugin_agent_defs {
+        cox_ext::agents::merge(&mut agents_found, defs, &id);
+    }
     warnings.extend(agents_found.notices.into_iter().map(Warning::Agent));
     let (instructions, skills_index, dropped) = prefix_texts(
         &home,
@@ -306,6 +314,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     );
     warnings.extend(dropped.into_iter().map(Warning::Instruction));
     let mut all = tools(answer, &store, mdir);
+    // T47.3: made before MCP connects, so each server's handshake already
+    // declares (or not) the elicitation capability.
+    let (asker, asks) = mcp::question_channel(questions).unzip();
     if questions {
         all = tools::with_question_surface(all);
     }
@@ -323,7 +334,8 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     // D14); `with_tool_search_index` below makes it discoverable.
     all.push(Arc::new(cox_ext::skills::SkillTool::new(found.skills)));
     if config.mcp.enabled {
-        let (mcp, notices) = mcp::mcp_tools(&config, cwd, mcp_login, plugins.mcp, &writable).await;
+        let (mcp, notices) =
+            mcp::mcp_tools(&config, cwd, mcp_login, asker, plugins.mcp, &writable).await;
         all.extend(mcp);
         warnings.extend(notices.into_iter().map(Warning::Mcp));
     }
@@ -340,6 +352,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         &mut plugin_warnings,
     ));
     all.extend(surface_tools);
+    let all = tools::with_lsp(all, &config, &writable);
     let all = tools::with_tool_search_index(all);
     let session = match resume {
         Some((id, history)) => Session::resume(
@@ -364,6 +377,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     };
     if worktree_main.is_some() {
         session.set_writable_roots(vec![cwd.to_path_buf()]);
+    }
+    if let Some(asks) = asks {
+        mcp::bridge_questions(&session, asks);
     }
     session.set_agent_defs(agents_found.agents);
     session.set_instructions(instructions, skills_index);
@@ -425,6 +441,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     )));
     // T27.3: `agent(isolation: "worktree")` gets real worktrees on every surface.
     session.set_worktrees(Arc::new(cox_tools::git::GitWorktrees));
+    // P43: the repo map, built once on the first submit when
+    // `context.repomap_budget_tokens` is on.
+    session.set_repo_mapper(Arc::new(ToolsRepoMapper));
     for warning in served.iter().flat_map(|s| s.model.warnings()) {
         session.notice(Level::Warn, warning).await?;
     }
@@ -494,6 +513,22 @@ pub fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBuf {
         cox_ext::memory::memory_dir(home, cwd)
     } else {
         PathBuf::from(&config.memory.dir)
+    }
+}
+
+/// `cox_tools::repomap` behind the core's `RepoMapper` (P43): `cox-core`
+/// may not walk the tree or run git itself.
+struct ToolsRepoMapper;
+
+#[async_trait::async_trait]
+impl cox_protocol::traits::RepoMapper for ToolsRepoMapper {
+    async fn build(
+        &self,
+        root: &Path,
+        budget_bytes: usize,
+        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+    ) -> String {
+        cox_tools::repomap::build(root, budget_bytes, admit).await
     }
 }
 

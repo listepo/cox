@@ -38,20 +38,20 @@ public struct SessionRow: View {
       VStack(alignment: .leading, spacing: 0) {
         HStack(alignment: .firstTextBaseline, spacing: Space.m) {
           Text(item.title)
-            .textStyle(.body)
+            .textStyle(.titleSession)
             .foregroundStyle(Color(isEnabled ? .textPrimary : .textSecondary))
             .frame(maxWidth: .infinity, alignment: .leading)
           if let cost = item.cost {
             // `text.secondary`, not the mockup's tertiary: a figure must stay readable on
             // frosted glass (DS§8).
             Text(cost)
-              .textStyle(.footnote, tabularDigits: true)
+              .textStyle(.detail, tabularDigits: true)
               .foregroundStyle(Color(.textSecondary))
           }
         }
         .alignmentGuide(.titleLine) { $0[VerticalAlignment.center] }
         Text(item.subtitle)
-          .textStyle(.footnote)
+          .textStyle(.detail)
           .foregroundStyle(Color(.textSecondary))
       }
     }

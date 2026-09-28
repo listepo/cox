@@ -410,6 +410,19 @@ pub enum PermissionMode {
     Bypass,
 }
 
+/// `core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the
+/// permission mode and the main tier only. It never filters tools, so the
+/// cache prefix stays byte-stable, and it only narrows `permissions.mode`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// The configured permission mode and main tier, unchanged.
+    #[default]
+    Editor,
+    /// `Plan` (read-only tools only) and the `think` main tier, confirmed.
+    Architect,
+}
+
 /// `permissions.approval` (plan.md §1.6/§1.8 step 8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -438,6 +451,19 @@ pub enum CompactReason {
     Manual,
     /// The provider rejected a request as too long; the call retries once.
     ContextTooLong,
+}
+
+/// Why `Event::RepoMapBuilt` happened (P43): the only three moments the
+/// repo map in system[2] is built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoMapReason {
+    /// Before the first request of a session.
+    SessionStart,
+    /// `/repomap refresh` produced different bytes.
+    Refresh,
+    /// Compaction rebuilt it with the prefix it already restarts.
+    Compaction,
 }
 
 /// `sandbox.mode` (plan.md §1.6/D7).
@@ -995,6 +1021,15 @@ pub enum Submission {
         /// The new mode.
         mode: PermissionMode,
     },
+    /// Revoke an `AllowForSession` grant (T37.45.3): the next call it
+    /// covered goes back through the rules and asks. The core answers with
+    /// `GrantRevoked`, which resume replays, so the grant stays gone.
+    RevokeGrant {
+        /// The grant's tool, as `grants_for` recorded it.
+        tool: String,
+        /// The grant's subject prefix.
+        subject: String,
+    },
     /// A slash command the surface parsed but did not resolve itself.
     Command {
         /// The parsed command.
@@ -1062,6 +1097,16 @@ pub enum Submission {
         command: String,
         /// `!!`: append the output to history for the model.
         share: bool,
+    },
+    /// A composer `@name task` line (T45.5): runs subagent `name` through the
+    /// `agent` tool on the model's own path (hooks, permission engine,
+    /// budget, agent slots). The line and the answer join history at its
+    /// tail, so the next model turn sees them.
+    UserAgent {
+        /// A preset, agent definition or external agent name.
+        name: String,
+        /// What the subagent is asked to do.
+        task: String,
     },
     /// Wind down the session cleanly.
     Shutdown,
@@ -1189,6 +1234,13 @@ pub enum Event {
         /// Who/what decided it.
         by: DecidedBy,
     },
+    /// An `AllowForSession` grant was revoked (`Submission::RevokeGrant`).
+    GrantRevoked {
+        /// The grant's tool.
+        tool: String,
+        /// The grant's subject prefix.
+        subject: String,
+    },
     /// Streamed stdout/stderr from a running tool, already sanitised for display.
     ToolCallOutput {
         /// The call producing output.
@@ -1237,6 +1289,17 @@ pub enum Event {
         /// existed read as `post-turn`.
         #[serde(default)]
         reason: CompactReason,
+    },
+    /// The repo map now in system[2] (P43). Its text is archived before
+    /// this is emitted; resume reads the last one back instead of
+    /// rebuilding, so the replayed request carries the same bytes.
+    RepoMapBuilt {
+        /// The archived map text.
+        archive: ArchiveId,
+        /// Its size in bytes.
+        bytes: u64,
+        /// What built it.
+        reason: RepoMapReason,
     },
     /// Pre-images of the files a tool call changed are archived and
     /// retrievable (T26.1). Emitted after the `checkpoints` rows exist, so a
@@ -1309,6 +1372,15 @@ pub enum Event {
         mode: PermissionMode,
         /// The effort override; `None` means each tier's default.
         effort: Option<Effort>,
+    },
+    /// The session's mode changed (`/mode`, P42), or a top-level session
+    /// opened under a non-default one; carries the permission mode the
+    /// preset left in force so a surface needs no second event.
+    ModeChanged {
+        /// The mode now in force.
+        mode: Mode,
+        /// The permission mode now in force, after the preset narrowed it.
+        permission_mode: PermissionMode,
     },
     /// The session got a title (DT G6), for the sessions list and a window
     /// or tab title.
@@ -1699,6 +1771,7 @@ mod tests {
     #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into(), segments: None } })]
     #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
+    #[case::grant_revoked(Event::GrantRevoked { tool: "bash".into(), subject: "git push".into() })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None, structured: None } })]
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
@@ -1710,6 +1783,7 @@ mod tests {
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Plan, effort: Some(Effort::Low) })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Architect, permission_mode: PermissionMode::Plan })]
     #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "which?".into(), options: vec!["a".into()], source: None })]
     #[case::title_set(Event::TitleSet { title: "Fix the ledger".into(), by_user: false })]
     #[case::title_set_by_user(Event::TitleSet { title: "Mine".into(), by_user: true })]
@@ -1779,12 +1853,14 @@ mod tests {
     #[case::switch_model(Submission::SwitchModel { tier: Tier::Code, model: Some(ModelId("claude-opus-5".into())) })]
     #[case::set_effort(Submission::SetEffort { effort: Some(Effort::Xhigh) })]
     #[case::set_permission_mode(Submission::SetPermissionMode { mode: PermissionMode::Plan })]
+    #[case::revoke_grant(Submission::RevokeGrant { tool: "bash".into(), subject: "git push".into() })]
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
     #[case::revert_file(Submission::RevertFile { path: "src/a.rs".into(), to_turn: 2 })]
     #[case::revert_hunk(Submission::RevertHunk { path: "src/a.rs".into(), to_turn: 2, hunk: 1, now_digest: content_digest(b"now") })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
+    #[case::user_agent(Submission::UserAgent { name: "explore".into(), task: "find the router".into() })]
     #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
     #[case::rename(Submission::Rename { title: "Fix the ledger".into() })]
@@ -1830,6 +1906,7 @@ mod tests {
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None, structured: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Default, effort: None })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Editor, permission_mode: PermissionMode::Default })]
     #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "q".into(), options: vec![], source: None })]
     #[case::title_set(Event::TitleSet { title: "t".into(), by_user: true })]
     fn event_tags_are_snake_case(#[case] event: Event) {

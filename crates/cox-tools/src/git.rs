@@ -69,6 +69,54 @@ pub async fn branches(dir: &Path) -> Vec<String> {
     out.lines().map(str::to_string).collect()
 }
 
+/// Files under `dir` most recently touched, relative to `dir`: uncommitted
+/// ones (`status`, untracked included) first, then those named by the last
+/// `commits` commits in `log` order, each once. The repo map's ranking
+/// (P43). Git prints both lists relative to the repository root, so the
+/// `--show-prefix` of `dir` is stripped and anything outside `dir` dropped.
+/// Empty outside a repository — the map then falls back to path order.
+pub async fn recent_changes(dir: &Path, commits: usize) -> Vec<String> {
+    let Some(prefix) = git(dir, &["rev-parse", "--show-prefix"]).await else {
+        return Vec::new();
+    };
+    let prefix = prefix.trim_end_matches('\n');
+    let status = git(
+        dir,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+    )
+    .await
+    .unwrap_or_default();
+    let n = commits.to_string();
+    let log = git(dir, &["log", "-z", "-n", &n, "--name-only", "--format="])
+        .await
+        .unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    porcelain_paths(&status)
+        .into_iter()
+        .chain(log.split(['\0', '\n']).filter(|p| !p.is_empty()))
+        .filter_map(|p| p.strip_prefix(prefix))
+        .filter(|p| seen.insert(*p))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The paths of `status --porcelain -z`: each record is `XY path`; a rename
+/// or copy is followed by one more record holding the old path, skipped.
+fn porcelain_paths(out: &str) -> Vec<&str> {
+    let mut paths = Vec::new();
+    let mut records = out.split('\0');
+    while let Some(record) = records.next() {
+        let Some(path) = record.get(3..).filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        if record.get(..2).is_some_and(|xy| xy.contains(['R', 'C'])) {
+            records.next();
+        }
+        paths.push(path);
+    }
+    paths
+}
+
 /// Sums `git diff --numstat` columns. A binary file reports `-` for both,
 /// which parses as nothing rather than aborting the count.
 fn numstat(out: &str) -> (usize, usize) {
@@ -510,6 +558,13 @@ mod tests {
             (13, 1)
         );
         assert_eq!(numstat(""), (0, 0));
+    }
+
+    #[test]
+    fn porcelain_paths_skip_the_old_name_of_a_rename() {
+        let out = " M src/a.rs\0R  new.rs\0old.rs\0?? notes.md\0";
+        assert_eq!(porcelain_paths(out), ["src/a.rs", "new.rs", "notes.md"]);
+        assert!(porcelain_paths("").is_empty());
     }
 
     #[test]

@@ -40,6 +40,10 @@ pub struct Cli {
     /// Override `permissions.mode`. `bypass` is flag-only and shows a persistent banner.
     #[arg(long = "permission-mode", global = true, value_name = "MODE")]
     pub permission_mode: Option<String>,
+    /// Override `core.mode`: `architect` (plan + think tier) or `editor`.
+    /// In `cox run`, `--mode architect` is also the think-tier consent.
+    #[arg(long = "mode", global = true, value_name = "MODE", value_parser = ["architect", "editor"])]
+    pub mode: Option<String>,
     /// Override `permissions.approval`.
     #[arg(long, global = true, value_name = "POLICY")]
     pub approve: Option<String>,
@@ -180,6 +184,10 @@ pub struct RunArgs {
     /// Stop `--loop` after this many turns; required together with `--loop`.
     #[arg(long = "max-iterations", value_name = "N")]
     pub max_iterations: Option<u32>,
+    /// Attach an image (PNG, JPEG, GIF or WebP, at most 3.75 MB) to the
+    /// first turn; repeat for more. Checked before any request (T40.7).
+    #[arg(long = "image", value_name = "PATH")]
+    pub images: Vec<PathBuf>,
 }
 
 /// `cox stats` (plan.md §1.12/T1.7). Print usage and cost statistics.

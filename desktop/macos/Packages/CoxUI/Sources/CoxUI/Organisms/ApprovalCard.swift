@@ -158,7 +158,7 @@ public struct ApprovalCard: View {
         Text(content.command).textSelection(.enabled)
       }
     }
-    .textStyle(.monoCode)
+    .textStyle(.monoCommand)
     .foregroundStyle(Color(.textPrimary))
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, Space.l)

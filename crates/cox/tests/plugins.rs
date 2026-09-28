@@ -161,3 +161,130 @@ fn example_plugin_counts_turns_in_its_status_and_resets_them() {
     assert!(matches!(out, CommandOut::Notice(n) if n.text == "counters reset"));
     assert_eq!(status_text(host), "turns 0 · failed tools 0");
 }
+
+/// T45.4: the parent dispatches `reviewer`; the child's own turn, pinned by
+/// the marker on the task's second line, answers with its tool names —
+/// `grep` under the plugin's definition, `glob` under the local one. The
+/// marker never reaches the parent's own text, so its `done` stays FIFO.
+const AGENT_SCENARIO: &str = "[[turn]]\n\
+    tool_calls = [{ name = \"agent\", input = { task = \"review\\nREVIEWER-CHILD\", preset = \"reviewer\" } }]\n\n\
+    [[turn]]\nwhen_contains = \"REVIEWER-CHILD\"\necho_tools = true\n\n\
+    [[turn]]\ntext = \"done\"\n";
+
+/// An agents-only package (no wasm, PL§13) whose `reviewer` keeps `grep`,
+/// and the scenario above beside it.
+fn agent_package(root: &Path) -> (String, String) {
+    let pkg = root.join("review-kit");
+    std::fs::create_dir_all(pkg.join("agents")).unwrap();
+    std::fs::write(
+        pkg.join("plugin.toml"),
+        "api = 1\nid = \"review-kit\"\nversion = \"0.1.0\"\nname = \"Review kit\"\n\n\
+         [[agents]]\nname = \"reviewer\"\nfile = \"agents/reviewer.md\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        pkg.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: reviews from the plugin\ntools: [grep]\n---\nReview it.\n",
+    )
+    .unwrap();
+    let scenario = root.join("plugin_agent.toml");
+    std::fs::write(&scenario, AGENT_SCENARIO).unwrap();
+    let path = |p: &Path| p.to_str().unwrap().to_string();
+    (path(&pkg), path(&scenario))
+}
+
+/// The headless run's events and its one `agent` call's result.
+fn agent_run(home: &Path, cwd: &Path, scenario: &str) -> (Vec<Value>, Value) {
+    let out = stdout(cox(home, cwd).env("COX_SCENARIO", scenario).args([
+        "run",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+    ]));
+    let events: Vec<Value> = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let result = events
+        .iter()
+        .find(|e| e["type"] == "tool_call_done")
+        .map(|e| e["result"].clone())
+        .expect("the agent call finished");
+    (events, result)
+}
+
+#[test]
+fn granted_plugin_agent_is_dispatchable() {
+    let (home, cwd, root) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (home, cwd) = (home.path(), cwd.path());
+    let (pkg, scenario) = agent_package(root.path());
+    stdout(cox(home, cwd).args(["plugin", "install", &pkg, "--yes"]));
+
+    let (_, result) = agent_run(home, cwd, &scenario);
+    assert_eq!(result["ok"], true, "{result}");
+    let tools = result["visible"].as_str().unwrap();
+    assert!(tools.contains("grep") && !tools.contains("glob"), "{tools}");
+}
+
+#[test]
+fn ungranted_plugin_agent_is_not_loaded() {
+    let (home, cwd, root) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (home, cwd) = (home.path(), cwd.path());
+    let (pkg, scenario) = agent_package(root.path());
+    // Installed, but the approval is answered "no": no grant row.
+    cox(home, cwd)
+        .args(["plugin", "install", &pkg])
+        .write_stdin("n\n")
+        .assert()
+        .success();
+
+    let (events, result) = agent_run(home, cwd, &scenario);
+    assert_eq!(result["ok"], false, "{result}");
+    assert!(
+        events.iter().any(|e| e["type"] == "notice"
+            && e["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("plugin review-kit is not loaded"))),
+        "{events:#?}"
+    );
+}
+
+#[test]
+fn local_agent_wins_over_plugin_agent() {
+    let (home, cwd, root) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (home, cwd) = (home.path(), cwd.path());
+    let (pkg, scenario) = agent_package(root.path());
+    stdout(cox(home, cwd).args(["plugin", "install", &pkg, "--yes"]));
+    let local = cwd.join(".cox/agents");
+    std::fs::create_dir_all(&local).unwrap();
+    std::fs::write(
+        local.join("reviewer.md"),
+        "---\nname: reviewer\ndescription: reviews locally\ntools: [glob]\n---\nReview it.\n",
+    )
+    .unwrap();
+
+    let (events, result) = agent_run(home, cwd, &scenario);
+    let tools = result["visible"].as_str().unwrap();
+    assert!(tools.contains("glob") && !tools.contains("grep"), "{tools}");
+    assert!(
+        events.iter().any(|e| e["type"] == "notice"
+            && e["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("plugin review-kit: agent reviewer skipped"))),
+        "{events:#?}"
+    );
+}

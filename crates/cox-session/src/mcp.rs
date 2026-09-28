@@ -2,13 +2,20 @@
 //! for a directory, the auth a surface brings, and connecting them — every
 //! stdio server under the sandbox wrap first. Separate from `open` because
 //! `cox mcp` lists and logs in to the same servers without a session.
+//! A server's elicitation questions reach the person through the session's
+//! own question path (T47.3), so the modal and `--plain` show them.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use cox_core::Session;
+use cox_mcp::elicit::{Ask, Asker};
 use cox_protocol::Config;
 use cox_protocol::config::McpServerConfig;
-use cox_protocol::traits::Tool;
+use cox_protocol::ids::CallId;
+use cox_protocol::traits::{Relay, Tool};
+use cox_protocol::types::Source;
+use tokio::sync::mpsc;
 
 use crate::sandbox::sandboxed_argv;
 
@@ -26,6 +33,7 @@ pub fn mcp_auth(login: Option<cox_mcp::client::Prompt>) -> cox_mcp::client::Auth
     cox_mcp::client::Auth {
         secrets: Arc::new(cox_mcp::auth::Keyring),
         prompt: login,
+        ask: None,
     }
 }
 
@@ -35,10 +43,13 @@ pub fn mcp_auth(login: Option<cox_mcp::client::Prompt>) -> cox_mcp::client::Auth
 /// `plugins` (T33.19) join discovery as its lowest-precedence source, and
 /// every stdio server (theirs and the user's) is sandboxed (T33.42) before
 /// `connect_all` spawns it. Returns the tools and the warnings, in order.
+/// `ask` (T47.3) is the asker a server's elicitation goes through; `None`
+/// where nobody answers questions, so the servers see no capability.
 pub(crate) async fn mcp_tools(
     config: &Config,
     cwd: &Path,
     login: Option<cox_mcp::client::Prompt>,
+    ask: Option<Asker>,
     plugins: Vec<(String, Vec<(String, McpServerConfig)>)>,
     writable: &[PathBuf],
 ) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
@@ -48,15 +59,60 @@ pub(crate) async fn mcp_tools(
     }
     sandbox_stdio_servers(&mut found, config, writable);
     let timeout = std::time::Duration::from_secs(u64::from(config.mcp.timeout_s));
-    let (_clients, tools, notices) = cox_mcp::client::connect_all(
-        &found.servers,
-        timeout,
-        config.mcp.deferred,
-        &mcp_auth(login),
-    )
-    .await;
+    let mut auth = mcp_auth(login);
+    auth.ask = ask;
+    let (_clients, tools, notices) =
+        cox_mcp::client::connect_all(&found.servers, timeout, config.mcp.deferred, &auth).await;
     let warnings = found.notices.into_iter().chain(notices).collect();
     (tools, warnings)
+}
+
+/// T47.3: the elicitation asker, only on a surface that answers questions
+/// (`questions`: the TUI and `--plain`). Headless, ACP and `cox mcp` get
+/// none, so their servers never see an elicitation capability (A78).
+pub(crate) fn question_channel(questions: bool) -> Option<(Asker, mpsc::Receiver<Ask>)> {
+    questions.then(|| mpsc::channel(8))
+}
+
+/// T47.3: raises each elicitation question as the session's own
+/// `QuestionAsked`, labelled `mcp:<server>`, so the one question modal (and
+/// `--plain`) shows it — no second path. The answer goes back to the
+/// server only: `Submission::Answer` records nothing in the rollout.
+pub(crate) fn bridge_questions(session: &Session, mut asks: mpsc::Receiver<Ask>) {
+    let session = session.clone();
+    tokio::spawn(async move {
+        while let Some(ask) = asks.recv().await {
+            let session = session.clone();
+            tokio::spawn(async move { ask_person(&session, ask).await });
+        }
+    });
+}
+
+/// One question; a dismissed one drops `reply`, which the handler reads
+/// as `cancel`. A call cancelled meanwhile stops the wait.
+async fn ask_person(session: &Session, ask: Ask) {
+    let Ask {
+        server,
+        question,
+        options,
+        mut reply,
+    } = ask;
+    let source = Source {
+        session: session.id(),
+        agent: Some(format!("mcp:{server}")),
+        preset: None,
+    };
+    // The server wrote it: untrusted text, like any tool output.
+    let question = cox_sanitize::sanitize(&question);
+    let answer = tokio::select! {
+        answered = session.ask(CallId::new(), &question, &options, Some(source)) => {
+            answered.ok().flatten()
+        }
+        () = reply.closed() => None,
+    };
+    if let Some(text) = answer {
+        let _ = reply.send(text);
+    }
 }
 
 /// T33.42 (`docs/design/plugins.md` §7c/§14 decision 4): every stdio MCP
@@ -175,6 +231,14 @@ mod tests {
         let _ = std::fs::remove_file(&outside);
         assert!(ws.path().join("inside").exists(), "the server never ran");
         assert!(!leaked, "the sandbox let a config server write {outside}");
+    }
+
+    /// T47.3: only a surface with a person gets an asker; a headless open
+    /// (`questions == false`) passes none, so no server may elicit.
+    #[test]
+    fn headless_open_passes_no_asker() {
+        assert!(question_channel(false).is_none());
+        assert!(question_channel(true).is_some());
     }
 
     /// T33.42 Check: `sandbox_false_opts_a_named_server_out`. A server

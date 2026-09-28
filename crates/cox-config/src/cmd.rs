@@ -145,10 +145,17 @@ fn toml_from_json(value: &JsonValue) -> Option<TomlValue> {
     })
 }
 
-fn set_value_in(path: &Path, key: &str, value: TomlValue) -> Result<(), ConfigError> {
+/// Writes `contents` to `path`, creating its directory first: the one
+/// writer `set` and the TUI theme editor's save (T46.7) share.
+pub fn write_file(path: &Path, contents: &str) -> Result<(), ConfigError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    fs::write(path, contents)?;
+    Ok(())
+}
+
+fn set_value_in(path: &Path, key: &str, value: TomlValue) -> Result<(), ConfigError> {
     let existing = fs::read_to_string(path).unwrap_or_default();
     let mut doc: DocumentMut = existing.parse().map_err(|error| ConfigError::InvalidToml {
         path: path.to_path_buf(),
@@ -175,8 +182,7 @@ fn set_value_in(path: &Path, key: &str, value: TomlValue) -> Result<(), ConfigEr
     // value, so a leading `# comment` above `key = old` survives a `set`.
     *table.entry(last).or_insert(Item::None) = Item::Value(value);
 
-    fs::write(path, doc.to_string())?;
-    Ok(())
+    write_file(path, &doc.to_string())
 }
 
 #[cfg(test)]

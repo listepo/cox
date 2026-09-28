@@ -4,8 +4,9 @@
 //! Here rather than in `cox-ffi` (T37.39, A86) so the FFI only forwards and
 //! this logic is tested in Rust once, without a foreign language.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use cox_protocol::StoreError;
@@ -17,8 +18,15 @@ use cox_store::lock::Holder;
 
 use crate::live::LiveSession;
 use crate::mcp_login::{LoginError, McpAuth};
+use crate::mcp_status::McpRun;
 use crate::{Activity, Inbox, InboxItem, IntentError, SettingsError, SettingsView};
+use crate::{RuleKind, SessionGrant};
 use crate::{Workspace, WorkspaceError};
+
+/// The project `cwd` is in, as MCP discovery finds it: its git root.
+fn project_of(cwd: &Path) -> PathBuf {
+    cox_config::load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())
+}
 
 /// DT§4.8: how long the login shell may take before its env is skipped.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -74,6 +82,8 @@ pub enum AppError {
     /// T51.3: the terminal pane's shell could not start or be driven.
     #[error(transparent)]
     Terminal(#[from] crate::TerminalError),
+    #[error("session {0} is not open here")]
+    NotOpen(SessionId),
 }
 
 impl From<SessionError> for AppError {
@@ -109,6 +119,11 @@ pub struct App {
     inbox: Mutex<Inbox>,
     workspace: Workspace,
     mcp: McpAuth,
+    /// What the last session opened in each project made of its MCP
+    /// servers, by project root (T37.45.4).
+    mcp_runs: Mutex<HashMap<PathBuf, McpRun>>,
+    /// The sessions open here, for their grants in Settings (T37.45.3).
+    live: Mutex<Vec<Weak<LiveSession>>>,
     /// Woken when a session here changes what the session list shows.
     listed: tokio::sync::Notify,
 }
@@ -134,6 +149,8 @@ impl App {
             inbox: Mutex::default(),
             workspace,
             mcp,
+            mcp_runs: Mutex::default(),
+            live: Mutex::default(),
             listed: tokio::sync::Notify::new(),
         }))
     }
@@ -223,8 +240,54 @@ impl App {
         let user = self.user_config();
         let loaded = crate::settings::load(&user, cwd)?;
         let mut view = crate::settings::view_of(&loaded, &user, cwd)?;
-        view.mcp = crate::mcp_login::servers(&loaded.config, cwd, &*self.mcp.secrets).await;
+        let run = self.mcp_run(cwd);
+        view.mcp =
+            crate::mcp_login::servers(&loaded.config, cwd, &*self.mcp.secrets, run.as_ref()).await;
+        for live in self.live_sessions() {
+            view.grants.extend(live.grants().await);
+        }
         Ok(view)
+    }
+
+    /// Adds, replaces or removes one permission rule in this home's
+    /// `config.toml` (`permissions::edit`); the new view.
+    pub async fn set_rule(
+        &self,
+        cwd: &Path,
+        kind: RuleKind,
+        old: Option<&str>,
+        new: Option<&str>,
+    ) -> Result<SettingsView, AppError> {
+        crate::permissions::edit(&self.user_config(), cwd, kind, old, new)?;
+        self.settings(cwd).await
+    }
+
+    /// Revokes one grant of the open `session` through its core, which
+    /// asks again for the next call it covered; the new view.
+    pub async fn revoke_grant(
+        &self,
+        cwd: &Path,
+        grant: &SessionGrant,
+    ) -> Result<SettingsView, AppError> {
+        let live = self
+            .live_sessions()
+            .into_iter()
+            .find(|l| l.id() == grant.session)
+            .ok_or(AppError::NotOpen(grant.session))?;
+        live.revoke(&grant.tool, &grant.subject).await?;
+        self.settings(cwd).await
+    }
+
+    /// Remembers `live` for Settings; a closed one drops out by itself.
+    pub(crate) fn register(&self, live: &Arc<LiveSession>) {
+        let mut all = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+        all.retain(|w| w.strong_count() > 0);
+        all.push(Arc::downgrade(live));
+    }
+
+    fn live_sessions(&self) -> Vec<Arc<LiveSession>> {
+        let all = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+        all.iter().filter_map(Weak::upgrade).collect()
     }
 
     /// Sets `key` to `json` in this home's `config.toml`; the new view.
@@ -258,6 +321,18 @@ impl App {
     /// This home's `config.toml`, what sessions and Settings both read.
     pub(crate) fn user_config(&self) -> PathBuf {
         self.home.join("config.toml")
+    }
+
+    /// Keeps `run` as the MCP status of the project `cwd` is in, replacing
+    /// the one an earlier session there left.
+    pub(crate) fn record_mcp(&self, cwd: &Path, run: McpRun) {
+        let mut runs = self.mcp_runs.lock().unwrap_or_else(PoisonError::into_inner);
+        runs.insert(project_of(cwd), run);
+    }
+
+    fn mcp_run(&self, cwd: &Path) -> Option<McpRun> {
+        let runs = self.mcp_runs.lock().unwrap_or_else(PoisonError::into_inner);
+        runs.get(&project_of(cwd)).cloned()
     }
 
     fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {

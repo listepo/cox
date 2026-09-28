@@ -19,10 +19,11 @@ use cox_app::review::LineComment;
 use cox_app::{
     Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
     ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer,
-    Linked, McpLogin, McpServer, MeterRow, MeterText, ModelChoice, Need, PageText, Project,
-    SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget,
-    TurnCosts, TurnUsage, UsageView,
+    Linked, McpLogin, McpServer, McpStatus, MeterRow, MeterText, ModelChoice, Need, PageText,
+    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
+    TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
+use cox_app::{PermissionRule, RuleKind, SessionGrant};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
 use cox_protocol::traits::WorktreeInfo;
@@ -674,6 +675,31 @@ pub struct SettingsView {
     pub project_file: Option<PathBuf>,
     pub mcp: Vec<McpServer>,
     pub dropped: Vec<Dropped>,
+    pub rules: Vec<PermissionRule>,
+    pub grants: Vec<SessionGrant>,
+}
+
+#[uniffi::remote(Record)]
+pub struct PermissionRule {
+    pub kind: RuleKind,
+    pub rule: String,
+    pub layer: Layer,
+    pub editable: bool,
+}
+
+#[uniffi::remote(Enum)]
+pub enum RuleKind {
+    Allow,
+    Ask,
+    Deny,
+}
+
+#[uniffi::remote(Record)]
+pub struct SessionGrant {
+    pub session: SessionId,
+    pub title: Option<String>,
+    pub tool: String,
+    pub subject: String,
 }
 
 #[uniffi::remote(Record)]
@@ -711,6 +737,17 @@ pub struct McpServer {
     pub name: String,
     pub source: String,
     pub login: McpLogin,
+    pub status: McpStatus,
+    pub log: Vec<String>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum McpStatus {
+    Connected,
+    NeedsLogin,
+    Failed,
+    Disabled,
+    Unknown,
 }
 
 #[uniffi::remote(Enum)]

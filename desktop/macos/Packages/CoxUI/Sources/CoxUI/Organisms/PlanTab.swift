@@ -96,7 +96,7 @@ private struct PlanStepRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
-    .textStyle(.body)
+    .textStyle(.compact)
     // The mockup's `.todo` sits the box almost on the section's edge, under its header.
     .padding(.horizontal, Space.xxs)
     .padding(.vertical, Space.s)

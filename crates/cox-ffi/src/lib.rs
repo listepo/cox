@@ -8,7 +8,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use cox_app::SettingsView;
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
 use cox_app::onboarding::CheckRow;
@@ -16,6 +15,7 @@ use cox_app::terminal::TerminalError;
 use cox_app::{
     Activity, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry,
 };
+use cox_app::{RuleKind, SessionGrant, SettingsView};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
 use tokio::runtime::Runtime;
@@ -205,6 +205,35 @@ impl App {
     ) -> Result<SettingsView, AppError> {
         Ok(
             on_runtime(async move { self.owner.set_setting(Path::new(&cwd), &key, &value).await })
+                .await??,
+        )
+    }
+
+    /// Adds (`old` none), replaces or removes (`new` none) one permission
+    /// rule in the user file (T37.45.3); the new view.
+    pub async fn set_permission_rule(
+        self: Arc<Self>,
+        cwd: String,
+        kind: RuleKind,
+        old: Option<String>,
+        new: Option<String>,
+    ) -> Result<SettingsView, AppError> {
+        Ok(on_runtime(async move {
+            (self.owner)
+                .set_rule(Path::new(&cwd), kind, old.as_deref(), new.as_deref())
+                .await
+        })
+        .await??)
+    }
+
+    /// Revokes a session grant through its session's core (T37.45.3).
+    pub async fn revoke_grant(
+        self: Arc<Self>,
+        cwd: String,
+        grant: SessionGrant,
+    ) -> Result<SettingsView, AppError> {
+        Ok(
+            on_runtime(async move { self.owner.revoke_grant(Path::new(&cwd), &grant).await })
                 .await??,
         )
     }

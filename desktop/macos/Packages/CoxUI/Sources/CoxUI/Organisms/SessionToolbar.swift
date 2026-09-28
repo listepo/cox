@@ -106,7 +106,7 @@ public struct SessionToolbar: View {
       ) { send(.toggleInspector) }
     }
     .padding(.leading, Space.xl)
-    .padding(.trailing, Space.l)
+    .padding(.trailing, Space.toolbarTrailing)
     .frame(height: Size.toolbarHeight)
     .overlay(alignment: .bottom) {
       if state.mode == .bypass {

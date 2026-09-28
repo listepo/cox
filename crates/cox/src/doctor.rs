@@ -4,6 +4,7 @@
 //! capabilities (TERM, true colour, size), prices table age, whether every
 //! configured model has a catalog price (T30.27), what LM Studio runs when
 //! it is the code tier's provider (T30.16), `.claude/settings.json`,
+//! each `[lsp.servers]` program on PATH (T41.7),
 //! one OAuth row per HTTP MCP server (T22.5), and one row per granted
 //! `[[external_agents]]` entry (EA§7, T35.8), and one row per discovered
 //! plugin: loaded, skipped (with reason), not granted, or dev, plus
@@ -103,6 +104,9 @@ pub fn run(
 
     // One row naming every stdio server opted out of the sandbox (T33.42).
     results.push(check_mcp_sandbox(mcp));
+
+    // Each `[lsp.servers]` program found on PATH or missing (T41.7).
+    results.push(check_lsp(config));
 
     // One row per granted `[[external_agents]]` entry: CLI on PATH (+
     // `--version`, best-effort), `key_env` set, sandboxed or refused
@@ -306,6 +310,50 @@ fn check_mcp_sandbox(mcp: &HashMap<String, McpServerConfig>) -> CheckResult {
             "mcp sandbox",
             format!("unsandboxed by config: {}", names.join(", ")),
             "sandbox = false was set on purpose; drop it to re-enable the wrap".to_string(),
+        )
+    }
+}
+
+/// One row for `[lsp]` (T41.7): each configured server's program, found on
+/// PATH or missing, by the lookup the `diagnostics` tool starts it by. A
+/// missing server is not a problem while another one runs; with none,
+/// `diagnostics` can only point the model at `bash`.
+fn check_lsp(config: &cox_protocol::Config) -> CheckResult {
+    check_lsp_with(&config.lsp, |command| {
+        cox_tools::lsp::on_path(command).is_some()
+    })
+}
+
+fn check_lsp_with(
+    lsp: &cox_protocol::config::LspConfig,
+    found: impl Fn(&str) -> bool,
+) -> CheckResult {
+    const CHECK: &str = "LSP servers";
+    if !lsp.enabled {
+        return CheckResult::ok(CHECK, "disabled (lsp.enabled = false)".to_string());
+    }
+    if lsp.servers.is_empty() {
+        return CheckResult::ok(CHECK, "none configured".to_string());
+    }
+    let rows: Vec<(bool, &str)> = lsp
+        .servers
+        .values()
+        .map(|s| (found(&s.command), s.command.as_str()))
+        .collect();
+    let detail = rows
+        .iter()
+        .map(|(ok, command)| format!("{command} {}", if *ok { "ok" } else { "missing" }))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if rows.iter().any(|(ok, _)| *ok) {
+        CheckResult::ok(CHECK, detail)
+    } else {
+        CheckResult::warn(
+            CHECK,
+            detail,
+            "install a language server for your project, or set lsp.enabled = false; \
+             without one, `diagnostics` tells the model to run the project's checker with `bash`"
+                .to_string(),
         )
     }
 }
@@ -1157,6 +1205,28 @@ mod tests {
         }
 
         insta::assert_snapshot!(output);
+    }
+
+    /// T41.7: the LSP row lists each server's program as found or missing,
+    /// warns only when none is found, and says so when `[lsp]` is off.
+    #[test]
+    fn doctor_lsp_row() {
+        let lsp = cox_protocol::config::LspConfig::default();
+        let some = check_lsp_with(&lsp, |command| command == "rust-analyzer");
+        let none = check_lsp_with(&lsp, |_| false);
+        let off = check_lsp_with(
+            &cox_protocol::config::LspConfig {
+                enabled: false,
+                ..lsp.clone()
+            },
+            |_| true,
+        );
+        let rows = [some, none, off];
+        assert_eq!(
+            rows.iter().map(|r| r.status.as_str()).collect::<Vec<_>>(),
+            ["ok", "warn", "ok"]
+        );
+        insta::assert_snapshot!(rows.iter().map(human).collect::<String>());
     }
 
     /// T37.36: a `cox.db` a newer `cox` migrated fails the `db` row with

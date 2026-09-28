@@ -71,6 +71,35 @@ pub fn with_client_tools(
         .collect()
 }
 
+/// Adds the deferred `diagnostics` tool (T41.7) when `lsp.enabled`. Its
+/// servers start under `sandboxed_argv`, the wrap every stdio MCP server
+/// gets, with the same `writable` roots; `danger-full-access` runs them bare
+/// because `sandboxed_argv` does. Before `with_tool_search_index`, so
+/// `tool_search` can find it.
+pub(crate) fn with_lsp(
+    mut tools: Vec<Arc<dyn Tool>>,
+    config: &cox_protocol::Config,
+    writable: &[PathBuf],
+) -> Vec<Arc<dyn Tool>> {
+    if config.lsp.enabled {
+        let (wrap_config, writable) = (config.clone(), writable.to_vec());
+        let spawner: cox_tools::lsp::Spawner =
+            Arc::new(move |server: &cox_protocol::config::LspServerConfig| {
+                crate::sandbox::sandboxed_argv(
+                    std::path::Path::new(&server.command),
+                    &server.args,
+                    &wrap_config,
+                    &writable,
+                )
+            });
+        tools.push(Arc::new(cox_tools::lsp::DiagnosticsTool::new(
+            config.lsp.clone(),
+            spawner,
+        )));
+    }
+    tools
+}
+
 /// Rebuilds `tool_search` over the complete tool list — built-ins, the
 /// deferred `skill` (T22.2), MCP and plugin tools (T33.12) — by the
 /// swap-by-name shape of `with_question_surface`: it answers from the specs
@@ -193,5 +222,57 @@ mod tests {
             .await
             .expect("answered through the surface");
         assert_eq!(out.text, "b");
+    }
+
+    /// T41.7: with `lsp.enabled` the deferred `diagnostics` tool is in the
+    /// list `tool_search` indexes; without it, it is not.
+    #[tokio::test]
+    async fn tool_search_finds_diagnostics() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let store = Arc::new(Store::open(tmp.path()).expect("open store"));
+        let mut config = cox_protocol::Config::default();
+        let built = with_tool_search_index(with_lsp(
+            tools(None, &store, tmp.path().join("memory")),
+            &config,
+            &[],
+        ));
+        let search = built
+            .iter()
+            .find(|t| t.spec().name == "tool_search")
+            .expect("tool_search present")
+            .clone();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::channel(1);
+        let cx = cox_tools::tool_cx(
+            vec![tmp.path().to_path_buf()],
+            tmp.path().to_path_buf(),
+            cox_protocol::SandboxPolicy {
+                mode: cox_protocol::types::SandboxMode::ReadOnly,
+                network: false,
+                writable: vec![],
+                readonly_in_workspace: vec![],
+                linux_backend: Default::default(),
+            },
+            Arc::new(NoopArchive) as Arc<dyn cox_protocol::Archive>,
+            tokio_util::sync::CancellationToken::new(),
+            out_tx,
+            SessionId::new(),
+            cox_protocol::ids::CallId::new(),
+        );
+        let out = search
+            .call(serde_json::json!({"query": "diagnostics"}), &cx)
+            .await
+            .expect("search runs");
+        let found = out.structured.expect("discovered names");
+        assert!(
+            found["discovered"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|n| n == "diagnostics")),
+            "{}",
+            out.text
+        );
+
+        config.lsp.enabled = false;
+        let without = with_lsp(tools(None, &store, tmp.path().join("memory")), &config, &[]);
+        assert!(without.iter().all(|t| t.spec().name != "diagnostics"));
     }
 }

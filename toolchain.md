@@ -85,6 +85,7 @@ Programs the project uses and the direct packages from its manifests.
 | pulldown-cmark | local | https://crates.io/crates/pulldown-cmark | T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine). Lives in `cox-render` (T32.2). |
 | ratatui | local | https://crates.io/crates/ratatui | cox-tui |
 | reqwest | local | https://crates.io/crates/reqwest | cox-provider |
+| url | local | https://crates.io/crates/url | cox-tools: LSP `file://` URI ↔ path (T41.3); `cox-app`'s browser tools parse a URL and pass only http/https (T51.7). 2.5.8, the latest release, 2026-01-05 |
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
 | schemars | local | https://crates.io/crates/schemars | Rust dependency |
@@ -119,10 +120,10 @@ Programs the project uses and the direct packages from its manifests.
 | typify | local (build-dependency) | https://github.com/oxidecomputer/typify | cox-provider `build.rs`: Anthropic request and stream types generated from the vendored `schema/anthropic-openapi.json` (T30.10, T30.12) |
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
-| url | local | https://crates.io/crates/url | Rust dependency: T51.7, `cox-app`'s browser tools parse a URL and pass only http/https (2.5.8, the latest release, 2026-01-05) |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
+| trycmd | local | https://github.com/assert-rs/trycmd | dev-dep: `cox run -p` output fixtures (P48) |
 
 ## pub (`plugins/templates/dart`, `plugins/examples/dart`)
 

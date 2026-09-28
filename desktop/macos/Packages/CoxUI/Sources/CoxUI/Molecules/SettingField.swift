@@ -36,17 +36,26 @@ struct SettingField: View {
         TextField(prompt, text: text, prompt: hint)
       }
     }
-    .textFieldStyle(.plain)
-    .textStyle(.body)
-    .foregroundStyle(Color(.textPrimary))
-    .lineLimit(1)
     .onSubmit {
       if let draft { commit(draft) }
       draft = nil
     }
-    .padding(.horizontal, Space.ml)
-    .frame(width: Size.sidebarWidth, height: Size.buttonHeightSmall)
-    .insetWell(Color(.fillPrimary), cornerRadius: Radius.m)
+    .settingWell()
+  }
+}
+
+extension View {
+  /// `SettingField`'s sunken well around a text field: `width` wide, or the width it is offered
+  /// when `nil`, as the provider key sheet's field takes it.
+  func settingWell(width: CGFloat? = Size.sidebarWidth) -> some View {
+    textFieldStyle(.plain)
+      .textStyle(.body)
+      .foregroundStyle(Color(.textPrimary))
+      .lineLimit(1)
+      .padding(.horizontal, Space.ml)
+      .frame(width: width, height: Size.buttonHeightSmall)
+      .frame(maxWidth: width == nil ? .infinity : nil)
+      .insetWell(Color(.fillPrimary), cornerRadius: Radius.m)
   }
 }
 

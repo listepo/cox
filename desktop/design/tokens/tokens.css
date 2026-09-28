@@ -11,6 +11,10 @@
   --space-xxl: 20px;
   --space-xxxl: 24px;
   --space-huge: 32px;
+  --space-tab: 9px;
+  --space-popover: 14px;
+  --space-toolbarTrailing: 14px;
+  --space-composerBottom: 18px;
   --radius-xs: 4px;
   --radius-s: 6px;
   --radius-m: 8px;
@@ -23,6 +27,8 @@
   --radius-window: 22px;
   --radius-badge: 5px;
   --radius-capsule: 999px;
+  --radius-swatch: 2px;
+  --radius-tab: 7px;
   --size-toolbarHeight: 56px;
   --size-sidebarWidth: 252px;
   --size-inspectorWidth: 324px;
@@ -42,6 +48,12 @@
   --size-windowMinHeight: 700px;
   --size-popoverWidth: 340px;
   --size-tokenPopoverWidth: 360px;
+  --size-windowSmallWidth: 980px;
+  --size-chipHeight: 26px;
+  --size-sendButton: 30px;
+  --size-composerTextMinHeight: 46px;
+  --size-completionWidth: 470px;
+  --size-reviewFileListWidth: 260px;
   --c-surface-window: rgba(255, 255, 255, 1);
   --c-surface-sidebar: rgba(242, 242, 246, 0.86);
   --c-surface-code: rgba(246, 246, 248, 1);

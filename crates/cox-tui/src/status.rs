@@ -11,6 +11,12 @@
 //! end of the row and drop before any built-in one. Their last good render
 //! is cached in `State`; `on_plugin` and `render_requests` are the only
 //! places a render is asked for, so drawing the row never reaches a plugin.
+//!
+//! The user's status command (T46.3, `[tui.status_line]`) owns one more row
+//! above this one: `script_input` is what it reads on stdin, `script_ask`
+//! asks the runtime to run it only when that input changed, and
+//! `script_line` draws its last answer. The runtime runs, debounces and
+//! sandboxes it; nothing here starts a process.
 
 use cox_protocol::plugin::{RenderIn, Slot, Widget};
 use cox_protocol::types::{PresenceStatus, SandboxMode, TodoState};
@@ -18,8 +24,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use serde_json::{Value, json};
 
-use crate::state::{Cmd, Modal, PluginRequest, PluginUiMsg, State};
+use crate::state::{Ask, Cmd, Modal, PluginRequest, PluginUiMsg, State, Status};
 use crate::vim::Mode;
 
 /// Columns one plugin segment may fill (PL§8).
@@ -256,7 +263,7 @@ fn built_in_segments(state: &State) -> Vec<(bool, String)> {
         SandboxMode::WorkspaceWrite => "workspace-write",
         SandboxMode::DangerFullAccess => "danger-full-access",
     };
-    let pct = u64::from(s.context_used()) * 100 / u64::from(s.context_window.max(1));
+    let pct = ctx_pct(s);
     let filled =
         ((s.cache_ratio.clamp(0.0, 1.0) * CTX_CELLS as f64).round() as usize).min(CTX_CELLS);
     let bar: String = "▰".repeat(filled) + &"▱".repeat(CTX_CELLS - filled);
@@ -348,8 +355,79 @@ fn built_in_segments(state: &State) -> Vec<(bool, String)> {
     if let Some(seg) = loop_countdown {
         out.push((false, seg));
     }
-    out.push((true, format!("{head}[{mode}]{suffix}")));
+    // P42: architect's badge rides in the mode segment, before the
+    // permission mode it narrowed, so the two never separate.
+    let work = match state.session_mode {
+        cox_protocol::types::Mode::Architect => "[architect] ",
+        cox_protocol::types::Mode::Editor => "",
+    };
+    out.push((true, format!("{head}{work}[{mode}]{suffix}")));
     out
+}
+
+/// `ctx N%`'s N: the context used as a share of the model's window.
+fn ctx_pct(s: &Status) -> u64 {
+    u64::from(s.context_used()) * 100 / u64::from(s.context_window.max(1))
+}
+
+/// The user's status command as the TUI sees it (T46.3): whether it runs,
+/// the last `(input, columns)` asked for, and the last line it printed.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StatusScript {
+    pub enabled: bool,
+    pub last_input: Option<(Value, u16)>,
+    pub line: Option<String>,
+}
+
+/// The status command's stdin: Claude Code's statusline field names where
+/// the meaning is the same, so an existing script runs unchanged (D4), plus
+/// cox's own `permission_mode`, `sandbox_mode`, `git.branch` and `busy`.
+/// The runtime adds `session_id`, `cwd`, `workspace` and `version`.
+pub fn script_input(state: &State) -> Value {
+    let s = &state.status;
+    let display = s.model.strip_prefix("claude-").unwrap_or(&s.model);
+    json!({
+        "model": { "id": s.model, "display_name": display },
+        "cost": { "total_cost_usd": s.cost_usd },
+        "context_window": {
+            "used_percentage": ctx_pct(s),
+            "context_window_size": s.context_window,
+        },
+        "permission_mode": state.mode,
+        "sandbox_mode": s.sandbox,
+        "git": { "branch": state.git.as_ref().map(|g| g.branch.as_str()) },
+        "busy": s.busy,
+    })
+}
+
+/// `Ask::StatusLine` when the command is enabled and its input or the
+/// terminal width changed since the last ask; the runtime debounces, so
+/// this holds no timer.
+pub fn script_ask(state: &mut State) -> Option<Cmd> {
+    let script = state.status_script.as_ref().filter(|s| s.enabled)?;
+    let next = (script_input(state), state.term.0);
+    if script.last_input.as_ref() == Some(&next) {
+        return None;
+    }
+    let (input, columns) = next.clone();
+    if let Some(script) = &mut state.status_script {
+        script.last_input = Some(next);
+    }
+    Some(Cmd::Ask(Ask::StatusLine { input, columns }))
+}
+
+/// The status command's row, cut to `width` and drawn in `theme.dim`;
+/// `None` (no row at all) until it printed something. Sanitized again here,
+/// as every other status text is at draw time, whoever sent the line.
+pub fn script_line(state: &State, width: u16) -> Option<Line<'static>> {
+    let line = state.status_script.as_ref()?.line.as_deref()?;
+    let clean = crate::text::sanitize(line);
+    let text = clean.lines().next().unwrap_or("").trim();
+    if text.is_empty() {
+        return None;
+    }
+    let text = crate::text::truncate(text, usize::from(width), state.glyphs.ellipsis);
+    Some(Line::styled(text, Style::default().fg(state.theme.dim)))
 }
 
 /// The same segments `--plain` (T29.1) prints once per turn: joined text, no
@@ -536,6 +614,29 @@ mod tests {
         state
     }
 
+    /// P42: `[architect]` sits right before the permission mode it
+    /// narrowed; editor shows nothing extra.
+    #[test]
+    fn status_line_shows_architect_badge() {
+        use cox_protocol::types::{Event, Mode as SessionMode};
+
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.model = "sonnet-5".into();
+        assert!(!line_at(&state, 200).to_string().contains("architect"));
+        update(
+            &mut state,
+            Msg::Event(Event::ModeChanged {
+                mode: SessionMode::Architect,
+                permission_mode: PermissionMode::Plan,
+            }),
+        );
+        // The price question holds the mode slot while it is open.
+        state.modal = None;
+        let line = line_at(&state, 200).to_string();
+        assert!(line.contains("[architect] [plan]"), "{line}");
+        insta::assert_snapshot!(line);
+    }
+
     #[test]
     fn plugin_segments_wide() {
         let state = two_plugins();
@@ -674,5 +775,109 @@ mod tests {
             assert!(crate::view::buffer_to_string(&buf).contains("ctx ▰▰▰▱▱ 7%"));
             insta::assert_snapshot!(format!("ctx_share_{name}"), format!("{buf:?}"));
         }
+    }
+
+    fn scripted(line: Option<&str>) -> State {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.model = "claude-sonnet-5".into();
+        state.status_script = Some(StatusScript {
+            enabled: true,
+            last_input: None,
+            line: line.map(str::to_string),
+        });
+        state
+    }
+
+    /// T46.3: the command's line is its own row, directly above the
+    /// built-in status line, which keeps every segment it had.
+    #[test]
+    fn status_script_row_is_drawn_above_the_status_line() {
+        let state = scripted(Some("main · 3 files · hello from the script"));
+        let screen = crate::view::buffer_to_string(&render(&state, 60, 6));
+        let rows: Vec<&str> = screen.lines().collect();
+        assert_eq!(
+            rows[4], "main · 3 files · hello from the script",
+            "{screen}"
+        );
+        assert!(rows[5].starts_with("sonnet-5"), "{screen}");
+        insta::assert_snapshot!(screen);
+    }
+
+    /// T46.3: no line (not configured, or blank after a failure) draws no
+    /// row, so the screen is the one without the key.
+    #[test]
+    fn status_script_without_a_line_adds_no_row() {
+        let plain = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let mut blank = scripted(None);
+        blank.status.model = plain.status.model.clone();
+        let screen = |s: &State| crate::view::buffer_to_string(&render(s, 60, 6));
+        assert_eq!(screen(&blank), screen(&plain));
+        if let Some(script) = &mut blank.status_script {
+            script.line = Some("  ".into());
+        }
+        assert_eq!(screen(&blank), screen(&plain));
+    }
+
+    /// T46.3: the runtime is asked again only when the input or the width
+    /// changed, never on a tick that changed nothing, and never when off.
+    #[test]
+    fn status_script_input_changes_only_on_status_change() {
+        let asks = |cmds: Vec<Cmd>| {
+            cmds.into_iter()
+                .filter_map(|c| match c {
+                    Cmd::Ask(Ask::StatusLine { input, columns }) => Some((input, columns)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut state = scripted(None);
+        let first = asks(update(&mut state, Msg::Tick));
+        assert_eq!(first.len(), 1, "the first update asks once");
+        assert_eq!(first[0].0["model"]["id"], "claude-sonnet-5");
+        assert_eq!(first[0].0["model"]["display_name"], "sonnet-5");
+        assert_eq!(first[0].0["sandbox_mode"], "workspace-write");
+        assert!(asks(update(&mut state, Msg::Tick)).is_empty());
+
+        state.status.cost_usd = 1.25;
+        let after_cost = asks(update(&mut state, Msg::Tick));
+        assert_eq!(after_cost.len(), 1);
+        assert_eq!(after_cost[0].0["cost"]["total_cost_usd"], 1.25);
+        assert!(asks(update(&mut state, Msg::Tick)).is_empty());
+
+        let resized = asks(update(&mut state, Msg::Resize(99, 30)));
+        assert_eq!(resized.len(), 1);
+        assert_eq!(resized[0].1, 99);
+
+        // The answer itself is not an input change.
+        assert!(asks(update(&mut state, Msg::StatusLine(Some("x".into())))).is_empty());
+
+        let mut off = scripted(None);
+        if let Some(script) = &mut off.status_script {
+            script.enabled = false;
+        }
+        assert!(asks(update(&mut off, Msg::Tick)).is_empty());
+        let mut none = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        assert!(asks(update(&mut none, Msg::Tick)).is_empty());
+    }
+
+    /// T46.3: the row goes through `sanitize` at draw time, whoever sent
+    /// the line: colours, a title and an OSC 8 link are stripped, and only
+    /// the first line is drawn.
+    #[test]
+    fn status_script_row_is_sanitized() {
+        let mut state = scripted(None);
+        update(
+            &mut state,
+            Msg::StatusLine(Some(
+                "\u{1b}[31mred\u{1b}]0;title\u{7} \u{1b}]8;;https://x\u{7}link\u{1b}]8;;\u{7}\nsecond"
+                    .into(),
+            )),
+        );
+        let line = script_line(&state, 60).expect("a row");
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "red link");
+        let screen = crate::view::buffer_to_string(&render(&state, 60, 6));
+        assert!(!screen.contains('\u{1b}'), "{screen:?}");
+        assert!(!screen.contains("second"), "{screen}");
     }
 }

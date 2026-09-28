@@ -73,13 +73,14 @@ public struct TokenPopover: View {
           KeyValueGrid.Row(label: $0.label, values: [$0.turn, $0.session], isDetail: $0.isDetail)
         })
       context
+      // The mockup's 11 pt regular note.
       Text(state.footnote)
-        .textStyle(.micro)
+        .textStyle(.detail)
         .foregroundStyle(Color(.textTertiary))
         .fixedSize(horizontal: false, vertical: true)
     }
     .padding(.horizontal, Space.xl)
-    .padding(.vertical, Space.l)
+    .padding(.vertical, Space.popover)
     .frame(width: Size.tokenPopoverWidth)
     .glassPane(shape, surface: Color(.surfacePopover), role: .readable)
     .hairline(in: shape)
@@ -91,15 +92,15 @@ public struct TokenPopover: View {
   /// The heading and phase, the big rate beside its sparkline, and the rate line.
   private var rate: some View {
     VStack(alignment: .leading, spacing: Space.s) {
-      header(state.heading, trailing: state.phase, accent: state.isStreaming)
-        .textCase(.uppercase)
+      // The mockup's `THIS TURN · 4 REQUESTS` over a lowercase `streaming`.
+      header(state.heading, trailing: state.phase, accent: state.isStreaming, uppercased: true)
       HStack(alignment: .lastTextBaseline, spacing: Space.s) {
         Text(state.rate).textStyle(.metric).foregroundStyle(Color(.textPrimary))
         Text(state.rateUnit).textStyle(.caption).foregroundStyle(Color(.textSecondary))
         Spacer(minLength: Space.l)
         Sparkline(state.sparkline).frame(width: Self.sparkWidth, height: Self.sparkHeight)
       }
-      Text(state.rateDetail).textStyle(.footnote, tabularDigits: true)
+      Text(state.rateDetail).textStyle(.detail, tabularDigits: true)
         .foregroundStyle(Color(.textSecondary))
     }
   }
@@ -119,7 +120,7 @@ public struct TokenPopover: View {
             legend(Array(state.parts.dropFirst(half)))
           }
         }
-        .textStyle(.micro, tabularDigits: true)
+        .textStyle(.legend, tabularDigits: true)
         .foregroundStyle(Color(.textSecondary))
       }
     }
@@ -130,7 +131,7 @@ public struct TokenPopover: View {
     HStack(spacing: Space.m) {
       ForEach(parts, id: \.legend) { part in
         HStack(spacing: Space.xs) {
-          RoundedRectangle(cornerRadius: Radius.xs).fill(part.kind.colour)
+          RoundedRectangle(cornerRadius: Radius.swatch).fill(part.kind.colour)
             .frame(width: Self.swatch, height: Self.swatch)
           Text(part.legend).fixedSize()
         }
@@ -139,9 +140,11 @@ public struct TokenPopover: View {
   }
 
   /// The mockup's `h5`: a label with its value at the trailing edge.
-  private func header(_ title: String, trailing: String, accent: Bool) -> some View {
+  private func header(
+    _ title: String, trailing: String, accent: Bool, uppercased: Bool = false
+  ) -> some View {
     HStack {
-      Text(title).accessibilityAddTraits(.isHeader)
+      Text(title).textCase(uppercased ? .uppercase : nil).accessibilityAddTraits(.isHeader)
       Spacer(minLength: Space.m)
       Text(trailing).foregroundStyle(Color(accent ? .accent : .textSecondary))
     }

@@ -26,6 +26,7 @@ mod self_update;
 mod session;
 mod sessions;
 mod stats;
+mod status_line;
 mod telemetry;
 
 use clap::Parser;
@@ -40,6 +41,10 @@ fn main() -> anyhow::Result<()> {
     };
     if cli.worktree.is_some() {
         cwd = session::enter_worktree(&mut cli, &cwd)?;
+    } else if cli.resume.is_some() {
+        // T44.4: a worktree session resumes in its worktree, before config
+        // loads, for the same reason `--worktree` runs first.
+        cwd = session::resume_worktree(&mut cli, &cwd)?;
     }
     let loaded = config_load::load(&cwd, &cli)?;
     let telemetry_home = cli.home.clone().unwrap_or_else(config_load::cox_home);

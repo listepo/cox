@@ -14,7 +14,8 @@
         "parallel_tools": 4,
         "max_concurrent_subagents": 8,
         "log_level": "info",
-        "profile": ""
+        "profile": "",
+        "mode": "editor"
       }
     },
     "tiers": {
@@ -128,7 +129,8 @@
         "instruction_budget_tokens": 8000,
         "memory_budget_tokens": 800,
         "deferred_tools": true,
-        "system_prompt": "default"
+        "system_prompt": "default",
+        "repomap_budget_tokens": 0
       }
     },
     "permissions": {
@@ -191,7 +193,12 @@
         "git": true,
         "notify": "auto",
         "motion": "full",
-        "caps": {}
+        "caps": {},
+        "status_line": {
+          "command": "",
+          "refresh_s": 0,
+          "timeout_ms": 2000
+        }
       }
     },
     "hooks": {
@@ -391,9 +398,29 @@
           "description": "`core.profile`: the assembled-prefix profile, `\"\"` (default) or\n`\"minimal\"` (T30.1: the core eight tools plus `expand`/`tool_search`,\na ≤300-token system prompt, no skills or memory index;\n`cox --profile minimal`).",
           "type": "string",
           "default": ""
+        },
+        "mode": {
+          "description": "`core.mode` (P42): the session's starting mode, `editor` (default)\nor `architect`; also `cox --mode`, and `/mode` switches it live.\nNot in the project-config guard list: architect only narrows\n`permissions.mode` and its think tier still needs confirmation, so a\nproject config may set it.",
+          "$ref": "#/$defs/Mode",
+          "default": "editor"
         }
       },
       "additionalProperties": false
+    },
+    "Mode": {
+      "description": "`core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the\npermission mode and the main tier only. It never filters tools, so the\ncache prefix stays byte-stable, and it only narrows `permissions.mode`.",
+      "oneOf": [
+        {
+          "description": "The configured permission mode and main tier, unchanged.",
+          "type": "string",
+          "const": "editor"
+        },
+        {
+          "description": "`Plan` (read-only tools only) and the `think` main tier, confirmed.",
+          "type": "string",
+          "const": "architect"
+        }
+      ]
     },
     "TiersConfig": {
       "description": "`[tiers]` (plan.md §1.6): the three routing tiers (plan.md D5).",
@@ -760,7 +787,7 @@
           ]
         },
         "images": {
-          "description": "Whether this model takes image input (T37.6). Read only by an\n`api = \"chat\"` section, where one server hosts both vision and\ntext-only models: unset means \"not declared\", and an attached image\nis then held back with a notice rather than sent to a model that\nwould reject it.",
+          "description": "Whether this model takes image input (T37.6). Read only by an\n`api = \"chat\"` section, where one server hosts both vision and\ntext-only models: unset means \"not declared\", and an attached image\nis then held back with a notice rather than sent to a model that\nwould reject it. `false` also makes the Chat wire refuse any request\nthat still carries an image (T40.9).",
           "type": [
             "boolean",
             "null"
@@ -1092,6 +1119,13 @@
           "description": "`context.system_prompt`: which embedded system prompt assembly uses,\n`\"default\"` or `\"minimal\"` (T30.1: the ≤300-token prompt; profiles\nset this, users normally set `core.profile` instead).",
           "type": "string",
           "default": "default"
+        },
+        "repomap_budget_tokens": {
+          "description": "Token budget for the session repo map, placed last in system[2]\n(P43); `0` is off, the default until the T43.6 bench sets one.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
         }
       },
       "additionalProperties": false
@@ -1402,6 +1436,43 @@
             "type": "boolean"
           },
           "default": {}
+        },
+        "status_line": {
+          "description": "`[tui.status_line]` (T46.1): a user command whose first output line\nis one row above the built-in status line.",
+          "$ref": "#/$defs/StatusLineConfig",
+          "default": {
+            "command": "",
+            "refresh_s": 0,
+            "timeout_ms": 2000
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "StatusLineConfig": {
+      "description": "`[tui.status_line]` (P46, A77): the user's status command. It runs under\nthe sandbox, read-only and without network, and its output passes\n`cox_sanitize::sanitize`. A project config cannot set `command` (the\nguard in `cox-config`'s `load.rs`): a cloned repository must not choose\na program cox runs on every TUI start.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "A `/bin/sh -c` command fed the status JSON on stdin; empty is off.",
+          "type": "string",
+          "default": ""
+        },
+        "refresh_s": {
+          "description": "Re-run the command every this many seconds even when nothing\nchanged; 0 is off.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "maximum": 3600,
+          "default": 0
+        },
+        "timeout_ms": {
+          "description": "How long one run may take, in milliseconds, before it is killed and\nthe row goes blank.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 100,
+          "maximum": 10000,
+          "default": 2000
         }
       },
       "additionalProperties": false

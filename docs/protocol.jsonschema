@@ -288,6 +288,29 @@
         ]
       },
       {
+        "description": "An `AllowForSession` grant was revoked (`Submission::RevokeGrant`).",
+        "type": "object",
+        "properties": {
+          "tool": {
+            "description": "The grant's tool.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The grant's subject prefix.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "grant_revoked"
+          }
+        },
+        "required": [
+          "type",
+          "tool",
+          "subject"
+        ]
+      },
+      {
         "description": "Streamed stdout/stderr from a running tool, already sanitised for display.",
         "type": "object",
         "properties": {
@@ -440,6 +463,36 @@
           "dropped",
           "before_tokens",
           "after_tokens"
+        ]
+      },
+      {
+        "description": "The repo map now in system[2] (P43). Its text is archived before\nthis is emitted; resume reads the last one back instead of\nrebuilding, so the replayed request carries the same bytes.",
+        "type": "object",
+        "properties": {
+          "archive": {
+            "description": "The archived map text.",
+            "$ref": "#/$defs/ArchiveId"
+          },
+          "bytes": {
+            "description": "Its size in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "reason": {
+            "description": "What built it.",
+            "$ref": "#/$defs/RepoMapReason"
+          },
+          "type": {
+            "type": "string",
+            "const": "repo_map_built"
+          }
+        },
+        "required": [
+          "type",
+          "archive",
+          "bytes",
+          "reason"
         ]
       },
       {
@@ -656,6 +709,29 @@
         "required": [
           "type",
           "mode"
+        ]
+      },
+      {
+        "description": "The session's mode changed (`/mode`, P42), or a top-level session\nopened under a non-default one; carries the permission mode the\npreset left in force so a surface needs no second event.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The mode now in force.",
+            "$ref": "#/$defs/Mode"
+          },
+          "permission_mode": {
+            "description": "The permission mode now in force, after the preset narrowed it.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "type": {
+            "type": "string",
+            "const": "mode_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode",
+          "permission_mode"
         ]
       },
       {
@@ -1690,6 +1766,26 @@
           }
         ]
       },
+      "RepoMapReason": {
+        "description": "Why `Event::RepoMapBuilt` happened (P43): the only three moments the\nrepo map in system[2] is built.",
+        "oneOf": [
+          {
+            "description": "Before the first request of a session.",
+            "type": "string",
+            "const": "session_start"
+          },
+          {
+            "description": "`/repomap refresh` produced different bytes.",
+            "type": "string",
+            "const": "refresh"
+          },
+          {
+            "description": "Compaction rebuilt it with the prefix it already restarts.",
+            "type": "string",
+            "const": "compaction"
+          }
+        ]
+      },
       "CheckpointFile": {
         "description": "One path in an `Event::Checkpoint`.",
         "type": "object",
@@ -1852,6 +1948,21 @@
             "description": "User-selected for a flagged large refactor.",
             "type": "string",
             "const": "xhigh"
+          }
+        ]
+      },
+      "Mode": {
+        "description": "`core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the\npermission mode and the main tier only. It never filters tools, so the\ncache prefix stays byte-stable, and it only narrows `permissions.mode`.",
+        "oneOf": [
+          {
+            "description": "The configured permission mode and main tier, unchanged.",
+            "type": "string",
+            "const": "editor"
+          },
+          {
+            "description": "`Plan` (read-only tools only) and the `think` main tier, confirmed.",
+            "type": "string",
+            "const": "architect"
           }
         ]
       },
@@ -2997,6 +3108,29 @@
         ]
       },
       {
+        "description": "Revoke an `AllowForSession` grant (T37.45.3): the next call it\ncovered goes back through the rules and asks. The core answers with\n`GrantRevoked`, which resume replays, so the grant stays gone.",
+        "type": "object",
+        "properties": {
+          "tool": {
+            "description": "The grant's tool, as `grants_for` recorded it.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The grant's subject prefix.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "revoke_grant"
+          }
+        },
+        "required": [
+          "type",
+          "tool",
+          "subject"
+        ]
+      },
+      {
         "description": "A slash command the surface parsed but did not resolve itself.",
         "type": "object",
         "properties": {
@@ -3181,6 +3315,29 @@
           "type",
           "command",
           "share"
+        ]
+      },
+      {
+        "description": "A composer `@name task` line (T45.5): runs subagent `name` through the\n`agent` tool on the model's own path (hooks, permission engine,\nbudget, agent slots). The line and the answer join history at its\ntail, so the next model turn sees them.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "A preset, agent definition or external agent name.",
+            "type": "string"
+          },
+          "task": {
+            "description": "What the subagent is asked to do.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "user_agent"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "task"
         ]
       },
       {

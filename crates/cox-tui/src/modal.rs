@@ -498,8 +498,14 @@ impl Question {
                 .join(" ")
         };
         let bold = Style::default().add_modifier(Modifier::BOLD);
+        // T47.3: an MCP server's elicitation is not the model's `ask_user`;
+        // the label before it names the server (the spec's MUST).
+        let tool = match &self.agent {
+            Some(agent) if agent.starts_with("mcp:") => "mcp",
+            _ => "ask_user",
+        };
         let mut header = Line::styled(
-            format!(" ask_user {}", sanitize(&self.question)),
+            format!(" {tool} {}", sanitize(&self.question)),
             bold.fg(theme.warn),
         );
         if let Some(agent) = &self.agent {
@@ -687,6 +693,31 @@ mod tests {
             text.contains("asks again only if capabilities widen"),
             "{text:?}"
         );
+    }
+
+    fn render_question(question: &Question) -> String {
+        let lines = question.lines(&Glyphs::default(), &Theme::dark());
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let mut term = Terminal::new(TestBackend::new(72, height)).expect("test terminal");
+        term.draw(|f| Paragraph::new(lines).render(f.area(), f.buffer_mut()))
+            .expect("draw");
+        crate::view::buffer_to_string(term.backend().buffer())
+    }
+
+    /// T47.3: an MCP elicitation question names the server that asks and
+    /// reads `mcp`, not the model's `ask_user`.
+    #[test]
+    fn question_modal_labels_mcp_server() {
+        let question = Question::new(
+            CallId::new(),
+            "Sign up — Name".into(),
+            vec!["send".into(), "edit".into(), "decline".into()],
+        )
+        .from_agent(Some("mcp:github".into()));
+        let text = render_question(&question);
+        assert!(text.contains("mcp:github asks: mcp Sign up"), "{text}");
+        assert!(!text.contains("ask_user"), "{text}");
+        insta::assert_snapshot!(text);
     }
 
     fn render_remove(confirm: &RemoveConfirm) -> String {

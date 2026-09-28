@@ -37,7 +37,7 @@ private struct StopStyle: ButtonStyle {
     ControlStateReader(isPressed: configuration.isPressed) { state in
       let shape = RoundedRectangle(cornerRadius: Radius.capsule, style: .continuous)
       configuration.label
-        .textStyle(.control)
+        .textStyle(.stop)
         .foregroundStyle(Color(.surfaceWindow))
         .padding(.horizontal, Space.l)
         .frame(height: Size.capsuleHeight)

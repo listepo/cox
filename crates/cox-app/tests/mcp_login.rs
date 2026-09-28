@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use cox_app::app::{App, AppError, Host};
 use cox_app::mcp_login::{Flow, LoginError, McpAuth};
-use cox_app::{InboxItem, McpLogin};
+use cox_app::{InboxItem, McpLogin, McpStatus};
 use rmcp::transport::auth::{AuthError, CredentialStore, StoredCredentials};
 
 const LOGIN_PAGE: &str = "https://auth.example.test/authorize?client_id=cox";
@@ -139,4 +139,39 @@ async fn only_a_configured_http_server_logs_in() {
         Err(AppError::McpLogin(LoginError::Unknown(_)))
     ));
     assert!(host.0.lock().expect("opened").is_empty());
+}
+
+/// T37.45.4: a stdio server whose program is missing is `unknown` until a
+/// session in the project tries it, then `failed` with the reason in its
+/// log. Unsandboxed so the spawn itself fails, with no process started.
+#[tokio::test]
+async fn a_server_a_session_could_not_start_shows_failed_with_its_log() {
+    let (dir, home, project) = scratch();
+    std::fs::write(
+        home.join("config.toml"),
+        "[mcp.servers.broken]\ncommand = \"/nonexistent/cox-mcp-missing\"\nsandbox = false\n",
+    )
+    .expect("config");
+    let scenario = dir.path().join("scenario.toml");
+    std::fs::write(&scenario, "[[turn]]\ntext = \"ok\"\n").expect("scenario");
+    // SAFETY: this test's own process (nextest), before any session opens.
+    unsafe {
+        std::env::set_var("COX_PROVIDER", "scripted");
+        std::env::set_var("COX_SCENARIO", &scenario);
+    }
+    let app = app(&home, Arc::new(Opener::default()));
+    let before = app.settings(&project).await.expect("settings").mcp;
+    assert_eq!(before[0].status, McpStatus::Unknown);
+    assert!(before[0].log.is_empty());
+
+    let theme = "base16-ocean.dark".to_string();
+    let _session = app.open(project.clone(), None, theme).await.expect("open");
+    let after = app.settings(&project).await.expect("settings").mcp;
+    assert_eq!(after[0].status, McpStatus::Failed);
+    assert_eq!(after[0].log.len(), 1, "{:?}", after[0].log);
+    assert!(
+        after[0].log[0].starts_with("skipped: spawn /nonexistent/cox-mcp-missing"),
+        "{:?}",
+        after[0].log
+    );
 }

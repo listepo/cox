@@ -53,6 +53,23 @@ text = "Done."
 text = "Seen."
 "#;
 
+/// A write granted for the session, then the same write in a second turn.
+const WRITE_TWICE: &str = r#"
+[[turn]]
+text = "Writing it."
+tool_calls = [{ name = "write", input = { path = "out.txt", content = "one\n" } }]
+
+[[turn]]
+text = "Done."
+
+[[turn]]
+text = "Writing it again."
+tool_calls = [{ name = "write", input = { path = "out.txt", content = "two\n" } }]
+
+[[turn]]
+text = "Done again."
+"#;
+
 /// Two plain replies: one per turn.
 const TWO_REPLIES: &str = r#"
 [[turn]]
@@ -219,6 +236,27 @@ async fn finish(session: &LiveSession) {
     panic!("the stream closed before the turn ended");
 }
 
+/// Pulls until an approval is pending; its call.
+async fn pending(session: &LiveSession) -> cox_protocol::CallId {
+    loop {
+        let batch = session.next_patches().await.expect("open stream");
+        let pending = batch.iter().find_map(|p| match p {
+            TimelinePatch::Upsert { block, .. } => match &block.kind {
+                BlockKind::Approval {
+                    call,
+                    decision: None,
+                    ..
+                } => Some(*call),
+                _ => None,
+            },
+            _ => None,
+        });
+        if let Some(call) = pending {
+            return call;
+        }
+    }
+}
+
 /// The user and assistant texts, in order.
 fn texts(session: &LiveSession) -> Vec<String> {
     let blocks = session.snapshot().into_iter().map(|b| b.kind);
@@ -269,23 +307,7 @@ async fn an_approval_reaches_the_inbox_and_the_host_and_the_intent_answers_it() 
     let session = app.open(dir.path().join("project"), None, theme).await;
     let session = session.expect("open");
     session.send(send("write it")).await.expect("send");
-    let call = loop {
-        let batch = session.next_patches().await.expect("open stream");
-        let pending = batch.iter().find_map(|p| match p {
-            TimelinePatch::Upsert { block, .. } => match &block.kind {
-                BlockKind::Approval {
-                    call,
-                    decision: None,
-                    ..
-                } => Some(*call),
-                _ => None,
-            },
-            _ => None,
-        });
-        if let Some(call) = pending {
-            break call;
-        }
-    };
+    let call = pending(&session).await;
     let notes = host.notes.lock().expect("notes").clone();
     let asks =
         |item: &InboxItem| matches!(&item.need, Need::Approval { call: c, .. } if c.id == call);
@@ -956,4 +978,42 @@ async fn browser_read_over_cap_is_archived_first() {
     assert!(full.ends_with(&page), "every line of the page is archived");
     assert!(result.visible.len() < full.len(), "the model sees less");
     assert!(!result.visible.contains("line 1000\n"));
+}
+
+#[tokio::test]
+async fn a_grant_revoked_from_settings_makes_the_next_write_ask_again() {
+    let dir = scratch(Some(WRITE_TWICE));
+    let app = app(dir.path(), Arc::default());
+    let cwd = dir.path().join("project");
+    let theme = "base16-ocean.dark".to_string();
+    let session = app.open(cwd.clone(), None, theme).await.expect("open");
+    session.send(send("write it")).await.expect("send");
+    let call = pending(&session).await;
+    let grant = Intent::Approve {
+        call,
+        decision: Decision::AllowForSession,
+    };
+    session.send(grant).await.expect("allow for session");
+    finish(&session).await;
+
+    let view = app.settings(&cwd).await.expect("settings");
+    let [granted] = &view.grants[..] else {
+        panic!("one grant: {:?}", view.grants);
+    };
+    assert_eq!(
+        (granted.session, granted.tool.as_str()),
+        (session.id(), "write")
+    );
+    let view = app.revoke_grant(&cwd, granted).await.expect("revoke");
+    assert!(view.grants.is_empty(), "{:?}", view.grants);
+
+    session.send(send("write it again")).await.expect("send");
+    let asked = pending(&session).await;
+    assert_ne!(asked, call, "the second write asks on its own");
+    let elsewhere = cox_app::SessionGrant {
+        session: cox_protocol::ids::SessionId::new(),
+        ..granted.clone()
+    };
+    let refused = app.revoke_grant(&cwd, &elsewhere).await;
+    assert!(matches!(refused, Err(AppError::NotOpen(_))));
 }

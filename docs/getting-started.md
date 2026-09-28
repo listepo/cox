@@ -24,6 +24,11 @@ sandbox and rules as the model's `bash`, kept out of the conversation; `!!cmd`
 also hands its output to the model. Headless scripts use `cox run -p`; editors use
 `cox acp`; other agents can call `cox mcp`.
 
+`cox run -p "what is wrong here?" --image shot.png --image log.jpg` attaches
+images to the first turn; repeat `--image` for more. Each must be a PNG, JPEG,
+GIF or WebP of at most 3.75 MB. A missing file, a non-image or an oversized
+image exits 2 with the reason before any request is made.
+
 ## Keys
 
 `?` on an empty composer shows this table over the transcript; `/help`
@@ -65,6 +70,7 @@ binding; a plugin's slash commands show up in the `/` palette as
 | `Esc` | close | modal |
 | `Up` | previous | modal |
 | `Down` | next | modal |
+| `Ctrl+E` | theme.edit | modal |
 | `Esc` | close | overlay |
 | `?` | close | overlay |
 | `PageUp` | scroll.up | overlay |
@@ -141,6 +147,31 @@ One row under the composer, e.g.
 Narrow terminals drop segments from the right in this order: loop countdown →
 title → git counts → cache → tasks → effort → sandbox → model → cost → ctx (the `ctx`
 bar and the mode badge never drop).
+
+### Your own status row
+
+`[tui.status_line]` adds one row above the status line, drawn from the first
+line your command prints. It reads the same JSON on stdin as a Claude Code
+statusline script, so one you already have runs unchanged:
+
+```toml
+# ~/.cox/config.toml (a project config cannot set this)
+[tui.status_line]
+command = "~/.cox/status.sh"
+```
+
+```sh
+#!/bin/sh
+# ~/.cox/status.sh: model, context share and branch
+input=$(cat)
+model=$(printf '%s' "$input" | jq -r '.model.display_name')
+ctx=$(printf '%s' "$input" | jq -r '.context_window.used_percentage')
+branch=$(printf '%s' "$input" | jq -r '.git.branch // "-"')
+printf '%s · %s%% · %s\n' "$model" "$ctx" "$branch"
+```
+
+It runs sandboxed, read-only and offline, 300 ms after the status changes;
+colours are stripped. [config.md](config.md) lists every field and rule.
 
 ## Status
 

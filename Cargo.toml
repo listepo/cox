@@ -45,8 +45,9 @@ tokio-util = "0.7"
 # `cox-core`'s attached text file (T37.6).
 base64 = "0.23"
 # T51.7: the browser tools parse the URL they are given and pass only
-# http/https (`cox-app/src/browser.rs`). 2.5.8, the latest release
-# (2026-01-05); already in the tree through reqwest.
+# http/https (`cox-app/src/browser.rs`); T41.3: `file://` URI <-> path for
+# the LSP wire (A81). 2.5.8, the latest release (2026-01-05); already in the
+# tree through reqwest.
 url = "2.5.8"
 
 # cox-core
@@ -166,6 +167,7 @@ wiremock = "0.6"
 rstest = "0.27"
 assert_cmd = "2"
 predicates = "3"
+trycmd = "1.2.1"
 assert_fs = "1"
 tempfile = "3"
 pretty_assertions = "1.4"

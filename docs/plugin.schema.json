@@ -28,7 +28,7 @@
       "default": ""
     },
     "wasm": {
-      "description": "The module to load, relative to the package directory. Absent only\nwhen the package's sole capability is an `[[mcp]]` stdio/HTTP server\n(PL§13/§14, T33.38): `validate` then requires `capabilities` to be\nits default and `provider`/`models`/`external_agents` to be empty,\nsince every other capability class needs a wasm export to back it.",
+      "description": "The module to load, relative to the package directory. Absent only\nfor a data-only package — `[[mcp]]` servers and/or `[[agents]]`\nfiles (PL§13/§14, T33.38, T45.3): `validate` then requires\n`capabilities` to be its default and `provider`/`models`/\n`external_agents` to be empty, since every other capability class\nneeds a wasm export to back it.",
       "type": [
         "string",
         "null"
@@ -103,6 +103,14 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/ExternalAgentDecl"
+      },
+      "default": []
+    },
+    "agents": {
+      "description": "`[[agents]]` subagent definition files the package ships (T45.3);\neach is one approval line, and a local definition of the same name\nwins over it.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AgentDecl"
       },
       "default": []
     }
@@ -563,6 +571,25 @@
           "type": "string",
           "const": "stream-json"
         }
+      ]
+    },
+    "AgentDecl": {
+      "description": "An `[[agents]]` entry (T45.3): a subagent definition (`.md` with\nfrontmatter, the same format as `.cox/agents/*.md`) inside the package.\nData, not code: the host reads it only for a granted plugin.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The `agent(preset: \"<name>\")` dispatch name.",
+          "type": "string"
+        },
+        "file": {
+          "description": "The definition file, relative to the package directory, ending in\n`.md`; no `..` component.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "file"
       ]
     }
   }
