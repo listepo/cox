@@ -32,7 +32,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.29.3.3 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
 | T37.29.3.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.28.6 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
+| T37.32.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.19.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
@@ -2772,15 +2775,33 @@ Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/src/meter_text.rs`, 
 Goal: A104 — cox-app formats the cache hit for the turn and for the session (from the ledger's `usage` rows); a config key owned by `cox-config` (schema, drift test, so the generated Settings window shows it) picks which one the tab shows, per turn by default. A105 — Compact now is disabled while a turn runs, read from the session status the tab already has.
 Check: a cox-app test of both figures over a scripted two-turn session; the config drift test; CoxUI snapshots of the session figure and of a disabled Compact now.
 
+#### T37.28.6 Review comments queue while a turn runs
+
+Depends: T37.28.4 · Size: ~80 · Files: `desktop/macos/Packages/CoxModel/…/ReviewDraft.swift`, `crates/cox-config/…`
+Goal: A108 — "Send to agent" in the Review pane queues its message while a turn runs, the same way the composer queues a prompt (`Intent::Queue`), or sends it at once, as a config key owned by `cox-config` picks (queue by default; schema and drift test, so the generated Settings window shows it).
+Check: CoxModel tests that a running turn queues the review message by default and sends it with the other setting; the config drift test.
+
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
-Depends: T37.15 · Size: ~150 · Files: `.github/workflows/release.yml`, `desktop/macos/Cox.xcodeproj/…`, `scripts/desktop/…`
+Split into T37.32.1 and T37.32.2 (A106). Depends: T37.15 · Size: ~150 · Files: `.github/workflows/release.yml`, `desktop/macos/Cox.xcodeproj/…`, `scripts/desktop/…`
 Goal: a Developer ID-signed, notarized app with Sparkle 2 updates and the `cox` CLI inside the bundle (DT§7). New dependency Sparkle (§1.1 row).
+Check: `spctl --assess` accepts the release build; the appcast validates.
+
+#### T37.32.1 App target and an unsigned dev build
+
+Depends: T37.15 · Size: ~150 · Files: `desktop/macos/Cox.xcodeproj/…`, `desktop/macos/App/…`, `justfile`
+Goal: A106 — the thin app target of DT§7 (`@main`, scenes, menus, entitlements, Info.plist, assets) over the local Swift packages, with the XCFramework from T37.15; `just desktop-app` builds an unsigned (ad-hoc signed) Debug `Cox.app` that launches and shows `MainScreen` on the fixture or live core. The `.xcodeproj` stays small and merge-friendly; if a generator (e.g. XcodeGen) is the best maintained fit, use it and add its row to `toolchain.md`. No Sparkle, no signing identity, no secrets.
+Check: `just desktop-app` builds on a clean checkout; the app launches and a screenshot shows the main window; the macOS CI job builds the target.
+
+#### T37.32.2 Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
+
+Depends: T37.32.1 · Size: ~150 · Files: `.github/workflows/release.yml`, `scripts/desktop/…`
+Goal: the rest of T37.32 (A106): a Developer ID-signed, notarized app with Sparkle 2 updates and the `cox` CLI inside the bundle (DT§7), and a Homebrew cask. New dependency Sparkle (§1.1 row). Waits for the creator's Developer ID certificate, App Store Connect API key, Sparkle EdDSA key, appcast host and tap repository as GitHub Actions secrets.
 Check: `spctl --assess` accepts the release build; the appcast validates.
 
 #### T37.33 Performance budget suite
 
-Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
+On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
@@ -2804,7 +2825,7 @@ Check: the changed snapshots are re-recorded on purpose; each fixed text pair me
 
 #### T37.22.3 App window setup and the public CoxUI surface
 
-Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
+Depends: T37.32.1 (the app target, A106) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
 Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display. The app's View menu replaces the system sidebar and inspector command groups with items of the same titles and keys from `ShellShortcut` (T37.22.2), because the system commands act only on system-built panes and the shell is laid out by hand. The onboarding checklist (`App::checklist`, T37.31) is forwarded through `cox-ffi` and shown on first run.
 Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
 
@@ -2974,6 +2995,9 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A103 T37.24.10 — the composer's think toggle routes one turn to the think tier through the existing `/think` (`confirm_think`) and then turns off, by the creator (2026-09-28). Why: it reuses what the core has, and the costly tier never stays on by accident; sticky or a model-level extended-thinking switch were the other options.
 - A104 T37.29.3.5 — the Context tab's cache hit is available both per turn and per session; a setting picks which one the tab shows (per turn by default), by the creator (2026-09-28). Why: a turn's hit shows what the last request reused, the session's shows whether the cache-stable prefix pays off overall.
 - A105 T37.29.3.5 — Compact now is disabled while a turn runs, by the creator (2026-09-28). Why: compaction rewrites the context the running turn is using; the core would refuse or race it.
+- A106 T37.32, T37.32.1, T37.32.2, T37.22.3 — T37.32 splits in two, by the creator (2026-09-28): T37.32.1 is the app target and an unsigned dev build, which needs no secrets; T37.32.2 is Developer ID signing, notarization, Sparkle and the Homebrew cask, which wait for the creator's certificates and keys. T37.22.3 depends on T37.32.1. Why: the app target unblocks the window setup and the app wiring of finished views without waiting for signing secrets.
+- A107 T37.33 — the performance budget suite is on hold, by the creator (2026-09-28). Why: benchmarks are skipped for now.
+- A108 T37.28.6 — the Review pane's "Send to agent" follows a setting: queue the comments while a turn runs, like the composer (the default), or send them at once, by the creator (2026-09-28). Why: the same behaviour as a typed prompt by default, with the choice left to the user.
 
 ## 7. Risk register
 
