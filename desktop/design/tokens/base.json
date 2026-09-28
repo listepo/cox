@@ -69,6 +69,38 @@
         "value": 32,
         "unit": "px"
       }
+    },
+    "tab": {
+      "$type": "dimension",
+      "$description": "An inspector tab's side inset: the mockup's .tabs span padding 9px",
+      "$value": {
+        "value": 9,
+        "unit": "px"
+      }
+    },
+    "popover": {
+      "$type": "dimension",
+      "$description": "A popover's top inset: the mockup's .tokpop and .appear padding 14px",
+      "$value": {
+        "value": 14,
+        "unit": "px"
+      }
+    },
+    "toolbarTrailing": {
+      "$type": "dimension",
+      "$description": "The toolbar's trailing inset: the mockup's .toolbar padding-right 14px",
+      "$value": {
+        "value": 14,
+        "unit": "px"
+      }
+    },
+    "composerBottom": {
+      "$type": "dimension",
+      "$description": "Under the composer: the mockup's .composer margin-bottom 18px",
+      "$value": {
+        "value": 18,
+        "unit": "px"
+      }
     }
   },
   "radius": {
@@ -154,6 +186,22 @@
       "$type": "dimension",
       "$value": {
         "value": 999,
+        "unit": "px"
+      }
+    },
+    "swatch": {
+      "$type": "dimension",
+      "$description": "A legend swatch: the mockup's .legend i and .tokpop .leg i border-radius 2px",
+      "$value": {
+        "value": 2,
+        "unit": "px"
+      }
+    },
+    "tab": {
+      "$type": "dimension",
+      "$description": "An inspector tab: the mockup's .tabs span border-radius 7px",
+      "$value": {
+        "value": 7,
         "unit": "px"
       }
     }
@@ -295,6 +343,54 @@
         "value": 360,
         "unit": "px"
       }
+    },
+    "windowSmallWidth": {
+      "$type": "dimension",
+      "$description": "The first-run window: the mockup's .window.small, 980px wide",
+      "$value": {
+        "value": 980,
+        "unit": "px"
+      }
+    },
+    "chipHeight": {
+      "$type": "dimension",
+      "$description": "A composer chip: the mockup's .chip height 26px",
+      "$value": {
+        "value": 26,
+        "unit": "px"
+      }
+    },
+    "sendButton": {
+      "$type": "dimension",
+      "$description": "The composer's round Send: the mockup's .send, 30px",
+      "$value": {
+        "value": 30,
+        "unit": "px"
+      }
+    },
+    "composerTextMinHeight": {
+      "$type": "dimension",
+      "$description": "The composer's text area with its insets, at least: the mockup's .composer .ta min-height 46px",
+      "$value": {
+        "value": 46,
+        "unit": "px"
+      }
+    },
+    "completionWidth": {
+      "$type": "dimension",
+      "$description": "The composer's completion list: the mockup's .pop, 470px wide",
+      "$value": {
+        "value": 470,
+        "unit": "px"
+      }
+    },
+    "reviewFileListWidth": {
+      "$type": "dimension",
+      "$description": "Review's file list: the mockup's 260px column (screen 08)",
+      "$value": {
+        "value": 260,
+        "unit": "px"
+      }
     }
   },
   "font": {
@@ -314,6 +410,90 @@
           },
           "fontWeight": 600,
           "lineHeight": 1.3,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "em"
+          }
+        }
+      },
+      "page": {
+        "$type": "typography",
+        "$description": "Settings page title: the mockup's .set-main h1, 20px bold",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 20,
+            "unit": "px"
+          },
+          "fontWeight": 700,
+          "lineHeight": 1.45,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "em"
+          }
+        }
+      },
+      "hero": {
+        "$type": "typography",
+        "$description": "First-run window title: the mockup's 26px bold h1 (screen 21)",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 26,
+            "unit": "px"
+          },
+          "fontWeight": 700,
+          "lineHeight": 1.45,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "em"
+          }
+        }
+      },
+      "group": {
+        "$type": "typography",
+        "$description": "Settings group box title: the mockup's .gtitle, 12px semibold",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 12,
+            "unit": "px"
+          },
+          "fontWeight": 600,
+          "lineHeight": 1.45,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "em"
+          }
+        }
+      },
+      "session": {
+        "$type": "typography",
+        "$description": "Session row title in the sidebar: the mockup's .row .t, 13px medium",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 13,
+            "unit": "px"
+          },
+          "fontWeight": 500,
+          "lineHeight": 1.45,
           "letterSpacing": {
             "value": 0,
             "unit": "em"
@@ -491,6 +671,111 @@
         }
       }
     },
+    "compact": {
+      "$type": "typography",
+      "$description": "Dense rows: inspector file and plan rows, the decision bar, the cost capsule's context (the mockup's 12.5px regular)",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 12.5,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.45,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "em"
+        }
+      }
+    },
+    "segment": {
+      "$type": "typography",
+      "$description": "Segment and inspector tab labels: the mockup's .seg span and .tabs span, 12px medium",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 12,
+          "unit": "px"
+        },
+        "fontWeight": 500,
+        "lineHeight": 1.2,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "em"
+        }
+      }
+    },
+    "stop": {
+      "$type": "typography",
+      "$description": "The Stop button's label: the mockup's .stop, 12px semibold",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 12,
+          "unit": "px"
+        },
+        "fontWeight": 600,
+        "lineHeight": 1.2,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "em"
+        }
+      }
+    },
+    "detail": {
+      "$type": "typography",
+      "$description": "Second lines: a session row's subtitle and cost, the token popover's rate line and note (the mockup's 11px regular)",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 11,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.45,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "em"
+        }
+      }
+    },
+    "legend": {
+      "$type": "typography",
+      "$description": "The token popover's legend: the mockup's .tokpop .leg, 10px regular",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 10,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.45,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "em"
+        }
+      }
+    },
     "label": {
       "$type": "typography",
       "$description": "Uppercase section headers",
@@ -612,6 +897,27 @@
           },
           "fontWeight": 400,
           "lineHeight": 1.5,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "em"
+          }
+        }
+      },
+      "command": {
+        "$type": "typography",
+        "$description": "The command in an approval card's well: the mockup's .appr .cmd, 12.5px",
+        "$value": {
+          "fontFamily": [
+            "SF Mono",
+            "ui-monospace",
+            "Menlo"
+          ],
+          "fontSize": {
+            "value": 12.5,
+            "unit": "px"
+          },
+          "fontWeight": 400,
+          "lineHeight": 1.45,
           "letterSpacing": {
             "value": 0,
             "unit": "em"

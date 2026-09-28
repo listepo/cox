@@ -66,10 +66,9 @@ public struct SettingsScreen: View {
         ShellPane(.column) {
           ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
-              // The mockup's `.set-main h1`; its 20 pt bold has no token, so the nearest
-              // heading style.
+              // The mockup's `.set-main h1`.
               Text(state.selection.title)
-                .textStyle(.transcriptH1)
+                .textStyle(.titlePage)
                 .foregroundStyle(Color(.textPrimary))
                 .accessibilityAddTraits(.isHeader)
               if !state.dropped.isEmpty { DroppedBox(values: state.dropped) }

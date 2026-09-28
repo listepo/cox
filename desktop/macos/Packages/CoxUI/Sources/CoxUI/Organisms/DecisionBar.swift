@@ -103,11 +103,11 @@ public struct DecisionBar: View {
   /// `Waiting for you: git push -u origin main`, the subject emphasised; one line, cut in the
   /// middle so both ends of a long command stay.
   private func line(_ label: String, _ subject: String, mono: Bool) -> some View {
-    // `monospaced()` keeps the caption's size, so the command reads as `font.mono.inline`.
+    // `monospaced()` keeps the bar's size, the mockup's 12.5 pt `.pinned`.
     let emphasis =
       mono ? Text(subject).monospaced().fontWeight(.semibold) : Text(subject).fontWeight(.medium)
     return Text("\(label) \(emphasis)")
-      .textStyle(.caption)
+      .textStyle(.compact)
       .foregroundStyle(Color(.textPrimary))
       .lineLimit(1)
       .truncationMode(.middle)

@@ -116,14 +116,14 @@ extension CoxButtonStyle.Role {
   }
 }
 
-/// Send, the mockup's `.send`: a round accent face at the regular button height (the mockup's
-/// 30 px has no token); disabled, `fill.secondary` with a readable glyph (DS§8).
+/// Send, the mockup's `.send`: a round accent face `Size.sendButton` wide; disabled,
+/// `fill.secondary` with a readable glyph (DS§8).
 struct SendButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     ControlStateReader(isPressed: configuration.isPressed) { state in
       configuration.label
         .foregroundStyle(state == .disabled ? Color(.textSecondary) : Color(.textOnAccent))
-        .frame(width: Size.buttonHeight, height: Size.buttonHeight)
+        .frame(width: Size.sendButton, height: Size.sendButton)
         .background { Circle().fill(state.tint) }
         .background {
           Circle().fill(state == .disabled ? Color(.fillSecondary) : Color(.accent))

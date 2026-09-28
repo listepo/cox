@@ -97,14 +97,14 @@ extension OnboardingScreen {
 
 #Preview("no provider") {
   OnboardingScreen(state: PreviewState.onboardingNoProvider) { _ in }
-    .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    .frame(width: Size.windowSmallWidth, height: Size.windowMinHeight)
     .padding(Space.xxl)
     .background(PreviewBackdrop())
 }
 
 #Preview("all green") {
   OnboardingScreen(state: PreviewState.onboardingAllGreen) { _ in }
-    .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    .frame(width: Size.windowSmallWidth, height: Size.windowMinHeight)
     .padding(Space.xxl)
     .background(PreviewBackdrop())
 }

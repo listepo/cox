@@ -136,6 +136,8 @@ public struct Composer: View {
     return VStack(alignment: .leading, spacing: 0) {
       ComposerEditor(state: state, send: send)
         .padding(EdgeInsets(top: Space.l, leading: Space.l, bottom: Space.s, trailing: Space.l))
+        // The mockup's `.ta` min-height counts its insets, so it goes on after them.
+        .frame(minHeight: Size.composerTextMinHeight, alignment: .topLeading)
       if !state.attachments.isEmpty {
         ComposerAttachments(attachments: state.attachments) { send(.removeAttachment($0)) }
           .padding(.horizontal, Space.xl)

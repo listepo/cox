@@ -43,7 +43,7 @@ struct InspectorRow<Glyph: View, Content: View>: View {
         ForEach(actions) { RowActionButton(action: $0) }
       }
     }
-    .textStyle(.body)
+    .textStyle(.compact)
     .foregroundStyle(Color(.textPrimary))
     .lineLimit(1)
     .padding(.horizontal, Space.m)

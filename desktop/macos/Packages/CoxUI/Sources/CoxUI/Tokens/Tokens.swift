@@ -39,6 +39,14 @@ public enum Space {
     public static let xxl: CGFloat = 20
     public static let xxxl: CGFloat = 24
     public static let huge: CGFloat = 32
+    /// An inspector tab's side inset: the mockup's .tabs span padding 9px
+    public static let tab: CGFloat = 9
+    /// A popover's top inset: the mockup's .tokpop and .appear padding 14px
+    public static let popover: CGFloat = 14
+    /// The toolbar's trailing inset: the mockup's .toolbar padding-right 14px
+    public static let toolbarTrailing: CGFloat = 14
+    /// Under the composer: the mockup's .composer margin-bottom 18px
+    public static let composerBottom: CGFloat = 18
 }
 
 public enum Radius {
@@ -55,6 +63,10 @@ public enum Radius {
     /// Badges and inline code: the mockup's border-radius 5px, between xs and s
     public static let badge: CGFloat = 5
     public static let capsule: CGFloat = 999
+    /// A legend swatch: the mockup's .legend i and .tokpop .leg i border-radius 2px
+    public static let swatch: CGFloat = 2
+    /// An inspector tab: the mockup's .tabs span border-radius 7px
+    public static let tab: CGFloat = 7
 }
 
 public enum Size {
@@ -81,11 +93,31 @@ public enum Size {
     public static let windowMinHeight: CGFloat = 700
     public static let popoverWidth: CGFloat = 340
     public static let tokenPopoverWidth: CGFloat = 360
+    /// The first-run window: the mockup's .window.small, 980px wide
+    public static let windowSmallWidth: CGFloat = 980
+    /// A composer chip: the mockup's .chip height 26px
+    public static let chipHeight: CGFloat = 26
+    /// The composer's round Send: the mockup's .send, 30px
+    public static let sendButton: CGFloat = 30
+    /// The composer's text area with its insets, at least: the mockup's .composer .ta min-height 46px
+    public static let composerTextMinHeight: CGFloat = 46
+    /// The composer's completion list: the mockup's .pop, 470px wide
+    public static let completionWidth: CGFloat = 470
+    /// Review's file list: the mockup's 260px column (screen 08)
+    public static let reviewFileListWidth: CGFloat = 260
 }
 
 public extension FontToken {
     /// Session title in the toolbar
     static let titleWindow = FontToken(size: 13.5, weight: .semibold, design: .default, lineHeight: 1.3, tracking: 0)
+    /// Settings page title: the mockup's .set-main h1, 20px bold
+    static let titlePage = FontToken(size: 20, weight: .bold, design: .default, lineHeight: 1.45, tracking: 0)
+    /// First-run window title: the mockup's 26px bold h1 (screen 21)
+    static let titleHero = FontToken(size: 26, weight: .bold, design: .default, lineHeight: 1.45, tracking: 0)
+    /// Settings group box title: the mockup's .gtitle, 12px semibold
+    static let titleGroup = FontToken(size: 12, weight: .semibold, design: .default, lineHeight: 1.45, tracking: 0)
+    /// Session row title in the sidebar: the mockup's .row .t, 13px medium
+    static let titleSession = FontToken(size: 13, weight: .medium, design: .default, lineHeight: 1.45, tracking: 0)
     /// Default UI text
     static let body = FontToken(size: 13, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
     /// Assistant and user messages
@@ -102,6 +134,16 @@ public extension FontToken {
     static let caption = FontToken(size: 12, weight: .regular, design: .default, lineHeight: 1.4, tracking: 0)
     /// Tool status, meter, key-value rows
     static let footnote = FontToken(size: 11.5, weight: .regular, design: .default, lineHeight: 1.4, tracking: 0)
+    /// Dense rows: inspector file and plan rows, the decision bar, the cost capsule's context (the mockup's 12.5px regular)
+    static let compact = FontToken(size: 12.5, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
+    /// Segment and inspector tab labels: the mockup's .seg span and .tabs span, 12px medium
+    static let segment = FontToken(size: 12, weight: .medium, design: .default, lineHeight: 1.2, tracking: 0)
+    /// The Stop button's label: the mockup's .stop, 12px semibold
+    static let stop = FontToken(size: 12, weight: .semibold, design: .default, lineHeight: 1.2, tracking: 0)
+    /// Second lines: a session row's subtitle and cost, the token popover's rate line and note (the mockup's 11px regular)
+    static let detail = FontToken(size: 11, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
+    /// The token popover's legend: the mockup's .tokpop .leg, 10px regular
+    static let legend = FontToken(size: 10, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
     /// Uppercase section headers
     static let label = FontToken(size: 11, weight: .semibold, design: .default, lineHeight: 1.3, tracking: 0.03)
     /// Key caps, legends, badges
@@ -114,6 +156,8 @@ public extension FontToken {
     static let monoInline = FontToken(size: 12, weight: .regular, design: .monospaced, lineHeight: 1.3, tracking: 0)
     /// Terminal tail
     static let monoTerminal = FontToken(size: 11.5, weight: .regular, design: .monospaced, lineHeight: 1.5, tracking: 0)
+    /// The command in an approval card's well: the mockup's .appr .cmd, 12.5px
+    static let monoCommand = FontToken(size: 12.5, weight: .regular, design: .monospaced, lineHeight: 1.45, tracking: 0)
 }
 
 public extension ElevationToken {

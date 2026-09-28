@@ -123,7 +123,7 @@ public struct ContextTab: View {
 
   private func row(_ swatch: Color, _ label: String, _ tokens: String, text: Color) -> some View {
     GridRow {
-      RoundedRectangle(cornerRadius: Radius.xs).fill(swatch)
+      RoundedRectangle(cornerRadius: Radius.swatch).fill(swatch)
         .frame(width: Self.swatch, height: Self.swatch)
       Text(label).foregroundStyle(text).frame(maxWidth: .infinity, alignment: .leading)
       Text(tokens).foregroundStyle(Color(.textSecondary)).gridColumnAlignment(.trailing)
