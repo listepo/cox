@@ -153,5 +153,5 @@ Programs the project uses and the direct packages from its manifests.
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
 | swift-collections | local (`CoxModel`) | https://github.com/apple/swift-collections | T37.16: `OrderedDictionary` keeps the timeline store in block order (research.md §9.5.6) |
-| SwiftLintPlugins | local (`CoxModel`, `CoxCore`, `CoxUI`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |
+| SwiftLintPlugins | local (every package under `desktop/macos/Packages`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |
 | swift-snapshot-testing | local (`CoxUI` tests) | https://github.com/pointfreeco/swift-snapshot-testing | T37.19: image snapshots of the CoxUI Foundations and components (DS§9, A67) |

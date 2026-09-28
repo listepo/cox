@@ -43,7 +43,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27 | todo | P0 | 3 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | todo | P1 | 3 | 0% | |
-| T37.30 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.30.1 | todo | P1 | 3 | 0% | |
+| T37.30.2 | todo | P1 | 2 | 0% | |
+| T37.30.3 | todo | P1 | 3 | 0% | |
+| T37.30.4 | todo | P2 | 2 | 0% | |
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
@@ -1177,15 +1180,33 @@ Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Inspector.swift
 Goal: DT§5 inspector built from DS§6 rows.
 Check: snapshot per tab.
 
-#### T37.30 Settings from the schema with provenance; Keychain keys; MCP OAuth
+#### T37.30.1 Settings screen
 
-Depends: T37.16 · Size: split at claim · Files: `…/Screens/SettingsScreen.swift`, `desktop/macos/Packages/CoxPlatform/Secrets.swift`
-Goal: settings rendered from `docs/config.jsonschema` with the layer each value came from; keys stored through the `Host` trait on the Security framework directly, no wrapper package (R§9.5.8). Tests never touch the real keychain (A49).
-Check: snapshot of a setting overridden by the project layer; secrets tests use an in-memory store.
+Depends: T37.21 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
+Goal: the Settings screen from `CoxUI` molecules over `SettingsStore`: sidebar groups, a layer badge per value, a read-only project field that names the project file, secure fields for keys through `SecretStore`.
+Check: snapshot of a setting overridden by the project layer (read-only, badge names the layer); editing a user value round-trips through the fixture client.
+
+#### T37.30.2 The app's `AppHost` over the Keychain
+
+Depends: T37.22 · Size: ~150 · Files: `desktop/macos/Packages/CoxPlatform/…`, the app target
+Goal: a `CoxPlatform` `AppHost` whose `secret` reads `KeychainSecretStore` (and `notify`/`open_url` through AppKit), wired in the app target.
+Check: a test with the injected in-memory keychain answers `secret` for a stored provider key and `nil` otherwise; no test touches the real keychain (A49).
+
+#### T37.30.3 MCP login status and OAuth
+
+Depends: T37.30.1, T37.30.2 · Size: ~150 · Files: `crates/cox-app/…`, `…/Screens/SettingsScreen.swift`
+Goal: per MCP server, its login status on the Settings screen, and Log in / Log out through `Host::open_url` and the existing `cox-mcp` OAuth.
+Check: a fixture server shows logged out, then logged in after a scripted callback; tests use `cox_mcp::auth`'s memory store.
+
+#### T37.30.4 Show dropped project values
+
+Depends: T37.30.1 · Size: ~150 · Files: `crates/cox-app/src/settings.rs`, `…/Screens/SettingsScreen.swift`
+Goal: the Settings screen lists project values the guard list threw out, with the reason, so a user sees why a project setting did not apply.
+Check: snapshot of a project file that raises the budget: the value is listed as dropped with its reason.
 
 #### T37.31 Onboarding and doctor checklist
 
-Depends: T37.30, T37.11 · Size: ~120 · Files: `…/Screens/OnboardingScreen.swift`
+Depends: T37.30.1, T37.30.2, T37.11 · Size: ~120 · Files: `…/Screens/OnboardingScreen.swift`
 Goal: first run finds providers, checks the sandbox and shell env, and explains what is missing.
 Check: snapshots for no-provider and all-green states.
 
