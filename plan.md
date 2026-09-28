@@ -28,6 +28,44 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
+| T37.0 | todo | P0 | 1 | 0% | |
+| T37.1 | todo | P0 | 4 | 0% | |
+| T37.2 | todo | P1 | 2 | 0% | |
+| T37.3 | todo | P1 | 2 | 0% | |
+| T37.4 | todo | P1 | 3 | 0% | |
+| T37.5 | todo | P2 | 2 | 0% | |
+| T37.6 | todo | P1 | 3 | 0% | |
+| T37.7 | todo | P1 | 3 | 0% | |
+| T37.8 | todo | P0 | 4 | 0% | |
+| T37.9 | todo | P0 | 3 | 0% | |
+| T37.10 | todo | P0 | 4 | 0% | |
+| T37.11 | todo | P1 | 2 | 0% | |
+| T37.12 | todo | P1 | 3 | 0% | |
+| T37.13 | todo | P1 | 2 | 0% | |
+| T37.14 | todo | P0 | 4 | 0% | |
+| T37.15 | todo | P0 | 3 | 0% | |
+| T37.16 | todo | P0 | 3 | 0% | |
+| T37.17 | todo | P0 | 3 | 0% | |
+| T37.18 | todo | P1 | 2 | 0% | |
+| T37.19 | todo | P0 | 4 | 0% | |
+| T37.20 | todo | P0 | 3 | 0% | |
+| T37.21 | todo | P0 | 4 | 0% | |
+| T37.22 | todo | P0 | 3 | 0% | |
+| T37.23 | todo | P0 | 5 | 0% | |
+| T37.24 | todo | P0 | 4 | 0% | |
+| T37.25 | todo | P1 | 3 | 0% | |
+| T37.26 | todo | P1 | 3 | 0% | |
+| T37.27 | todo | P0 | 3 | 0% | |
+| T37.28 | todo | P1 | 4 | 0% | |
+| T37.29 | todo | P1 | 3 | 0% | |
+| T37.30 | todo | P1 | 4 | 0% | |
+| T37.31 | todo | P2 | 2 | 0% | |
+| T37.32 | todo | P1 | 3 | 0% | |
+| T37.33 | todo | P1 | 3 | 0% | |
+| T37.34 | todo | P0 | 4 | 0% | |
+| T37.35 | todo | P0 | 3 | 0% | |
+| T37.36 | todo | P1 | 2 | 0% | |
+| T37.37 | todo | P0 | 3 | 0% | |
 
 ## Reference
 
@@ -39,8 +77,8 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 
 | # | Decision | Why (evidence in research.md) |
 |---|----------|-------------------------------|
-| D1 | **One Cargo workspace, one static binary. A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`, A47); `crates/cox/tests/deps.rs` holds the graph. No dylib plugin host. One WASM plugin host (extism) from v0.2: `docs/design/plugins.md`; it reaches the core only through traits in `cox-protocol`.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
-| D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP and the JSONL rollout are four consumers of one event stream. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
+| D1 | **One Cargo workspace, one static binary and one macOS app that links `cox-ffi` as a static library (`docs/design/desktop.md`, A67). A module is its own crate when it alone uses a heavy or platform-gated dependency, is a trust guard, is a ≥ 500-LOC leaf, or is needed by another crate without the rest of its own (`docs/design/crates.md`, A47); `crates/cox/tests/deps.rs` holds the graph, including: only `cox-ffi` depends on `uniffi`; `cox-session` and `cox-app` depend on neither `clap` nor `anyhow`. No dylib plugin host. One WASM plugin host (extism) from v0.2: `docs/design/plugins.md`; it reaches the core only through traits in `cox-protocol`.** Extensibility in v0.1 is *data and processes*: instruction files, `SKILL.md`, command and subagent markdown, hook subprocesses, MCP servers. A WASM host (extism) is v0.2. | Claude Code, Codex, Gemini CLI and Copilot all reach their ecosystems through markdown + hooks + MCP, not through in-process plugins (R§2). A plugin ABI is the one thing that cannot be changed later; defer it until the `Tool`/`Event` contract has survived a release. |
+| D2 | **The core is a pure state machine: `Submission` in, `Event` out.** `cox-core` owns turns, context assembly, permissions, routing, compaction. It never touches the network, filesystem or a process except through traits defined in `cox-protocol`. TUI, `stream-json`, ACP, the JSONL rollout and the desktop app (through `cox-app`, A67) are consumers of one event stream. `cox-app`'s timeline fold is a pure function of that stream: replaying a rollout yields the same patches as the live run. | Codex's SQ/EQ protocol is the reason it ships a TUI, an `exec` mode, an app-server for IDEs and an MCP server from one core (R§1.2). It is also what makes the loop testable without a model: a scripted provider plus a golden event log. |
 | D3 | **Own thin provider layer; no LLM framework crate.** `cox-provider` implements the Anthropic Messages API (streaming, tool use, `cache_control`, adaptive thinking, `effort`, `fallbacks`, `count_tokens`), the OpenAI Responses API, and OpenAI Chat Completions (Ollama, vLLM, LM Studio, llama.cpp, OpenRouter, DeepSeek). SSE via `eventsource-stream`. **Where wire types come from (A40):** (1) a maintained Rust SDK's *types* when one exists (OpenAI: `async-openai` types only), else (2) types generated with typify from the vendor's published spec, vendored in the repo (Anthropic), else (3) hand-written. Transport, retry, SSE state machine, `ProviderEvent` mapping and the ledger stay ours in every case; SDK code is a `wire` module inside the provider, extracted to a crate only when a second consumer appears. Login: API keys only — Claude subscription OAuth is forbidden to third parties (R§4.3.1); ChatGPT login waits for an OpenAI document permitting it. | rig/genai lag the wire formats that decide cost: cache breakpoints, thinking-block replay, server tools, per-message effort, refusal fallbacks (R§4.3). Each provider is ~500 LOC; a framework is a dependency on someone else's release cadence. Codex hand-rolls its client too and ships `eventsource-stream 0.2.3` (R§1.3). |
 | D4 | **Adopt existing formats verbatim instead of inventing ones.** `AGENTS.md` (and `CLAUDE.md`) hierarchy; Agent Skills `SKILL.md`; Claude Code hook JSON protocol and `.claude/settings.json` permission-rule syntax (`Bash(npm run test:*)`), `.claude/commands/*.md`, `.claude/agents/*.md`; `.mcp.json`; Codex `apply_patch` (V4A) grammar; `--output-format stream-json`. cox-native equivalents live under `.cox/` with the same schemas. | A user with a Claude Code or Codex setup gets cox for free, and the rtok hook stack works unchanged (R§3). Every one of these is documented and already read by ≥ 2 agents. |
 | D5 | **Route by job tier, never by guesswork, never up.** Three tiers in config: `cheap` (default `claude-haiku-4-5`; any local model), `code` (default `claude-sonnet-5`; `claude-opus-5` when the user picks it or the task is flagged large), `think` (`claude-fable-5-1`, only via `/think` or `--deep`, always confirmed). Jobs pinned to `cheap`: session title, compaction summary, tool-result summarisation, commit message, memory extraction, explore/search subagents, background shell and HTTP subagents, hook-driven LLM calls. Every request carries a `job` tag into the ledger. | User constraint. Claude Code's silent Haiku delegation is its most-cited complaint (R§2.1); Copilot's auto-routing is praised because it is explicit and discounted. Anthropic's own guidance: measure the capable model at lower `effort` before building a cascade, because caches are model-scoped (R§4.4). |
@@ -49,7 +87,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D8 | **Edits are diff-shaped.** `edit` = exact `str_replace` with a whitespace-insensitive fallback and a uniqueness check; `apply_patch` = V4A grammar (Add/Update/Delete, `@@` context, progressive matching). `write` is for new files; rewriting an existing file over 200 lines is denied with a hint. | 5–20× fewer output tokens than whole-file writes (R§4.2); OpenAI models are trained on V4A and Claude on `str_replace`, so supporting both removes a class of edit failures. |
 | D9 | **One SQLite file plus human-readable rollouts, through a sync ORM.** `~/.cox/cox.db` (Diesel 2.2 `sqlite` + bundled `libsqlite3-sys` 0.30 with FTS5, WAL): sessions, usage ledger, tool-output archive index, memory. Typed Diesel models and `schema.rs`; migrations embedded with `diesel_migrations`; FTS5 virtual tables via `diesel::sql_query` (Diesel cannot model `VIRTUAL TABLE`). `cox-store` is the only crate that contains SQL. Each session is also `~/.cox/sessions/<id>.jsonl` — the event stream itself — used for resume, replay tests and export. Archived payloads over 16 KiB live under `~/.cox/archive/`. | Same choice as rtok D13 (user request): typed models make the ledger queries (`stats`, budget, cache diagnostics) joins instead of hand-written SQL, and Diesel is sync, so hooks, tests and `cox stats` need no async runtime. Async ORMs (SeaORM, SQLx) would need a runtime per hook. Codex stores rollouts as JSONL; Claude Code uses JSONL; engram/claude-mem converge on SQLite+FTS5 (R§1.5). |
 | D10 | **TUI = ratatui 0.30 + crossterm 0.29 in TEA form, inline viewport.** `State`, `update(State, Msg) -> State`, `view(&State, Frame)`. Inline (non-alternate-screen) rendering so native scrollback keeps the transcript. Every widget has an `insta` snapshot through `TestBackend`; end-to-end through `portable-pty` + `vt100`. | Codex made the same choices and tests them the same way (R§1.6). TEA makes `update` a pure function that a test can drive without a terminal. |
-| D11 | **Four surfaces from day one: `cox` (TUI), `cox run -p` (headless; `text`/`json`/`stream-json`), `cox acp` (Agent Client Protocol 2.0 for Zed/JetBrains/neovim), `cox mcp` (built-in tools as an MCP server).** Each is ≤ 300 LOC over the event stream. | D2 makes them cheap; ACP is what gets a terminal agent into editors without an extension per IDE (R§3.2); `cox mcp` lets Claude Code or Codex borrow cox's tools. |
+| D11 | **Four surfaces from day one: `cox` (TUI), `cox run -p` (headless; `text`/`json`/`stream-json`), `cox acp` (Agent Client Protocol 2.0 for Zed/JetBrains/neovim), `cox mcp` (built-in tools as an MCP server).** Each is ≤ 300 LOC over the event stream. A fifth, the macOS app (P37, A67), consumes the same stream through `cox-app`; the 300-LOC limit applies to `cox-ffi`'s surface, while the view model lives in `cox-app` and the Swift code outside the Cargo workspace. | D2 makes them cheap; ACP is what gets a terminal agent into editors without an extension per IDE (R§3.2); `cox mcp` lets Claude Code or Codex borrow cox's tools. |
 | D12 | **No test touches the network or needs an API key.** `Provider` has `Scripted` (fixtures) and `Replay` (recorded cassettes, re-recorded on demand with `cox record`) implementations; tools run in `tempfile` trees; the patch parser and `str_replace` have `proptest` suites; transcripts and TUI frames are `insta` snapshots; the real binary is driven by `assert_cmd` against `COX_HOME`. Evals (Terminal-Bench adapter) are a separate, opt-in `just eval`. | A coding agent is a distributed system with a nondeterministic component; the only cheap regression suite is one that replays events instead of models (R§5). |
 | D13 | **One config file; every flag is a key.** `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `COX_<SECTION>_<KEY>` < flags, via clap 4 (derive) + figment + toml_edit. `cox config show --sources` reports provenance. `.claude/settings.json` permissions and hooks are *imported* (read-only) when present. `.env` / `.env.local` (dotenvy, T0.7) are not a config layer: they inject unset process env before figment reads `COX_*`, and never override variables already set (CI, `COX_HOME=...` tests). | Same rule as rtok D12/D14; it worked. Headless and ACP runs are launched with fixed command lines, so flags alone cannot configure them. Local API keys live in `.env`, which gitignores. |
 | D14 | **Everything not written by cox is untrusted, and extensions fail open.** Model output, tool results, MCP responses, hook stdout, skill files and repository instruction files pass the guards in `AGENTS.md` → Trust boundaries. A broken hook, server or skill is warned about and skipped. | Aider's credential leak and Claude Code's escape-sequence incidents are both "trusted text from the wrong side" bugs (R§2.2). |
@@ -1049,6 +1087,248 @@ Rationale in §6 A62.
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
 
+### P37 — Native macOS client, M1 (goal: a SwiftUI app over the cox crates that is a complete daily driver — sessions, transcript, approvals, review, settings — with the view layer free of business logic and every visual built from one token set and one component catalogue)
+
+Rationale in §6 A67. Design: `docs/design/desktop.md` (DT§n); view layer and tokens: `desktop/design/DESIGN.md` (DS§n) and `desktop/design/tokens/`; evidence `research.md` §9; mockups `desktop/design/mockups/`.
+
+Every card in this phase:
+- keeps business logic in Rust (`cox-session`, `cox-app`); Swift views render view state and send intents (DS§1);
+- uses tokens only in SwiftUI — no literal colour, size, font, radius, shadow or duration outside `Tokens/` and `Foundations/` (DS§9);
+- builds each visual from the DS§6 catalogue, adding a variant or a catalogue row in the same change rather than a copy;
+- leaves a test that fails without it (`insta` in Rust, swift-snapshot-testing in Swift);
+- is split at claim time when it exceeds 200 LOC or 3 files — the catalogue cards (T37.19–T37.21) always are;
+- adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
+
+Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
+
+#### T37.0 Land the desktop design docs and tokens
+
+Depends: — · Size: ~0 (docs and data) · Files: `docs/design/desktop.md`, `desktop/design/DESIGN.md`, `desktop/design/tokens/*.json`
+Goal: the design doc, the design-system guide, the DTCG token files and the HTML mockups are in the tree, so every later card can cite DT§n and DS§n.
+Check: `docs/design/desktop.md` and `desktop/design/DESIGN.md` exist; each token file parses as JSON; every DS§6 CSS class named in the catalogue occurs in `desktop/design/mockups/mockups.html`.
+
+#### T37.1 Extract `cox-session` from `crates/cox/src/session.rs`
+
+Depends: — · Size: ~200 · Files: `crates/cox-session/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/tests/deps.rs`
+Goal: session assembly (provider, tools, MCP, skills, hooks, plugins, checkpointer, worktrees) is a library with no `Cli`, no `anyhow`, no `eprintln!`; warnings are returned as data (DT§4.2).
+Check: `cargo nextest run --workspace` green; `deps.rs` asserts `cox-session` does not depend on `clap` or `anyhow`; the TUI and `run -p` e2e snapshots are unchanged.
+
+#### T37.2 Route `cox acp` through `cox-session`
+
+Depends: T37.1 · Size: ~80 · Files: `crates/cox-acp/src/lib.rs`, `crates/cox/src/main.rs`
+Goal: ACP sessions get the same tools, MCP servers, hooks and plugins as the TUI.
+Check: an ACP e2e against the scripted provider lists the same tool names as `cox run -p` for the same `COX_HOME`.
+
+#### T37.3 `ToolResult.structured`; TUI and ACP drop their todo re-parsers
+
+Depends: — · Size: ~150 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-tools/src/todo.rs`, `crates/cox-tui/src/…` (DT gap G3)
+Goal: the todo list crosses the event stream as data, not text a surface re-parses.
+Check: protocol schema regenerated; a todo scenario snapshot shows identical TUI output; no todo text parser remains (`rg` finds none).
+
+#### T37.4 `QuestionAsked` / `Answer` replace the `ask_user` side channel
+
+Depends: — · Size: ~180 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-tools/src/ask_user.rs` (G4)
+Goal: a question to the user is an `Event` and its answer a `Submission`, so every surface — and a replay — sees it.
+Check: a scripted scenario asks and answers a question headless; the rollout contains both.
+
+#### T37.5 `StateChanged` and `TitleSet` events; fix `protocol.md` counts
+
+Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/lib.rs`, `docs/protocol.md` (G5–G7)
+Goal: effort and permission-mode changes and the session title arrive as typed events, not a `Notice`.
+Check: a scenario that changes mode and effort emits both events; `docs/protocol.md` counts match the enum.
+
+#### T37.6 Honor `UserTurn.attachments` for images and files
+
+Depends: — · Size: ~180 · Files: `crates/cox-core/src/context.rs`, `crates/cox-provider-anthropic/src/…`, `crates/cox-provider-openai/src/…` (G2)
+Goal: an attached image or file reaches the model on every wire that supports it; an unsupported wire gets a clear notice.
+Check: request snapshots for Anthropic and OpenAI Responses contain the image block; a Chat-only local model gets the notice.
+
+#### T37.7 `cox-render`: a neutral `StyledDoc` for markdown and highlighting
+
+Depends: — · Size: ~200 · Files: `crates/cox-render/src/doc.rs`, `crates/cox-render/src/markdown.rs`, `crates/cox-render/Cargo.toml`
+Goal: markdown and syntax highlighting produce runs tagged with `StyleToken` roles that both ratatui and SwiftUI can draw; ratatui sits behind a feature.
+Check: the TUI transcript snapshots are unchanged; `StyledDoc` snapshots exist for a markdown fixture with code, lists and links.
+
+#### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
+
+Depends: T37.3–T37.7 · Size: ~200 · Files: `crates/cox-app/src/timeline.rs`, `crates/cox-app/src/patch.rs`, `crates/cox-app/src/lib.rs`
+Goal: `Event` → keyed blocks → `TimelinePatch` (DT§4.3); replaying a rollout produces the same patches as the live run.
+Check: `insta` snapshot per scripted scenario; `replay_equals_live` holds for all of them.
+
+#### T37.9 `cox-app`: drain task, coalescer, never-stall
+
+Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/controller.rs`, `crates/cox-app/src/patch.rs`
+Goal: the core never blocks on a slow UI: events drain into the fold continuously and patches coalesce while the consumer is behind.
+Check: `slow_consumer_never_stalls_the_core` — a consumer that sleeps 2 s per pull still sees the turn finish on time and a coalesced final state.
+
+#### T37.10 `cox-app`: workspace, inbox, status, intents, completion
+
+Depends: T37.1, T37.8, T37.35 · Size: ~200 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-app/src/inbox.rs`, `crates/cox-app/src/intent.rs`
+Goal: projects, sessions, search, worktrees with disk size, the "needs you" inbox, and one intent enum the app sends (DT§4.3).
+Check: unit tests per intent against a scratch `COX_HOME`; inbox ordering test.
+
+#### T37.11 Login-shell environment resolution in `cox-session`
+
+Depends: T37.1 · Size: ~80 · Files: `crates/cox-session/src/env.rs`
+Goal: an app launched from Finder sees the user's login-shell `PATH` and env, like a terminal launch.
+Check: a test with a fake shell script returns its exported `PATH`; a timeout falls back to the process env with a warning.
+
+#### T37.12 `cox-app`: usage and throughput view state
+
+Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/usage.rs`, `crates/cox-app/src/timeline.rs`
+Goal: the token meter's data (DS§7): sent and received per turn and per session from the ledger, live tok/s estimated from output deltas over a rolling window and replaced by the exact figure when usage arrives, time to first token, and the context breakdown the TUI already shows (P28).
+Check: a scripted stream with known timings yields the expected tok/s within 5 %; per-turn and session totals equal the ledger rows.
+
+#### T37.13 `[desktop.appearance]` config section
+
+Depends: — · Size: ~100 · Files: `crates/cox-config/src/…`, `docs/config.jsonschema`
+Goal: `[desktop.appearance]` — `material` (frosted | glossy | solid), `opacity`, `blur`, `depth`, `tint` with defaults from `desktop/design/tokens/base.json` (DS§3.5) — and `[desktop.transcript] cross_block_selection` (default `true`, A67), owned by `cox-config` like every other setting.
+Check: the config-schema drift test passes; `cox config set desktop.appearance.material glossy` round-trips; an out-of-range value is rejected.
+
+#### T37.14 `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
+
+Depends: T37.9, T37.10, T37.34, T37.36 · Size: ~200 · Files: `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/session.rs`, `crates/cox-ffi/src/host.rs`
+Goal: one tokio runtime; async `next_patches()`; foreign `Host` trait for notifications and secrets; a recorder that writes patch streams for Swift fixtures. New dependency `uniffi` (§1.1 row), only in `cox-ffi`.
+Check: generated Swift bindings compile in a scratch package; `deps.rs` asserts only `cox-ffi` depends on `uniffi`.
+
+#### T37.15 XCFramework script, `just` recipes, macOS CI job
+
+Depends: T37.14 · Size: ~120 · Files: `scripts/desktop/xcframework.sh`, `justfile`, `.github/workflows/ci.yml`
+Goal: `just desktop-xcframework` builds `CoxFFI.xcframework` for `aarch64-apple-darwin` only with `MACOSX_DEPLOYMENT_TARGET=26.0` (A67: no Intel, no universal slice); CI builds it and runs the Swift tests on an Apple Silicon macOS runner.
+Check: the recipe exits 0 on a clean checkout; `lipo -archs` on the library prints `arm64` only; the CI job is green.
+
+#### T37.16 Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
+
+Depends: T37.15 · Size: ~200 · Files: `desktop/macos/Packages/CoxCore/…`, `desktop/macos/Packages/CoxModel/…`
+Goal: `CoxModel` turns patches into `@Observable` stores (timeline keyed by block id in swift-collections' `OrderedDictionary`, R§9.5.6; §1.1 row); a fixture client replays recorded streams so every view and test runs without Rust.
+Check: `swift test` in `CoxModel` applies each recorded fixture and matches its expected final state.
+
+#### T37.17 Token pipeline: DTCG → `Tokens.swift`, `Colors.xcassets`, `tokens.css`
+
+Depends: T37.0, T37.15 · Size: ~120 · Files: `desktop/design/style-dictionary.config.mjs`, `desktop/design/package.json`, `justfile`
+Goal: Style Dictionary generates the Swift tokens, asset-catalog colorsets (Any, Dark, High Contrast) and the mockups' CSS from `desktop/design/tokens/` (DS§2). New dependency `style-dictionary` (§1.1 row).
+Check: `just desktop-tokens` regenerates with no diff (drift test in CI); a generated colorset has a dark variant; `build_tokens.py` is deleted.
+
+#### T37.18 SwiftLint with the no-literal rules
+
+Depends: T37.15 · Size: ~60 · Files: `desktop/macos/.swiftlint.yml`, `.github/workflows/ci.yml`
+Goal: custom rules reject literal colours, sizes, fonts, radii, shadows and durations outside `Tokens/` and `Foundations/` (DS§9); SwiftLint runs through the SwiftLintPlugins build-tool plugin and formatting through the toolchain's own `swift-format` (R§9.5.4–9.5.5). New tool SwiftLint (§1.1 row).
+Check: a fixture view with `.padding(12)` fails lint; the same view with `Space.l` passes.
+
+#### T37.19 `CoxUI` Foundations
+
+Depends: T37.17, T37.18 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`
+Goal: every DS§6.1 modifier and style — `elevation`, `glassPane`, `specular`, `hairline`, `insetWell`, `textStyle`, button, capsule, segmented, toggle and slider styles — with Depth scaling, the readable floor and Reduce Transparency/Motion handled once, here.
+Check: snapshot per modifier × light/dark × Solid/Frosted; Reduce Transparency renders Solid.
+
+#### T37.20 `CoxUI` Atoms
+
+Depends: T37.19 · Size: split at claim · Files: `…/CoxUI/Atoms/*`, `…/CoxUI/Previews/PreviewState.swift`
+Goal: every DS§6.2 atom, one file each, with previews and snapshots for every variant.
+Check: snapshot suite green; lint green; each atom's file names a DS§6.2 row.
+
+#### T37.21 `CoxUI` Molecules
+
+Depends: T37.20 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
+Goal: every DS§6.3 molecule built only from atoms and foundations.
+Check: snapshot suite green; no molecule imports `CoxCore`; no styling modifier is applied to an atom from outside it except through the atom's own parameters.
+
+#### T37.22 Window shell: split view, sidebar, toolbar, inspector frame
+
+Depends: T37.16, T37.21 · Size: ~200 · Files: `…/CoxUI/Organisms/Sidebar.swift`, `…/Organisms/SessionToolbar.swift`, `…/Screens/MainScreen.swift`
+Goal: DS§4 layout with floating glass panes, collapsible sidebar and inspector, the window material from `[desktop.appearance]`.
+Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/design/mockups` screens 28–29 in structure.
+
+#### T37.23 Transcript view and the DT§9 benchmark gate
+
+Depends: T37.22, T37.37 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
+Goal: lazy transcript from timeline patches with `UserBubble`, `ThinkingDisclosure`, `ToolCard`, `AssistantMessage` and `ApprovalCard` slots; text selection runs across blocks like a document (copy keeps block order and gives Markdown), and `cross_block_selection = false` clamps it to one block (A67); the DT§9 rendering bet is decided by its benchmark with selection on.
+Check: the benchmark in DT§9 passes its budget on a 2 000-block fixture; snapshots per block kind; a UI test drags a selection across three blocks and the pasteboard holds all three in order; with the setting off the same drag selects one block.
+
+#### T37.24 Composer: mentions, commands, shell mode, attachments, queue
+
+Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
+Goal: DT§5 composer with completion driven by `cox-app` (T37.10).
+Check: UI test types `@`, picks a file, sends; the intent reaches the fixture client.
+
+#### T37.25 Token meter and token popover
+
+Depends: T37.12, T37.24 · Size: ~150 · Files: `…/Molecules/TokenMeter.swift`, `…/Organisms/TokenPopover.swift`
+Goal: ↑ sent, ↓ received and live tok/s with a sparkline in the composer; the popover shows turn and session breakdown, first-token time, cost and the context bar (mockup 30).
+Check: snapshots idle and streaming; VoiceOver label reads the three numbers; the UI does no arithmetic on them (values come formatted from `cox-app`).
+
+#### T37.26 Appearance popover and live window material
+
+Depends: T37.13, T37.22 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
+Goal: material, transparency, blur/reflection, depth and tint change the window live and persist through `[desktop.appearance]` (mockups 28–29); Reduce Transparency disables the controls and says why.
+Check: snapshot per material; changing a slider writes the config through an intent; Reduce Transparency snapshot is Solid.
+
+#### T37.27 Approvals, questions, inbox, notifications with actions, Dock badge
+
+Depends: T37.23, T37.4 · Size: split at claim · Files: `…/Organisms/ApprovalCard.swift`, `desktop/macos/Packages/CoxPlatform/…`
+Goal: DT§5 approvals and questions in the transcript and as actionable notifications; the inbox and Dock badge count what needs you.
+Check: a fixture with a pending approval shows the card, the notification and badge 1; approving from the notification resumes the turn.
+
+#### T37.28 Review pane and rewind timeline
+
+Depends: T37.23 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
+Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
+Check: fixture rewind restores the expected files in a scratch worktree.
+
+#### T37.29 Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
+
+Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
+Goal: DT§5 inspector built from DS§6 rows.
+Check: snapshot per tab.
+
+#### T37.30 Settings from the schema with provenance; Keychain keys; MCP OAuth
+
+Depends: T37.16 · Size: split at claim · Files: `…/Screens/SettingsScreen.swift`, `desktop/macos/Packages/CoxPlatform/Secrets.swift`
+Goal: settings rendered from `docs/config.jsonschema` with the layer each value came from; keys stored through the `Host` trait on the Security framework directly, no wrapper package (R§9.5.8). Tests never touch the real keychain (A49).
+Check: snapshot of a setting overridden by the project layer; secrets tests use an in-memory store.
+
+#### T37.31 Onboarding and doctor checklist
+
+Depends: T37.30, T37.11 · Size: ~120 · Files: `…/Screens/OnboardingScreen.swift`
+Goal: first run finds providers, checks the sandbox and shell env, and explains what is missing.
+Check: snapshots for no-provider and all-green states.
+
+#### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
+
+Depends: T37.15 · Size: ~150 · Files: `.github/workflows/release.yml`, `desktop/macos/Cox.xcodeproj/…`, `scripts/desktop/…`
+Goal: a Developer ID-signed, notarized app with Sparkle 2 updates and the `cox` CLI inside the bundle (DT§7). New dependency Sparkle (§1.1 row).
+Check: `spctl --assess` accepts the release build; the appcast validates.
+
+#### T37.33 Performance budget suite
+
+Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
+Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
+Check: the suite runs locally and in the nightly job; every budget has a measured row.
+
+#### T37.34 One process drives a session: session lock, read-only follow, fork
+
+Depends: T37.1 · Size: ~180 · Files: `crates/cox-store/src/lock.rs`, `crates/cox-session/src/lib.rs`, `crates/cox-store/src/lib.rs`
+Goal: the process that runs a session holds an OS advisory lock on `sessions/<id>.lock` (`std::fs::File::try_lock`, stable since Rust 1.89, no new dependency); the kernel drops it when the process exits or crashes, so no lease goes stale. A second process — another TUI, the app, `cox resume` — that opens the same session gets a typed `SessionBusy { holder }` and may follow it read-only (tail the rollout and fold it, the D2 replay path), fork it into a new session, or ask to take it over. Never two writers on one rollout (A67, DT§11 Q6).
+Check: `second_opener_gets_session_busy` and `lock_released_when_holder_exits` (child process holds then exits); a follow test sees events the holder appends; the TUI e2e prints the busy notice instead of resuming.
+
+#### T37.35 Write transactions are IMMEDIATE; cross-process change feed
+
+Depends: — · Size: ~150 · Files: `crates/cox-store/src/lib.rs`, `crates/cox-store/src/queries.rs`, `crates/cox-store/src/watch.rs`
+Goal: every write that reads first runs in Diesel's `SqliteConnection::immediate_transaction`, so a concurrent commit makes it wait for `busy_timeout` instead of failing with `SQLITE_BUSY_SNAPSHOT`; a `Store::changes()` feed polls `PRAGMA data_version` (raw SQL: Diesel cannot model a PRAGMA; kept in `cox-store` with that comment) and reports "sessions/ledger changed by another process", which `cox-app` turns into sidebar and cost refreshes (T37.10).
+Check: `concurrent_writers_never_fail_busy` — two processes each append 500 ledger rows and create sessions; all rows land, no busy error; `change_feed_sees_other_process_commit`.
+
+#### T37.36 An older binary refuses a newer `cox.db`
+
+Depends: — · Size: ~80 · Files: `crates/cox-store/src/lib.rs`, `crates/cox/src/doctor.rs`
+Goal: on open, if `__diesel_schema_migrations` holds a version this binary does not embed (`MigrationHarness::applied_migrations`), `Store::open` fails with `StoreError::SchemaNewer { db, binary }` and the CLI says which `cox` is newer and how to update; `cox doctor` reports the mismatch. Covers the app's bundled `cox` next to a Homebrew `cox` of another version.
+Check: `older_binary_refuses_newer_schema` (a test inserts a future migration version); doctor snapshot shows the mismatch line.
+
+#### T37.37 Spike: the cross-block selection engine
+
+Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `desktop/macos/Spikes/Selection/…`, `research.md`
+Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
+Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -1176,6 +1456,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A64 §3 P36 (new T36.2), by the creator. Why: T36.1's follow-ups are security gaps: an assignment prefix (`GIT_PAGER='rm x' git log`) keeps a command rated `ReadOnly`, so it runs without asking; wrappers (`nohup rm …`) and `sh -c` strings hide a command from deny. Effect: one card; `cox_permission::Engine` stays the single guard. No decision changes.
 - A65 `docs/design/plugins.md` §11–12, `scripts/footprint.json` — plugin size budget 22 MiB, by the creator. Why: PR #53's footprint job failed: the full release binary is 77 764 992 B on the macOS CI runner against a baseline of 47 323 136 B, and the whole `plugins` feature now adds +20.38 MiB over the slim build (56 409 008 B), just over A55's 20 MiB. Effect: the budget is 22 MiB and the `Darwin-arm64-ci` baseline is refreshed from that CI run (startup 6.9 ms, first frame 35.7 ms, RSS 24.0 MiB), and the local `Darwin-arm64` one from a fresh release build (77 799 856 B). No decision changes.
 - A66 §3 P35 (new T35.14), by the creator. Why: the PR #53 CI fix found that bwrap's private `/tmp` hides any sandboxed program under `/tmp` on Linux, including AGENTS.md's `COX_HOME=/tmp/cox-scratch` dev runs. Effect: one card; `cox_sandbox::sandbox::Policy` stays the single sandbox guard. No decision changes.
+- A67 §0 D1, D2, D11; §3 new P37 — native macOS client, M1, by the creator ("create the plan and tasks", 2026-09-28), after the desktop research (`research.md` §9) and the design `docs/design/desktop.md` with its view-layer guide `desktop/design/DESIGN.md`. Why: a desktop client that uses cox as a library, better than Claude, Codex and Cursor desktop apps on transparency (cost, tokens, context), review and native feel; SwiftUI views stay free of business logic, which lives in new crates `cox-session`, `cox-app` and `cox-ffi` (UniFFI, in-process). Effect: 38 cards T37.0–T37.37, including the design-system work the creator asked for — DTCG tokens generated into Swift and asset colours, a component catalogue decomposed into foundations, atoms, molecules and organisms, lint that forbids literals — plus adjustable glass (frosted, glossy, solid) with depth and a live token meter (sent, received, tok/s). New dependencies arrive with their cards: `uniffi` (T37.14), `style-dictionary` (T37.17), SwiftLint (T37.18), swift-snapshot-testing (T37.19), Sparkle (T37.32). §0 D1, D2 and D11 change as the creator chose (option A, 2026-09-28: in-process static library over a `cox app-server` subprocess or an ACP client, which would lack cost, checkpoints, worktrees and the inbox): D1 names the macOS app as the second artifact and the `uniffi`/`clap`/`anyhow` graph rules; D2 names the app as a consumer and makes `cox-app`'s fold a pure function of the stream (T37.8 `replay_equals_live`); D11 adds the app as a fifth surface with the 300-LOC limit on `cox-ffi`. Platform floor, by the creator (2026-09-28): macOS 26 or later on Apple Silicon only, no Intel — one `aarch64-apple-darwin` slice, no universal binary. Also by the creator (2026-09-28): the Swift code lives in this repository under `desktop/macos/`, under the repository's licence; cross-block text selection in the transcript is on by default with a setting to turn it off; the ACP host (M3) stays in `roadmap.md` and moves into this plan only when a planned card is blocked by it; Swift dependencies are chosen by the agent — the most used, best-maintained fit, otherwise our own code as a separate package with its own card. Concurrent writers on `cox.db`, by the creator (2026-09-28, option A of four — over a background daemon that owns the database, the app as server with the TUI as its client, or a separate app database that would split sessions and the cost ledger): one shared database; one process drives a session under an OS file lock and others follow it read-only or fork (T37.34); read-then-write transactions are IMMEDIATE and a `data_version` feed reports other processes' commits (T37.35); an older binary refuses a newer schema (T37.36). Swift dependencies (`research.md` §9.5): Sparkle, swift-snapshot-testing, SwiftLint with SwiftLintPlugins, swift-collections; SwiftTerm in M2; `swift-format` and the Security framework are native; STTextView is rejected because its GPL-only terms would take the royalty-free option away from the app (A68); cross-block selection is decided by a spike between Textual and our own TextKit 2 package (T37.37). M2 and M3 (DT§3.2–3.3) go to `roadmap.md`.
+- A68 `Cargo.toml` `license`, `crates/cox-plugin-api/Cargo.toml`, `deny.toml` — licence metadata matches the README, by the creator (2026-09-28): "GPLv3 and royalty-free", GPL-3.0-only rather than -or-later, and the plugin SDK stays MIT/Apache. Why: the workspace said `MIT OR Apache-2.0` while `LICENSE` and the README offer GPLv3, a royalty-free licence and a commercial one. Effect: workspace crates are `GPL-3.0-only OR LicenseRef-cox-Royalty-Free` (crates.io parses `LicenseRef-` ids: its `src/licenses.rs` uses `spdx` with `allow_unknown: false`, which rejects unknown names but lexes `LicenseRef-` as its own token, `spdx` 0.13.5 `src/lexer.rs:79`, checked 2026-09-28); `cox-plugin-api` stays `MIT OR Apache-2.0` because the guest SDK in `plugins/` depends on it; `deny.toml` allows only the ref, not GPL-3.0-only, so the royalty-free option cannot gain a GPL dependency. The commercial licence needs no SPDX id. No decision changes.
 
 ## 7. Risk register
 

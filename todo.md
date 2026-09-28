@@ -22,3 +22,41 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
+- T37.0. Land the desktop design docs and tokens
+- T37.1. Extract `cox-session` from `crates/cox/src/session.rs`
+- T37.2. Route `cox acp` through `cox-session`
+- T37.3. `ToolResult.structured`; TUI and ACP drop their todo re-parsers
+- T37.4. `QuestionAsked` / `Answer` replace the `ask_user` side channel
+- T37.5. `StateChanged` and `TitleSet` events; fix `protocol.md` counts
+- T37.6. Honor `UserTurn.attachments` for images and files
+- T37.7. `cox-render`: a neutral `StyledDoc` for markdown and highlighting
+- T37.8. `cox-app`: timeline fold with snapshots per scripted scenario
+- T37.9. `cox-app`: drain task, coalescer, never-stall
+- T37.10. `cox-app`: workspace, inbox, status, intents, completion
+- T37.11. Login-shell environment resolution in `cox-session`
+- T37.12. `cox-app`: usage and throughput view state
+- T37.13. `[desktop.appearance]` config section
+- T37.14. `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
+- T37.15. XCFramework script, `just` recipes, macOS CI job
+- T37.16. Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
+- T37.17. Token pipeline: DTCG → `Tokens.swift`, `Colors.xcassets`, `tokens.css`
+- T37.18. SwiftLint with the no-literal rules
+- T37.19. `CoxUI` Foundations
+- T37.20. `CoxUI` Atoms
+- T37.21. `CoxUI` Molecules
+- T37.22. Window shell: split view, sidebar, toolbar, inspector frame
+- T37.23. Transcript view and the DT§9 benchmark gate
+- T37.24. Composer: mentions, commands, shell mode, attachments, queue
+- T37.25. Token meter and token popover
+- T37.26. Appearance popover and live window material
+- T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
+- T37.28. Review pane and rewind timeline
+- T37.29. Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
+- T37.30. Settings from the schema with provenance; Keychain keys; MCP OAuth
+- T37.31. Onboarding and doctor checklist
+- T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
+- T37.33. Performance budget suite
+- T37.34. One process drives a session: session lock, read-only follow, fork
+- T37.35. Write transactions are IMMEDIATE; cross-process change feed
+- T37.36. An older binary refuses a newer `cox.db`
+- T37.37. Spike: the cross-block selection engine
