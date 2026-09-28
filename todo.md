@@ -28,7 +28,6 @@
 - T37.33. Performance budget suite
 - T37.44.2. Style the app from the Figma file
 - T37.44.3. Figma text in SF Pro and SF Mono
-- T37.44.6. Inspector and review screens match the Figma frames
 - T37.44.7. Approval and composer screens match the Figma frames
 - T37.44.8. Navigation screens match the Figma frames
 - T37.44.9. Main-screen states and glass variants match the mockups

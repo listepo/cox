@@ -5750,3 +5750,18 @@ Deviations: small optional parameters on shared `SettingLabel`, `TitledSetting` 
 Check: filtered settings/onboarding suites recorded once then passed twice (20/20); CoxUI 184/184; swift-format and swiftlint strict clean; 2 Figma reads (only the "Main" page came back, so the comparison used the mockup renders).
 
 Not done: the floating 252 pt glass sidebar stays (DESIGN.md §6.5) where the mockup has a flush 220 pt one; the sidebar search field, pop-up menus, Change/Add key buttons, rules editor, session grants, MCP "Show log"/status badges and the onboarding drop zone are features, not layout; type with no token (20 pt bold `h1`, 12 pt semibold `.gtitle`, 26 pt onboarding title) and the 980 pt small window size.
+
+#### T37.44.6 Inspector and review screens match the Figma frames
+
+Depends: T37.44.1 · Size: ~150 · Files: CoxUI inspector, review and diff views, their snapshots
+Goal: A114, A119. The Figma page "Inspector & review" frames are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. Iterate in CoxUI alone.
+Check: as T37.44.5.
+Plan: as T37.44.5 for the "Inspector & review" page.
+Status: done 2026-09-28
+Result: inspector tabs and the review pane compared with mockup renders 01, 08–11 (the Figma file holds only the "Main" page) and five layout differences fixed through tokens: `InspectorRow` icons sit in a fixed column one body size wide, so labels line up in Changes, Review and Tasks (the ideas.md line removed); `KeyValueGrid` without headers reads as the mockup's key/value list (quiet keys, value after key, a value-less row spans both columns — Worktree, Info); `PlanTab` done boxes are solid green with a white check under the section header; `ContextTab` legend in the caption style; `Inspector` content starts `Space.xl` below the tabs. Mapping: 01 → `ChangesTabTests`, 08 → `ReviewPaneTests`, 09 → `PlanTabTests`, 10 → `ContextTabTests`, 11 → `TasksTabTests`, Info → `InfoTabTests`.
+
+Deviations: five source files, each a few lines.
+
+Check: CoxUI 183/183 after recording, affected suites again after a format fix; swift-format and swiftlint strict clean; Changes tab vs frame 01 3.64 % differing at threshold 0.3 (text rows). On the merged tree with T37.44.5: CoxUI 184/184.
+
+Not done: values with no token (inspector width 330 vs 324, 12 pt medium tab label, tab padding 9 and radius 7, 12.5 pt row text, 15 pt plan checkbox, radius 2 legend swatch, review file list 260 wide with 10/6 insets) → T37.44.10; features (plan update time and note, cache and budget gauges, auto-compact button, cost-table rules, task cards with Show output/Kill, review Unified/Split, Revert, Open in Zed, split diff, comment cards and bubbles).

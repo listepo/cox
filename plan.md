@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.44.3 | todo | P3 | 2 | 0% | |
-| T37.44.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.9 | todo | P2 | 3 | 0% | |
@@ -2793,13 +2792,6 @@ Plan: first run every Swift package's tests on the base (the merged T37.22.7/9/1
 Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
 Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
 Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
-
-#### T37.44.6 Inspector and review screens match the Figma frames
-
-Depends: T37.44.1 · Size: ~150 · Files: CoxUI inspector, review and diff views, their snapshots
-Goal: A114, A119. The Figma page "Inspector & review" frames are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. Iterate in CoxUI alone.
-Check: as T37.44.5.
-Plan: as T37.44.5 for the "Inspector & review" page.
 
 #### T37.44.7 Approval and composer screens match the Figma frames
 
