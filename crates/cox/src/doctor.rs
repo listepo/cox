@@ -780,7 +780,9 @@ fn ymd_to_days(date: (u32, u32, u32)) -> Option<u32> {
 fn days_between(from: &str, to: (u32, u32, u32)) -> Option<u32> {
     let from_days = ymd_to_days(parse_iso_date(from)?)?;
     let to_days = ymd_to_days(to)?;
-    Some(to_days - from_days)
+    // `cox-vendor` stamps the local date, which runs ahead of the UTC `today`
+    // near midnight: a date after today is as fresh as today, not a panic.
+    Some(to_days.saturating_sub(from_days))
 }
 
 fn today_ymd() -> (u32, u32, u32) {
@@ -1248,6 +1250,21 @@ mod tests {
         let result = check_prices();
         assert_eq!(result.status, "ok");
         assert!(result.detail.starts_with("oldest verified_on "));
+    }
+
+    #[test]
+    fn doctor_prices_verified_after_today_is_fresh() {
+        let ahead = Price {
+            id: "claude-haiku-4-5".to_string(),
+            input: 1.0,
+            output: 5.0,
+            cache_write: 1.25,
+            cache_read: 0.1,
+            verified_on: "2026-09-13".to_string(),
+            source_url: "https://example.com".to_string(),
+        };
+        let result = prices_status(&[ahead], (2026, 9, 12));
+        assert_eq!(result.status, "ok", "{}", result.detail);
     }
 
     #[test]
