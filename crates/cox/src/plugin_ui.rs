@@ -1,171 +1,100 @@
-//! The runtime side of the TUI's plugin redraw model (T33.23, PL§8):
-//! serves `Cmd::Plugin` requests against the live plugin hosts and answers
-//! on the TUI's feed as `Msg::Plugin`. Its own module because `cox-tui`
-//! never holds a plugin (it depends on the ABI types only) and `session.rs`
-//! only wires the channels; the session's live hosts (T33.44) are passed in.
-//! T33.25 adds `Command`/`Key`: the same request/answer shape, `cox_command`
-//! or `cox_key` in place of `cox_render`. T33.26 adds `RenderItem`:
-//! `cox_render_item` for a finished cell, under the same render deadline.
+//! The TUI's adapter over the plugin UI service (T33.23, PL§8): maps
+//! `Cmd::Plugin`'s `PluginRequest` to `cox_session::plugin_ui`'s neutral
+//! request and its answer back to `Msg::Plugin`. T52.13 moved the service
+//! itself into `cox-session` so the desktop app serves the same hosts with
+//! the same deadlines; this module keeps only what is the TUI's own — its
+//! cell reference for an item render and its feed.
 
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::thread::JoinHandle;
 
-use cox_plugin::{Lane, PluginHost, Redraw};
-use cox_protocol::plugin::{CommandIn, CommandOut, RenderItemIn, Widget};
-use cox_protocol::types::ItemKind;
-use cox_tui::item_render::RenderSource;
+use cox_plugin::{PluginHost, Redraw};
+use cox_session::plugin_ui::{self as service, ItemSource, PluginAnswer};
+use cox_tui::item_render::{CellRef, RenderSource};
 use cox_tui::state::{Msg, PluginRequest, PluginUiMsg};
 use tokio::sync::mpsc::{Receiver, Sender};
 
-/// A render's budget (PL§8, PL§12 "render 20 ms").
-pub(crate) const RENDER_DEADLINE: Duration = Duration::from_millis(20);
-/// A command or a key's budget (T33.25): interactive, not render-critical,
-/// so it gets the same outer cap `cox_init` and a plugin hook already use.
-pub(crate) const COMMAND_DEADLINE: Duration = Duration::from_secs(5);
-const RENDER: &str = "cox_render";
-const COMMAND: &str = "cox_command";
-const KEY: &str = "cox_key";
-const RENDER_ITEM: &str = "cox_render_item";
-
-/// Serves `requests` on a thread of its own, since a host call blocks for
-/// up to its deadline. Requests that piled up behind a slow render are
-/// served once each. Ends when the TUI drops its sender or the feed closes.
+/// Serves `requests` on the service's own thread, answering on `feed`.
 pub(crate) fn serve(
     hosts: Vec<(String, Arc<PluginHost>)>,
-    mut requests: Receiver<PluginRequest>,
+    requests: Receiver<PluginRequest>,
     feed: Sender<Msg>,
 ) -> std::io::Result<JoinHandle<()>> {
-    thread::Builder::new()
-        .name("cox-plugin-ui".into())
-        .spawn(move || {
-            while let Some(first) = requests.blocking_recv() {
-                let mut batch = vec![first];
-                while let Ok(next) = requests.try_recv() {
-                    if !batch.contains(&next) {
-                        batch.push(next);
-                    }
-                }
-                for request in batch {
-                    let plugin = match &request {
-                        PluginRequest::Render { plugin, .. }
-                        | PluginRequest::Command { plugin, .. }
-                        | PluginRequest::Key { plugin, .. }
-                        | PluginRequest::RenderItem { plugin, .. }
-                        | PluginRequest::Stop { plugin } => plugin,
-                    };
-                    let host = hosts.iter().find(|(id, _)| id == plugin);
-                    let msg = answer(host.map(|(_, h)| h.as_ref()), request);
-                    if feed.blocking_send(Msg::Plugin(msg)).is_err() {
-                        return;
-                    }
-                }
-            }
-        })
+    service::serve(hosts, requests, feed, split, |cell, answer| {
+        Msg::Plugin(join(cell, answer))
+    })
 }
 
-/// One request's answer. A render inside `RENDER_DEADLINE` is `Rendered`;
-/// a timeout, an error, a missing export or an unknown plugin is `Missed`,
-/// so the TUI keeps the last good segment and counts the miss. A command or
-/// a key (T33.25) answers `Command`, `out: None` covering the same misses.
+/// One request's answer, as `serve` gives it (the service's
+/// `plugin_ui::answer` under the TUI's types).
 pub(crate) fn answer(host: Option<&PluginHost>, request: PluginRequest) -> PluginUiMsg {
+    let (request, cell) = split(request);
+    join(cell, service::answer(host, request))
+}
+
+/// The neutral request, and the cell an item render answers for.
+fn split(request: PluginRequest) -> (service::PluginRequest, Option<CellRef>) {
     match request {
         PluginRequest::Render { plugin, input } => {
-            let slot = input.slot;
-            let out =
-                host.map(|h| h.call::<_, Widget>(Lane::Control, RENDER, &input, RENDER_DEADLINE));
-            match out {
-                Some(Ok(Some(widget))) => PluginUiMsg::Rendered {
-                    plugin,
-                    slot,
-                    widget,
-                },
-                _ => PluginUiMsg::Missed { plugin, slot },
-            }
+            (service::PluginRequest::Render { plugin, input }, None)
         }
         PluginRequest::Command { plugin, name, args } => {
-            let input = CommandIn { name, args };
-            PluginUiMsg::Command {
-                plugin,
-                out: command_call(host, COMMAND, &input),
-            }
+            (service::PluginRequest::Command { plugin, name, args }, None)
         }
+        PluginRequest::Key { plugin, name } => (service::PluginRequest::Key { plugin, name }, None),
         PluginRequest::RenderItem {
+            plugin,
             cell,
             target,
             source,
             width,
-            ..
         } => {
-            let input = render_item_input(target, source, width);
-            let widget = host
-                .map(|h| {
-                    h.call::<_, Option<Widget>>(Lane::Control, RENDER_ITEM, &input, RENDER_DEADLINE)
-                })
-                .and_then(|out| out.ok().flatten().flatten());
-            PluginUiMsg::ItemRendered { cell, widget }
-        }
-        PluginRequest::Key { plugin, name } => {
-            let input = CommandIn {
-                name,
-                args: String::new(),
+            let source = match source {
+                RenderSource::Tool { call, result } => ItemSource::Tool { call, result },
+                RenderSource::Assistant { text } => ItemSource::Assistant { text },
             };
-            PluginUiMsg::Command {
+            let request = service::PluginRequest::RenderItem {
                 plugin,
-                out: command_call(host, KEY, &input),
-            }
+                target,
+                source,
+                width,
+            };
+            (request, Some(cell))
         }
-        // T33.33, PL§1c: `WasmTool::is_stopped` is the only reader of this
-        // flag. `Stop` has no reply of its own, so it answers with a plain
-        // redraw, which re-asks only what is already on screen.
-        PluginRequest::Stop { plugin } => {
-            if let Some(h) = host {
-                h.stop();
-            }
-            PluginUiMsg::Redraw { plugin }
-        }
+        PluginRequest::Stop { plugin } => (service::PluginRequest::Stop { plugin }, None),
     }
 }
 
-/// PL§4's `RenderItemIn`: the call and its result as the model's history
-/// carries them, or the assistant item as `ItemKind` serializes it.
-fn render_item_input(target: String, source: RenderSource, width: u16) -> RenderItemIn {
-    let (call, result) = match source {
-        RenderSource::Tool { call, result } => (
-            serde_json::to_value(&call).ok(),
-            serde_json::to_value(&result),
-        ),
-        RenderSource::Assistant { text } => (
-            None,
-            serde_json::to_value(ItemKind::AssistantMessage { text }),
-        ),
-    };
-    RenderItemIn {
-        target,
-        call,
-        result: result.unwrap_or_default(),
-        width,
+/// The TUI's message for an answer.
+fn join(cell: Option<CellRef>, answer: PluginAnswer) -> PluginUiMsg {
+    match answer {
+        PluginAnswer::Rendered {
+            plugin,
+            slot,
+            widget,
+        } => PluginUiMsg::Rendered {
+            plugin,
+            slot,
+            widget,
+        },
+        PluginAnswer::Missed { plugin, slot } => PluginUiMsg::Missed { plugin, slot },
+        PluginAnswer::Command { plugin, out } => PluginUiMsg::Command { plugin, out },
+        PluginAnswer::ItemRendered { plugin, widget } => match cell {
+            Some(cell) => PluginUiMsg::ItemRendered { cell, widget },
+            // Only a `RenderItem` answers `ItemRendered`, and `split` kept
+            // its cell; a redraw would be harmless if that ever changed.
+            None => PluginUiMsg::Redraw { plugin },
+        },
+        PluginAnswer::Redraw { plugin } => PluginUiMsg::Redraw { plugin },
     }
-}
-
-/// `cox_command`/`cox_key`'s call, folding a timeout, an error, a missing
-/// export or an unknown plugin into one `None` (PL§4 fails open).
-fn command_call(host: Option<&PluginHost>, export: &str, input: &CommandIn) -> Option<CommandOut> {
-    host?
-        .call::<_, CommandOut>(Lane::Control, export, input, COMMAND_DEADLINE)
-        .ok()
-        .flatten()
 }
 
 /// The `Redraw` a `PluginTap` calls when a plugin's `Effects.redraw` is set.
 /// `try_send`: the tap's pump thread must not wait on the TUI; a redraw lost
 /// to a full feed is repainted by the plugin's next one.
 pub(crate) fn redraw(feed: Sender<Msg>) -> Redraw {
-    Arc::new(move |plugin: &str| {
-        let msg = PluginUiMsg::Redraw {
-            plugin: plugin.to_string(),
-        };
-        let _ = feed.try_send(Msg::Plugin(msg));
+    service::redraw(move |plugin| {
+        let _ = feed.try_send(Msg::Plugin(PluginUiMsg::Redraw { plugin }));
     })
 }
 
@@ -173,6 +102,8 @@ pub(crate) fn redraw(feed: Sender<Msg>) -> Redraw {
 mod tests {
     use super::*;
     use cox_plugin_api::{Limits, RenderIn, Slot};
+    use cox_protocol::plugin::{CommandOut, Widget};
+    use std::time::Duration;
     use std::time::Instant;
 
     // The extism kernel imports a module needs to write its output (P15:

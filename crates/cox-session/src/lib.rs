@@ -24,6 +24,8 @@ pub mod env;
 pub mod external_agents;
 pub mod lineage;
 pub mod mcp;
+#[cfg(feature = "plugins")]
+pub mod plugin_ui;
 pub mod plugins;
 pub mod provider;
 pub mod sandbox;
