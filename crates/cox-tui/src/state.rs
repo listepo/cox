@@ -200,6 +200,9 @@ pub enum Modal {
     Plugin {
         id: String,
     },
+    /// The theme editor (T46.6): a band like `Picker`, drawn from
+    /// `ThemeEditor::lines`; `/theme` opens it and saves it (T46.7).
+    ThemeEditor(crate::theme_editor::ThemeEditor),
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -1082,7 +1085,8 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
             | Modal::Context
             | Modal::Agents { .. }
             | Modal::Transcript { .. }
-            | Modal::Plugin { .. },
+            | Modal::Plugin { .. }
+            | Modal::ThemeEditor(_),
         ) => {}
         None => {
             state.scroll = if up {
@@ -1263,6 +1267,14 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         // immediately, not only `Enter` — the same live-apply the picker's
         // other kinds do not need, since none of them redraws the screen
         // they came from.
+        // T46.6: only keeps the editor open; the preview, `Save` and
+        // `Revert` belong to the `/theme` wiring (T46.7).
+        Some(Modal::ThemeEditor(mut editor)) => {
+            if editor.key(key).is_none() {
+                state.modal = Some(Modal::ThemeEditor(editor));
+            }
+            Vec::new()
+        }
         Some(Modal::Picker(mut picker)) if picker.kind == Kind::Themes => {
             match picker.key(key) {
                 Pick::Closed => {
