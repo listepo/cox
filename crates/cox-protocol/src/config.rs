@@ -1308,9 +1308,12 @@ pub const DESKTOP_LINE_HEIGHT: (f64, f64) = (1.0, 2.5);
 /// `[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the
 /// app reads them; they live here so they get a schema and provenance like
 /// every other setting.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DesktopConfig {
+    /// Show cox's menu-bar extra: what needs you, what runs, and today's
+    /// spend (T51.14).
+    pub menu_bar: bool,
     /// `[desktop.appearance]`
     pub appearance: DesktopAppearanceConfig,
     /// `[desktop.transcript]`
@@ -1319,6 +1322,18 @@ pub struct DesktopConfig {
     pub context: DesktopContextConfig,
     /// `[desktop.review]`
     pub review: DesktopReviewConfig,
+}
+
+impl Default for DesktopConfig {
+    fn default() -> Self {
+        Self {
+            menu_bar: true,
+            appearance: DesktopAppearanceConfig::default(),
+            transcript: DesktopTranscriptConfig::default(),
+            context: DesktopContextConfig::default(),
+            review: DesktopReviewConfig::default(),
+        }
+    }
 }
 
 /// The window's glass material (DS§3.5).

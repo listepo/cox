@@ -157,7 +157,7 @@ pub struct DaySummary {
     pub cost: String,
     /// The sessions written to since local midnight.
     pub sessions: u64,
-    /// `Today $3.18 · 4 sessions`.
+    /// The footer's figures after its "Today" label: `$3.18 · 4 sessions`.
     pub text: String,
 }
 
@@ -176,7 +176,7 @@ fn day_summary<Tz: TimeZone>(store: &Store, now: &DateTime<Tz>) -> Result<DaySum
     let cost = format!("${spent:.2}");
     let noun = if sessions == 1 { "session" } else { "sessions" };
     Ok(DaySummary {
-        text: format!("Today {cost} · {sessions} {noun}"),
+        text: format!("{cost} · {sessions} {noun}"),
         cost,
         sessions,
     })
@@ -372,11 +372,11 @@ mod tests {
         let (_home, store) = ledger(2, &[0.1]);
         let today = day_summary(&store, &chrono::Local::now()).expect("today");
         assert_eq!(today.sessions, 2);
-        assert_eq!(today.text, "Today $0.20 · 2 sessions");
+        assert_eq!(today.text, "$0.20 · 2 sessions");
         let later = day_summary(&store, &tomorrow()).expect("tomorrow");
         assert_eq!(
             (later.sessions, later.text.as_str()),
-            (0, "Today $0.00 · 0 sessions")
+            (0, "$0.00 · 0 sessions")
         );
     }
 

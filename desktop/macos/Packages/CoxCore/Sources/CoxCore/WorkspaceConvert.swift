@@ -34,6 +34,9 @@ extension LiveCoreClient: WorkspaceClient {
 
   public func changed() async throws { try await app.workspaceChanged() }
 
+  /// The menu bar's "Today" figures, `$4.02 · 7 sessions`, from the cost ledger (T51.12).
+  public func today() throws -> String { try app.today().text }
+
   public func rename(session: String, title: String) throws -> Bool {
     try app.rename(session: session, title: title)
   }

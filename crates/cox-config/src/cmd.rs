@@ -307,6 +307,16 @@ mod tests {
         assert!(set_then_load("desktop.review.send", "later").is_err());
     }
 
+    /// T51.14: the menu-bar extra is on unless the user turns it off.
+    #[test]
+    fn config_set_desktop_menu_bar_round_trips() {
+        assert!(cox_protocol::Config::default().desktop.menu_bar);
+        let loaded = set_then_load("desktop.menu_bar", "false").expect("load succeeds");
+        assert!(!loaded.config.desktop.menu_bar);
+        assert_eq!(loaded.source_of("desktop.menu_bar"), "user");
+        assert!(set_then_load("desktop.menu_bar", "sometimes").is_err());
+    }
+
     /// A113: `default.toml` names sessions; the user can turn it off.
     #[test]
     fn config_set_session_auto_title_round_trips() {

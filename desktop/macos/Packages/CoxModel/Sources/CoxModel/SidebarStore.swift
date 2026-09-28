@@ -129,6 +129,9 @@ public final class SidebarStore {
     return nil
   }
 
+  /// The inbox's items as the core sent them; the menu bar reads them (T51.14).
+  public var inboxItems: [InboxItem] { inbox?.items ?? [] }
+
   /// "Needs you" and "Running" while they hold a row, then every project that does; with a
   /// filter, a folded project opens to show what matched.
   public var sections: [SidebarSection] {

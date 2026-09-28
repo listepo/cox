@@ -318,6 +318,7 @@
       "description": "`[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)",
       "$ref": "#/$defs/DesktopConfig",
       "default": {
+        "menu_bar": true,
         "appearance": {
           "material": "frosted",
           "opacity": 0.42,
@@ -1851,6 +1852,11 @@
       "description": "`[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the\napp reads them; they live here so they get a schema and provenance like\nevery other setting.",
       "type": "object",
       "properties": {
+        "menu_bar": {
+          "description": "Show cox's menu-bar extra: what needs you, what runs, and today's\nspend (T51.14).",
+          "type": "boolean",
+          "default": true
+        },
         "appearance": {
           "description": "`[desktop.appearance]`",
           "$ref": "#/$defs/DesktopAppearanceConfig",

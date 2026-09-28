@@ -2,7 +2,7 @@
 // they share. Thin by design — every view and store lives in the local packages; this target
 // picks the core at launch, hosts the windows and joins stores to screens. The session window
 // hides its title bar (DS§4); a session pops out into its own window or a native tab (T51.11);
-// Settings opens from the app menu (⌘,).
+// Settings opens from the app menu (⌘,); the menu-bar extra shows what needs you (T51.14).
 
 import AppKit
 import CoxClient
@@ -16,12 +16,28 @@ import UserNotifications
 struct CoxApp: App {
   @State private var model = AppModel(launch: LaunchCore.pick())
 
+  /// The main window's scene id: the menu bar's New session and Open cox open one.
+  static let mainWindow = "main"
+
+  /// The setting decides; removing the extra from the menu bar lasts until relaunch, and
+  /// Settings is where it is turned off for good.
+  private var showsMenuBar: Binding<Bool> {
+    Binding(get: { model.settings?.showsMenuBar ?? true }, set: { _ in })
+  }
+
   var body: some Scene {
-    WindowGroup("Cox") {
+    WindowGroup("Cox", id: Self.mainWindow) {
       SessionWindow(model: model)
     }
     .windowStyle(.hiddenTitleBar)
     .commands { ShellCommands() }
+    // What needs you and what runs, from the menu bar, while `desktop.menu_bar` is on (T51.14).
+    MenuBarExtra(isInserted: showsMenuBar) {
+      MenuBarContent(model: model)
+    } label: {
+      Text(model.sidebar.inboxItems.isEmpty ? "cx" : "cx \(model.sidebar.inboxItems.count)")
+    }
+    .menuBarExtraStyle(.window)
     // One session popped out of a window, alone or as a native tab (T51.11).
     WindowGroup("Session", for: PopOut.self) { $popOut in
       if let popOut { SessionWindow(model: model, popOut: popOut) }
@@ -78,9 +94,9 @@ final class AppModel {
     sessions[session] = WeakSession(store: store)
   }
 
-  /// Allow, Deny or an answer from a notification, sent to the session it came from; a closed
-  /// session's action is dropped, as its card is gone too.
-  private func route(_ route: NotificationRoute) {
+  /// Allow, Deny or an answer from a notification or the menu bar, sent to the session it came
+  /// from; a closed session's action is dropped, as its card is gone too.
+  func route(_ route: NotificationRoute) {
     guard let store = sessions[route.session]?.store else { return }
     Task { _ = try? await store.send(route.intent) }
   }

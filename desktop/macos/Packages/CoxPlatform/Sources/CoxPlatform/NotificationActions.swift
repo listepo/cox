@@ -84,6 +84,14 @@ public enum NotificationActions {
     return NotificationRoute(session: session, intent: intent)
   }
 
+  /// Allow or Deny from the menu bar (T51.14): the same route a notification's Allow or Deny
+  /// takes, so both answer an approval one way.
+  public static func approval(session: String, call: String, allow: Bool) -> NotificationRoute? {
+    route(
+      action: allow ? Self.allow : Self.deny, userInfo: [sessionKey: session, callKey: call],
+      text: nil)
+  }
+
   static func title(_ kind: HostNote.Kind) -> String {
     switch kind {
     case .approval: "Approval needed"

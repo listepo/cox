@@ -244,6 +244,9 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[record]`
 
 - `redact` = `true`
+## `[desktop]`
+
+- `menu_bar` = `true` — show cox's menu-bar extra: what needs you, what runs, today's spend (T51.14)
 ## `[desktop.appearance]`
 
 - `material` = `"frosted"` — frosted | glossy | solid — solid is forced by Reduce Transparency
