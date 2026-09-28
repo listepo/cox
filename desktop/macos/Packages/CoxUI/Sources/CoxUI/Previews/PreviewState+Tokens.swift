@@ -43,12 +43,25 @@ extension PreviewState {
     return state
   }
 
-  /// After the turn, with the context window and its parts unknown (what the core sends today).
+  /// After the turn, with the context window and its parts unknown (before the core's first
+  /// `ContextBreakdown`).
   static var tokensIdle: TokenPopover.State {
     var state = tokensStreaming
     (state.heading, state.phase, state.isStreaming) = ("Last turn · 4 requests", "done", false)
     state.rateUnit = "tok/s last call"
     (state.context, state.contextShare, state.parts) = ("Context · 76.4k", "", [])
+    return state
+  }
+
+  /// After the turn, fed as the live session feeds it (T37.25.2): the share and the parts as
+  /// `cox_app::MeterText` formats them, each legend its label and tokens.
+  static var tokensLive: TokenPopover.State {
+    var state = tokensIdle
+    (state.context, state.contextShare) = ("Context · 76.4k", "38% of 200k")
+    let legends = ["System 6.2k", "Tools 9.8k", "Instructions 11.5k", "History 48.9k"]
+    state.parts = zip(bars[2].segments, legends).map {
+      TokenPopover.Part(kind: $0.kind, fraction: $0.fraction, legend: $1)
+    }
     return state
   }
 

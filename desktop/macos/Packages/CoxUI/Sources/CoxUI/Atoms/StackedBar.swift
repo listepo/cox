@@ -8,8 +8,8 @@ import SwiftUI
 /// Segments laid end to end from the leading edge over a `fill.secondary` capsule; what they
 /// leave uncovered is the free share.
 public struct StackedBar: View {
-  /// A part of the context window (DS§7).
-  public enum Kind: CaseIterable, Sendable {
+  /// A part of the context window (DS§7); the raw value is the core's `ContextPart.kind`.
+  public enum Kind: String, CaseIterable, Sendable {
     case system, tools, instructions, history
   }
 
