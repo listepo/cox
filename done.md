@@ -2998,3 +2998,27 @@ Deviations: the types live in `cox-protocol/src/config.rs` with every other sect
 Check: `cargo nextest run -p cox-protocol -p cox-config` 84/84, including the schema and `config.md` drift tests, `config_set_desktop_material_round_trips` and `config_rejects_out_of_range_desktop_appearance`; `-p cox --test docs` 1/1; `-p cox --bin cox -E 'test(config) | test(doctor)'` 33/33; clippy and fmt clean. Real binary (`COX_HOME` scratch): `config set desktop.appearance.material glossy` → `config get` prints `glossy`, `show --sources` marks it `# user`; opacity 1.5 → exit 1, `1.5 is out of range 0..=1`. Re-checked after merging with T37.6's schema change: 84/84. Commit 97e9f77.
 
 Not done: `cox config set` does not validate ranges before writing (no key does today); the error appears on the next load.
+
+#### T37.35 Write transactions are IMMEDIATE; cross-process change feed
+
+Depends: — · Size: ~150 · Files: `crates/cox-store/src/lib.rs`, `crates/cox-store/src/queries.rs`, `crates/cox-store/src/watch.rs`
+Goal: every write that reads first runs in Diesel's `SqliteConnection::immediate_transaction`, so a concurrent commit makes it wait for `busy_timeout` instead of failing with `SQLITE_BUSY_SNAPSHOT`; a `Store::changes()` feed polls `PRAGMA data_version` (raw SQL: Diesel cannot model a PRAGMA; kept in `cox-store` with that comment) and reports "sessions/ledger changed by another process", which `cox-app` turns into sidebar and cost refreshes (T37.10).
+Check: `concurrent_writers_never_fail_busy` — two processes each append 500 ledger rows and create sessions; all rows land, no busy error; `change_feed_sees_other_process_commit`.
+Status: done 2026-09-28
+Result: `cox-store` `write_tx` runs a body under Diesel's `SqliteConnection::immediate_transaction`; it wraps every read-then-write or multi-statement path (`memory_upsert`, `grant_put`, `kv_put` with its quota read, `finish_session_turn`'s ledger SUM + counter update, the open-time migration run). Single-statement writes stay in autocommit. `crates/cox-store/src/watch.rs` adds `Store::change_token()` and `Store::changes(&mut ChangeToken)`, polling `PRAGMA data_version` on the store's own connection — it moves only when another connection commits, so the store's own writes never report; pull-based, no thread.
+
+Deviations: `Store::open` sets `busy_timeout` before `journal_mode = WAL` and retries the WAL switch on "database is locked" for up to 5 s (two processes opening a fresh file at once skip the busy handler); `queries.rs` has no write path and is unchanged; cross-process tests re-execute the test binary (`current_exe()` + an ignored `writer_process` test) instead of a test-only bin.
+
+Check: `cargo nextest run -p cox-store` 21 passed, 1 skipped (child-only), 3 runs; `concurrent_writers_never_fail_busy` (2 processes × 500 rows + 5 sessions each, all land; fails with a deferred transaction); `change_feed_sees_other_process_commit`; clippy and fmt clean. Commit 640ef26.
+
+#### T37.36 An older binary refuses a newer `cox.db`
+
+Depends: — · Size: ~80 · Files: `crates/cox-store/src/lib.rs`, `crates/cox/src/doctor.rs`
+Goal: on open, if `__diesel_schema_migrations` holds a version this binary does not embed (`MigrationHarness::applied_migrations`), `Store::open` fails with `StoreError::SchemaNewer { db, binary }` and the CLI says which `cox` is newer and how to update; `cox doctor` reports the mismatch. Covers the app's bundled `cox` next to a Homebrew `cox` of another version.
+Check: `older_binary_refuses_newer_schema` (a test inserts a future migration version); doctor snapshot shows the mismatch line.
+Status: done 2026-09-28
+Result: `Store::open` runs `refuse_newer_schema` inside the same IMMEDIATE transaction before migrating: an applied version unknown to the embedded `MIGRATIONS` gives `StoreError::SchemaNewer { db, binary }`. The CLI message names both versions and says to update cox or run the newer one; `cox doctor` has its own `db` row for it whose fix keeps `cox.db` (the generic "remove cox.db" would throw away the newer cox's data).
+
+Deviations: the variant lives in `cox-protocol/src/errors.rs`, so `docs/protocol.jsonschema` was regenerated (two files beyond the card). `doctor_human_output` unchanged; new snapshot `doctor_reports_a_newer_schema`.
+
+Check: `older_binary_refuses_newer_schema`; nextest `-p cox-store -p cox-protocol` 91 passed (re-run after merge: 91 passed, 1 skipped); `-p cox` doctor tests 24; clippy and fmt clean. Real binary with a scratch `COX_HOME`: doctor ✓, then ✗ with the new line after a future migration row was inserted; `cox stats` printed the SchemaNewer error. Commit a6e839e.

@@ -53,6 +53,4 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.34. One process drives a session: session lock, read-only follow, fork
-- T37.35. Write transactions are IMMEDIATE; cross-process change feed
-- T37.36. An older binary refuses a newer `cox.db`
 - T37.37. Spike: the cross-block selection engine
