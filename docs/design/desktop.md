@@ -192,7 +192,7 @@ SessionController               one per open session
 | `ToolGroup` | consecutive read/grep/glob/outline calls | "Explored 7 files", children |
 | `Approval` | `ApprovalRequired` / `ApprovalDecided` | call, why text, grant preview, source (subagent), state |
 | `Question` | `QuestionAsked` (new) | question, options, state |
-| `Task` | `TaskCreated` / `TaskCompleted` / `TaskMessage` | label, tier, cost, status, child session id |
+| `Task` | `TaskCreated` / `TaskCompleted` / `TaskMessage` | label, tier, cost, status, kind (subagent or shell); the child session or archived output is read back by `open_task` (T37.29.6) |
 | `Compaction` | `Compacted` | before → after tokens, reason, summary |
 | `Checkpoint` | `Checkpoint` | turn, files |
 | `Notice`, `Error` | `Notice`, `Error` | level, text, retryable |

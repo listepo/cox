@@ -13,6 +13,7 @@ use cox_render::markdown;
 
 use crate::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState, tail};
 use crate::summary::{self, Explore, one_line};
+use crate::tasks::TaskKind;
 use crate::usage::add_to;
 
 /// The block list of one session and what folds events into it.
@@ -309,6 +310,7 @@ impl Timeline {
                     done: false,
                     cost_usd: 0.0,
                     exit_code: None,
+                    kind: TaskKind::of(label),
                 };
                 self.insert(key("task", task), kind)
             }
@@ -316,16 +318,19 @@ impl Timeline {
                 task,
                 cost_usd: c,
                 exit_code: e,
+                archive,
                 ..
             } => self.update(&key("task", task), |k| {
                 if let BlockKind::Task {
                     done,
                     cost_usd,
                     exit_code,
+                    kind,
                     ..
                 } = k
                 {
                     (*done, *cost_usd, *exit_code) = (true, *c, *e);
+                    *kind = kind.ended(*e, *archive);
                 }
             }),
             Event::Notice { level, text } => {

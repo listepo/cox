@@ -42,8 +42,19 @@ public protocol SessionClient: AnyObject, Sendable {
   func changes() async throws -> Changes
   /// What the inspector's Plan tab lists: the latest todo list (`LiveSession::plan`, T37.29.2).
   func plan() -> [TodoItem]
+  /// What a Tasks-tab click opens (`cox_app::live::LiveSession::open_task`, T37.29.6); `nil`
+  /// while there is nothing to open.
+  func openTask(_ task: String) throws -> TaskTarget?
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
+}
+
+/// What opening a task shows (`cox_app::TaskTarget`).
+public enum TaskTarget: Equatable, Sendable {
+  /// A subagent's own session, by id.
+  case transcript(session: String)
+  /// A finished shell's full output, by archive id.
+  case output(archive: String)
 }
 
 /// A recorded stream: what `record.rs` (cox-ffi) writes to
@@ -115,9 +126,9 @@ extension FixtureCoreClient: InboxClient {
 
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
-/// fixed list instead of the Rust completer, serves a fixed prompt history and lists fixed
-/// changes and a fixed plan. Waiting on the person, it plays the core: the turn resumes when the card is
-/// answered.
+/// fixed list instead of the Rust completer, serves a fixed prompt history, lists fixed
+/// changes and a fixed plan, and opens tasks from a fixed map. Waiting on the person, it plays
+/// the core: the turn resumes when the card is answered.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
   private let fixture: Fixture
@@ -128,6 +139,7 @@ public final class FixtureSession: SessionClient {
   private let prompts: [String]
   private let fixedChanges: Changes
   private let fixedPlan: [TodoItem]
+  private let tasks: [String: TaskTarget]
   private let inbox: FixtureInbox
   private let state = Mutex(State())
 
@@ -144,21 +156,23 @@ public final class FixtureSession: SessionClient {
   public convenience init(
     fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
     waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes(),
-    plan: [TodoItem] = []
+    plan: [TodoItem] = [], tasks: [String: TaskTarget] = [:]
   ) {
     self.init(
       fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou,
-      prompts: prompts, changes: changes, plan: plan, inbox: FixtureInbox())
+      prompts: prompts, changes: changes, plan: plan, tasks: tasks, inbox: FixtureInbox())
   }
 
   init(
     fixture: Fixture, completions: [Completion], host: (any PlatformHost)?, waitsForYou: Bool,
     prompts: [String] = [], changes: Changes = Changes(), plan: [TodoItem] = [],
+    tasks: [String: TaskTarget] = [:],
     inbox: FixtureInbox
   ) {
     (self.fixture, self.completions, self.host, self.waitsForYou) =
       (fixture, completions, host, waitsForYou)
-    (self.prompts, fixedChanges, fixedPlan, self.inbox) = (prompts, changes, plan, inbox)
+    (self.prompts, fixedChanges, fixedPlan, self.tasks, self.inbox) =
+      (prompts, changes, plan, tasks, inbox)
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -214,6 +228,8 @@ public final class FixtureSession: SessionClient {
   public func changes() async throws -> Changes { fixedChanges }
 
   public func plan() -> [TodoItem] { fixedPlan }
+
+  public func openTask(_ task: String) -> TaskTarget? { tasks[task] }
 
   public func close() {
     let resume = state.withLock { state in

@@ -57,6 +57,9 @@ final class LiveSession: SessionClient {
   }
 
   func plan() -> [CoxClient.TodoItem] { handle.plan().map { CoxClient.TodoItem($0) } }
+  func openTask(_ task: String) throws -> CoxClient.TaskTarget? {
+    try handle.openTask(task: task).map { CoxClient.TaskTarget($0) }
+  }
 
   func close() { handle.close() }
 }
