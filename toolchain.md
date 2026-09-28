@@ -147,3 +147,10 @@ Programs the project uses and the direct packages from its manifests.
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
 | style-dictionary | local | https://github.com/style-dictionary/style-dictionary | T37.17: generates CoxUI's `Tokens.swift` and `Colors.xcassets` and the mockups' `tokens.css` from the DTCG token files (DS§2) |
+
+## SwiftPM (`desktop/macos/Packages`)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| swift-collections | local (`CoxModel`) | https://github.com/apple/swift-collections | T37.16: `OrderedDictionary` keeps the timeline store in block order (research.md §9.5.6) |
+| SwiftLintPlugins | local (`CoxModel`, `CoxCore`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |

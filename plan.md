@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.16 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.19 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.20 | todo | P0 | 3 | 0% | |
 | T37.21 | todo | P0 | 4 | 0% | |
@@ -39,11 +38,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27 | todo | P0 | 3 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | todo | P1 | 3 | 0% | |
-| T37.30 | todo | P1 | 4 | 0% | |
+| T37.30 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.37 | todo | P0 | 3 | 0% | |
+| T37.37 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -101,7 +100,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-session` | session assembly as a library (T37.1; split out of `cox`): `open(SessionSpec)` → session, effective config and typed `Warning`s — provider, tools, MCP, skills, hooks, plugins, fork/handoff/resume lineage, external agents; login-shell environment (T37.11). No clap, no anyhow, no printing | async-trait, tokio-util, agent-client-protocol (moved from `cox` with the external-agent code), nix `signal` (T37.11: process-group kill of a slow login shell) |
 | `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui` |
 | `cox-ffi` | the macOS app's UniFFI surface (T37.14): one tokio runtime, `App` and `SessionHandle` objects, the foreign `AppHost` trait, `#[uniffi::remote]` mirrors of cox-app types, a fixture recorder. `staticlib` + `lib`; the only crate that depends on uniffi | uniffi 0.32.2 (proc-macros, no UDL; default features off) |
-| `desktop/` | the macOS app (P37, not a Cargo crate): Swift packages under `desktop/macos/Packages/`, the design tokens and their generator under `desktop/design/` | node 24.21.0 (mise) with npm `style-dictionary` 5.5.5 (T37.17: DTCG tokens → Swift, asset colours, CSS); SwiftLint 0.65.1 (mise, aqua; T37.18: DS§9 no-literal rules) and SwiftLintPlugins at the same version in each package; `swift-format` from the Xcode toolchain |
+| `desktop/` | the macOS app (P37, not a Cargo crate): Swift packages under `desktop/macos/Packages/`, the design tokens and their generator under `desktop/design/` | node 24.21.0 (mise) with npm `style-dictionary` 5.5.5 (T37.17: DTCG tokens → Swift, asset colours, CSS); SwiftLint 0.65.1 (mise, aqua; T37.18: DS§9 no-literal rules) and SwiftLintPlugins at the same version in each package; `swift-format` from the Xcode toolchain; swift-collections 1.7.1 (T37.16: `OrderedDictionary` timeline store) |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
@@ -1076,12 +1075,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.16 Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
-
-Depends: T37.15 · Size: ~200 · Files: `desktop/macos/Packages/CoxCore/…`, `desktop/macos/Packages/CoxModel/…`
-Goal: `CoxModel` turns patches into `@Observable` stores (timeline keyed by block id in swift-collections' `OrderedDictionary`, R§9.5.6; §1.1 row); a fixture client replays recorded streams so every view and test runs without Rust.
-Check: `swift test` in `CoxModel` applies each recorded fixture and matches its expected final state.
 
 #### T37.19 `CoxUI` Foundations
 
