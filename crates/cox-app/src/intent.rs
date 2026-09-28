@@ -64,6 +64,15 @@ pub enum Intent {
         path: String,
         to_turn: u32,
     },
+    /// Put hunk `hunk` of Review's diff of `path` back (T51.20, DT§5.4):
+    /// `to_turn` as for `RevertFile`, `now_digest` the `DiffModel`'s
+    /// digest, so the core refuses bytes Review did not show.
+    RevertHunk {
+        path: String,
+        to_turn: u32,
+        hunk: u32,
+        now_digest: String,
+    },
     Fork {
         turn: Option<u32>,
     },
@@ -156,6 +165,17 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
         }),
         Intent::Redo => now(Submission::Redo),
         Intent::RevertFile { path, to_turn } => now(Submission::RevertFile { path, to_turn }),
+        Intent::RevertHunk {
+            path,
+            to_turn,
+            hunk,
+            now_digest,
+        } => now(Submission::RevertHunk {
+            path,
+            to_turn,
+            hunk,
+            now_digest,
+        }),
         Intent::Fork { turn } => Ok(Dispatch::Fork { turn }),
         Intent::Handoff { objective } if objective.trim().is_empty() => Err(IntentError::Empty),
         Intent::Handoff { objective } => Ok(Dispatch::Handoff { objective }),
@@ -231,4 +251,31 @@ fn command(line: &str) -> Result<Dispatch, IntentError> {
         },
         spawn: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revert_hunk_intent_maps_to_the_submission() {
+        let intent = Intent::RevertHunk {
+            path: "src/a.rs".into(),
+            to_turn: 2,
+            hunk: 1,
+            now_digest: "00ff".into(),
+        };
+        assert_eq!(
+            dispatch(intent),
+            Ok(Dispatch::Submit {
+                submission: Submission::RevertHunk {
+                    path: "src/a.rs".into(),
+                    to_turn: 2,
+                    hunk: 1,
+                    now_digest: "00ff".into(),
+                },
+                spawn: false,
+            })
+        );
+    }
 }

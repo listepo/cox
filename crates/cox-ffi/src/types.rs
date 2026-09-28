@@ -467,6 +467,12 @@ pub enum Intent {
         path: String,
         to_turn: u32,
     },
+    RevertHunk {
+        path: String,
+        to_turn: u32,
+        hunk: u32,
+        now_digest: String,
+    },
     Fork {
         turn: Option<u32>,
     },
@@ -780,12 +786,14 @@ pub struct Attachment {
 pub struct DiffModel {
     pub path: PathBuf,
     pub hunks: Vec<DiffHunk>,
+    pub digest: Option<String>,
 }
 
 #[uniffi::remote(Record)]
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
+    pub index: u32,
 }
 
 #[uniffi::remote(Record)]

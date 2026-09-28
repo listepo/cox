@@ -86,6 +86,8 @@ impl LiveSession {
         let keys: cox_session::Keys = Arc::new(move |section: &str| keys.secret(section));
         let opened = cox_session::open_with_keys(spec, Some(keys)).await?;
         let session = opened.session;
+        // Review's hunk revert (T51.19): cox-render's diff, which the core cannot reach.
+        session.set_hunk_reverter(crate::review::RenderHunks::shared());
         let events = session.events().ok_or(AppError::EventsTaken)?;
         let events = tee(Arc::clone(&app), session.id(), events);
         let claude_home = cox_config::load::home_dir().join(".claude");

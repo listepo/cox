@@ -23,6 +23,11 @@ use crate::markdown::{highlight_runs, theme_variants};
 pub struct DiffModel {
     pub path: PathBuf,
     pub hunks: Vec<DiffHunk>,
+    /// `content_digest` of the new side's bytes when Review built the
+    /// model from the file on disk (T51.20), so a hunk revert names the
+    /// bytes it was shown; `None` for a tool's diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
 }
 
 /// An `@@` header and the lines under it.
@@ -31,6 +36,10 @@ pub struct DiffHunk {
     /// `@@ -41,12 +41,26 @@ impl Backoff`; empty for lines before any header.
     pub header: String,
     pub lines: Vec<DiffLine>,
+    /// The hunk's place in its model, from 0: for Review's model, the
+    /// index [`revert_hunk`] puts back (T51.20).
+    #[serde(default)]
+    pub index: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -377,6 +386,7 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
             Row::Meta(l) if l.starts_with("@@") => hunks.push(DiffHunk {
                 header: l.to_owned(),
                 lines: Vec::new(),
+                index: next_index(&hunks),
             }),
             Row::Meta(_) => {}
             Row::Body {
@@ -390,6 +400,7 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
                     hunks.push(DiffHunk {
                         header: String::new(),
                         lines: Vec::new(),
+                        index: 0,
                     });
                 }
                 let kind = match marker {
@@ -424,7 +435,13 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
     DiffModel {
         path: diff.path.clone(),
         hunks,
+        digest: None,
     }
+}
+
+/// The index the next hunk pushed onto `hunks` takes.
+fn next_index(hunks: &[DiffHunk]) -> u32 {
+    u32::try_from(hunks.len()).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
