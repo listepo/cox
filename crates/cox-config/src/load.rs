@@ -128,6 +128,7 @@ impl GuardViolation {
             "plugins.enabled" => "A project may not turn plugins back on",
             "tiers.think.confirm" => "A project may not skip the think tier's confirmation",
             "mcp.servers.*.sandbox" => "A project may not run an MCP server unsandboxed",
+            "lsp.servers" => "A project may not choose which language servers run",
             _ => GUARD_REASON,
         }
     }
