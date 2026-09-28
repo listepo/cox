@@ -108,6 +108,31 @@ pub struct GuardViolation {
     pub reverted_to: String,
 }
 
+/// What a guard reason says for a key the list does not name; the test
+/// below keeps every guarded key off it.
+const GUARD_REASON: &str = "A project may not weaken this setting";
+
+impl GuardViolation {
+    /// Why the project may not set this key, one line for the desktop
+    /// Settings screen (T37.30.4), next to the guard that enforces it.
+    pub fn reason(&self) -> &'static str {
+        match self.key {
+            "budget.session_usd" | "budget.monthly_usd" | "budget.warn_at" => {
+                "A project may not raise a budget above your own"
+            }
+            "core.max_concurrent_subagents" => {
+                "A project may not run more subagents at once than you allow"
+            }
+            "permissions.mode" => "A project may not turn on bypass mode",
+            "sandbox.mode" => "A project may not turn the sandbox off",
+            "plugins.enabled" => "A project may not turn plugins back on",
+            "tiers.think.confirm" => "A project may not skip the think tier's confirmation",
+            "mcp.servers.*.sandbox" => "A project may not run an MCP server unsandboxed",
+            _ => GUARD_REASON,
+        }
+    }
+}
+
 /// Reverts any guarded key `full` set relative to `without_project` back to
 /// `without_project`'s value, returning what it reverted (plan.md §1.6:
 /// "budget.* may not be raised above user/default, permissions.mode =
@@ -850,5 +875,17 @@ mod tests {
                 assert_eq!(loaded.source_of("tiers.code.model"), "env");
             },
         );
+    }
+
+    #[test]
+    fn every_guarded_key_has_its_own_reason() {
+        for key in GUARDED_KEYS {
+            let v = GuardViolation {
+                key,
+                project_value: String::new(),
+                reverted_to: String::new(),
+            };
+            assert_ne!(v.reason(), GUARD_REASON, "{key}");
+        }
     }
 }

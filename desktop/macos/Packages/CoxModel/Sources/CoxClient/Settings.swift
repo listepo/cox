@@ -55,9 +55,19 @@ public struct SettingsView: Equatable, Sendable {
   public var userFile: String
   /// The project's `.cox/config.toml`, when there is one.
   public var projectFile: String?
+  /// The MCP servers in effect and their logins, sorted by name.
+  public var mcp: [McpServer]
+  /// Project values the guard list threw out.
+  public var dropped: [Dropped]
 
-  public init(settings: [Setting], userFile: String, projectFile: String? = nil) {
-    (self.settings, self.userFile, self.projectFile) = (settings, userFile, projectFile)
+  public init(
+    settings: [Setting], userFile: String, projectFile: String? = nil, mcp: [McpServer] = [],
+    dropped: [Dropped] = []
+  ) {
+    (self.settings, self.userFile, self.projectFile, self.mcp) = (
+      settings, userFile, projectFile, mcp
+    )
+    self.dropped = dropped
   }
 }
 
@@ -67,16 +77,28 @@ public protocol SettingsClient: Sendable {
   /// Writes `json` for `key` to the user file; the view after the edit.
   /// Rust refuses a read-only key and a value the config loader rejects.
   func setSetting(cwd: String, key: String, json: String) async throws -> SettingsView
+  /// Logs in to (`login`) or out of the MCP server `server`; a login's page goes to the host's
+  /// `open` and the call returns once the browser comes back.
+  func mcpLogin(cwd: String, server: String, login: Bool) async throws
 }
 
 /// A fixed view that takes edits the way Rust does for an editable key:
 /// the value changes and its layer becomes `user`. Keeps what it was sent.
+/// A login opens `loginPage` through `host`, then its callback is scripted: the
+/// server is logged in with an hour left.
 public final class FixtureSettingsClient: SettingsClient {
   public struct ReadOnly: Error, Equatable { public let key: String }
+  public struct NoLogin: Error, Equatable { public let server: String }
+
+  public static let loginPage = "https://auth.example.test/authorize?client_id=cox"
 
   private let state: Mutex<(view: SettingsView, sent: [String])>
+  private let host: (any PlatformHost)?
 
-  public init(view: SettingsView) { state = Mutex((view, [])) }
+  public init(view: SettingsView, host: (any PlatformHost)? = nil) {
+    state = Mutex((view, []))
+    self.host = host
+  }
 
   /// `key=json`, in order.
   public var sent: [String] { state.withLock { $0.sent } }
@@ -94,6 +116,18 @@ public final class FixtureSettingsClient: SettingsClient {
       state.view.settings[index].value = json
       state.view.settings[index].layer = .user
       return state.view
+    }
+  }
+
+  public func mcpLogin(cwd: String, server: String, login: Bool) async throws {
+    let index = state.withLock { state in
+      state.view.mcp.firstIndex { $0.name == server && $0.login != .stdio }
+    }
+    guard let index else { throw NoLogin(server: server) }
+    if login { host?.open(Self.loginPage) }
+    state.withLock { state in
+      state.sent.append("\(login ? "login" : "logout")=\(server)")
+      state.view.mcp[index].login = login ? .loggedIn(expires: "1h") : .loggedOut
     }
   }
 }

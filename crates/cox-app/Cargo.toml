@@ -33,6 +33,11 @@ thiserror = { workspace = true }
 cox-session = { path = "../cox-session", version = "0.1.2" }
 cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-tools = { path = "../cox-tools", version = "0.1.2" }
+# T37.30.3: Settings shows each MCP server's login and runs Log in / Log
+# out through cox-mcp's OAuth; rmcp names its credential store and error.
+# Both were already in the app's tree through cox-session.
+cox-mcp = { path = "../cox-mcp", version = "0.1.2" }
+rmcp = { workspace = true }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and

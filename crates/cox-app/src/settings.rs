@@ -9,9 +9,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cox_config::ConfigError;
+use cox_config::load::LoadedConfig;
 use cox_protocol::errors::CoreError;
 use serde::Serialize;
 use serde_json::Value;
+
+use crate::mcp_login::McpServer;
 
 /// The layer a value came from, the badge beside each field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -94,6 +97,23 @@ pub struct SettingsView {
     pub user_file: PathBuf,
     /// The project's `.cox/config.toml`, when there is one.
     pub project_file: Option<PathBuf>,
+    /// The MCP servers in effect for `cwd` and their logins (T37.30.3).
+    pub mcp: Vec<McpServer>,
+    /// Project values the guard list threw out (T37.30.4).
+    pub dropped: Vec<Dropped>,
+}
+
+/// A value the project's `.cox/config.toml` set and the guard list threw
+/// out (`plan.md` §1.6), so the person sees why their setting still holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Dropped {
+    /// Dotted; `mcp.servers.*.sandbox` names the servers in `value`.
+    pub key: String,
+    /// What the project set.
+    pub value: String,
+    /// What is in effect instead.
+    pub kept: String,
+    pub reason: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -114,11 +134,24 @@ pub enum SettingsError {
 
 /// The effective config for a session in `cwd`, loaded as `live.rs` loads
 /// it: no flags, no Claude-settings layer (only `crates/cox` reads that).
-pub fn view(user_file: &Path, cwd: &Path) -> Result<SettingsView, SettingsError> {
+pub fn load(user_file: &Path, cwd: &Path) -> Result<LoadedConfig, SettingsError> {
     let flags = Value::Object(serde_json::Map::new());
-    let loaded = cox_config::load::load_in(user_file, cwd, &flags, |_| None)?;
+    Ok(cox_config::load::load_in(user_file, cwd, &flags, |_| None)?)
+}
+
+pub fn view(user_file: &Path, cwd: &Path) -> Result<SettingsView, SettingsError> {
+    view_of(&load(user_file, cwd)?, user_file, cwd)
+}
+
+/// The view of an already loaded config. `mcp` is left empty: reading a
+/// server's token may wait on the keychain, so `App::settings` adds them.
+pub fn view_of(
+    loaded: &LoadedConfig,
+    user_file: &Path,
+    cwd: &Path,
+) -> Result<SettingsView, SettingsError> {
     let schema = cox_config::schema()?;
-    let settings = cox_config::cmd::leaves(&loaded)?
+    let settings = cox_config::cmd::leaves(loaded)?
         .into_iter()
         .map(|(key, value)| {
             let layer = Layer::from_source(loaded.source_of(&key));
@@ -137,6 +170,17 @@ pub fn view(user_file: &Path, cwd: &Path) -> Result<SettingsView, SettingsError>
         settings,
         user_file: user_file.to_path_buf(),
         project_file: cox_config::load::project_config_path(cwd).filter(|p| p.exists()),
+        mcp: Vec::new(),
+        dropped: loaded
+            .violations
+            .iter()
+            .map(|v| Dropped {
+                key: v.key.to_string(),
+                value: v.project_value.clone(),
+                kept: v.reverted_to.clone(),
+                reason: v.reason().to_string(),
+            })
+            .collect(),
     })
 }
 
@@ -301,6 +345,13 @@ mod tests {
                 "core.workspace_roots",
             ]
         ));
+    }
+
+    #[test]
+    fn a_project_value_the_guard_drops_is_listed_with_its_reason() {
+        let (_dir, user, project) = scratch();
+        let view = view(&user, &project).expect("view");
+        insta::assert_json_snapshot!(view.dropped);
     }
 
     #[test]

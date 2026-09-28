@@ -4,8 +4,8 @@
 //! fails this build instead of drifting. Separate from the exported objects
 //! because these are data only. Ids and paths cross as strings; the one
 //! type UniFFI cannot carry as-is (a span's `[u8; 3]` colour) crosses as
-//! the local `Span`, and the two records only this surface has (`Project`,
-//! `OpenRequest`) are declared here too.
+//! the local `Span`, and the one record only this surface has
+//! (`OpenRequest`) is declared here too.
 
 use std::path::PathBuf;
 
@@ -14,8 +14,9 @@ use cox_app::SessionInfo;
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, Completion, Icon, InboxItem, Intent, Layer, Need, SearchHit, SessionEntry, Setting,
-    SettingKind, SettingsView, Tally, TurnUsage, UsageView,
+    Activity, Completion, Dropped, Icon, InboxItem, Intent, Layer, McpLogin, McpServer, Need,
+    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TurnUsage,
+    UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -85,8 +86,7 @@ uniffi::custom_type!(StyledSpan, Span, {
     }),
 });
 
-/// One sidebar project (`cox_app::ProjectRow`, its count as `u64`).
-#[derive(uniffi::Record)]
+#[uniffi::remote(Record)]
 pub struct Project {
     pub root: PathBuf,
     pub name: String,
@@ -466,6 +466,32 @@ pub struct SettingsView {
     pub settings: Vec<Setting>,
     pub user_file: PathBuf,
     pub project_file: Option<PathBuf>,
+    pub mcp: Vec<McpServer>,
+    pub dropped: Vec<Dropped>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Dropped {
+    pub key: String,
+    pub value: String,
+    pub kept: String,
+    pub reason: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct McpServer {
+    pub name: String,
+    pub source: String,
+    pub login: McpLogin,
+}
+
+#[uniffi::remote(Enum)]
+pub enum McpLogin {
+    Stdio,
+    LoggedOut,
+    LoggedIn { expires: Option<String> },
+    Expired,
+    Unreadable { error: String },
 }
 
 #[uniffi::remote(Record)]

@@ -90,6 +90,14 @@ public final class SettingsStore {
     await attempt { try await $0.client.setSetting(cwd: $0.cwd, key: key, json: try value.json()) }
   }
 
+  /// Logs in to (`login`) or out of an MCP server, then reads its status back.
+  public func setLogin(_ server: String, _ login: Bool) async {
+    await attempt {
+      try await $0.client.mcpLogin(cwd: $0.cwd, server: server, login: login)
+      return try await $0.client.settings(cwd: $0.cwd)
+    }
+  }
+
   /// Non-empty groups in DT§5.7's order, keys sorted within each.
   public var sections: [SettingsSection] {
     let rows = Dictionary(grouping: view?.settings ?? []) { SettingsGroup(key: $0.key) }
