@@ -33,12 +33,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.23.13 | todo | P3 | 2 | 0% | |
 | T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | todo | P2 | 3 | 0% | |
-| T37.24.8 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.27.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27.8 | todo | P3 | 1 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
-| T37.29.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.7 | todo | P3 | 2 | 0% | |
 | T37.29.8 | todo | P3 | 1 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
@@ -2790,18 +2787,6 @@ Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Composer.
 Goal: the mode chip (⇧⇥ cycles), model · effort, and the think toggle under the composer (mockup), driven by a Swift mirror of `TimelinePatch::Status`.
 Check: snapshots in the four cells; ⇧⇥ sends `setMode`.
 
-#### T37.24.8 Queue from Rust
-
-Depends: — · Size: ~100 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
-Goal: `Intent::Queue` carries attachments and the status patch reports the queue length, so `ComposerStore` stops deriving it from block turn numbers and a draft with attachments can be queued.
-Check: cox-app tests for both; the Swift count comes from the patch.
-
-#### T37.27.6 Approval Edit… and the grant preview
-
-Depends: — · Size: ~150 · Files: `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxUI/…/ApprovalCard.swift`, `desktop/macos/Packages/CoxTranscript/…/DecisionCard.swift`
-Goal: the approval block carries the call input and what "Allow for session" would grant (`grants_for`); the card shows the grant and Edit… edits the input into `Decision.edit`.
-Check: a cox-app test that the block carries both; a UI test that an edit sends the edited JSON; a snapshot showing the grant.
-
 #### T37.27.8 One app-local key monitor for the composer and the decision bar
 
 Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/Composer.swift`, `desktop/macos/Packages/CoxUI/…/Organisms/DecisionBar.swift`
@@ -2819,12 +2804,6 @@ Check: fixture rewind restores the expected files in a scratch worktree.
 Depends: — · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
-
-#### T37.29.5 Inspector Info tab
-
-Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/InfoTab.swift`, `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`
-Goal: session id, cwd, worktree, config provenance and rollout path as a KeyValueGrid, from a new `SessionHandle::info()` forward.
-Check: a snapshot per cell; a cox-app test for `info()`.
 
 #### T37.29.7 Deleted files and created-file counts in the Changes tab
 

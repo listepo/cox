@@ -4919,3 +4919,63 @@ Check:
 - CoxModel 40 (`openingATaskResolvesToTheChildSessionOrTheShellOutput`), CoxCore 10 (debug XCFramework), CoxTranscriptText 31, CoxTranscript all but the load-bound benchmark.
 - After merging into `p37-desktop` with T37.29.2: cox-app, cox-ffi and cox-store 95/95; CoxModel 41/41, CoxTranscriptText 31/31, CoxTranscript 33/33, CoxUI TasksTab and PlanTab 7/7.
 Not done: a kind label or glyph in CoxUI's `TasksTab.Item` (T37.29.8); opening the transcript or output in the app (T37.22.3).
+
+#### T37.24.8 Queue from Rust
+
+Depends: — · Size: ~100 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
+Goal: `Intent::Queue` carries attachments and the status patch reports the queue length, so `ComposerStore` stops deriving it from block turn numbers and a draft with attachments can be queued.
+Check: cox-app tests for both; the Swift count comes from the patch.
+Status: done 2026-09-28
+Result:
+- cox-app `Intent::Queue { text, attachments }` (`intent.rs`); `Send` and `Queue` share the rule that a turn needs text or an attachment.
+- New `TimelinePatch::Status { status: Status { queued } }` (`patch.rs`): `LiveSession` counts a queued turn when it is sent and uncounts it when it starts (`Controller::enqueue`/`dequeue`); only the latest status stays queued, and a `Reset` or `snapshot()` keeps the status and the meter.
+- cox-ffi declares `Status` and the queue attachments in `types.rs`.
+- Swift: CoxClient `Status`, the `.status` patch and `.queue(text:attachments:)`; `SessionStore.status`; `ComposerStore.queued` reads `session.status.queued` (the turn-number arithmetic and the "attachments cannot wait" refusal are gone; queuing clears the attachments); CoxCore `Convert.swift`; `TranscriptPatches` ignores `.status`. DT§4.3 patch and intent lines and the DT§4.6 CoxModel row updated.
+Deviations:
+- The DT§4.3 `Status` patch lands here with `queued` only; T37.24.7 adds mode, model and effort.
+- 20 files, +284/−89 with tests: every layer the patch and intent cross.
+Check:
+- `cargo nextest run -p cox-app -p cox-ffi`: 66/66, including `a_queued_turn_carries_its_attachments_and_counts_until_it_starts`, `the_status_patch_counts_turns_queued_and_not_yet_started`, `only_the_latest_status_stays_queued_and_a_reset_keeps_it` and `forward_only`; clippy and fmt clean.
+- CoxModel 39, CoxCore 11, CoxTranscriptText 31, CoxTranscript 29 (ComposerFlowTests 5/5; the streaming benchmark missed its busy budget under load).
+- After merging into `p37-desktop` with T37.24.9, T37.27.6, T37.29.2, T37.29.5 and T37.29.6: cox-app, cox-ffi and cox-store 101/101; CoxCore 12/12 against a dev-profile XCFramework; CoxModel 44/44; CoxTranscript 35/35; CoxUI Approval, Composer and DecisionBar 10/10.
+Not done: app wiring (T37.22.3).
+
+#### T37.27.6 Approval Edit… and the grant preview
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxUI/…/ApprovalCard.swift`, `desktop/macos/Packages/CoxTranscript/…/DecisionCard.swift`
+Goal: the approval block carries the call input and what "Allow for session" would grant (`grants_for`); the card shows the grant and Edit… edits the input into `Decision.edit`.
+Check: a cox-app test that the block carries both; a UI test that an edit sends the edited JSON; a snapshot showing the grant.
+Status: done 2026-09-28
+Result:
+- The approval block carries the call's `input` (JSON) and `grants`, the subjects "Allow for session" would record, from `grants_for` through `cox_core::permission` (`crates/cox-app/src/patch.rs`, `timeline.rs`; `#[uniffi::remote]` in `cox-ffi/src/types.rs`). The permission decision stays in the engine: Swift shows the grant and sends `Decision.edit`.
+- CoxUI `ApprovalCard`: `Content` gains `grant` and `input`; new `init(_:act:edit:)` beside the unchanged `init(_:act:)`. A line "Allow for session grants: bash: a · b"; Edit… swaps the command well for a JSON field with Run edited (enabled while the draft parses) and Cancel.
+- CoxTranscript `DecisionCard` fills the grant and a pretty-printed input; an edit becomes `.approve(call:, decision: .edit(input:))`. CoxClient `BlockKind.approval` and its decoding, CoxCore `Convert.swift`, every Swift `.approval` pattern and the DESIGN.md ApprovalCard row follow.
+Deviations:
+- About 20 files: two new associated values reach every `.approval` pattern, both mirrors, the fixtures and snapshots.
+- All three fixtures re-recorded.
+- The UI test clicks through AppKit's private `_FocusRingView` (no accessibility tree off-screen); only the test depends on it.
+- At the merge, T37.27.5's bar mapping and `PinnedDecisionTests` follow the 9-value case, and the test reads the waiting call from the recording instead of a fixed id.
+Check:
+- `cargo nextest run -p cox-app -p cox-ffi`: 64/64, including `an_approval_carries_the_input_and_what_allow_for_session_grants`; three scenario snapshots differ only by `input` and `grants`. clippy and fmt clean.
+- CoxUI 141 (new grant snapshots; ApprovalCard click-and-type UI tests), CoxModel 39, CoxTranscriptText 31, CoxPlatform 13, CoxTranscript 29 (DecisionCard snapshot re-recorded), CoxCore 10.
+- After merging into `p37-desktop`: cox-app and cox-ffi 72/72; CoxModel 41/41, CoxPlatform 13/13, CoxTranscriptText 31/31, CoxTranscript 35/35, CoxUI Approval/Composer/DecisionBar 10/10; CoxCore 12/12 after T37.29.5.
+Not done: app wiring (T37.22.3).
+
+#### T37.29.5 Inspector Info tab
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/InfoTab.swift`, `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`
+Goal: session id, cwd, worktree, config provenance and rollout path as a KeyValueGrid, from a new `SessionHandle::info()` forward.
+Check: a snapshot per cell; a cox-app test for `info()`.
+Status: done 2026-09-28
+Result:
+- cox-app `info.rs` (`Info`, `ConfigSource`, `build`) and `LiveSession::info()`: session id, cwd, rollout path (new `cox_store::Store::rollout_path`, which the store's two readers now use too), the linked worktree through `cox_tools::git::linked`, and the config layers that set at least one key, in load order, with key count and file, from `settings::view` over cox-config's `source_of`.
+- cox-ffi `SessionHandle::info`, a one-expression async forward; `Info`, `ConfigSource` as `#[uniffi::remote(Record)]`.
+- Swift: CoxClient `Info.swift` and `SessionClient.info()` (`FixtureSession(info:)`); CoxCore `InfoConvert.swift` (the `Linked` conversion is one shared `CoxClient.Linked.init` in `ChangesConvert.swift`); CoxModel `InfoTabState` (paths shortened to `~`), `SessionStore.infoTab()`; CoxUI `Organisms/InfoTab.swift`: "Session" and "Config" `InspectorSection`s, each a KeyValueGrid, previews in `PreviewState+Info.swift`. DS§6.4 `InfoTab` row.
+Deviations:
+- More than 3 files: the same record → convert → client → state → view chain as T37.29.1.
+- Long values (ULID, rollout path) wrap: KeyValueGrid has no truncation mode.
+Check:
+- `cargo nextest run -p cox-app -p cox-ffi -p cox-store`: 91, including `info_counts_each_layer_that_set_a_key_with_its_file` and the live `info_names_the_session_its_cwd_rollout_and_the_user_config_it_read`; clippy and fmt clean.
+- CoxUI 140 (Info snapshots), CoxModel 42 (3 new), CoxCore 10.
+- After merging into `p37-desktop` with T37.29.2 and T37.29.6: cox-app, cox-ffi and cox-store 101/101; CoxCore 12/12; CoxModel 44/44; CoxUI InfoTab 2/2; CoxTranscript builds with its tests.
+Not done: app wiring (T37.22.3).
