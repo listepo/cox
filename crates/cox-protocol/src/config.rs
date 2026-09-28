@@ -936,7 +936,48 @@ pub struct TuiConfig {
     /// field (`osc8 = false`) for a terminal `Caps::detect`/`query` guesses
     /// wrong about. An unrecognised name is ignored, not rejected.
     pub caps: HashMap<String, bool>,
+    /// `[tui.status_line]` (T46.1): a user command whose first output line
+    /// is one row above the built-in status line.
+    pub status_line: StatusLineConfig,
 }
+
+/// `[tui.status_line]` (P46, A77): the user's status command. It runs under
+/// the sandbox, read-only and without network, and its output passes
+/// `cox_sanitize::sanitize`. A project config cannot set `command` (the
+/// guard in `cox-config`'s `load.rs`): a cloned repository must not choose
+/// a program cox runs on every TUI start.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct StatusLineConfig {
+    /// A `/bin/sh -c` command fed the status JSON on stdin; empty is off.
+    pub command: String,
+    /// Re-run the command every this many seconds even when nothing
+    /// changed; 0 is off.
+    #[serde(deserialize_with = "refresh_s")]
+    #[schemars(range(min = 0, max = STATUS_LINE_MAX_REFRESH_S))]
+    pub refresh_s: u32,
+    /// How long one run may take, in milliseconds, before it is killed and
+    /// the row goes blank.
+    #[serde(deserialize_with = "timeout_ms")]
+    #[schemars(range(min = STATUS_LINE_TIMEOUT_MS.0, max = STATUS_LINE_TIMEOUT_MS.1))]
+    pub timeout_ms: u32,
+}
+
+impl Default for StatusLineConfig {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            refresh_s: 0,
+            timeout_ms: 2_000,
+        }
+    }
+}
+
+/// The longest `tui.status_line.refresh_s`: one hour.
+pub const STATUS_LINE_MAX_REFRESH_S: u32 = 3_600;
+
+/// The bounds of `tui.status_line.timeout_ms`.
+pub const STATUS_LINE_TIMEOUT_MS: (u32, u32) = (100, 10_000);
 
 impl Default for TuiConfig {
     fn default() -> Self {
@@ -956,6 +997,7 @@ impl Default for TuiConfig {
             notify: "auto".to_string(),
             motion: "full".to_string(),
             caps: HashMap::new(),
+            status_line: StatusLineConfig::default(),
         }
     }
 }
@@ -1485,6 +1527,32 @@ fn text_size_pt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error>
 /// A transcript line height in `DESKTOP_LINE_HEIGHT`.
 fn line_height<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
     in_range(d, DESKTOP_LINE_HEIGHT.0, DESKTOP_LINE_HEIGHT.1)
+}
+
+/// A `tui.status_line.refresh_s` in `0..=STATUS_LINE_MAX_REFRESH_S`.
+fn refresh_s<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    u32_in_range(d, 0, STATUS_LINE_MAX_REFRESH_S)
+}
+
+/// A `tui.status_line.timeout_ms` in `STATUS_LINE_TIMEOUT_MS`.
+fn timeout_ms<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    u32_in_range(d, STATUS_LINE_TIMEOUT_MS.0, STATUS_LINE_TIMEOUT_MS.1)
+}
+
+/// [`in_range`] for a whole number, with the same error text.
+fn u32_in_range<'de, D: serde::Deserializer<'de>>(
+    d: D,
+    min: u32,
+    max: u32,
+) -> Result<u32, D::Error> {
+    let value = u32::deserialize(d)?;
+    if (min..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "{value} is out of range {min}..={max}"
+        )))
+    }
 }
 
 /// Serde, not the loader, rejects an out-of-range number, so the error

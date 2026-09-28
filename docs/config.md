@@ -190,6 +190,11 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `notify` = `"auto"` — auto | always | off — OSC 9 (OSC 777 on VTE) plus BEL when a turn ends, an approval waits or ask_user asks; auto only while the terminal is unfocused (focus reporting), always regardless, off never (T23.5)
 - `motion` = `"full"` — full | reduced — reduced draws a running tool's spinner as one still glyph and replaces its ticking elapsed time with `running` (T24.7)
 - `caps` = `{}` — [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
+## `[tui.status_line]`
+
+- `command` = `""` — a /bin/sh -c command fed the status JSON (Claude Code's statusLine field names) on stdin; its first output line is one row above the status line, re-run 300 ms after the status changes; runs sandboxed read-only without network, output passes sanitize (colours and links stripped); "" is off; a project config cannot set it (T46.1)
+- `refresh_s` = `0` — also re-run every this many seconds (0 = off, at most 3600)
+- `timeout_ms` = `2000` — a run that takes longer is killed and the row goes blank (100 to 10000)
 ## `[hooks]`
 
 - `timeout_s` = `60` — seconds per [[hooks.<Event>]] process (a hook's own timeout_s overrides); stdin carries the Claude Code JSON payload, exit 2 blocks, stdout may carry updatedInput or additionalContext

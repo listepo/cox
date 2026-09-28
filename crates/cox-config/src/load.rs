@@ -132,6 +132,7 @@ impl GuardViolation {
             "tiers.think.confirm" => "A project may not skip the think tier's confirmation",
             "mcp.servers.*.sandbox" => "A project may not run an MCP server unsandboxed",
             "lsp.servers" => "A project may not choose which language servers run",
+            "tui.status_line.command" => "A project may not choose a status-line command",
             _ => GUARD_REASON,
         }
     }
@@ -311,6 +312,18 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         full.lsp.servers = without_project.lsp.servers.clone();
     }
 
+    // T46.1 (A77): the status-line command runs on every TUI start, before
+    // any prompt, so a cloned repository must not choose it; Claude Code
+    // gates the same key behind workspace trust.
+    if full.tui.status_line.command != without_project.tui.status_line.command {
+        violations.push(GuardViolation {
+            key: "tui.status_line.command",
+            project_value: full.tui.status_line.command.clone(),
+            reverted_to: without_project.tui.status_line.command.clone(),
+        });
+        full.tui.status_line.command = without_project.tui.status_line.command.clone();
+    }
+
     violations
 }
 
@@ -341,7 +354,7 @@ fn rule_list(rules: &[String]) -> String {
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 11] = [
+const GUARDED_KEYS: [&str; 12] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
@@ -353,6 +366,7 @@ const GUARDED_KEYS: [&str; 11] = [
     "plugins.enabled",
     "sandbox.mode",
     "tiers.think.confirm",
+    "tui.status_line.command",
 ];
 
 /// The result of [`load`]: the effective, guard-corrected `Config`, plus
@@ -1023,6 +1037,69 @@ mod tests {
                 assert!(loaded.violations.is_empty(), "{:?}", loaded.violations);
             },
         );
+    }
+
+    /// T46.1 (A77): a repository must not choose a program cox runs on
+    /// every TUI start; the user's own command survives, and the key's
+    /// provenance is the layer the reverted value came from.
+    #[test]
+    fn project_layer_cannot_set_status_line_command() {
+        load_with_project(
+            Some("[tui.status_line]\ncommand = \"echo mine\"\n"),
+            "[tui.status_line]\ncommand = \"./evil\"\nrefresh_s = 5\n",
+            |loaded| {
+                let status_line = &loaded.config.tui.status_line;
+                assert_eq!(status_line.command, "echo mine");
+                assert_eq!(status_line.refresh_s, 5, "refresh_s is not guarded");
+                let v = violation(&loaded, "tui.status_line.command").expect("a command violation");
+                assert_eq!(v.project_value, "./evil");
+                assert_eq!(v.reverted_to, "echo mine");
+                assert_eq!(loaded.source_of("tui.status_line.command"), "user");
+                assert_eq!(loaded.source_of("tui.status_line.refresh_s"), "project");
+            },
+        );
+    }
+
+    /// T46.1: an out-of-range `timeout_ms` or `refresh_s` fails the load
+    /// with an error that names the key, like any other bad value.
+    #[test]
+    fn status_line_timeout_out_of_range_is_rejected() {
+        for (text, key) in [
+            ("timeout_ms = 99", "tui.status_line.timeout_ms"),
+            ("timeout_ms = 10001", "tui.status_line.timeout_ms"),
+            ("refresh_s = 3601", "tui.status_line.refresh_s"),
+        ] {
+            let home = tempdir().expect("tempdir");
+            let cwd = tempdir().expect("tempdir");
+            fs::write(
+                home.path().join("config.toml"),
+                format!("[tui.status_line]\n{text}\n"),
+            )
+            .expect("write user config");
+            temp_env(
+                &[("COX_HOME", Some(home.path().to_str().unwrap()))],
+                || match load_plain(cwd.path()) {
+                    Err(CoreError::Config { key: at, message }) => {
+                        assert_eq!(at, key, "{text}");
+                        assert!(message.contains("out of range"), "{message}");
+                    }
+                    Err(other) => panic!("{text}: wrong error {other:?}"),
+                    Ok(_) => panic!("{text} must be rejected"),
+                },
+            );
+        }
+        let home = tempdir().expect("tempdir");
+        let cwd = tempdir().expect("tempdir");
+        fs::write(
+            home.path().join("config.toml"),
+            "[tui.status_line]\ntimeout_ms = 10000\nrefresh_s = 3600\n",
+        )
+        .expect("write user config");
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let loaded = load_plain(cwd.path()).expect("the bounds load");
+            assert_eq!(loaded.config.tui.status_line.timeout_ms, 10_000);
+            assert_eq!(loaded.config.tui.status_line.refresh_s, 3_600);
+        });
     }
 
     #[test]
