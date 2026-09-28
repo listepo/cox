@@ -310,8 +310,8 @@ Rules:
 
 | Package | Contents | Depends on |
 | --- | --- | --- |
-| `CoxCore` | `binaryTarget` `CoxFFI.xcframework`; generated `cox_ffi.swift`; `LiveCoreClient` adapting it to the `CoreClient` protocol | — |
-| `CoxModel` | `@Observable @MainActor` stores: `AppStore` (projects, sessions, inbox, badge), `SessionStore` (ordered blocks by id, status, composer draft), `SettingsStore`. `apply(_ patches:)` and `send(_ intent:)` only | `CoreClient` protocol |
+| `CoxCore` | `binaryTarget` `CoxFFI.xcframework`; generated `cox_ffi.swift` (target `CoxFFIBindings`, Swift 5 mode, a symlink into `build/bindings/`); `LiveCoreClient` converting its values to `CoxClient`'s | `CoxModel`'s `CoxClient` |
+| `CoxModel` | Target `CoxClient`: the timeline and intent values, the `CoreClient` protocol and `FixtureCoreClient` — here, not in `CoxCore`, because a package declaring the binary target does not load before the XCFramework is built (T37.16). Target `CoxModel`: `@Observable @MainActor` stores: `AppStore` (projects, sessions, inbox, badge), `SessionStore` (ordered blocks by id, status, composer draft), `SettingsStore`. `apply(_ patches:)` and `send(_ intent:)` only | swift-collections |
 | `CoxUI` | Views and the design system (DT§5.9) | `CoxModel` |
 | `CoxPlatform` | `Host` implementation, notifications with actions, Sparkle, OAuth handoff, `NSWorkspace` "open in editor", SwiftTerm and `WebView` panes (M2) | `CoxModel` |
 | App target | `@main`, scenes, menus, entitlements, Info.plist, assets | all |

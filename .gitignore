@@ -10,3 +10,6 @@ fuzz/artifacts/
 # The macOS app build output: CoxFFI.xcframework and the generated bindings (T37.15).
 desktop/macos/build/
 desktop/design/node_modules/
+# SwiftPM build output of the desktop packages (T37.16).
+desktop/macos/Packages/*/.build/
+desktop/macos/Packages/*/.swiftpm/
