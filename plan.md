@@ -33,7 +33,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.2 | todo | P2 | 4 | 0% | |
+| T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.22.11 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T37.22.12 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
+| T37.22.13 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2776,11 +2780,38 @@ Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
 Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
 Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
 
+#### T37.44.3 Figma text in SF Pro and SF Mono
+
+Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
+Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
+Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
+
 #### T37.22.10 The running app draws pane content under the glass
 
 Depends: — · Size: ~80 · Files: `desktop/macos/App/WindowChrome.swift`, `…/GlassPane.swift`, `…/Screens/MainScreen.swift`
 Goal: a regression the orchestrator saw on the approve-write fixture with the window in front (2026-09-28): text inside the panes draws much lighter than its token (`text.primary` reads about `#626366`, the sidebar's "Needs you" about 1.8:1), as if the glass or blur layer sits on top of the content, and the transcript's tool block and the pinned approval are not visible at all, leaving a gap. The toolbar's text, outside the panes, draws at full strength. Snapshot tests do not show it, so it lies in how the app window composes the panes (T37.22.4's `glassPane(frosts: false)`, the behind-window view) or in a later change (T37.22.6, T37.21.11). Find the cause (bisect the merges if needed), fix it so pane content draws above the glass at its token colour, and add a guard a test can hold where possible.
 Check: a screenshot of the app in front on the approve-write fixture shows the tool block, the pinned approval and text at token strength; the measured `text.primary` pixel matches its token within a small tolerance over a plain backdrop.
+
+#### T37.22.11 Selected session row meets 4.5:1 in light Solid
+
+Depends: — · Size: ~30 · Files: `desktop/design/tokens` (the `accent.soft` light value), CoxUI tokens, `ContrastTests.swift`
+Goal: A115. `text.secondary` on the selected row's `accent.soft` is 3.99:1 in light Solid; lighten `accent.soft` (light appearance only) until every pair on the selected row reaches 4.5:1, keeping the row visibly selected. Text tokens stay as they are.
+Check: `ContrastTests` asserts the selected-row pairs at ≥ 4.5:1 in every appearance and material; CoxUI snapshots re-recorded on purpose; the Figma variables regenerated (`npm run figma`).
+Plan: measure the selected-row pairs in `ContrastTests`, lighten the light `accent.soft` in the design tokens and CoxUI until they reach 4.5:1, re-record CoxUI snapshots, regenerate the Figma variables script; verify with CoxUI tests, swift-format and swiftlint.
+
+#### T37.22.12 Model pill drops a trailing "(latest)"
+
+Depends: — · Size: ~15 · Files: `CoxModel/ModelName.swift`, its tests
+Goal: A116. `ModelName.short` also drops a trailing ` (latest)`, so models.dev's "Claude Haiku 4.5 (latest)" reads `Haiku 4.5`.
+Check: a `ModelNameTests` case for the haiku name and one where "(latest)" is not at the end and stays.
+Plan: strip a trailing " (latest)" in `ModelName.short`, add two `ModelNameTests` cases; verify with CoxModel tests and the linters. Done by the same agent as T37.22.11.
+
+#### T37.22.13 Full `cox-vendor models` refresh
+
+Depends: — · Size: data only · Files: `crates/cox-protocol/default.toml`, `prices.toml` as the script writes them
+Goal: A117. Re-run `cox-vendor models` so the catalog matches models.dev: `medium` joins the efforts of most Anthropic, OpenAI and OpenRouter models and kimi-k2.6, and the OpenRouter `deepseek/deepseek-v4-pro` price moves to models.dev's value. No hand edits; the diff is whatever the saved script writes.
+Check: `cox-vendor models --check` up to date; cox-models, cox-config and cox-protocol tests pass; the diff reviewed row by row in the commit body.
+Plan: run `cox-vendor models` in `scripts/vendor`, review the diff, run the vendor tests, `model-names --check`, and nextest on cox-models, cox-config and cox-protocol; list the changed rows in the commit body.
 
 ## 4. Definition of done for v0.1
 
@@ -2957,6 +2988,10 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A112 T37.21.11 — contrast, by the creator (2026-09-28): the filter prompt uses a new placeholder token (`#69696e` in light, the dark `text.secondary` in dark) instead of changing `text.secondary`; DS§8's Frosted and Glossy contrast is measured on the glass laid over the window fill, the worst predictable case, while the snapshot wallpaper stays for looks. Why: the recommendations as proposed; the user's wallpaper is unknown.
 - A113 T37.22.8, T37.22.9 — session titles, by the creator (2026-09-28): a title is generated after the first turn by one low-cost `Job::Title` request, behind a setting (`[session] auto_title`, default on), and the user can rename a session; a user's title is never overwritten. Why: every session read "Untitled session" in the app's sidebar and toolbar.
 - A114 T37.44.1, T37.44.2 — a Figma file `cox desktop` (team "Ivan's Starter team") mirrors the design, and the app is styled against it, by the creator (2026-09-28): tokens become Figma variables through a saved generator script, mockup screens become frames, screen 28 is rebuilt as editable layers bound to the variables. The repository (`desktop/design/tokens`, `mockups.html`) stays the source; an edit made in Figma is carried back into the tokens and mockups. Why: the creator wants to see and edit the design in Figma and style the app from it.
+- A115 T37.22.11 — selected-row contrast, by the creator (2026-09-28): the selected session row reaches 4.5:1 by lightening `accent.soft` in the light appearance; text tokens stay. Why: `text.secondary` on `accent.soft` measured 3.99:1 in light Solid.
+- A116 T37.22.12 — by the creator (2026-09-28): the model pill also drops a trailing " (latest)" from a models.dev name. Why: haiku read `Haiku 4.5 (latest)`.
+- A117 T37.22.13 — by the creator (2026-09-28): the catalog is refreshed with a full `cox-vendor models` run, accepting the new `medium` efforts and the OpenRouter deepseek-v4-pro price. Why: T37.22.7 wrote only names and left the rest of models.dev's changes pending.
+- A118 T37.44.3 — by the creator (2026-09-28): the Figma file uses SF Pro and SF Mono, which the creator installs locally; no substitute font. Why: the app draws in SF, and a substitute would change the metrics being compared in T37.44.2.
 
 ## 7. Risk register
 
