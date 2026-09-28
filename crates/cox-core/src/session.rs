@@ -15,8 +15,8 @@ use cox_protocol::traits::{
 };
 use cox_protocol::types::{
     ArchiveRef, Attachment, Content, ContextBreakdown, Decision, Event, HookEvent, HookOutcome,
-    ItemKind, Job, Level, Message, ModelId, PermissionMode, ProviderId, Request, Role, SandboxMode,
-    StopReason, Submission, Tier, ToolCall,
+    ItemKind, Job, Level, Message, Mode, ModelId, PermissionMode, ProviderId, Request, Role,
+    SandboxMode, StopReason, Submission, Tier, ToolCall,
 };
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -90,6 +90,12 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
+    /// The mode in force (P42): `core.mode` at build, then `/mode`.
+    mode: Mode,
+    /// The main-tier override a mode replaced, while the mode's own tier
+    /// stands; `/mode editor` restores it, and `/model` clears it so the
+    /// user's own pick survives leaving the mode.
+    mode_tier: Option<Option<Tier>>,
     /// The tier the running user turn was moved to: by `route` advice
     /// (T33.20) or by `confirm_think` onto think (T37.24.11); `None` outside
     /// a turn and whenever the static pick stands.
@@ -138,6 +144,15 @@ fn state_changed(inner: &Inner) -> Event {
     Event::StateChanged {
         mode: inner.permission_mode,
         effort: inner.overrides.effort,
+    }
+}
+
+/// The mode as it stands after a change, with the permission mode it
+/// left in force (P42).
+fn mode_changed(inner: &Inner) -> Event {
+    Event::ModeChanged {
+        mode: inner.mode,
+        permission_mode: inner.permission_mode,
     }
 }
 
@@ -447,6 +462,16 @@ impl Session {
                     0,
                 ),
             };
+        // P42: a top-level session opens in `core.mode`, which only narrows
+        // the mode above. A child runs under its parent's live mode (T45.1),
+        // so config never re-applies one to it.
+        let mode = if is_child {
+            Mode::Editor
+        } else {
+            config.core.mode
+        };
+        let mode_preset = crate::mode::preset(mode);
+        let permission_mode = crate::mode::apply(mode_preset, permission_mode);
         let (tx, rx) = mpsc::channel(256);
         let home = std::env::home_dir();
         let engine = Engine::compile(&config.permissions, home.as_deref(), &cwd)?;
@@ -520,7 +545,12 @@ impl Session {
                 renamed: false,
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
-                overrides: Overrides::default(),
+                overrides: Overrides {
+                    main_tier: mode_preset.main_tier,
+                    ..Overrides::default()
+                },
+                mode,
+                mode_tier: mode_preset.main_tier.map(|_| None),
                 routed: None,
                 tasks: HashMap::new(),
                 children: HashMap::new(),
@@ -575,6 +605,14 @@ impl Session {
                 .map_err(|error| CoreError::Store { error })?;
         }
         let _ = session.tx.try_send(started);
+        // P42: a surface learns a non-default opening mode from the core,
+        // like any later `/mode`, instead of re-reading config.
+        if mode != Mode::Editor {
+            let _ = session.tx.try_send(Event::ModeChanged {
+                mode,
+                permission_mode,
+            });
+        }
         if let Some(notice) = truncated_notice {
             let _ = session.tx.try_send(notice);
         }
@@ -904,6 +942,10 @@ impl Session {
             }
             // T25.6: `/init [--force]` scaffolds AGENTS.md; the write asks
             // first, like any other model-initiated write.
+            Submission::Command { command } if command.name == "mode" => {
+                self.switch_mode(command.args.first().map(String::as_str))
+                    .await
+            }
             Submission::Command { command } if command.name == "init" => {
                 let force = command.args.iter().any(|a| a == "--force" || a == "force");
                 self.run_init(force).await
@@ -991,6 +1033,8 @@ impl Session {
         {
             let mut inner = self.inner.lock().await;
             inner.overrides.main_tier = Some(tier);
+            // P42: the user's own pick outlives the mode's.
+            inner.mode_tier = None;
             match model {
                 Some(m) => {
                     inner.overrides.models.insert(tier, m);
@@ -1887,6 +1931,71 @@ impl Session {
         .await
     }
 
+    /// `/mode architect|editor` (P42, T42.3): architect narrows the live
+    /// permission mode to `plan` and moves main turns to think; editor
+    /// restores `permissions.mode` and the tier the mode replaced. Tools are
+    /// never touched, and think still needs `confirm_think` per turn
+    /// (invariant 9). Refused mid-turn: a turn's calls keep one mode.
+    async fn switch_mode(&self, arg: Option<&str>) -> Result<(), CoreError> {
+        let Some(mode) = arg.and_then(crate::mode::parse) else {
+            return self
+                .emit(Event::Notice {
+                    level: Level::Warn,
+                    text: "usage: /mode architect|editor".into(),
+                })
+                .await;
+        };
+        let preset = crate::mode::preset(mode);
+        let events = {
+            let mut inner = self.inner.lock().await;
+            if inner.state != State::Idle {
+                None
+            } else {
+                let base = match mode {
+                    Mode::Editor => self.config.permissions.mode,
+                    Mode::Architect => inner.permission_mode,
+                };
+                inner.permission_mode = crate::mode::apply(preset, base);
+                let before = inner.overrides.main_tier;
+                match preset.main_tier {
+                    Some(tier) => {
+                        if inner.mode_tier.is_none() {
+                            inner.mode_tier = Some(before);
+                        }
+                        inner.overrides.main_tier = Some(tier);
+                    }
+                    None => {
+                        if let Some(saved) = inner.mode_tier.take() {
+                            inner.overrides.main_tier = saved;
+                        }
+                    }
+                }
+                // Same reason as `/model`: thinking signatures bind to the
+                // model that wrote them.
+                if inner.overrides.main_tier != before {
+                    inner.history = crate::router::strip_thinking(&inner.history);
+                }
+                inner.mode = mode;
+                Some((state_changed(&inner), mode_changed(&inner)))
+            }
+        };
+        match events {
+            // `StateChanged` too: resume rebuilds the permission mode from
+            // it (T50.4), and surfaces already follow it.
+            Some((state, changed)) => {
+                self.emit(state).await?;
+                self.emit(changed).await
+            }
+            None => {
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: "a turn is running; `/mode` waits until it ends".into(),
+                })
+                .await
+            }
+        }
+    }
+
     /// A composer `!` line (T25.3). The call takes the model's path
     /// (`run_tools`: `PreToolUse`, the engine, the sandbox, the archive) so
     /// a user command is no more trusted than a model one. Refused outside
@@ -2344,5 +2453,212 @@ mod tests {
         assert_eq!(payload["title"], "Turn done");
         assert_eq!(payload["message"], "end_turn");
         assert_eq!(payload["hook_event_name"], "Notification");
+    }
+
+    /// The script, plus every request it was sent (P42's prefix claim is
+    /// about the bytes the provider saw).
+    struct Recording {
+        script: Scripted,
+        seen: StdMutex<Vec<Request>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for Recording {
+        fn id(&self) -> ProviderId {
+            self.script.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.script.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: Request,
+            sink: mpsc::Sender<cox_protocol::types::ProviderEvent>,
+            cancel: CancellationToken,
+        ) -> Result<cox_protocol::types::Usage, ProviderError> {
+            self.seen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.clone());
+            self.script.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+            self.script.count_tokens(req).await
+        }
+    }
+
+    impl Recording {
+        fn seen(&self) -> Vec<Request> {
+            self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        }
+    }
+
+    /// A session under `config` over `turns` scripted replies.
+    fn recorded(
+        config: cox_protocol::Config,
+        turns: usize,
+    ) -> (Session, Arc<MemoryStore>, Arc<Recording>) {
+        let provider = Arc::new(Recording {
+            script: Scripted::from_toml(&"[[turn]]\ntext = \"ok\"\n".repeat(turns), "")
+                .expect("scenario"),
+            seen: StdMutex::new(Vec::new()),
+        });
+        let store = Arc::new(MemoryStore::new());
+        let session = Session::new(
+            config,
+            provider.clone(),
+            vec![],
+            store.clone(),
+            store.clone(),
+            PathBuf::from("/tmp/cox-mode"),
+        )
+        .expect("session");
+        (session, store, provider)
+    }
+
+    async fn set_mode(session: &Session, name: &str) {
+        session
+            .submit(Submission::Command {
+                command: cox_protocol::types::SlashCommand {
+                    name: "mode".into(),
+                    args: vec![name.into()],
+                },
+            })
+            .await
+            .expect("/mode");
+    }
+
+    async fn turn(session: &Session, confirm_think: bool) {
+        session
+            .submit(Submission::UserTurn {
+                text: "plan it".into(),
+                attachments: vec![],
+                confirm_think,
+            })
+            .await
+            .expect("turn");
+    }
+
+    #[tokio::test]
+    async fn architect_denies_write_through_the_engine() {
+        let (session, store, _) = recorded(cox_protocol::Config::default(), 0);
+        let write = ToolCall {
+            id: CallId::new(),
+            name: "write".into(),
+            input: serde_json::json!({"path": "/tmp/cox-mode/a.rs"}),
+            risk: cox_protocol::types::Risk::Write,
+            subject: "/tmp/cox-mode/a.rs".into(),
+            segments: None,
+        };
+        assert!(!matches!(
+            session.decide(&write).await,
+            Outcome::Deny { .. }
+        ));
+        set_mode(&session, "architect").await;
+        match session.decide(&write).await {
+            Outcome::Deny { reason, .. } => assert!(reason.contains("plan mode"), "{reason}"),
+            other => panic!("architect let a write through: {other:?}"),
+        }
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        assert!(events.iter().any(|e| *e
+            == Event::ModeChanged {
+                mode: Mode::Architect,
+                permission_mode: PermissionMode::Plan,
+            }));
+    }
+
+    #[tokio::test]
+    async fn architect_never_widens_a_plan_config() {
+        let mut config = cox_protocol::Config::default();
+        config.permissions.mode = PermissionMode::Plan;
+        let (session, _, _) = recorded(config, 0);
+        for name in ["architect", "editor", "architect"] {
+            set_mode(&session, name).await;
+            assert_eq!(
+                session.permission_mode().await,
+                PermissionMode::Plan,
+                "{name}"
+            );
+        }
+        // A wider mode picked by hand (Shift+Tab) is narrowed again.
+        session
+            .submit(Submission::SetPermissionMode {
+                mode: PermissionMode::Auto,
+            })
+            .await
+            .expect("set mode");
+        set_mode(&session, "architect").await;
+        assert_eq!(session.permission_mode().await, PermissionMode::Plan);
+    }
+
+    #[tokio::test]
+    async fn editor_restores_the_configured_mode() {
+        let mut config = cox_protocol::Config::default();
+        config.permissions.mode = PermissionMode::Auto;
+        let (session, _, _) = recorded(config, 0);
+        set_mode(&session, "architect").await;
+        assert_eq!(session.permission_mode().await, PermissionMode::Plan);
+        assert_eq!(
+            session.inner.lock().await.overrides.main_tier,
+            Some(Tier::Think)
+        );
+        set_mode(&session, "editor").await;
+        assert_eq!(session.permission_mode().await, PermissionMode::Auto);
+        assert_eq!(session.inner.lock().await.overrides.main_tier, None);
+
+        // A `/model` pick made before the mode survives leaving it.
+        session
+            .switch_model(Tier::Cheap, None)
+            .await
+            .expect("/model cheap");
+        set_mode(&session, "architect").await;
+        set_mode(&session, "editor").await;
+        assert_eq!(
+            session.inner.lock().await.overrides.main_tier,
+            Some(Tier::Cheap)
+        );
+    }
+
+    #[tokio::test]
+    async fn mode_switch_keeps_prefix_bytes_identical() {
+        let (session, _, provider) = recorded(cox_protocol::Config::default(), 2);
+        turn(&session, false).await;
+        set_mode(&session, "architect").await;
+        turn(&session, true).await;
+        let seen = provider.seen();
+        assert_eq!(seen.len(), 2, "one request per turn");
+        assert_eq!(seen[0].tier, Tier::Code);
+        assert_eq!(seen[1].tier, Tier::Think, "the mode moved main turns");
+        assert_eq!(
+            seen[0].system[..3],
+            seen[1].system[..3],
+            "system[0..2] byte-identical across /mode"
+        );
+        assert_eq!(seen[0].tools, seen[1].tools, "no tool filtered by mode");
+    }
+
+    #[tokio::test]
+    async fn architect_think_still_requires_confirmation() {
+        let mut config = cox_protocol::Config::default();
+        config.core.mode = Mode::Architect;
+        let (session, store, provider) = recorded(config, 1);
+        assert_eq!(session.permission_mode().await, PermissionMode::Plan);
+        turn(&session, false).await;
+        assert!(
+            provider.seen().is_empty(),
+            "no provider call without consent"
+        );
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::TurnDone {
+                stop: StopReason::Refusal { .. },
+                ..
+            }
+        )));
+        turn(&session, true).await;
+        let seen = provider.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].tier, Tier::Think);
     }
 }
