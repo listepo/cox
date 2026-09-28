@@ -37,7 +37,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.21.6 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.7 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.10 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.22 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23 | todo | P0 | 5 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
@@ -1144,12 +1143,6 @@ Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only
 Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
 Goal: a Settings row — label, control and the source-layer badge (mockup `.group .gr`); DS§6.3 gains its row. Built only from atoms and foundations (DS§6.3).
 Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.22 Window shell: split view, sidebar, toolbar, inspector frame
-
-Depends: T37.16, T37.21 · Size: ~200 · Files: `…/CoxUI/Organisms/Sidebar.swift`, `…/Organisms/SessionToolbar.swift`, `…/Screens/MainScreen.swift`
-Goal: DS§4 layout with floating glass panes, collapsible sidebar and inspector, the window material from `[desktop.appearance]`.
-Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/design/mockups` screens 28–29 in structure.
 
 #### T37.23 Transcript view and the DT§9 benchmark gate
 

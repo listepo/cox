@@ -3574,3 +3574,22 @@ Deviations: the shared layout is a third file; the time uses `text.secondary` (r
 Check: snapshot per variant × light/dark × Solid/Frosted; SwiftUI-only imports; full suite as in T37.21.8. Commit a0a83a6.
 
 Not done: `clock` in the DS§3.7 symbol table; `SessionRow` could reuse the shared selected-row styling.
+
+#### T37.22 Window shell: split view, sidebar, toolbar, inspector frame
+
+Depends: T37.16, T37.21 · Size: ~200 · Files: `…/CoxUI/Organisms/Sidebar.swift`, `…/Organisms/SessionToolbar.swift`, `…/Screens/MainScreen.swift`
+Goal: DS§4 layout with floating glass panes, collapsible sidebar and inspector, the window material from `[desktop.appearance]`.
+Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/design/mockups` screens 28–29 in structure.
+Status: done 2026-09-28
+Result: `CoxUI/Screens/MainScreen.swift` composes the window: sidebar, toolbar, transcript column and inspector on the window glass. It takes `MainScreenState`, emits `MainScreenIntent`, and has slots for the transcript (T37.23/T37.24) and inspector tab content (T37.29). The side panes fold with `Motion.durationSlow`. The organisms in `Organisms/`: `ShellPane` draws the window (e5), side (e2) and column (flat) layers from `coxAppearance`; `Sidebar` has the filter, status sections with counts, foldable projects and a footer; `SessionToolbar`; `Inspector` has five tabs and an empty slot. Fixtures from mockup screen 28 are in `Previews/PreviewState+Window.swift`. DESIGN.md §4, §6.1, §6.4 and §6.5 are updated.
+Deviations:
+- The screen lays out its own panes instead of using `NavigationSplitView`: the system split view draws its own glass and toolbar, ignores `[desktop.appearance]` and cannot be snapshotted (DS§4 says why).
+- 7 source files instead of 3 (adds `ShellPane`, `Inspector`, the fixtures and an `isIcon` variant in `CapsuleStyle`).
+- Main-screen snapshots are recorded at 1×; organism snapshots are 2×.
+- Everything is `internal`; the app target will need a public surface.
+- One new named constant: `windowButtonsWidth = 68`.
+Check: `swift test`, run twice against the committed snapshots: 69/69 passed both times (19 new MainScreenTests snapshots). `swiftlint lint --strict` and `swift-format lint --strict` are clean. Mockup screens 28–29 were compared by eye.
+Not done:
+- Shortcuts: DS§4 says ⌘0/⌘⌥0 but DT§5 says ⌘⌃S/⌥⌘I, so neither is bound.
+- Bypass strip: DS puts it at the window top, DT under the toolbar, so it is not drawn.
+- The inspector overlay below 1280 pt and the app window setup (hidden title bar, behind-window blur) are in ideas.md.

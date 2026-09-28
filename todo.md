@@ -31,7 +31,6 @@
 - T37.21.6. `NoticeRow`, `TurnDivider` and `TurnMeta`
 - T37.21.7. `ComposerChip`
 - T37.21.10. `SettingRow`
-- T37.22. Window shell: split view, sidebar, toolbar, inspector frame
 - T37.23. Transcript view and the DT§9 benchmark gate
 - T37.24. Composer: mentions, commands, shell mode, attachments, queue
 - T37.25. Token meter and token popover
