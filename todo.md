@@ -31,6 +31,7 @@
 - T37.22.7. Model display names from models.dev
 - T37.22.8. Session titles: generated after the first turn, behind a setting
 - T37.22.9. Session titles in the TUI and the app, with rename
+- T37.22.10. The running app draws pane content under the glass
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows

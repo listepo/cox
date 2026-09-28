@@ -37,6 +37,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.8 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.22.9 | todo | P2 | 3 | 0% | |
+| T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2802,6 +2803,12 @@ Check: a cox-core test that a scripted session with the setting on emits one `Ti
 Depends: T37.22.8 · Size: ~150 · Files: `crates/cox-tui`, `crates/cox` (a `cox rename` or `/rename`), cox-app/cox-ffi, CoxModel, the app's toolbar and sidebar
 Goal: A113. The TUI shows the session title where it shows the session today and in the resume list; `/rename <title>` in the TUI and a rename in the app (double-click the toolbar title or a sidebar row's context menu) set it through one `Submission` that marks the title as the user's. The app's toolbar and sidebar read the title from the store and follow `TitleSet`.
 Check: a TUI snapshot with a title; a test that a user rename survives a later generated title; a screenshot of the app with titled sessions.
+
+#### T37.22.10 The running app draws pane content under the glass
+
+Depends: — · Size: ~80 · Files: `desktop/macos/App/WindowChrome.swift`, `…/GlassPane.swift`, `…/Screens/MainScreen.swift`
+Goal: a regression the orchestrator saw on the approve-write fixture with the window in front (2026-09-28): text inside the panes draws much lighter than its token (`text.primary` reads about `#626366`, the sidebar's "Needs you" about 1.8:1), as if the glass or blur layer sits on top of the content, and the transcript's tool block and the pinned approval are not visible at all, leaving a gap. The toolbar's text, outside the panes, draws at full strength. Snapshot tests do not show it, so it lies in how the app window composes the panes (T37.22.4's `glassPane(frosts: false)`, the behind-window view) or in a later change (T37.22.6, T37.21.11). Find the cause (bisect the merges if needed), fix it so pane content draws above the glass at its token colour, and add a guard a test can hold where possible.
+Check: a screenshot of the app in front on the approve-write fixture shows the tool block, the pinned approval and text at token strength; the measured `text.primary` pixel matches its token within a small tolerance over a plain backdrop.
 
 ## 4. Definition of done for v0.1
 
