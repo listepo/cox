@@ -265,6 +265,9 @@ public struct Span: Equatable, Sendable {
   public var text: String
   public var token: StyleToken = .text
   public var rgb: UInt32?
+  /// The run's colour under the theme's light variant, where the core highlighted it for both
+  /// appearances (a diff, A95); `rgb` is then the dark variant's.
+  public var light: UInt32?
   public var bold = false, italic = false, strike = false, underline = false
   public var link: String?
 

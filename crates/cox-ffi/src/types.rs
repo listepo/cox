@@ -66,6 +66,7 @@ uniffi::custom_type!(StyledSpan, Span, {
     remote,
     lower: |s| Span {
         rgb: s.rgb.map(|[r, g, b]| u32::from_be_bytes([0, r, g, b])),
+        light: s.light.map(|[r, g, b]| u32::from_be_bytes([0, r, g, b])),
         text: s.text,
         token: s.token,
         bold: s.bold,
@@ -76,6 +77,10 @@ uniffi::custom_type!(StyledSpan, Span, {
     },
     try_lift: |s| Ok(StyledSpan {
         rgb: s.rgb.map(|c| {
+            let [_, r, g, b] = c.to_be_bytes();
+            [r, g, b]
+        }),
+        light: s.light.map(|c| {
             let [_, r, g, b] = c.to_be_bytes();
             [r, g, b]
         }),
@@ -99,7 +104,8 @@ pub struct Project {
 }
 
 /// What `App::open` opens: a new session in `cwd`, or `resume`'s.
-/// `theme` is the syntect theme code blocks are highlighted with.
+/// `theme` is the syntect theme code blocks are highlighted with; a diff
+/// takes its dark and light variant (A95).
 #[derive(uniffi::Record)]
 pub struct OpenRequest {
     pub cwd: String,
@@ -107,12 +113,13 @@ pub struct OpenRequest {
     pub theme: String,
 }
 
-/// `StyledSpan` with its theme colour as `0xRRGGBB`.
+/// `StyledSpan` with its theme colours as `0xRRGGBB`.
 #[derive(uniffi::Record)]
 pub struct Span {
     pub text: String,
     pub token: StyleToken,
     pub rgb: Option<u32>,
+    pub light: Option<u32>,
     pub bold: bool,
     pub italic: bool,
     pub strike: bool,

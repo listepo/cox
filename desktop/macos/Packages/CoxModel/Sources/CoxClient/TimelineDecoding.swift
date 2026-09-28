@@ -186,12 +186,15 @@ extension TextLine: Decodable {
 }
 
 extension Span: Decodable {
-  /// serde omits every field left at its default; `rgb` is `[r, g, b]`.
+  /// serde omits every field left at its default; `rgb` and `light` are `[r, g, b]`.
   public init(from decoder: any Decoder) throws {
     let keys = try decoder.fields()
+    let colour = { (key: String) in
+      try (keys.optional(key) as [UInt8]?).map { $0.reduce(0) { $0 << 8 | UInt32($1) } }
+    }
     text = try keys.optional("text") ?? ""
     token = try keys.optional("token") ?? .text
-    rgb = try (keys.optional("rgb") as [UInt8]?).map { $0.reduce(0) { $0 << 8 | UInt32($1) } }
+    (rgb, light) = (try colour("rgb"), try colour("light"))
     bold = try keys.optional("bold") ?? false
     italic = try keys.optional("italic") ?? false
     strike = try keys.optional("strike") ?? false

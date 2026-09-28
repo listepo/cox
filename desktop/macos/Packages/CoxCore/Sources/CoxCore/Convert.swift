@@ -134,7 +134,7 @@ extension CoxClient.TextKind {
 extension CoxClient.Span {
   init(_ value: CoxFFIBindings.Span) {
     self.init(text: value.text)
-    (token, rgb, link) = (.init(value.token), value.rgb, value.link)
+    (token, rgb, light, link) = (.init(value.token), value.rgb, value.light, value.link)
     (bold, italic, strike, underline) = (value.bold, value.italic, value.strike, value.underline)
   }
 }

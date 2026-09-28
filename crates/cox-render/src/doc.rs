@@ -85,6 +85,11 @@ pub struct StyledSpan {
     /// highlighter and one theme serve every surface (DT§4.2).
     #[serde(skip_serializing_if = "is_default")]
     pub rgb: Option<[u8; 3]>,
+    /// The same run's colour under the theme's light variant, set where a
+    /// surface picks by the system appearance (a diff, A95); `rgb` then
+    /// holds the dark variant's.
+    #[serde(skip_serializing_if = "is_default")]
+    pub light: Option<[u8; 3]>,
     #[serde(skip_serializing_if = "is_default")]
     pub bold: bool,
     #[serde(skip_serializing_if = "is_default")]
