@@ -1,6 +1,7 @@
 // `PreviewState` fixtures for the inspector's Context tab (T37.29.3.1): a turn's split of a 200k
 // window as `cox_app::MeterText` formats it, the same split with the window unknown, and mockup
-// 10's cost by turn as `cox_app::TurnCosts` formats it (T37.29.3.2). Separate
+// 10's cost by turn and project footnote as `cox_app::TurnCosts` formats them (T37.29.3.2,
+// T37.29.3.3). Separate
 // from `PreviewState+Inspector.swift` so the inspector's tabs, built in parallel, add their
 // fixtures without editing one file.
 
@@ -18,7 +19,8 @@ extension PreviewState {
     return state
   }
 
-  /// Mockup screen 10's cost by turn: two turns, a subagent under the first, the session total.
+  /// Mockup screen 10's cost by turn: two turns, a subagent under the first, the session total,
+  /// and the project's spend under it.
   static var contextCosts: ContextTab.State {
     var state = contextTab
     state.costColumns = ["In", "Out", "Cache r/w", "$"]
@@ -28,6 +30,8 @@ extension PreviewState {
       .init(label: "2 · code", values: ["16.8k", "900", "15.9k/800", "0.10"]),
       .init(label: "Session", values: ["58.0k", "3.7k", "43.9k/13.7k", "0.42"]),
     ]
+    state.footnote =
+      "Project cox today: $3.18 · this week: $21.40. Every number is a row in the cost ledger."
     return state
   }
 

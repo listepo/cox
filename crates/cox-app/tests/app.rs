@@ -709,4 +709,12 @@ async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() 
     assert_eq!(own.len(), 3, "two calls in turn 1, one in turn 2");
     assert_eq!(costs.total.label, "Session");
     assert_ne!(costs.total.values[0], "0", "{:?}", costs.total);
+    assert!(
+        costs.project.starts_with(&format!(
+            "Project project today: ${}",
+            costs.total.values[3]
+        )),
+        "{}",
+        costs.project
+    );
 }

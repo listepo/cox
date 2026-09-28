@@ -9,7 +9,7 @@ extension CoxClient.TurnCosts {
   init(_ costs: CoxFFIBindings.TurnCosts) {
     self.init(
       columns: costs.columns, rows: costs.rows.map { CoxClient.CostRow($0) },
-      total: CoxClient.CostRow(costs.total))
+      total: CoxClient.CostRow(costs.total), project: costs.project)
   }
 }
 

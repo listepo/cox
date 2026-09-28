@@ -3,8 +3,10 @@
 //! turn's subagents right under it, and the session total, every figure
 //! formatted. Built from the rows the store returns, never from the meter's
 //! running sums, because a cost that is not a ledger row does not exist.
-//! Separate from `meter_text.rs`, which formats the live meter.
+//! Also the tab's footnote, the project's spend today and this week
+//! (T37.29.3.3). Separate from `meter_text.rs`, which formats the live meter.
 
+use chrono::{DateTime, Datelike, Days, NaiveDate, SecondsFormat, TimeZone, Utc};
 use cox_protocol::types::{Job, Usage};
 use cox_store::queries::LedgerRow;
 use cox_store::to_tag;
@@ -23,6 +25,8 @@ pub struct TurnCosts {
     pub rows: Vec<CostRow>,
     /// `Session`: every row above summed.
     pub total: CostRow,
+    /// The footnote: `Project cox today: $3.18 · this week: $21.40. …`.
+    pub project: String,
 }
 
 /// One line of the grid: `1 · code` (a subagent's `explore`), then a value
@@ -108,7 +112,37 @@ pub fn build(own: &[LedgerRow], children: &[Vec<LedgerRow>]) -> TurnCosts {
         columns: COLUMNS.map(String::from).to_vec(),
         rows,
         total: row("Session".into(), total, false),
+        project: String::new(),
     }
+}
+
+/// The starts of `now`'s day and of its week (Monday, ISO 8601) in its own
+/// time zone, written as `usage.created_at` is (UTC, milliseconds) so the
+/// store compares them as text.
+pub fn periods<Tz: TimeZone>(now: &DateTime<Tz>) -> (String, String) {
+    let tz = now.timezone();
+    // A zone that skips midnight for daylight saving starts the day an
+    // hour or two later.
+    let start = |date: NaiveDate| {
+        (0..3)
+            .find_map(|h| {
+                tz.from_local_datetime(&date.and_hms_opt(h, 0, 0)?)
+                    .earliest()
+            })
+            .map_or_else(|| now.with_timezone(&Utc), |d| d.with_timezone(&Utc))
+            .to_rfc3339_opts(SecondsFormat::Millis, true)
+    };
+    let today = now.date_naive();
+    let back = Days::new(u64::from(today.weekday().num_days_from_monday()));
+    (start(today), start(today - back))
+}
+
+/// The tab's footnote over the project's spend (mockup 10).
+pub fn footnote(project: &str, today: f64, week: f64) -> String {
+    format!(
+        "Project {project} today: ${today:.2} · this week: ${week:.2}. \
+         Every number is a row in the cost ledger."
+    )
 }
 
 /// The jobs a subagent's child session runs as (`subagent::Preset::job`).
@@ -230,6 +264,32 @@ mod tests {
         assert_eq!(
             labels(&costs),
             [("Before turn 1", false), ("1 · code", false)]
+        );
+    }
+
+    #[test]
+    fn today_and_this_week_start_at_local_midnight_and_monday() {
+        let zone = chrono::FixedOffset::east_opt(3 * 3600).expect("offset");
+        // Wednesday 01:30 at UTC+3 is still Tuesday in UTC.
+        let now = zone
+            .with_ymd_and_hms(2026, 9, 30, 1, 30, 0)
+            .single()
+            .expect("time");
+        assert_eq!(
+            periods(&now),
+            (
+                "2026-09-29T21:00:00.000Z".to_string(),
+                "2026-09-27T21:00:00.000Z".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn the_footnote_names_the_project_and_both_sums() {
+        assert_eq!(
+            footnote("cox", 3.18, 21.4),
+            "Project cox today: $3.18 · this week: $21.40. \
+             Every number is a row in the cost ledger."
         );
     }
 

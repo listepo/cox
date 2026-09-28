@@ -2,14 +2,14 @@
 // Cost): the inspector's third tab — how the model's window is split between system, tools,
 // instruction files and history, what is left, the turn's cache hit, and "Compact now". Separate
 // so the `Inspector` frame stays a slot and each tab is its own view, fed plain values the app
-// copies from the core's token meter (T37.29.3.1) and cost history (T37.29.3.2). The budget
-// comes later.
+// copies from the core's token meter (T37.29.3.1) and cost history (T37.29.3.2), the project's
+// spend as the footnote (T37.29.3.3). The budget comes later.
 
 import SwiftUI
 
 /// An `InspectorSection` headed by the context and its share of the window: the StackedBar, a
 /// legend row per part and one for what is free, and "Compact now"; then the cache hit and the
-/// cost by turn. Before the core sent anything, one quiet line.
+/// cost by turn; the project's spend as a footnote. Before the core sent anything, one quiet line.
 struct ContextTab: View {
   /// What the tab shows, formatted by the core.
   struct State: Equatable, Sendable {
@@ -26,6 +26,8 @@ struct ContextTab: View {
     /// A row per turn, its subagents indented under it, the session total last; none hides
     /// the section.
     var costs: [KeyValueGrid.Row] = []
+    /// `Project cox today: $3.18 · this week: $21.40. …`, under everything; empty hides it.
+    var footnote = ""
   }
 
   /// A part of the window: its colour role and share of the bar, `System` and `7.6k`.
@@ -68,6 +70,12 @@ struct ContextTab: View {
         InspectorSection("Cost by turn") {
           KeyValueGrid(columns: state.costColumns, rows: state.costs)
         }
+      }
+      if !state.footnote.isEmpty {
+        Text(state.footnote)
+          .textStyle(.caption)
+          .foregroundStyle(Color(.textSecondary))
+          .fixedSize(horizontal: false, vertical: true)
       }
       if state.parts.isEmpty && state.cacheHit.isEmpty && state.costs.isEmpty {
         Text("No context yet")

@@ -2,7 +2,8 @@
 // turn's cache hit from the token meter's latest `UsageView`, and "Compact now". Here, not in
 // CoxUI, because the meter's figures decide what the tab shows (DS§1); the app copies them into
 // `ContextTab.State` field for field. `CostHistoryState` is the tab's cost by turn, read from
-// the ledger when the tab asks (T37.29.3.2). Totals and the budget come later.
+// the ledger when the tab asks (T37.29.3.2), with the project's spend as its footnote
+// (T37.29.3.3). The budget comes later.
 
 import CoxClient
 
@@ -34,10 +35,13 @@ public struct CostHistoryState: Equatable, Sendable {
   public var columns: [String] = []
   /// A row per turn, its subagents as detail rows, then `Session`.
   public var rows: [Row] = []
+  /// `Project cox today: $3.18 · this week: $21.40. …`, shown even before this session spent.
+  public var footnote = ""
 
   public init() {}
 
   public init(_ costs: TurnCosts) {
+    footnote = costs.project
     guard !costs.rows.isEmpty else { return }
     let row = { (cost: CostRow) in
       Row(label: cost.label, values: cost.values, isDetail: cost.detail)

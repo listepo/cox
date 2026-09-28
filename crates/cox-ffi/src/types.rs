@@ -609,6 +609,7 @@ pub struct TurnCosts {
     pub columns: Vec<String>,
     pub rows: Vec<CostRow>,
     pub total: CostRow,
+    pub project: String,
 }
 
 #[uniffi::remote(Record)]

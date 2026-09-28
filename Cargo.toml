@@ -33,6 +33,9 @@ serde = { version = "1.0", features = ["derive"] }
 # order (snapshots, rollout lines, ledger JSON) identical for per-crate and
 # full-workspace runs instead of depending on the invocation.
 serde_json = { version = "1.0", features = ["preserve_order"] }
+# Local midnight and week start for the desktop's project spend (T37.29.3.3);
+# already in the tree through oauth2 and schemars.
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 schemars = "1"
 thiserror = "2"
 ulid = { version = "3", features = ["serde"] }

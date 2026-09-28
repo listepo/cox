@@ -92,11 +92,13 @@ import Testing
 @Test func turnCostsConvertFieldForField() {
   let row = CoxFFIBindings.CostRow(label: "explore", values: ["9.8k", "0.03"], detail: true)
   let total = CoxFFIBindings.CostRow(label: "Session", values: ["9.8k", "0.03"], detail: false)
-  let live = CoxFFIBindings.TurnCosts(columns: ["In", "$"], rows: [row], total: total)
+  let live = CoxFFIBindings.TurnCosts(
+    columns: ["In", "$"], rows: [row], total: total, project: "Project cox today: $0.03")
   #expect(
     CoxClient.TurnCosts(live)
       == CoxClient.TurnCosts(
         columns: ["In", "$"],
         rows: [CoxClient.CostRow(label: "explore", values: ["9.8k", "0.03"], detail: true)],
-        total: CoxClient.CostRow(label: "Session", values: ["9.8k", "0.03"])))
+        total: CoxClient.CostRow(label: "Session", values: ["9.8k", "0.03"]),
+        project: "Project cox today: $0.03"))
 }
