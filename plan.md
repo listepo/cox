@@ -60,11 +60,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T47.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T48.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T48.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T49.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T49.2 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T49.3 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
-| T49.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
-| T49.5 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
 | T50.3 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
 | T50.5 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T51.1 | todo | P2 | 2 | 0% | |
@@ -1895,81 +1890,6 @@ for h in '## Problem' '## The field' '## cox' '## Falsifiers' '## Review'; do gr
 test "$(grep -c 'checked 2026-' "$f")" -ge 3
 test -z "$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=false git status --porcelain -- crates)"
 ```
-
-### T49.1. Remote control scope gate
-
-Model: sonnet · Status: open · Depends: — · Size: ~90 · Priority: P2 · Complexity: 3
-Goal: decide how, if at all, a person drives a running cox session from a phone or a second machine, on paper.
-Files: `docs/design/v0.3-remote-control.md`, `plan.md`.
-Steps:
-1. Problem: the number — how many turns an away-from-desk user loses to an approval nobody can answer (from the field's framing; state it as a target, not a measurement).
-2. The field: Claude Code Remote Control — session stays local, outbound HTTPS only, the Anthropic API relays, subscription plans only, "API keys are not supported" (https://code.claude.com/docs/en/remote-control, checked 2026-09-28); Codex Remote — runs on the connected computer, paired from the ChatGPT app by QR code, same account on both (https://learn.chatgpt.com/docs/remote, redirected from https://developers.openai.com/codex/remote, checked 2026-09-28); ACP "Streamable HTTP & WebSocket Transport" RFD, stage Active, reconnect via `session/load` (https://agentclientprotocol.com/rfds/streamable-http-websocket-transport.md, checked 2026-09-28).
-3. cox: cox has no relay service and D3 forbids subscription logins, so a vendor-relay design is out. Candidate: `cox acp` over the RFD's HTTP/WebSocket transport, bound to loopback, reached over the user's own SSH/Tailscale tunnel — approvals stay `Event::ApprovalRequired` answered through the same `Engine` path the ACP permission request already uses (D2: one more consumer of the event stream); attaching a second surface to a live TUI session (P16 presence records) as the alternative. State the auth model and why no inbound port opens by default.
-4. Falsifiers (at least two), e.g. the ACP transport RFD stalls before an SDK release; users cannot reach their machine without a relay.
-5. Review verdict.
-Check: the common check with `f=docs/design/v0.3-remote-control.md`.
-Done when: the doc exists with a verdict; done.md carries the Check output.
-Out of scope: any transport code; any hosted relay.
-
-### T49.2. Windows sandbox scope gate
-
-Model: sonnet · Status: open · Depends: — · Size: ~90 · Priority: P3 · Complexity: 3
-Goal: decide whether and how cox gets a native Windows sandbox behind `cox_sandbox::sandbox::Policy`, replacing D7's "no sandbox, loud warning, `on-request` forced".
-Files: `docs/design/v0.3-windows-sandbox.md`, `plan.md`.
-Steps:
-1. Problem: today a Windows user has zero confinement (D7); and cox ships no Windows binary at all (`dist-workspace.toml` targets are macOS and Linux only) — the doc must say which comes first.
-2. The field: Codex — elevated mode with dedicated lower-privilege sandbox users, ACL filesystem boundaries and firewall rules; unelevated fallback with a restricted token (https://learn.chatgpt.com/docs/windows/windows-sandbox, redirected from https://developers.openai.com/codex/windows, checked 2026-09-28; source `openai/codex` `codex-rs/windows-sandbox-rs`, https://github.com/openai/codex/tree/main/codex-rs/windows-sandbox-rs — pin the commit read); Microsoft AppContainer (https://learn.microsoft.com/en-us/windows/win32/secauthz/appcontainer-isolation, checked 2026-09-28).
-3. cox: a `Backend::Windows*` inside `cox_sandbox::sandbox::command`, so `Policy` stays the single guard and `bash`/MCP stdio/status-line callers change nothing; which `windows`/`windows-sys` crate (both in `rust.md`, used by rtok/slint work) it would need; how `.git`/`.cox` read-only and `network = false` map.
-4. Falsifiers, e.g. elevated setup blocked on managed machines leaves only a token sandbox weaker than D7's `on-request`; no Windows release target by the time the backend is ready.
-5. Review verdict.
-Check: the common check with `f=docs/design/v0.3-windows-sandbox.md`.
-Done when: the doc exists with a verdict; done.md carries the Check output.
-Out of scope: a Windows release target; any `cox-sandbox` code.
-
-### T49.3. Voice input scope gate
-
-Model: sonnet · Status: open · Depends: — · Size: ~70 · Priority: P3 · Complexity: 2
-Goal: decide whether cox needs its own dictation, on paper.
-Files: `docs/design/v0.3-voice.md`, `plan.md`.
-Steps:
-1. Problem: seconds from speech to an editable prompt, and what it costs per minute.
-2. The field: Claude Code `/voice` — hold or tap `Space`, audio streamed to Anthropic's servers, needs a Claude.ai account and is unavailable with an API key, native recorder with `arecord`/SoX fallback on Linux (https://code.claude.com/docs/en/voice-dictation, checked 2026-09-28); aider `/voice` — OpenAI `whisper-1` through litellm, recorded with `sounddevice` (`Aider-AI/aider` `aider/voice.py` at `5dc9490`, checked 2026-09-28).
-3. cox: both vendor paths need a key or account cox may not have (D3); the OS dictation of macOS and Windows already types into any terminal, so cox gets plain dictation for free; the remaining gap is push-to-talk with auto-submit. Options: a provider-agnostic transcription endpoint (OpenAI-compatible `audio/transcriptions`, local servers included) behind the provider layer with a `usage` row (a cost that is not in the ledger does not exist), or a local whisper crate (heavy C build → its own crate under D1). Name the microphone dependency each option pulls.
-4. Falsifiers, e.g. OS dictation mangles code vocabulary badly enough that users ask; a local model under N MB with acceptable latency appears.
-5. Review verdict.
-Check: the common check with `f=docs/design/v0.3-voice.md`.
-Done when: the doc exists with a verdict; done.md carries the Check output.
-Out of scope: audio code; any new dependency.
-
-### T49.4. MCP Apps scope gate
-
-Model: sonnet · Status: open · Depends: — · Size: ~70 · Priority: P3 · Complexity: 2
-Goal: decide what a terminal host does with an MCP App (`ui://` resource), on paper.
-Files: `docs/design/v0.3-mcp-apps.md`, `plan.md`.
-Steps:
-1. Problem: share of the MCP servers a cox user runs whose tools declare `_meta.ui.resourceUri`, and whether their text result alone is usable.
-2. The field: MCP Apps — a tool declares `_meta.ui.resourceUri`; the host fetches an HTML `ui://` resource and renders it in a sandboxed iframe, talking JSON-RPC over `postMessage` (`ui/initialize`, tool-call proxying), CSP and permissions in `_meta.ui` (https://modelcontextprotocol.io/extensions/apps/overview, checked 2026-09-28; spec https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx — pin the commit read); client matrix https://modelcontextprotocol.io/extensions/client-matrix (terminal hosts listed or not); the `extensions` capability field added in the 2026-07-28 revision (changelog, minor change 1).
-3. cox: a terminal has no web view. Options: (a) ignore the UI and keep the text result (today's behaviour — say so explicitly and test-backed in a later card); (b) open the `ui://` HTML in the user's browser through a loopback page that implements the host side of the bridge — every app-initiated `tools/call` still goes through `cox_permission::Engine`, and the page is a new network listener; (c) forward to the editor over ACP if ACP ever carries it. Which rmcp version exposes the `extensions` capability.
-4. Falsifiers, e.g. popular servers stop returning a usable text result alongside the UI.
-5. Review verdict.
-Check: the common check with `f=docs/design/v0.3-mcp-apps.md`.
-Done when: the doc exists with a verdict; done.md carries the Check output.
-Out of scope: any HTML rendering or listener.
-
-### T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
-
-Model: sonnet · Status: open · Depends: — · Size: ~90 · Priority: P3 · Complexity: 3
-Goal: decide whether a cox background task may run as a Cursor Cloud Agent (durable, server-side, billed to the caller's Cursor plan), on paper, next to P35's local-CLI plugin.
-Files: `docs/design/v0.3-cursor-cloud.md`, `plan.md`.
-Steps:
-1. Problem: what a cloud run buys over P35's local `agent -p`/`agent acp` subprocess (a task that survives the laptop closing), measured as turns or hours the local path cannot cover.
-2. The field: research.md §4.3.8 (checked 2026-09-26) — agent-shaped endpoints `POST/GET /v1/agents`, runs, SSE `…/runs/{runId}/stream`, `cancel`, `GET /v1/agents/{id}/usage`, artifacts; Basic or Bearer auth on `https://api.cursor.com`; OpenAPI 3.0.3 at https://cursor.com/docs-static/cloud-agents-openapi.yaml; ToS silent on third-party clients (flagged for the creator). Re-fetch the OpenAPI file and https://cursor.com/docs/cloud-agent/api/endpoints and record size and date.
-3. cox: map a run onto `Event::TaskCreated`/`TaskCompleted`/`TaskMessage` (T34.8) so every surface already shows it; the seam is a plugin capability (A54 put Cursor behind plugins), with the network grant and key handling of P33/P35; the code leaves the machine (Cloud Agents clone a GitHub repo), so the permission prompt must say so through `Engine`, never a plugin-side check; each run's `usage` becomes a ledger `usage` row or the feature does not ship; types from the OpenAPI spec per A40 (no Rust SDK exists, §4.3.8) and vendored only through a `scripts/vendor` script (A48).
-4. Falsifiers, e.g. usage cannot be priced into the ledger; the ToS question resolves against third-party clients; runs require a repo host cox cannot assume.
-5. Review verdict.
-Check: the common check with `f=docs/design/v0.3-cursor-cloud.md`.
-Done when: the doc exists with a verdict; done.md carries the Check output.
-Out of scope: any API call with credentials; any plugin code.
 
 ### P50 — Gaps found while planning P39–P49 (goal: the model sees the project's instruction files and skills, and a subagent never runs with wider permissions than its parent)
 
