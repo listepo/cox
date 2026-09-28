@@ -12,7 +12,9 @@ use cox_protocol::types::{
     ArchiveRef, Content, Job, Message, ModelId, Request, SystemBlock, Tier, Usage,
 };
 
-/// Instruction-file stub until T7.1 reads the AGENTS.md chain.
+/// The first line of `system[2]`; the loaded instruction files and the
+/// skills index follow it (T50.1). Kept even when both are empty so a
+/// session without either sends the same prefix bytes as before.
 const INSTRUCTIONS: &str = "Follow repository instruction files when present.";
 
 const PROMPT: &str = include_str!("prompt.md");
@@ -69,15 +71,16 @@ pub fn assemble_with(
     cwd: &Path,
     date: &str,
 ) -> Request {
-    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "")
+    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "", "")
 }
 
-/// `assemble_with` plus the `system[2]` skills index (T22.2), appended last
-/// in the block. An empty index appends nothing, so a user without skills
-/// keeps the exact prefix bytes of every earlier session and `system[0..=2]`
-/// stays byte-stable across turns either way (D6e). The surface builds the
-/// index with `cox_ext::skills::index`; threading it through `Session` is
-/// the recorded T22.2 split, so the core's own call sites pass `""` for now.
+/// `assemble_with` plus the `system[2]` instruction-file block (T50.1) and
+/// skills index (T22.2), in that order after the `INSTRUCTIONS` line. An
+/// empty part appends nothing, so a user without either keeps the exact
+/// prefix bytes of every earlier session and `system[0..=2]` stays
+/// byte-stable across turns either way (D6e). The surface reads both once
+/// (`cox_ext::instructions::load`, `cox_ext::skills::index`) and hands them
+/// to `Session::set_instructions`; this crate reads no files.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_with_skills(
     history: &[Message],
@@ -87,6 +90,7 @@ pub fn assemble_with_skills(
     discovered: &[String],
     cwd: &Path,
     date: &str,
+    instructions: &str,
     skills_index: &str,
 ) -> Request {
     let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
@@ -127,12 +131,17 @@ pub fn assemble_with_skills(
     // the `prefix_bytes_identical_between_turns` test pins still holds.
     let prompt = if minimal { PROMPT_MINIMAL } else { PROMPT };
     // Under `minimal` the skills index never joins `system[2]`: it would
-    // grow the prefix past the cap, and the profile promises no index.
-    let instructions = if minimal || skills_index.is_empty() {
-        INSTRUCTIONS.to_string()
-    } else {
-        format!("{INSTRUCTIONS}\n{skills_index}")
-    };
+    // grow the prefix past the cap, and the profile promises no index. The
+    // instruction files join under every profile: they are the user's
+    // rules for the repository, not cox's scaffolding.
+    let index = if minimal { "" } else { skills_index };
+    let mut stable = INSTRUCTIONS.to_string();
+    for part in [instructions, index] {
+        if !part.is_empty() {
+            stable.push('\n');
+            stable.push_str(part);
+        }
+    }
     let system = vec![
         SystemBlock {
             text: tools_json,
@@ -143,7 +152,7 @@ pub fn assemble_with_skills(
             cache: true,
         },
         SystemBlock {
-            text: instructions,
+            text: stable,
             cache: true,
         },
         SystemBlock {
@@ -542,6 +551,7 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
+            "",
             index,
         );
         assert!(
@@ -581,6 +591,7 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
+            "",
             index,
         );
         assert!(
@@ -606,10 +617,42 @@ mod tests {
             Path::new("/w"),
             "d",
             "",
+            "",
         );
         assert_eq!(
             serde_json::to_vec(&plain.system[0..=2]).expect("plain"),
             serde_json::to_vec(&empty.system[0..=2]).expect("empty"),
         );
+    }
+
+    /// T50.1: `system[2]` is the stub line, then the instruction files, then
+    /// the skills index; `minimal` drops the index but keeps the user's files.
+    #[test]
+    fn instructions_precede_skills_index_and_survive_minimal() {
+        let (block, index) = (
+            "# Instructions\n## AGENTS.md\nBe terse.\n",
+            "# Skills\n- a: b\n",
+        );
+        let two = |config: &cox_protocol::Config| {
+            assemble_with_skills(
+                &[],
+                config,
+                Tier::Code,
+                &[],
+                &[],
+                Path::new("/w"),
+                "d",
+                block,
+                index,
+            )
+            .system[2]
+                .text
+                .clone()
+        };
+        let full = two(&cox_protocol::Config::default());
+        assert_eq!(full, format!("{INSTRUCTIONS}\n{block}\n{index}"));
+        let mut minimal = cox_protocol::Config::default();
+        minimal.core.profile = "minimal".to_string();
+        assert_eq!(two(&minimal), format!("{INSTRUCTIONS}\n{block}"));
     }
 }

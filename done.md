@@ -3126,3 +3126,31 @@ Check output:
 - `cargo nextest run -p cox-tools -E 'test(read_)'`: 14 passed, among them `read_png_returns_structured_image`, `read_oversized_image_is_too_large`, `read_binary_file_is_rejected_with_binary_error`. Before the change the two new tests failed (a PNG with NUL bytes was refused as `Binary`).
 - Real binary, scratch `COX_HOME=/tmp/cox-t40.4` (removed afterwards), scripted provider calling `read` on a 16-byte PNG, `--output-format stream-json`: `tool_call_done` with `"ok":true,"visible":"image/png, 16 B"`, run ended `done`, exit 0.
 - Workspace: `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run --workspace`: 1336 passed, 4 skipped.
+
+#### T50.1 Instruction files and the skills index reach system[2]
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~150 · Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`, `crates/cox/src/session.rs` (the caller that already owns `cox_ext`)
+
+Goal: the `AGENTS.md`/`CLAUDE.md` hierarchy (`cox_ext::instructions::load`) and the skills index are sent to the model in system[2]. Today system[2] is the `INSTRUCTIONS` constant ("Instruction-file stub until T7.1") in `context.rs`, `instructions::load` is called only by `cox ext` listing (`crates/cox/src/ext_cmd.rs`), and the core is handed an empty skills index. The loaded text is passed into the core as data (the core does no I/O), stays byte-stable for the whole session (cache-stable prefix, §1.9) and is not re-read mid-session.
+
+Check: a test builds a request for a session opened on a scratch tree with an `AGENTS.md` and one skill and finds both texts in system[2]; a second turn's system[2] is byte-identical (`prefix_bytes_identical_between_turns` stays green); the test fails on current `main`. Run the real binary against a `COX_HOME` scratch tree with `--output-format stream-json` and a scripted provider (or the request dump) to see the text in the request.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: re-reading instruction files mid-session; the repo map (P43).
+
+Plan:
+1. `context.rs`: `assemble_with_skills` gains `instructions: &str` (the `instructions::load` block) before `skills_index`; system[2] = the `INSTRUCTIONS` line, then the block, then the index, each joined by `\n` only when non-empty, so a tree with neither keeps today's bytes. The block joins under every profile (the user's rules); `minimal` still drops the index.
+2. `cox-core/src/session.rs`: `Session::set_instructions(block, skills_index)`, set once by the surface like `set_agent_defs` (a later call is ignored, so system[2] cannot change mid-session); the one `assemble_with` call site passes both. A child shares the parent's block (not the index: its tools may lack `skill`).
+3. `crates/cox/src/session.rs`: at session build, load the chain with `cox_ext::instructions::load` under `context.instruction_budget_tokens` (notices are warnings, D14) and build the index with `cox_ext::skills::index` before `SkillTool` takes the skills; call `set_instructions` for new and resumed sessions. `crates/cox/src/ext_cmd.rs` (a 4th file): its `Roots` construction becomes one shared `instruction_roots` helper so `cox ext` and the session read the same chain.
+4. Test `instruction_files_and_skills_index_reach_system_two` in `crates/cox/src/session.rs`: scratch tree with `AGENTS.md` and one skill, a recording scripted provider, two turns; both texts in system[2], and system[0..=2] byte-identical between the turns. Fails on `main` (system[2] is the stub).
+5. Real binary: `COX_HOME=/tmp/cox-t50.1 cargo run -- run -p … --output-format stream-json` with a scripted provider or the request dump from a scratch tree with an `AGENTS.md`; then the three AGENTS.md commands.
+
+Status: done 2026-09-28
+Result: `crates/cox/src/session.rs` reads the `AGENTS.md`/`CLAUDE.md` chain once at session build (`cox_ext::instructions::load` under `context.instruction_budget_tokens`, notices as warnings) and the skills index (`cox_ext::skills::index`) in `prefix_texts`, and hands both to the new `Session::set_instructions` (a `OnceLock`, so a second call cannot change the prefix mid-session). `context::assemble_with_skills` takes the block before the index: system[2] is the old `INSTRUCTIONS` line, then the block, then the index, each only when non-empty, so a tree with neither sends the old bytes. The block joins under every profile; `minimal` still drops the index. A subagent shares its parent's block but not the index (its tools may lack `skill`). The core still reads no files.
+Deviations: 4 files instead of ≤3: `crates/cox/src/ext_cmd.rs` gives its `Roots` construction to a shared `instruction_roots`, so `cox ext` lists exactly the chain a session sends instead of a second copy. About 190 lines including the two tests. The `Recorder` test provider in `crates/cox/src/session.rs` lost its `plugins` feature gate so the new test can use it.
+Check output:
+- `instruction_files_and_skills_index_reach_system_two` (`crates/cox/src/session.rs`): a scratch tree with an `AGENTS.md` and one skill, a recording scripted provider, two turns; both texts in system[2], system[0..=2] byte-identical between the turns. Failed before the core change (system[2] was the stub line only), passes now.
+- `instructions_precede_skills_index_and_survive_minimal` (`crates/cox-core/src/context.rs`) pins the order and the `minimal` rule; `prefix_bytes_identical_between_turns`, `skills_index_is_in_system_2` and `minimal_prefix_under_1000_tokens` stay green.
+- Real binary, `COX_HOME=/tmp/cox-t50.1`, `--provider local run -p hi --output-format stream-json` against a local capturing HTTP stand-in: the request's system text carried `# Instructions`, the `AGENTS.md` body and `- greet: …` after the stub line. Scratch tree removed.
+- nextest 1316 passed, 4 skipped; fmt and clippy clean.

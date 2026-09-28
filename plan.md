@@ -91,7 +91,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.3 | todo | P3 | 2 | 0% | |
 | T49.4 | todo | P3 | 2 | 0% | |
 | T49.5 | todo | P3 | 3 | 0% | |
-| T50.1 | in progress | P0 | 3 | 0% | Claude Code / opus-5.5 |
 | T50.2 | in progress | P0 | 3 | 0% | Claude Code / opus-5.5 |
 | T50.3 | todo | P2 | 1 | 0% | |
 
@@ -2824,18 +2823,6 @@ Out of scope: any API call with credentials; any plugin code.
 ### P50 — Gaps found while planning P39–P49 (goal: the model sees the project's instruction files and skills, and a subagent never runs with wider permissions than its parent)
 
 Rationale in §6 A81.
-
-### T50.1. Instruction files and the skills index reach system[2]
-
-Model: mid-tier · Status: open · Depends: — · Size: ~150 · Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`, `crates/cox/src/session.rs` (the caller that already owns `cox_ext`)
-
-Goal: the `AGENTS.md`/`CLAUDE.md` hierarchy (`cox_ext::instructions::load`) and the skills index are sent to the model in system[2]. Today system[2] is the `INSTRUCTIONS` constant ("Instruction-file stub until T7.1") in `context.rs`, `instructions::load` is called only by `cox ext` listing (`crates/cox/src/ext_cmd.rs`), and the core is handed an empty skills index. The loaded text is passed into the core as data (the core does no I/O), stays byte-stable for the whole session (cache-stable prefix, §1.9) and is not re-read mid-session.
-
-Check: a test builds a request for a session opened on a scratch tree with an `AGENTS.md` and one skill and finds both texts in system[2]; a second turn's system[2] is byte-identical (`prefix_bytes_identical_between_turns` stays green); the test fails on current `main`. Run the real binary against a `COX_HOME` scratch tree with `--output-format stream-json` and a scripted provider (or the request dump) to see the text in the request.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: re-reading instruction files mid-session; the repo map (P43).
 
 ### T50.2. Permission-mode changes are recorded, so resume and a woken child keep the live mode
 

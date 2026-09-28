@@ -143,6 +143,13 @@ pub async fn open(
     for notice in &found.notices {
         eprintln!("cox: warning: {notice}");
     }
+    let (instructions, skills_index) = prefix_texts(
+        &home,
+        &claude_home,
+        cwd,
+        config.context.instruction_budget_tokens,
+        &found.skills,
+    );
     // T34.1: subagent definitions are discovered once here, at session
     // build, the same roots `cox ext list` reads — never inside `cox-core`,
     // which does no filesystem I/O of its own (`agent_defs` on `Session`
@@ -211,6 +218,7 @@ pub async fn open(
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
     session.set_agent_defs(agents_found.agents);
+    session.set_instructions(instructions, skills_index);
     // T35.13: one driver per granted `[[external_agents]]` entry; an entry
     // whose CLI or key is missing is left out with one warning (EA§7).
     #[cfg(feature = "plugins")]
@@ -1077,6 +1085,25 @@ pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
     let wt = rt.block_on(cox_tools::git::worktree_add(cwd, &name, &owner))?;
     cli.cwd = Some(wt.path.clone());
     Ok(wt.path)
+}
+
+/// T50.1: the two `system[2]` texts a session opens with — the
+/// `AGENTS.md`/`CLAUDE.md` chain under the instruction budget and the skills
+/// index — read once here, since `cox-core` reads no files. A dropped file
+/// or include cycle is a warning, never fatal (D14).
+fn prefix_texts(
+    home: &Path,
+    claude_home: &Path,
+    cwd: &Path,
+    budget_tokens: u32,
+    skills: &[cox_ext::skills::Skill],
+) -> (String, String) {
+    let roots = crate::ext_cmd::instruction_roots(home, claude_home, cwd);
+    let loaded = cox_ext::instructions::load(&roots, budget_tokens);
+    for notice in &loaded.notices {
+        eprintln!("cox: warning: {notice}");
+    }
+    (loaded.block, cox_ext::skills::index(skills))
 }
 
 /// One worktree-aware project identity for presence writes and polling.
@@ -3403,13 +3430,11 @@ mod tests {
     }
 
     /// T33.12: every request a scripted session sends, for prefix checks.
-    #[cfg(feature = "plugins")]
     struct Recorder {
         inner: cox_provider::scripted::Scripted,
         sent: std::sync::Mutex<Vec<cox_protocol::types::Request>>,
     }
 
-    #[cfg(feature = "plugins")]
     #[async_trait::async_trait]
     impl Provider for Recorder {
         fn id(&self) -> ProviderId {
@@ -3433,6 +3458,70 @@ mod tests {
         ) -> Result<u32, cox_protocol::errors::ProviderError> {
             self.inner.count_tokens(req).await
         }
+    }
+
+    /// T50.1: the `AGENTS.md` chain and the skills index a session opens
+    /// with reach `system[2]`, and the next turn sends the same prefix bytes.
+    #[tokio::test]
+    async fn instruction_files_and_skills_index_reach_system_two() {
+        let (home, claude, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("claude"),
+            tempfile::tempdir().expect("work"),
+        );
+        std::fs::write(work.path().join("AGENTS.md"), "Answer in haiku.\n").expect("agents");
+        let skill = work.path().join(".cox").join("skills").join("greet");
+        std::fs::create_dir_all(&skill).expect("skill dir");
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: greet\ndescription: Greet the user first.\n---\nSay hello.\n",
+        )
+        .expect("skill");
+        let found = cox_ext::skills::discover(&cox_ext::skills::skill_dirs(
+            Some(home.path()),
+            Some(claude.path()),
+            Some(work.path()),
+        ));
+        let config = Config::default();
+        let (block, index) = prefix_texts(
+            home.path(),
+            claude.path(),
+            work.path(),
+            config.context.instruction_budget_tokens,
+            &found.skills,
+        );
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let recorder = Arc::new(Recorder {
+            inner: cox_provider::scripted::Scripted::from_toml(
+                "[[turn]]\ntext = \"one\"\n[[turn]]\ntext = \"two\"\n",
+                "",
+            )
+            .expect("scenario"),
+            sent: std::sync::Mutex::default(),
+        });
+        let session = Session::new_with_id(
+            SessionId::new(),
+            config,
+            recorder.clone(),
+            vec![],
+            store.clone(),
+            store,
+            work.path().to_path_buf(),
+        )
+        .expect("session");
+        session.set_instructions(block, index);
+        user_turn(&session, "one").await;
+        user_turn(&session, "two").await;
+        let sent = recorder.sent.lock().expect("sent").clone();
+        assert_eq!(sent.len(), 2);
+        let two = &sent[0].system[2].text;
+        assert!(two.contains("# Instructions\n"), "{two}");
+        assert!(two.contains("Answer in haiku."), "{two}");
+        assert!(two.contains("- greet: Greet the user first."), "{two}");
+        let prefix = |r: &cox_protocol::types::Request| {
+            serde_json::to_vec(&r.system[0..=2]).expect("prefix")
+        };
+        assert_eq!(prefix(&sent[0]), prefix(&sent[1]));
     }
 
     /// Bytes the `dump` tool of `tool_plugin_wat` answers.

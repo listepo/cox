@@ -24,7 +24,7 @@ use tracing::Instrument as _;
 use crate::budget;
 use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
-use crate::context::assemble_with;
+use crate::context::assemble_with_skills;
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
@@ -169,6 +169,14 @@ pub struct Session {
     /// installed like `worktrees`, empty until then. Not copied to
     /// children — only `new`/`resume` push the `agent` tool at all.
     agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
+    /// The `AGENTS.md`/`CLAUDE.md` block (T50.1) the surface read once
+    /// with `cox_ext::instructions::load` — this crate reads no files.
+    /// Shared with children: a subagent follows the same project rules.
+    instructions: Arc<OnceLock<String>>,
+    /// The `system[2]` skills index (T22.2, T50.1), installed with
+    /// `instructions`. Not copied to children: a child's tool list may
+    /// have no `skill` tool for the index to point at.
+    skills_index: Arc<OnceLock<String>>,
     /// The task id `send_message`'s `Relay` impl stamps a child's own
     /// message with (T34.6, SM§4), set once by `subagent::spawn` right
     /// after the child session exists; unset for the session the user is
@@ -352,6 +360,7 @@ impl Session {
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
         child.worktrees = self.worktrees.clone();
+        child.instructions = self.instructions.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
         // T34.9: share this session's name→TaskId registry so the child can
         // resolve a sibling by name itself (`resolve_name_or_id`).
@@ -455,6 +464,8 @@ impl Session {
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
+            instructions: Arc::new(OnceLock::new()),
+            skills_index: Arc::new(OnceLock::new()),
             self_task: Arc::new(OnceLock::new()),
             external_agents: Arc::new(OnceLock::new()),
             event_tap: Arc::new(OnceLock::new()),
@@ -694,6 +705,14 @@ impl Session {
 
     pub(crate) fn agent_defs(&self) -> &[AgentDef] {
         self.agent_defs.get().map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Installs the instruction-file block and the skills index `system[2]`
+    /// carries (T50.1), read once by the surface at session build. A second
+    /// call is ignored, so the cached prefix cannot change mid-session (§1.9).
+    pub fn set_instructions(&self, block: String, skills_index: String) {
+        let _ = self.instructions.set(block);
+        let _ = self.skills_index.set(skills_index);
     }
 
     /// Installs the granted external-agent drivers (T35.5); the surface
@@ -1343,7 +1362,7 @@ impl Session {
                 }
                 _ => req_messages,
             };
-            let mut req = assemble_with(
+            let mut req = assemble_with_skills(
                 &req_messages,
                 &self.config,
                 route.tier,
@@ -1351,6 +1370,8 @@ impl Session {
                 &discovered,
                 &self.cwd,
                 "",
+                self.instructions.get().map_or("", String::as_str),
+                self.skills_index.get().map_or("", String::as_str),
             );
             req.model = route.model.clone();
             // T22.3: `SessionStart` hook context goes into `system[3]` — the
