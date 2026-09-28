@@ -272,10 +272,10 @@ component.
 | `ModelCapsule(model, isOpen:)`, `CostCapsule(cost:, context:, fraction:, isOpen:)` | CapsuleStyle (active while open), ProgressRing | `.cap` |
 | `ModeSegmented(selection:)` | CoxSegmented; ask, plan, auto, bypass (offered only while on) | `.seg` |
 | `StopButton` | KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
-| `ToolHeader` | IconTile, summary, RiskChip, status, disclosure | `.tool .h` |
-| `DiffLineView`, `DiffHunkView` | gutter, syntax runs | `.diff .ln`, `.hh` |
-| `CodeBlockView` | header, copy button, highlighted runs | `.codeblock` |
-| `TerminalTail` | insetWell, lines | `.tail` |
+| `ToolHeader(item, isExpanded:)` | IconTile, summary (subject bold, monospaced for a command), DiffStat, RiskChip, Spinner / check / cross and duration, disclosure chevron; expanded on `fill.primary` over a hairline | `.tool .h` |
+| `DiffLineView(line, widestNumber:)`, `DiffHunkView(header:, lines:)` | gutter number (`text.secondary`, `text.primary` on a `diff.*Gutter`), sign, `CodeRun` syntax runs on `diff.add` / `diff.del`; the hunk: header on `fill.primary`, one gutter width, `surface.code` | `.diff .ln`, `.hh` |
+| `CodeBlockView(language:, lines:, copy:)` | header (language, icon-only `doc.on.doc` copy button, `CoxButtonStyle(.plain, size: .small)`), `CodeRun` lines scrolling sideways on `surface.code`, `radius.l` | `.codeblock` |
+| `TerminalTail(lines, exit:)` | insetWell on `surface.terminal`, `font.mono.terminal` lines in `text.terminal`, cut with an ellipsis; exit line: check + status in `text.terminalOk`, or `status.danger` cross + status in `text.terminal`; none while running | `.tail` |
 | `UserBubble` | text, Thumbnail | `.user` |
 | `ThinkingDisclosure` | caption, disclosure | `.think` |
 | `NoticeRow`, `TurnDivider`, `TurnMeta` | icon, caption | `.notice`, `.divider`, `.meta` |
