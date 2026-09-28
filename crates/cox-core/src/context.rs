@@ -289,6 +289,26 @@ pub fn strip_thinking_before(mut messages: Vec<Message>, turn_start: usize) -> V
     out
 }
 
+/// Tool images are visible in their own turn only (T40.6): `Content::Image`
+/// is dropped from this copy of every user message before `turn_start`
+/// that carries tool results (a `ToolResult`, or the `Pointer`
+/// microcompaction left in its place). The stored history keeps them and
+/// the rollout never had them, so a resumed session builds the same
+/// request; each result's text still names the image's archive row. A user
+/// attachment sits in a message without tool results and stays.
+pub fn strip_tool_images_before(mut messages: Vec<Message>, turn_start: usize) -> Vec<Message> {
+    for msg in messages.iter_mut().take(turn_start) {
+        let results = msg
+            .content
+            .iter()
+            .any(|c| matches!(c, Content::ToolResult { .. } | Content::Pointer { .. }));
+        if results {
+            msg.content.retain(|c| !matches!(c, Content::Image { .. }));
+        }
+    }
+    messages
+}
+
 /// The marker `compact.rs` prefixes its summary message with; otherwise a
 /// summary is an indistinguishable plain user message (append-only history,
 /// `ItemKind::Summary` replays as one) and could not fill `summary` below.
@@ -630,6 +650,59 @@ mod tests {
         );
         assert!(b.summary > 0 && b.history_pointers > 0 && b.instructions > 0);
         assert_eq!(b.cached_estimate, usage.cache_read_tokens);
+    }
+
+    fn png() -> Content {
+        Content::Image {
+            media_type: "image/png".into(),
+            data_b64: "iVBORw==".into(),
+        }
+    }
+
+    fn results_with_image() -> Message {
+        Message {
+            role: cox_protocol::types::Role::User,
+            content: vec![
+                Content::ToolResult {
+                    call_id: CallId::new(),
+                    content: "[image image/png, 0.0 KiB, archived as x; visible to the model \
+                              in this turn only]"
+                        .into(),
+                    is_error: false,
+                },
+                png(),
+            ],
+        }
+    }
+
+    /// T40.6: a tool image before the turn start leaves the request; the
+    /// pointer text stays, and the running turn keeps its own image.
+    #[test]
+    fn tool_image_dropped_after_its_turn() {
+        let old = results_with_image();
+        let current = results_with_image();
+        let out = strip_tool_images_before(vec![old.clone(), current.clone()], 1);
+        assert_eq!(out[0].content, old.content[..1].to_vec());
+        assert_eq!(out[1], current);
+    }
+
+    /// T40.6: a user attachment is in a message without tool results, so it
+    /// is sent on every later turn too.
+    #[test]
+    fn user_attachment_kept_across_turns() {
+        let user = Message {
+            role: cox_protocol::types::Role::User,
+            content: vec![
+                png(),
+                Content::Text {
+                    text: "look".into(),
+                },
+            ],
+        };
+        let history = vec![user, results_with_image()];
+        let out = strip_tool_images_before(history.clone(), 2);
+        assert_eq!(out[0], history[0]);
+        assert!(!out[1].content.contains(&png()));
     }
 
     /// T40.3: an image counts `IMAGE_TOKEN_ESTIMATE` in its message's

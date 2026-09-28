@@ -96,9 +96,15 @@ impl Provider for Signed {
     }
 }
 
-/// `Scripted` on a wire that takes images, so a user attachment reaches
-/// history as `Content::Image` (T40.2).
-struct Seeing(Scripted);
+/// `Scripted` on a wire that takes images, so a user attachment or a tool
+/// image reaches history as `Content::Image` (T40.2, T40.5); keeps every
+/// request it is sent.
+struct Seeing(Scripted, std::sync::Mutex<Vec<Request>>);
+
+fn seeing(toml: &str) -> Arc<Seeing> {
+    let scripted = Scripted::from_toml(toml, "").expect("scenario");
+    Arc::new(Seeing(scripted, std::sync::Mutex::default()))
+}
 
 #[async_trait]
 impl Provider for Seeing {
@@ -117,6 +123,9 @@ impl Provider for Seeing {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
+        let mut seen = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        seen.push(req.clone());
+        drop(seen);
         self.0.stream(req, sink, cancel).await
     }
     async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
@@ -175,7 +184,7 @@ async fn resume_builds_identical_request() {
         media_type: "image/png".into(),
         data_b64: "iVBORw0KGgo=".into(),
     };
-    let (live, req) = resume_matches_live(Arc::new(Seeing(scripted())), vec![shot.clone()]).await;
+    let (live, req) = resume_matches_live(seeing(&scenario()), vec![shot.clone()]).await;
     assert_eq!(
         live[0].content[0],
         Content::Image {
@@ -196,6 +205,115 @@ async fn resume_builds_identical_request_with_signature() {
         .flat_map(|m| &m.content)
         .any(|c| matches!(c, Content::Thinking { signature: Some(sig), .. } if sig == "sig-1"));
     assert!(signed, "no signed block to rebuild: {live:?}");
+}
+
+/// Returns a PNG under `structured["image"]`, as `read` does (T40.4).
+struct Shot;
+
+#[async_trait]
+impl Tool for Shot {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "shot".into(),
+            description: "a png".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+            deferred: false,
+            risk: Risk::ReadOnly,
+            concurrency: Concurrency::Parallel,
+        }
+    }
+    fn subject(&self, _input: &Value) -> String {
+        String::new()
+    }
+    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+        Ok(ToolOutput {
+            text: "image/png, 16 B".into(),
+            is_error: false,
+            diff: None,
+            structured: Some(cox_protocol::image::to_structured("image/png", png)),
+        })
+    }
+}
+
+fn user_turn(text: &str) -> Submission {
+    Submission::UserTurn {
+        text: text.into(),
+        attachments: vec![],
+        confirm_think: false,
+    }
+}
+
+fn has_image(messages: &[Message]) -> bool {
+    messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .any(|c| matches!(c, Content::Image { .. }))
+}
+
+/// T40.6 (invariant 6): turn 1 reads an image, turn 2 is sent. The live
+/// session drops the image from turn 2's request while its history keeps
+/// it; the rollout never stored it, so a session resumed after turn 1
+/// sends the very same turn-2 request.
+#[tokio::test]
+async fn resume_builds_identical_request_after_a_tool_image() {
+    let cwd = PathBuf::from("/tmp/cox-turn");
+    let mut config = cox_protocol::Config::default();
+    config.core.workspace_roots = vec![cwd.clone()];
+    // No title job: it would take one of the scripted replies.
+    config.session.auto_title = false;
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Shot)];
+    let store = Arc::new(MemoryStore::new());
+    let live = seeing(
+        "[[turn]]\ntext = \"looking\"\ntool_calls = [{ name = \"shot\", input = {} }]\n\n\
+         [[turn]]\ntext = \"seen\"\n\n[[turn]]\ntext = \"again\"\n",
+    );
+    let session = Session::new(
+        config.clone(),
+        live.clone(),
+        tools.clone(),
+        store.clone(),
+        store.clone(),
+        cwd.clone(),
+    )
+    .expect("session");
+    session.submit(user_turn("first")).await.expect("turn 1");
+    let id = session.id();
+    let history = History::from_events(&store.rollout_read(&id).expect("rollout"));
+    assert!(
+        !has_image(&history.messages),
+        "the rollout stores no tool image"
+    );
+    session.submit(user_turn("second")).await.expect("turn 2");
+    assert!(
+        has_image(&session.history().await),
+        "history is append-only"
+    );
+
+    let resumed_provider = seeing("[[turn]]\ntext = \"again\"\n");
+    let other = Arc::new(MemoryStore::new());
+    let resumed = Session::resume(
+        config,
+        resumed_provider.clone(),
+        tools,
+        other.clone(),
+        other,
+        cwd,
+        id,
+        history,
+    )
+    .expect("resume");
+    resumed
+        .submit(user_turn("second"))
+        .await
+        .expect("resumed turn 2");
+
+    let live_seen = live.1.lock().unwrap_or_else(|e| e.into_inner());
+    let resumed_seen = resumed_provider.1.lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(live_seen.len(), 3);
+    assert!(has_image(&live_seen[1].messages), "turn 1 sees its image");
+    assert!(!has_image(&live_seen[2].messages), "turn 2 does not");
+    assert_eq!(resumed_seen.last(), live_seen.last());
 }
 
 /// Runs `one_tool`, rebuilds history from the rollout, and asserts it and

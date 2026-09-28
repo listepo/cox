@@ -1520,6 +1520,12 @@ impl Session {
                 microcompact_after,
                 &archives,
             );
+            // T40.6: on every request, routed or not — an earlier turn's
+            // tool image is never resent, and never in a resumed request.
+            let req_messages = match marks.last() {
+                Some(start) => crate::context::strip_tool_images_before(req_messages, *start),
+                None => req_messages,
+            };
             let req_messages = match marks.last() {
                 Some(start) if routed => {
                     crate::context::strip_thinking_before(req_messages, *start)
