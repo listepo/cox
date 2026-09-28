@@ -27,7 +27,9 @@ private let blocks: [Block] = [
     [
       .text(kind: .heading(2), lines: [TextLine(line("The fix"))]),
       .text(kind: .paragraph, lines: [TextLine(line("The test raced the watcher; it now waits."))]),
-      .text(kind: .list, lines: [TextLine(line("• wait for the first event")), TextLine(line("• drop the sleep"))]),
+      .text(
+        kind: .list,
+        lines: [TextLine(line("• wait for the first event")), TextLine(line("• drop the sleep"))]),
       .code(lang: "rust", lines: [line("let event = rx.recv().await?;")]),
     ]),
 ]

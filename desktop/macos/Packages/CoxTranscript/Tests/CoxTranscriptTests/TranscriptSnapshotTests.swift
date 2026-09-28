@@ -13,8 +13,12 @@ private func line(_ text: String) -> [Span] { [Span(text: text)] }
 
 private let reply = StyledDoc(blocks: [
   .text(kind: .heading(2), lines: [TextLine(line("The fix"))]),
-  .text(kind: .paragraph, lines: [TextLine(line("The test raced the watcher; it now waits for the event."))]),
-  .text(kind: .list, lines: [TextLine(line("wait for the first event")), TextLine(line("drop the sleep"))]),
+  .text(
+    kind: .paragraph,
+    lines: [TextLine(line("The test raced the watcher; it now waits for the event."))]),
+  .text(
+    kind: .list,
+    lines: [TextLine(line("wait for the first event")), TextLine(line("drop the sleep"))]),
   .code(
     lang: "rust",
     lines: [line("let event = rx.recv().await?;"), line("assert_eq!(event.kind, Kind::Write);")]),
