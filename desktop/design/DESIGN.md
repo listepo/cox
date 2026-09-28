@@ -301,7 +301,7 @@ component.
 | `TranscriptView` | lazy list of TurnView from timeline patches | `.scroll` |
 | `Composer` | text field, ComposerChip, TokenMeter, send button | `.composer` |
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
-| `AppearancePopover` | MaterialPicker, LabeledSlider ×3, LabeledToggle ×2 | `.appear` |
+| `AppearancePopover(state:, send:)` | title and KeyCap, MaterialPicker, LabeledSlider ×3 (transparency; blur, or reflection for Glossy; Depth), LabeledToggle (tint), a note in footnote; readable `surface.popover` glass at e4. Solid disables transparency and blur; Reduce Transparency disables all but Depth and the note says why. Reports one intent per `[desktop.appearance]` key; the window draws from the same state | `.appear` |
 | `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot | `.insp` |
 
 ### 6.5 The glass main screen, decomposed

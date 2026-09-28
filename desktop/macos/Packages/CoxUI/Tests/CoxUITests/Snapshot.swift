@@ -110,11 +110,39 @@ struct SnapshotHost<Sample: View> {
 /// the calling test file.
 @MainActor
 func assertCoxSnapshot(
-  _ sample: some View, _ variant: Variant, named name: String, testName: String = #function,
-  filePath: StaticString = #filePath, fileID: StaticString = #fileID, line: UInt = #line
+  _ sample: some View, _ variant: Variant, reduceTransparency: Bool = false,
+  named name: String, testName: String = #function, filePath: StaticString = #filePath,
+  fileID: StaticString = #fileID, line: UInt = #line
 ) throws {
-  let image = try SnapshotHost(sample, variant).image()
+  let image = try SnapshotHost(sample, variant, reduceTransparency: reduceTransparency).image()
   // Anti-aliasing differs slightly between machines; a real change moves far more pixels.
+  assertSnapshot(
+    of: image, as: .image(precision: 0.995, perceptualPrecision: 0.98), named: name,
+    fileID: fileID, file: filePath, testName: testName, line: line)
+}
+
+/// Asserts a whole window at 1× — its structure is the check, and the organisms' own snapshots
+/// hold the detail at 2× — so the committed images stay a few hundred kilobytes each.
+@MainActor
+func assertCoxWindowSnapshot(
+  _ screen: some View, _ variant: Variant, reduceTransparency: Bool = false,
+  named name: String, testName: String = #function, filePath: StaticString = #filePath,
+  fileID: StaticString = #fileID, line: UInt = #line
+) throws {
+  let sample = screen.frame(width: PreviewState.window.width, height: PreviewState.window.height)
+  let full = try SnapshotHost(sample, variant, reduceTransparency: reduceTransparency).bitmap()
+  let rep = try #require(
+    NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: Int(full.size.width), pixelsHigh: Int(full.size.height),
+      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+  rep.size = full.size
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+  full.draw(in: CGRect(origin: .zero, size: full.size))
+  NSGraphicsContext.restoreGraphicsState()
+  let image = NSImage(size: rep.size)
+  image.addRepresentation(rep)
   assertSnapshot(
     of: image, as: .image(precision: 0.995, perceptualPrecision: 0.98), named: name,
     fileID: fileID, file: filePath, testName: testName, line: line)
