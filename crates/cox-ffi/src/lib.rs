@@ -5,11 +5,11 @@
 //! sessions are `cox-app`'s (T37.39), so its sole workspace dependencies are
 //! `cox-app` and `cox-protocol`, and it alone uses `uniffi` (`deps.rs`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use cox_app::app::{App as Owner, AppError as OwnerError};
-use cox_app::{Activity, Holder, InboxItem, SearchHit, SessionEntry, WorkspaceError};
+use cox_app::{Activity, Holder, InboxItem, SearchHit, SessionEntry, SettingsView, WorkspaceError};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
 use tokio::runtime::Runtime;
@@ -21,6 +21,7 @@ pub mod types;
 
 pub use host::AppHost;
 pub use session::SessionHandle;
+pub use types::{OpenRequest, Project};
 
 uniffi::setup_scaffolding!();
 
@@ -37,6 +38,8 @@ pub enum AppError {
     #[error("{message}")]
     Workspace { message: String },
     #[error("{message}")]
+    Settings { message: String },
+    #[error("{message}")]
     Runtime { message: String },
 }
 
@@ -47,6 +50,7 @@ impl From<OwnerError> for AppError {
             OwnerError::Busy { id, holder } => Self::Busy { id, holder },
             OwnerError::Intent(_) => Self::Intent { message },
             OwnerError::Workspace(_) => Self::Workspace { message },
+            OwnerError::Settings(_) => Self::Settings { message },
             _ => Self::Session { message },
         }
     }
@@ -94,25 +98,6 @@ async fn on_runtime<T: Send + 'static>(
 #[uniffi::export]
 pub async fn load_login_env() -> Result<Option<String>, AppError> {
     on_runtime(cox_app::app::load_login_env()).await
-}
-
-/// One sidebar project (`cox_app::ProjectRow`, its count as `u64`).
-#[derive(uniffi::Record)]
-pub struct Project {
-    pub root: PathBuf,
-    pub name: String,
-    pub sessions: u64,
-    pub cost_usd: f64,
-    pub updated_at: String,
-}
-
-/// What [`App::open`] opens: a new session in `cwd`, or `resume`'s.
-/// `theme` is the syntect theme code blocks are highlighted with.
-#[derive(uniffi::Record)]
-pub struct OpenRequest {
-    pub cwd: String,
-    pub resume: Option<SessionId>,
-    pub theme: String,
 }
 
 /// One per process: the workspace, the inbox across sessions, the host.
@@ -178,6 +163,21 @@ impl App {
 
     pub fn dismiss(&self, session: SessionId, seq: u64) {
         self.owner.dismiss(session, seq);
+    }
+
+    /// The Settings screen for a session in `cwd` (DT§5.7).
+    pub fn settings(&self, cwd: String) -> Result<SettingsView, AppError> {
+        Ok(self.owner.settings(Path::new(&cwd))?)
+    }
+
+    /// Sets `key` to the JSON `value` in the user file; the new view.
+    pub fn set_setting(
+        &self,
+        cwd: String,
+        key: String,
+        value: String,
+    ) -> Result<SettingsView, AppError> {
+        Ok(self.owner.set_setting(Path::new(&cwd), &key, &value)?)
     }
 
     pub async fn open(&self, request: OpenRequest) -> Result<Arc<SessionHandle>, AppError> {

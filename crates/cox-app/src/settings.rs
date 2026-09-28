@@ -1,0 +1,345 @@
+//! The Settings screen's model (DT§5.7, T37.30): every leaf of the
+//! effective config with the layer it came from, what `Config`'s JSON Schema
+//! says about it, and whether an edit to the user file would take effect.
+//! Edits go through `cox-config`'s comment-preserving `set`. Here rather
+//! than in Swift so the layering, the schema walk and the read-only rule are
+//! tested once, in Rust; the loading itself stays `cox-config`'s.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use cox_config::ConfigError;
+use cox_protocol::errors::CoreError;
+use serde::Serialize;
+use serde_json::Value;
+
+/// The layer a value came from, the badge beside each field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Layer {
+    Default,
+    User,
+    Project,
+    ClaudeSettings,
+    Env,
+    Flag,
+}
+
+impl Layer {
+    fn from_source(source: &str) -> Self {
+        match source {
+            "user" => Self::User,
+            "project" => Self::Project,
+            "claude-settings" => Self::ClaudeSettings,
+            "env" => Self::Env,
+            "flag" => Self::Flag,
+            _ => Self::Default,
+        }
+    }
+}
+
+impl std::fmt::Display for Layer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Default => "default",
+            Self::User => "user",
+            Self::Project => "project",
+            Self::ClaudeSettings => "claude-settings",
+            Self::Env => "env",
+            Self::Flag => "flag",
+        })
+    }
+}
+
+/// The control a field takes, from its schema.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SettingKind {
+    Toggle,
+    Integer {
+        min: Option<f64>,
+        max: Option<f64>,
+    },
+    Number {
+        min: Option<f64>,
+        max: Option<f64>,
+    },
+    Text,
+    Choice {
+        options: Vec<String>,
+    },
+    List,
+    /// A shape the schema leaves open (plugin tables, hook entries).
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Setting {
+    /// Dotted, as `cox config set` takes it.
+    pub key: String,
+    pub value: Value,
+    pub layer: Layer,
+    /// Whether an edit to the user file takes effect: `false` once a layer
+    /// above it (project, Claude settings, env, flag) sets the key.
+    pub editable: bool,
+    pub kind: SettingKind,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SettingsView {
+    /// Sorted by key.
+    pub settings: Vec<Setting>,
+    /// Where edits go.
+    pub user_file: PathBuf,
+    /// The project's `.cox/config.toml`, when there is one.
+    pub project_file: Option<PathBuf>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error(transparent)]
+    Load(#[from] CoreError),
+    #[error(transparent)]
+    Edit(#[from] ConfigError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("not JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("no setting `{0}`")]
+    Unknown(String),
+    #[error("`{key}` is set by the {layer} layer; change it there")]
+    ReadOnly { key: String, layer: Layer },
+}
+
+/// The effective config for a session in `cwd`, loaded as `live.rs` loads
+/// it: no flags, no Claude-settings layer (only `crates/cox` reads that).
+pub fn view(user_file: &Path, cwd: &Path) -> Result<SettingsView, SettingsError> {
+    let flags = Value::Object(serde_json::Map::new());
+    let loaded = cox_config::load::load_in(user_file, cwd, &flags, |_| None)?;
+    let schema = cox_config::schema()?;
+    let settings = cox_config::cmd::leaves(&loaded)?
+        .into_iter()
+        .map(|(key, value)| {
+            let layer = Layer::from_source(loaded.source_of(&key));
+            let (kind, description) = describe(&schema, &key);
+            Setting {
+                editable: matches!(layer, Layer::Default | Layer::User),
+                key,
+                value,
+                layer,
+                kind,
+                description,
+            }
+        })
+        .collect();
+    Ok(SettingsView {
+        settings,
+        user_file: user_file.to_path_buf(),
+        project_file: cox_config::load::project_config_path(cwd).filter(|p| p.exists()),
+    })
+}
+
+/// Writes `json` for `key` to the user file and returns the new view. An
+/// edit the loader then rejects (a wrong type, out of range) puts the file
+/// back as it was, so the app never leaves a config the CLI cannot load.
+pub fn set(
+    user_file: &Path,
+    cwd: &Path,
+    key: &str,
+    json: &str,
+) -> Result<SettingsView, SettingsError> {
+    let value: Value = serde_json::from_str(json)?;
+    let before = view(user_file, cwd)?;
+    let row = before
+        .settings
+        .iter()
+        .find(|s| s.key == key)
+        .ok_or_else(|| SettingsError::Unknown(key.to_string()))?;
+    if !row.editable {
+        return Err(SettingsError::ReadOnly {
+            key: key.to_string(),
+            layer: row.layer,
+        });
+    }
+    let previous = fs::read(user_file).ok();
+    cox_config::cmd::set_json_in(user_file, key, &value)?;
+    match view(user_file, cwd) {
+        Ok(after) => Ok(after),
+        Err(rejected) => {
+            match previous {
+                Some(bytes) => fs::write(user_file, bytes)?,
+                None => fs::remove_file(user_file)?,
+            }
+            Err(rejected)
+        }
+    }
+}
+
+/// The control and help text the schema gives `key`; a key it does not
+/// reach is `Other` with no text.
+fn describe(schema: &Value, key: &str) -> (SettingKind, String) {
+    let Some(node) = property(schema, key) else {
+        return (SettingKind::Other, String::new());
+    };
+    let target = resolve(schema, node);
+    let description = node
+        .get("description")
+        .or_else(|| target.get("description"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    (kind(target), description)
+}
+
+/// Walks `properties` (and a map's `additionalProperties`) down `key`.
+fn property<'a>(root: &'a Value, key: &str) -> Option<&'a Value> {
+    key.split('.').try_fold(root, |node, part| {
+        let node = resolve(root, node);
+        node.get("properties")
+            .and_then(|p| p.get(part))
+            .or_else(|| node.get("additionalProperties").filter(|v| v.is_object()))
+    })
+}
+
+/// Follows `#/$defs/<name>` references, a bounded number of hops.
+fn resolve<'a>(root: &'a Value, mut node: &'a Value) -> &'a Value {
+    for _ in 0..8 {
+        let next = node
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|r| r.strip_prefix("#/$defs/"))
+            .and_then(|name| root.get("$defs")?.get(name));
+        match next {
+            Some(next) => node = next,
+            None => break,
+        }
+    }
+    node
+}
+
+fn kind(node: &Value) -> SettingKind {
+    let consts: Option<Vec<String>> = node.get("oneOf").and_then(Value::as_array).map(|all| {
+        all.iter()
+            .filter_map(|v| v.get("const")?.as_str().map(String::from))
+            .collect()
+    });
+    if let Some(options) = consts.filter(|o| !o.is_empty()) {
+        return SettingKind::Choice { options };
+    }
+    let bound = |name| node.get(name).and_then(Value::as_f64);
+    let (min, max) = (bound("minimum"), bound("maximum"));
+    let ty = match node.get("type") {
+        Some(Value::Array(types)) => types
+            .iter()
+            .filter_map(Value::as_str)
+            .find(|t| *t != "null"),
+        Some(other) => other.as_str(),
+        None => None,
+    };
+    match ty {
+        Some("boolean") => SettingKind::Toggle,
+        Some("integer") => SettingKind::Integer { min, max },
+        Some("number") => SettingKind::Number { min, max },
+        Some("string") => SettingKind::Text,
+        Some("array") => SettingKind::List,
+        _ => SettingKind::Other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A user file and a git checkout whose `.cox/config.toml` overrides
+    /// the model and tries to raise the budget (a guarded key).
+    fn scratch() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let user = dir.path().join("home/config.toml");
+        let project = dir.path().join("project");
+        fs::create_dir_all(user.parent().expect("parent")).expect("home");
+        fs::create_dir_all(project.join(".git")).expect(".git");
+        fs::create_dir_all(project.join(".cox")).expect(".cox");
+        fs::write(
+            &user,
+            "# mine\n[tiers.code]\nmodel = \"user-model\"\n\n[desktop.appearance]\nmaterial = \"glossy\"\n",
+        )
+        .expect("user file");
+        fs::write(
+            project.join(".cox/config.toml"),
+            "[tiers.code]\nmodel = \"project-model\"\n\n[budget]\nsession_usd = 999.0\n",
+        )
+        .expect("project file");
+        (dir, user, project)
+    }
+
+    fn rows<'a>(view: &'a SettingsView, keys: &[&str]) -> Vec<&'a Setting> {
+        keys.iter()
+            .map(|k| {
+                view.settings
+                    .iter()
+                    .find(|s| s.key == *k)
+                    .expect("key listed")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_setting_the_project_overrides_is_read_only_with_its_layer() {
+        let (_dir, user, project) = scratch();
+        let view = view(&user, &project).expect("view");
+        assert!(view.project_file.is_some());
+        insta::assert_json_snapshot!(rows(
+            &view,
+            &[
+                "tiers.code.model",
+                "budget.session_usd",
+                "desktop.appearance.material",
+                "desktop.appearance.opacity",
+                "desktop.appearance.tint",
+                "core.max_turns",
+                "core.workspace_roots",
+            ]
+        ));
+    }
+
+    #[test]
+    fn set_writes_the_user_file_and_keeps_its_comments() {
+        let (_dir, user, project) = scratch();
+        let after = set(&user, &project, "desktop.appearance.opacity", "0.5").expect("set");
+        let row = rows(&after, &["desktop.appearance.opacity"])[0];
+        assert_eq!(
+            (row.layer, &row.value),
+            (Layer::User, &serde_json::json!(0.5))
+        );
+        assert!(
+            fs::read_to_string(&user)
+                .expect("read")
+                .starts_with("# mine\n")
+        );
+    }
+
+    #[test]
+    fn set_refuses_a_key_a_higher_layer_sets() {
+        let (_dir, user, project) = scratch();
+        let err = set(&user, &project, "tiers.code.model", "\"x\"").expect_err("read-only");
+        assert!(matches!(
+            err,
+            SettingsError::ReadOnly {
+                layer: Layer::Project,
+                ..
+            }
+        ));
+        let unknown = set(&user, &project, "no.such.key", "1").expect_err("unknown");
+        assert!(matches!(unknown, SettingsError::Unknown(_)));
+    }
+
+    #[test]
+    fn a_value_the_loader_rejects_leaves_the_user_file_as_it_was() {
+        let (_dir, user, project) = scratch();
+        let before = fs::read(&user).expect("read");
+        let err = set(&user, &project, "desktop.appearance.opacity", "1.5").expect_err("range");
+        assert!(matches!(err, SettingsError::Load(_)), "{err}");
+        assert_eq!(fs::read(&user).expect("read"), before);
+    }
+}

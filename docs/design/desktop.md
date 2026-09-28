@@ -245,9 +245,8 @@ impl App {
     pub async fn search(&self, query: String, limit: u32) -> Vec<SearchHit>;
     pub async fn open(&self, req: OpenRequest) -> Result<Arc<SessionHandle>, AppError>;
     pub async fn next_app_patches(&self) -> Vec<AppPatch>;   // sidebar, inbox, badge
-    pub fn settings(&self) -> SettingsView;                   // values + provenance
-    pub fn set_setting(&self, key: String, json: String) -> Result<(), AppError>;
-    pub fn store_key(&self, provider: String, secret: String) -> Result<(), AppError>;
+    pub fn settings(&self, cwd: String) -> Result<SettingsView, AppError>; // values + provenance
+    pub fn set_setting(&self, cwd: String, key: String, json: String) -> Result<SettingsView, AppError>;
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -277,9 +276,11 @@ Rules:
 - **The patch types derive `Serialize` and `JsonSchema` too.** The same stream
   can later go over a socket (`cox app-server`, M3 remote sessions) or be
   recorded as a fixture for Swift tests (DT§8) without a second protocol.
-- Secrets: the Rust side keeps resolving keys with `resolve_key` (keyring).
-  Tests inject the lookup, never the real Keychain (A49); `store_key` is the
-  only write path.
+- Secrets (T37.30): Rust asks `Host::secret(section)`; an env var still
+  wins. CoxPlatform's `KeychainSecretStore` is the one write path and the
+  reader behind `secret`: generic-password items `cox/<section>`, the item
+  the CLI's keyring entry uses, so one key serves both. Tests use an
+  in-memory store, never the real Keychain (A49).
 
 ### 4.5 Threads, runtime, backpressure, cancellation
 
@@ -513,7 +514,7 @@ provenance badge — *default*, *user*, *project*, *env*, *flag* — from
 `source_of`; a field overridden by the project config shows the project file
 and is read-only here (project guard keys stay guarded). Edits go through
 `cox-config`'s comment-preserving `set` (user file only). Provider keys are
-entered in a secure field and go to the Keychain through `store_key`. MCP:
+entered in a secure field and go to the Keychain through `SecretStore`. MCP:
 status per server, Log in / Log out; login opens the browser via `Host`.
 
 ### 5.8 Onboarding and empty states

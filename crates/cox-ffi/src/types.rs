@@ -4,7 +4,8 @@
 //! fails this build instead of drifting. Separate from the exported objects
 //! because these are data only. Ids and paths cross as strings; the one
 //! type UniFFI cannot carry as-is (a span's `[u8; 3]` colour) crosses as
-//! the local `Span`.
+//! the local `Span`, and the two records only this surface has (`Project`,
+//! `OpenRequest`) are declared here too.
 
 use std::path::PathBuf;
 
@@ -13,8 +14,8 @@ use cox_app::SessionInfo;
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, Completion, Icon, InboxItem, Intent, Need, SearchHit, SessionEntry, Tally, TurnUsage,
-    UsageView,
+    Activity, Completion, Icon, InboxItem, Intent, Layer, Need, SearchHit, SessionEntry, Setting,
+    SettingKind, SettingsView, Tally, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -83,6 +84,25 @@ uniffi::custom_type!(StyledSpan, Span, {
         link: s.link,
     }),
 });
+
+/// One sidebar project (`cox_app::ProjectRow`, its count as `u64`).
+#[derive(uniffi::Record)]
+pub struct Project {
+    pub root: PathBuf,
+    pub name: String,
+    pub sessions: u64,
+    pub cost_usd: f64,
+    pub updated_at: String,
+}
+
+/// What `App::open` opens: a new session in `cwd`, or `resume`'s.
+/// `theme` is the syntect theme code blocks are highlighted with.
+#[derive(uniffi::Record)]
+pub struct OpenRequest {
+    pub cwd: String,
+    pub resume: Option<SessionId>,
+    pub theme: String,
+}
 
 /// `StyledSpan` with its theme colour as `0xRRGGBB`.
 #[derive(uniffi::Record)]
@@ -439,6 +459,44 @@ pub struct WorktreeInfo {
     pub stale: bool,
     pub merged: bool,
     pub bytes: u64,
+}
+
+#[uniffi::remote(Record)]
+pub struct SettingsView {
+    pub settings: Vec<Setting>,
+    pub user_file: PathBuf,
+    pub project_file: Option<PathBuf>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Setting {
+    pub key: String,
+    pub value: Value,
+    pub layer: Layer,
+    pub editable: bool,
+    pub kind: SettingKind,
+    pub description: String,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Layer {
+    Default,
+    User,
+    Project,
+    ClaudeSettings,
+    Env,
+    Flag,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SettingKind {
+    Toggle,
+    Integer { min: Option<f64>, max: Option<f64> },
+    Number { min: Option<f64>, max: Option<f64> },
+    Text,
+    Choice { options: Vec<String> },
+    List,
+    Other,
 }
 
 #[uniffi::remote(Record)]

@@ -4,7 +4,7 @@
 //! Here rather than in `cox-ffi` (T37.39, A71) so the FFI only forwards and
 //! this logic is tested in Rust once, without a foreign language.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -16,7 +16,8 @@ use cox_session::SessionError;
 use cox_store::lock::Holder;
 
 use crate::live::LiveSession;
-use crate::{Activity, Inbox, InboxItem, IntentError, Workspace, WorkspaceError};
+use crate::{Activity, Inbox, InboxItem, IntentError, SettingsError, SettingsView};
+use crate::{Workspace, WorkspaceError};
 
 /// DT§4.8: how long the login shell may take before its env is skipped.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -49,6 +50,8 @@ pub enum AppError {
     Intent(#[from] IntentError),
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+    #[error(transparent)]
+    Settings(#[from] SettingsError),
     #[error("the session's events were already taken")]
     EventsTaken,
 }
@@ -134,6 +137,21 @@ impl App {
             None => None,
         };
         LiveSession::open(Arc::clone(self), cwd, resume, theme).await
+    }
+
+    /// The Settings screen for a session in `cwd` (DT§5.7).
+    pub fn settings(&self, cwd: &Path) -> Result<SettingsView, AppError> {
+        Ok(crate::settings::view(&self.user_config(), cwd)?)
+    }
+
+    /// Sets `key` to `json` in this home's `config.toml`; the new view.
+    pub fn set_setting(&self, cwd: &Path, key: &str, json: &str) -> Result<SettingsView, AppError> {
+        Ok(crate::settings::set(&self.user_config(), cwd, key, json)?)
+    }
+
+    /// This home's `config.toml`, what sessions and Settings both read.
+    pub(crate) fn user_config(&self) -> PathBuf {
+        self.home.join("config.toml")
     }
 
     fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {

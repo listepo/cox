@@ -2,8 +2,9 @@
 //! layers `config/default.toml`, the user and project `config.toml`, the
 //! `.claude/settings.json` import, `COX_*` env vars and CLI flags, applies
 //! the project-config guard list and answers provenance; `cmd` renders and
-//! edits the user config file for `cox config show|get|set|path`; the
-//! schema drift test pins `Config`'s JSON Schema to `docs/config.jsonschema`.
+//! edits the user config file for `cox config show|get|set|path`; [`schema`]
+//! is `Config`'s JSON Schema, which the drift test pins to
+//! `docs/config.jsonschema` and the desktop Settings screen reads.
 //!
 //! Separate from `crates/cox` (size (c): a ~1k-line leaf, and reuse (d):
 //! any surface can load config without the clap binary). `figment` and
@@ -43,14 +44,23 @@ pub enum ConfigError {
     /// A dotted key walks through a value that is not a table.
     #[error("`{part}` in `{key}` is not a table")]
     NotATable { part: String, key: String },
+    /// A value that has no TOML form a config key takes (`null`, an object).
+    #[error("`{key}` cannot be set to {value}")]
+    UnsupportedValue { key: String, value: String },
+}
+
+/// `Config`'s JSON Schema, the one `docs/config.jsonschema` commits.
+/// Through `Serialize`, not `Schema::to_value`: schemars orders the
+/// keywords (`$schema`, `title`, …) only when it serializes.
+pub fn schema() -> Result<serde_json::Value, ConfigError> {
+    Ok(serde_json::to_value(schemars::schema_for!(
+        cox_protocol::Config
+    ))?)
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-
-    use cox_protocol::Config;
-    use schemars::schema_for;
 
     /// The config-schema drift test (AGENTS.md "Config files"): generates
     /// `Config`'s JSON Schema and checks it against the committed
@@ -58,8 +68,9 @@ mod tests {
     /// diff. Same shape as `cox-protocol`'s `protocol_jsonschema` test.
     #[test]
     fn config_jsonschema_matches_committed_file() {
-        let generated =
-            serde_json::to_string_pretty(&schema_for!(Config)).expect("schema serializes") + "\n";
+        let generated = serde_json::to_string_pretty(&super::schema().expect("schema"))
+            .expect("schema serializes")
+            + "\n";
 
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/config.jsonschema");
         match std::fs::read_to_string(&path) {
