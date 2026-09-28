@@ -385,7 +385,9 @@ enum TranscriptText {
     }
     switch block {
     case .text(_, let lines):
-      return (lines.map { $0.lead + $0.spans.map(\.text).joined() }.joined(separator: separator), false)
+      return (
+        lines.map { $0.lead + $0.spans.map(\.text).joined() }.joined(separator: separator), false
+      )
     case .code(_, let lines): return (joined(lines), true)
     case .table(let rows):
       return (rows.map { $0.joined(separator: "\t") }.joined(separator: separator), false)
