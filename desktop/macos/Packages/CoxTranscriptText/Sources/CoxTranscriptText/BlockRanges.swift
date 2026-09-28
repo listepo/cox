@@ -29,6 +29,45 @@ public struct BlockRanges: Equatable, Sendable {
     ranges.append(range)
   }
 
+  /// Inserts a block without text at `index`, at the end of the text before it.
+  mutating func insert(_ id: BlockID, at index: Int) {
+    ids.insert(id, at: index)
+    ranges.insert(NSRange(location: textEnd(before: index), length: 0), at: index)
+    for later in index..<ids.count { indexByID[ids[later]] = later }
+  }
+
+  /// Drops a block that no longer has text.
+  mutating func remove(at index: Int) {
+    indexByID[ids.remove(at: index)] = nil
+    ranges.remove(at: index)
+    for later in index..<ids.count { indexByID[ids[later]] = later }
+  }
+
+  /// Block `index` now holds `range` after an edit that changed the text's
+  /// length by `delta`: later blocks move by `delta`, and those without text
+  /// right after it to the end of the text at or before it.
+  mutating func update(_ index: Int, to range: NSRange, delta: Int) {
+    ranges[index] = range
+    let end = range.length > 0 ? NSMaxRange(range) : textEnd(before: index)
+    var textSeen = false
+    for later in ranges.indices.dropFirst(index + 1) {
+      textSeen = textSeen || ranges[later].length > 0
+      ranges[later].location = textSeen ? ranges[later].location + delta : end
+    }
+  }
+
+  /// The nearest block before `index` that has text.
+  func text(before index: Int) -> Int? {
+    ranges[..<index].lastIndex { $0.length > 0 }
+  }
+
+  func hasText(after index: Int) -> Bool {
+    ranges[(index + 1)...].contains { $0.length > 0 }
+  }
+
+  /// Where a block without text at `index` sits.
+  func textEnd(before index: Int) -> Int { text(before: index).map { NSMaxRange(ranges[$0]) } ?? 0 }
+
   public func index(of id: BlockID) -> Int? { indexByID[id] }
 
   public func range(of id: BlockID) -> NSRange? { index(of: id).map { ranges[$0] } }

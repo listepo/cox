@@ -10,9 +10,11 @@ import CoxClient
 public final class TranscriptTextView: NSTextView {
   public private(set) var style = TranscriptStyle.system
   /// Where each block's text sits; kept in step with the text storage.
-  public private(set) var blockRanges = BlockRanges()
+  public internal(set) var blockRanges = BlockRanges()
   /// The shown blocks by id, for copy (`MarkdownCopy.swift`).
-  public private(set) var blocks: [BlockID: Block] = [:]
+  public internal(set) var blocks: [BlockID: Block] = [:]
+  /// Where each reply's doc blocks start in its text (`TranscriptPatches.swift`).
+  var docStarts: [BlockID: [Int]] = [:]
   /// Whether a drag may run across blocks (A67). The app passes
   /// `[desktop.transcript] cross_block_selection`; `false` clamps a selection
   /// to the block it started in (`Selection.swift`).
@@ -55,11 +57,12 @@ public final class TranscriptTextView: NSTextView {
   /// Replaces the whole text with `blocks`, in order.
   public func load(_ blocks: some Sequence<Block>) {
     let blocks = Array(blocks)
-    let (text, ranges) = TranscriptText.build(blocks, style: style, cards: hostedCards)
-    blockRanges = ranges
+    let built = TranscriptText.build(blocks, style: style, cards: hostedCards)
+    blockRanges = built.ranges
+    docStarts = built.docStarts
     self.blocks = Dictionary(blocks.map { ($0.id, $0) }) { first, _ in first }
     dragAnchor = nil
-    textStorage?.setAttributedString(text)
+    textStorage?.setAttributedString(built.text)
   }
 
   public func range(of id: BlockID) -> NSRange? { blockRanges.range(of: id) }

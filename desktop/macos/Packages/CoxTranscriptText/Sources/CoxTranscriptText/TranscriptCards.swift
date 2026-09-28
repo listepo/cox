@@ -38,7 +38,7 @@ public struct TranscriptCards {
 /// text view lays out, hence `assumeIsolated` in the nonisolated overrides.
 @MainActor
 final class CardAttachment: NSTextAttachment {
-  let block: Block
+  private(set) var block: Block
   private let cards: TranscriptCards
   private var host: CardHost?
 
@@ -48,6 +48,13 @@ final class CardAttachment: NSTextAttachment {
   }
 
   nonisolated required init?(coder: NSCoder) { nil }
+
+  /// Shows `block`'s new state in the same view, so SwiftUI keeps the card's
+  /// own state; a new height re-lays the card out as any resize does.
+  func update(_ block: Block) {
+    self.block = block
+    host?.rootView.card = cards.view(block)
+  }
 
   var hostView: CardHost {
     if let host { return host }
@@ -163,7 +170,8 @@ extension TranscriptTextView {
   /// Lays the viewport out again, and a resized card's one character with
   /// it, so the text below moves with the card while its ranges stay put.
   func cardChanged(_ id: BlockID, resized: Bool) {
-    guard let manager = textLayoutManager else { return }
+    // Out of a window the viewport is the whole text: nothing to place.
+    guard window != nil, let manager = textLayoutManager else { return }
     if resized, let range = range(of: id), let text = textRange(range) {
       manager.invalidateLayout(for: text)
     }
