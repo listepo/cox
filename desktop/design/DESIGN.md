@@ -200,7 +200,7 @@ Packages/CoxUI/Sources/CoxUI/
 ├─ Foundations/   Appearance (the settings every modifier reads, with Reduce Transparency and Reduce
 │                 Motion applied once) and the ViewModifiers and styles: Elevation, GlassPane,
 │                 Specular, Hairline, InsetWell, TextStyle, CoxButtonStyle, CapsuleStyle,
-│                 SegmentedStyle, CoxToggleStyle, CoxSliderStyle
+│                 CoxSegmented, CoxToggleStyle, CoxSliderStyle
 ├─ Atoms/         one file per atom (§6.2)
 ├─ Molecules/     one file per molecule (§6.3)
 ├─ Organisms/     one file per organism (§6.4)
@@ -232,7 +232,7 @@ component.
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size:)` | All push buttons | `size.button*`, `radius.m` | `.pb`, `.pri`, `.dan` |
 | `CapsuleStyle(.plain/.active)` | Toolbar capsules | `size.capsuleHeight`, `surface.capsule` | `.cap`, `.cap.hot` |
-| `SegmentedStyle` | Segmented control with lifted selection | `e1` | `.seg` |
+| `CoxSegmented(_ label:, selection:, options:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
 | `CoxToggleStyle`, `CoxSliderStyle` | Toggles and sliders with 3D knob | `e1`, `accent` | `.tog`, `.slider` |
 
 ### 6.2 Atoms
