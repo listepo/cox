@@ -176,10 +176,14 @@ private struct GlassPaneSample: View {
 
 private struct SpecularSample: View {
   var body: some View {
-    RoundedRectangle(cornerRadius: Radius.pane, style: .continuous)
-      .fill(Color(.fillSecondary))
+    // The sweep lies under the content, so a surface behind it shows it.
+    Color.clear
       .frame(width: Size.popoverWidth, height: Size.toolbarHeight * 2)
       .specular(MaterialToken.glossySpecular, in: .rect(cornerRadius: Radius.pane))
+      .background {
+        RoundedRectangle(cornerRadius: Radius.pane, style: .continuous)
+          .fill(Color(.fillSecondary))
+      }
   }
 }
 

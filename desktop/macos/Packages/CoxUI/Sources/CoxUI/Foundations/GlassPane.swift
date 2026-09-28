@@ -24,18 +24,15 @@ private struct GlassPane<S: Shape>: ViewModifier {
   @EffectiveAppearance private var appearance
 
   func body(content: Content) -> some View {
-    let tinted = content.background {
+    // Bottom up: the glass, the tint, the sweep, then the content — the sweep under the content
+    // so the pane's text keeps its token colour (T37.22.10). `specular` draws nothing in Solid.
+    let tinted = content.specular(appearance.specular, in: shape).background {
       shape.fill(surface.opacity(appearance.backgroundOpacity(role)))
     }
     switch appearance.material {
-    case .solid:
-      tinted
-    case _ where !frosts:
-      tinted.specular(appearance.specular, in: shape)
-    case .frosted:
-      tinted.glassEffect(.regular, in: shape).specular(appearance.specular, in: shape)
-    case .glossy:
-      tinted.glassEffect(.clear, in: shape).specular(appearance.specular, in: shape)
+    case .frosted where frosts: tinted.glassEffect(.regular, in: shape)
+    case .glossy where frosts: tinted.glassEffect(.clear, in: shape)
+    default: tinted
     }
   }
 }

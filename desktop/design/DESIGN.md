@@ -145,7 +145,7 @@ highlights go too and the app looks like a standard macOS app. Only `e5` ignores
 | Material | Window opacity | Blur | Specular | SwiftUI / AppKit |
 | --- | --- | --- | --- | --- |
 | Frosted | `material.frosted.windowOpacity` (default) | heavy | soft sweep | `glassEffect(.regular)`; window behind: `NSVisualEffectView`, `.behindWindow` |
-| Glossy | lower | light | strong sweep and streak | `glassEffect(.clear)` + the `specular` overlay |
+| Glossy | lower | light | strong sweep and streak | `glassEffect(.clear)` + the `specular` sweep |
 | Solid | 1 | none | none | Plain `surface.window`; forced by Reduce Transparency |
 
 - The user sets material, window transparency, blur (frosted) or reflection (glossy), Depth, and
@@ -261,7 +261,7 @@ component.
 | --- | --- | --- | --- |
 | `.elevation(_ level:, cornerRadius:)` | Shadow layers + top highlight, scaled by Depth; in dark mode the highlight takes the `dark_highlight` share on the `dark_highlight_scope` levels (A109) | `elevation.e0–e5`, Depth, `material.darkHighlight.*` | `--lift1…3` |
 | `.glassPane(_ shape:, surface:, role:)` | Pane material: glass or solid per setting; `role: .readable` holds the readable floor | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
-| `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid or under Increase Contrast) | `material.*.specular` | `.window:after` |
+| `.specular(_ strength:, in:)` | Diagonal highlight behind the content and over the surface, so text keeps its token colour (strong for Glossy, faint for Frosted, none for Solid or under Increase Contrast) | `material.*.specular` | `.window:after` |
 | `.hairline(_ edges:)`, `.hairline(in:, color:)` | 0.5 pt `separator` line on edges or around a shape; capsules pass `surface.capsuleBorder` | `size.hairline`, `separator`, `surface.capsuleBorder` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |

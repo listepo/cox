@@ -61,12 +61,13 @@ struct ButtonFace<Label: View>: View {
       .foregroundStyle(role.foreground(state))
       .padding(.horizontal, Space.l)
       .frame(height: size.height)
+      // Before the face and tint, so the sweep lies on them and under the label.
+      .specular(lifted ? appearance.specular : MaterialToken.solidSpecular, in: shape)
       .background { shape.fill(state.tint) }
       .background {
         shape.fill(role.face(state).opacity(role.faceOpacity(appearance, state)))
       }
       .overlay { if role.hasRim(state) { Color.clear.hairline(in: shape) } }
-      .specular(lifted ? appearance.specular : MaterialToken.solidSpecular, in: shape)
       .elevation(state.elevation(lifted ? .e1 : .e0), cornerRadius: Radius.m)
       .contentShape(shape)
   }
