@@ -32,6 +32,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("cost", "/cost", "what this session has spent"),
     ("context", "/context", "where the next request's tokens go"),
     (
+        "repomap",
+        "/repomap [refresh]",
+        "show or rebuild the repo map",
+    ),
+    (
         "autocompact",
         "/autocompact",
         "the compaction threshold and its config source",

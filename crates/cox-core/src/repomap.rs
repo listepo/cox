@@ -15,7 +15,7 @@ use cox_protocol::traits::ArchivePut;
 use cox_protocol::types::{Event, Level, RepoMapReason, Risk, ToolCall};
 
 use crate::Outcome;
-use crate::session::Session;
+use crate::session::{Session, State};
 
 /// Tokens → bytes for the budget: the estimator's four-bytes-per-token rule.
 const BYTES_PER_TOKEN: usize = 4;
@@ -36,12 +36,78 @@ impl Session {
             return self.restore_repomap(id).await;
         }
         match self.render_repomap().await {
-            Some(text) => {
-                self.install_repomap(text, RepoMapReason::SessionStart)
-                    .await
-            }
+            Some(text) => self
+                .install_repomap(text, RepoMapReason::SessionStart)
+                .await
+                .map(|_| ()),
             None => Ok(()),
         }
+    }
+
+    /// The one rebuild `/repomap refresh` and compaction share (T43.5).
+    /// Identical bytes change nothing — no archive row, no event — so the
+    /// cached prefix survives a refresh of an unchanged tree.
+    pub(crate) async fn rebuild_repomap(
+        &self,
+        reason: RepoMapReason,
+    ) -> Result<Rebuilt, CoreError> {
+        let Some(text) = self.render_repomap().await else {
+            return Ok(Rebuilt::Off);
+        };
+        if self.inner.lock().await.repomap.as_deref() == Some(text.as_str()) {
+            return Ok(Rebuilt::Unchanged);
+        }
+        Ok(match self.install_repomap(text, reason).await? {
+            true => Rebuilt::Changed,
+            false => Rebuilt::Unchanged,
+        })
+    }
+
+    /// `/repomap`: the map's size and where to read it; `/repomap refresh`:
+    /// a rebuild, only between turns, announced because a changed map
+    /// restarts the cached prefix (§1.9 exception, A74).
+    pub(crate) async fn repomap_command(&self, args: &[String]) -> Result<(), CoreError> {
+        let off = "the repo map is off; set context.repomap_budget_tokens to turn it on";
+        let idle = self.inner.lock().await.state == State::Idle;
+        let (level, text) = match args.first().map(String::as_str) {
+            None => {
+                let (bytes, archive) = {
+                    let inner = self.inner.lock().await;
+                    (
+                        inner.repomap.as_ref().map(String::len),
+                        inner.repomap_archive,
+                    )
+                };
+                match (bytes, archive) {
+                    (Some(bytes), Some(id)) => (
+                        Level::Info,
+                        format!("repo map: {bytes} bytes in system[2]; `cox expand {id}` shows it"),
+                    ),
+                    _ if self.config.context.repomap_budget_tokens == 0 => {
+                        (Level::Info, off.to_string())
+                    }
+                    _ => (Level::Info, "this session has no repo map".to_string()),
+                }
+            }
+            Some("refresh") if !idle => (
+                Level::Warn,
+                "a turn is running; refresh the repo map once it is done".to_string(),
+            ),
+            Some("refresh") => match self.rebuild_repomap(RepoMapReason::Refresh).await? {
+                Rebuilt::Changed => (
+                    Level::Info,
+                    "repo map refreshed; the cached prefix restarts on the next request"
+                        .to_string(),
+                ),
+                Rebuilt::Unchanged => (Level::Info, "repo map unchanged, cache kept".to_string()),
+                Rebuilt::Off => (Level::Info, off.to_string()),
+            },
+            Some(other) => (
+                Level::Warn,
+                format!("unknown /repomap argument `{other}`; use /repomap or /repomap refresh"),
+            ),
+        };
+        self.notice(level, text).await
     }
 
     /// Fail open: a map missing from the archive costs the map, not the
@@ -110,12 +176,12 @@ impl Session {
 
     /// Archives `text` first (the archive row exists before the model sees
     /// the map), then installs it and records `RepoMapBuilt`. An archive
-    /// failure is a warning and leaves the map as it was.
-    pub(crate) async fn install_repomap(
+    /// failure is a warning and leaves the map as it was (`false`).
+    async fn install_repomap(
         &self,
         text: String,
         reason: RepoMapReason,
-    ) -> Result<(), CoreError> {
+    ) -> Result<bool, CoreError> {
         let put = ArchivePut {
             session: self.id,
             call: CallId::new(),
@@ -126,12 +192,12 @@ impl Session {
         let archive = match self.archive.put(put).await {
             Ok(id) => id,
             Err(error) => {
-                return self
-                    .notice(
-                        Level::Warn,
-                        format!("repo map not archived ({error}); keeping the previous one"),
-                    )
-                    .await;
+                self.notice(
+                    Level::Warn,
+                    format!("repo map not archived ({error}); keeping the previous one"),
+                )
+                .await?;
+                return Ok(false);
             }
         };
         let bytes = text.len() as u64;
@@ -145,8 +211,20 @@ impl Session {
             bytes,
             reason,
         })
-        .await
+        .await?;
+        Ok(true)
     }
+}
+
+/// What a rebuild did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rebuilt {
+    /// No map: the budget is 0, no mapper, a subagent, or nothing to map.
+    Off,
+    /// Same bytes as the map in place; nothing recorded.
+    Unchanged,
+    /// A new map is archived, installed and recorded.
+    Changed,
 }
 
 #[cfg(test)]
@@ -159,7 +237,7 @@ pub(crate) mod tests {
     use cox_protocol::errors::ProviderError;
     use cox_protocol::traits::{Provider, RepoMapper, Store as _};
     use cox_protocol::types::{
-        Caps, Job, ProviderEvent, ProviderId, Request, Submission, Tier, Usage,
+        Caps, Job, ProviderEvent, ProviderId, Request, SlashCommand, Submission, Tier, Usage,
     };
     use cox_provider::scripted::Scripted;
     use tokio::sync::mpsc;
@@ -169,10 +247,12 @@ pub(crate) mod tests {
     use crate::MemoryStore;
 
     /// Offers two files and lists the ones `admit` takes, tagged with how
-    /// many times it was asked, so a rebuild shows up as new bytes.
+    /// many times it was asked, so a rebuild shows up as new bytes — unless
+    /// `frozen`, which stands for a tree that did not change.
     #[derive(Default)]
     pub(crate) struct FakeMapper {
         pub(crate) calls: AtomicUsize,
+        pub(crate) frozen: bool,
     }
 
     #[async_trait]
@@ -184,7 +264,11 @@ pub(crate) mod tests {
             admit: &(dyn Fn(&Path) -> bool + Send + Sync),
         ) -> String {
             let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
-            let mut out = format!("v{n}\n");
+            let mut out = if self.frozen {
+                "v0\n".to_string()
+            } else {
+                format!("v{n}\n")
+            };
             for rel in ["src/lib.rs", "secrets/key.txt"] {
                 if admit(&root.join(rel)) {
                     out.push_str(rel);
@@ -210,11 +294,14 @@ pub(crate) mod tests {
             }
         }
 
+        /// system[2] of each turn request; the compaction summary's
+        /// request has one system block and is left out.
         pub(crate) fn system_two(&self) -> Vec<String> {
             self.seen
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .iter()
+                .filter(|r| r.system.len() > 2)
                 .map(|r| r.system[2].text.clone())
                 .collect()
         }
@@ -399,5 +486,84 @@ pub(crate) mod tests {
         assert_eq!(mapper.calls.load(Ordering::SeqCst), 1, "not rebuilt");
         assert_eq!(live.system_two()[0], replay.system_two()[0]);
         assert_eq!(built(&store, &resumed), [RepoMapReason::SessionStart]);
+    }
+
+    fn refresh() -> Submission {
+        Submission::Command {
+            command: SlashCommand {
+                name: "repomap".into(),
+                args: vec!["refresh".into()],
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn repomap_refresh_with_changed_tree_emits_one_event() {
+        let mapper = Arc::new(FakeMapper::default());
+        let (session, provider, store) = open(config(), 2, mapper.clone());
+        session.submit(turn("one")).await.expect("one");
+        session.submit(refresh()).await.expect("refresh");
+        session.submit(turn("two")).await.expect("two");
+        assert_eq!(
+            built(&store, &session),
+            [RepoMapReason::SessionStart, RepoMapReason::Refresh]
+        );
+        let two = provider.system_two();
+        assert!(two[0].contains("<repo_map>\nv1\n"), "{}", two[0]);
+        assert!(two[1].contains("<repo_map>\nv2\n"), "{}", two[1]);
+    }
+
+    /// An unchanged tree records nothing, so the next request's system[2]
+    /// is byte-identical and the cached prefix survives.
+    #[tokio::test]
+    async fn repomap_refresh_unchanged_keeps_prefix_bytes() {
+        let mapper = Arc::new(FakeMapper {
+            frozen: true,
+            ..FakeMapper::default()
+        });
+        let (session, provider, store) = open(config(), 2, mapper.clone());
+        session.submit(turn("one")).await.expect("one");
+        session.submit(refresh()).await.expect("refresh");
+        session.submit(turn("two")).await.expect("two");
+        assert_eq!(mapper.calls.load(Ordering::SeqCst), 2, "the refresh asked");
+        assert_eq!(built(&store, &session), [RepoMapReason::SessionStart]);
+        let two = provider.system_two();
+        assert_eq!(two[0], two[1]);
+    }
+
+    #[tokio::test]
+    async fn repomap_refresh_is_refused_mid_turn() {
+        let mapper = Arc::new(FakeMapper::default());
+        let (session, _provider, store) = open(config(), 1, mapper.clone());
+        session.submit(turn("one")).await.expect("one");
+        session.inner.lock().await.state = State::Streaming;
+        session.submit(refresh()).await.expect("refresh");
+        assert_eq!(mapper.calls.load(Ordering::SeqCst), 1, "not rebuilt");
+        assert_eq!(built(&store, &session), [RepoMapReason::SessionStart]);
+        let map = session.inner.lock().await.repomap.clone();
+        assert!(map.is_some_and(|m| m.starts_with("v1\n")));
+    }
+
+    /// Three turns over the default `keep_turns = 2` leave one to summarise;
+    /// the fourth scripted reply is the summary.
+    #[tokio::test]
+    async fn compaction_rebuilds_repomap() {
+        let mapper = Arc::new(FakeMapper::default());
+        let (session, provider, store) = open(config(), 5, mapper.clone());
+        for text in ["one", "two", "three"] {
+            session.submit(turn(text)).await.expect("turn");
+        }
+        session
+            .submit(Submission::Compact { focus: None })
+            .await
+            .expect("compact");
+        session.submit(turn("four")).await.expect("four");
+        assert_eq!(
+            built(&store, &session),
+            [RepoMapReason::SessionStart, RepoMapReason::Compaction]
+        );
+        let two = provider.system_two();
+        let last = two.last().expect("a request");
+        assert!(last.contains("<repo_map>\nv2\n"), "{last}");
     }
 }

@@ -932,6 +932,11 @@ impl Session {
                     .await
                     .map(|_| ())
             }
+            // P43: `/repomap` shows the map; `/repomap refresh` is one of
+            // the two ways it changes mid-session.
+            Submission::Command { command } if command.name == "repomap" => {
+                self.repomap_command(&command.args).await
+            }
             // T25.6: `/init [--force]` scaffolds AGENTS.md; the write asks
             // first, like any other model-initiated write.
             Submission::Command { command } if command.name == "init" => {
