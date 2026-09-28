@@ -9,3 +9,4 @@ __pycache__/
 fuzz/artifacts/
 # The macOS app build output: CoxFFI.xcframework and the generated bindings (T37.15).
 desktop/macos/build/
+desktop/design/node_modules/

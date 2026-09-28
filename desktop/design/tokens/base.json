@@ -303,23 +303,25 @@
       }
     },
     "transcript": {
-      "$type": "typography",
-      "$description": "Assistant and user messages",
-      "$value": {
-        "fontFamily": [
-          "SF Pro Text",
-          "-apple-system",
-          "system-ui"
-        ],
-        "fontSize": {
-          "value": 13.5,
-          "unit": "px"
-        },
-        "fontWeight": 400,
-        "lineHeight": 1.55,
-        "letterSpacing": {
-          "value": 0,
-          "unit": "rem"
+      "$root": {
+        "$type": "typography",
+        "$description": "Assistant and user messages",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 13.5,
+            "unit": "px"
+          },
+          "fontWeight": 400,
+          "lineHeight": 1.55,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
         }
       },
       "h3": {

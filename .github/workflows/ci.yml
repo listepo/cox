@@ -208,6 +208,34 @@ jobs:
             swift test --package-path "$(dirname "$manifest")"
           done
 
+  # The desktop design tokens (T37.17, DS§2): regenerate Tokens.swift,
+  # Colors.xcassets and tokens.css from desktop/design/tokens/*.json and fail
+  # on any change, like the config-schema drift test. Node only, so Linux.
+  desktop-tokens:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: node
+
+      - name: regenerate the tokens
+        working-directory: desktop/design
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
+      - name: no drift
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            git diff
+            echo "generated tokens drifted: run \`just desktop-tokens\` and commit" >&2
+            exit 1
+          fi
+
   revert-on-failure:
     name: revert-on-failure
     needs:

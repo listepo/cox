@@ -41,13 +41,21 @@ design/tokens/base.json        ┘                        ├─ CoxUI/Tokens/To
   as `{value, unit: "px"}` (1 px = 1 pt on macOS); shadows as arrays of layers with `inset`.
   Source: https://www.designtokens.org/tr/2025.10/format/ (checked 2026-09-28).
 - Generator: Style Dictionary (npm `style-dictionary` 5.5.5, released 2026-09-20; checked in the npm
-  registry 2026-09-28). The colorset output is a small custom action; whether it is built in is
-  **unverified**.
+  registry 2026-09-28), pinned with its lockfile in `package.json`; `style-dictionary.config.mjs` holds
+  the build. Built-in formats do not cover DTCG composite values or colorsets, so the Swift and CSS
+  outputs are custom formats and the colorsets a custom action. `just desktop-tokens` runs it.
+- Each `color.<mode>.json` holds every colour role for one appearance: `light` (Any) and `dark` are
+  required; `light-hc` and `dark-hc` are optional and add the High Contrast entries. A token that also
+  has children (`accent` and `accent.soft`) is the group's `$root` token (DTCG §6.2).
 - Colours become asset-catalog colours, so Xcode's generated asset symbols give `Color.accent`,
   `Color.surfaceWindow` and so on. Light, dark and high-contrast variants live in one colorset.
-- A drift test regenerates the outputs in CI and fails on any diff, like `docs/config.jsonschema`.
-- Until T37.17 wires Style Dictionary, `build_tokens.py` writes the JSON from its tables. T37.17 makes the
-  JSON the edited source and deletes the script.
+- `Tokens.swift` flattens each group's path to camelCase: `Space.m`, `Radius.pane`, `Size.readingWidth`,
+  `Motion.durationFast`, `Motion.easingStandard` (a `UnitCurve`), `MaterialToken.frostedBlur`, and the
+  values `FontToken.transcriptH3` and `ElevationToken.e2` that `.textStyle(_:)` and `.elevation(_:)`
+  take. Font, Material and Elevation carry a `Token` suffix so they do not shadow SwiftUI's `Font` and
+  `Material` or the `Elevation` modifier.
+- A drift test (the `desktop-tokens` CI job) regenerates the outputs and fails on any diff, like
+  `docs/config.jsonschema`. Edit the JSON, never a generated file.
 
 ## 3. Foundations
 

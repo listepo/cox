@@ -1,0 +1,11 @@
+{
+  "name": "cox-desktop-design",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node style-dictionary.config.mjs"
+  },
+  "dependencies": {
+    "style-dictionary": "5.5.5"
+  }
+}

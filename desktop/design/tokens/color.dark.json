@@ -210,17 +210,19 @@
       "$description": "Hairlines, 0.5 pt"
     },
     "accent": {
-      "$type": "color",
-      "$value": {
-        "colorSpace": "srgb",
-        "components": [
-          0.2314,
-          0.6078,
-          1.0
-        ],
-        "hex": "#3b9bff"
+      "$root": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.2314,
+            0.6078,
+            1.0
+          ],
+          "hex": "#3b9bff"
+        },
+        "$description": "Primary actions, links, selection"
       },
-      "$description": "Primary actions, links, selection",
       "soft": {
         "$type": "color",
         "$value": {

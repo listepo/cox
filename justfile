@@ -89,6 +89,12 @@ release:
 desktop-xcframework:
     mise exec -- bash scripts/desktop/xcframework.sh
 
+# The desktop design tokens (T37.17, DS§2): Style Dictionary regenerates CoxUI's
+# Tokens.swift and Colors.xcassets and the mockups' tokens.css from
+# desktop/design/tokens/*.json. CI runs the same build and fails on any diff.
+desktop-tokens:
+    cd desktop/design && mise exec -- npm ci --no-fund --no-audit && mise exec -- npm run build
+
 # $CARGO_HOME sizes (no deletes) and ./target
 cache:
     mise exec -- cargo-cache

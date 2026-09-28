@@ -23,6 +23,7 @@ Programs the project uses and the direct packages from its manifests.
 | LM Studio (`lms`) | desktop app | Local model server for the eval matrix (`cox-bench`, provider `lmstudio`): OpenAI Chat and Anthropic Messages endpoints on :1234 | https://lmstudio.ai/docs/developer |
 | docker-cli, docker-compose, docker-buildx | global (mise) | Harbor drives task containers through `docker compose` and `docker buildx build` | https://github.com/docker/cli , https://github.com/docker/compose , https://github.com/docker/buildx |
 | dart | mise (`plugins/mise.toml`) | Builds `plugins/templates/dart` and `plugins/examples/dart` (T33.38): Dart cannot emit a wasm module extism can load (research.md §4.3.5 P44), so its only plugin capability is an `[[mcp]]` stdio server, `dart compile exe` | https://github.com/dart-lang/sdk |
+| node | mise (`mise.toml`) | Runs Style Dictionary, the desktop token build (`just desktop-tokens`, T37.17, DS§2) | https://github.com/nodejs/node |
 
 ## ketch
 
@@ -138,3 +139,9 @@ Programs the project uses and the direct packages from its manifests.
 | --- | --- | --- | --- |
 | pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the vendor package |
 | tomlkit | local | https://github.com/sdispater/tomlkit | Comment-preserving TOML edits for `cox-vendor models` (T30.20) |
+
+## npm (`desktop/design`)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| style-dictionary | local | https://github.com/style-dictionary/style-dictionary | T37.17: generates CoxUI's `Tokens.swift` and `Colors.xcassets` and the mockups' `tokens.css` from the DTCG token files (DS§2) |
