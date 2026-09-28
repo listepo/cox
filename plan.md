@@ -36,7 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.11 | todo | P2 | 2 | 0% | |
-| T37.22.13 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2797,13 +2796,6 @@ Depends: — · Size: ~30 · Files: `desktop/design/tokens` (the `accent.soft` l
 Goal: A115. `text.secondary` on the selected row's `accent.soft` is 3.99:1 in light Solid; lighten `accent.soft` (light appearance only) until every pair on the selected row reaches 4.5:1, keeping the row visibly selected. Text tokens stay as they are.
 Check: `ContrastTests` asserts the selected-row pairs at ≥ 4.5:1 in every appearance and material; CoxUI snapshots re-recorded on purpose; the Figma variables regenerated (`npm run figma`).
 Plan: measure the selected-row pairs in `ContrastTests`, lighten the light `accent.soft` in the design tokens and CoxUI until they reach 4.5:1, re-record CoxUI snapshots, regenerate the Figma variables script; verify with CoxUI tests, swift-format and swiftlint.
-
-#### T37.22.13 Full `cox-vendor models` refresh
-
-Depends: — · Size: data only · Files: `crates/cox-protocol/default.toml`, `prices.toml` as the script writes them
-Goal: A117. Re-run `cox-vendor models` so the catalog matches models.dev: `medium` joins the efforts of most Anthropic, OpenAI and OpenRouter models and kimi-k2.6, and the OpenRouter `deepseek/deepseek-v4-pro` price moves to models.dev's value. No hand edits; the diff is whatever the saved script writes.
-Check: `cox-vendor models --check` up to date; cox-models, cox-config and cox-protocol tests pass; the diff reviewed row by row in the commit body.
-Plan: run `cox-vendor models` in `scripts/vendor`, review the diff, run the vendor tests, `model-names --check`, and nextest on cox-models, cox-config and cox-protocol; list the changed rows in the commit body.
 
 ## 4. Definition of done for v0.1
 

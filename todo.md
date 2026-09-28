@@ -30,7 +30,6 @@
 - T37.44.3. Figma text in SF Pro and SF Mono
 - T37.22.10. The running app draws pane content under the glass
 - T37.22.11. Selected session row meets 4.5:1 in light Solid
-- T37.22.13. Full `cox-vendor models` refresh
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows
