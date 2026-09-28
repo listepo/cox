@@ -54,7 +54,9 @@ public struct SettingsTable: Identifiable, Equatable, Sendable {
 extension SettingsStore {
   /// `section`'s settings by table, each table where its first key sorts.
   public func tables(in section: SettingsSection) -> [SettingsTable] {
-    let byTable = OrderedDictionary(grouping: section.settings) {
+    // The rule lists are the Permissions page's own box (`PermissionRule`), not rows here.
+    let rows = section.settings.filter { row in !RuleKind.allCases.contains { $0.key == row.key } }
+    let byTable = OrderedDictionary(grouping: rows) {
       $0.key.split(separator: ".").dropLast().joined(separator: ".")
     }
     return byTable.map { name, settings in
@@ -100,6 +102,7 @@ extension SettingsStore {
   /// More options than this take a pop-up rather than a segmented control, as mockup 18's
   /// pop-ups and segments show.
   static let segmentLimit = 3
+  static let modeKey = "permissions.mode"
 
   private func control(of setting: Setting) -> SettingControl {
     let json = Data(setting.value.utf8)
@@ -117,7 +120,9 @@ extension SettingsStore {
     case .text:
       let text = decoded(String.self) ?? ""
       return modelMenu(setting.key, text) ?? .field(text)
-    case .choice(let options) where options.count > Self.segmentLimit:
+    // Mockup 19 draws the permission mode segmented, whatever its count.
+    case .choice(let options)
+    where options.count > Self.segmentLimit && setting.key != Self.modeKey:
       return .menu(
         decoded(String.self) ?? "", options: options.map { .init(value: $0, title: $0) })
     case .choice(let options):
@@ -143,4 +148,9 @@ extension SettingsStore {
     }
     return .menu(value, options: options)
   }
+}
+
+extension RuleKind {
+  /// The dotted key of this kind's list.
+  public var key: String { "permissions.\(rawValue)" }
 }

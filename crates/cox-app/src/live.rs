@@ -26,7 +26,7 @@ use crate::mcp_status::McpRun;
 use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
-use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
+use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, SessionGrant, Timeline};
 use crate::{TimelinePatch, dispatch};
 
 /// The core's own bound (DT§4.5).
@@ -100,7 +100,8 @@ impl LiveSession {
         let events = session.events().ok_or(AppError::EventsTaken)?;
         let events = tee(Arc::clone(&app), session.id(), events);
         let claude_home = cox_config::load::home_dir().join(".claude");
-        Ok(Arc::new(Self {
+        let owner = Arc::clone(&app);
+        let live = Arc::new(Self {
             completer: Completer::load(&cwd, &app.home, &claude_home),
             controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
@@ -110,7 +111,9 @@ impl LiveSession {
             session,
             cwd,
             theme,
-        }))
+        });
+        owner.register(&live);
+        Ok(live)
     }
 
     pub fn id(&self) -> SessionId {
@@ -280,6 +283,35 @@ impl LiveSession {
             &settings,
             rollout,
         ))
+    }
+
+    /// This session's `AllowForSession` grants, as its core holds them
+    /// (T37.45.3), with its title for the Settings row.
+    pub async fn grants(&self) -> Vec<SessionGrant> {
+        let (session, store) = (self.id(), self.app.workspace().store());
+        // A session with no ledger row yet has no title to show.
+        let title = store.session_info(&session).ok().and_then(|i| i.title);
+        self.session
+            .grants()
+            .await
+            .into_iter()
+            .map(|(tool, subject)| SessionGrant {
+                session,
+                title: title.clone(),
+                tool,
+                subject,
+            })
+            .collect()
+    }
+
+    /// Revokes a grant through the core (`Submission::RevokeGrant`), so the
+    /// engine asks for the next call it covered.
+    pub async fn revoke(&self, tool: &str, subject: &str) -> Result<(), AppError> {
+        let revoke = Submission::RevokeGrant {
+            tool: tool.to_string(),
+            subject: subject.to_string(),
+        };
+        Ok(self.session.submit(revoke).await?)
     }
 
     /// `/` commands and `@` files for the composer's token.

@@ -218,6 +218,9 @@ impl History {
                         grants.extend(crate::permission::grants_for(call));
                     }
                 }
+                Event::GrantRevoked { tool, subject } => {
+                    grants.retain(|(t, s)| t != tool || s != subject);
+                }
                 Event::TurnDone { stop, .. } => {
                     if *stop == StopReason::Interrupted {
                         pending_results.clear();

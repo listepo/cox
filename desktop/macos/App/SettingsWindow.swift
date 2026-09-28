@@ -65,7 +65,21 @@ struct SettingsWindow: View {
       dropped: group.map { group in
         settings.dropped(in: group).map { .init(id: $0.key, reason: $0.reason, change: $0.change) }
       } ?? [],
-      filter: settings.filter)
+      filter: settings.filter,
+      permissions: group == .permissions ? permissions(settings) : nil)
+  }
+
+  private func permissions(_ settings: SettingsStore) -> SettingsScreen.Permissions {
+    SettingsScreen.Permissions(
+      rules: (settings.view?.rules ?? []).map {
+        .init(kind: Self.kind($0.kind), text: $0.rule, source: Self.source($0.layer))
+      },
+      grants: (settings.view?.grants ?? []).map { grant in
+        .init(
+          id: grant.id, subject: "\(grant.tool) \(grant.subject)",
+          detail: grant.title.map { "in “\($0)”" } ?? "this session")
+      },
+      failure: settings.ruleFailure)
   }
 
   private func field(_ field: SettingsField) -> SettingsScreen.Field {
@@ -102,11 +116,41 @@ struct SettingsWindow: View {
         refused = String(describing: error)
       }
     case .setLogin(let server, let login): Task { await settings.setLogin(server, login) }
+    case .editRule, .revokeGrant: handlePermissions(intent, settings)
+    }
+  }
+
+  /// The Permissions page's rule edits and revokes; Rust checks and applies both.
+  private func handlePermissions(_ intent: SettingsScreenIntent, _ settings: SettingsStore) {
+    switch intent {
+    case .editRule(let kind, let old, let new):
+      Task { await settings.editRule(Self.kind(kind), old: old, new: new) }
+    case .revokeGrant(let id):
+      if let grant = settings.view?.grants.first(where: { $0.id == id }) {
+        Task { await settings.revoke(grant) }
+      }
+    default: break
     }
   }
 
   private func action(_ row: McpLoginRow) -> LoginAction? {
     row.action.map { $0 == .logIn ? .logIn : .logOut }
+  }
+
+  private static func kind(_ kind: RuleKind) -> SettingsScreen.RuleKind {
+    switch kind {
+    case .allow: .allow
+    case .ask: .ask
+    case .deny: .deny
+    }
+  }
+
+  private static func kind(_ kind: SettingsScreen.RuleKind) -> RuleKind {
+    switch kind {
+    case .allow: .allow
+    case .ask: .ask
+    case .deny: .deny
+    }
   }
 
   private static func status(_ status: McpStatus) -> ServerStatus {

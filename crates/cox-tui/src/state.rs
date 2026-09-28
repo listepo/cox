@@ -2375,7 +2375,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.turns.truncate(at);
             }
         }
-        Event::SessionStarted { .. } | Event::Compacted { .. } => {}
+        Event::SessionStarted { .. } | Event::Compacted { .. } | Event::GrantRevoked { .. } => {}
     }
     cmds
 }

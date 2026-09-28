@@ -20,16 +20,20 @@ public struct SettingsScreenState: Equatable, Sendable {
   public var dropped: [SettingsScreen.DroppedValue] = []
   /// The sidebar's search; `pages` and `tables` arrive narrowed to it, and labels mark it.
   public var filter = ""
+  /// The rules and session grants, on the Permissions page.
+  public var permissions: SettingsScreen.Permissions?
 
   public init(
     pages: [SettingsPage] = [], selection: SettingsPage = .general,
     tables: [SettingsScreen.Table] = [], userFile: String = "", projectFile: String? = nil,
     logins: [SettingsScreen.Login] = [], dropped: [SettingsScreen.DroppedValue] = [],
-    filter: String = ""
+    filter: String = "",
+    permissions: SettingsScreen.Permissions? = nil
   ) {
     (self.pages, self.selection, self.tables) = (pages, selection, tables)
     (self.userFile, self.projectFile) = (userFile, projectFile)
     (self.logins, self.dropped, self.filter) = (logins, dropped, filter)
+    self.permissions = permissions
   }
 }
 
@@ -44,6 +48,10 @@ public enum SettingsScreenIntent: Equatable, Sendable {
   case storeKey(provider: String, secret: String)
   /// Log in to (`true`) or out of an MCP server.
   case setLogin(server: String, Bool)
+  /// Add (`old` nil), replace or remove (`new` nil) one permission rule in the user config.
+  case editRule(SettingsScreen.RuleKind, old: String?, new: String?)
+  /// Revoke the session grant with this id.
+  case revokeGrant(id: String)
 }
 
 /// The Settings window: `SettingsSidebar` beside the selected page's title over a column of
@@ -75,6 +83,9 @@ public struct SettingsScreen: View {
               if !state.dropped.isEmpty { DroppedBox(values: state.dropped) }
               if !state.logins.isEmpty { LoginsBox(logins: state.logins, send: send) }
               ForEach(state.tables) { TableBox(table: $0, send: send) }
+              if let permissions = state.permissions {
+                PermissionsBoxes(permissions: permissions, send: send)
+              }
             }
             .frame(maxWidth: Size.readingWidth)
             .padding(Space.xxl)

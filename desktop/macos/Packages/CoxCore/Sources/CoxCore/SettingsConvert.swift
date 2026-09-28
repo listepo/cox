@@ -10,7 +10,49 @@ extension CoxClient.SettingsView {
     self.init(
       settings: view.settings.map { CoxClient.Setting($0) }, userFile: view.userFile,
       projectFile: view.projectFile, mcp: view.mcp.map { CoxClient.McpServer($0) },
-      dropped: view.dropped.map { CoxClient.Dropped($0) })
+      dropped: view.dropped.map { CoxClient.Dropped($0) },
+      rules: view.rules.map { CoxClient.PermissionRule($0) },
+      grants: view.grants.map { CoxClient.SessionGrant($0) })
+  }
+}
+
+extension CoxClient.PermissionRule {
+  init(_ rule: CoxFFIBindings.PermissionRule) {
+    self.init(
+      kind: .init(rule.kind), rule: rule.rule, layer: .init(rule.layer), editable: rule.editable)
+  }
+}
+
+extension CoxClient.RuleKind {
+  init(_ kind: CoxFFIBindings.RuleKind) {
+    switch kind {
+    case .allow: self = .allow
+    case .ask: self = .ask
+    case .deny: self = .deny
+    }
+  }
+}
+
+extension CoxFFIBindings.RuleKind {
+  init(_ kind: CoxClient.RuleKind) {
+    switch kind {
+    case .allow: self = .allow
+    case .ask: self = .ask
+    case .deny: self = .deny
+    }
+  }
+}
+
+extension CoxClient.SessionGrant {
+  init(_ grant: CoxFFIBindings.SessionGrant) {
+    self.init(session: grant.session, title: grant.title, tool: grant.tool, subject: grant.subject)
+  }
+}
+
+extension CoxFFIBindings.SessionGrant {
+  /// Back to Rust for a revoke, which matches on the session, tool and subject.
+  init(_ grant: CoxClient.SessionGrant) {
+    self.init(session: grant.session, title: grant.title, tool: grant.tool, subject: grant.subject)
   }
 }
 

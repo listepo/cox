@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::mcp_login::McpServer;
+use crate::permissions::{PermissionRule, SessionGrant};
 
 /// The layer a value came from, the badge beside each field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -101,6 +102,10 @@ pub struct SettingsView {
     pub mcp: Vec<McpServer>,
     /// Project values the guard list threw out (T37.30.4).
     pub dropped: Vec<Dropped>,
+    /// The allow/ask/deny rules in effect, deny first (T37.45.3).
+    pub rules: Vec<PermissionRule>,
+    /// The grants of the sessions open here; `App::settings` adds them.
+    pub grants: Vec<SessionGrant>,
 }
 
 /// A value the project's `.cox/config.toml` set and the guard list threw
@@ -130,6 +135,11 @@ pub enum SettingsError {
     Unknown(String),
     #[error("`{key}` is set by the {layer} layer; change it there")]
     ReadOnly { key: String, layer: Layer },
+    /// `cox_permission`'s grammar refused it (T37.45.3).
+    #[error("`{rule}` is not a rule: {message}")]
+    Rule { rule: String, message: String },
+    #[error("no rule `{0}`")]
+    NoRule(String),
 }
 
 /// The effective config for a session in `cwd`, loaded as `live.rs` loads
@@ -151,7 +161,7 @@ pub fn view_of(
     cwd: &Path,
 ) -> Result<SettingsView, SettingsError> {
     let schema = cox_config::schema()?;
-    let settings = cox_config::cmd::leaves(loaded)?
+    let settings: Vec<Setting> = cox_config::cmd::leaves(loaded)?
         .into_iter()
         .map(|(key, value)| {
             let layer = Layer::from_source(loaded.source_of(&key));
@@ -167,6 +177,8 @@ pub fn view_of(
         })
         .collect();
     Ok(SettingsView {
+        rules: crate::permissions::rules(&settings),
+        grants: Vec::new(),
         settings,
         user_file: user_file.to_path_buf(),
         project_file: cox_config::load::project_config_path(cwd).filter(|p| p.exists()),

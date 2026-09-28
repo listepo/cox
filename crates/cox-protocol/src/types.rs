@@ -995,6 +995,15 @@ pub enum Submission {
         /// The new mode.
         mode: PermissionMode,
     },
+    /// Revoke an `AllowForSession` grant (T37.45.3): the next call it
+    /// covered goes back through the rules and asks. The core answers with
+    /// `GrantRevoked`, which resume replays, so the grant stays gone.
+    RevokeGrant {
+        /// The grant's tool, as `grants_for` recorded it.
+        tool: String,
+        /// The grant's subject prefix.
+        subject: String,
+    },
     /// A slash command the surface parsed but did not resolve itself.
     Command {
         /// The parsed command.
@@ -1171,6 +1180,13 @@ pub enum Event {
         decision: Decision,
         /// Who/what decided it.
         by: DecidedBy,
+    },
+    /// An `AllowForSession` grant was revoked (`Submission::RevokeGrant`).
+    GrantRevoked {
+        /// The grant's tool.
+        tool: String,
+        /// The grant's subject prefix.
+        subject: String,
     },
     /// Streamed stdout/stderr from a running tool, already sanitised for display.
     ToolCallOutput {
@@ -1670,6 +1686,7 @@ mod tests {
     #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into(), segments: None } })]
     #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
+    #[case::grant_revoked(Event::GrantRevoked { tool: "bash".into(), subject: "git push".into() })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None, structured: None } })]
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
@@ -1750,6 +1767,7 @@ mod tests {
     #[case::switch_model(Submission::SwitchModel { tier: Tier::Code, model: Some(ModelId("claude-opus-5".into())) })]
     #[case::set_effort(Submission::SetEffort { effort: Some(Effort::Xhigh) })]
     #[case::set_permission_mode(Submission::SetPermissionMode { mode: PermissionMode::Plan })]
+    #[case::revoke_grant(Submission::RevokeGrant { tool: "bash".into(), subject: "git push".into() })]
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
     #[case::revert_file(Submission::RevertFile { path: "src/a.rs".into(), to_turn: 2 })]

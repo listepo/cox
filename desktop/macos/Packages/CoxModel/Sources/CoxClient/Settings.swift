@@ -59,15 +59,19 @@ public struct SettingsView: Equatable, Sendable {
   public var mcp: [McpServer]
   /// Project values the guard list threw out.
   public var dropped: [Dropped]
+  /// The allow/ask/deny rules in effect, deny first.
+  public var rules: [PermissionRule]
+  /// The "allow for session" grants of the sessions open here.
+  public var grants: [SessionGrant]
 
   public init(
     settings: [Setting], userFile: String, projectFile: String? = nil, mcp: [McpServer] = [],
-    dropped: [Dropped] = []
+    dropped: [Dropped] = [], rules: [PermissionRule] = [], grants: [SessionGrant] = []
   ) {
     (self.settings, self.userFile, self.projectFile, self.mcp) = (
       settings, userFile, projectFile, mcp
     )
-    self.dropped = dropped
+    (self.dropped, self.rules, self.grants) = (dropped, rules, grants)
   }
 }
 
@@ -80,12 +84,20 @@ public protocol SettingsClient: Sendable {
   /// Logs in to (`login`) or out of the MCP server `server`; a login's page goes to the host's
   /// `open` and the call returns once the browser comes back.
   func mcpLogin(cwd: String, server: String, login: Bool) async throws
+  /// Adds (`old` nil), replaces or removes (`new` nil) one rule of `kind` in the user file; the
+  /// view after it. Rust checks `new` with the permission engine's grammar and refuses a list a
+  /// layer above the user file sets, both as `RuleRefused`.
+  func setPermissionRule(cwd: String, kind: RuleKind, old: String?, new: String?) async throws
+    -> SettingsView
+  /// Revokes `grant` through its session's core, which asks again for the next call it covered.
+  func revokeGrant(cwd: String, grant: SessionGrant) async throws -> SettingsView
 }
 
 /// A fixed view that takes edits the way Rust does for an editable key:
 /// the value changes and its layer becomes `user`. Keeps what it was sent.
 /// A login opens `loginPage` through `host`, then its callback is scripted: the
-/// server is logged in with an hour left.
+/// server is logged in with an hour left. A rule edit lands in the user layer unless its list is
+/// read-only or `ruleRefusal` is set; a revoke drops the grant.
 public final class FixtureSettingsClient: SettingsClient {
   public struct ReadOnly: Error, Equatable { public let key: String }
   public struct NoLogin: Error, Equatable { public let server: String }
@@ -95,9 +107,14 @@ public final class FixtureSettingsClient: SettingsClient {
   private let state: Mutex<(view: SettingsView, sent: [String])>
   private let host: (any PlatformHost)?
 
-  public init(view: SettingsView, host: (any PlatformHost)? = nil) {
+  /// What every rule edit is refused with, as Rust refuses a rule its grammar rejects.
+  private let ruleRefusal: String?
+
+  public init(
+    view: SettingsView, host: (any PlatformHost)? = nil, ruleRefusal: String? = nil
+  ) {
     state = Mutex((view, []))
-    self.host = host
+    (self.host, self.ruleRefusal) = (host, ruleRefusal)
   }
 
   /// `key=json`, in order.
@@ -128,6 +145,42 @@ public final class FixtureSettingsClient: SettingsClient {
     state.withLock { state in
       state.sent.append("\(login ? "login" : "logout")=\(server)")
       state.view.mcp[index].login = login ? .loggedIn(expires: "1h") : .loggedOut
+    }
+  }
+
+  public func setPermissionRule(
+    cwd: String, kind: RuleKind, old: String?, new: String?
+  ) async throws -> SettingsView {
+    if let ruleRefusal { throw RuleRefused(ruleRefusal) }
+    return try state.withLock { state in
+      var list = state.view.rules.filter { $0.kind == kind }
+      guard list.allSatisfy(\.editable) else { throw RuleRefused("set by a higher layer") }
+      if let old {
+        guard let index = list.firstIndex(where: { $0.rule == old }) else {
+          throw RuleRefused("no rule `\(old)`")
+        }
+        if let new { list[index].rule = new } else { list.remove(at: index) }
+      } else if let new {
+        list.append(.init(kind: kind, rule: new, layer: .user, editable: true))
+      }
+      state.sent.append("\(kind.rawValue)=\(old ?? "")>\(new ?? "")")
+      let edited = list.map {
+        PermissionRule(kind: kind, rule: $0.rule, layer: .user, editable: true)
+      }
+      // Rust's order: deny, then allow, then ask.
+      let rules = state.view.rules
+      state.view.rules = [RuleKind.deny, .allow, .ask].flatMap { other in
+        other == kind ? edited : rules.filter { $0.kind == other }
+      }
+      return state.view
+    }
+  }
+
+  public func revokeGrant(cwd: String, grant: SessionGrant) async throws -> SettingsView {
+    state.withLock { state in
+      state.sent.append("revoke=\(grant.tool) \(grant.subject)")
+      state.view.grants.removeAll { $0 == grant }
+      return state.view
     }
   }
 }
