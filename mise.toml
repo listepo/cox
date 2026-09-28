@@ -3,3 +3,4 @@
 rust = { version = "1.98.1", components = "rustfmt,clippy", targets = ["wasm32-unknown-unknown"] } # the one Rust version for local work, CI and releases; wasm32: the guest workspace `plugins/` (T33.27, PL§13)
 zig = "0.16.0" # linker for `cargo zigbuild`: the Linux cox build the Terminal-Bench containers run (T30.9)
 "aqua:rust-cross/cargo-zigbuild" = "0.23.4" # cross-builds that Linux cox from macOS without a Docker build step
+"aqua:realm/SwiftLint" = "0.65.1" # lints desktop/macos (T37.18, DS§9); must equal the SwiftLintPlugins version the Swift packages pin

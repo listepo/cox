@@ -23,6 +23,8 @@ Programs the project uses and the direct packages from its manifests.
 | LM Studio (`lms`) | desktop app | Local model server for the eval matrix (`cox-bench`, provider `lmstudio`): OpenAI Chat and Anthropic Messages endpoints on :1234 | https://lmstudio.ai/docs/developer |
 | docker-cli, docker-compose, docker-buildx | global (mise) | Harbor drives task containers through `docker compose` and `docker buildx build` | https://github.com/docker/cli , https://github.com/docker/compose , https://github.com/docker/buildx |
 | dart | mise (`plugins/mise.toml`) | Builds `plugins/templates/dart` and `plugins/examples/dart` (T33.38): Dart cannot emit a wasm module extism can load (research.md §4.3.5 P44), so its only plugin capability is an `[[mcp]]` stdio server, `dart compile exe` | https://github.com/dart-lang/sdk |
+| SwiftLint | mise (`mise.toml`, aqua) | Lints the macOS app (T37.18): default rules plus DS§9's no-literal custom rules in `desktop/macos/.swiftlint.yml`; CI's `desktop-macos-lint` job; packages run the same version through the SwiftLintPlugins build-tool plugin | https://github.com/realm/SwiftLint |
+| swift-format | Xcode toolchain (`xcrun swift-format`) | Formats the macOS app's Swift (research.md §9.5.5); CI's `desktop-macos-lint` job runs `lint --strict` | https://github.com/swiftlang/swift-format |
 
 ## ketch
 
