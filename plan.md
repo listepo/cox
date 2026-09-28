@@ -40,6 +40,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.9 | todo | P2 | 3 | 0% | |
 | T37.44.10 | todo | P2 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
+| T37.45.1 | todo | P3 | 2 | 0% | |
+| T37.45.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T37.45.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.45.5 | todo | P3 | 2 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2828,6 +2833,39 @@ Depends: T37.44.9, T37.44.10 · Size: ~120 · Files: `desktop/macos/App`, CoxUI 
 Goal: A114, A119. The built app is screenshotted on each screen it reaches with the fixtures (main, approval, composer, inspector, review, palette, settings, onboarding) and compared with the mockup renders by `npm run diff`, including 23-notification-and-dock; differences that CoxUI snapshots cannot show (window chrome, toolbar, real materials, dock badge, notification) are fixed. M2/M3 screens (24–27) are out of scope.
 Check: per screen, the app screenshot and its diff against the mockup; no unexplained layout or type region left; swift-format and swiftlint strict clean.
 
+#### T37.45.1 Settings: filter field in the sidebar
+
+Depends: — · Size: ~80 · Files: CoxUI `SettingsSidebar`/`SettingsScreen`, CoxModel `SettingsStore`
+Goal: A120. Mockups 18–20 put a search field at the top of the settings sidebar. Typing filters the pages and the fields on them by label and config key (the schema-generated field list), highlighting matches; Esc clears. Pure Swift over the settings the store already holds.
+Check: a CoxModel test that a query keeps only matching pages and fields; a CoxUI snapshot with a query; the sidebar diff against mockup 18 loses the offset region T37.44.5 reported.
+
+#### T37.45.2 Settings: provider keys and model pickers as in mockup 18
+
+Depends: — · Size: ~180 · Files: CoxUI settings Models & Providers views, CoxModel `SettingsStore`, `SecretStore` use
+Goal: A120, DT§ settings row ("API keys go to the Keychain"). Each provider row shows whether a key is stored and offers Add key / Change key: a secure field whose value goes only through `SecretStore` (`KeychainSecretStore` in the app, the in-memory store in tests, A49) and is never logged or echoed; enum fields such as the default model and effort render as pop-up menus as in the mockup, writing through the existing settings set path.
+Check: CoxModel tests with the in-memory `SecretStore` (add, change, the value never reaches the settings file or a log); CoxUI snapshots of both key states and a pop-up; no real Keychain touched.
+Plan: find what `SettingsStore`/`SecretStore` already expose for provider keys and enum fields, add the key-state row with Add/Change key and a secure-field sheet, render enum fields as pop-ups, test with the in-memory store, snapshots; CoxModel and CoxUI only unless cox-app lacks key presence.
+
+#### T37.45.3 Settings: permission rules editor and session grants
+
+Depends: — · Size: ~200 · Files: CoxUI Permissions page, CoxModel, cox-app/cox-ffi if the data is not exposed yet
+Goal: A120, mockup 19. The Permissions page lists the allow/ask/deny rules with the layer each comes from, lets the user add, edit and remove rules in their user config (a project config never gains a rule from the app, per the project-config guard), validates a rule with `cox_permission`'s grammar before saving, and lists the grants given for the open session ("allow for session") with a revoke. Writes go through `cox-config` `set`; the permission engine stays the one place a call is decided.
+Check: a cox-app or CoxModel test that an invalid rule is refused with the grammar's message and a valid one lands in the user layer only; a test that a revoked session grant asks again; CoxUI snapshots of the page.
+Plan: check what cox-app/cox-ffi expose for rules with their layers and session grants, add the missing calls (validated by `cox_permission`, written by `cox-config` set to the user layer, revoke through the session), then the Permissions page views, tests at the cox-app and CoxModel layers, snapshots.
+
+#### T37.45.4 Settings: MCP server status and log
+
+Depends: — · Size: ~150 · Files: CoxUI MCP page, CoxModel, cox-app/cox-ffi if status and log are not exposed yet
+Goal: A120, DT§ MCP row ("Status per server"), mockup 20. Each server row shows a status badge (connected, needs login, failed, disabled) from the MCP client's state and a Show log button that opens the server's recent stderr/log lines, sanitized through `cox_sanitize` before display.
+Check: a cox-app test mapping client states to badges and that log text is sanitized; CoxUI snapshots of each badge and the log sheet.
+Plan: check what cox-app exposes for MCP server state and logs, add a status mapping and a sanitized log read if missing, then the badge and Show log sheet in CoxUI, tests at the cox-app layer, snapshots.
+
+#### T37.45.5 Onboarding: drop a project folder
+
+Depends: — · Size: ~60 · Files: CoxUI onboarding view, `desktop/macos/App` first-run wiring
+Goal: A120, mockup 21, DT§ onboarding row ("Pick a folder"). The first-run window has the dashed drop zone: dropping a folder (only a directory is accepted) opens it as the project, the same as the folder picker; hover shows the accent outline.
+Check: a test that a dropped file is refused and a dropped directory reaches the same intent as the picker; CoxUI snapshots idle and hovered.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -3008,6 +3046,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A117 T37.22.13 — by the creator (2026-09-28): the catalog is refreshed with a full `cox-vendor models` run, accepting the new `medium` efforts and the OpenRouter deepseek-v4-pro price. Why: T37.22.7 wrote only names and left the rest of models.dev's changes pending.
 - A118 T37.44.3 — by the creator (2026-09-28): the Figma file uses SF Pro and SF Mono, which the creator installs locally; no substitute font. Why: the app draws in SF, and a substitute would change the metrics being compared in T37.44.2.
 - A119 T37.44.4–T37.44.8 — faster layout work, by the creator (2026-09-28): layout fixes iterate in the CoxUI package alone (it depends on neither the Rust core nor the XCFramework), compare a snapshot with its frame by a pixel-diff command, and split the Figma comparison by page so agents work on separate screens in parallel. Why: each layout check was rebuilding the XCFramework and the app and one agent at a time owned every screen.
+- A120 T37.45.1–T37.45.5 — by the creator (2026-09-28, "do what is best"): controls the mockups show and the design doc already names but the app lacks — settings filter, provider keys and model pop-ups, permission rules editor and session grants, MCP status and log, the onboarding drop zone — become cards; the settings sidebar stays the floating glass one of DESIGN.md §6.5, not the mockups' flush 220 pt one; the M2/M3 mockups (24–27) stay out of scope. Why: the design pass (T37.44.5) found them missing, and they are features, not layout.
 
 ## 7. Risk register
 
