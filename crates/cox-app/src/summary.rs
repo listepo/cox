@@ -180,12 +180,12 @@ fn field(call: &ToolCall, key: &str) -> String {
     one_line(field_opt(call, key).unwrap_or(&call.subject))
 }
 
-fn plural(n: u64, one: &str, many: &str) -> String {
+pub(crate) fn plural(n: u64, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
 /// "840 ms", "4.2 s".
-fn seconds(ms: u64) -> String {
+pub(crate) fn seconds(ms: u64) -> String {
     match ms {
         0..1000 => format!("{ms} ms"),
         _ => format!("{:.1} s", ms as f64 / 1000.0),

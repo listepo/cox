@@ -283,7 +283,21 @@ extension CoxClient.UsageView {
   init(_ value: CoxFFIBindings.UsageView) {
     self.init(
       session: .init(value.session), turn: value.turn.map { CoxClient.TurnUsage($0) },
-      contextTokens: value.contextTokens)
+      contextTokens: value.contextTokens, text: .init(value.text))
+  }
+}
+
+extension CoxClient.MeterText {
+  init(_ value: CoxFFIBindings.MeterText) {
+    self.init()
+    (sent, received, rate, spoken) = (value.sent, value.received, value.rate, value.spoken)
+    (heading, phase, rateUnit, rateDetail) = (
+      value.heading, value.phase, value.rateUnit, value.rateDetail
+    )
+    rows = value.rows.map {
+      .init(label: $0.label, turn: $0.turn, session: $0.session, detail: $0.detail)
+    }
+    (context, footnote) = (value.context, value.footnote)
   }
 }
 

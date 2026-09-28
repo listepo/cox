@@ -107,5 +107,6 @@ struct ComposerSample: View {
     Composer(state: state) { _ in }
       .frame(width: Size.readingWidth)
       .padding(.top, state.completion == nil ? 0 : PreviewState.completionRoom)
+      .padding(.top, state.tokens == nil ? 0 : PreviewState.tokensRoom)
   }
 }
