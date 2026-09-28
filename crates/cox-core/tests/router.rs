@@ -175,6 +175,48 @@ async fn router_switch_gates_and_runs_think() {
     assert_eq!(rows[0].model.0, "claude-fable-5-1");
 }
 
+#[tokio::test]
+async fn confirm_think_runs_one_turn_on_think_then_the_session_tier_again() {
+    // Turn 1 is a tool call and its follow-up, so every request of the
+    // confirmed turn is checked, not just the first.
+    let toml = "[[turn]]\ntext = \"look\"\ntool_calls = [{ name = \"echo\", input = { text = \"x\" } }]\n\
+                [[turn]]\ntext = \"planned\"\n[[turn]]\ntext = \"coded\"\n";
+    let (session, store, mut rx) = open(toml, Config::default());
+    let running = spawn_turn_confirmed(&session, "plan it");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::TurnStarted {
+            tier: Tier::Think,
+            ..
+        }
+    )));
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::ModelSwitched { .. })),
+        "the session tier is not switched"
+    );
+
+    let running = spawn_turn(&session, "now code it");
+    drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let rows: Vec<(Job, Tier, String)> = store
+        .usage_rows()
+        .into_iter()
+        .map(|r| (r.job, r.tier, r.model.0))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (Job::Main, Tier::Think, "claude-fable-5-1".to_string()),
+            (Job::Main, Tier::Think, "claude-fable-5-1".to_string()),
+            (Job::Main, Tier::Code, "claude-sonnet-5".to_string()),
+        ]
+    );
+}
+
 fn spawn_turn_confirmed(
     session: &Session,
     text: &str,

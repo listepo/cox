@@ -90,8 +90,9 @@ pub(crate) struct Inner {
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
-    /// The tier `route` advice moved the running user turn to (T33.20);
-    /// `None` outside a turn and whenever the static pick stands.
+    /// The tier the running user turn was moved to: by `route` advice
+    /// (T33.20) or by `confirm_think` onto think (T37.24.11); `None` outside
+    /// a turn and whenever the static pick stands.
     pub(crate) routed: Option<Tier>,
     /// Running background tasks: label, tier and kind by id (T9.2, T27.1).
     pub(crate) tasks: HashMap<TaskId, (String, Tier, crate::tasks::TaskKind)>,
@@ -1197,6 +1198,17 @@ impl Session {
             "gen_ai.input.messages",
             &serde_json::json!([{"role": "user", "content": &text}]),
         );
+        // D5, A103 (T37.24.11): `/think` and the think toggle move this one
+        // turn to the think tier through the same per-turn slot `route`
+        // advice uses, so every call of the turn follows it and `run_turn`
+        // clears it after. A session already on think (`--deep`, architect)
+        // keeps no slot, so its earlier thinking blocks are not stripped.
+        if confirm_think {
+            let mut inner = self.inner.lock().await;
+            if inner.overrides.main_tier.unwrap_or(self.tier) != Tier::Think {
+                inner.routed = Some(Tier::Think);
+            }
+        }
         // T9.1: the think tier needs `confirm_think`; without it the turn is
         // refused before any provider call, with the price in the notice.
         // An unknown provider name is a turn-fatal config error instead.

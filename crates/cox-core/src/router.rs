@@ -87,7 +87,9 @@ pub struct Router;
 
 impl Router {
     /// Resolves `job` to a [`Route`]. Main turns run on the session tier
-    /// (or the `/model` tier); every other job follows the `[jobs]` table.
+    /// (or `overrides.main_tier`: the `/model` tier, or the one-turn tier the
+    /// session sets for `route` advice and `/think`); every other job follows
+    /// the `[jobs]` table.
     /// Pure: the same inputs always give the same route, so a retry never
     /// escalates a tier on its own.
     pub fn pick(
