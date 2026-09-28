@@ -5059,3 +5059,27 @@ Result:
 Deviations: CoxModel `TaskRows.swift` unchanged — `TaskRow.kind` already maps field for field.
 Check: CoxUI `ChangesTab|InspectorRow|TasksTab|Inspector` 18/18 including `aShellRowOpensItsOutputUnderItsOwnGlyph`; CoxModel 44/44; swiftlint and swift-format clean.
 Not done: app wiring (T37.22.3).
+
+#### T37.28.1 Rewind timeline: restore code, conversation or both
+
+Depends: — · Size: ~90 · Files: `…/Organisms/RewindTimeline.swift`, `CoxModel/…/Rewind.swift`, `crates/cox-app/tests/app.rs`
+Goal: pick a checkpoint from `changes().checkpoints` and a scope and send the existing `Intent::Rewind`.
+Check: a fixture rewind restores the expected files in a scratch tree.
+Status: done 2026-09-28
+Result:
+- CoxUI `Organisms/RewindTimeline.swift`: the checkpoints oldest first as CheckpointRows, the selected one raised, each with Restore code (`doc.text`), Restore conversation (`text.bubble`) and Restore both (`arrow.uturn.backward`), reporting `.rewind(checkpoint:code:conversation:)`; previews in `Previews/PreviewState+Rewind.swift`; DESIGN.md DS§6.4 row.
+- CoxModel `Rewind.swift`: `SessionStore.rewind(checkpoint:code:conversation:)` turns the Changes-tab checkpoint (the turn) into `Intent.rewind`; the core's rewind is reused as is.
+- Bug found by the Check and fixed in `crates/cox-sandbox/src/path.rs`: `confine`'s lexical pre-check compared a checkpoint row's canonical path (`/private/var/…`) with the root as opened (`/var/…`), so every restore under a symlinked cwd was refused and reported as "too large to restore". The pre-check now also matches the canonical roots; the canonical check after it still decides.
+Deviations: the trust-guard fix above (reviewed by the orchestrator).
+Check:
+- `cargo nextest run -p cox-sandbox -p cox-app -p cox-tools`: 210 passed, 1 skipped, including `rewinding_code_to_a_checkpoint_restores_its_files_and_keeps_the_conversation`, `rewinding_code_and_conversation_leaves_nothing_to_review` and `a_canonical_path_under_a_symlinked_root_is_confined`; clippy and fmt clean. CoxModel 45/45; CoxUI RewindTimeline, ChangesTab, InspectorRow 13/13; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: cox-sandbox and cox-app 87/87.
+Not done: app wiring (T37.22.3, T37.32). Open questions: the scope of the Changes tab's plain Rewind; whether Review shows the net diff against disk or the model's calls after a code-only rewind; the "too large to restore" notice also covers any failed restore.
+
+#### T37.28 Review pane and rewind timeline
+
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
+Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
+Check: fixture rewind restores the expected files in a scratch worktree.
+Status: done 2026-09-28
+Split at claim into T37.28.1 (rewind timeline, done), T37.28.2 (review pane), T37.28.3 (per-file revert, needs an amendment) and T37.28.4 (line comments).

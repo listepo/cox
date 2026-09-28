@@ -37,7 +37,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.25.3 | todo | P2 | 2 | 0% | |
 | T37.24.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27.8 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
-| T37.28 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.28.2 | todo | P2 | 3 | 0% | |
+| T37.28.3 | todo | P2 | 3 | 0% | |
+| T37.28.4 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
 | T37.30.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
@@ -2811,11 +2813,23 @@ Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/
 Goal: T37.24.5's private `ComposerPaste.Monitor` and T37.27.5's `WindowKeys` both install an app-local `NSEvent` key monitor scoped to one window; keep one helper (`WindowKeys`, moved to its own file) and let the ⌘V paste use it.
 Check: `ComposerFlowTests` paste tests and `PinnedDecisionTests` pass unchanged.
 
-#### T37.28 Review pane and rewind timeline
+#### T37.28.2 Review pane: files by turn and their diff
 
-Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
-Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
-Check: fixture rewind restores the expected files in a scratch worktree.
+Depends: T37.28.1 · Size: ~180 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs` (new), CoxModel mapping
+Goal: DT§5.4's split view — on the left the files grouped by turn with +/− counts and the RewindTimeline ("Rewind to here"), on the right the selected file's unified `DiffModel` through `DiffHunkView`, with the ⌘⌥D side-by-side toggle.
+Check: a cox-app test gives the per-file diff after two edits; a snapshot per cell.
+
+#### T37.28.3 Revert one file to before turn N
+
+Depends: T37.28.1 · Size: ~120 · Files: `crates/cox-protocol/…` (a new `Submission`), `crates/cox-core/src/rewind.rs`, the cox-app intent
+Goal: DT§5.4's per-file revert and ChangesTab's existing `.revert(path:)`: restore one file to its checkpoint before turn N, checkpointing it first so the revert can itself be undone. Changes the protocol, so it needs a `plan.md` amendment before it is claimed.
+Check: a cox-app test reverts one file and leaves the other.
+
+#### T37.28.4 Line comments sent to the agent
+
+Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs`
+Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
+Check: a cox-app test of the message; a snapshot of a draft.
 
 #### T37.29.3 Inspector Context & Cost tab
 

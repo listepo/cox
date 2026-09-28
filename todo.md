@@ -31,7 +31,9 @@
 - T37.25.3. Context split in the TUI
 - T37.24.7. Composer status chips
 - T37.27.8. One app-local key monitor for the composer and the decision bar
-- T37.28. Review pane and rewind timeline
+- T37.28.2. Review pane: files by turn and their diff
+- T37.28.3. Revert one file to before turn N
+- T37.28.4. Line comments sent to the agent
 - T37.29.3. Inspector Context & Cost tab
 - T37.30.5. Coloured page tiles in Settings
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
