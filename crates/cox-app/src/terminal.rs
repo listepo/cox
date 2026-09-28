@@ -201,6 +201,20 @@ impl TerminalHandle {
             .map(|status| status.exit_code())
     }
 
+    /// A job other than the shell holds the terminal's foreground, so
+    /// closing now would kill it and the pane asks first (T51.6). The
+    /// shell leads its own session, so its group id is its pid.
+    pub fn is_busy(&self) -> bool {
+        if self.closed.load(Ordering::SeqCst) {
+            return false;
+        }
+        let shell = lock(&self.child)
+            .process_id()
+            .and_then(|pid| i32::try_from(pid).ok());
+        let foreground = lock(&self.master).process_group_leader();
+        matches!((shell, foreground), (Some(shell), Some(group)) if shell != group)
+    }
+
     /// Ends the terminal: SIGHUP to the shell's process group and the
     /// terminal's foreground job, as closing a terminal window does (the
     /// shell passes it on to its background jobs), then SIGKILL to both
@@ -406,7 +420,33 @@ mod tests {
         assert!(term.next_output_after_close_ends().await);
     }
 
+    #[tokio::test]
+    async fn terminal_is_busy_only_while_a_foreground_job_runs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let term = open(&spec(dir.path(), SandboxMode::DangerFullAccess)).expect("open");
+        term.write(b"echo READY-$((40+2))\n").expect("write");
+        let (found, seen) = read_until(&term, "READY-42").await;
+        assert!(found, "{seen}");
+        assert!(!term.is_busy(), "an idle prompt is not busy");
+        term.write(b"sleep 300\n").expect("write");
+        assert!(term.busy_becomes(true).await, "sleep holds the foreground");
+        // ^C ends the job and the prompt takes the foreground back.
+        term.write(b"\x03").expect("write");
+        assert!(term.busy_becomes(false).await, "the prompt is back");
+        term.close();
+        assert!(!term.is_busy(), "a closed terminal is not busy");
+    }
+
     impl TerminalHandle {
+        /// Polls `is_busy` until it answers `want` or the wait runs out.
+        async fn busy_becomes(&self, want: bool) -> bool {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while self.is_busy() != want && Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            self.is_busy() == want
+        }
+
         /// Drains what is left; true once the stream ended.
         async fn next_output_after_close_ends(&self) -> bool {
             tokio::time::timeout(WAIT, async { while self.next_output().await.is_some() {} })

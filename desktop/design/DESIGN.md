@@ -383,6 +383,7 @@ component.
 | `InfoTab(state:)` | the Info tab (DT§5.1): an `InspectorSection` `Session` whose KeyValueGrid lists the session id, folder, worktree with its branch as a detail row, and rollout file, then `Config`: each layer that set a key with its count, its file as a detail row under it; paths start at `~`; an empty tab says so | `.ib`, `.ih`, `.tokpop .grid` |
 | `SettingsSidebar(pages:, selection:, userFile:, projectFile:, select:)` | ShellPane(.sidebar); an `InspectorRow` per `SettingsPage` (General … Advanced, DT§5.7) led by its §3.7 symbol on an `IconTile` in `tile.settings.<page>` colours, the selected one lifted on `accent` in `text.onAccent` (the mockup's `.set-side .it.on`); footer: each config file cut in the middle with its layer Badge | `.set-side` |
 | `SettingsGroupBox(title, content:)` | SectionHeader (none for a `nil` title, as the first-run window's boxes) over the rows on `fill.primary` at `radius.xl`, a hairline between rows | `.gtitle`, `.group` |
+| `TerminalPaneChrome(state:, send:, content:)` | the terminal pane under the column (mockup 24, T51.6): a header on `fill.primary` under a top hairline, `font.caption` in `text.secondary` — a tab per shell (`terminal` symbol and CoxModel's `zsh — <branch>` title), the shown one on `surface.window` in `text.primary` at e1, `radius.s`; then `+` and the trailing `` ⌃` toggle `` hint — over the `content` slot on `surface.terminal`, where the app puts CoxPlatform's SwiftTerm `TerminalPane`. A tab's context menu closes it | `.panehead`, `.term` |
 
 ### 6.5 The glass main screen, decomposed
 

@@ -37,6 +37,20 @@ public enum SurfaceColour: CaseIterable, Sendable {
   }
 }
 
+/// The terminal pane's colours (T51.6): `surface.terminal`, `text.terminal` and
+/// `text.terminalOk`, for SwiftTerm's view, which AppKit draws.
+public enum TerminalColour: CaseIterable, Sendable {
+  case surface, text, ok
+
+  public var nsColor: NSColor {
+    switch self {
+    case .surface: NSColor(resource: .surfaceTerminal)
+    case .text: NSColor(resource: .textTerminal)
+    case .ok: NSColor(resource: .textTerminalOk)
+    }
+  }
+}
+
 extension Appearance {
   /// A readable surface's opacity, as `.glassPane(role: .readable)` sets it (DS§3.5), for a
   /// face AppKit draws (T37.23.9).

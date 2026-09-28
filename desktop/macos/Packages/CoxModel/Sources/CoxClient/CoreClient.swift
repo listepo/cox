@@ -58,6 +58,9 @@ public protocol SessionClient: AnyObject, Sendable {
   func info() async throws -> Info
   /// The Context tab's cost history (`cox_app::live::LiveSession::turn_costs`, T37.29.3.2).
   func turnCosts() async throws -> TurnCosts
+  /// A terminal pane's login shell in the session's cwd, under its sandbox, `cols` × `rows`
+  /// cells (`cox_app::live::LiveSession::open_terminal`, T51.3).
+  func openTerminal(cols: UInt16, rows: UInt16) throws -> any TerminalClient
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
 }
@@ -271,6 +274,9 @@ public final class FixtureSession: SessionClient {
   public func info() async throws -> Info { fixedInfo }
 
   public func turnCosts() async throws -> TurnCosts { fixedCosts }
+
+  /// A shell with no process: it prints nothing until a test says so.
+  public func openTerminal(cols: UInt16, rows: UInt16) -> any TerminalClient { FixtureTerminal() }
 
   public func close() {
     let resume = state.withLock { state in

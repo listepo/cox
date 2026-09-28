@@ -1,11 +1,12 @@
 // The `CoreClient` over cox-ffi (DT§4.4, §4.6): opens sessions, reads the
 // inbox, and reads and edits settings (DT§5.7), through the generated `App` and hands the
-// stores `CoxClient` values. Separate from the
+// stores `CoxClient` values, a terminal pane's shell among them (T51.6). Separate from the
 // conversions, which are data only; this file is the one place the app
 // calls into Rust.
 
 import CoxClient
 import CoxFFIBindings
+import Foundation
 
 public final class LiveCoreClient: CoreClient {
   /// Internal so the conversion files' extensions (the checklist) call it too.
@@ -79,6 +80,28 @@ final class LiveSession: SessionClient {
     CoxClient.TurnCosts(try await handle.turnCosts())
   }
 
+  func openTerminal(cols: UInt16, rows: UInt16) throws -> any TerminalClient {
+    LiveTerminal(try handle.openTerminal(cols: cols, rows: rows))
+  }
+
+  func close() { handle.close() }
+}
+
+/// A terminal pane's shell over the generated handle (T51.6): `outputs` pulls `nextOutput`
+/// until the shell exits and its PTY drains.
+final class LiveTerminal: TerminalClient {
+  private let handle: TerminalHandle
+  let outputs: AsyncStream<[UInt8]>
+
+  init(_ handle: TerminalHandle) {
+    self.handle = handle
+    outputs = AsyncStream(unfolding: { await handle.nextOutput().map { [UInt8]($0) } })
+  }
+
+  func write(_ bytes: [UInt8]) throws { try handle.write(bytes: Data(bytes)) }
+  func resize(cols: UInt16, rows: UInt16) throws { try handle.resize(cols: cols, rows: rows) }
+  func exitStatus() -> UInt32? { handle.exitStatus() }
+  func isBusy() -> Bool { handle.isBusy() }
   func close() { handle.close() }
 }
 

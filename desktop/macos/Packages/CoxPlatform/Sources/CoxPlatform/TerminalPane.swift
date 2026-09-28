@@ -3,7 +3,8 @@
 // process (DT§4.6) — bridged to a `TerminalClient`. Keys and pastes the view encodes go to
 // `write`, its new size in cells to `resize`, and one task feeds the shell's bytes in. In
 // CoxPlatform because it is the one package that may link a platform library (DT§4.6); the
-// colours and font arrive as a `TerminalStyle` the app builds from CoxUI's tokens.
+// colours and font arrive as a `TerminalStyle` the app builds from CoxUI's tokens. A
+// `TerminalSurface` keeps each tab's view and feed alive while SwiftUI rebuilds the pane.
 
 import AppKit
 import CoxClient
@@ -32,37 +33,58 @@ public struct TerminalStyle {
   }
 }
 
-/// One terminal in SwiftUI. `openLink` receives a link the user clicked in the output;
-/// by default nothing opens, since the host opens web links only after its own check.
-public struct TerminalPane: NSViewRepresentable {
-  let client: any TerminalClient
-  let style: TerminalStyle
-  let openLink: @MainActor (String) -> Void
+/// One tab's terminal, kept by the pane's owner for as long as the tab is open (T51.6): the
+/// view holds the scrollback and the feed task holds the output stream, which ends for good once
+/// its reader is cancelled, so neither may go when SwiftUI drops the pane on a tab switch or a
+/// toggle. `openLink` receives a link the user clicked in the output; by default nothing opens,
+/// since the host opens web links only after its own check.
+@MainActor
+public final class TerminalSurface {
+  public let client: any TerminalClient
+  let view: TerminalView
+  let bridge: TerminalBridge
 
   public init(
     client: any TerminalClient, style: TerminalStyle,
     openLink: @escaping @MainActor (String) -> Void = { _ in }
   ) {
-    (self.client, self.style, self.openLink) = (client, style, openLink)
-  }
-
-  public func makeCoordinator() -> TerminalBridge {
-    TerminalBridge(client: client, openLink: openLink)
-  }
-
-  public func makeNSView(context: Context) -> TerminalView {
-    let view = TerminalView(frame: .zero, font: style.font)
+    self.client = client
+    // A zero frame starts SwiftTerm at its default 80 × 25 cells until the pane lays it out.
+    view = TerminalView(frame: .zero, font: style.font)
+    bridge = TerminalBridge(client: client, openLink: openLink)
     style.apply(to: view)
-    context.coordinator.attach(view)
-    return view
+    bridge.attach(view)
   }
 
-  public func updateNSView(_ view: TerminalView, context: Context) {
-    style.apply(to: view)
+  /// Stops feeding the view; the owner closes the shell.
+  public func end() { bridge.detach() }
+}
+
+/// A tab's `TerminalSurface` in SwiftUI: a plain container the surface's view moves into, so a
+/// pane rebuilt by SwiftUI shows the same terminal rather than a fresh one.
+public struct TerminalPane: NSViewRepresentable {
+  let surface: TerminalSurface
+  let style: TerminalStyle
+
+  public init(surface: TerminalSurface, style: TerminalStyle) {
+    (self.surface, self.style) = (surface, style)
   }
 
-  public static func dismantleNSView(_ view: TerminalView, coordinator: TerminalBridge) {
-    coordinator.detach()
+  public func makeNSView(context: Context) -> NSView {
+    let container = NSView()
+    surface.view.removeFromSuperview()
+    surface.view.frame = container.bounds
+    surface.view.autoresizingMask = [.width, .height]
+    container.addSubview(surface.view)
+    return container
+  }
+
+  public func updateNSView(_ container: NSView, context: Context) {
+    style.apply(to: surface.view)
+  }
+
+  public static func dismantleNSView(_ container: NSView, coordinator: ()) {
+    for view in container.subviews { view.removeFromSuperview() }
   }
 }
 

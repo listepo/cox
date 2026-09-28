@@ -521,6 +521,7 @@ current project and slash commands. The whole app is keyboard-drivable:
 | ⌘⇧R | Review |
 | ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A89) |
 | ⌘⌥A | Appearance popover |
+| ⌃` | Terminal pane under the transcript: show / hide; the first show opens the session's shell (T51.6) |
 | ⌘⇧F | Search all sessions |
 | ⌘[ / ⌘] | Previous / next turn in the transcript |
 | ⌘+ / ⌘− | Text size |

@@ -6,8 +6,9 @@
 // title, model, mode and cost and stops its turn, the toolbar's title and a sidebar row's menu
 // rename a session (A113), its model popover switches the session's model
 // as `/model` does, the inspector's tabs read the open session,
-// Review replaces the transcript column, the shell's panes fold and the Appearance popover writes
-// `[desktop.appearance]`.
+// Review replaces the transcript column, the shell's panes fold, ⌃` shows the session's terminal
+// pane under the column (T51.6; the window asks before closing over a running command) and the
+// Appearance popover writes `[desktop.appearance]`.
 
 import CoxClient
 import CoxModel
@@ -38,6 +39,9 @@ struct SessionWindow: View {
   @State private var failure: String?
   /// Why the core refused the last intent; shown until dismissed.
   @State private var refused: String?
+  /// The terminal pane shows under the column; its height is the user's drag, UI-only.
+  @State private var isTerminalVisible = false
+  @State private var terminalHeight = SessionTerminal.defaultHeight
   @Environment(\.coxAppearance) private var base
 
   var body: some View {
@@ -72,14 +76,17 @@ struct SessionWindow: View {
         \.shell,
         ShellActions(
           isSidebarVisible: screen.isSidebarVisible, isInspectorVisible: screen.isInspectorVisible,
+          isTerminalVisible: isTerminalShown,
           toggleSidebar: { screen.isSidebarVisible.toggle() },
-          toggleInspector: { screen.isInspectorVisible.toggle() })
+          toggleInspector: { screen.isInspectorVisible.toggle() },
+          toggleTerminal: { toggleTerminal() })
       )
       .task { if current == nil { await open(resume: nil) } }
       .task { await watch() }
       .onDisappear {
         for session in opened.values { session.close() }
       }
+      .closeGuard { opened.values.contains { $0.store.hasBusyTerminal } }
   }
 
   private var shown: MainScreenState {
@@ -93,6 +100,27 @@ struct SessionWindow: View {
   }
 
   private var showing: OpenedSession? { current.flatMap { opened[$0] } }
+
+  /// The pane shows while it is toggled on and the session has a terminal left open.
+  private var isTerminalShown: Bool {
+    isTerminalVisible && showing?.store.terminals.isEmpty == false
+  }
+
+  /// ⌃`: shows or hides the terminal pane; showing it with no terminal open opens the session's
+  /// shell first.
+  private func toggleTerminal() {
+    guard let store = showing?.store else { return }
+    let isShown = isTerminalShown
+    if !isShown && store.terminals.isEmpty {
+      do {
+        try store.openTerminal()
+      } catch {
+        refused = String(describing: error)
+        return
+      }
+    }
+    isTerminalVisible = !isShown
+  }
 
   private var isRefused: Binding<Bool> {
     Binding(get: { refused != nil }, set: { if !$0 { refused = nil } })
@@ -111,6 +139,12 @@ struct SessionWindow: View {
           .composer(showing.composer)
         // At its own height, so the transcript takes the rest of the column.
         SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
+        if isTerminalShown {
+          SessionTerminal(
+            store: showing.store, surfaces: showing.terminals,
+            branch: showing.info?.worktree?.branch, height: $terminalHeight
+          ) { refused = $0 }
+        }
       }
       // A new view per session, so the transcript's text is rebuilt from the one it shows.
       .id(current)

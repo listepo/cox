@@ -1,6 +1,6 @@
 // One open session as observable state (DT§4.6): the timeline keyed by
 // block id in insertion order (`OrderedDictionary`, research.md 9.5.6), the
-// token meter and the composer draft. It applies patches and sends intents
+// token meter, the composer draft and the terminal tabs. It applies patches and sends intents
 // and nothing else; every decision already came from Rust. The rules mirror
 // `cox_app::coalesce::apply`, the reference consumer the Rust tests prove.
 
@@ -21,6 +21,13 @@ public final class SessionStore {
   public var draft = ""
   /// Review's line comments, kept while Review opens other files (T37.28.4).
   public var reviewDraft = ReviewDraft()
+  /// The session's terminal panes in tab order (T51.6): the shells run in Rust, and what they
+  /// print never reaches `blocks`.
+  public internal(set) var terminals: [TerminalTab] = []
+  /// The tab the terminal pane shows.
+  public var terminalSelection: TerminalTab.ID?
+  /// The last tab's id, so a closed tab's id is never handed out again.
+  @ObservationIgnored var terminalCount = 0
   @ObservationIgnored public let session: any SessionClient
 
   public init(session: any SessionClient) {

@@ -165,6 +165,11 @@ impl TerminalHandle {
         self.term.exit_status()
     }
 
+    /// A job other than the shell holds the foreground, so closing asks first.
+    pub fn is_busy(&self) -> bool {
+        self.term.is_busy()
+    }
+
     /// Hangs up the shell and kills its process groups.
     pub fn close(&self) {
         self.term.close();

@@ -9,8 +9,8 @@ import CoxModel
 import CoxTranscript
 import CoxUI
 
-/// A session this window opened: its stores, what it reported at open, and its pull, which runs
-/// while another session shows.
+/// A session this window opened: its stores, what it reported at open, its pull, which runs
+/// while another session shows, and its terminal tabs' views.
 @MainActor
 struct OpenedSession {
   let store: SessionStore
@@ -20,13 +20,17 @@ struct OpenedSession {
   var info: Info?
   /// The models its cwd's config offers; empty until read.
   var models: [ModelChoice] = []
+  /// Its terminal tabs' views, kept while each tab is open (T51.6).
+  let terminals = TerminalSurfaces()
 
   /// The toolbar's model menu for what the session runs on now.
   var menu: ModelMenu { ModelMenu(choices: models, status: store.status) }
 
-  /// Stops the pull; the session keeps running in the core.
+  /// Stops the pull and closes its terminals; the session keeps running in the core.
   func close() {
     pull.cancel()
+    terminals.endAll()
+    store.closeTerminals()
     store.session.close()
   }
 }
