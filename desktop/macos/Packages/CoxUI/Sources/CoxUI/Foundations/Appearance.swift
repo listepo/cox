@@ -1,0 +1,116 @@
+// The appearance every Foundation reads (DS§3.4–3.6): material, window opacity, Depth and text
+// size, plus the one place the system's Reduce Transparency and Reduce Motion override them
+// (DS§1.6). Separate so no modifier resolves a setting on its own. CoxModel fills
+// `coxAppearance` from `[desktop.appearance]`; CoxUI never reads config. The modifiers in
+// Foundations are internal: only CoxUI's own components style a view (DS§5).
+
+import SwiftUI
+
+/// The window material the user picked (DS§3.5).
+public enum GlassMaterial: String, Sendable, CaseIterable {
+  case solid, frosted, glossy
+}
+
+/// What a glass surface carries, which decides whether it may go below the readable floor.
+enum SurfaceRole: Sendable {
+  /// Window and pane backgrounds: they follow the transparency slider.
+  case chrome
+  /// Messages, code, diffs, terminal, popovers, the composer: never below the floor.
+  case readable
+}
+
+/// The `[desktop.appearance]` values the Foundations draw with.
+public struct Appearance: Sendable, Equatable {
+  public var material: GlassMaterial
+  /// Window and pane background opacity, 0…1 (the transparency slider).
+  public var windowOpacity: Double
+  /// Depth, 0 (Flat) … 1 (3D): scales every elevation but `e5` (DS§3.4).
+  public var depth: Double
+  /// Text size, 1 = 100 % (DS§3.2).
+  public var textScale: Double
+
+  /// `windowOpacity` defaults to the material's token.
+  public init(
+    material: GlassMaterial = .frosted, windowOpacity: Double? = nil, depth: Double = 1,
+    textScale: Double = 1
+  ) {
+    self.material = material
+    self.windowOpacity = windowOpacity ?? Self.defaultOpacity(material)
+    self.depth = depth
+    self.textScale = textScale
+  }
+
+  /// What a view draws: Reduce Transparency forces Solid (DS§1.6).
+  public func effective(reduceTransparency: Bool) -> Appearance {
+    guard reduceTransparency, material != .solid else { return self }
+    var solid = self
+    solid.material = .solid
+    solid.windowOpacity = MaterialToken.solidWindowOpacity
+    return solid
+  }
+
+  /// Background opacity of a surface: Solid is opaque, readable surfaces hold the floor.
+  func backgroundOpacity(_ role: SurfaceRole) -> Double {
+    switch (material, role) {
+    case (.solid, _): MaterialToken.solidWindowOpacity
+    case (_, .chrome): windowOpacity
+    case (_, .readable): max(windowOpacity, MaterialToken.readableFloorWindowOpacity)
+    }
+  }
+
+  /// Strength of the diagonal highlight for the material (DS§3.5).
+  var specular: Double {
+    switch material {
+    case .solid: MaterialToken.solidSpecular
+    case .frosted: MaterialToken.frostedSpecular
+    case .glossy: MaterialToken.glossySpecular
+    }
+  }
+
+  private static func defaultOpacity(_ material: GlassMaterial) -> Double {
+    switch material {
+    case .solid: MaterialToken.solidWindowOpacity
+    case .frosted: MaterialToken.frostedWindowOpacity
+    case .glossy: MaterialToken.glossyWindowOpacity
+    }
+  }
+}
+
+extension EnvironmentValues {
+  /// The user's appearance, before the system overrides it; read it through `EffectiveAppearance`.
+  @Entry public var coxAppearance = Appearance()
+}
+
+/// The appearance with Reduce Transparency applied — the only way a Foundation reads it.
+@propertyWrapper
+struct EffectiveAppearance: DynamicProperty {
+  @Environment(\.coxAppearance) private var appearance
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  var wrappedValue: Appearance { appearance.effective(reduceTransparency: reduceTransparency) }
+}
+
+extension Animation {
+  /// A token animation: `Motion.duration*` on `Motion.easing*` (DS§3.6).
+  static func cox(
+    _ duration: TimeInterval, curve: UnitCurve = Motion.easingStandard
+  ) -> Animation {
+    .timingCurve(curve, duration: duration)
+  }
+}
+
+extension View {
+  /// Inserts and removes with `movement`, or with a cross-fade under Reduce Motion (DS§3.6).
+  func coxTransition(_ movement: AnyTransition) -> some View {
+    modifier(CoxTransition(movement: movement))
+  }
+}
+
+private struct CoxTransition: ViewModifier {
+  let movement: AnyTransition
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    content.transition(reduceMotion ? .opacity : movement)
+  }
+}

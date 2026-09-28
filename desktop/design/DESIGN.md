@@ -47,8 +47,9 @@ design/tokens/base.json        ┘                        ├─ CoxUI/Tokens/To
 - Each `color.<mode>.json` holds every colour role for one appearance: `light` (Any) and `dark` are
   required; `light-hc` and `dark-hc` are optional and add the High Contrast entries. A token that also
   has children (`accent` and `accent.soft`) is the group's `$root` token (DTCG §6.2).
-- Colours become asset-catalog colours, so Xcode's generated asset symbols give `Color.accent`,
-  `Color.surfaceWindow` and so on. Light, dark and high-contrast variants live in one colorset.
+- Colours become asset-catalog colours; the build generates a `ColorResource` per colorset, so a view
+  writes `Color(.accent)`, `Color(.surfaceWindow)` and so on (SwiftPM generates no `Color.<name>`
+  extensions). Light, dark and high-contrast variants live in one colorset.
 - `Tokens.swift` flattens each group's path to camelCase: `Space.m`, `Radius.pane`, `Size.readingWidth`,
   `Motion.durationFast`, `Motion.easingStandard` (a `UnitCurve`), `MaterialToken.frostedBlur`, and the
   values `FontToken.transcriptH3` and `ElevationToken.e2` that `.textStyle(_:)` and `.elevation(_:)`
@@ -196,8 +197,10 @@ names map one-to-one:
 ```
 Packages/CoxUI/Sources/CoxUI/
 ├─ Tokens/        generated: Tokens.swift, Colors.xcassets — never edited by hand
-├─ Foundations/   ViewModifiers and styles: Elevation, GlassPane, Specular, Hairline, InsetWell,
-│                 TextStyle, CoxButtonStyle, CapsuleStyle, SegmentedStyle, CoxToggleStyle, CoxSliderStyle
+├─ Foundations/   Appearance (the settings every modifier reads, with Reduce Transparency and Reduce
+│                 Motion applied once) and the ViewModifiers and styles: Elevation, GlassPane,
+│                 Specular, Hairline, InsetWell, TextStyle, CoxButtonStyle, CapsuleStyle,
+│                 SegmentedStyle, CoxToggleStyle, CoxSliderStyle
 ├─ Atoms/         one file per atom (§6.2)
 ├─ Molecules/     one file per molecule (§6.3)
 ├─ Organisms/     one file per organism (§6.4)
@@ -206,7 +209,9 @@ Packages/CoxUI/Sources/CoxUI/
 ```
 
 A layer may use only the layers above it in this list. `Screens` contains no modifiers from
-`Foundations`; if a screen needs styling, the styling belongs to a component.
+`Foundations`; if a screen needs styling, the styling belongs to a component. The Foundations
+modifiers are `internal`, so nothing outside `CoxUI` can style a view; the app sets only the public
+`coxAppearance` environment value from `[desktop.appearance]`.
 
 ## 6. Component catalogue
 
@@ -219,12 +224,12 @@ component.
 
 | Name | What it does | Tokens | CSS |
 | --- | --- | --- | --- |
-| `.elevation(_ level:)` | Shadow layers + top highlight, scaled by Depth | `elevation.e0–e5`, Depth | `--lift1…3` |
-| `.glassPane(_ shape:)` | Pane material: glass or solid per setting, readable floor honoured | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
-| `.specular(_ strength:)` | Diagonal highlight overlay for Glossy | `material.*.specular` | `.window:after` |
-| `.hairline(_ edges:)` | 0.5 pt `separator` border | `size.hairline`, `separator` | `border:.5px` |
-| `.insetWell()` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
-| `.textStyle(_ token:)` | Font, line height, tracking, tabular digits | `font.*` | font rules |
+| `.elevation(_ level:, cornerRadius:)` | Shadow layers + top highlight, scaled by Depth | `elevation.e0–e5`, Depth | `--lift1…3` |
+| `.glassPane(_ shape:, surface:, role:)` | Pane material: glass or solid per setting; `role: .readable` holds the readable floor | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
+| `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid) | `material.*.specular` | `.window:after` |
+| `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
+| `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
+| `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size:)` | All push buttons | `size.button*`, `radius.m` | `.pb`, `.pri`, `.dan` |
 | `CapsuleStyle(.plain/.active)` | Toolbar capsules | `size.capsuleHeight`, `surface.capsule` | `.cap`, `.cap.hot` |
 | `SegmentedStyle` | Segmented control with lifted selection | `e1` | `.seg` |
@@ -323,7 +328,7 @@ Before writing a view:
 
 While writing:
 
-- Use generated tokens only: `Color.<role>`, `Space.<step>`, `Radius.<step>`, `Size.<name>`,
+- Use generated tokens only: `Color(.<role>)`, `Space.<step>`, `Radius.<step>`, `Size.<name>`,
   `.textStyle(.<token>)`, `.elevation(.<level>)`, `Motion.<token>`. No `Color(red:…)`, `.padding(12)`,
   `.font(.system(size:…))`, `.shadow(…)`, `.cornerRadius(…)` or `withAnimation(.easeIn(duration:…))`
   with literals.
@@ -338,6 +343,8 @@ Before finishing:
 
 - `#Preview` for every variant × light/dark × Solid/Frosted, using `Previews/PreviewState`.
 - Snapshot tests (swift-snapshot-testing 1.19.6, checked on GitHub 2026-09-28) for the same matrix.
+  A missing reference is recorded and fails once; `SNAPSHOT_TESTING_RECORD=all swift test` re-records
+  after an intended change, and a second run must pass.
 - SwiftLint (0.65.1, checked on GitHub 2026-09-28) passes, including the custom rules that reject
   literal colours, sizes, fonts, radii, shadows and durations outside `Tokens/` and `Foundations/`.
 - If you added or changed a token, the drift test passes and `tokens/tokens.css` is regenerated.
