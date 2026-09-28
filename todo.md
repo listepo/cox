@@ -27,7 +27,6 @@
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.21.11. Molecule legibility and small fixes
-- T37.22.6. App wiring leftovers: model popover, session titles, provider count, live session list
 - T37.22.7. Model display names from models.dev
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item

@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.21.11 | in progress | P2 | 2 | 90% | Claude Code / Opus 5.5 |
-| T37.22.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2778,12 +2777,6 @@ Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`
 Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
 
 Decided (A112): a new placeholder token for the filter prompt; contrast on the glass over the window fill.
-
-#### T37.22.6 App wiring leftovers: model popover, session titles, provider count, live session list
-
-Depends: T37.22.5 · Size: ~150 · Files: `crates/cox-ffi`, `crates/cox-app`, CoxClient, `…/Screens/…`
-Goal: what T37.22.5 left. The toolbar's model pill opens its popover from a model catalog `cox-ffi` exports (a one-expression forward, A90). A session gets a title the same way the TUI titles one, also for `cox run`; the toolbar and the sidebar name an untitled session the same way. The sidebar's footer counts the providers the user can use (a key present or a local server), not the configured sections (9 on defaults) (A110). The session list follows app patches instead of a 2 s poll. A shell task's output opens in a viewer.
-Check: a screenshot on a live core with a few titled sessions; a test for each new FFI export and the provider count.
 
 #### T37.22.7 Model display names from models.dev
 
