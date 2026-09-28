@@ -14,7 +14,8 @@
         "parallel_tools": 4,
         "max_concurrent_subagents": 8,
         "log_level": "info",
-        "profile": ""
+        "profile": "",
+        "mode": "editor"
       }
     },
     "tiers": {
@@ -390,9 +391,29 @@
           "description": "`core.profile`: the assembled-prefix profile, `\"\"` (default) or\n`\"minimal\"` (T30.1: the core eight tools plus `expand`/`tool_search`,\na ≤300-token system prompt, no skills or memory index;\n`cox --profile minimal`).",
           "type": "string",
           "default": ""
+        },
+        "mode": {
+          "description": "`core.mode` (P42): the session's starting mode, `editor` (default)\nor `architect`; also `cox --mode`, and `/mode` switches it live.\nNot in the project-config guard list: architect only narrows\n`permissions.mode` and its think tier still needs confirmation, so a\nproject config may set it.",
+          "$ref": "#/$defs/Mode",
+          "default": "editor"
         }
       },
       "additionalProperties": false
+    },
+    "Mode": {
+      "description": "`core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the\npermission mode and the main tier only. It never filters tools, so the\ncache prefix stays byte-stable, and it only narrows `permissions.mode`.",
+      "oneOf": [
+        {
+          "description": "The configured permission mode and main tier, unchanged.",
+          "type": "string",
+          "const": "editor"
+        },
+        {
+          "description": "`Plan` (read-only tools only) and the `think` main tier, confirmed.",
+          "type": "string",
+          "const": "architect"
+        }
+      ]
     },
     "TiersConfig": {
       "description": "`[tiers]` (plan.md §1.6): the three routing tiers (plan.md D5).",

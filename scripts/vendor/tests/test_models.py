@@ -304,3 +304,53 @@ def test_a_malformed_registry_is_rejected_and_nothing_is_written(isolated_files)
         models.run(fetch=fetching(b"not json"))
     assert prices.read_text() == before_prices
     assert default.read_text() == before_default
+
+
+def test_a_google_row_fills_the_gemini_section_and_its_price():
+    # `[providers.gemini]` is priced from models.dev's `google` provider (P39).
+    # The numbers below are test values, not Google's prices.
+    registry = {
+        "google": {
+            "models": {
+                "gemini-3.8-flash": {
+                    "name": "Gemini 3.8 Flash",
+                    "limit": {"context": 1048576},
+                    "cost": {"input": 0.5, "output": 3.0, "cache_read": 0.05},
+                    "reasoning_options": [{"type": "effort", "values": ["minimal", "low", "medium", "high"]}],
+                }
+            }
+        }
+    }
+    default_text = (
+        "[providers.gemini]\n"
+        'api = "chat"\n'
+        'models = [{id="gemini-3.8-flash", context_window=0, efforts=[], reasoning_effort=true}]\n'
+    )
+    prices_text = (
+        "[[model]]\n"
+        'id = "gemini-3.8-flash"\n'
+        "input = 0.0\n"
+        "output = 0.0\n"
+        "cache_write = 0.0\n"
+        "cache_read = 0.0\n"
+        'verified_on = "1970-01-01"\n'
+        'source_url = "https://models.dev"\n'
+    )
+    report: list[str] = []
+
+    doc = tomlkit.parse(models.build_default_toml(default_text, registry, report=report))
+    row = doc["providers"]["gemini"]["models"][0]
+    assert row["display_name"] == "Gemini 3.8 Flash"
+    assert row["context_window"] == 1048576
+    # `minimal` is not a cox effort and is dropped.
+    assert list(row["efforts"]) == ["low", "medium", "high"]
+    assert row.unwrap()["reasoning_effort"] is True
+
+    id_to_sections = {"gemini-3.8-flash": ["gemini"]}
+    priced = tomlkit.parse(
+        models.build_prices_toml(prices_text, registry, id_to_sections=id_to_sections, today=TODAY, report=report)
+    )
+    price = priced["model"][0]
+    assert (price["input"], price["output"], price["cache_write"], price["cache_read"]) == (0.5, 3.0, 0.0, 0.05)
+    assert price["verified_on"] == TODAY
+    assert report == []

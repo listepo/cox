@@ -189,6 +189,39 @@ fn auto_mode_writes_the_file_and_exits_0() {
     );
 }
 
+/// P42: `--mode architect` is plan plus the think tier, and the flag is the
+/// think consent; the scripted `write` is denied by plan mode, not asked.
+#[test]
+fn run_architect_denies_write_with_scripted_provider() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    cox(work.path(), home.path(), WRITE)
+        .args(["--mode", "architect", "--output-format", "stream-json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("\"type\":\"mode_changed\""))
+        .stdout(predicates_str_contains("plan mode"));
+    assert!(!work.path().join("a.txt").exists());
+}
+
+/// P42: `core.mode = architect` from a config file alone is not think
+/// consent headlessly; the run is refused before any provider call and
+/// names the flag that confirms it.
+#[test]
+fn run_config_architect_without_flag_asks_for_confirmation() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[core]\nmode = \"architect\"\n",
+    )
+    .unwrap();
+    cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("requires confirmation"))
+        .stderr(predicates_str_contains("--mode architect"));
+}
+
 #[test]
 fn unknown_output_format_is_an_error() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());

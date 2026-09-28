@@ -1,0 +1,6 @@
+data: {"id":"gem-r2","object":"chat.completion.chunk","created":1790000001,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"main.rs prints "},"finish_reason":null}]}
+
+data: {"id":"gem-r2","object":"chat.completion.chunk","created":1790000001,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"content":"hello."},"finish_reason":null}]}
+
+data: {"id":"gem-r2","object":"chat.completion.chunk","created":1790000001,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":70,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":32}}}
+

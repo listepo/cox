@@ -13,7 +13,7 @@ use cox_protocol::ids::{CallId, ItemId, SessionId};
 use cox_protocol::image::{self, ImageError, MAX_IMAGE_BYTES};
 use cox_protocol::traits::Store as _;
 use cox_protocol::types::{
-    ApprovalPolicy, Attachment, Decision, ItemKind, StopReason, Submission, Tier,
+    ApprovalPolicy, Attachment, Decision, ItemKind, Mode, StopReason, Submission, Tier,
 };
 use cox_store::Store;
 use serde_json::{Value, json};
@@ -227,6 +227,11 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
     let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)
         .then(|| Duration::from_secs(u64::from(loaded.config.hooks.timeout_s)));
+    // P42, invariant 9: only an explicit flag is think consent here —
+    // `--deep`, or `--mode architect` like it. `core.mode = architect` from
+    // a config file alone never confirms: that run is refused below.
+    let confirm_think = args.deep || cli.mode.as_deref() == Some("architect");
+    let unconfirmed_architect = loaded.config.core.mode == Mode::Architect && !confirm_think;
     // The event receiver is taken once and, for `--loop`, shared across
     // every iteration's `drive` call on the same session — that is also
     // what lets the core's own `budget.session_usd` tracking (already
@@ -242,6 +247,16 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
                 interrupter.interrupt();
             }
         });
+        // T9.1: `--deep` routes the run through think; the flag itself is
+        // the confirmation the gate requires. Once per run, `--loop` too.
+        if args.deep {
+            session
+                .submit(Submission::SwitchModel {
+                    tier: Tier::Think,
+                    model: None,
+                })
+                .await?;
+        }
         let outcome = match loop_spec {
             Some(loop_spec) => {
                 run_loop(
@@ -250,14 +265,14 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
                     (prompt, attachments),
                     format,
                     approvals,
-                    args.deep,
+                    confirm_think,
                     loop_spec,
                 )
                 .await
             }
             None => {
                 let prompt = (prompt, attachments);
-                drive(&session, &mut rx, prompt, format, approvals, args.deep).await
+                drive(&session, &mut rx, prompt, format, approvals, confirm_think).await
             }
         };
         // T34.9 follow-up: `drive`/`run_loop` above already awaited
@@ -276,6 +291,11 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         session.wait_tasks_cleared(SHELL_CANCEL_GRACE).await;
         outcome
     })?;
+    if unconfirmed_architect && matches!(outcome.stop, Some(StopReason::Refusal { .. })) {
+        eprintln!(
+            "cox: architect mode runs on the think tier; pass --mode architect to confirm it"
+        );
+    }
     let mut out = std::io::stdout().lock();
     match format {
         Format::Text => writeln!(out, "{}", outcome.result)?,
@@ -337,18 +357,8 @@ async fn drive(
     prompt: (String, Vec<Attachment>),
     format: Format,
     approvals: Option<Duration>,
-    deep: bool,
+    confirm_think: bool,
 ) -> anyhow::Result<Outcome> {
-    // T9.1: `--deep` routes the run through think; the flag itself is the
-    // confirmation the gate requires.
-    if deep {
-        session
-            .submit(Submission::SwitchModel {
-                tier: Tier::Think,
-                model: None,
-            })
-            .await?;
-    }
     // The core runs the turn inside `submit`, so it must live on its own
     // task or nothing could answer an `ApprovalRequired` mid-turn.
     let (text, attachments) = prompt;
@@ -359,7 +369,7 @@ async fn drive(
                 .submit(Submission::UserTurn {
                     text,
                     attachments,
-                    confirm_think: deep,
+                    confirm_think,
                 })
                 .await
         }
@@ -465,7 +475,7 @@ async fn run_loop(
     prompt: (String, Vec<Attachment>),
     format: Format,
     approvals: Option<Duration>,
-    deep: bool,
+    confirm_think: bool,
     // `(interval, max_iterations)`, bundled so the function stays under
     // clippy's 7-argument limit.
     loop_spec: (Duration, u32),
@@ -475,7 +485,7 @@ async fn run_loop(
     let mut total = Outcome::default();
     for i in 0..max_iterations {
         let prompt = (text.clone(), std::mem::take(&mut attachments));
-        let iteration = drive(session, rx, prompt, format, approvals, deep).await?;
+        let iteration = drive(session, rx, prompt, format, approvals, confirm_think).await?;
         total.merge(iteration);
         if total.failed || matches!(total.stop, Some(StopReason::Budget)) {
             break;

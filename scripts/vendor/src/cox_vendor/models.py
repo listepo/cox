@@ -72,7 +72,9 @@ DEFAULT_TOML_FILE = REPO_ROOT / "crates" / "cox-protocol" / "default.toml"
 API_URL = "https://models.dev/api.json"
 
 # cox `[providers.<name>]` section -> models.dev provider id. The two don't
-# always match (`moonshot` -> `moonshotai`, `z-ai` -> `zai`). A section
+# always match (`moonshot` -> `moonshotai`, `z-ai` -> `zai`, `gemini` ->
+# `google`: models.dev's `google` provider names env `GEMINI_API_KEY`,
+# checked 2026-09-28). A section
 # absent here (`local`, `typesafe`: no vendor row on models.dev — local
 # inference and a gateway models.dev doesn't mirror) is never looked up;
 # its `models` array is left completely untouched.
@@ -83,6 +85,7 @@ PROVIDER_TO_MODELS_DEV = {
     "openrouter": "openrouter",
     "moonshot": "moonshotai",
     "z-ai": "zai",
+    "gemini": "google",
 }
 
 # cox `Effort` values, in the fixed order rendered into `efforts = [...]`.

@@ -5911,3 +5911,378 @@ Deviations: 21 Swift source files and 22 tokens, far past ~80 LOC and 3 files, s
 Check: `just desktop-tokens` passed (HC 237 pairs); swift-format and swiftlint strict clean on the 24 changed Swift files. Not run (no-build rule, 2026-09-28): `npm test`, swift build/test, recording.
 
 Not done: re-recording for the verification pass — CoxUI Settings* (Screen, Keys, Login, McpStatus, Dropped, Filter), OnboardingScreen, ShellMolecule, Segmented, SidebarInbox, MainScreen, ComposerMolecule, DecisionBar, ApprovalCard, ApprovalCardEdit, InspectorRow, ChangesTab, PlanTab, ContextTab, TasksTab, InfoTab, ReviewPane, TokenMeter, TokenPopoverUsage, AppearancePopover, ModelPopover, SettingMolecule, SettingRow; CoxTranscript ComposerFlow, PinnedDecision, PromptBubble, DecisionCard and any suite that snapshots `SessionComposer`. Left for the creator or later: inspector width 330 (the token is 324), the 0.35 orange hairline (a colour with no dark value), the 15 pt plan checkbox (an SF Symbol sized by its text style), the 520 pt command popover (the completion state has no files/commands kind), the "12 pt key caps" (element unclear), the sidebar footer's 12/500 label (shared small button style), T37.44.8's navigation-screen sizes (views not built), the onboarding hero title and icon (features), the Figma variables re-sync.
+
+#### T22.10 A project config may only tighten the permission rules
+
+Depends: — · Size: ~80 · Files: `crates/cox-config/src/load.rs`, its tests, `docs/design` guard-list text if it names the keys
+Goal: A122. Today a project `.cox/config.toml` replaces `permissions.allow`, `permissions.ask` and `permissions.deny` wholesale (figment replaces arrays, and none of them is on the guard list), so a cloned repository can drop the default `Read(~/.ssh/**)` deny or allow `Bash`. After this card the effective lists are: `deny` and `ask` = the lists without the project layer plus the project's extra rules (the project cannot remove one); `allow` = the list without the project layer (a project `allow` that differs is reverted). Each reverted or dropped rule is a `GuardViolation` with its own reason line ("A project may not allow a tool call" / "A project may not remove a deny or ask rule"), reported the way the other guarded keys are, and `GUARDED_KEYS` names the three keys so `--sources` reads their provenance right.
+Check: `cox-config` tests: a project `allow = ["Bash"]` is reverted with a violation; a project `deny = []` keeps the default deny and reports it; a project `deny = ["Bash(rm:*)"]` is appended to the user's deny; the same for `ask`; the config-schema drift test unchanged.
+
+Plan (Claude Code / opus-5.5): extend the guard pass in `load.rs` next to the `permissions.mode` guard — read the three arrays from the pre-project and full figments, merge as above, push violations; add the reasons to `GuardViolation::reason` and the keys to `GUARDED_KEYS`; tests at the bottom of `load.rs`. No build or test run (no-build rule); the verification pass runs the Check.
+Status: done 2026-09-28
+Result: `crates/cox-config/src/load.rs`'s guard pass (`apply_project_guards`, after the `permissions.mode` guard) makes a project config only tighten the permission rules: a project `permissions.allow` that differs from the pre-project list is reverted with one `GuardViolation` ("A project may not allow a tool call"); `permissions.deny` and `permissions.ask` are the pre-project list plus the project's extra rules (`add_rules`), with no notice, since figment replaces arrays and a project list means "add these". `GUARDED_KEYS` gains `permissions.allow` (11 keys); `deny`/`ask` stay off it because they never produce a violation. The `allow`/`ask`/`deny` notes in `crates/cox-protocol/default.toml` and `docs/config.md` say what a project may do. `config_claude_settings_import_matches_native_rules` (`crates/cox/src/config_load.rs`) repeats the default deny rules in its project files so both lists keep one order.
+
+Deviations: a 4th file (that test); a first version reported a dropped deny/ask rule as a violation, replaced by the plain union because every project with a deny list would have seen the notice.
+
+Check: `cargo fmt --check` clean. Tests written, not run (no-build rule, 2026-09-28): `project_config_allow_is_reverted_with_a_violation`, `project_config_empty_deny_keeps_the_default_deny`, `project_config_deny_rule_is_appended_to_the_user_deny`, `project_config_ask_keeps_the_user_ask_and_appends_its_own`.
+
+Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-config -p cox-protocol -p cox -p cox-app` and clippy on `cox-config`, `cox`, `cox-app`. `source_of("permissions.deny")` answers "project" whenever the project sets the key, so the desktop Settings screen may show the whole list as the project's. The `.claude/settings.json` import still lets a repository's `allow` rules through — T22.11.
+
+#### T22.11 A repository's `.claude/settings.json` may only tighten the permission rules
+
+Depends: T22.10 · Size: ~60 · Files: the Claude-settings reader in `crates/cox` (`config_load`), its tests, `docs/config.md` if it describes the import
+Goal: A122. The permissions imported from a project `.claude/settings.json` (and `.claude/settings.local.json`) follow T22.10's rule: their `deny` and `ask` rules are added, their `allow` rules are dropped with the same `GuardViolation` notice a project `allow` gets. The user's own `~/.claude/settings.json` import is unchanged.
+Check: `crates/cox` config-load tests: a project `.claude/settings.json` with `allow: ["Bash"]` leaves `Bash` out of the effective allow list and reports it; its `deny` rules are in the effective deny list; a user `~/.claude/settings.json` allow rule still applies.
+
+Plan (Claude Code / opus-5.5): find where the Claude settings are layered into both figments (with and without the project), move the project file's `allow` out of the pre-project figment and through T22.10's guard, add the tests next to `config_claude_settings_import_matches_native_rules`. No build or test run (no-build rule).
+Status: done 2026-09-28
+Result: `cox-config` has a public `ClaudeLayers { user, project }`; the loader's Claude callback returns `Option<ClaudeLayers>`. The repository's layer (`.claude/settings.json` plus `.claude/settings.local.json`) goes only into the figment built with the project, the user's `~/.claude/settings.json` into both, so T22.10's guard treats a repository's imported rules like a project config's: its `allow` rules are dropped with the `permissions.allow` `GuardViolation` and the same stderr warning, its `deny`/`ask` rules are added. `claude_layer` in `crates/cox/src/config_load.rs` reads the two groups separately; the existing `|_| None` callers (cox-app `app.rs`, `settings.rs`, cox-config tests) are unchanged.
+
+Deviations: when the git root is the home directory (a dotfiles repository) `~/.claude` stays the user's file (it was loaded in both roles before); `cox-config/src/load.rs` changed too, since the split cannot be made from the binary alone.
+
+Check: `cargo fmt --check` clean. Tests written, not run (no-build rule): `project_claude_settings_allow_is_dropped_and_its_deny_added`, `user_claude_settings_allow_still_applies`; `config_claude_settings_import_matches_native_rules` unchanged.
+
+Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-config -p cox -p cox-app` and clippy on the same crates. `source_of("permissions.allow")` after a revert probably answers "default" rather than "claude-settings" (figment's `adjoin` keeps the first label), untested.
+
+### T39.3. Chat translator replays a signature as `extra_content` on its tool call
+
+- Model: sonnet
+- Depends: T39.2
+- Size: ~80
+- Priority: P1
+- Complexity: 2
+- Goal: a signed `Content::Thinking` directly followed by a `Content::ToolUse` in an assistant message becomes `"extra_content": {"google": {"thought_signature": sig}}` on that tool call's JSON. Any other signed thinking still fails with `ProviderError::Unsupported { feature: "thinking replay" }`.
+- Files: `crates/cox-provider-openai/src/chat.rs`
+- Steps:
+  1. In `message_items`, walk the assistant blocks with a one-slot "pending signature". A signed empty-text thinking followed by a `ToolUse` attaches the signature to that call; a signed thinking in any other position keeps the current error.
+  2. Keep `chat_request_signed_thinking_unsupported` (non-adjacent case) and `chat_request_unsigned_thinking_dropped` green.
+  3. Add `chat_request_replays_signature_on_its_tool_call`, an insta snapshot of the body.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_request)'
+  ```
+- Done when: the snapshot shows `extra_content` only on the signed call. With no signature, the body is byte-identical to before (the existing snapshots do not change).
+- Out of scope: the Responses and Anthropic wires. The router strips these blocks on a model switch, so they never reach another wire.
+Status: done 2026-09-29
+Result: `crates/cox-provider-openai/src/chat.rs` sends a signed empty thinking block that directly precedes a tool call as that call's `extra_content.google.thought_signature`; any other signed thinking still fails as an unsupported "thinking replay", and unsigned bodies are unchanged.
+
+Deviations: a second test, `chat_request_signature_not_before_a_tool_call_unsupported`; the snapshot `cox_provider_openai__chat__tests__chat_request_replays_signature_on_its_tool_call.snap` is hand-written.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `cargo nextest run -p cox-provider-openai -E 'test(chat_request)'` (then `cargo insta review` if the hand-written snapshot differs) and clippy on `cox-provider-openai`.
+
+### T39.4. Surfaces skip the empty signed thinking item
+
+- Model: haiku
+- Depends: T39.2
+- Size: ~40
+- Priority: P2
+- Complexity: 1
+- Goal: the TUI transcript and `plain` output draw nothing for an `ItemKind::Thinking` with empty text. It is a replay token, not something the model said.
+- Files: `crates/cox-tui/src/state.rs` (~line 2165), `crates/cox/src/plain.rs` (~line 268)
+- Steps:
+  1. Guard both match arms with `if !text.is_empty()`.
+  2. Add a TUI snapshot test `empty_signed_thinking_draws_no_cell` and a `plain` unit test.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-tui -E 'test(empty_signed_thinking)'
+  mise exec -- cargo nextest run -p cox -E 'test(plain)'
+  ```
+- Done when: no empty thinking cell appears in any existing snapshot, and the new tests pass.
+- Out of scope: stream-json. It prints every event as-is by design.
+Status: done 2026-09-29
+Result: the TUI (`crates/cox-tui/src/state.rs`) and plain output (`crates/cox/src/plain.rs`, its choice moved into a testable `buffered()`) draw nothing for a thinking item with empty text and a signature.
+
+Deviations: the guard needs the signature as well as empty text — a streamed thought also starts as an empty unsigned item, so the card's `if !text.is_empty()` would have hidden all streamed thinking; this matches `cox-app`'s timeline. `empty_signed_thinking_draws_no_cell` checks the transcript directly (no snapshot); plain's test is `plain_skips_empty_signed_thinking`.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox-tui -E 'test(empty_signed_thinking)'`, `-p cox -E 'test(plain)'`, the TUI snapshots, clippy on `cox-tui` and `cox`.
+
+### T39.5. `[providers.gemini]` preset and vendored model rows
+
+- Model: sonnet
+- Depends: -
+- Size: ~120
+- Priority: P1
+- Complexity: 2
+- Goal: a built-in type-2 section `[providers.gemini]` exists (A9), and its model ids, context windows, efforts and prices come from `cox-vendor models` (A48), not hand-pasted numbers.
+- Files: `scripts/vendor/src/cox_vendor/models.py`, `scripts/vendor/tests/test_models.py`, `crates/cox-protocol/src/config.rs` (tests only). Data: `crates/cox-protocol/default.toml`, `crates/cox-provider/prices.toml`.
+- Steps:
+  1. `models.py`: add `"gemini": "google"` to `PROVIDER_TO_MODELS_DEV`. models.dev lists provider `google` with env `GEMINI_API_KEY` (https://models.dev/api.json, checked 2026-09-28). `cox_effort_for` already drops `minimal`. Add a pytest proving a `google` row maps to a `gemini` row.
+  2. `default.toml`: add the section in the shape of `[providers.deepseek]`:
+     - `base_url = "https://generativelanguage.googleapis.com/v1beta/openai"`
+     - `api_key_env = "GEMINI_API_KEY"`, `api = "chat"`
+     - `model = "gemini-3.8-flash"`
+     - `timeout_s = 120`, `max_retries = 4`
+     - a `models` list with the ids `gemini-3.8-flash`, `gemini-3.1-pro-preview` and `gemini-3.5-flash-lite`, each with `reasoning_effort = true`. The OpenAI-compat page says reasoning cannot be turned off for Gemini 2.5 Pro or 3 models, so effort is always meaningful.
+     - Add the ids the way earlier type-2 rows first landed, then run `cox-vendor models` so the script fills `context_window`, `efforts` and the `prices.toml` rows.
+  3. `config.rs`: add `"gemini"` to the preset loop test (~line 1357) that asserts every built-in type-2 section parses and names its key env var.
+  4. Add a `research.md` ledger row citing both Google pages, with URL and "last updated" date, and the models.dev check date.
+- Check:
+  ```bash
+  cd scripts/vendor && mise exec -- uv run pytest -q && cd ../..
+  mise exec -- cargo nextest run -p cox-protocol -E 'test(provider)'
+  mise exec -- cargo nextest run -p cox-provider -E 'test(price)'
+  COX_HOME=/tmp/cox-gemini mise exec -- cargo run -- doctor
+  ```
+- Done when: `doctor` lists `gemini` with "GEMINI_API_KEY not set" and the three models are priced. The config-schema drift test is green (no schema change is expected: presets are data).
+- Out of scope:
+  - Vertex AI (the gate excludes it).
+  - `extra_body.google.thinking_config.include_thoughts` (thought summaries).
+  - The TUI model picker ordering.
+Status: done 2026-09-29
+Result: `scripts/vendor` `models.py` maps `"gemini"` to models.dev's `"google"` (new pytest in `test_models.py`); `default.toml` has `[providers.gemini]` with the three model ids, each with `reasoning_effort = true`; the `config.rs` provider test covers gemini; `docs/config.md` regenerated; research.md ledger row 40.
+
+Deviations: `cox-vendor models` needs the network and never adds new ids, so the rows are placeholders — `default.toml` `context_window = 0`, `efforts = []`; `prices.toml` three zero-price rows dated `1970-01-01`, so doctor's price check (`doctor_prices_embedded_table_is_ok`) fails until the script replaces them; ledger row 40 cites the Google page dates from P39 without re-reading them.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cd scripts/vendor && uv run pytest -q`, `uv run --project scripts/vendor cox-vendor models` (network, approved under A117), regenerates `docs/config.md` through `config_docs_config_md_matches_default_toml`, then `cargo nextest run -p cox-protocol -E 'test(provider) | test(config_docs)'`, `-p cox-provider -E 'test(price)'`, `-p cox-models -E 'test(usage_prices)'`, `-p cox -E 'test(doctor) | test(docs)'` and `COX_HOME=/tmp/cox-gemini cargo run -- doctor`; ids models.dev does not list keep their placeholders.
+
+### T39.6. Offline end-to-end: a Gemini-shaped two-round tool loop
+
+- Model: sonnet
+- Depends: T39.3, T39.4, T39.5
+- Size: ~150
+- Priority: P1
+- Complexity: 3
+- Goal: `cox run -p` against a wiremock server that speaks the Gemini OpenAI-compat stream completes a tool round and a final answer. The second request echoes the signature on its tool call and sends `Authorization: Bearer <test key>`.
+- Files: `crates/cox/tests/gemini_compat.rs` (new), fixtures `crates/cox/tests/fixtures/gemini/{round1,round2}.sse`
+- Steps:
+  1. Round 1 SSE: a `read` tool call chunk carrying `extra_content.google.thought_signature = "sig-fixture"`, then `finish_reason: tool_calls`, plus usage with `prompt_tokens_details.cached_tokens`.
+  2. Round 2 SSE: text, then `stop`.
+  3. Run the real binary with `COX_HOME` scratch, a project config overriding `providers.gemini.base_url` to the mock, and `GEMINI_API_KEY=test-key`. Assert:
+     - the second request's JSON has the signature on the `read` tool call;
+     - the exit code is 0;
+     - the ledger has two `usage` rows with the cached tokens.
+  4. Document the preset in `docs/compat.md` and `docs/config.md`, including the "OpenAI compatibility is beta at Google" caveat with its URL.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox --test gemini_compat
+  ```
+- Done when: the test passes with no network access. done.md cites the fixture's unverified field path.
+- Out of scope: a real key (T39.7).
+Status: done 2026-09-29
+Result: `crates/cox/tests/gemini_compat.rs` with fixtures `tests/fixtures/gemini/round1.sse` and `round2.sse` runs the real binary against a mock server and asserts exit 0 and the final text, `Bearer test-key` on both requests, `sig-fixture` on the second request's read call, and two ledger usage rows with cached tokens `[8, 32]`. `docs/compat.md` has a Gemini section with the beta caveat and the unverified field path.
+
+Deviations: the mock's address goes in the user config under `COX_HOME` (no git root needed; `base_url` is not guarded); the test sets the model's context window itself, independent of T39.5's placeholders; the beta caveat reaches `docs/config.md` through a comment on the preset's `api` line.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox --test gemini_compat`, the config-docs test and clippy on `cox`. The fixtures, like the existing ones, carry no `data: [DONE]` line — T39.8.
+
+### T39.8. The Chat wire ignores the `data: [DONE]` sentinel
+
+- Depends: —
+- Size: ~10
+- Priority: P1
+- Complexity: 1
+- Goal: OpenAI-style Chat Completions streams (OpenAI, Gemini's compatibility endpoint, Ollama, vLLM, OpenRouter) end with `data: [DONE]`, which is not JSON; `OpenAiChatStream::feed` parsed every frame as JSON, so a real stream ended in `ProviderError::Parse`. Found while writing T39.6's fixtures, which, like the older ones, carry no sentinel. `feed` returns no events for it; the end of the byte stream still finishes the turn.
+- Files: `crates/cox-provider-openai/src/chat.rs`
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_stream)'
+  ```
+Status: done 2026-09-29
+Result: `OpenAiChatStream::feed` (`crates/cox-provider-openai/src/chat.rs`) returns no events for a `[DONE]` frame instead of failing to parse it as JSON; the end of the byte stream still finishes the turn. Test `chat_stream_done_sentinel_is_not_a_parse_error`.
+
+Deviations: none.
+
+Check: `rustfmt --check` clean. Not run (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_stream)'` and clippy on `cox-provider-openai`. The Chat fixtures still carry no sentinel; adding one to a fixture would cover the whole stream path.
+
+### T42.1. Mode type, `narrower` and the resolved gate table
+
+Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~90 · Priority: P2 · Complexity: 2
+
+Goal: the shared vocabulary the other P42 cards and T45.2 build on — a `Mode` enum, a `ModeChanged` event, and one pure function that picks the narrower of two permission modes.
+
+Files:
+- `crates/cox-protocol/src/types.rs`
+- `crates/cox-permission/src/lib.rs`
+- `docs/design/v0.2-modes.md`
+
+Steps:
+1. `types.rs`: add `#[serde(rename_all = "snake_case")] pub enum Mode { #[default] Editor, Architect }` with `JsonSchema`, next to `PermissionMode` (line ~356); add `Event::ModeChanged { mode: Mode, permission_mode: PermissionMode }`. Regenerate `docs/protocol.jsonschema` through its drift test.
+2. `cox-permission/src/lib.rs`: add `pub fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode` with the order `Plan < Default < Auto < Bypass`; a private `rank()` so the order has one definition.
+3. Tests in `cox-permission`: `narrower_never_returns_the_wider_mode` (all 16 pairs), `narrower_is_commutative`.
+4. `v0.2-modes.md`: add a "Resolved (P42)" section — architect = `Plan` + main tier `think`, editor = the configured mode + configured tier; tool schemas are never filtered by mode (cache prefix); the "every Exec asks" row is superseded by plan's deny (pending open question 1).
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-permission narrower_
+mise exec -- cargo nextest run -p cox-protocol
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: `Mode`, `Event::ModeChanged` and `narrower` exist with the tests above; the protocol schema is regenerated; the gate doc records the resolved table.
+
+Out of scope: applying the mode (T42.3), config/flag (T42.2), any TUI.
+Status: done 2026-09-29
+Result: `types::Mode` (Editor default, Architect) and `Event::ModeChanged { mode, permission_mode }` with rstest cases (`crates/cox-protocol/src/types.rs`); `cox_permission::narrower` over one private `rank` (Plan < Default < Auto < Bypass) with `narrower_never_returns_the_wider_mode` and `narrower_is_commutative`; a "Resolved (P42)" section in `docs/design/v0.2-modes.md`.
+
+Deviations: `docs/protocol.jsonschema` edited by hand to the shape schemars emits; a no-op `ModeChanged` arm in `crates/cox-tui/src/state.rs` (the `Event` match is exhaustive), replaced by T42.4.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `cargo nextest run -p cox-permission -E 'test(narrower_)'`, `-p cox-protocol` (`protocol_jsonschema_matches_committed_file`; regenerate if it drifts), `-p cox-tui`, clippy.
+
+### T42.2. `core.mode` config key and `--mode` flag
+
+Model: claude-sonnet-5 · Status: open · Depends: T42.1 · Size: ~70 · Priority: P2 · Complexity: 2
+
+Goal: `--mode architect|editor` and `core.mode` are one setting (invariant 12, `every_flag_has_a_config_key`).
+
+Files:
+- `crates/cox-protocol/src/config.rs`
+- `crates/cox/src/cli.rs`
+- `crates/cox/src/config_load.rs`
+
+Steps:
+1. `config.rs`: `CoreConfig.mode: Mode` (default `Editor`), doc comment naming the flag. Regenerate `docs/config.jsonschema`, `docs/config.md`, `config/default.toml`.
+2. `cli.rs`: `#[arg(long = "mode", global = true)] pub mode: Option<String>` next to `permission_mode` (line ~41), value parser limited to `architect|editor`.
+3. `config_load.rs`: `flag_key_map()` gains `"mode" => "core.mode"`; `flag_overrides(cli)` sets it through `set_dotted`.
+4. Decide guard status: `core.mode = architect` only narrows, so it is **not** added to `GUARDED_KEYS` (a project config may set it). Note this in the doc comment.
+5. Tests: `mode_flag_maps_to_core_mode` in `config_load.rs`; `every_flag_has_a_config_key` stays green.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox mode_flag_maps_to_core_mode every_flag_has_a_config_key
+mise exec -- cargo nextest run -p cox-config
+COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- --mode architect config get core.mode
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the flag and the key round-trip, the schema drift test passes, the scratch run prints `architect`.
+
+Out of scope: acting on the value (T42.3).
+Status: done 2026-09-29
+Result: `CoreConfig.mode` (`crates/cox-protocol/src/config.rs`); a global `--mode` flag limited to architect|editor (`crates/cox/src/cli.rs`); `flag_key_map`/`flag_overrides` wiring and `mode_flag_maps_to_core_mode` (`crates/cox/src/config_load.rs`); the key in `default.toml` and `docs/config.md`. Not in `GUARDED_KEYS`, as the card says; the doc comment says why.
+
+Deviations: `docs/config.jsonschema` and `docs/config.md` edited by hand.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox -E 'test(mode_flag_maps_to_core_mode) | test(config_every_flag_has_a_config_key) | test(docs_config_covers_every_key)'`, `-p cox-config -E 'test(config_jsonschema_matches_committed_file)'` (regenerate on drift), `-p cox-protocol`, and `COX_HOME=/tmp/cox-scratch cargo run -- --mode architect config get core.mode` → `architect`.
+
+### T42.3. Core applies the mode at build and on `/mode`
+
+Model: claude-opus-5.5 · Status: open · Depends: T42.1, T42.2 · Size: ~180 · Priority: P2 · Complexity: 4
+
+Goal: one core path turns a `Mode` into a live permission mode and a main-tier override, at session build and on `Submission::Command { name: "mode" }`, and emits `ModeChanged`.
+
+Files:
+- `crates/cox-core/src/mode.rs` (new)
+- `crates/cox-core/src/lib.rs`
+- `crates/cox-core/src/session.rs`
+
+Steps:
+1. `mode.rs` (`//!` header: "mode presets over permission mode and main tier; the top-session counterpart of `subagent::PRESETS`"): `pub struct ModePreset { pub mode: Mode, pub permission: Option<PermissionMode>, pub main_tier: Option<Tier> }`, consts `EDITOR` (both `None`) and `ARCHITECT` (`Some(Plan)`, `Some(Tier::Think)`); `pub fn apply(preset, configured: PermissionMode) -> PermissionMode` = `preset.permission.map_or(configured, |p| cox_permission::narrower(configured, p))`.
+2. `lib.rs`: `pub mod mode;`.
+3. `session.rs` `build` (line ~366): after `permission_mode` is set from config, apply `config.core.mode`; set `Inner.overrides.main_tier` from the preset. Store the active `Mode` in `Inner`.
+4. `session.rs` `Submission::Command` dispatch (~819): `"mode"` with arg `architect|editor` (unknown → `Event::Notice` Warn listing both). Idle-only like `compact`. Architect: `permission_mode = apply(ARCHITECT, current)`, `overrides.main_tier = Some(Think)`. Editor: restore `config.permissions.mode` narrowed by nothing and clear `main_tier` only if the mode set it (a `/model`-set override survives — keep a `mode_set_tier: bool`). Emit `ModeChanged`.
+5. The router still returns `RouteError::NeedsConfirm` for Think without `confirm_think`; do not bypass it here (invariant 9). The mode never touches `tools`, so system[0..2] stay byte-identical.
+6. Tests (bottom of `session.rs` or `mode.rs`): `architect_denies_write_through_the_engine`, `architect_never_widens_a_plan_config`, `editor_restores_the_configured_mode`, `mode_switch_keeps_prefix_bytes_identical`, `architect_think_still_requires_confirmation`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core architect_ editor_restores mode_switch_keeps_prefix prefix_bytes_identical_between_turns think_requires_confirmation
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the five tests pass; invariants 1 and 9 still pass; no tool list is filtered by mode.
+
+Out of scope: TUI affordances (T42.4), headless consent (T42.5), children (T45.1 inherits the live mode).
+Status: done 2026-09-29
+Result: `crates/cox-core/src/mode.rs` (`ModePreset`, `EDITOR`/`ARCHITECT`, `preset`, `apply`, `parse`). `session.rs` `build` opens a top-level session in `core.mode` (children never take it from config) and sends `ModeChanged` when it is not the default. `/mode` is refused mid-turn, warns on an unknown argument, narrows the live permission mode (editor restores the configured one), sets or restores the main-tier override, strips thinking when the tier changes (as `/model`), and emits `StateChanged` then `ModeChanged`. Five tests at the bottom of `session.rs`, two in `mode.rs`.
+
+Deviations: the override the mode replaced is stored, not a bool, so a `/model` pick made before architect comes back after editor; `StateChanged` is emitted too because resume rebuilds the permission mode from it (T50.4); ~320 LOC, including a third copy of a request-recording test provider (advise.rs and subagent.rs have one each).
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox-core -E 'test(architect_) | test(editor_restores) | test(mode_switch_keeps_prefix) | test(prefix_bytes_identical_between_turns) | test(think_requires_confirmation) | test(parse_takes)'` and clippy (dead code on the new `Inner` fields). In architect, Shift+Tab (`SetPermissionMode`) can still widen the permission mode past plan — not covered by the cards, a question for the creator.
+
+### T42.4. TUI `/mode` and the mode badge
+
+Model: claude-sonnet-5 · Status: open · Depends: T42.3 · Size: ~120 · Priority: P2 · Complexity: 3
+
+Goal: the user switches mode from the composer, sees it on the status line, and confirms the think price once per architect stretch.
+
+Files:
+- `crates/cox-tui/src/commands.rs`
+- `crates/cox-tui/src/state.rs`
+- `crates/cox-tui/src/status.rs`
+
+Steps:
+1. `commands.rs`: `COMMANDS` row `("mode", "/mode architect|editor", "switch between planning and editing")`; the generic arm already submits `Submission::Command`.
+2. `state.rs`: handle `Event::ModeChanged` → `state.mode`; entering architect opens the existing price confirmation (same text as `/think`, `THINK_PRICE`) once; after a yes, `UserTurn.confirm_think = true` while `state.mode == Architect`; a no sends `/mode editor`.
+3. `status.rs`: `[architect]` segment before the permission-mode segment; nothing in editor.
+4. Snapshot tests: `status_line_shows_architect_badge`, `mode_command_is_listed_in_help`; unit test `architect_confirmation_is_asked_once`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui status_line_shows_architect_badge mode_command_is_listed architect_confirmation_is_asked_once
+mise exec -- cargo insta review
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the snapshots are reviewed and committed; a real TUI run against `COX_HOME=/tmp/cox-scratch` shows the badge after `/mode architect`.
+
+Out of scope: ACP session modes (open question 10).
+Status: done 2026-09-29
+Result: the `/mode` row in `crates/cox-protocol/src/commands.rs`; `State.session_mode` in `crates/cox-tui/src/state.rs` (`State.mode` is the permission mode); entering architect asks the think price (`THINK_PRICE`) once per stretch — a yes makes every TUI turn carry `confirm_think` while in architect (the five turn builders go through one `user_turn`), a no submits `/mode editor`; `status.rs` shows `[architect] [plan]`.
+
+Deviations: the TUI had no price confirmation to reuse (`/think` submits directly), so the `ask_user` Question modal is reused and its answer kept local by id; 4 files. Merge: its test sits beside T39.4's in `state.rs`.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox-tui -E 'test(status_line_shows_architect_badge) | test(mode_command_is_listed) | test(architect_confirmation_is_asked_once) | test(command_help_lists_every_command)'`, records `status_line_shows_architect_badge` and `mode_command_is_listed_in_help` and re-records `screenshots__screen_help_overlay`; a real TUI run shows the badge after `/mode architect`.
+
+### T42.5. Headless `--mode` consent, e2e and docs
+
+Model: claude-sonnet-5 · Status: open · Depends: T42.3 · Size: ~100 · Priority: P3 · Complexity: 2
+
+Goal: `cox run -p --mode architect` works end to end; only the explicit flag counts as think consent, like `--deep`.
+
+Files:
+- `crates/cox/src/run.rs`
+- `crates/cox/tests/run_cli.rs`
+- `docs/how-it-works.md`
+
+Steps:
+1. `run.rs`: `confirm_think = deep || cli.mode == Some("architect")`; a `core.mode = architect` from a config file alone does not confirm — the run fails with the existing `NeedsConfirm` message naming `--mode architect` (pending open question 2).
+2. `run_cli.rs`: `run_architect_denies_write_with_scripted_provider` (scripted provider requests `write`; the stream-json shows a plan-mode denial), `run_config_architect_without_flag_asks_for_confirmation`.
+3. `how-it-works.md`: a "Modes" paragraph: the table, "mode never widens permissions", "tools are not filtered".
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox run_architect_ run_config_architect_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: both e2e tests pass without network or keys; docs describe modes.
+
+Out of scope: ACP.
+
+---
+Status: done 2026-09-29
+Result: `crates/cox/src/run.rs` sets `confirm_think = --deep || --mode architect`; with architect from config only, the core refuses the run (exit 2) and the driver prints a stderr line naming `--mode architect`; `--deep`'s `SwitchModel` moved from `drive` into `run`, once per run. Two e2e tests in `run_cli.rs`; a "Modes" section in `docs/how-it-works.md`.
+
+Deviations: the hint comes from the headless driver; the core's shared notice text is unchanged.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox -E 'test(run_architect_) | test(run_config_architect_)'`, then the phase's full nextest, clippy and fmt.

@@ -40,6 +40,10 @@ pub struct Cli {
     /// Override `permissions.mode`. `bypass` is flag-only and shows a persistent banner.
     #[arg(long = "permission-mode", global = true, value_name = "MODE")]
     pub permission_mode: Option<String>,
+    /// Override `core.mode`: `architect` (plan + think tier) or `editor`.
+    /// In `cox run`, `--mode architect` is also the think-tier consent.
+    #[arg(long = "mode", global = true, value_name = "MODE", value_parser = ["architect", "editor"])]
+    pub mode: Option<String>,
     /// Override `permissions.approval`.
     #[arg(long, global = true, value_name = "POLICY")]
     pub approve: Option<String>,

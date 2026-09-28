@@ -11,8 +11,9 @@ use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::plugin::{CommandDecl, CommandOut, KeyDecl, NoticeLevel, RenderIn, Slot, Widget};
 use cox_protocol::types::{
-    Content, ContextBreakdown, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role,
-    SandboxMode, SlashCommand, StopReason, Submission, Tier, TodoItem, ToolCall, ToolResult,
+    Content, ContextBreakdown, Effort, Event, ItemKind, Level, Mode as SessionMode, PermissionMode,
+    Presence, Role, SandboxMode, SlashCommand, StopReason, Submission, Tier, TodoItem, ToolCall,
+    ToolResult,
 };
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -391,6 +392,15 @@ pub struct State {
     /// choice (T33.30), the same two-step shape `rewind_to` above uses for
     /// `/rewind`'s turn-then-what picks.
     pub pending_plugin_new: Option<(String, Vec<String>)>,
+    /// The session's mode (P42) as the core last reported it; `mode`
+    /// above stays the permission mode.
+    pub session_mode: SessionMode,
+    /// The user accepted the think price for this architect stretch, so
+    /// every turn carries `confirm_think` until the mode leaves architect.
+    pub think_confirmed: bool,
+    /// The open think-price question's id: its answer stays in the TUI
+    /// instead of reaching the core as an `ask_user` reply.
+    think_consent: Option<CallId>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -749,6 +759,9 @@ impl State {
             term: (80, 24),
             plugin_renderers: Vec::new(),
             pending_plugin_new: None,
+            session_mode: SessionMode::Editor,
+            think_confirmed: false,
+            think_consent: None,
         }
     }
 
@@ -1168,6 +1181,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             }
         },
         Some(Modal::Question(mut question)) => match question.key(key) {
+            Some(answer) if state.think_consent == Some(question.call) => {
+                think_consent_answered(state, answer)
+            }
             // `None` (Esc) dismisses, so the tool call fails instead of
             // succeeding with empty text.
             Some(answer) => vec![Cmd::Submit(Submission::Answer {
@@ -1616,11 +1632,7 @@ fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     state.queue.push_back(text);
                     Vec::new()
                 }
-                None => vec![Cmd::Submit(Submission::UserTurn {
-                    text,
-                    attachments: Vec::new(),
-                    confirm_think: false,
-                })],
+                None => vec![Cmd::Submit(user_turn(state, text))],
             }
         }
         Edit::SendNow(text) => send_now(state, text),
@@ -1852,11 +1864,9 @@ fn declare_plugin_commands(state: &mut State, plugin: &str, commands: &[CommandD
 /// fails open like a missed render: nothing happens, nothing is shown.
 fn plugin_command_out(state: &mut State, plugin: &str, out: Option<CommandOut>) -> Vec<Cmd> {
     match out {
-        Some(CommandOut::Prompt { text }) => vec![Cmd::Submit(Submission::UserTurn {
-            text: crate::text::sanitize(&text),
-            attachments: Vec::new(),
-            confirm_think: false,
-        })],
+        Some(CommandOut::Prompt { text }) => {
+            vec![Cmd::Submit(user_turn(state, crate::text::sanitize(&text)))]
+        }
         Some(CommandOut::Compact { focus }) => vec![Cmd::Submit(Submission::Compact {
             focus: focus.map(|f| crate::text::sanitize(&f)),
         })],
@@ -2166,6 +2176,13 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 done: false,
                 render: ItemRender::Builtin,
             }),
+            // T39.2 keeps a tool call's signature as an empty signed item
+            // for the provider's history: a replay token, not something the
+            // model said. A streamed thought also starts empty, but unsigned.
+            ItemKind::Thinking {
+                text,
+                signature: Some(_),
+            } if text.is_empty() => {}
             ItemKind::Thinking { text, .. } => state.transcript.push(Cell::Thinking {
                 item,
                 text,
@@ -2236,11 +2253,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.shell_call = None;
                 state.status.busy = false;
                 if let Some(text) = state.queue.pop_front() {
-                    cmds.push(Cmd::Submit(Submission::UserTurn {
-                        text,
-                        attachments: Vec::new(),
-                        confirm_think: false,
-                    }));
+                    cmds.push(Cmd::Submit(user_turn(state, text)));
                 }
             }
         }
@@ -2375,6 +2388,10 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.turns.truncate(at);
             }
         }
+        Event::ModeChanged {
+            mode,
+            permission_mode,
+        } => mode_changed(state, mode, permission_mode),
         Event::SessionStarted { .. } | Event::Compacted { .. } | Event::GrantRevoked { .. } => {}
     }
     cmds
@@ -2397,11 +2414,7 @@ fn turn_done_cmds(state: &mut State, stop: StopReason) -> Vec<Cmd> {
         _ => state.queue.pop_front(),
     };
     match text {
-        Some(text) => vec![Cmd::Submit(Submission::UserTurn {
-            text,
-            attachments: Vec::new(),
-            confirm_think: false,
-        })],
+        Some(text) => vec![Cmd::Submit(user_turn(state, text))],
         None => Vec::new(),
     }
 }
@@ -2429,10 +2442,73 @@ fn loop_tick(state: &mut State) -> Vec<Cmd> {
         lp.next_at = state.tick + interval_ticks;
         lp.iterations += 1;
     }
-    vec![Cmd::Submit(Submission::UserTurn {
-        text: prompt,
+    vec![Cmd::Submit(user_turn(state, prompt))]
+}
+
+/// A user turn from any TUI source. In architect it carries the think
+/// consent the user gave once for the stretch (P42, invariant 9); anywhere
+/// else `confirm_think` would move the turn to think, so it stays off.
+fn user_turn(state: &State, text: String) -> Submission {
+    Submission::UserTurn {
+        text,
         attachments: Vec::new(),
-        confirm_think: false,
+        confirm_think: state.session_mode == SessionMode::Architect && state.think_confirmed,
+    }
+}
+
+/// `Event::ModeChanged` (P42): the core's word on the mode. Entering
+/// architect asks the think price once per stretch, reusing the `ask_user`
+/// modal; leaving it forgets the answer, so the next stretch asks again.
+fn mode_changed(state: &mut State, mode: SessionMode, permission_mode: PermissionMode) {
+    state.mode = permission_mode;
+    state.session_mode = mode;
+    if mode != SessionMode::Architect {
+        state.think_confirmed = false;
+        return;
+    }
+    let asking = matches!((&state.modal, state.think_consent),
+        (Some(Modal::Question(q)), Some(id)) if q.call == id);
+    if state.think_confirmed || asking {
+        return;
+    }
+    let question = format!(
+        "architect mode runs main turns on the think tier ({}); use it?",
+        cox_core::router::THINK_PRICE
+    );
+    if state.modal.is_none() {
+        let id = CallId::new();
+        state.think_consent = Some(id);
+        state.modal = Some(Modal::Question(Question::new(
+            id,
+            question,
+            vec!["yes".into(), "no".into()],
+        )));
+    } else {
+        // The one modal slot is taken: the first turn's refusal names the
+        // price instead, and `/mode architect` asks again.
+        notice(
+            state,
+            Level::Warn,
+            "architect: think price not confirmed yet; run /mode architect again".into(),
+        );
+    }
+}
+
+/// The think-price question's answer (P42). Yes confirms think for the
+/// rest of this architect stretch; anything else leaves architect.
+fn think_consent_answered(state: &mut State, answer: QuestionAnswer) -> Vec<Cmd> {
+    state.think_consent = None;
+    let yes = matches!(&answer, QuestionAnswer::Text(t)
+        if matches!(t.trim().to_ascii_lowercase().as_str(), "y" | "yes"));
+    if yes {
+        state.think_confirmed = true;
+        return Vec::new();
+    }
+    vec![Cmd::Submit(Submission::Command {
+        command: SlashCommand {
+            name: "mode".into(),
+            args: vec!["editor".into()],
+        },
     })]
 }
 
@@ -3364,5 +3440,95 @@ mod tests {
         assert_eq!(state.modal, Some(Modal::Context));
         update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
         assert_eq!(state.modal, None);
+    }
+
+    #[test]
+    fn empty_signed_thinking_draws_no_cell() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let before = state.transcript.len();
+        let signed = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: Some("sig".into()),
+        };
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted { item: signed, kind }),
+        );
+        update(&mut state, Msg::Event(Event::ItemDone { item: signed }));
+        assert_eq!(state.transcript.len(), before);
+
+        // A streamed thought starts empty too, but unsigned: it keeps its cell.
+        let streamed = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: None,
+        };
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted {
+                item: streamed,
+                kind,
+            }),
+        );
+        assert!(matches!(
+            state.transcript.last(),
+            Some(Cell::Thinking { item, .. }) if *item == streamed
+        ));
+    }
+
+    /// P42: entering architect asks the think price once; a yes rides on
+    /// every architect turn, a repeat `/mode architect` does not ask again,
+    /// leaving forgets it, and a no sends `/mode editor`.
+    #[test]
+    fn architect_confirmation_is_asked_once() {
+        let key = |c| Msg::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        let architect = Event::ModeChanged {
+            mode: SessionMode::Architect,
+            permission_mode: PermissionMode::Plan,
+        };
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        update(&mut state, Msg::Event(architect.clone()));
+        assert!(matches!(state.modal, Some(Modal::Question(_))));
+        assert_eq!(state.mode, PermissionMode::Plan);
+        // `1` picks "yes"; the answer never reaches the core.
+        assert_eq!(update(&mut state, key('1')), Vec::new());
+        assert!(state.modal.is_none());
+        let confirmed = |state: &State| {
+            matches!(
+                user_turn(state, "go".into()),
+                Submission::UserTurn {
+                    confirm_think: true,
+                    ..
+                }
+            )
+        };
+        assert!(confirmed(&state));
+
+        update(&mut state, Msg::Event(architect.clone()));
+        assert!(state.modal.is_none(), "asked once per stretch");
+
+        update(
+            &mut state,
+            Msg::Event(Event::ModeChanged {
+                mode: SessionMode::Editor,
+                permission_mode: PermissionMode::Default,
+            }),
+        );
+        assert!(!confirmed(&state), "editor turns never confirm think");
+
+        update(&mut state, Msg::Event(architect));
+        assert!(matches!(state.modal, Some(Modal::Question(_))));
+        // `2` picks "no": leave architect.
+        assert_eq!(
+            update(&mut state, key('2')),
+            vec![Cmd::Submit(Submission::Command {
+                command: SlashCommand {
+                    name: "mode".into(),
+                    args: vec!["editor".into()],
+                },
+            })]
+        );
+        assert!(!confirmed(&state));
     }
 }

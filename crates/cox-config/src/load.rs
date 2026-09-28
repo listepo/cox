@@ -5,7 +5,9 @@
 //! `cox config show --sources` can print it.
 //!
 //! `.claude/settings.json` (T7.5) is one more layer above project config (plan.md §1.6
-//! "Out of scope").
+//! "Out of scope"). A repository's own `.claude` files count as project
+//! config for the guard list (T22.11, A122), the user's `~/.claude` file does
+//! not.
 //!
 //! T32.16: moved here from `crates/cox`. The two inputs that come from the
 //! binary's side stay there and are passed in: the CLI-flag layer (built
@@ -124,6 +126,7 @@ impl GuardViolation {
                 "A project may not run more subagents at once than you allow"
             }
             "permissions.mode" => "A project may not turn on bypass mode",
+            "permissions.allow" => "A project may not allow a tool call",
             "sandbox.mode" => "A project may not turn the sandbox off",
             "plugins.enabled" => "A project may not turn plugins back on",
             "tiers.think.confirm" => "A project may not skip the think tier's confirmation",
@@ -190,6 +193,26 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         });
         full.permissions.mode = without_project.permissions.mode;
     }
+
+    // T22.10 (A122): a project may only tighten the rule lists. figment
+    // replaces an array wholesale, so without this a cloned repository's
+    // `deny = []` drops the default `~/.ssh` deny and its `allow = ["Bash"]`
+    // runs every command unasked. Its `allow` never counts and is reported;
+    // its `deny` and `ask` lists only add rules, so there is nothing to
+    // report for them.
+    if full.permissions.allow != without_project.permissions.allow {
+        violations.push(GuardViolation {
+            key: "permissions.allow",
+            project_value: rule_list(&full.permissions.allow),
+            reverted_to: rule_list(&without_project.permissions.allow),
+        });
+        full.permissions.allow = without_project.permissions.allow.clone();
+    }
+    add_rules(
+        &mut full.permissions.deny,
+        &without_project.permissions.deny,
+    );
+    add_rules(&mut full.permissions.ask, &without_project.permissions.ask);
 
     if full.sandbox.mode == SandboxMode::DangerFullAccess
         && without_project.sandbox.mode != SandboxMode::DangerFullAccess
@@ -291,16 +314,41 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
     violations
 }
 
+/// Makes `rules` (with the project layer) the union of `base` (without it)
+/// and the project's extra rules. A list that already holds every `base`
+/// rule stays as it is, in the project's own order.
+fn add_rules(rules: &mut Vec<String>, base: &[String]) {
+    if base.iter().all(|rule| rules.contains(rule)) {
+        return;
+    }
+    let added: Vec<String> = rules
+        .iter()
+        .filter(|rule| !base.contains(rule))
+        .cloned()
+        .collect();
+    *rules = base.iter().cloned().chain(added).collect();
+}
+
+/// A rule list as one line of a [`GuardViolation`], `none` when empty.
+fn rule_list(rules: &[String]) -> String {
+    if rules.is_empty() {
+        "none".to_string()
+    } else {
+        rules.join(", ")
+    }
+}
+
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 10] = [
+const GUARDED_KEYS: [&str; 11] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
     "core.max_concurrent_subagents",
     "lsp.servers",
     "mcp.servers.*.sandbox",
+    "permissions.allow",
     "permissions.mode",
     "plugins.enabled",
     "sandbox.mode",
@@ -352,10 +400,23 @@ impl LoadedConfig {
     }
 }
 
+/// The imported `.claude/settings.json` layers for one `cwd`, split by owner
+/// (T22.11, A122): a repository's files are left out of the figment without
+/// the project, so the guard list treats their rules like a project
+/// config's (`allow` reverted, `deny`/`ask` added), while the user's own
+/// file counts like user config.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClaudeLayers {
+    /// `~/.claude/settings.json`, as `cox_ext::claude_settings` lifts it.
+    pub user: Option<JsonValue>,
+    /// A repository's `.claude/settings.json` and `.claude/settings.local.json`.
+    pub project: Option<JsonValue>,
+}
+
 fn build_figment(
     user_path: &Path,
     project_path: Option<&Path>,
-    claude: Option<&JsonValue>,
+    claude: &[&JsonValue],
     flags: &JsonValue,
 ) -> Figment {
     // `Toml::file` (not `file_exact`): both paths here are always absolute
@@ -369,12 +430,12 @@ fn build_figment(
     if let Some(project_path) = project_path {
         fig = fig.merge(named("project", Toml::file(project_path)));
     }
-    if let Some(claude) = claude {
+    for claude in claude {
         // `adjoin`, not `merge`: imported rules and hooks add to the `.cox`
         // lists rather than replace them (D13: imported, read-only).
         fig = fig.adjoin(named(
             "claude-settings",
-            Serialized::defaults(claude.clone()),
+            Serialized::defaults((*claude).clone()),
         ));
     }
     let key_tree = default_key_tree();
@@ -457,13 +518,13 @@ fn to_core_error(err: figment::Error) -> CoreError {
 /// list, and returns the effective config plus provenance.
 ///
 /// `flags` is the sparse CLI-flag override tree; `claude_layer` reads the
-/// imported `.claude/settings.json` layer for `cwd`, and is called only when
+/// imported `.claude/settings.json` layers for `cwd`, and is called only when
 /// the `.cox` layers leave `permissions.import_claude_settings` on. The
 /// caller reports `violations` (T32.16: no terminal output in this crate).
 pub fn load(
     cwd: &Path,
     flags: &JsonValue,
-    claude_layer: impl FnOnce(&Path) -> Option<JsonValue>,
+    claude_layer: impl FnOnce(&Path) -> Option<ClaudeLayers>,
 ) -> Result<LoadedConfig, CoreError> {
     load_in(&user_config_path(), cwd, flags, claude_layer)
 }
@@ -474,23 +535,28 @@ pub fn load_in(
     user_path: &Path,
     cwd: &Path,
     flags: &JsonValue,
-    claude_layer: impl FnOnce(&Path) -> Option<JsonValue>,
+    claude_layer: impl FnOnce(&Path) -> Option<ClaudeLayers>,
 ) -> Result<LoadedConfig, CoreError> {
     let user_path = user_path.to_path_buf();
     let project_path = project_config_path(cwd);
 
     // Whether to import is itself a config key, so the `.cox` layers decide
     // before the Claude layer exists.
-    let native: Config = build_figment(&user_path, project_path.as_deref(), None, flags)
+    let native: Config = build_figment(&user_path, project_path.as_deref(), &[], flags)
         .extract()
         .map_err(to_core_error)?;
     let claude = native
         .permissions
         .import_claude_settings
         .then(|| claude_layer(cwd))
-        .flatten();
-    let full_fig = build_figment(&user_path, project_path.as_deref(), claude.as_ref(), flags);
-    let pre_project_fig = build_figment(&user_path, None, claude.as_ref(), flags);
+        .flatten()
+        .unwrap_or_default();
+    // T22.11: a repository's `.claude` files join only the figment with the
+    // project, so the guard list sees their rules as the project's.
+    let user_claude: Vec<&JsonValue> = claude.user.iter().collect();
+    let all_claude: Vec<&JsonValue> = claude.user.iter().chain(&claude.project).collect();
+    let full_fig = build_figment(&user_path, project_path.as_deref(), &all_claude, flags);
+    let pre_project_fig = build_figment(&user_path, None, &user_claude, flags);
 
     let full_cfg: Config = full_fig.extract().map_err(to_core_error)?;
     let without_project_cfg: Config = pre_project_fig.extract().map_err(to_core_error)?;
@@ -874,6 +940,87 @@ mod tests {
                 let loaded = load_plain(git_root.path()).expect("load succeeds");
                 assert_eq!(loaded.config.tiers.code.model, "env-model");
                 assert_eq!(loaded.source_of("tiers.code.model"), "env");
+            },
+        );
+    }
+
+    /// Loads with `user` as `~/.cox/config.toml` (if any) and `project` as a
+    /// git root's `.cox/config.toml`, then hands the result to `check`.
+    fn load_with_project(user: Option<&str>, project: &str, check: impl FnOnce(LoadedConfig)) {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        if let Some(user) = user {
+            fs::write(home.path().join("config.toml"), user).expect("write user config");
+        }
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        fs::write(git_root.path().join(".cox/config.toml"), project).expect("write project config");
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            check(load_plain(git_root.path()).expect("load succeeds"));
+        });
+    }
+
+    fn violation<'a>(loaded: &'a LoadedConfig, key: &str) -> Option<&'a GuardViolation> {
+        loaded.violations.iter().find(|v| v.key == key)
+    }
+
+    /// T22.10 (A122): a repository must not pre-approve a tool call.
+    #[test]
+    fn project_config_allow_is_reverted_with_a_violation() {
+        load_with_project(None, "[permissions]\nallow = [\"Bash\"]\n", |loaded| {
+            assert!(loaded.config.permissions.allow.is_empty());
+            let v = violation(&loaded, "permissions.allow").expect("an allow violation");
+            assert_eq!(v.project_value, "Bash");
+            assert_eq!(v.reverted_to, "none");
+            assert_eq!(v.reason(), "A project may not allow a tool call");
+            assert_eq!(loaded.source_of("permissions.allow"), "default");
+        });
+    }
+
+    /// T22.10 (A122): an empty project `deny` must not drop the default
+    /// `~/.ssh` deny; a project list only adds rules, so nothing is reported.
+    #[test]
+    fn project_config_empty_deny_keeps_the_default_deny() {
+        load_with_project(None, "[permissions]\ndeny = []\n", |loaded| {
+            assert_eq!(
+                loaded.config.permissions.deny,
+                ["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]
+            );
+            assert!(loaded.violations.is_empty(), "{:?}", loaded.violations);
+        });
+    }
+
+    /// T22.10 (A122): a project deny rule tightens: it is added after the
+    /// user's own rules rather than replacing them, with no notice.
+    #[test]
+    fn project_config_deny_rule_is_appended_to_the_user_deny() {
+        load_with_project(
+            Some("[permissions]\ndeny = [\"Read(~/.ssh/**)\"]\n"),
+            "[permissions]\ndeny = [\"Bash(rm:*)\"]\n",
+            |loaded| {
+                assert_eq!(
+                    loaded.config.permissions.deny,
+                    ["Read(~/.ssh/**)", "Bash(rm:*)"]
+                );
+                assert!(loaded.violations.is_empty(), "{:?}", loaded.violations);
+                assert_eq!(loaded.source_of("permissions.deny"), "project");
+            },
+        );
+    }
+
+    /// T22.10 (A122): `ask` follows `deny`: the project cannot remove the
+    /// user's ask rule, and its own ask rule is appended.
+    #[test]
+    fn project_config_ask_keeps_the_user_ask_and_appends_its_own() {
+        load_with_project(
+            Some("[permissions]\nask = [\"Bash(git push:*)\"]\n"),
+            "[permissions]\nask = [\"Bash(curl:*)\"]\n",
+            |loaded| {
+                assert_eq!(
+                    loaded.config.permissions.ask,
+                    ["Bash(git push:*)", "Bash(curl:*)"]
+                );
+                assert!(loaded.violations.is_empty(), "{:?}", loaded.violations);
             },
         );
     }

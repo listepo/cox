@@ -348,7 +348,13 @@ fn built_in_segments(state: &State) -> Vec<(bool, String)> {
     if let Some(seg) = loop_countdown {
         out.push((false, seg));
     }
-    out.push((true, format!("{head}[{mode}]{suffix}")));
+    // P42: architect's badge rides in the mode segment, before the
+    // permission mode it narrowed, so the two never separate.
+    let work = match state.session_mode {
+        cox_protocol::types::Mode::Architect => "[architect] ",
+        cox_protocol::types::Mode::Editor => "",
+    };
+    out.push((true, format!("{head}{work}[{mode}]{suffix}")));
     out
 }
 
@@ -534,6 +540,29 @@ mod tests {
         let cmds = declare(&mut state, "right", vec![Slot::StatusRight]);
         bus.serve(&mut state, cmds);
         state
+    }
+
+    /// P42: `[architect]` sits right before the permission mode it
+    /// narrowed; editor shows nothing extra.
+    #[test]
+    fn status_line_shows_architect_badge() {
+        use cox_protocol::types::{Event, Mode as SessionMode};
+
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.model = "sonnet-5".into();
+        assert!(!line_at(&state, 200).to_string().contains("architect"));
+        update(
+            &mut state,
+            Msg::Event(Event::ModeChanged {
+                mode: SessionMode::Architect,
+                permission_mode: PermissionMode::Plan,
+            }),
+        );
+        // The price question holds the mode slot while it is open.
+        state.modal = None;
+        let line = line_at(&state, 200).to_string();
+        assert!(line.contains("[architect] [plan]"), "{line}");
+        insta::assert_snapshot!(line);
     }
 
     #[test]

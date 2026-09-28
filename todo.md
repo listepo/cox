@@ -1,6 +1,5 @@
 # Todo
 
-- T22.10. A project config may only tighten the permission rules
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.34. Go: SDK wrapper, template, example
@@ -29,10 +28,6 @@
 - T37.33. Performance budget suite
 - T37.44.3. Figma text in SF Pro and SF Mono
 - T37.44.11. The running app matches the mockups end to end
-- T39.3. Chat translator replays a signature as `extra_content` on its tool call
-- T39.4. Surfaces skip the empty signed thinking item
-- T39.5. `[providers.gemini]` preset and vendored model rows
-- T39.6. Offline end-to-end: a Gemini-shaped two-round tool loop
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 - T40.2. Core carries user attachments into history and the rollout
 - T40.3. Token estimate and context breakdown count images
@@ -49,11 +44,6 @@
 - T41.7. Wire `diagnostics` into sessions, sandboxed, and into `doctor`
 - T41.8. End-to-end with a fake LSP server binary
 - T41.9. Optional: live check with real rust-analyzer
-- T42.1. Mode type, `narrower` and the resolved gate table
-- T42.2. `core.mode` config key and `--mode` flag
-- T42.3. Core applies the mode at build and on `/mode`
-- T42.4. TUI `/mode` and the mode badge
-- T42.5. Headless `--mode` consent, e2e and docs
 - T43.0. Amend the repo-map gate doc to the creator's decision
 - T43.1. Repo-map builder in `cox-tools`
 - T43.2. Protocol and config for the map

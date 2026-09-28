@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.10 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
@@ -35,10 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
-| T39.3 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T39.4 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
-| T39.5 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T39.6 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T40.2 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
 | T40.3 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
@@ -55,11 +50,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T41.7 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T41.8 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T41.9 | todo | P3 | 2 | 0% | |
-| T42.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T42.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T42.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
-| T42.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T42.5 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T43.0 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
 | T43.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T43.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
@@ -76,26 +66,26 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T45.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T45.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T45.6 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T46.1 | todo | P2 | 2 | 0% | |
-| T46.2 | todo | P2 | 3 | 0% | |
-| T46.3 | todo | P2 | 3 | 0% | |
-| T46.4 | todo | P2 | 2 | 0% | |
-| T46.5 | todo | P3 | 2 | 0% | |
-| T46.6 | todo | P3 | 3 | 0% | |
-| T46.7 | todo | P3 | 3 | 0% | |
-| T47.1 | todo | P2 | 3 | 0% | |
-| T47.2 | todo | P2 | 4 | 0% | |
-| T47.3 | todo | P2 | 2 | 0% | |
-| T47.4 | todo | P3 | 2 | 0% | |
-| T48.1 | todo | P2 | 2 | 0% | |
-| T48.2 | todo | P2 | 2 | 0% | |
-| T49.1 | todo | P2 | 3 | 0% | |
-| T49.2 | todo | P3 | 3 | 0% | |
-| T49.3 | todo | P3 | 2 | 0% | |
-| T49.4 | todo | P3 | 2 | 0% | |
-| T49.5 | todo | P3 | 3 | 0% | |
-| T50.3 | todo | P2 | 1 | 0% | |
-| T50.5 | todo | P3 | 1 | 0% | |
+| T46.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T46.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T46.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T46.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T46.5 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T46.6 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T46.7 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T47.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T47.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T47.3 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T47.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T48.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T48.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T49.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T49.2 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T49.3 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T49.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T49.5 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T50.3 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
+| T50.5 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T51.1 | todo | P2 | 2 | 0% | |
 | T51.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T51.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
@@ -597,7 +587,8 @@ The engine is pure: `decide(&self, call, mode, policy, grants) -> Decision`. Rul
 ```
  ┌ system[0]  tool specs, non-deferred, sorted by name, canonical JSON        ┐ byte-stable for the session
  │ system[1]  cox system prompt (versioned string, no date, no cwd)           │  cache breakpoint 1 (after system[2])
- │ system[2]  instruction files: AGENTS.md/CLAUDE.md chain, skills index      ┘
+ │ system[2]  instruction files: AGENTS.md/CLAUDE.md chain, skills index,     ┘
+ │            repo map last (A74, off by default)
  │ system[3]  volatile: date, cwd, git branch, memory index, permission mode      no cache (changes daily / per turn)
  │ messages   [Summary item if compacted]
  │            history … (older tool results microcompacted to pointers)         cache breakpoint 2 = end of previous turn
@@ -605,7 +596,7 @@ The engine is pure: `decide(&self, call, mode, policy, grants) -> Decision`. Rul
  └
 ```
 
-Invariants: bytes of `system[0..=2]` are identical across all calls of a session unless the user changes instruction files or tools are discovered via `tool_search` (discovered tools are appended to `system[0]`, which invalidates breakpoint 1 once; `Notice` explains it). Anthropic allows 4 breakpoints; cox uses 3 so a fourth is free for experiments. OpenAI providers ignore breakpoints (automatic prefix caching) but still benefit from the stable order. `Request.cache_breakpoints` are indices; the Anthropic translator turns them into `cache_control: {"type": "ephemeral", "ttl": …}`.
+Invariants: bytes of `system[0..=2]` are identical across all calls of a session unless the user changes instruction files, tools are discovered via `tool_search` (discovered tools are appended to `system[0]`, which invalidates breakpoint 1 once; `Notice` explains it), a `/repomap refresh` changes the map's bytes (idle only, announced by a `Notice`, recorded by `Event::RepoMapBuilt`, attributed by `cache_diag`; identical bytes change nothing), or compaction rebuilds the map on the prefix restart it already causes (A74). Anthropic allows 4 breakpoints; cox uses 3 so a fourth is free for experiments. OpenAI providers ignore breakpoints (automatic prefix caching) but still benefit from the stable order. `Request.cache_breakpoints` are indices; the Anthropic translator turns them into `cache_control: {"type": "ephemeral", "ttl": …}`.
 
 Token accounting per call writes `context_tokens` (input + cache read + cache write) to the ledger; `context-token-turns` for a session is the sum. T8.5 measures each D6 mechanism by toggling it and replaying recorded sessions.
 
@@ -806,14 +797,6 @@ Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding
 Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape. T21.1–T21.2 (below) are the implementation the gate allowed: provider wiring only, no call sites yet.
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
-
-#### T22.10 A project config may only tighten the permission rules
-
-Depends: — · Size: ~80 · Files: `crates/cox-config/src/load.rs`, its tests, `docs/design` guard-list text if it names the keys
-Goal: A122. Today a project `.cox/config.toml` replaces `permissions.allow`, `permissions.ask` and `permissions.deny` wholesale (figment replaces arrays, and none of them is on the guard list), so a cloned repository can drop the default `Read(~/.ssh/**)` deny or allow `Bash`. After this card the effective lists are: `deny` and `ask` = the lists without the project layer plus the project's extra rules (the project cannot remove one); `allow` = the list without the project layer (a project `allow` that differs is reverted). Each reverted or dropped rule is a `GuardViolation` with its own reason line ("A project may not allow a tool call" / "A project may not remove a deny or ask rule"), reported the way the other guarded keys are, and `GUARDED_KEYS` names the three keys so `--sources` reads their provenance right.
-Check: `cox-config` tests: a project `allow = ["Bash"]` is reverted with a violation; a project `deny = []` keeps the default deny and reports it; a project `deny = ["Bash(rm:*)"]` is appended to the user's deny; the same for `ask`; the config-schema drift test unchanged.
-
-Plan (Claude Code / opus-5.5): extend the guard pass in `load.rs` next to the `permissions.mode` guard — read the three arrays from the pre-project and full figments, merge as above, push violations; add the reasons to `GuardViolation::reason` and the keys to `GUARDED_KEYS`; tests at the bottom of `load.rs`. No build or test run (no-build rule); the verification pass runs the Check.
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 
@@ -1190,103 +1173,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers:** T39.1 → T39.2 → T39.3 is the signature path; T39.5 is independent; T39.6 needs T39.3 and T39.5.
-
-### T39.3. Chat translator replays a signature as `extra_content` on its tool call
-
-- Model: sonnet
-- Depends: T39.2
-- Size: ~80
-- Priority: P1
-- Complexity: 2
-- Goal: a signed `Content::Thinking` directly followed by a `Content::ToolUse` in an assistant message becomes `"extra_content": {"google": {"thought_signature": sig}}` on that tool call's JSON. Any other signed thinking still fails with `ProviderError::Unsupported { feature: "thinking replay" }`.
-- Files: `crates/cox-provider-openai/src/chat.rs`
-- Steps:
-  1. In `message_items`, walk the assistant blocks with a one-slot "pending signature". A signed empty-text thinking followed by a `ToolUse` attaches the signature to that call; a signed thinking in any other position keeps the current error.
-  2. Keep `chat_request_signed_thinking_unsupported` (non-adjacent case) and `chat_request_unsigned_thinking_dropped` green.
-  3. Add `chat_request_replays_signature_on_its_tool_call`, an insta snapshot of the body.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_request)'
-  ```
-- Done when: the snapshot shows `extra_content` only on the signed call. With no signature, the body is byte-identical to before (the existing snapshots do not change).
-- Out of scope: the Responses and Anthropic wires. The router strips these blocks on a model switch, so they never reach another wire.
-
-### T39.4. Surfaces skip the empty signed thinking item
-
-- Model: haiku
-- Depends: T39.2
-- Size: ~40
-- Priority: P2
-- Complexity: 1
-- Goal: the TUI transcript and `plain` output draw nothing for an `ItemKind::Thinking` with empty text. It is a replay token, not something the model said.
-- Files: `crates/cox-tui/src/state.rs` (~line 2165), `crates/cox/src/plain.rs` (~line 268)
-- Steps:
-  1. Guard both match arms with `if !text.is_empty()`.
-  2. Add a TUI snapshot test `empty_signed_thinking_draws_no_cell` and a `plain` unit test.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-tui -E 'test(empty_signed_thinking)'
-  mise exec -- cargo nextest run -p cox -E 'test(plain)'
-  ```
-- Done when: no empty thinking cell appears in any existing snapshot, and the new tests pass.
-- Out of scope: stream-json. It prints every event as-is by design.
-
-### T39.5. `[providers.gemini]` preset and vendored model rows
-
-- Model: sonnet
-- Depends: -
-- Size: ~120
-- Priority: P1
-- Complexity: 2
-- Goal: a built-in type-2 section `[providers.gemini]` exists (A9), and its model ids, context windows, efforts and prices come from `cox-vendor models` (A48), not hand-pasted numbers.
-- Files: `scripts/vendor/src/cox_vendor/models.py`, `scripts/vendor/tests/test_models.py`, `crates/cox-protocol/src/config.rs` (tests only). Data: `crates/cox-protocol/default.toml`, `crates/cox-provider/prices.toml`.
-- Steps:
-  1. `models.py`: add `"gemini": "google"` to `PROVIDER_TO_MODELS_DEV`. models.dev lists provider `google` with env `GEMINI_API_KEY` (https://models.dev/api.json, checked 2026-09-28). `cox_effort_for` already drops `minimal`. Add a pytest proving a `google` row maps to a `gemini` row.
-  2. `default.toml`: add the section in the shape of `[providers.deepseek]`:
-     - `base_url = "https://generativelanguage.googleapis.com/v1beta/openai"`
-     - `api_key_env = "GEMINI_API_KEY"`, `api = "chat"`
-     - `model = "gemini-3.8-flash"`
-     - `timeout_s = 120`, `max_retries = 4`
-     - a `models` list with the ids `gemini-3.8-flash`, `gemini-3.1-pro-preview` and `gemini-3.5-flash-lite`, each with `reasoning_effort = true`. The OpenAI-compat page says reasoning cannot be turned off for Gemini 2.5 Pro or 3 models, so effort is always meaningful.
-     - Add the ids the way earlier type-2 rows first landed, then run `cox-vendor models` so the script fills `context_window`, `efforts` and the `prices.toml` rows.
-  3. `config.rs`: add `"gemini"` to the preset loop test (~line 1357) that asserts every built-in type-2 section parses and names its key env var.
-  4. Add a `research.md` ledger row citing both Google pages, with URL and "last updated" date, and the models.dev check date.
-- Check:
-  ```bash
-  cd scripts/vendor && mise exec -- uv run pytest -q && cd ../..
-  mise exec -- cargo nextest run -p cox-protocol -E 'test(provider)'
-  mise exec -- cargo nextest run -p cox-provider -E 'test(price)'
-  COX_HOME=/tmp/cox-gemini mise exec -- cargo run -- doctor
-  ```
-- Done when: `doctor` lists `gemini` with "GEMINI_API_KEY not set" and the three models are priced. The config-schema drift test is green (no schema change is expected: presets are data).
-- Out of scope:
-  - Vertex AI (the gate excludes it).
-  - `extra_body.google.thinking_config.include_thoughts` (thought summaries).
-  - The TUI model picker ordering.
-
-### T39.6. Offline end-to-end: a Gemini-shaped two-round tool loop
-
-- Model: sonnet
-- Depends: T39.3, T39.4, T39.5
-- Size: ~150
-- Priority: P1
-- Complexity: 3
-- Goal: `cox run -p` against a wiremock server that speaks the Gemini OpenAI-compat stream completes a tool round and a final answer. The second request echoes the signature on its tool call and sends `Authorization: Bearer <test key>`.
-- Files: `crates/cox/tests/gemini_compat.rs` (new), fixtures `crates/cox/tests/fixtures/gemini/{round1,round2}.sse`
-- Steps:
-  1. Round 1 SSE: a `read` tool call chunk carrying `extra_content.google.thought_signature = "sig-fixture"`, then `finish_reason: tool_calls`, plus usage with `prompt_tokens_details.cached_tokens`.
-  2. Round 2 SSE: text, then `stop`.
-  3. Run the real binary with `COX_HOME` scratch, a project config overriding `providers.gemini.base_url` to the mock, and `GEMINI_API_KEY=test-key`. Assert:
-     - the second request's JSON has the signature on the `read` tool call;
-     - the exit code is 0;
-     - the ledger has two `usage` rows with the cached tokens.
-  4. Document the preset in `docs/compat.md` and `docs/config.md`, including the "OpenAI compatibility is beta at Google" caveat with its URL.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox --test gemini_compat
-  ```
-- Done when: the test passes with no network access. done.md cites the fixture's unverified field path.
-- Out of scope: a real key (T39.7).
 
 ### T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 
@@ -1755,159 +1641,6 @@ Every card in this phase: same four bullets as P39.
 Rationale in §6 A73.
 
 Design decision carried by every card: a mode is a preset over the **permission mode** and the **main tier** only. It never removes tools from system[0] (that would break invariant 1 mid-session); "write tools denied / bash read-only only" is delivered by `PermissionMode::Plan` through `cox_permission::Engine`, which already allows `Risk::ReadOnly` (including classifier-safe `bash`) and denies the rest. `/mode` can only narrow the configured permission mode (`narrower`), so a mode never widens what `permissions.mode` allows.
-
-### T42.1. Mode type, `narrower` and the resolved gate table
-
-Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~90 · Priority: P2 · Complexity: 2
-
-Goal: the shared vocabulary the other P42 cards and T45.2 build on — a `Mode` enum, a `ModeChanged` event, and one pure function that picks the narrower of two permission modes.
-
-Files:
-- `crates/cox-protocol/src/types.rs`
-- `crates/cox-permission/src/lib.rs`
-- `docs/design/v0.2-modes.md`
-
-Steps:
-1. `types.rs`: add `#[serde(rename_all = "snake_case")] pub enum Mode { #[default] Editor, Architect }` with `JsonSchema`, next to `PermissionMode` (line ~356); add `Event::ModeChanged { mode: Mode, permission_mode: PermissionMode }`. Regenerate `docs/protocol.jsonschema` through its drift test.
-2. `cox-permission/src/lib.rs`: add `pub fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode` with the order `Plan < Default < Auto < Bypass`; a private `rank()` so the order has one definition.
-3. Tests in `cox-permission`: `narrower_never_returns_the_wider_mode` (all 16 pairs), `narrower_is_commutative`.
-4. `v0.2-modes.md`: add a "Resolved (P42)" section — architect = `Plan` + main tier `think`, editor = the configured mode + configured tier; tool schemas are never filtered by mode (cache prefix); the "every Exec asks" row is superseded by plan's deny (pending open question 1).
-
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-permission narrower_
-mise exec -- cargo nextest run -p cox-protocol
-mise exec -- cargo nextest run --workspace
-mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-mise exec -- cargo fmt --check
-```
-
-Done when: `Mode`, `Event::ModeChanged` and `narrower` exist with the tests above; the protocol schema is regenerated; the gate doc records the resolved table.
-
-Out of scope: applying the mode (T42.3), config/flag (T42.2), any TUI.
-
-### T42.2. `core.mode` config key and `--mode` flag
-
-Model: claude-sonnet-5 · Status: open · Depends: T42.1 · Size: ~70 · Priority: P2 · Complexity: 2
-
-Goal: `--mode architect|editor` and `core.mode` are one setting (invariant 12, `every_flag_has_a_config_key`).
-
-Files:
-- `crates/cox-protocol/src/config.rs`
-- `crates/cox/src/cli.rs`
-- `crates/cox/src/config_load.rs`
-
-Steps:
-1. `config.rs`: `CoreConfig.mode: Mode` (default `Editor`), doc comment naming the flag. Regenerate `docs/config.jsonschema`, `docs/config.md`, `config/default.toml`.
-2. `cli.rs`: `#[arg(long = "mode", global = true)] pub mode: Option<String>` next to `permission_mode` (line ~41), value parser limited to `architect|editor`.
-3. `config_load.rs`: `flag_key_map()` gains `"mode" => "core.mode"`; `flag_overrides(cli)` sets it through `set_dotted`.
-4. Decide guard status: `core.mode = architect` only narrows, so it is **not** added to `GUARDED_KEYS` (a project config may set it). Note this in the doc comment.
-5. Tests: `mode_flag_maps_to_core_mode` in `config_load.rs`; `every_flag_has_a_config_key` stays green.
-
-Check:
-```bash
-mise exec -- cargo nextest run -p cox mode_flag_maps_to_core_mode every_flag_has_a_config_key
-mise exec -- cargo nextest run -p cox-config
-COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- --mode architect config get core.mode
-mise exec -- cargo nextest run --workspace
-mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-mise exec -- cargo fmt --check
-```
-
-Done when: the flag and the key round-trip, the schema drift test passes, the scratch run prints `architect`.
-
-Out of scope: acting on the value (T42.3).
-
-### T42.3. Core applies the mode at build and on `/mode`
-
-Model: claude-opus-5.5 · Status: open · Depends: T42.1, T42.2 · Size: ~180 · Priority: P2 · Complexity: 4
-
-Goal: one core path turns a `Mode` into a live permission mode and a main-tier override, at session build and on `Submission::Command { name: "mode" }`, and emits `ModeChanged`.
-
-Files:
-- `crates/cox-core/src/mode.rs` (new)
-- `crates/cox-core/src/lib.rs`
-- `crates/cox-core/src/session.rs`
-
-Steps:
-1. `mode.rs` (`//!` header: "mode presets over permission mode and main tier; the top-session counterpart of `subagent::PRESETS`"): `pub struct ModePreset { pub mode: Mode, pub permission: Option<PermissionMode>, pub main_tier: Option<Tier> }`, consts `EDITOR` (both `None`) and `ARCHITECT` (`Some(Plan)`, `Some(Tier::Think)`); `pub fn apply(preset, configured: PermissionMode) -> PermissionMode` = `preset.permission.map_or(configured, |p| cox_permission::narrower(configured, p))`.
-2. `lib.rs`: `pub mod mode;`.
-3. `session.rs` `build` (line ~366): after `permission_mode` is set from config, apply `config.core.mode`; set `Inner.overrides.main_tier` from the preset. Store the active `Mode` in `Inner`.
-4. `session.rs` `Submission::Command` dispatch (~819): `"mode"` with arg `architect|editor` (unknown → `Event::Notice` Warn listing both). Idle-only like `compact`. Architect: `permission_mode = apply(ARCHITECT, current)`, `overrides.main_tier = Some(Think)`. Editor: restore `config.permissions.mode` narrowed by nothing and clear `main_tier` only if the mode set it (a `/model`-set override survives — keep a `mode_set_tier: bool`). Emit `ModeChanged`.
-5. The router still returns `RouteError::NeedsConfirm` for Think without `confirm_think`; do not bypass it here (invariant 9). The mode never touches `tools`, so system[0..2] stay byte-identical.
-6. Tests (bottom of `session.rs` or `mode.rs`): `architect_denies_write_through_the_engine`, `architect_never_widens_a_plan_config`, `editor_restores_the_configured_mode`, `mode_switch_keeps_prefix_bytes_identical`, `architect_think_still_requires_confirmation`.
-
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core architect_ editor_restores mode_switch_keeps_prefix prefix_bytes_identical_between_turns think_requires_confirmation
-mise exec -- cargo nextest run --workspace
-mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-mise exec -- cargo fmt --check
-```
-
-Done when: the five tests pass; invariants 1 and 9 still pass; no tool list is filtered by mode.
-
-Out of scope: TUI affordances (T42.4), headless consent (T42.5), children (T45.1 inherits the live mode).
-
-### T42.4. TUI `/mode` and the mode badge
-
-Model: claude-sonnet-5 · Status: open · Depends: T42.3 · Size: ~120 · Priority: P2 · Complexity: 3
-
-Goal: the user switches mode from the composer, sees it on the status line, and confirms the think price once per architect stretch.
-
-Files:
-- `crates/cox-tui/src/commands.rs`
-- `crates/cox-tui/src/state.rs`
-- `crates/cox-tui/src/status.rs`
-
-Steps:
-1. `commands.rs`: `COMMANDS` row `("mode", "/mode architect|editor", "switch between planning and editing")`; the generic arm already submits `Submission::Command`.
-2. `state.rs`: handle `Event::ModeChanged` → `state.mode`; entering architect opens the existing price confirmation (same text as `/think`, `THINK_PRICE`) once; after a yes, `UserTurn.confirm_think = true` while `state.mode == Architect`; a no sends `/mode editor`.
-3. `status.rs`: `[architect]` segment before the permission-mode segment; nothing in editor.
-4. Snapshot tests: `status_line_shows_architect_badge`, `mode_command_is_listed_in_help`; unit test `architect_confirmation_is_asked_once`.
-
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui status_line_shows_architect_badge mode_command_is_listed architect_confirmation_is_asked_once
-mise exec -- cargo insta review
-mise exec -- cargo nextest run --workspace
-mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-mise exec -- cargo fmt --check
-```
-
-Done when: the snapshots are reviewed and committed; a real TUI run against `COX_HOME=/tmp/cox-scratch` shows the badge after `/mode architect`.
-
-Out of scope: ACP session modes (open question 10).
-
-### T42.5. Headless `--mode` consent, e2e and docs
-
-Model: claude-sonnet-5 · Status: open · Depends: T42.3 · Size: ~100 · Priority: P3 · Complexity: 2
-
-Goal: `cox run -p --mode architect` works end to end; only the explicit flag counts as think consent, like `--deep`.
-
-Files:
-- `crates/cox/src/run.rs`
-- `crates/cox/tests/run_cli.rs`
-- `docs/how-it-works.md`
-
-Steps:
-1. `run.rs`: `confirm_think = deep || cli.mode == Some("architect")`; a `core.mode = architect` from a config file alone does not confirm — the run fails with the existing `NeedsConfirm` message naming `--mode architect` (pending open question 2).
-2. `run_cli.rs`: `run_architect_denies_write_with_scripted_provider` (scripted provider requests `write`; the stream-json shows a plan-mode denial), `run_config_architect_without_flag_asks_for_confirmation`.
-3. `how-it-works.md`: a "Modes" paragraph: the table, "mode never widens permissions", "tools are not filtered".
-
-Check:
-```bash
-mise exec -- cargo nextest run -p cox run_architect_ run_config_architect_
-mise exec -- cargo nextest run --workspace
-mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-mise exec -- cargo fmt --check
-```
-
-Done when: both e2e tests pass without network or keys; docs describe modes.
-
-Out of scope: ACP.
-
----
 
 ### P43 — Repo map (goal: a git-recency-ranked symbol map built once per session, placed last in the byte-stable system[2], refreshed only by `/repomap refresh` or compaction)
 
@@ -3368,7 +3101,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A119 T37.44.4–T37.44.8 — faster layout work, by the creator (2026-09-28): layout fixes iterate in the CoxUI package alone (it depends on neither the Rust core nor the XCFramework), compare a snapshot with its frame by a pixel-diff command, and split the Figma comparison by page so agents work on separate screens in parallel. Why: each layout check was rebuilding the XCFramework and the app and one agent at a time owned every screen.
 - A120 T37.45.1–T37.45.5 — by the creator (2026-09-28, "do what is best"): controls the mockups show and the design doc already names but the app lacks — settings filter, provider keys and model pop-ups, permission rules editor and session grants, MCP status and log, the onboarding drop zone — become cards; the settings sidebar stays the floating glass one of DESIGN.md §6.5, not the mockups' flush 220 pt one; the M2/M3 mockups (24–27) stay out of scope. Why: the design pass (T37.44.5) found them missing, and they are features, not layout.
 - A121 §3 (new P51: T51.1–T51.21, P52: T52.1–T52.22, P53: T53.1–T53.9), `roadmap.md`, by the creator (2026-09-28): every `roadmap.md` item moves into the plan as described cards — desktop M2 and the dark glass theme as P51, desktop M3 as P52 (the ACP host no longer waits for a blocked card, A67 §11 Q8), plugin install from git or a URL and the publishing of `cox-plugin-api`, `cox-plugin-sdk` and the Go module as P53. The approved looks are mockups 24-terminal-pane-m2, 25-browser-preview-m2, 26-menu-bar-extra-m2 and 27-external-agents-acp-m3 in `desktop/design/mockups/mockups.html`, which T37.44.11 and A120 left out of P37. One agent implements the cards serially without building or running tests (the creator's instruction); a later verification pass runs each card's Check, builds and tests, and only then does the card merge and move to `done.md`. Decisions taken with them: business logic stays in Rust (`cox-app`), `cox-ffi` stays a one-expression forwarder (D11, A90), Swift never spawns a process; the terminal pane runs the user's login shell in the session cwd under the session's own `cox_sandbox::sandbox::Policy`; browser page text reaching the model is untrusted and passes `cox_sanitize::sanitize` and the archive; remote SSH sessions never send API keys or forward the ssh agent; install from a URL needs a pinned sha256 and from git a named ref, and both end in the existing local-directory install and per-digest grant; publishing stops at a dry run — `cargo publish` and tag pushes are the creator's. New dependencies: SwiftTerm (research.md §9.5.2) and KeyboardShortcuts (§9.5.7) in Swift, `portable-pty` promoted from a dev-dependency to a `cox-app` dependency; each gets its §1.1 and `toolchain.md` rows in the implementing commit. Plugin install from git or a URL reverses PL§12's "out of scope" line for those two sources only (T53.1). Why: the creator approved these items in `roadmap.md` and asked to have all of them planned; `roadmap.md` is left with no items.
-- A122 T22.10 — by the creator (2026-09-28): a project config may only tighten `permissions.allow`/`ask`/`deny`: it can add `deny` and `ask` rules, never remove one, and its `allow` is reverted with a notice. Why: T37.45.3 found that a project config replaced the lists wholesale, so a cloned repository could drop the default `~/.ssh` deny or allow `Bash` without a prompt.
+- A122 T22.10 — by the creator (2026-09-28): a project config may only tighten `permissions.allow`/`ask`/`deny`: it can add `deny` and `ask` rules, never remove one, and its `allow` is reverted with a notice; the same holds for the permissions imported from a repository's `.claude/settings.json` (T22.11, creator 2026-09-28). Why: T37.45.3 found that a project config replaced the lists wholesale, so a cloned repository could drop the default `~/.ssh` deny or allow `Bash` without a prompt.
 
 ## 7. Risk register
 

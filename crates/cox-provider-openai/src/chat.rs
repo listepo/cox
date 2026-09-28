@@ -28,8 +28,11 @@
 //! be: same wire shape, real auth.
 //!
 //! **Thinking.** Chat has no reasoning-item replay (that is a Responses
-//! feature), so `Content::Thinking` is treated exactly as in
-//! `responses.rs`: unsigned dropped, signed rejected with `Unsupported`.
+//! feature), so `Content::Thinking` is treated as in `responses.rs`:
+//! unsigned dropped, signed rejected with `Unsupported`. The one exception
+//! is a tool call's thought signature (Gemini, T39.3): core keeps it as a
+//! signed empty-text thinking block directly before its `ToolUse`, and it
+//! goes back out as `extra_content.google.thought_signature` on that call.
 
 use async_trait::async_trait;
 use cox_models::{Api, Capabilities, effort_for};
@@ -45,11 +48,11 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 /// Translates a `Request` into the JSON body for `POST /v1/chat/completions`.
-/// Errors when history carries a signed thinking block (see module header)
-/// or an image for a model declared `images = false` — every other shape
-/// translates unconditionally. `caps` is what the model's `models` entry
-/// declares: `reasoning_effort` goes out only when it declares the field
-/// (`cox_models::effort_for`).
+/// Errors when history carries a signed thinking block that is not a tool
+/// call's signature (see module header) or an image for a model declared
+/// `images = false` — every other shape translates unconditionally. `caps`
+/// is what the model's `models` entry declares: `reasoning_effort` goes out
+/// only when it declares the field (`cox_models::effort_for`).
 pub fn build_body(req: &Request, caps: &Capabilities) -> Result<Value, ProviderError> {
     // The core already holds images back from a Chat model that does not
     // declare them; this is the wire's own refusal, so a declared
@@ -130,8 +133,11 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
     let mut text = String::new();
     let mut tool_calls = Vec::new();
     let mut images = Vec::new();
+    // A tool call's signature waits here for the `ToolUse` right after it.
+    let mut pending_signature: Option<&str> = None;
 
-    for c in &m.content {
+    let mut blocks = m.content.iter().peekable();
+    while let Some(c) = blocks.next() {
         match c {
             Content::Text { text: t } => {
                 if !text.is_empty() {
@@ -139,11 +145,17 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 }
                 text.push_str(t);
             }
-            Content::ToolUse { id, name, input } => tool_calls.push(json!({
-                "id": id.to_string(),
-                "type": "function",
-                "function": {"name": name, "arguments": input.to_string()},
-            })),
+            Content::ToolUse { id, name, input } => {
+                let mut call = json!({
+                    "id": id.to_string(),
+                    "type": "function",
+                    "function": {"name": name, "arguments": input.to_string()},
+                });
+                if let Some(sig) = pending_signature.take() {
+                    call["extra_content"] = signature_extra(sig);
+                }
+                tool_calls.push(call);
+            }
             Content::ToolResult {
                 call_id,
                 content,
@@ -177,14 +189,20 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 }
                 text.push_str(&format!("[archived: {summary}; expand {}]", archive.id));
             }
-            Content::Thinking { signature, .. } => {
-                if signature.is_some() {
+            Content::Thinking { text: t, signature } => match signature {
+                // No signature: nothing to replay, drop silently.
+                None => {}
+                Some(sig)
+                    if t.is_empty() && matches!(blocks.peek(), Some(Content::ToolUse { .. })) =>
+                {
+                    pending_signature = Some(sig.as_str());
+                }
+                Some(_) => {
                     return Err(ProviderError::Unsupported {
                         feature: "thinking replay".into(),
                     });
                 }
-                // No signature: nothing to replay, drop silently.
-            }
+            },
         }
     }
 
@@ -225,6 +243,13 @@ pub struct AccruedCall {
     pub wire_id: Option<String>,
     /// The call's thought signature (Gemini); the last one sent wins.
     pub signature: Option<String>,
+}
+
+/// A tool call's `extra_content` carrying its thought signature back to the
+/// server: the inverse of [`thought_signature`], under the same UNVERIFIED
+/// path.
+fn signature_extra(sig: &str) -> Value {
+    json!({"google": {"thought_signature": sig}})
 }
 
 /// Where Gemini puts a tool call's thought signature on the Chat wire.
@@ -292,6 +317,11 @@ impl OpenAiChatStream {
     /// Ollama and vLLM do) just updates the counters.
     pub fn feed(&mut self, data: &str) -> Result<Vec<ProviderEvent>, ProviderError> {
         self.frame_no += 1;
+        // OpenAI-style servers end the stream with a non-JSON sentinel; the
+        // end of the byte stream, not this frame, finishes the turn.
+        if data.trim() == "[DONE]" {
+            return Ok(Vec::new());
+        }
         let value: Value = serde_json::from_str(data).map_err(|_| ProviderError::Parse {
             line: self.frame_no,
         })?;
@@ -882,6 +912,12 @@ mod tests {
     }
 
     #[test]
+    fn chat_stream_done_sentinel_is_not_a_parse_error() {
+        let mut stream = OpenAiChatStream::new();
+        assert!(stream.feed("[DONE]").expect("sentinel").is_empty());
+    }
+
+    #[test]
     fn chat_stream_unknown_frame_is_ignored_not_fatal() {
         let mut stream = OpenAiChatStream::new();
         let events = stream
@@ -997,6 +1033,61 @@ mod tests {
         }];
         let err = build_body(&req, &Capabilities::default())
             .expect_err("signed thinking must not drop silently");
+        assert!(matches!(err, ProviderError::Unsupported { .. }));
+    }
+
+    #[test]
+    fn chat_request_replays_signature_on_its_tool_call() {
+        let mut req = base("gemini-3.8-flash");
+        req.messages = vec![
+            user_text("read both files"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    Content::Thinking {
+                        text: String::new(),
+                        signature: Some("sig-a".into()),
+                    },
+                    Content::ToolUse {
+                        id: call(1),
+                        name: "read".into(),
+                        input: json!({"path": "a.rs"}),
+                    },
+                    Content::ToolUse {
+                        id: call(2),
+                        name: "read".into(),
+                        input: json!({"path": "b.rs"}),
+                    },
+                ],
+            },
+        ];
+        let body = build_body(&req, &Capabilities::default()).expect("a tool call's signature");
+        let calls = &body["messages"][2]["tool_calls"];
+        assert_eq!(
+            calls[0]["extra_content"]["google"]["thought_signature"],
+            "sig-a"
+        );
+        assert!(calls[1].get("extra_content").is_none());
+        insta::assert_json_snapshot!(body);
+    }
+
+    #[test]
+    fn chat_request_signature_not_before_a_tool_call_unsupported() {
+        let mut req = base("gemini-3.8-flash");
+        req.messages = vec![Message {
+            role: Role::Assistant,
+            content: vec![
+                Content::Thinking {
+                    text: String::new(),
+                    signature: Some("sig-a".into()),
+                },
+                Content::Text {
+                    text: "no call follows".into(),
+                },
+            ],
+        }];
+        let err = build_body(&req, &Capabilities::default())
+            .expect_err("a signature with no call after it has nowhere to go");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
     }
 

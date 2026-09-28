@@ -410,6 +410,19 @@ pub enum PermissionMode {
     Bypass,
 }
 
+/// `core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the
+/// permission mode and the main tier only. It never filters tools, so the
+/// cache prefix stays byte-stable, and it only narrows `permissions.mode`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// The configured permission mode and main tier, unchanged.
+    #[default]
+    Editor,
+    /// `Plan` (read-only tools only) and the `think` main tier, confirmed.
+    Architect,
+}
+
 /// `permissions.approval` (plan.md §1.6/§1.8 step 8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -1309,6 +1322,15 @@ pub enum Event {
         /// The effort override; `None` means each tier's default.
         effort: Option<Effort>,
     },
+    /// The session's mode changed (`/mode`, P42), or a top-level session
+    /// opened under a non-default one; carries the permission mode the
+    /// preset left in force so a surface needs no second event.
+    ModeChanged {
+        /// The mode now in force.
+        mode: Mode,
+        /// The permission mode now in force, after the preset narrowed it.
+        permission_mode: PermissionMode,
+    },
     /// The session got a title (DT G6), for the sessions list and a window
     /// or tab title.
     TitleSet {
@@ -1698,6 +1720,7 @@ mod tests {
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Plan, effort: Some(Effort::Low) })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Architect, permission_mode: PermissionMode::Plan })]
     #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "which?".into(), options: vec!["a".into()], source: None })]
     #[case::title_set(Event::TitleSet { title: "Fix the ledger".into(), by_user: false })]
     #[case::title_set_by_user(Event::TitleSet { title: "Mine".into(), by_user: true })]
@@ -1818,6 +1841,7 @@ mod tests {
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None, structured: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     #[case::state_changed(Event::StateChanged { mode: PermissionMode::Default, effort: None })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Editor, permission_mode: PermissionMode::Default })]
     #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "q".into(), options: vec![], source: None })]
     #[case::title_set(Event::TitleSet { title: "t".into(), by_user: true })]
     fn event_tags_are_snake_case(#[case] event: Event) {
