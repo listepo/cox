@@ -172,6 +172,7 @@ names map one-to-one:
 | paint | `paintbrush` | refresh | `arrow.clockwise` |
 | insp | `sidebar.right` | comment | `text.bubble` |
 | sparkle | `sparkle` | bolt | `bolt` |
+| branch | `arrow.triangle.branch` | stop | `stop.fill` |
 
 ## 4. Layout
 
@@ -231,9 +232,10 @@ component.
 | `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
+| `.symbolStyle(_ token:)` | An SF Symbol at a font token's size, weight medium, rendered hierarchical (§3.7) | `font.*` | `svg` icons |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
 | `CapsuleStyle(.plain/.active)` | Toolbar capsules and filter chips: readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
-| `CoxSegmented(_ label:, selection:, options:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
+| `CoxSegmented(_ label:, selection:, options:, look:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). `look` marks the selected segment per option: `plain`, `tinted(colour)` label, or `filled(colour)` pill with a white label (the §3.1 mode colours). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
 | `CoxToggleStyle`, `CoxSlider(_ label:, value:, in:)` | Toggles and sliders with the shared 3D `Knob` (white disc, hairline rim, e1) over an `insetWell` track filled with `accent`; the toggle's knob slides, or cross-fades under Reduce Motion. The slider is a view: macOS has no public `SliderStyle` | `e1`, `accent`, `fill.secondary` | `.tog`, `.slider` |
 
 ### 6.2 Atoms
@@ -258,12 +260,12 @@ component.
 
 | Molecule | Built from | CSS |
 | --- | --- | --- |
-| `SessionRow` | StatusDot, title, subtitle, cost | `.row` |
-| `SessionFilter` | search field, KeyCap | `.filter` |
-| `Breadcrumb` | title, project, branch | `.crumb` |
-| `ModelCapsule`, `CostCapsule` | CapsuleStyle, ProgressRing | `.cap` |
-| `ModeSegmented` | SegmentedStyle; ask, plan, auto, bypass | `.seg` |
-| `StopButton` | KeyCap | `.stop` |
+| `SessionRow(item, isSelected:)` | StatusDot, title, subtitle, cost; selected on `accent.soft` at e1 | `.row` |
+| `SessionFilter(text:, prompt:, shortcut:)` | search field in an `insetWell`, KeyCap | `.filter` |
+| `Breadcrumb(title, project:, branch:)` | title, project, branch | `.crumb` |
+| `ModelCapsule(model, isOpen:)`, `CostCapsule(cost:, context:, fraction:, isOpen:)` | CapsuleStyle (active while open), ProgressRing | `.cap` |
+| `ModeSegmented(selection:)` | CoxSegmented; ask, plan, auto, bypass (offered only while on) | `.seg` |
+| `StopButton` | KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
 | `ToolHeader` | IconTile, summary, RiskChip, status, disclosure | `.tool .h` |
 | `DiffLineView`, `DiffHunkView` | gutter, syntax runs | `.diff .ln`, `.hh` |
 | `CodeBlockView` | header, copy button, highlighted runs | `.codeblock` |

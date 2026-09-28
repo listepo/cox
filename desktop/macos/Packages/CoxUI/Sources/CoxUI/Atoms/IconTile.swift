@@ -23,9 +23,7 @@ struct IconTile: View {
     let shape = RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
     Image(systemName: symbol)
       // The mockup's 13 pt glyph is `font.body`'s size, so it scales with the text size.
-      .textStyle(.body)
-      .fontWeight(.medium)
-      .symbolRenderingMode(.hierarchical)
+      .symbolStyle(.body)
       .foregroundStyle(kind.glyph)
       .frame(width: Size.iconTile, height: Size.iconTile)
       .background {
