@@ -5436,3 +5436,50 @@ Check:
 - All 30 mockup screens render byte-identical before and after.
 - No Swift tests: no generated Swift changed.
 Not done: none.
+
+#### T37.29.3.2 Context tab: per-turn cost history
+
+Depends: T37.29.3.1 · Size: ~180 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: cox-app `LiveSession::turn_costs()` over the ledger's `usage` rows by turn (input, output, cache read and write, `$`, subagent rows indented) plus the session total, forwarded through cox-ffi into a KeyValueGrid "Cost by turn".
+Check: a cox-app test over a scripted two-turn session; snapshots.
+Status: done 2026-09-28
+Result:
+- cox-store `usage_ledger` (Diesel DSL; the rows in write order with `created_at`). `crates/cox-app/src/costs.rs` builds `TurnCosts` from the session's ledger rows and its child sessions' rows. A turn starts where the ledger's `turn` resets to 1; side calls (turn 0) join the turn they ran in; a subagent (job Explore/Shell/Agent) is a detail row under the last turn that started before it; forks and handoffs are left out; the total row is "Session" (commit 93ab45e8).
+- `LiveSession::turn_costs` → cox-ffi `SessionHandle.turn_costs` → CoxModel `SessionStore.costHistory()`; CoxUI ContextTab shows a "Cost by turn" KeyValueGrid.
+Deviations: about 17 files. A subagent row is labelled by its job alone, because job and tier wrapped at the inspector's width.
+Check:
+- In the branch: cox-store and cox-app 112, cox-ffi and cox 13; clippy and fmt clean; CoxModel 61, CoxCore 13, CoxUI 165 (4 new snapshots).
+- After merging into `p37-desktop`: `just test --changed-since` 1546 passed, 6 skipped; clippy on cox-store, cox-app, cox-ffi, cox-config and cox-protocol clean; CoxCore 13, CoxModel 66, CoxTranscriptText 35, CoxTranscript 48, CoxUI Context/Token/Settings 20.
+Not done: nothing calls `costHistory()` until the app target (T37.32.1, T37.22.3). Finding, not fixed: the ledger's `usage.turn` is the call number within a turn, so `cox stats --session` shows call indices as turns (ideas.md).
+
+#### T37.29.3.3 Context tab: project totals
+
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-store/…`, `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: a cox-store ledger query for today's and this week's spend per project, shown as the tab's footnote.
+Check: a cox-store or cox-app test; a snapshot.
+Status: done 2026-09-28
+Result:
+- cox-store `Store::project_spend(root, since)`: usage joined with sessions and grouped by cwd, in Diesel DSL. `costs.rs` `periods(now)` gives the start of the local day and of the ISO week (Monday) in UTC; `footnote()` gives mockup 10's line, "Project X today: $… · this week: $…". The project root is the git root, else the canonical cwd. The footnote shows before the session has spent anything (commit fc024c1e).
+Deviations:
+- The project is matched by the session's cwd being under the root, not by `project_slug`, which the core writes empty.
+- New dependency chrono 0.4.45 (no default features; `clock`, `std`) for local midnight and the week start. It was already in the lock and is listed in `rust.md`; rows in `toolchain.md` and §1.1.
+Check:
+- In the branch: cox-store, cox-app and cox-ffi 122; clippy and fmt clean; CoxCore 13, CoxModel 61, CoxUI 165.
+- After merging into `p37-desktop`: the same runs as T37.29.3.2.
+Not done: app wiring (T37.32.1, T37.22.3). Finding, not fixed: `project_totals(slug)` behind `/sessions` returns zeros because `project_slug` is always empty (ideas.md).
+
+#### T37.29.3.5 Context tab: cache hit per turn or per session, Compact now waits for the turn
+
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/src/meter_text.rs`, `crates/cox-config/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: A104 — cox-app formats the cache hit for the turn and for the session (from the ledger's `usage` rows); a config key owned by `cox-config` (schema, drift test, so the generated Settings window shows it) picks which one the tab shows, per turn by default. A105 — Compact now is disabled while a turn runs, read from the session status the tab already has.
+Check: a cox-app test of both figures over a scripted two-turn session; the config drift test; CoxUI snapshots of the session figure and of a disabled Compact now.
+Status: done 2026-09-28
+Result:
+- A104: `MeterText.cache_hit_session` ("88% this session"), from the session tally, which sums one `Event::Usage` per ledger row. The new config key `[desktop.context] cache_hit = "turn" | "session"` (default turn) has the `CacheHitScope` enum in `cox-protocol` `config.rs` and a `default.toml` line; `docs/config.jsonschema` and `docs/config.md` are regenerated. It is not on the project-config guard list, because it is a display setting. `SettingsStore.cacheHitScope` and `SessionStore.contextTab(cacheHit:)` pick the figure (commit d5080dfb).
+- A105: `ContextTabState.turnRunning` is true while the meter's current turn is not done, and ContextTab disables Compact now while it is.
+Deviations: the cox-ffi record, the Swift `MeterText` and its conversion, and the four re-recorded fixtures. One snapshot set covers the session figure and the disabled button.
+Check:
+- cox-protocol and cox-config 124 (both drift tests and a `desktop.context.cache_hit` round trip); cox-app and cox-ffi 97 (`the_cache_hit_is_formatted_for_the_last_turn_and_for_the_session`); clippy and fmt clean.
+- CoxModel 66, CoxCore 13, CoxUI 167 (4 new `contextTabWhileATurnRuns` snapshots).
+- After merging into `p37-desktop`: the same runs as T37.29.3.2.
+Not done: the app target passes `SettingsStore.cacheHitScope` into the tab (T37.22.3).

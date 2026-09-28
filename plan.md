@@ -27,11 +27,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.29.3 | todo | P2 | 4 | 25% | |
-| T37.29.3.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.29.3.3 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.29.3 | todo | P2 | 4 | 80% | |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
-| T37.29.3.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28.6 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -157,7 +154,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-session` | session assembly as a library (T37.1; split out of `cox`): `open(SessionSpec)` → session, effective config and typed `Warning`s — provider, tools, MCP, skills, hooks, plugins, fork/handoff/resume lineage, external agents; login-shell environment (T37.11). No clap, no anyhow, no printing | async-trait, tokio-util, agent-client-protocol (moved from `cox` with the external-agent code), nix `signal` (T37.11: process-group kill of a slow login shell) |
-| `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui` |
+| `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui`; chrono 0.4 (no default features; `clock`, `std`): local midnight and the ISO week start for the Context tab's project totals (T37.29.3.3) |
 | `cox-ffi` | the macOS app's UniFFI surface (T37.14): one tokio runtime, `App` and `SessionHandle` objects, the foreign `AppHost` trait, `#[uniffi::remote]` mirrors of cox-app types, a fixture recorder. `staticlib` + `lib`; the only crate that depends on uniffi | uniffi 0.32.2 (proc-macros, no UDL; default features off); dev: syn 3.0.5 (`full`, `parsing`; T37.39.1: `tests/forward_only.rs` parses the FFI sources) |
 | `desktop/` | the macOS app (P37, not a Cargo crate): Swift packages under `desktop/macos/Packages/`, the design tokens and their generator under `desktop/design/` | node 24.21.0 (mise) with npm `style-dictionary` 5.5.5 (T37.17: DTCG tokens → Swift, asset colours, CSS); SwiftLint 0.65.1 (mise, aqua; T37.18: DS§9 no-literal rules) and SwiftLintPlugins at the same version in each package; `swift-format` from the Xcode toolchain; swift-collections 1.7.1 (T37.16: `OrderedDictionary` timeline store); swift-snapshot-testing 1.19.6 (T37.19: `CoxUI` snapshot tests) |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2, base64 0.23 (`image`, T40.1) |
@@ -2751,29 +2748,11 @@ Depends: T37.25.1 · Size: split into T37.29.3.1–T37.29.3.4 · Files: see the 
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
 
-#### T37.29.3.2 Context tab: per-turn cost history
-
-Depends: T37.29.3.1 · Size: ~180 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
-Goal: cox-app `LiveSession::turn_costs()` over the ledger's `usage` rows by turn (input, output, cache read and write, `$`, subagent rows indented) plus the session total, forwarded through cox-ffi into a KeyValueGrid "Cost by turn".
-Check: a cox-app test over a scripted two-turn session; snapshots.
-
-#### T37.29.3.3 Context tab: project totals
-
-Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-store/…`, `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
-Goal: a cox-store ledger query for today's and this week's spend per project, shown as the tab's footnote.
-Check: a cox-store or cox-app test; a snapshot.
-
 #### T37.29.3.4 Context tab: budget cap and how close it is
 
 Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
 Goal: the configured cap and the spend as `$0.42 of $5.00` with a gauge. On hold by the creator (2026-09-28). Needs the creator's choice before it is claimed: where the cap comes from (a config key or the existing budget setting), whether it is per session or per day, and what the tab shows with no cap.
 Check: a cox-app test for the figure; snapshots with and without a cap.
-
-#### T37.29.3.5 Context tab: cache hit per turn or per session, Compact now waits for the turn
-
-Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/src/meter_text.rs`, `crates/cox-config/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
-Goal: A104 — cox-app formats the cache hit for the turn and for the session (from the ledger's `usage` rows); a config key owned by `cox-config` (schema, drift test, so the generated Settings window shows it) picks which one the tab shows, per turn by default. A105 — Compact now is disabled while a turn runs, read from the session status the tab already has.
-Check: a cox-app test of both figures over a scripted two-turn session; the config drift test; CoxUI snapshots of the session figure and of a disabled Compact now.
 
 #### T37.28.6 Review comments queue while a turn runs
 
