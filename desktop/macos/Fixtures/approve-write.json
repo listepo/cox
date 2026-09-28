@@ -5,8 +5,8 @@
         "op": "status",
         "status": {
           "queued": 0,
-          "mode": "default",
-          "next_mode": "plan",
+          "mode": "auto",
+          "next_mode": "default",
           "model": "claude-sonnet-5",
           "effort": "high"
         }
@@ -16,14 +16,14 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KV6PZGXJJ1ZFV28AVAMHJM",
+          "id": "turn:01M3KWZGSBK09D192Y99FVKV94",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
             "model": "claude-sonnet-5",
             "tier": "code",
             "usage": {
-              "input_tokens": 3710,
+              "input_tokens": 3709,
               "output_tokens": 16,
               "cache_read_tokens": 0,
               "cache_write_tokens": 0,
@@ -39,7 +39,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KV6PZGSPS9931JAGHPBF08",
+          "id": "item:01M3KWZGSB094WE8VC89XY2GSR",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -47,12 +47,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KV6PZGXJJ1ZFV28AVAMHJM"
+        "after": "turn:01M3KWZGSBK09D192Y99FVKV94"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KV6PZNCMGV7R0P2JH38W1X",
+          "id": "item:01M3KWZGSF8T95F8FJ84W2GX5W",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -76,50 +76,87 @@
             }
           }
         },
-        "after": "item:01M3KV6PZGSPS9931JAGHPBF08"
+        "after": "item:01M3KWZGSB094WE8VC89XY2GSR"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KWZGSFTH7ZWJR01ZFJSXYH",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "write",
+            "summary": "Wrote `summary.md` · 1 line",
+            "icon": "edit",
+            "risk": "write",
+            "state": "done",
+            "tail": "wrote /project/summary.md (6 bytes)",
+            "archive": {
+              "id": "01M3KWZGSJ43YAFFGJ451XTR6V",
+              "bytes": 102
+            },
+            "diff": null,
+            "duration_ms": 1
+          }
+        },
+        "after": "item:01M3KWZGSF8T95F8FJ84W2GX5W"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "checkpoint:11",
+          "turn": 1,
+          "kind": {
+            "type": "checkpoint",
+            "files": [
+              "/project/summary.md"
+            ]
+          }
+        },
+        "after": "call:01M3KWZGSFTH7ZWJR01ZFJSXYH"
       },
       {
         "op": "usage",
         "usage": {
           "session": {
-            "sent": 3710,
+            "sent": 3709,
             "received": 16,
             "cache_read": 0,
             "cache_write": 0,
-            "uncached": 3710,
+            "uncached": 3709,
             "cost_usd": 0.0,
             "calls": 1,
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KV6PZGXJJ1ZFV28AVAMHJM",
+            "turn": "01M3KWZGSBK09D192Y99FVKV94",
             "tally": {
-              "sent": 3710,
+              "sent": 3709,
               "received": 16,
               "cache_read": 0,
               "cache_write": 0,
-              "uncached": 3710,
+              "uncached": 3709,
               "cost_usd": 0.0,
               "calls": 1,
               "estimated": true
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 32784.13084146619,
+            "tok_per_s": 65911.4315139032,
             "exact": true,
             "sparkline": [],
             "done": false
           },
-          "context_tokens": 3710,
+          "context_tokens": 3709,
           "text": {
             "sent": "3.7k",
             "received": "16",
-            "rate": "32784",
-            "spoken": "3.7 thousand tokens sent, 16 received, 32784 tokens per second",
+            "rate": "65911",
+            "spoken": "3.7 thousand tokens sent, 16 received, 65911 tokens per second",
             "heading": "This turn · 1 request",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 32784 tok/s · first token 0 ms · peak 32784 tok/s",
+            "rate_detail": "avg 65911 tok/s · first token 0 ms · peak 65911 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -165,137 +202,43 @@
               }
             ],
             "context": "Context · 3.7k",
+            "context_share": "0.4% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "109",
+                "share": 0.00010856841388699797
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "3.5k",
+                "share": 0.0034571465282505105
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "16",
+                "share": 0.000015780292716133424
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "128",
+                "share": 0.00012750476514635805
+              }
+            ],
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KV6PZNGSBQ1Q7M82YPH674",
-          "turn": 1,
-          "kind": {
-            "type": "tool",
-            "tool": "write",
-            "summary": "Writing `summary.md` · 1 line",
-            "icon": "edit",
-            "risk": "write",
-            "state": "running",
-            "tail": "",
-            "archive": null,
-            "diff": null,
-            "duration_ms": 0
-          }
-        },
-        "after": "item:01M3KV6PZNCMGV7R0P2JH38W1X"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "approval:01M3KV6PZNGSBQ1Q7M82YPH674",
-          "turn": 1,
-          "kind": {
-            "type": "approval",
-            "call": "01M3KV6PZNGSBQ1Q7M82YPH674",
-            "tool": "write",
-            "summary": "summary.md",
-            "input": {
-              "content": "hello\n",
-              "path": "summary.md"
-            },
-            "grants": [
-              "summary.md"
-            ],
-            "why": {
-              "type": "risk",
-              "risk": "write"
-            },
-            "source": {
-              "session": "01M3KV6PREWXD4JN91QJ5HWPDF"
-            },
-            "decision": null,
-            "by": null
-          }
-        },
-        "after": "call:01M3KV6PZNGSBQ1Q7M82YPH674"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KV6PZNGSBQ1Q7M82YPH674",
-          "turn": 1,
-          "kind": {
-            "type": "approval",
-            "call": "01M3KV6PZNGSBQ1Q7M82YPH674",
-            "tool": "write",
-            "summary": "summary.md",
-            "input": {
-              "content": "hello\n",
-              "path": "summary.md"
-            },
-            "grants": [
-              "summary.md"
-            ],
-            "why": {
-              "type": "risk",
-              "risk": "write"
-            },
-            "source": {
-              "session": "01M3KV6PREWXD4JN91QJ5HWPDF"
-            },
-            "decision": {
-              "type": "allow"
-            },
-            "by": "user"
-          }
-        },
-        "after": "call:01M3KV6PZNGSBQ1Q7M82YPH674"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "checkpoint:12",
-          "turn": 1,
-          "kind": {
-            "type": "checkpoint",
-            "files": [
-              "/project/summary.md"
-            ]
-          }
-        },
-        "after": "approval:01M3KV6PZNGSBQ1Q7M82YPH674"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KV6PZNGSBQ1Q7M82YPH674",
-          "turn": 1,
-          "kind": {
-            "type": "tool",
-            "tool": "write",
-            "summary": "Wrote `summary.md` · 1 line",
-            "icon": "edit",
-            "risk": "write",
-            "state": "done",
-            "tail": "wrote /project/summary.md (6 bytes)",
-            "archive": {
-              "id": "01M3KV6Q04PAEW961V1E1AE4ZH",
-              "bytes": 102
-            },
-            "diff": null,
-            "duration_ms": 2
-          }
-        },
-        "after": "item:01M3KV6PZNCMGV7R0P2JH38W1X"
-      }
-    ],
-    [
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KV6Q062JXBTCVTRTE8Z94V",
+          "id": "item:01M3KWZGSKAMPS944ER3EA56WV",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -326,19 +269,19 @@
             }
           }
         },
-        "after": "checkpoint:12"
+        "after": "checkpoint:11"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KV6PZGXJJ1ZFV28AVAMHJM",
+          "id": "turn:01M3KWZGSBK09D192Y99FVKV94",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
             "model": "claude-sonnet-5",
             "tier": "code",
             "usage": {
-              "input_tokens": 7465,
+              "input_tokens": 7464,
               "output_tokens": 21,
               "cache_read_tokens": 0,
               "cache_write_tokens": 0,
@@ -357,30 +300,30 @@
         "op": "usage",
         "usage": {
           "session": {
-            "sent": 7465,
+            "sent": 7464,
             "received": 21,
             "cache_read": 0,
             "cache_write": 0,
-            "uncached": 7465,
+            "uncached": 7464,
             "cost_usd": 0.0,
             "calls": 2,
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KV6PZGXJJ1ZFV28AVAMHJM",
+            "turn": "01M3KWZGSBK09D192Y99FVKV94",
             "tally": {
-              "sent": 7465,
+              "sent": 7464,
               "received": 21,
               "cache_read": 0,
               "cache_write": 0,
-              "uncached": 7465,
+              "uncached": 7464,
               "cost_usd": 0.0,
               "calls": 2,
               "estimated": true
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 183486.2385321101,
+            "tok_per_s": 180180.18018018018,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -389,12 +332,12 @@
           "text": {
             "sent": "7.5k",
             "received": "21",
-            "rate": "183486",
-            "spoken": "7.5 thousand tokens sent, 21 received, 183486 tokens per second",
+            "rate": "180180",
+            "spoken": "7.5 thousand tokens sent, 21 received, 180180 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 40754 tok/s · first token 0 ms · peak 183486 tok/s",
+            "rate_detail": "avg 77634 tok/s · first token 0 ms · peak 180180 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -440,53 +383,50 @@
               }
             ],
             "context": "Context · 3.8k",
+            "context_share": "0.4% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "110",
+                "share": 0.0001099149081007488
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "3.5k",
+                "share": 0.0035000229748127975
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "16",
+                "share": 0.000015976004084411165
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "129",
+                "share": 0.0001290861130020422
+              }
+            ],
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
       }
     ]
   ],
-  "notes": [
-    {
-      "batch": 1,
-      "item": {
-        "session": "01M3KV6PREWXD4JN91QJ5HWPDF",
-        "source": {
-          "session": "01M3KV6PREWXD4JN91QJ5HWPDF"
-        },
-        "need": {
-          "type": "approval",
-          "call": {
-            "id": "01M3KV6PZNGSBQ1Q7M82YPH674",
-            "name": "write",
-            "input": {
-              "content": "hello\n",
-              "path": "summary.md"
-            },
-            "risk": "write",
-            "subject": "summary.md"
-          },
-          "why": {
-            "type": "risk",
-            "risk": "write"
-          }
-        },
-        "expired": false,
-        "seq": 1
-      },
-      "badge": 1
-    }
-  ],
+  "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KV6PZGXJJ1ZFV28AVAMHJM",
+      "id": "turn:01M3KWZGSBK09D192Y99FVKV94",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
         "model": "claude-sonnet-5",
         "tier": "code",
         "usage": {
-          "input_tokens": 7465,
+          "input_tokens": 7464,
           "output_tokens": 21,
           "cache_read_tokens": 0,
           "cache_write_tokens": 0,
@@ -500,7 +440,7 @@
       }
     },
     {
-      "id": "item:01M3KV6PZGSPS9931JAGHPBF08",
+      "id": "item:01M3KWZGSB094WE8VC89XY2GSR",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -509,7 +449,7 @@
       }
     },
     {
-      "id": "item:01M3KV6PZNCMGV7R0P2JH38W1X",
+      "id": "item:01M3KWZGSF8T95F8FJ84W2GX5W",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -534,7 +474,7 @@
       }
     },
     {
-      "id": "call:01M3KV6PZNGSBQ1Q7M82YPH674",
+      "id": "call:01M3KWZGSFTH7ZWJR01ZFJSXYH",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -545,43 +485,15 @@
         "state": "done",
         "tail": "wrote /project/summary.md (6 bytes)",
         "archive": {
-          "id": "01M3KV6Q04PAEW961V1E1AE4ZH",
+          "id": "01M3KWZGSJ43YAFFGJ451XTR6V",
           "bytes": 102
         },
         "diff": null,
-        "duration_ms": 2
+        "duration_ms": 1
       }
     },
     {
-      "id": "approval:01M3KV6PZNGSBQ1Q7M82YPH674",
-      "turn": 1,
-      "kind": {
-        "type": "approval",
-        "call": "01M3KV6PZNGSBQ1Q7M82YPH674",
-        "tool": "write",
-        "summary": "summary.md",
-        "input": {
-          "content": "hello\n",
-          "path": "summary.md"
-        },
-        "grants": [
-          "summary.md"
-        ],
-        "why": {
-          "type": "risk",
-          "risk": "write"
-        },
-        "source": {
-          "session": "01M3KV6PREWXD4JN91QJ5HWPDF"
-        },
-        "decision": {
-          "type": "allow"
-        },
-        "by": "user"
-      }
-    },
-    {
-      "id": "checkpoint:12",
+      "id": "checkpoint:11",
       "turn": 1,
       "kind": {
         "type": "checkpoint",
@@ -591,7 +503,7 @@
       }
     },
     {
-      "id": "item:01M3KV6Q062JXBTCVTRTE8Z94V",
+      "id": "item:01M3KWZGSKAMPS944ER3EA56WV",
       "turn": 1,
       "kind": {
         "type": "assistant",
