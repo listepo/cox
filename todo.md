@@ -21,11 +21,12 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.24.10. Think toggle in the composer
-- T37.28.3. Revert one file to before turn N
+- T37.24.11. `/think` and the think toggle run their turn on the think tier
 - T37.28.4. Line comments sent to the agent
-- T37.28.5. A skipped restore says why
 - T37.29.3. Inspector Context & Cost tab
+- T37.29.3.2. Context tab: per-turn cost history
+- T37.29.3.3. Context tab: project totals
+- T37.29.3.4. Context tab: budget cap and how close it is
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`

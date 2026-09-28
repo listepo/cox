@@ -5310,3 +5310,71 @@ Deviations: none.
 Check:
 - After merging into `p37-desktop`: CoxTranscriptText 35, CoxTranscript 48, CoxUI 161.
 Not done: none.
+
+#### T37.29.3.1 Context tab: context split, cache hit, Compact now
+
+Depends: T37.25.1 · Size: ~190 · Files: `crates/cox-app/src/meter_text.rs`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `desktop/macos/Packages/CoxModel/…`
+Goal: the window as a StackedBar by part with a Free row in the legend, the share of the window, the turn's cache hit and Compact now, all from the Meter's latest `ContextBreakdown`.
+Check: a CoxModel test that the fixture reaches the tab and that Compact sends one `Intent.compact`; snapshots.
+Status: done 2026-09-28
+Result:
+- cox-app `MeterText` gains `context_free` (the window minus the context) and `cache_hit` (`94% this turn`); the footnote reuses the same cache-hit figure; cox-ffi mirrors both (commit 50eb2c0c).
+- CoxModel `ContextSplit` is the one mapping of the split, shared by the token popover and the tab; `ContextTabState`, `SessionStore.contextTab` and `compactNow()`, which sends `.compact(focus: nil)`. CoxUI `Organisms/ContextTab.swift` with preview states; a DS§6.4 row and the Usage line in `docs/design/desktop.md`.
+- Merged with T37.25.2: one set of meter types, in `CoxClient/Meter.swift` and `CoxCore/Convert+Meter.swift`; the popover now takes its parts from `ContextSplit` (commit f566cbf3).
+Deviations:
+- About 11 files, the same record → convert → client → state → view chain the other tabs needed.
+- The legend uses cox-app's labels without the mockup's counts, because the breakdown doesn't carry them.
+- No cache gauge: no CoxUI component draws one yet.
+Check:
+- In the branch: `just test --changed-since p37-desktop` 479 passed; CoxModel 54, CoxUI ContextTab 3, CoxCore 12.
+- After merging into `p37-desktop` with fixtures re-recorded: `just test --changed-since` 1514 passed, 5 skipped; CoxCore 12, CoxModel 58, CoxTranscriptText 35, CoxTranscript 48, CoxUI 164.
+Not done:
+- Nothing feeds the tab in the app yet; that waits for the app wiring (T37.22.3).
+- The mockup's "Auto-compact at 85%" is not in DT.
+- Open questions for the creator: is the cache hit per turn (as now) or per session? Should Compact now be disabled while a turn runs?
+
+#### T37.24.10 Think toggle in the composer
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…` (Composer), `desktop/macos/Packages/CoxModel/…`
+Goal (A103): the composer's think toggle from DS/DT (left out of T37.24.7) works for one turn, like `/think`: the next send goes out with `confirm_think` (the think tier), then the toggle turns itself off.
+Check: a CoxModel test that the toggle sends what the chosen behaviour needs; a CoxUI snapshot of both states.
+Status: done 2026-09-28
+Result:
+- `Intent::Send` and `Intent::Queue` in cox-app carry `confirm_think` (default false); a queued send keeps the flag it was sent with; cox-ffi mirrors the field (A90). CoxClient/CoxCore `Intent.send`/`.queue` carry `confirmThink` (commit 37a34371).
+- CoxModel `ComposerStore.think` and `toggleThink()`: the next turn, sent or queued, carries the flag, then the toggle turns off; a shell line or `/` command does not use it up (A103).
+- CoxUI `ComposerChip.Kind.think(Bool)` and a `ThinkChip` next to the model chip; `TokenMeter` is fixed-size in the chip row so the model chip's label truncates instead of the meter wrapping. DESIGN.md and desktop.md updated.
+Deviations: about 19 files plus 18 snapshots.
+Check:
+- In the branch: `just test --changed-since p37-desktop` 86 passed; CoxModel 52 (`theThinkToggleConfirmsOneTurnThenTurnsItselfOff`), CoxCore 12, CoxTranscript 45, CoxUI Composer/Token 9.
+- After merging into `p37-desktop`: CoxModel 58, CoxTranscript 48, CoxUI 164.
+Not done: `confirm_think` only passes the think tier's confirmation gate; it does not move a code-tier turn onto think, and the TUI `/think` has the same gap. Filed as T37.24.11.
+
+#### T37.28.5 A skipped restore says why
+
+Depends: — · Size: ~80 · Files: `crates/cox-protocol/…` (`Event::Rewound`'s skipped entries), `docs/protocol.jsonschema`, `crates/cox-core/src/rewind.rs`
+Goal (A101): each file a code rewind could not restore carries its reason — too large, outside the workspace roots, or the I/O error — and the notice counts them by reason (`2 too large to restore, 1 failed: <error>`) instead of calling every failure too large.
+Check: the protocol-schema drift test; a cox-core test where one file is over the size cap and one is unreadable gives two reasons and the matching notice.
+Status: done 2026-09-28
+Result:
+- `Event::Rewound.skipped` entries are `SkippedFile { path, reason }` with `SkipReason::TooLarge | OutsideRoots | Failed { error }` (A101, commit 12e4fe20); `docs/protocol.jsonschema` regenerated.
+- `cox-core/src/rewind.rs` gives each skipped file its reason and the notice counts them by reason (`1 too large to restore, 1 failed: io error`).
+Deviations: a rollout that stored `skipped` as bare paths still loads, each read as failed with "no reason recorded", so an old rollout still resumes.
+Check:
+- cox-protocol 103 (drift test and `a_skipped_path_without_a_reason_still_loads`); cox-core rewind 8 (`a_skipped_restore_carries_its_reason`); clippy and fmt clean.
+- After merging into `p37-desktop`: `just test --changed-since` 1521 passed, 5 skipped.
+Not done: none.
+
+#### T37.28.3 Revert one file to before turn N
+
+Depends: T37.28.1 · Size: ~120 · Files: `crates/cox-protocol/…` (a new `Submission`), `crates/cox-core/src/rewind.rs`, the cox-app intent
+Goal (A101): DT§5.4's per-file revert and ChangesTab's existing `.revert(path:)`: restore one file to its checkpoint before turn N, checkpointing it first so the revert can itself be undone. A new `Submission` approved by A101.
+Check: a cox-app test reverts one file and leaves the other.
+Status: done 2026-09-28
+Result:
+- `Submission::RevertFile { path, to_turn }` handled by `revert_file` in `cox-core/src/rewind.rs` (A101, commit aeb69eab): the rewind's restore limited to one path, checkpointing the file's current bytes first under a turn of their own, so `/redo` or a rewind undoes it; history stays append-only. The path is confined by the checkpointer's `preimages`; a path outside the roots or unreadable is refused with a warning notice.
+- Wired through `Intent::RevertFile` (cox-app), the cox-ffi type mirror, `Intent.revertFile` (CoxClient/CoxCore) and CoxModel `SessionStore.revert(path:)`, which sends `to_turn` 1.
+Deviations: more than 3 files, because the intent runs through cox-ffi and the Swift packages; no TUI slash command (the card asks for none).
+Check:
+- `reverting_one_file_restores_it_and_leaves_the_other`, `revert_file_restores_only_that_file`, `every_intent_maps_to_its_submission`; clippy and fmt clean; a real-binary scripted write under a scratch `COX_HOME`.
+- After merging into `p37-desktop` (merge 8944da74): `just test --changed-since` 1521 passed, 5 skipped; clippy on cox-core, cox-app, cox-ffi and cox-protocol clean; CoxCore 12, CoxModel 59.
+Not done: the headless surface has no way to send a revert, so the real-binary run covered the checkpoint, not the revert.

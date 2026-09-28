@@ -27,11 +27,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.24.10 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.28.3 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.24.11 | todo | P2 | 3 | 0% | |
 | T37.28.4 | todo | P3 | 2 | 0% | |
-| T37.28.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.29.3 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.29.3 | todo | P2 | 4 | 25% | |
+| T37.29.3.2 | todo | P2 | 3 | 0% | |
+| T37.29.3.3 | todo | P3 | 2 | 0% | |
+| T37.29.3.4 | todo | P3 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2743,17 +2744,11 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.24.10 Think toggle in the composer
+#### T37.24.11 `/think` and the think toggle run their turn on the think tier
 
-Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…` (Composer), `desktop/macos/Packages/CoxModel/…`
-Goal (A103): the composer's think toggle from DS/DT (left out of T37.24.7) works for one turn, like `/think`: the next send goes out with `confirm_think` (the think tier), then the toggle turns itself off.
-Check: a CoxModel test that the toggle sends what the chosen behaviour needs; a CoxUI snapshot of both states.
-
-#### T37.28.3 Revert one file to before turn N
-
-Depends: T37.28.1 · Size: ~120 · Files: `crates/cox-protocol/…` (a new `Submission`), `crates/cox-core/src/rewind.rs`, the cox-app intent
-Goal (A101): DT§5.4's per-file revert and ChangesTab's existing `.revert(path:)`: restore one file to its checkpoint before turn N, checkpointing it first so the revert can itself be undone. A new `Submission` approved by A101.
-Check: a cox-app test reverts one file and leaves the other.
+Depends: T37.24.10 · Size: ~60 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
+Goal: D5 and A103 — `UserTurn { confirm_think: true }` routes that one turn's main request to `Tier::Think`, then the session goes back to its own tier. Today `Router::pick` takes the main tier from the session override or the session tier and uses `confirm_think` only to pass the confirmation gate, so `/think` and the desktop toggle on a code-tier session still run on code; only `--deep` reaches think, through a session-wide `SwitchModel`. Architect mode (which already sets `confirm_think` while on the think tier) must keep working.
+Check: a cox-core test that a code-tier session's `confirm_think` turn requests the think model and the next plain turn requests the code model again.
 
 #### T37.28.4 Line comments sent to the agent
 
@@ -2761,17 +2756,29 @@ Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `cra
 Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
 Check: a cox-app test of the message; a snapshot of a draft.
 
-#### T37.28.5 A skipped restore says why
-
-Depends: — · Size: ~80 · Files: `crates/cox-protocol/…` (`Event::Rewound`'s skipped entries), `docs/protocol.jsonschema`, `crates/cox-core/src/rewind.rs`
-Goal (A101): each file a code rewind could not restore carries its reason — too large, outside the workspace roots, or the I/O error — and the notice counts them by reason (`2 too large to restore, 1 failed: <error>`) instead of calling every failure too large.
-Check: the protocol-schema drift test; a cox-core test where one file is over the size cap and one is unreadable gives two reasons and the matching notice.
-
 #### T37.29.3 Inspector Context & Cost tab
 
-Depends: T37.25.1 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
+Depends: T37.25.1 · Size: split into T37.29.3.1–T37.29.3.4 · Files: see the sub-cards
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
+
+#### T37.29.3.2 Context tab: per-turn cost history
+
+Depends: T37.29.3.1 · Size: ~180 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: cox-app `LiveSession::turn_costs()` over the ledger's `usage` rows by turn (input, output, cache read and write, `$`, subagent rows indented) plus the session total, forwarded through cox-ffi into a KeyValueGrid "Cost by turn".
+Check: a cox-app test over a scripted two-turn session; snapshots.
+
+#### T37.29.3.3 Context tab: project totals
+
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-store/…`, `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: a cox-store ledger query for today's and this week's spend per project, shown as the tab's footnote.
+Check: a cox-store or cox-app test; a snapshot.
+
+#### T37.29.3.4 Context tab: budget cap and how close it is
+
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: the configured cap and the spend as `$0.42 of $5.00` with a gauge. Needs the creator's choice before it is claimed: where the cap comes from (a config key or the existing budget setting), whether it is per session or per day, and what the tab shows with no cap.
+Check: a cox-app test for the figure; snapshots with and without a cap.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
