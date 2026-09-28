@@ -5224,3 +5224,19 @@ Check:
 - `cargo nextest run -p cox-render -p cox-app -p cox-ffi -p cox-tui` 382/382 (`a_rust_edits_keyword_run_carries_the_dark_and_the_light_colour`, `a_theme_pairs_with_its_sibling_and_an_unpaired_one_serves_both`, `every_highlighted_run_carries_the_light_variant_too`); clippy (also `--no-default-features`) and fmt clean. CoxModel 44, CoxUI 149, CoxTranscript 40, CoxCore 12.
 - After merging T37.24.7, T37.23.9, T37.25.1 and T37.23.16 into `p37-desktop` (fixtures re-recorded): `just test --changed-since` 1511 passed, 5 skipped; clippy on the changed crates and fmt clean; CoxCore 12, CoxModel 48, CoxTranscriptText 34, CoxTranscript 45, CoxUI 158.
 Not done: code blocks in replies keep one (dark) colour — A95 covers edit cards.
+
+#### T37.28.2 Review pane: files by turn and their diff
+
+Depends: T37.28.1 · Size: ~180 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs` (new), CoxModel mapping
+Goal (A101): DT§5.4's split view — on the left the files grouped by turn with +/− counts and the RewindTimeline ("Rewind to here"), on the right the selected file's unified `DiffModel` through `DiffHunkView`, with the ⌘⌥D side-by-side toggle. After a code-only rewind the diff is the net difference between the checkpoint copy and the file on disk, not the model's calls one by one. The Changes tab's plain Rewind (`.rewind(checkpoint:)`) restores code only (DT§5.2 "Restore code to here"); the three scopes stay in the timeline.
+Check: a cox-app test gives the per-file diff after two edits; a snapshot per cell.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/review.rs` and `LiveSession::review(path)`: the net diff A101 asks for — the first checkpoint copy of the path from the store's archive (empty if the session created it) against the file on disk, read through `GitCheckpointer::preimages` under `path::confine` against the session's workspace roots (now kept on `LiveSession`). `cox_render::diffmodel::between(path, old, new, theme)` feeds similar's unified text to the existing `model`, so word ranges and highlighting match the edit cards; no hunks when nothing differs, `None` for an unchanged, outside or over-cap path.
+- cox-ffi `SessionHandle::review` (one-expression forward); `SessionClient.review(_:)` (the fixture takes `reviews:`), CoxCore `LiveSession.review`. CoxModel `ReviewState` groups `changes::build`'s files by turn with the checkpoints; `SessionStore.review(path:)`; `SessionStore.rewind(checkpoint:)` is the Changes tab's plain Rewind, code only.
+- CoxUI `Organisms/ReviewPane.swift`: files by turn with +/− counts, the RewindTimeline under them, the open file's diff as `DiffHunkView`s; `Previews/PreviewState+Review.swift`, 6 snapshots, DESIGN.md DS§6.4 row.
+Deviations: ~270 non-test lines in 13 files; the ⌘⌥D side-by-side toggle left out.
+Check:
+- `cargo nextest run -p cox-ffi -p cox-app`: 80/80 including `review_diffs_each_file_against_its_checkpoint_and_after_a_code_rewind_nets_to_nothing`; clippy and fmt clean. CoxModel 50, CoxUI ReviewPane/ChangesTab/RewindTimeline 12, CoxCore 12.
+- After merging into `p37-desktop`: `just test --changed-since` 534 passed, 1 skipped; clippy and fmt clean; CoxCore 12, CoxModel 51, CoxUI ReviewPane/ChangesTab/RewindTimeline 12.
+Not done: app wiring (⌘⇧R, `ReviewState` → `ReviewPane.State`, T37.32); the side-by-side toggle; the file list's +/− counts are still the model's calls, only the diff pane shows the net change.

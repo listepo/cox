@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.25.2 | todo | P2 | 2 | 0% | |
 | T37.25.3 | todo | P2 | 2 | 0% | |
 | T37.24.10 | todo | P3 | 2 | 0% | |
-| T37.28.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28.3 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28.4 | todo | P3 | 2 | 0% | |
 | T37.28.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -2784,12 +2783,6 @@ Check: `insta` snapshots of the status line and the `/context` overlay in dark, 
 Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…` (Composer), `desktop/macos/Packages/CoxModel/…`
 Goal: the composer's think toggle from DS/DT (left out of T37.24.7). Needs the creator's choice before it is claimed: one turn per click through the existing `/think` (`confirm_think`, the think tier), sticky until turned off, or extended thinking on/off through a new `Submission`.
 Check: a CoxModel test that the toggle sends what the chosen behaviour needs; a CoxUI snapshot of both states.
-
-#### T37.28.2 Review pane: files by turn and their diff
-
-Depends: T37.28.1 · Size: ~180 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs` (new), CoxModel mapping
-Goal (A101): DT§5.4's split view — on the left the files grouped by turn with +/− counts and the RewindTimeline ("Rewind to here"), on the right the selected file's unified `DiffModel` through `DiffHunkView`, with the ⌘⌥D side-by-side toggle. After a code-only rewind the diff is the net difference between the checkpoint copy and the file on disk, not the model's calls one by one. The Changes tab's plain Rewind (`.rewind(checkpoint:)`) restores code only (DT§5.2 "Restore code to here"); the three scopes stay in the timeline.
-Check: a cox-app test gives the per-file diff after two edits; a snapshot per cell.
 
 #### T37.28.3 Revert one file to before turn N
 

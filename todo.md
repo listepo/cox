@@ -27,7 +27,6 @@
 - T37.25.2. Context split in the desktop token popover
 - T37.25.3. Context split in the TUI
 - T37.24.10. Think toggle in the composer
-- T37.28.2. Review pane: files by turn and their diff
 - T37.28.3. Revert one file to before turn N
 - T37.28.4. Line comments sent to the agent
 - T37.28.5. A skipped restore says why
