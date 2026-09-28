@@ -8,7 +8,8 @@ import SwiftUI
 
 /// `content` on a chrome glass layer of `kind`: the material, window opacity and Depth come
 /// from `coxAppearance` through `glassPane` and `elevation`, so `[desktop.appearance]` and
-/// Reduce Transparency reach every pane alike.
+/// Reduce Transparency reach every pane alike. The panes tint the window's behind-window blur
+/// rather than frost it again, so the wallpaper's colour shows through at the window opacity.
 struct ShellPane<Content: View>: View {
   let kind: ShellPaneKind
   let content: Content
@@ -26,7 +27,7 @@ struct ShellPane<Content: View>: View {
       content
     }
     .clipShape(shape)
-    .glassPane(shape, surface: kind.surface)
+    .glassPane(shape, surface: kind.surface, frosts: false)
     .hairline(in: shape)
     .elevation(kind.elevation, cornerRadius: kind.radius)
   }

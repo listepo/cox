@@ -17,6 +17,10 @@ use crate::meter_text::{MeterText, Rates};
 
 /// The rolling window live tok/s is estimated over.
 pub const WINDOW: Duration = Duration::from_secs(2);
+/// The shortest span a rate is taken over: below it the clock's jitter, not
+/// the stream, sets the figure (a scripted or replayed call streams in
+/// microseconds, which read as 180 000 tok/s), so no rate shows.
+pub const MIN_SPAN: Duration = Duration::from_millis(100);
 /// Sparkline points kept, one per output delta.
 pub const SPARK_POINTS: usize = 32;
 /// Bytes per token of the live estimate. Not `cox_tokens::estimate`: that
@@ -209,7 +213,7 @@ impl Meter {
             .window
             .front()
             .map_or(0.0, |(at, _)| now.saturating_sub(*at).as_secs_f64());
-        if span > 0.0 {
+        if span >= MIN_SPAN.as_secs_f64() {
             let rate = self.window.iter().skip(1).map(|(_, n)| n).sum::<f64>() / span;
             (t.tok_per_s, t.exact) = (Some(rate), false);
             t.sparkline.push(rate);
@@ -228,14 +232,16 @@ fn estimate(bytes: usize) -> u32 {
 
 /// A call's exact tok/s and the seconds it is over: its reported output
 /// over the time from its first output delta to its usage, or over the ledger's latency (which includes
-/// the wait for the first token) when that time is unknown — a call that
-/// streamed no text, or a replay. `None` for a call that produced nothing.
+/// the wait for the first token) when that time is unknown or under
+/// `MIN_SPAN` — a call that streamed no text, streamed it in one burst, or a
+/// replay. `None` for a call that produced nothing or took under `MIN_SPAN`.
 fn exact_rate(usage: &Usage, streamed: Option<Duration>) -> Option<(f64, f64)> {
-    let secs = streamed
-        .filter(|d| !d.is_zero())
-        .unwrap_or(Duration::from_millis(usage.latency_ms))
-        .as_secs_f64();
-    (secs > 0.0 && usage.output_tokens > 0).then(|| (f64::from(usage.output_tokens) / secs, secs))
+    let span = streamed
+        .filter(|d| *d >= MIN_SPAN)
+        .unwrap_or(Duration::from_millis(usage.latency_ms));
+    let secs = span.as_secs_f64();
+    (span >= MIN_SPAN && usage.output_tokens > 0)
+        .then(|| (f64::from(usage.output_tokens) / secs, secs))
 }
 
 /// `sum` plus one more call; the one sum the meter and `TurnMeta` share.
@@ -390,5 +396,52 @@ mod tests {
         }
         let t = meter.view().turn.clone().expect("turn");
         assert_eq!((t.tok_per_s, t.ttft_ms), (Some(100.0), Some(0)));
+    }
+
+    #[test]
+    fn a_rate_over_a_near_zero_span_does_not_show() {
+        let mut meter = Meter::default();
+        let turn = TurnId::new();
+        let started = Event::TurnStarted {
+            turn,
+            seq: 1,
+            job: Job::Main,
+            tier: Tier::Code,
+            model: ModelId("m".into()),
+        };
+        meter.apply(&started, ms(0));
+        // A scripted call: its deltas and usage microseconds apart, no latency.
+        let item = ItemId::new();
+        let us = Duration::from_micros;
+        for at in 1..=5 {
+            let text = "x".repeat(40);
+            meter.apply(&Event::TextDelta { item, text }, us(at));
+        }
+        let call = Event::Usage {
+            turn,
+            usage: usage(21, 0),
+        };
+        meter.apply(&call, us(6));
+        let view = meter.view();
+        let t = view.turn.clone().expect("turn");
+        assert_eq!((t.tok_per_s, t.sparkline.len()), (None, 0));
+        assert_eq!(view.text.rate, "");
+        // A burst under the floor falls back to the ledger latency.
+        meter.apply(
+            &Event::TextDelta {
+                item,
+                text: "y".into(),
+            },
+            ms(10),
+        );
+        meter.apply(
+            &Event::Usage {
+                turn,
+                usage: usage(50, 500),
+            },
+            ms(20),
+        );
+        let t = meter.view().turn.clone().expect("turn");
+        assert_eq!((t.tok_per_s, t.exact), (Some(100.0), true));
     }
 }

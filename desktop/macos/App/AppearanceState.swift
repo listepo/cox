@@ -35,12 +35,14 @@ extension AppearancePopover.State {
     depthText = Self.percent(depth)
   }
 
-  /// How far the blur the window draws sits in its range: Glossy's value is its reflection, so
-  /// its window takes the material's own light blur (DS§3.5).
+  /// How much of the system's behind-window blur the window draws, 0…1. AppKit blurs at one
+  /// radius, about Frosted's default, so that default and anything heavier take all of it —
+  /// nothing behind the window reads sharp — and a lighter blur fades it out. Glossy's value is
+  /// its reflection, so its window takes the material's own light blur (DS§3.5).
   var blurFraction: Double {
     switch material {
-    case .frosted: Self.fraction(blur, in: blurRange)
-    case .glossy: Self.fraction(MaterialToken.glossyBlur, in: blurRange)
+    case .frosted: min(max(blur / MaterialToken.frostedBlur, 0), 1)
+    case .glossy: MaterialToken.glossyBlur / MaterialToken.frostedBlur
     case .solid: 0
     }
   }
