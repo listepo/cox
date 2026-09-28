@@ -84,6 +84,9 @@ pub(crate) struct Inner {
     /// `call_id` → archived payload for microcompaction (T8.2): the request
     /// replaces old results with `Pointer`s, the stored history keeps them.
     pub(crate) archives: HashMap<CallId, ArchiveRef>,
+    /// This round's tool images (T40.5), already archived, waiting to join
+    /// the results message after every `ToolResult`.
+    tool_images: HashMap<CallId, Content>,
     /// Last request's prefix hashes + whether it hit the cache (T8.3).
     pub(crate) cache: CacheTracker,
     /// Last call's cache share, for the status line (T8.3 step 1).
@@ -515,6 +518,7 @@ impl Session {
                 discovered: Vec::new(),
                 turn_marks,
                 archives: HashMap::new(),
+                tool_images: HashMap::new(),
                 turn_seq: turns,
                 redone: None,
                 renamed: false,
@@ -1115,6 +1119,13 @@ impl Session {
     /// Remembers where a tool result is archived for microcompaction (T8.2).
     pub(crate) async fn remember_archive(&self, call: CallId, archive: ArchiveRef) {
         self.inner.lock().await.archives.insert(call, archive);
+    }
+
+    /// Holds a tool's archived image for this round's results message
+    /// (T40.5). A field on the session, not on `ToolResult`, because that
+    /// type has dozens of literal constructions.
+    pub(crate) async fn remember_image(&self, call: CallId, image: Content) {
+        self.inner.lock().await.tool_images.insert(call, image);
     }
 
     /// The live mode (`SetPermissionMode` changes it; the configured one
@@ -1824,7 +1835,32 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let msg = results_message(results);
+        let order: Vec<CallId> = results.iter().map(|(id, _)| *id).collect();
+        let mut msg = results_message(results);
+        // T40.5: images follow every `ToolResult` (Anthropic wants the
+        // results first; the Chat wire sends images as a user message after
+        // the tool messages), in call order.
+        let images: Vec<Content> = {
+            // Taken whole, so an interrupted round leaves nothing behind.
+            let mut held = std::mem::take(&mut self.inner.lock().await.tool_images);
+            order.iter().filter_map(|id| held.remove(id)).collect()
+        };
+        if !images.is_empty() {
+            if self.provider.accepts_images(&route.model.0) {
+                msg.content.extend(images);
+            } else {
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: format!(
+                        "{} tool image(s) not sent: {} does not take images on this provider; \
+                         each stays archived",
+                        images.len(),
+                        route.model
+                    ),
+                })
+                .await?;
+            }
+        }
         // T10.3: tool results are user-role text the user will grep for.
         let joined: String = msg
             .content

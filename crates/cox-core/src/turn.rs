@@ -8,10 +8,11 @@ use std::time::Instant;
 use cox_protocol::ArchivePut;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, TurnId};
+use cox_protocol::image;
 use cox_protocol::traits::{Relay, Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, ItemKind, Level,
-    Message, ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall,
+    Attachment, Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, ItemKind,
+    Level, Message, ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall,
     ToolOutput, ToolResult, Usage, Why,
 };
 use serde_json::Value;
@@ -643,6 +644,12 @@ async fn run_one(
                 .await;
         }
     }
+    // T40.5: an image reaches the model as its own block, so it is archived
+    // before anything is sent (the lossless rule) and the text names the row.
+    if let Some((media_type, data_b64)) = image::take_structured(&mut output) {
+        let line = forward_image(session, id, tool.spec().name, media_type, data_b64).await;
+        output.text.push_str(&line);
+    }
     let bytes = output.text.len() as u64;
     let archive = session
         .archive
@@ -718,6 +725,56 @@ async fn run_one(
     (id, result)
 }
 
+/// Checks a tool's image, archives its base64 as its own row and holds it
+/// for this round's results message (T40.5); returns the line the tool's
+/// visible text gains. Checked here too because an MCP server or a plugin
+/// can put anything under `structured["image"]`.
+async fn forward_image(
+    session: &Session,
+    call: CallId,
+    tool: String,
+    media_type: String,
+    data_b64: String,
+) -> String {
+    let checked = Attachment {
+        name: tool.clone(),
+        media_type,
+        data_b64,
+    };
+    if let Err(e) = image::validate(&checked) {
+        return format!("\n[image dropped: {e}]");
+    }
+    let Attachment {
+        media_type,
+        data_b64,
+        ..
+    } = checked;
+    let kib = (data_b64.len() / 4 * 3) as f64 / 1024.0;
+    let put = session
+        .archive
+        .put(ArchivePut {
+            session: session.id,
+            call,
+            tool,
+            subject: Some("image".into()),
+            bytes: data_b64.as_bytes().to_vec(),
+        })
+        .await;
+    let Ok(archive) = put else {
+        return format!("\n[image {media_type} could not be archived; not sent]");
+    };
+    let line = format!(
+        "\n[image {media_type}, {kib:.1} KiB, archived as {archive}; visible to the model in \
+         this turn only]"
+    );
+    let image = Content::Image {
+        media_type,
+        data_b64,
+    };
+    session.remember_image(call, image).await;
+    line
+}
+
 pub(crate) fn error_output(e: ToolError) -> ToolOutput {
     ToolOutput {
         text: e.to_string(),
@@ -757,6 +814,9 @@ pub(crate) fn results_message(results: Vec<(CallId, ToolResult)>) -> Message {
 mod tests {
     use std::path::PathBuf;
 
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use cox_protocol::traits::Provider;
     use cox_protocol::types::ProviderEvent;
     use cox_provider::scripted::Scripted;
 
@@ -809,6 +869,171 @@ mod tests {
             streamed.signatures,
             HashMap::from([(signed, "sig-1".to_string())])
         );
+    }
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+
+    /// Returns a PNG under `structured["image"]`, as `read` does (T40.4).
+    struct Shot;
+
+    #[async_trait::async_trait]
+    impl Tool for Shot {
+        fn spec(&self) -> cox_protocol::types::ToolSpec {
+            cox_protocol::types::ToolSpec {
+                name: "shot".into(),
+                description: "a png".into(),
+                input_schema: serde_json::json!({"type": "object"}),
+                deferred: false,
+                risk: Risk::ReadOnly,
+                concurrency: Concurrency::Parallel,
+            }
+        }
+        fn subject(&self, _input: &Value) -> String {
+            String::new()
+        }
+        async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+            Ok(ToolOutput {
+                text: "image/png, 16 B".into(),
+                is_error: false,
+                diff: None,
+                structured: Some(image::to_structured("image/png", PNG)),
+            })
+        }
+    }
+
+    /// `Scripted` on a wire that takes images. Keeps every request and, for
+    /// each image in its last message, whether the archive row the tool
+    /// result names already held that image when the request was sent.
+    struct Seeing {
+        inner: Scripted,
+        store: Arc<MemoryStore>,
+        seen: std::sync::Mutex<Vec<(cox_protocol::types::Request, Vec<bool>)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for Seeing {
+        fn id(&self) -> cox_protocol::types::ProviderId {
+            self.inner.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.inner.capabilities()
+        }
+        fn accepts_images(&self, _model: &str) -> bool {
+            true
+        }
+        async fn stream(
+            &self,
+            req: cox_protocol::types::Request,
+            sink: mpsc::Sender<ProviderEvent>,
+            cancel: tokio_util::sync::CancellationToken,
+        ) -> Result<Usage, cox_protocol::errors::ProviderError> {
+            let archived = archived_images(&self.store, &req);
+            self.seen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((req.clone(), archived));
+            self.inner.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(
+            &self,
+            req: &cox_protocol::types::Request,
+        ) -> Result<u32, cox_protocol::errors::ProviderError> {
+            self.inner.count_tokens(req).await
+        }
+    }
+
+    fn archived_images(store: &MemoryStore, req: &cox_protocol::types::Request) -> Vec<bool> {
+        use cox_protocol::traits::Store as _;
+        let Some(last) = req.messages.last() else {
+            return vec![];
+        };
+        let ids: Vec<cox_protocol::ArchiveId> = last
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                Content::ToolResult { content, .. } => content
+                    .split("archived as ")
+                    .nth(1)?
+                    .split(';')
+                    .next()?
+                    .parse()
+                    .ok(),
+                _ => None,
+            })
+            .collect();
+        last.content
+            .iter()
+            .filter_map(|c| match c {
+                Content::Image { data_b64, .. } => Some(ids.iter().any(|id| {
+                    store
+                        .archive_get(id)
+                        .is_ok_and(|bytes| bytes == data_b64.as_bytes())
+                })),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// One turn: the model calls `shot`, then answers.
+    async fn shot_turn() -> (Session, Arc<Seeing>) {
+        let store = Arc::new(MemoryStore::new());
+        let scenario = "[[turn]]\ntext = \"looking\"\ntool_calls = [{ name = \"shot\", input = {} }]\n\n[[turn]]\ntext = \"seen\"\n";
+        let provider = Arc::new(Seeing {
+            inner: Scripted::from_toml(scenario, "").expect("scenario"),
+            store: store.clone(),
+            seen: std::sync::Mutex::default(),
+        });
+        let cwd = PathBuf::from("/tmp/cox-turn-image");
+        let mut config = cox_protocol::Config::default();
+        config.core.workspace_roots = vec![cwd.clone()];
+        // No title job: it would be one more request to `Seeing`.
+        config.session.auto_title = false;
+        let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Shot)];
+        let session = Session::new(config, provider.clone(), tools, store.clone(), store, cwd)
+            .expect("session");
+        session
+            .submit(cox_protocol::types::Submission::UserTurn {
+                text: "take a shot".into(),
+                attachments: vec![],
+                confirm_think: false,
+            })
+            .await
+            .expect("turn");
+        (session, provider)
+    }
+
+    /// T40.5, the lossless rule: the image's archive row exists before the
+    /// provider receives the request that carries the image.
+    #[tokio::test]
+    async fn tool_image_is_archived_before_it_is_sent() {
+        let (_session, provider) = shot_turn().await;
+        let seen = provider.seen.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(seen.len(), 2, "the tool round and the answer");
+        assert_eq!(seen[1].1, vec![true]);
+    }
+
+    /// T40.5: the image joins the results message after every `ToolResult`,
+    /// and the result's text names the archive row.
+    #[tokio::test]
+    async fn tool_image_follows_tool_results() {
+        let (session, provider) = shot_turn().await;
+        let seen = provider.seen.lock().unwrap_or_else(|e| e.into_inner());
+        let last = seen[1].0.messages.last().expect("results message");
+        let [
+            Content::ToolResult { content, .. },
+            Content::Image {
+                media_type,
+                data_b64,
+            },
+        ] = &last.content[..]
+        else {
+            panic!("results then image: {:?}", last.content);
+        };
+        assert!(content.contains("[image image/png, "), "{content}");
+        assert!(content.contains("visible to the model in this turn only"));
+        assert_eq!(media_type, "image/png");
+        assert_eq!(*data_b64, STANDARD.encode(PNG));
+        assert_eq!(session.history().await[2], last.clone());
     }
 
     /// A91: reasoning streams into its own `Thinking` item, which closes
