@@ -22,3 +22,11 @@ mise exec -- cargo run -p cox-ffi --example record -- \
 ```
 
 Ids and timings change on every run.
+
+`two-prompts.json` sends two prompts, each answered with a short reply, so a test can Edit and resend the second one (T37.23.18):
+
+```bash
+mise exec -- cargo run -p cox-ffi --example record -- \
+  crates/cox-ffi/fixtures/two-prompts.toml desktop/macos/Fixtures/two-prompts.json \
+  "What do the notes say?" "How long are they?"
+```
