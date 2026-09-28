@@ -7,332 +7,343 @@ import CoxClient
 import CoxFFIBindings
 
 extension CoxClient.Block {
-    init(_ b: CoxFFIBindings.Block) { self.init(id: b.id, turn: b.turn, kind: .init(b.kind)) }
+  init(_ value: CoxFFIBindings.Block) {
+    self.init(id: value.id, turn: value.turn, kind: .init(value.kind))
+  }
 }
 
 extension CoxClient.BlockKind {
-    init(_ k: CoxFFIBindings.BlockKind) {
-        switch k {
-        case let .user(text, attachments): self = .user(text: text, attachments: attachments)
-        case let .assistant(text, doc): self = .assistant(text: text, doc: .init(doc))
-        case let .thinking(text): self = .thinking(text: text)
-        case let .tool(tool, summary, icon, risk, state, tail, archive, diff, durationMs):
-            self = .tool(
-                tool: tool, summary: summary, icon: .init(icon), risk: .init(risk), state: .init(state),
-                tail: tail, archive: archive.map { .init(id: $0.id, bytes: $0.bytes) },
-                diff: diff.map { .init(path: $0.path, unified: $0.unified) }, durationMs: durationMs)
-        case let .toolGroup(summary, children, state):
-            self = .toolGroup(summary: summary, children: children, state: .init(state))
-        case let .approval(call, tool, summary, why, source, decision, by):
-            self = .approval(
-                call: call, tool: tool, summary: summary, why: .init(why),
-                source: source.map { .init(session: $0.session, agent: $0.agent, preset: $0.preset) },
-                decision: decision.map { CoxClient.Decision($0) }, by: by.map { CoxClient.DecidedBy($0) })
-        case let .question(call, question, options, answer):
-            self = .question(call: call, question: question, options: options, answer: answer)
-        case let .task(task, label, tier, done, costUsd, exitCode):
-            self = .task(
-                task: task, label: label, tier: .init(tier), done: done, costUsd: costUsd,
-                exitCode: exitCode)
-        case let .compaction(before, after, reason, summary):
-            self = .compaction(
-                beforeTokens: before, afterTokens: after, reason: .init(reason), summary: summary)
-        case let .checkpoint(files): self = .checkpoint(files: files)
-        case let .notice(level, text): self = .notice(level: .init(level), text: text)
-        case let .error(text, fatal): self = .error(text: text, fatal: fatal)
-        case let .turnMeta(model, tier, usage, stop):
-            self = .turnMeta(
-                model: model, tier: .init(tier), usage: usage.map { CoxClient.Usage($0) },
-                stop: stop.map { CoxClient.StopReason($0) })
-        }
+  init(_ value: CoxFFIBindings.BlockKind) {
+    switch value {
+    case .user(let text, let attachments): self = .user(text: text, attachments: attachments)
+    case .assistant(let text, let doc): self = .assistant(text: text, doc: .init(doc))
+    case .thinking(let text): self = .thinking(text: text)
+    case .tool(
+      let tool, let summary, let icon, let risk, let state, let tail, let archive, let diff,
+      let durationMs):
+      self = .tool(
+        tool: tool, summary: summary, icon: .init(icon), risk: .init(risk), state: .init(state),
+        tail: tail, archive: archive.map { .init(id: $0.id, bytes: $0.bytes) },
+        diff: diff.map { .init(path: $0.path, unified: $0.unified) }, durationMs: durationMs)
+    case .toolGroup(let summary, let children, let state):
+      self = .toolGroup(summary: summary, children: children, state: .init(state))
+    case .approval(
+      let call, let tool, let summary, let why, let source, let decision, let decidedBy):
+      self = .approval(
+        call: call, tool: tool, summary: summary, why: .init(why),
+        source: source.map { .init(session: $0.session, agent: $0.agent, preset: $0.preset) },
+        decision: decision.map { CoxClient.Decision($0) },
+        by: decidedBy.map { CoxClient.DecidedBy($0) })
+    case .question(let call, let question, let options, let answer):
+      self = .question(call: call, question: question, options: options, answer: answer)
+    case .task(let task, let label, let tier, let done, let costUsd, let exitCode):
+      self = .task(
+        task: task, label: label, tier: .init(tier), done: done, costUsd: costUsd,
+        exitCode: exitCode)
+    case .compaction(let before, let after, let reason, let summary):
+      self = .compaction(
+        beforeTokens: before, afterTokens: after, reason: .init(reason), summary: summary)
+    case .checkpoint(let files): self = .checkpoint(files: files)
+    case .notice(let level, let text): self = .notice(level: .init(level), text: text)
+    case .error(let text, let fatal): self = .error(text: text, fatal: fatal)
+    case .turnMeta(let model, let tier, let usage, let stop):
+      self = .turnMeta(
+        model: model, tier: .init(tier), usage: usage.map { CoxClient.Usage($0) },
+        stop: stop.map { CoxClient.StopReason($0) })
     }
+  }
 }
 
 extension CoxClient.TimelinePatch {
-    init(_ p: CoxFFIBindings.TimelinePatch) {
-        switch p {
-        case let .reset(blocks): self = .reset(blocks: blocks.map { CoxClient.Block($0) })
-        case let .upsert(block, after): self = .upsert(block: .init(block), after: after)
-        case let .appendText(id, text): self = .appendText(id: id, text: text)
-        case let .docTail(id, from, blocks):
-            self = .docTail(id: id, from: from, blocks: blocks.map { CoxClient.DocBlock($0) })
-        case let .remove(id): self = .remove(id: id)
-        case let .usage(usage): self = .usage(usage: .init(usage))
-        }
+  init(_ value: CoxFFIBindings.TimelinePatch) {
+    switch value {
+    case .reset(let blocks): self = .reset(blocks: blocks.map { CoxClient.Block($0) })
+    case .upsert(let block, let after): self = .upsert(block: .init(block), after: after)
+    case .appendText(let id, let text): self = .appendText(id: id, text: text)
+    case .docTail(let id, let from, let blocks):
+      self = .docTail(id: id, from: from, blocks: blocks.map { CoxClient.DocBlock($0) })
+    case .remove(let id): self = .remove(id: id)
+    case .usage(let usage): self = .usage(usage: .init(usage))
     }
+  }
 }
 
 extension CoxClient.StyledDoc {
-    init(_ d: CoxFFIBindings.StyledDoc) { self.init(blocks: d.blocks.map { CoxClient.DocBlock($0) }) }
+  init(_ value: CoxFFIBindings.StyledDoc) {
+    self.init(blocks: value.blocks.map { CoxClient.DocBlock($0) })
+  }
 }
 
 extension CoxClient.DocBlock {
-    init(_ b: CoxFFIBindings.DocBlock) {
-        let spans = { (lines: [[CoxFFIBindings.Span]]) in lines.map { $0.map { CoxClient.Span($0) } } }
-        switch b {
-        case let .text(kind, lines): self = .text(kind: .init(kind), lines: spans(lines))
-        case let .code(lang, lines): self = .code(lang: lang, lines: spans(lines))
-        case let .table(rows): self = .table(rows: rows)
-        case .rule: self = .rule
-        }
+  init(_ value: CoxFFIBindings.DocBlock) {
+    let spans = { (lines: [[CoxFFIBindings.Span]]) in lines.map { $0.map { CoxClient.Span($0) } } }
+    switch value {
+    case .text(let kind, let lines): self = .text(kind: .init(kind), lines: spans(lines))
+    case .code(let lang, let lines): self = .code(lang: lang, lines: spans(lines))
+    case .table(let rows): self = .table(rows: rows)
+    case .rule: self = .rule
     }
+  }
 }
 
 extension CoxClient.TextKind {
-    init(_ k: CoxFFIBindings.TextKind) {
-        switch k {
-        case .paragraph: self = .paragraph
-        case .heading(let level): self = .heading(level)
-        case .list: self = .list
-        case .quote: self = .quote
-        }
+  init(_ value: CoxFFIBindings.TextKind) {
+    switch value {
+    case .paragraph: self = .paragraph
+    case .heading(let level): self = .heading(level)
+    case .list: self = .list
+    case .quote: self = .quote
     }
+  }
 }
 
 extension CoxClient.Span {
-    init(_ s: CoxFFIBindings.Span) {
-        self.init(text: s.text)
-        (token, rgb, link) = (.init(s.token), s.rgb, s.link)
-        (bold, italic, strike, underline) = (s.bold, s.italic, s.strike, s.underline)
-    }
+  init(_ value: CoxFFIBindings.Span) {
+    self.init(text: value.text)
+    (token, rgb, link) = (.init(value.token), value.rgb, value.link)
+    (bold, italic, strike, underline) = (value.bold, value.italic, value.strike, value.underline)
+  }
 }
 
 extension CoxClient.StyleToken {
-    init(_ t: CoxFFIBindings.StyleToken) {
-        switch t {
-        case .text: self = .text
-        case .dim: self = .dim
-        case .accent: self = .accent
-        case .user: self = .user
-        case .agent: self = .agent
-        case .tool: self = .tool
-        case .ok: self = .ok
-        case .warn: self = .warn
-        case .error: self = .error
-        case .diffAdd: self = .diffAdd
-        case .diffDel: self = .diffDel
-        case .diffHunk: self = .diffHunk
-        case .border: self = .border
-        case .selection: self = .selection
-        }
+  init(_ value: CoxFFIBindings.StyleToken) {
+    switch value {
+    case .text: self = .text
+    case .dim: self = .dim
+    case .accent: self = .accent
+    case .user: self = .user
+    case .agent: self = .agent
+    case .tool: self = .tool
+    case .ok: self = .ok
+    case .warn: self = .warn
+    case .error: self = .error
+    case .diffAdd: self = .diffAdd
+    case .diffDel: self = .diffDel
+    case .diffHunk: self = .diffHunk
+    case .border: self = .border
+    case .selection: self = .selection
     }
+  }
 }
 
 extension CoxClient.Icon {
-    init(_ i: CoxFFIBindings.Icon) {
-        switch i {
-        case .read: self = .read
-        case .edit: self = .edit
-        case .shell: self = .shell
-        case .search: self = .search
-        case .web: self = .web
-        case .todo: self = .todo
-        case .ask: self = .ask
-        case .agent: self = .agent
-        case .mcp: self = .mcp
-        case .tool: self = .tool
-        }
+  init(_ value: CoxFFIBindings.Icon) {
+    switch value {
+    case .read: self = .read
+    case .edit: self = .edit
+    case .shell: self = .shell
+    case .search: self = .search
+    case .web: self = .web
+    case .todo: self = .todo
+    case .ask: self = .ask
+    case .agent: self = .agent
+    case .mcp: self = .mcp
+    case .tool: self = .tool
     }
+  }
 }
 
 extension CoxClient.Risk {
-    init(_ r: CoxFFIBindings.Risk) {
-        switch r {
-        case .readOnly: self = .readOnly
-        case .write: self = .write
-        case .exec: self = .exec
-        case .destructive: self = .destructive
-        }
+  init(_ value: CoxFFIBindings.Risk) {
+    switch value {
+    case .readOnly: self = .readOnly
+    case .write: self = .write
+    case .exec: self = .exec
+    case .destructive: self = .destructive
     }
+  }
 }
 
 extension CoxClient.ToolState {
-    init(_ s: CoxFFIBindings.ToolState) {
-        switch s {
-        case .running: self = .running
-        case .done: self = .done
-        case .failed: self = .failed
-        }
+  init(_ value: CoxFFIBindings.ToolState) {
+    switch value {
+    case .running: self = .running
+    case .done: self = .done
+    case .failed: self = .failed
     }
+  }
 }
 
 extension CoxClient.Tier {
-    init(_ t: CoxFFIBindings.Tier) {
-        switch t {
-        case .cheap: self = .cheap
-        case .code: self = .code
-        case .think: self = .think
-        }
+  init(_ value: CoxFFIBindings.Tier) {
+    switch value {
+    case .cheap: self = .cheap
+    case .code: self = .code
+    case .think: self = .think
     }
+  }
 }
 
 extension CoxFFIBindings.Tier {
-    init(_ t: CoxClient.Tier) {
-        switch t {
-        case .cheap: self = .cheap
-        case .code: self = .code
-        case .think: self = .think
-        }
+  init(_ value: CoxClient.Tier) {
+    switch value {
+    case .cheap: self = .cheap
+    case .code: self = .code
+    case .think: self = .think
     }
+  }
 }
 
 extension CoxClient.Level {
-    init(_ l: CoxFFIBindings.Level) {
-        switch l {
-        case .info: self = .info
-        case .warn: self = .warn
-        case .budget: self = .budget
-        case .security: self = .security
-        }
+  init(_ value: CoxFFIBindings.Level) {
+    switch value {
+    case .info: self = .info
+    case .warn: self = .warn
+    case .budget: self = .budget
+    case .security: self = .security
     }
+  }
 }
 
 extension CoxClient.DecidedBy {
-    init(_ d: CoxFFIBindings.DecidedBy) {
-        switch d {
-        case .user: self = .user
-        case .rule: self = .rule
-        case .session: self = .session
-        case .policy: self = .policy
-        case .hook: self = .hook
-        }
+  init(_ value: CoxFFIBindings.DecidedBy) {
+    switch value {
+    case .user: self = .user
+    case .rule: self = .rule
+    case .session: self = .session
+    case .policy: self = .policy
+    case .hook: self = .hook
     }
+  }
 }
 
 extension CoxClient.CompactReason {
-    init(_ r: CoxFFIBindings.CompactReason) {
-        switch r {
-        case .preCall: self = .preCall
-        case .postTurn: self = .postTurn
-        case .manual: self = .manual
-        case .contextTooLong: self = .contextTooLong
-        }
+  init(_ value: CoxFFIBindings.CompactReason) {
+    switch value {
+    case .preCall: self = .preCall
+    case .postTurn: self = .postTurn
+    case .manual: self = .manual
+    case .contextTooLong: self = .contextTooLong
     }
+  }
 }
 
 extension CoxClient.Why {
-    init(_ w: CoxFFIBindings.Why) {
-        switch w {
-        case let .ruleAsk(rule): self = .ruleAsk(rule: rule)
-        case let .risk(risk): self = .risk(risk: .init(risk))
-        case let .sandboxDenied(detail): self = .sandboxDenied(detail: detail)
-        case let .policy(policy):
-            switch policy {
-            case .untrusted: self = .policy(policy: .untrusted)
-            case .onRequest: self = .policy(policy: .onRequest)
-            case .onFailure: self = .policy(policy: .onFailure)
-            case .never: self = .policy(policy: .never)
-            }
-        }
+  init(_ value: CoxFFIBindings.Why) {
+    switch value {
+    case .ruleAsk(let rule): self = .ruleAsk(rule: rule)
+    case .risk(let risk): self = .risk(risk: .init(risk))
+    case .sandboxDenied(let detail): self = .sandboxDenied(detail: detail)
+    case .policy(let policy):
+      switch policy {
+      case .untrusted: self = .policy(policy: .untrusted)
+      case .onRequest: self = .policy(policy: .onRequest)
+      case .onFailure: self = .policy(policy: .onFailure)
+      case .never: self = .policy(policy: .never)
+      }
     }
+  }
 }
 
 extension CoxClient.Decision {
-    init(_ d: CoxFFIBindings.Decision) {
-        switch d {
-        case .allow: self = .allow
-        case .allowForSession: self = .allowForSession
-        case let .deny(reason): self = .deny(reason: reason)
-        case let .edit(input): self = .edit(input: input)
-        }
+  init(_ value: CoxFFIBindings.Decision) {
+    switch value {
+    case .allow: self = .allow
+    case .allowForSession: self = .allowForSession
+    case .deny(let reason): self = .deny(reason: reason)
+    case .edit(let input): self = .edit(input: input)
     }
+  }
 }
 
 extension CoxFFIBindings.Decision {
-    init(_ d: CoxClient.Decision) {
-        switch d {
-        case .allow: self = .allow
-        case .allowForSession: self = .allowForSession
-        case let .deny(reason): self = .deny(reason: reason)
-        case let .edit(input): self = .edit(input: input)
-        }
+  init(_ value: CoxClient.Decision) {
+    switch value {
+    case .allow: self = .allow
+    case .allowForSession: self = .allowForSession
+    case .deny(let reason): self = .deny(reason: reason)
+    case .edit(let input): self = .edit(input: input)
     }
+  }
 }
 
 extension CoxClient.StopReason {
-    init(_ s: CoxFFIBindings.StopReason) {
-        switch s {
-        case .endTurn: self = .endTurn
-        case .maxTurns: self = .maxTurns
-        case .interrupted: self = .interrupted
-        case .budget: self = .budget
-        case let .refusal(detail): self = .refusal(detail: detail)
-        case .error: self = .error
-        }
+  init(_ value: CoxFFIBindings.StopReason) {
+    switch value {
+    case .endTurn: self = .endTurn
+    case .maxTurns: self = .maxTurns
+    case .interrupted: self = .interrupted
+    case .budget: self = .budget
+    case .refusal(let detail): self = .refusal(detail: detail)
+    case .error: self = .error
     }
+  }
 }
 
 extension CoxClient.Usage {
-    init(_ u: CoxFFIBindings.Usage) {
-        self.init(
-            inputTokens: u.inputTokens, outputTokens: u.outputTokens,
-            cacheReadTokens: u.cacheReadTokens, cacheWriteTokens: u.cacheWriteTokens,
-            estimated: u.estimated, costUsd: u.costUsd, latencyMs: u.latencyMs)
-    }
+  init(_ value: CoxFFIBindings.Usage) {
+    self.init(
+      inputTokens: value.inputTokens, outputTokens: value.outputTokens,
+      cacheReadTokens: value.cacheReadTokens, cacheWriteTokens: value.cacheWriteTokens,
+      estimated: value.estimated, costUsd: value.costUsd, latencyMs: value.latencyMs)
+  }
 }
 
 extension CoxClient.UsageView {
-    init(_ v: CoxFFIBindings.UsageView) {
-        self.init(
-            session: .init(v.session), turn: v.turn.map { CoxClient.TurnUsage($0) },
-            contextTokens: v.contextTokens)
-    }
+  init(_ value: CoxFFIBindings.UsageView) {
+    self.init(
+      session: .init(value.session), turn: value.turn.map { CoxClient.TurnUsage($0) },
+      contextTokens: value.contextTokens)
+  }
 }
 
 extension CoxClient.Tally {
-    init(_ t: CoxFFIBindings.Tally) {
-        self.init(
-            sent: t.sent, received: t.received, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite,
-            uncached: t.uncached, costUsd: t.costUsd, calls: t.calls, estimated: t.estimated)
-    }
+  init(_ value: CoxFFIBindings.Tally) {
+    self.init(
+      sent: value.sent, received: value.received, cacheRead: value.cacheRead,
+      cacheWrite: value.cacheWrite,
+      uncached: value.uncached, costUsd: value.costUsd, calls: value.calls,
+      estimated: value.estimated)
+  }
 }
 
 extension CoxClient.TurnUsage {
-    init(_ t: CoxFFIBindings.TurnUsage) {
-        self.init(
-            turn: t.turn, tally: .init(t.tally), thinkingTokens: t.thinkingTokens, ttftMs: t.ttftMs,
-            tokPerS: t.tokPerS, exact: t.exact, sparkline: t.sparkline, done: t.done)
-    }
+  init(_ value: CoxFFIBindings.TurnUsage) {
+    self.init(
+      turn: value.turn, tally: .init(value.tally), thinkingTokens: value.thinkingTokens,
+      ttftMs: value.ttftMs,
+      tokPerS: value.tokPerS, exact: value.exact, sparkline: value.sparkline, done: value.done)
+  }
 }
 
 extension CoxFFIBindings.Intent {
-    init(_ i: CoxClient.Intent) {
-        switch i {
-        case let .send(text, attachments):
-            self = .send(
-                text: text,
-                attachments: attachments.map {
-                    .init(name: $0.name, mediaType: $0.mediaType, dataB64: $0.dataB64)
-                })
-        case let .approve(call, decision): self = .approve(call: call, decision: .init(decision))
-        case let .answer(question, text): self = .answer(question: question, text: text)
-        case .interrupt: self = .interrupt
-        case let .queue(text): self = .queue(text: text)
-        case let .compact(focus): self = .compact(focus: focus)
-        case let .setMode(mode):
-            switch mode {
-            case .default: self = .setMode(mode: .default)
-            case .plan: self = .setMode(mode: .plan)
-            case .auto: self = .setMode(mode: .auto)
-            case .bypass: self = .setMode(mode: .bypass)
-            }
-        case let .switchModel(tier, model): self = .switchModel(tier: .init(tier), model: model)
-        case let .setEffort(effort):
-            switch effort {
-            case nil: self = .setEffort(effort: nil)
-            case .low: self = .setEffort(effort: .low)
-            case .medium: self = .setEffort(effort: .medium)
-            case .high: self = .setEffort(effort: .high)
-            case .xhigh: self = .setEffort(effort: .xhigh)
-            }
-        case let .rewind(toTurn, code, conversation):
-            self = .rewind(toTurn: toTurn, code: code, conversation: conversation)
-        case .redo: self = .redo
-        case let .fork(turn): self = .fork(turn: turn)
-        case let .handoff(objective): self = .handoff(objective: objective)
-        case let .background(call): self = .background(call: call)
-        case let .shell(command, share): self = .shell(command: command, share: share)
-        case let .command(line): self = .command(line: line)
-        }
+  init(_ value: CoxClient.Intent) {
+    switch value {
+    case .send(let text, let attachments):
+      self = .send(
+        text: text,
+        attachments: attachments.map {
+          .init(name: $0.name, mediaType: $0.mediaType, dataB64: $0.dataB64)
+        })
+    case .approve(let call, let decision): self = .approve(call: call, decision: .init(decision))
+    case .answer(let question, let text): self = .answer(question: question, text: text)
+    case .interrupt: self = .interrupt
+    case .queue(let text): self = .queue(text: text)
+    case .compact(let focus): self = .compact(focus: focus)
+    case .setMode(let mode):
+      switch mode {
+      case .default: self = .setMode(mode: .default)
+      case .plan: self = .setMode(mode: .plan)
+      case .auto: self = .setMode(mode: .auto)
+      case .bypass: self = .setMode(mode: .bypass)
+      }
+    case .switchModel(let tier, let model): self = .switchModel(tier: .init(tier), model: model)
+    case .setEffort(let effort):
+      switch effort {
+      case nil: self = .setEffort(effort: nil)
+      case .low: self = .setEffort(effort: .low)
+      case .medium: self = .setEffort(effort: .medium)
+      case .high: self = .setEffort(effort: .high)
+      case .xhigh: self = .setEffort(effort: .xhigh)
+      }
+    case .rewind(let toTurn, let code, let conversation):
+      self = .rewind(toTurn: toTurn, code: code, conversation: conversation)
+    case .redo: self = .redo
+    case .fork(let turn): self = .fork(turn: turn)
+    case .handoff(let objective): self = .handoff(objective: objective)
+    case .background(let call): self = .background(call: call)
+    case .shell(let command, let share): self = .shell(command: command, share: share)
+    case .command(let line): self = .command(line: line)
     }
+  }
 }

@@ -7,38 +7,46 @@
 // that stays inside this package. Needs the XCFramework built first.
 import PackageDescription
 
+/// desktop/macos/.swiftlint.yml, through Packages/CoxCore/.swiftlint.yml;
+/// not on the generated `CoxFFIBindings`.
+let swiftLint = Target.PluginUsage.plugin(
+  name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+
 let package = Package(
-    name: "CoxCore",
-    platforms: [.macOS(.v26)],
-    products: [
-        .library(name: "CoxCore", targets: ["CoxCore"]),
-    ],
-    dependencies: [
-        .package(path: "../CoxModel"),
-    ],
-    targets: [
-        .binaryTarget(name: "CoxFFI", path: "../../build/CoxFFI.xcframework"),
-        .target(
-            name: "CoxFFIBindings",
-            dependencies: ["CoxFFI"],
-            swiftSettings: [.swiftLanguageMode(.v5)],
-            // The static library's own system links: reqwest's proxy lookup
-            // needs SystemConfiguration; Security comes through Foundation.
-            linkerSettings: [.linkedFramework("SystemConfiguration")]
-        ),
-        .target(
-            name: "CoxCore",
-            dependencies: [
-                "CoxFFIBindings",
-                .product(name: "CoxClient", package: "CoxModel"),
-            ]
-        ),
-        .testTarget(
-            name: "CoxCoreTests",
-            dependencies: [
-                "CoxCore", "CoxFFIBindings",
-                .product(name: "CoxClient", package: "CoxModel"),
-            ]
-        ),
-    ]
+  name: "CoxCore",
+  platforms: [.macOS(.v26)],
+  products: [
+    .library(name: "CoxCore", targets: ["CoxCore"])
+  ],
+  dependencies: [
+    .package(path: "../CoxModel"),
+    .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", exact: "0.65.1"),
+  ],
+  targets: [
+    .binaryTarget(name: "CoxFFI", path: "../../build/CoxFFI.xcframework"),
+    .target(
+      name: "CoxFFIBindings",
+      dependencies: ["CoxFFI"],
+      swiftSettings: [.swiftLanguageMode(.v5)],
+      // The static library's own system links: reqwest's proxy lookup
+      // needs SystemConfiguration; Security comes through Foundation.
+      linkerSettings: [.linkedFramework("SystemConfiguration")]
+    ),
+    .target(
+      name: "CoxCore",
+      dependencies: [
+        "CoxFFIBindings",
+        .product(name: "CoxClient", package: "CoxModel"),
+      ],
+      plugins: [swiftLint]
+    ),
+    .testTarget(
+      name: "CoxCoreTests",
+      dependencies: [
+        "CoxCore", "CoxFFIBindings",
+        .product(name: "CoxClient", package: "CoxModel"),
+      ],
+      plugins: [swiftLint]
+    ),
+  ]
 )

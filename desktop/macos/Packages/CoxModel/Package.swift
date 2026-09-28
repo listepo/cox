@@ -7,25 +7,31 @@
 // these tests and every SwiftUI preview must run without Rust (DT§8).
 import PackageDescription
 
+/// desktop/macos/.swiftlint.yml, through Packages/CoxModel/.swiftlint.yml.
+let swiftLint = Target.PluginUsage.plugin(
+  name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")
+
 let package = Package(
-    name: "CoxModel",
-    platforms: [.macOS(.v26)],
-    products: [
-        .library(name: "CoxClient", targets: ["CoxClient"]),
-        .library(name: "CoxModel", targets: ["CoxModel"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-collections", from: "1.7.1"),
-    ],
-    targets: [
-        .target(name: "CoxClient"),
-        .target(
-            name: "CoxModel",
-            dependencies: [
-                "CoxClient",
-                .product(name: "OrderedCollections", package: "swift-collections"),
-            ]
-        ),
-        .testTarget(name: "CoxModelTests", dependencies: ["CoxModel"]),
-    ]
+  name: "CoxModel",
+  platforms: [.macOS(.v26)],
+  products: [
+    .library(name: "CoxClient", targets: ["CoxClient"]),
+    .library(name: "CoxModel", targets: ["CoxModel"]),
+  ],
+  dependencies: [
+    .package(url: "https://github.com/apple/swift-collections", from: "1.7.1"),
+    .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", exact: "0.65.1"),
+  ],
+  targets: [
+    .target(name: "CoxClient", plugins: [swiftLint]),
+    .target(
+      name: "CoxModel",
+      dependencies: [
+        "CoxClient",
+        .product(name: "OrderedCollections", package: "swift-collections"),
+      ],
+      plugins: [swiftLint]
+    ),
+    .testTarget(name: "CoxModelTests", dependencies: ["CoxModel"], plugins: [swiftLint]),
+  ]
 )

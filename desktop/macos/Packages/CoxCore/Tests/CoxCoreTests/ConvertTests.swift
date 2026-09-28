@@ -8,41 +8,41 @@ import Testing
 @testable import CoxCore
 
 @Test func aToolUpsertConvertsFieldForField() {
-    let live = CoxFFIBindings.TimelinePatch.upsert(
-        block: .init(
-            id: "call:1", turn: 2,
-            kind: .tool(
-                tool: "read", summary: "Read `a`", icon: .read, risk: .readOnly, state: .done,
-                tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7)),
-        after: "item:1")
-    let want = CoxClient.TimelinePatch.upsert(
-        block: .init(
-            id: "call:1", turn: 2,
-            kind: .tool(
-                tool: "read", summary: "Read `a`", icon: .read, risk: .readOnly, state: .done,
-                tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7)),
-        after: "item:1")
-    #expect(CoxClient.TimelinePatch(live) == want)
+  let live = CoxFFIBindings.TimelinePatch.upsert(
+    block: .init(
+      id: "call:1", turn: 2,
+      kind: .tool(
+        tool: "read", summary: "Read `a`", icon: .read, risk: .readOnly, state: .done,
+        tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7)),
+    after: "item:1")
+  let want = CoxClient.TimelinePatch.upsert(
+    block: .init(
+      id: "call:1", turn: 2,
+      kind: .tool(
+        tool: "read", summary: "Read `a`", icon: .read, risk: .readOnly, state: .done,
+        tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7)),
+    after: "item:1")
+  #expect(CoxClient.TimelinePatch(live) == want)
 }
 
 @Test func aDocTailKeepsSpanStyleAndColour() {
-    let span = CoxFFIBindings.Span(
-        text: "fn", token: .accent, rgb: 0xB48EAD, bold: true, italic: false, strike: false,
-        underline: false, link: nil)
-    let live = CoxFFIBindings.TimelinePatch.docTail(
-        id: "item:2", from: 1,
-        blocks: [.code(lang: "rust", lines: [[span]]), .text(kind: .heading(2), lines: [])])
-    var want = CoxClient.Span(text: "fn")
-    (want.token, want.rgb, want.bold) = (.accent, 0xB48EAD, true)
-    let blocks: [CoxClient.DocBlock] = [
-        .code(lang: "rust", lines: [[want]]), .text(kind: .heading(2), lines: []),
-    ]
-    #expect(CoxClient.TimelinePatch(live) == .docTail(id: "item:2", from: 1, blocks: blocks))
+  let span = CoxFFIBindings.Span(
+    text: "fn", token: .accent, rgb: 0xB48EAD, bold: true, italic: false, strike: false,
+    underline: false, link: nil)
+  let live = CoxFFIBindings.TimelinePatch.docTail(
+    id: "item:2", from: 1,
+    blocks: [.code(lang: "rust", lines: [[span]]), .text(kind: .heading(2), lines: [])])
+  var want = CoxClient.Span(text: "fn")
+  (want.token, want.rgb, want.bold) = (.accent, 0xB48EAD, true)
+  let blocks: [CoxClient.DocBlock] = [
+    .code(lang: "rust", lines: [[want]]), .text(kind: .heading(2), lines: []),
+  ]
+  #expect(CoxClient.TimelinePatch(live) == .docTail(id: "item:2", from: 1, blocks: blocks))
 }
 
 @Test func anApprovalIntentConvertsToTheGeneratedIntent() {
-    let intent = CoxClient.Intent.approve(call: "c1", decision: .edit(input: #"{"path":"a"}"#))
-    let want = CoxFFIBindings.Intent.approve(call: "c1", decision: .edit(input: #"{"path":"a"}"#))
-    #expect(CoxFFIBindings.Intent(intent) == want)
-    #expect(CoxFFIBindings.Intent(.setEffort(effort: nil)) == .setEffort(effort: nil))
+  let intent = CoxClient.Intent.approve(call: "c1", decision: .edit(input: #"{"path":"a"}"#))
+  let want = CoxFFIBindings.Intent.approve(call: "c1", decision: .edit(input: #"{"path":"a"}"#))
+  #expect(CoxFFIBindings.Intent(intent) == want)
+  #expect(CoxFFIBindings.Intent(.setEffort(effort: nil)) == .setEffort(effort: nil))
 }
