@@ -57,6 +57,16 @@ impl Completer {
         }
     }
 
+    /// Appends `rows` after the built-ins and command files, skipping any
+    /// already offered, so a plugin's command never shadows a row (T52.14).
+    pub fn extend(&mut self, rows: impl IntoIterator<Item = Completion>) {
+        for row in rows {
+            if !self.commands.iter().any(|c| c.insert == row.insert) {
+                self.commands.push(row);
+            }
+        }
+    }
+
     /// Rows for the token being typed: `/que…` or `@que…`, best first,
     /// at most `limit`. Anything else completes nothing.
     pub fn complete(&self, token: &str, limit: usize) -> Vec<Completion> {

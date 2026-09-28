@@ -51,16 +51,25 @@ pub fn push(queue: &mut Vec<TimelinePatch>, patch: TimelinePatch) {
             queue.retain(|p| !matches!(p, TimelinePatch::Status { .. }));
             patch
         }
+        TimelinePatch::PluginSlot { slot } => {
+            queue.retain(|p| {
+                !matches!(p, TimelinePatch::PluginSlot { slot: queued }
+                    if queued.plugin == slot.plugin && queued.slot == slot.slot)
+            });
+            TimelinePatch::PluginSlot { slot }
+        }
     };
     queue.push(patch);
 }
 
-/// The meter and the status: whole states beside the block list, which no
-/// block patch or reset changes.
+/// The meter, the status and the plugin slots: whole states beside the
+/// block list, which no block patch or reset changes.
 pub(crate) fn beside(patch: &TimelinePatch) -> bool {
     matches!(
         patch,
-        TimelinePatch::Usage { .. } | TimelinePatch::Status { .. }
+        TimelinePatch::Usage { .. }
+            | TimelinePatch::Status { .. }
+            | TimelinePatch::PluginSlot { .. }
     )
 }
 
@@ -85,7 +94,9 @@ pub fn apply(blocks: &mut Vec<Block>, patch: TimelinePatch) {
         TimelinePatch::Remove { id } => blocks.retain(|b| b.id != id),
         // The meter and the status sit beside the list; a UI keeps them on
         // its own.
-        TimelinePatch::Usage { .. } | TimelinePatch::Status { .. } => {}
+        TimelinePatch::Usage { .. }
+        | TimelinePatch::Status { .. }
+        | TimelinePatch::PluginSlot { .. } => {}
         TimelinePatch::AppendText { .. } | TimelinePatch::DocTail { .. } => {
             let found = target(&patch).and_then(|id| blocks.iter().position(|b| &b.id == id));
             if let Some(i) = found {
@@ -98,12 +109,13 @@ pub fn apply(blocks: &mut Vec<Block>, patch: TimelinePatch) {
 }
 
 /// The block a patch changes; `None` for `Reset`, which changes them all,
-/// and for `Usage` and `Status`, which change none.
+/// and for `Usage`, `Status` and `PluginSlot`, which change none.
 fn target(patch: &TimelinePatch) -> Option<&BlockId> {
     match patch {
         TimelinePatch::Reset { .. }
         | TimelinePatch::Usage { .. }
-        | TimelinePatch::Status { .. } => None,
+        | TimelinePatch::Status { .. }
+        | TimelinePatch::PluginSlot { .. } => None,
         TimelinePatch::Upsert { block, .. } => Some(&block.id),
         TimelinePatch::AppendText { id, .. }
         | TimelinePatch::DocTail { id, .. }
@@ -331,6 +343,37 @@ mod tests {
         let reset = TimelinePatch::Reset { blocks: vec![] };
         let queue = coalesced(&[status(1), append("t", "a"), status(2), reset.clone()]);
         assert_eq!(queue, vec![status(2), reset]);
+    }
+
+    #[test]
+    fn only_the_latest_patch_per_plugin_slot_stays_queued() {
+        use cox_protocol::plugin::Slot;
+        let slot = |plugin: &str, slot, stopped| TimelinePatch::PluginSlot {
+            slot: Box::new(crate::PluginSlot {
+                plugin: plugin.into(),
+                slot,
+                view: None,
+                visible: true,
+                stopped,
+            }),
+        };
+        let reset = TimelinePatch::Reset { blocks: vec![] };
+        let queue = coalesced(&[
+            slot("a", Slot::StatusLeft, false),
+            slot("b", Slot::StatusLeft, false),
+            slot("a", Slot::Panel, false),
+            slot("a", Slot::StatusLeft, true),
+            reset.clone(),
+        ]);
+        assert_eq!(
+            queue,
+            vec![
+                slot("b", Slot::StatusLeft, false),
+                slot("a", Slot::Panel, false),
+                slot("a", Slot::StatusLeft, true),
+                reset,
+            ]
+        );
     }
 
     #[test]

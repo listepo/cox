@@ -6,16 +6,19 @@
 //! what outlives one session.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use cox_core::{History, Session};
 use cox_protocol::Checkpointer as _;
 use cox_protocol::SandboxPolicy;
 use cox_protocol::ids::{ArchiveId, SessionId, TaskId};
+use cox_protocol::plugin::{CommandOut, NoticeLevel};
 use cox_protocol::traits::Store as _;
-use cox_protocol::types::{Event, Submission, TodoItem};
+use cox_protocol::types::{Event, Level, Submission, TodoItem};
 use cox_render::diffmodel::DiffModel;
+use cox_sanitize::sanitize;
 use cox_session::SessionSpec;
+use cox_session::plugin_ui::PluginAnswer;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -24,6 +27,7 @@ use crate::changes::{self, Changes};
 use crate::costs::{self, TurnCosts};
 use crate::info::{self, Info};
 use crate::mcp_status::McpRun;
+use crate::plugin_ui::{self, PluginKey, PluginSlot, PluginUi};
 use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
@@ -33,6 +37,9 @@ use crate::{TimelinePatch, dispatch};
 
 /// The core's own bound (DT§4.5).
 const EVENTS: usize = 256;
+/// Plugin UI requests and answers in flight (T52.14); a full queue drops a
+/// request, which the next redraw asks again.
+const PLUGIN_QUEUE: usize = 64;
 
 pub struct LiveSession {
     app: Arc<App>,
@@ -40,6 +47,8 @@ pub struct LiveSession {
     /// Shared with each queued turn, which reports when it starts.
     controller: Arc<Controller>,
     completer: Completer,
+    /// The granted plugin slots, commands and keys (T52.14, PL§8).
+    plugins: Arc<PluginUi>,
     cwd: PathBuf,
     /// The workspace roots a path Review reads is confined to.
     roots: Vec<PathBuf>,
@@ -77,6 +86,9 @@ impl LiveSession {
             false => Vec::new(),
         };
         let (login, keys) = (Arc::clone(&app.host), Arc::clone(&app.host));
+        let (asks, requests) = mpsc::channel(PLUGIN_QUEUE);
+        let (answered, answers) = mpsc::channel(PLUGIN_QUEUE);
+        let plugins = Arc::new(PluginUi::new(asks));
         let spec = SessionSpec {
             config,
             cwd: cwd.clone(),
@@ -86,7 +98,11 @@ impl LiveSession {
             questions: true,
             resume,
             mcp_login: Some(Arc::new(move |url: &str| login.open_url(url))),
-            plugin_ui: None,
+            plugin_ui: Some(plugin_ui::serve_ui(
+                Arc::clone(&plugins),
+                requests,
+                answered,
+            )),
             client: None,
             surface: "app".into(),
             tools: crate::browser::browser_tools(app.host.browser()),
@@ -109,8 +125,12 @@ impl LiveSession {
         let events = tee(Arc::clone(&app), session.id(), events);
         let claude_home = cox_config::load::home_dir().join(".claude");
         let owner = Arc::clone(&app);
+        let mut completer = Completer::load(&cwd, &app.home, &claude_home);
+        // After the built-ins and command files, never in place of one.
+        completer.extend(plugins.completions());
         let live = Arc::new(Self {
-            completer: Completer::load(&cwd, &app.home, &claude_home),
+            completer,
+            plugins,
             controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
             turn: Mutex::new(None),
@@ -122,6 +142,7 @@ impl LiveSession {
             theme,
         });
         owner.register(&live);
+        pump(Arc::downgrade(&live), answers);
         Ok(live)
     }
 
@@ -146,6 +167,12 @@ impl LiveSession {
 
     /// Returns at once for a turn; a fork or handoff returns its child.
     pub async fn send(&self, intent: Intent) -> Result<Option<Arc<Self>>, AppError> {
+        if let Intent::Command { line } = &intent {
+            // `/<id>:<name>` is the plugin's (PL§8); no built-in has a colon.
+            if self.plugins.command(line) {
+                return Ok(None);
+            }
+        }
         let parent = self.session.id();
         let home = &self.app.home;
         let child = match dispatch(intent)? {
@@ -343,6 +370,98 @@ impl LiveSession {
         Ok(self.session.submit(revoke).await?)
     }
 
+    /// The plugin keys granted in this session (T52.14), for the leader
+    /// map and the help list.
+    pub fn plugin_keys(&self) -> Vec<PluginKey> {
+        self.plugins.keys()
+    }
+
+    /// `<leader> <key>`: asks `plugin`'s `cox_key`, whose answer lands like
+    /// a command's. False when the key is not granted.
+    pub fn plugin_key(&self, plugin: &str, name: &str) -> bool {
+        self.plugins.key(plugin, name)
+    }
+
+    /// The window is now `width`×`height` cells; a shown panel or overlay
+    /// renders again for it (PL§8 "resized").
+    pub fn plugin_area(&self, width: u16, height: u16) {
+        let slots = self.plugins.step(|s| s.resize(width, height));
+        self.patch_slots(slots);
+    }
+
+    /// Esc on a plugin overlay.
+    pub fn close_plugin_overlay(&self) {
+        let slots = self.plugins.step(|s| s.close_overlay());
+        self.patch_slots(slots);
+    }
+
+    fn patch_slots(&self, slots: Vec<PluginSlot>) {
+        for slot in slots {
+            let slot = Box::new(slot);
+            self.controller.push(TimelinePatch::PluginSlot { slot });
+        }
+    }
+
+    /// One answer from the serve thread: a slot's render or miss, a redraw,
+    /// or a command's closed effect (PL§4).
+    async fn on_plugin(&self, answer: PluginAnswer) {
+        match answer {
+            PluginAnswer::Command { plugin, out } => self.plugin_effect(&plugin, out).await,
+            other => {
+                let slots = self.plugins.step(|s| s.fold(other));
+                self.patch_slots(slots);
+            }
+        }
+    }
+
+    /// `CommandOut`'s effects, as the TUI runs them (T33.25): a prompt is a
+    /// turn queued like the user's own, a compaction is `/compact`'s. A
+    /// timeout or an error (`None`) does nothing.
+    async fn plugin_effect(&self, plugin: &str, out: Option<CommandOut>) {
+        let intent = match out {
+            Some(CommandOut::Prompt { text }) => Intent::Send {
+                text: sanitize(&text),
+                attachments: Vec::new(),
+                confirm_think: false,
+            },
+            Some(CommandOut::Compact { focus }) => Intent::Compact {
+                focus: focus.map(|f| sanitize(&f)),
+            },
+            Some(CommandOut::TogglePanel) => {
+                let slots = self.plugins.step(|s| s.toggle_panel(plugin));
+                self.patch_slots(slots);
+                return;
+            }
+            Some(CommandOut::OpenOverlay) => {
+                let slots = self.plugins.step(|s| s.open_overlay(plugin));
+                self.patch_slots(slots);
+                return;
+            }
+            Some(CommandOut::Notice(notice)) => {
+                let level = match notice.level {
+                    NoticeLevel::Warn => Level::Warn,
+                    NoticeLevel::Info => Level::Info,
+                };
+                // A session that ended has no stream left to tell.
+                let _ = self.session.notice(level, sanitize(&notice.text)).await;
+                return;
+            }
+            Some(CommandOut::Nothing) | None => return,
+        };
+        match dispatch(intent) {
+            Ok(Dispatch::Submit {
+                submission,
+                spawn: true,
+            }) => self.spawn(submission, true),
+            // A failed compaction says so in the event stream.
+            Ok(Dispatch::Submit { submission, .. }) => {
+                let _ = self.session.submit(submission).await;
+            }
+            // An empty prompt is dropped; neither intent dispatches otherwise.
+            _ => {}
+        }
+    }
+
     /// `/` commands and `@` files for the composer's token.
     pub fn complete(&self, token: &str, limit: usize) -> Vec<Completion> {
         self.completer.complete(token, limit)
@@ -386,6 +505,18 @@ impl LiveSession {
             let _ = session.submit(submission).await;
         }));
     }
+}
+
+/// Feeds the plugin serve thread's answers to `live` until it is gone.
+fn pump(live: Weak<LiveSession>, mut answers: mpsc::Receiver<PluginAnswer>) {
+    tokio::spawn(async move {
+        while let Some(answer) = answers.recv().await {
+            let Some(live) = live.upgrade() else {
+                break;
+            };
+            live.on_plugin(answer).await;
+        }
+    });
 }
 
 /// The inbox folds every event before the timeline sees it. A closed

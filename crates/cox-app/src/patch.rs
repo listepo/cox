@@ -15,6 +15,7 @@ use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::plugin_ui::PluginSlot;
 use crate::summary::Icon;
 use crate::tasks::TaskKind;
 use crate::usage::UsageView;
@@ -195,6 +196,11 @@ pub enum TimelinePatch {
     /// only the latest.
     Status {
         status: Status,
+    },
+    /// One plugin slot's whole state (T52.14, PL§8) beside the block list;
+    /// a queue keeps only the latest per plugin and slot.
+    PluginSlot {
+        slot: Box<PluginSlot>,
     },
 }
 
