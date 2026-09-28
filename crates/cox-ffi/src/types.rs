@@ -629,6 +629,7 @@ pub struct SessionEntry {
     pub info: SessionInfo,
     pub held_by: Option<Holder>,
     pub agent: Option<String>,
+    pub best_of: Option<String>,
 }
 
 #[uniffi::remote(Record)]

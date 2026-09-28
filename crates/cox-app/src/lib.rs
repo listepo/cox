@@ -5,6 +5,7 @@
 //! it later and no UI toolkit leaks in (`crates/cox/tests/deps.rs`).
 
 pub mod app;
+pub mod best_of;
 pub mod browser;
 pub mod changes;
 pub mod coalesce;
@@ -37,6 +38,7 @@ pub mod usage;
 pub mod wire;
 pub mod workspace;
 
+pub use best_of::{BestOf, BestOfError, BestOfId, BestOfRequest, Candidate, Launch, Launched};
 pub use browser::{Browser, BrowserError, PageText};
 pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
 pub use complete::{Completer, Completion};

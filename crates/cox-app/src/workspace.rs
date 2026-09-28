@@ -1,18 +1,21 @@
 //! The workspace (DT§4.3): what the sidebar lists before any session is
 //! open — projects (git roots) with their sessions, full-text search over
-//! every past session, and each project's worktrees with their disk size.
-//! Read from `cox.db` through `cox-store`; separate from the controller
-//! because it spans every session and drives none.
+//! every past session, and each project's worktrees with their disk size,
+//! and the best-of-n groups launched here (T52.9). Read from `cox.db`
+//! through `cox-store`; separate from the controller because it spans every
+//! session and drives none.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use cox_protocol::traits::{Store as _, WorktreeInfo, Worktrees};
+use cox_protocol::traits::{Store as _, Worktree, WorktreeInfo, Worktrees};
 use cox_protocol::{SessionId, StoreError, WorktreeError};
 use cox_store::Store;
 use cox_store::fts::SessionInfo;
 use cox_store::lock::Holder;
 use serde::{Deserialize, Serialize};
+
+use crate::best_of::{BestOf, BestOfError, BestOfId, Groups};
 
 /// How many prompts, across every session, [`Workspace::prompts`] reads:
 /// as many as the TUI's `Ctrl+R` search.
@@ -25,6 +28,8 @@ pub enum WorkspaceError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Worktree(#[from] WorktreeError),
+    #[error(transparent)]
+    BestOf(#[from] BestOfError),
 }
 
 /// One sidebar project: a git root (or a bare cwd outside git). The count
@@ -49,6 +54,10 @@ pub struct SessionEntry {
     /// The external ACP agent that drove it (T52.6); `None` for cox.
     #[serde(default)]
     pub agent: Option<String>,
+    /// The best-of-n group it was launched in (T52.9), which the sidebar
+    /// shows as one group; `None` for every other session.
+    #[serde(default)]
+    pub best_of: Option<String>,
 }
 
 /// One full-text hit, with the session it belongs to.
@@ -64,6 +73,7 @@ pub struct SearchHit {
 pub struct Workspace {
     store: Store,
     worktrees: Arc<dyn Worktrees>,
+    groups: Groups,
 }
 
 impl Workspace {
@@ -72,6 +82,7 @@ impl Workspace {
         Ok(Self {
             store: Store::open(home)?,
             worktrees,
+            groups: Groups::default(),
         })
     }
 
@@ -126,10 +137,17 @@ impl Workspace {
                 ),
                 Err(_) => (None, None),
             };
+            let best_of = info
+                .id
+                .parse::<SessionId>()
+                .ok()
+                .and_then(|id| self.groups.group_of(&id))
+                .map(|g| g.0);
             out.push(SessionEntry {
                 info,
                 held_by,
                 agent,
+                best_of,
             });
         }
         Ok(out)
@@ -176,6 +194,54 @@ impl Workspace {
     /// size; the size walk runs off the async runtime (`worktree_list`).
     pub async fn worktrees(&self, project: &Path) -> Result<Vec<WorktreeInfo>, WorkspaceError> {
         Ok(self.worktrees.list(project).await?)
+    }
+
+    /// The worktree `name` of `project`'s repository, locked for `owner`
+    /// (T52.9): made through the injected git side, as every worktree is.
+    pub(crate) async fn add_worktree(
+        &self,
+        project: &Path,
+        name: &str,
+        owner: &str,
+    ) -> Result<Worktree, WorkspaceError> {
+        Ok(self.worktrees.add(project, name, owner).await?)
+    }
+
+    pub(crate) fn groups(&self) -> &Groups {
+        &self.groups
+    }
+
+    /// The best-of-n group `id` as launched (T52.9).
+    pub fn best_of(&self, id: &BestOfId) -> Result<BestOf, WorkspaceError> {
+        self.groups
+            .get(id)
+            .ok_or_else(|| BestOfError::Unknown(id.clone()).into())
+    }
+
+    /// What group `id` cost: the sum of its candidates' own ledger rows
+    /// (T52.9). An external agent's session has none; its billing is the
+    /// agent's.
+    pub fn best_of_cost(&self, id: &BestOfId) -> Result<f64, WorkspaceError> {
+        let mut total = 0.0;
+        for session in self
+            .best_of(id)?
+            .candidates
+            .iter()
+            .filter_map(|c| c.session)
+        {
+            total += self.session_cost(&session)?;
+        }
+        Ok(total)
+    }
+
+    /// One session's cost from its ledger rows.
+    pub(crate) fn session_cost(&self, session: &SessionId) -> Result<f64, WorkspaceError> {
+        Ok(self
+            .store
+            .usage_ledger(session)?
+            .iter()
+            .map(|row| row.usage.usage.cost_usd)
+            .sum())
     }
 }
 

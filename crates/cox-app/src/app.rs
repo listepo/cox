@@ -12,6 +12,7 @@ use std::time::Duration;
 use cox_protocol::StoreError;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::SessionId;
+use cox_protocol::traits::Worktrees;
 use cox_protocol::types::Event;
 use cox_session::SessionError;
 use cox_store::lock::Holder;
@@ -97,6 +98,9 @@ pub enum AppError {
     /// one warning, EA§7), or it failed `initialize` or `session/new`.
     #[error(transparent)]
     Agent(#[from] cox_session::acp_session::AcpOpenError),
+    /// T52.9: a best-of-n launch had nothing to launch, or names no group.
+    #[error(transparent)]
+    BestOf(#[from] crate::best_of::BestOfError),
 }
 
 impl From<SessionError> for AppError {
@@ -154,8 +158,26 @@ impl App {
         host: Arc<dyn Host>,
         mcp: McpAuth,
     ) -> Result<Arc<Self>, AppError> {
+        Self::build(home, host, mcp, Arc::new(cox_tools::git::GitWorktrees))
+    }
+
+    /// [`App::new`] over another git side: a test's fake worktrees (T52.9).
+    pub fn with_worktrees(
+        home: Option<PathBuf>,
+        host: Arc<dyn Host>,
+        worktrees: Arc<dyn Worktrees>,
+    ) -> Result<Arc<Self>, AppError> {
+        Self::build(home, host, McpAuth::default(), worktrees)
+    }
+
+    fn build(
+        home: Option<PathBuf>,
+        host: Arc<dyn Host>,
+        mcp: McpAuth,
+        worktrees: Arc<dyn Worktrees>,
+    ) -> Result<Arc<Self>, AppError> {
         let home = home.unwrap_or_else(cox_config::load::cox_home);
-        let workspace = Workspace::open(&home, Arc::new(cox_tools::git::GitWorktrees))?;
+        let workspace = Workspace::open(&home, worktrees)?;
         Ok(Arc::new(Self {
             home,
             host,
@@ -288,6 +310,23 @@ impl App {
         theme: String,
     ) -> Result<Arc<LiveSession>, AppError> {
         LiveSession::open_agent(Arc::clone(self), cwd, agent, theme, None).await
+    }
+
+    /// Best of n (T52.9): one worktree and one session per candidate in
+    /// `request.project`, each sent `request.prompt`, grouped under one id
+    /// the sidebar shows as one group. A candidate that cannot start is
+    /// listed with why; the others run. Call on a tokio runtime, as for
+    /// [`App::open`].
+    pub async fn best_of(
+        self: &Arc<Self>,
+        request: crate::best_of::BestOfRequest,
+        theme: String,
+    ) -> Result<crate::best_of::Launch, AppError> {
+        let launch = crate::best_of::launch(self, request, theme).await?;
+        // The group lives in memory, which the store's change token does
+        // not see.
+        self.listed.notify_waiters();
+        Ok(launch)
     }
 
     /// The Settings screen for a session in `cwd` (DT§5.7), with each MCP
