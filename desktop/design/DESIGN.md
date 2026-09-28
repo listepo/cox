@@ -78,8 +78,8 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | shadow | `shadow.tint` | The colour every elevation layer uses |
 
 Mode colours: Ask uses `text.primary` on the selected segment, Plan uses `status.plan`, Auto uses
-`accent`, Bypass fills the segment with `status.danger` and draws a 3 pt `status.danger` strip at the
-window's top edge.
+`accent`, Bypass fills the segment with `status.danger` and draws a 3 pt `status.danger` strip under
+the toolbar (§4).
 
 ### 3.2 Typography
 
@@ -199,6 +199,12 @@ names map one-to-one:
   system window buttons sit over the sidebar's top row, and the toolbar leaves room for them while the
   sidebar is hidden. The app window hides its title bar and puts the behind-window blur under the
   window pane.
+- The sidebar and inspector toggles answer ⌃⌘S and ⌃⌘I, the default keys of the system
+  `SidebarCommands` and `InspectorCommands` (A74), and the Appearance button answers ⌘⌥A. The buttons
+  carry the keys (`ShellShortcut`) and their tooltips name them; the app's View menu shows the same
+  items on the same keys.
+- While the session is in Bypass mode a 3 pt `status.danger` strip runs under the toolbar, along the
+  panes below it, for as long as the mode is on (§3.1).
 - The reading column is `size.readingWidth` wide and centred; the composer shares its width.
 - Minimum window `size.windowMinWidth` × `size.windowMinHeight`. Below 1280 pt of window width the
   inspector floats over the transcript column, `size.paneGap` in from its edges, instead of taking width
@@ -299,7 +305,7 @@ component.
 | --- | --- | --- |
 | `ShellPane(.window/.sidebar/.column/.inspector)` | glassPane, hairline, elevation: e5 window, e2 side panes, flat column | `.window`, `.sidebar`, `.col`, `.insp` |
 | `Sidebar` | ShellPane, SessionFilter, SectionHeader + CountBadge, project disclosure, SessionRow, footer (New session, provider StatusDot) | `.sidebar` |
-| `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton, icon CapsuleStyle buttons (Appearance, inspector, sidebar while hidden) | `.toolbar` |
+| `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton, icon CapsuleStyle buttons (Appearance ⌘⌥A, inspector ⌃⌘I, sidebar ⌃⌘S while hidden; tooltips name the keys), the Bypass strip under the bar | `.toolbar` |
 | `ToolCard` | ToolHeader + one body: DiffHunkView, TerminalTail, CodeBlockView | `.tool`, `.tool.exp` |
 | `ApprovalCard` | header, command well, reasons, CoxButtonStyle row | `.appr` |
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |

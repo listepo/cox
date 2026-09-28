@@ -2,7 +2,8 @@
 // Glossy, light and dark, laid out as mockup screens 28–29 — sidebar, toolbar, transcript
 // column and inspector as floating panes — and with both side panes folded; its organisms per
 // light/dark × Solid/Frosted cell; the pane table the shell is built from; and, below 1280 pt,
-// the inspector floating over a column that keeps its width (T37.22.1).
+// the inspector floating over a column that keeps its width (T37.22.1); the Bypass strip and
+// the shell toggles' keys and tooltips (T37.22.2).
 
 import SwiftUI
 import Testing
@@ -32,6 +33,15 @@ extension Variant {
       MainScreenSample(state: PreviewState.main), Variant.all[1], size: Self.narrow)
   }
 
+  /// Bypass is on: the red strip runs under the toolbar (A74), with the sidebar out and in.
+  @Test func mainScreenInBypass() throws {
+    var state = PreviewState.main
+    state.toolbar.mode = .bypass
+    try checkWindow(MainScreenSample(state: state), Variant.all[1])
+    state.isSidebarVisible = false
+    try assertCoxWindowSnapshot(MainScreenSample(state: state), Variant.all[3], named: "folded")
+  }
+
   @Test(arguments: Variant.all) func sidebar(_ variant: Variant) throws {
     try assertCoxSnapshot(
       Sidebar(state: PreviewState.sidebar) { _ in }.frame(height: Size.windowMinHeight), variant,
@@ -58,6 +68,27 @@ extension Variant {
     _ screen: some View, _ variant: Variant, test: String = #function
   ) throws {
     try assertCoxWindowSnapshot(screen, variant, testName: test)
+  }
+}
+
+/// The shell toggles answer the system commands' default keys and name them in their tooltips.
+@MainActor
+@Suite struct ShellShortcutTests {
+  @Test func theTogglesUseTheSystemCommandsDefaultKeys() {
+    // SidebarCommands and InspectorCommands put Show Sidebar on ⌃⌘S and Show Inspector on
+    // ⌃⌘I (macOS 27 SDK; Apple's InspectorCommands page names Control-Command-I).
+    #expect(ShellShortcut.sidebar.key == KeyboardShortcut("s", modifiers: [.control, .command]))
+    #expect(ShellShortcut.inspector.key == KeyboardShortcut("i", modifiers: [.control, .command]))
+    #expect(ShellShortcut.appearance.key == KeyboardShortcut("a", modifiers: [.command, .option]))
+  }
+
+  /// The toolbar and sidebar buttons take their tooltips from `help(_:)`. A hosted view shows
+  /// neither an `NSView.toolTip` nor, with no assistive client, an accessibility tree to read
+  /// them back from, so the strings are checked here.
+  @Test func theTooltipsNameTheShortcuts() {
+    #expect(ShellShortcut.sidebar.help("Show sidebar") == "Show sidebar (⌃⌘S)")
+    #expect(ShellShortcut.inspector.help("Hide inspector") == "Hide inspector (⌃⌘I)")
+    #expect(ShellShortcut.appearance.help("Appearance") == "Appearance (⌘⌥A)")
   }
 }
 
