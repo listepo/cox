@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.12 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.14 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.15 | todo | P0 | 3 | 0% | |
 | T37.16 | todo | P0 | 3 | 0% | |
@@ -1086,12 +1085,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.12 `cox-app`: usage and throughput view state
-
-Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/usage.rs`, `crates/cox-app/src/timeline.rs`
-Goal: the token meter's data (DS§7): sent and received per turn and per session from the ledger, live tok/s estimated from output deltas over a rolling window and replaced by the exact figure when usage arrives, time to first token, and the context breakdown the TUI already shows (P28).
-Check: a scripted stream with known timings yields the expected tok/s within 5 %; per-turn and session totals equal the ledger rows.
 
 #### T37.14 `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
 
