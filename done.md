@@ -5943,3 +5943,153 @@ Deviations: when the git root is the home directory (a dotfiles repository) `~/.
 Check: `cargo fmt --check` clean. Tests written, not run (no-build rule): `project_claude_settings_allow_is_dropped_and_its_deny_added`, `user_claude_settings_allow_still_applies`; `config_claude_settings_import_matches_native_rules` unchanged.
 
 Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-config -p cox -p cox-app` and clippy on the same crates. `source_of("permissions.allow")` after a revert probably answers "default" rather than "claude-settings" (figment's `adjoin` keeps the first label), untested.
+
+### T39.3. Chat translator replays a signature as `extra_content` on its tool call
+
+- Model: sonnet
+- Depends: T39.2
+- Size: ~80
+- Priority: P1
+- Complexity: 2
+- Goal: a signed `Content::Thinking` directly followed by a `Content::ToolUse` in an assistant message becomes `"extra_content": {"google": {"thought_signature": sig}}` on that tool call's JSON. Any other signed thinking still fails with `ProviderError::Unsupported { feature: "thinking replay" }`.
+- Files: `crates/cox-provider-openai/src/chat.rs`
+- Steps:
+  1. In `message_items`, walk the assistant blocks with a one-slot "pending signature". A signed empty-text thinking followed by a `ToolUse` attaches the signature to that call; a signed thinking in any other position keeps the current error.
+  2. Keep `chat_request_signed_thinking_unsupported` (non-adjacent case) and `chat_request_unsigned_thinking_dropped` green.
+  3. Add `chat_request_replays_signature_on_its_tool_call`, an insta snapshot of the body.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_request)'
+  ```
+- Done when: the snapshot shows `extra_content` only on the signed call. With no signature, the body is byte-identical to before (the existing snapshots do not change).
+- Out of scope: the Responses and Anthropic wires. The router strips these blocks on a model switch, so they never reach another wire.
+Status: done 2026-09-29
+Result: `crates/cox-provider-openai/src/chat.rs` sends a signed empty thinking block that directly precedes a tool call as that call's `extra_content.google.thought_signature`; any other signed thinking still fails as an unsupported "thinking replay", and unsigned bodies are unchanged.
+
+Deviations: a second test, `chat_request_signature_not_before_a_tool_call_unsupported`; the snapshot `cox_provider_openai__chat__tests__chat_request_replays_signature_on_its_tool_call.snap` is hand-written.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `cargo nextest run -p cox-provider-openai -E 'test(chat_request)'` (then `cargo insta review` if the hand-written snapshot differs) and clippy on `cox-provider-openai`.
+
+### T39.4. Surfaces skip the empty signed thinking item
+
+- Model: haiku
+- Depends: T39.2
+- Size: ~40
+- Priority: P2
+- Complexity: 1
+- Goal: the TUI transcript and `plain` output draw nothing for an `ItemKind::Thinking` with empty text. It is a replay token, not something the model said.
+- Files: `crates/cox-tui/src/state.rs` (~line 2165), `crates/cox/src/plain.rs` (~line 268)
+- Steps:
+  1. Guard both match arms with `if !text.is_empty()`.
+  2. Add a TUI snapshot test `empty_signed_thinking_draws_no_cell` and a `plain` unit test.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-tui -E 'test(empty_signed_thinking)'
+  mise exec -- cargo nextest run -p cox -E 'test(plain)'
+  ```
+- Done when: no empty thinking cell appears in any existing snapshot, and the new tests pass.
+- Out of scope: stream-json. It prints every event as-is by design.
+Status: done 2026-09-29
+Result: the TUI (`crates/cox-tui/src/state.rs`) and plain output (`crates/cox/src/plain.rs`, its choice moved into a testable `buffered()`) draw nothing for a thinking item with empty text and a signature.
+
+Deviations: the guard needs the signature as well as empty text — a streamed thought also starts as an empty unsigned item, so the card's `if !text.is_empty()` would have hidden all streamed thinking; this matches `cox-app`'s timeline. `empty_signed_thinking_draws_no_cell` checks the transcript directly (no snapshot); plain's test is `plain_skips_empty_signed_thinking`.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox-tui -E 'test(empty_signed_thinking)'`, `-p cox -E 'test(plain)'`, the TUI snapshots, clippy on `cox-tui` and `cox`.
+
+### T39.5. `[providers.gemini]` preset and vendored model rows
+
+- Model: sonnet
+- Depends: -
+- Size: ~120
+- Priority: P1
+- Complexity: 2
+- Goal: a built-in type-2 section `[providers.gemini]` exists (A9), and its model ids, context windows, efforts and prices come from `cox-vendor models` (A48), not hand-pasted numbers.
+- Files: `scripts/vendor/src/cox_vendor/models.py`, `scripts/vendor/tests/test_models.py`, `crates/cox-protocol/src/config.rs` (tests only). Data: `crates/cox-protocol/default.toml`, `crates/cox-provider/prices.toml`.
+- Steps:
+  1. `models.py`: add `"gemini": "google"` to `PROVIDER_TO_MODELS_DEV`. models.dev lists provider `google` with env `GEMINI_API_KEY` (https://models.dev/api.json, checked 2026-09-28). `cox_effort_for` already drops `minimal`. Add a pytest proving a `google` row maps to a `gemini` row.
+  2. `default.toml`: add the section in the shape of `[providers.deepseek]`:
+     - `base_url = "https://generativelanguage.googleapis.com/v1beta/openai"`
+     - `api_key_env = "GEMINI_API_KEY"`, `api = "chat"`
+     - `model = "gemini-3.8-flash"`
+     - `timeout_s = 120`, `max_retries = 4`
+     - a `models` list with the ids `gemini-3.8-flash`, `gemini-3.1-pro-preview` and `gemini-3.5-flash-lite`, each with `reasoning_effort = true`. The OpenAI-compat page says reasoning cannot be turned off for Gemini 2.5 Pro or 3 models, so effort is always meaningful.
+     - Add the ids the way earlier type-2 rows first landed, then run `cox-vendor models` so the script fills `context_window`, `efforts` and the `prices.toml` rows.
+  3. `config.rs`: add `"gemini"` to the preset loop test (~line 1357) that asserts every built-in type-2 section parses and names its key env var.
+  4. Add a `research.md` ledger row citing both Google pages, with URL and "last updated" date, and the models.dev check date.
+- Check:
+  ```bash
+  cd scripts/vendor && mise exec -- uv run pytest -q && cd ../..
+  mise exec -- cargo nextest run -p cox-protocol -E 'test(provider)'
+  mise exec -- cargo nextest run -p cox-provider -E 'test(price)'
+  COX_HOME=/tmp/cox-gemini mise exec -- cargo run -- doctor
+  ```
+- Done when: `doctor` lists `gemini` with "GEMINI_API_KEY not set" and the three models are priced. The config-schema drift test is green (no schema change is expected: presets are data).
+- Out of scope:
+  - Vertex AI (the gate excludes it).
+  - `extra_body.google.thinking_config.include_thoughts` (thought summaries).
+  - The TUI model picker ordering.
+Status: done 2026-09-29
+Result: `scripts/vendor` `models.py` maps `"gemini"` to models.dev's `"google"` (new pytest in `test_models.py`); `default.toml` has `[providers.gemini]` with the three model ids, each with `reasoning_effort = true`; the `config.rs` provider test covers gemini; `docs/config.md` regenerated; research.md ledger row 40.
+
+Deviations: `cox-vendor models` needs the network and never adds new ids, so the rows are placeholders — `default.toml` `context_window = 0`, `efforts = []`; `prices.toml` three zero-price rows dated `1970-01-01`, so doctor's price check (`doctor_prices_embedded_table_is_ok`) fails until the script replaces them; ledger row 40 cites the Google page dates from P39 without re-reading them.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cd scripts/vendor && uv run pytest -q`, `uv run --project scripts/vendor cox-vendor models` (network, approved under A117), regenerates `docs/config.md` through `config_docs_config_md_matches_default_toml`, then `cargo nextest run -p cox-protocol -E 'test(provider) | test(config_docs)'`, `-p cox-provider -E 'test(price)'`, `-p cox-models -E 'test(usage_prices)'`, `-p cox -E 'test(doctor) | test(docs)'` and `COX_HOME=/tmp/cox-gemini cargo run -- doctor`; ids models.dev does not list keep their placeholders.
+
+### T39.6. Offline end-to-end: a Gemini-shaped two-round tool loop
+
+- Model: sonnet
+- Depends: T39.3, T39.4, T39.5
+- Size: ~150
+- Priority: P1
+- Complexity: 3
+- Goal: `cox run -p` against a wiremock server that speaks the Gemini OpenAI-compat stream completes a tool round and a final answer. The second request echoes the signature on its tool call and sends `Authorization: Bearer <test key>`.
+- Files: `crates/cox/tests/gemini_compat.rs` (new), fixtures `crates/cox/tests/fixtures/gemini/{round1,round2}.sse`
+- Steps:
+  1. Round 1 SSE: a `read` tool call chunk carrying `extra_content.google.thought_signature = "sig-fixture"`, then `finish_reason: tool_calls`, plus usage with `prompt_tokens_details.cached_tokens`.
+  2. Round 2 SSE: text, then `stop`.
+  3. Run the real binary with `COX_HOME` scratch, a project config overriding `providers.gemini.base_url` to the mock, and `GEMINI_API_KEY=test-key`. Assert:
+     - the second request's JSON has the signature on the `read` tool call;
+     - the exit code is 0;
+     - the ledger has two `usage` rows with the cached tokens.
+  4. Document the preset in `docs/compat.md` and `docs/config.md`, including the "OpenAI compatibility is beta at Google" caveat with its URL.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox --test gemini_compat
+  ```
+- Done when: the test passes with no network access. done.md cites the fixture's unverified field path.
+- Out of scope: a real key (T39.7).
+Status: done 2026-09-29
+Result: `crates/cox/tests/gemini_compat.rs` with fixtures `tests/fixtures/gemini/round1.sse` and `round2.sse` runs the real binary against a mock server and asserts exit 0 and the final text, `Bearer test-key` on both requests, `sig-fixture` on the second request's read call, and two ledger usage rows with cached tokens `[8, 32]`. `docs/compat.md` has a Gemini section with the beta caveat and the unverified field path.
+
+Deviations: the mock's address goes in the user config under `COX_HOME` (no git root needed; `base_url` is not guarded); the test sets the model's context window itself, independent of T39.5's placeholders; the beta caveat reaches `docs/config.md` through a comment on the preset's `api` line.
+
+Check: `cargo fmt` only (no-build rule).
+
+Not done: the verification pass runs `cargo nextest run -p cox --test gemini_compat`, the config-docs test and clippy on `cox`. The fixtures, like the existing ones, carry no `data: [DONE]` line — T39.8.
+
+### T39.8. The Chat wire ignores the `data: [DONE]` sentinel
+
+- Depends: —
+- Size: ~10
+- Priority: P1
+- Complexity: 1
+- Goal: OpenAI-style Chat Completions streams (OpenAI, Gemini's compatibility endpoint, Ollama, vLLM, OpenRouter) end with `data: [DONE]`, which is not JSON; `OpenAiChatStream::feed` parsed every frame as JSON, so a real stream ended in `ProviderError::Parse`. Found while writing T39.6's fixtures, which, like the older ones, carry no sentinel. `feed` returns no events for it; the end of the byte stream still finishes the turn.
+- Files: `crates/cox-provider-openai/src/chat.rs`
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_stream)'
+  ```
+Status: done 2026-09-29
+Result: `OpenAiChatStream::feed` (`crates/cox-provider-openai/src/chat.rs`) returns no events for a `[DONE]` frame instead of failing to parse it as JSON; the end of the byte stream still finishes the turn. Test `chat_stream_done_sentinel_is_not_a_parse_error`.
+
+Deviations: none.
+
+Check: `rustfmt --check` clean. Not run (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-provider-openai -E 'test(chat_stream)'` and clippy on `cox-provider-openai`. The Chat fixtures still carry no sentinel; adding one to a fixture would cover the whole stream path.
