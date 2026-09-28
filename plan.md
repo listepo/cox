@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.6 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
@@ -119,7 +118,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
-| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
+| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
 | `cox-provider` | the provider registry and `from_env`; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction; re-exports the wires at the old `anthropic` and `openai` paths | reqwest 0.12 (rustls) |
 | `cox-provider-anthropic` | the Anthropic Messages wire (T32.13; split out of `cox-provider`): request building, stream parsing, wire types from the vendored spec, `schema/` | reqwest 0.12, typify 0.8 (build.rs, T30.10/T30.12) |
@@ -1128,12 +1127,6 @@ Check: a scripted scenario asks and answers a question headless; the rollout con
 Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/lib.rs`, `docs/protocol.md` (G5–G7)
 Goal: effort and permission-mode changes and the session title arrive as typed events, not a `Notice`.
 Check: a scenario that changes mode and effort emits both events; `docs/protocol.md` counts match the enum.
-
-#### T37.6 Honor `UserTurn.attachments` for images and files
-
-Depends: — · Size: ~180 · Files: `crates/cox-core/src/context.rs`, `crates/cox-provider-anthropic/src/…`, `crates/cox-provider-openai/src/…` (G2)
-Goal: an attached image or file reaches the model on every wire that supports it; an unsupported wire gets a clear notice.
-Check: request snapshots for Anthropic and OpenAI Responses contain the image block; a Chat-only local model gets the notice.
 
 #### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
 

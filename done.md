@@ -2970,3 +2970,17 @@ Result: `crates/cox-render/src/doc.rs` adds `StyledDoc` — blocks (`Text{Paragr
 Deviations: `StyledSpan` also carries `rgb` (syntect's per-run colour, which a `StyleToken` cannot hold), `strike` and `underline`; 5 files instead of 3 (`lib.rs` gating, `AGENTS.md` row, `Cargo.lock` for insta dev-dep); `deps.rs` unchanged (no ratatui rule there).
 
 Check: `cargo nextest run -p cox-render -p cox-tui` 295/295, TUI snapshots unchanged; new snapshot `markdown_parses_into_tagged_blocks_without_a_terminal`; `cargo check`/`nextest -p cox-render --no-default-features` 6/6; clippy clean with and without default features; fmt clean. Commit a30e0f8.
+
+#### T37.6 Honor `UserTurn.attachments` for images and files
+
+Depends: — · Size: ~180 · Files: `crates/cox-core/src/context.rs`, `crates/cox-provider-anthropic/src/…`, `crates/cox-provider-openai/src/…` (G2)
+Goal: an attached image or file reaches the model on every wire that supports it; an unsupported wire gets a clear notice.
+Check: request snapshots for Anthropic and OpenAI Responses contain the image block; a Chat-only local model gets the notice.
+Status: done 2026-09-28
+Result: `cox-core/src/context.rs` `user_content` builds the user message from text, hook context and each `UserTurn.attachments` entry: png/jpeg/gif/webp → `Content::Image` when the model takes images; other UTF-8 files → a `<attachment name=… media_type=…>` text block; anything else is held back with one Warn notice. `Provider::accepts_images(model)` (default false) is true on Anthropic and OpenAI Responses, and on Chat only for a `models` entry with `images = true` (new `ProviderModel.images`, `Capabilities.images` in the catalog). Attachments ride on `ItemStarted` (`UserMessage.attachments`).
+
+Deviations: more than 3 files (trait, catalog flag, config field and schema, three wires, `Priced`); new dependency `base64 0.23` in cox-core (already in Cargo.lock) to decode attached text files, listed in §1.1 and `toolchain.md`.
+
+Check: `cargo nextest run -p cox-core -p cox-models -p cox-provider-anthropic -p cox-provider-openai -p cox-provider -p cox-protocol` 467 passed, 1 skipped — snapshots `anthropic_request_user_image`, `responses_request_user_image`; `chat_accepts_images_only_where_a_model_declares_them`; `image_on_a_text_only_wire_is_held_back_with_a_notice`; config schema drift test green; clippy and fmt clean. Commit 3b6ee4c.
+
+Not done (follow-ups): PDFs and other binary files are held back (needs a document `Content` variant); resume rebuilds history without attachments; an external-agent child turn does not forward them.
