@@ -25,20 +25,25 @@ private struct Specular<S: Shape>: ViewModifier {
     }
   }
 
-  /// The mockup's 118° gradient: a bright corner, a clear middle and a thin streak.
   private var sweep: LinearGradient {
-    let white = Color.white
-    return LinearGradient(
-      stops: [
-        .init(color: white.opacity(strength), location: 0),
-        .init(color: white.opacity(strength * 0.25), location: 0.18),
-        .init(color: white.opacity(0), location: 0.30),
-        .init(color: white.opacity(0), location: 0.64),
-        .init(color: white.opacity(strength * 0.4), location: 0.66),
-        .init(color: white.opacity(0), location: 0.72),
-      ],
+    LinearGradient(
+      stops: Appearance.sweep(strength).map {
+        .init(color: Color.white.opacity($0.opacity), location: $0.location)
+      },
       startPoint: .topLeading,
       endPoint: .bottomTrailing
     )
+  }
+}
+
+extension Appearance {
+  /// The mockup's 118° gradient at `strength`: a bright corner, a clear middle and a thin
+  /// streak, as white opacities by location. Shared with the transcript's AppKit bubble
+  /// (`sweepStops`), so both draw one sweep.
+  static func sweep(_ strength: Double) -> [(opacity: Double, location: Double)] {
+    [
+      (strength, 0), (strength * 0.25, 0.18), (0, 0.30), (0, 0.64), (strength * 0.4, 0.66),
+      (0, 0.72),
+    ]
   }
 }

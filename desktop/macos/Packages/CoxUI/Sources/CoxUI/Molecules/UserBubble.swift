@@ -48,5 +48,57 @@ struct UserBubble: View {
   }
 }
 
+/// What a hovered prompt offers (DT§5.2, T37.23.9): Edit and resend, and Copy, as icon buttons
+/// on a readable capsule lifted to e1 over the bubble's edge. Public so the transcript's text
+/// view, which draws the bubble itself, shows the same strip; the caller acts on the choice.
+public struct PromptActions: View {
+  public enum Action: CaseIterable, Sendable {
+    case edit, copy
+
+    var title: String {
+      switch self {
+      case .edit: "Edit and resend"
+      case .copy: "Copy"
+      }
+    }
+
+    var symbol: String {
+      switch self {
+      case .edit: "pencil"
+      case .copy: "doc.on.doc"
+      }
+    }
+  }
+
+  let actions: [Action]
+  let act: (Action) -> Void
+
+  public init(_ actions: [Action] = Action.allCases, act: @escaping (Action) -> Void) {
+    self.actions = actions
+    self.act = act
+  }
+
+  public var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Radius.capsule, style: .continuous)
+    HStack(spacing: Space.xxs) {
+      ForEach(actions, id: \.self) { action in
+        Button {
+          act(action)
+        } label: {
+          Image(systemName: action.symbol).symbolStyle(.footnote)
+        }
+        .buttonStyle(CoxButtonStyle(.plain, size: .small))
+        .help(action.title)
+        .accessibilityLabel(action.title)
+      }
+    }
+    .padding(.horizontal, Space.xxs)
+    .glassPane(shape, surface: Color(.surfaceCapsule), role: .readable)
+    .hairline(in: shape)
+    .elevation(.e1, cornerRadius: Radius.capsule)
+  }
+}
+
 #Preview("text") { PreviewMatrix { UserBubbleSample(hasAttachments: false) } }
 #Preview("attachments") { PreviewMatrix { UserBubbleSample(hasAttachments: true) } }
+#Preview("actions") { PreviewMatrix { PromptActions { _ in } } }
