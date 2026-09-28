@@ -24,6 +24,7 @@ pub mod patch;
 pub mod permissions;
 pub mod plugin_ui;
 pub mod review;
+pub mod server;
 pub mod settings;
 pub mod status;
 pub mod summary;

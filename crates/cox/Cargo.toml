@@ -38,7 +38,7 @@ x86_64-unknown-linux-gnu = ["cox"]
 aarch64-unknown-linux-gnu = ["cox"]
 
 [features]
-default = ["otel", "plugins"]
+default = ["otel", "plugins", "app-server"]
 # T32.9: the five otel crates moved to cox-telemetry; this forwards the
 # feature rather than gating a dependency declared here.
 otel = ["cox-telemetry/otel"]
@@ -47,6 +47,10 @@ otel = ["cox-telemetry/otel"]
 # `--no-default-features --features otel`. Plugin code sits behind
 # `#[cfg(feature = "plugins")]`.
 plugins = ["dep:cox-plugin", "dep:cox-plugin-api", "cox-session/plugins"]
+# T52.19: `cox app-server --stdio` serves the desktop app's `cox-app` over
+# the wire. cox-app builds on cox-session's plugin host, so this implies
+# `plugins`; the slim build drops both.
+app-server = ["dep:cox-app", "plugins"]
 
 [dependencies]
 clap = { workspace = true }
@@ -80,6 +84,8 @@ cox-config = { path = "../cox-config", version = "0.1.2" }
 # this crate keeps the flags, the TUI loop and the printing. Its `plugins`
 # feature follows this crate's.
 cox-session = { path = "../cox-session", version = "0.1.2", default-features = false }
+# T52.19: the app-server surface; optional behind `app-server`.
+cox-app = { path = "../cox-app", version = "0.1.2", optional = true }
 # anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
 # serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }

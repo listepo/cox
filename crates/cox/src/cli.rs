@@ -109,6 +109,9 @@ pub enum Command {
     Mcp(McpArgs),
     /// Agent Client Protocol server on stdio.
     Acp,
+    /// Serve this machine's sessions to a remote desktop app (T52.19).
+    #[cfg(feature = "app-server")]
+    AppServer(AppServerArgs),
     /// Scaffold an AGENTS.md for the repo.
     Init(InitArgs),
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
@@ -119,6 +122,17 @@ pub enum Command {
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate(SelfUpdateArgs),
+}
+
+/// `cox app-server --stdio` (T52.19, DT§4.4): the app-server protocol for
+/// one client on stdin and stdout; stdio is the only transport, so the flag
+/// is required and a later transport gets its own.
+#[cfg(feature = "app-server")]
+#[derive(Args, Debug, Clone)]
+pub struct AppServerArgs {
+    /// Serve on stdin and stdout (what `ssh <host> cox app-server --stdio` runs).
+    #[arg(long, required = true)]
+    pub stdio: bool,
 }
 
 /// `cox self update [--version v]` (plan.md §1.12/T12.2).

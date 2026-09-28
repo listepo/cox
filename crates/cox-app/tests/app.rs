@@ -8,10 +8,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use cox_app::Activity;
 use cox_app::TimelinePatch;
 use cox_app::app::{App, AppError, Host};
 use cox_app::diffmodel::DiffLineKind;
 use cox_app::live::LiveSession;
+use cox_app::server::{ServerHost, serve};
+use cox_app::wire::{self, Call, Line, Outcome, Reply, Request, ServerEvent};
 use cox_app::{
     BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Layer, Need,
 };
@@ -1016,4 +1019,183 @@ async fn a_grant_revoked_from_settings_makes_the_next_write_ask_again() {
     };
     let refused = app.revoke_grant(&cwd, &elsewhere).await;
     assert!(matches!(refused, Err(AppError::NotOpen(_))));
+}
+
+/// T52.19: a request line to `cox app-server`.
+async fn request(to: &mut tokio::io::DuplexStream, id: u64, call: Call) {
+    use tokio::io::AsyncWriteExt as _;
+    let line = wire::encode(&Line::Request(Request {
+        v: wire::VERSION,
+        id,
+        call,
+    }))
+    .expect("encode");
+    to.write_all(line.as_bytes())
+        .await
+        .expect("write a request");
+}
+
+type ServerLines = tokio::io::Lines<tokio::io::BufReader<tokio::io::DuplexStream>>;
+
+async fn next_line(lines: &mut ServerLines) -> Line {
+    let text = lines.next_line().await.expect("read").expect("a line");
+    wire::decode(&text).expect("a protocol line")
+}
+
+/// Reads past notifications to the response to `id`.
+async fn response(lines: &mut ServerLines, id: u64) -> Outcome {
+    loop {
+        if let Line::Response(r) = next_line(lines).await
+            && r.id == id
+        {
+            return r.outcome;
+        }
+    }
+}
+
+/// The client's ends and the server's, as two one-way pipes of `size` bytes.
+fn pipes(
+    size: usize,
+) -> (
+    tokio::io::DuplexStream,
+    ServerLines,
+    tokio::io::DuplexStream,
+    tokio::io::DuplexStream,
+) {
+    use tokio::io::AsyncBufReadExt as _;
+    let (to_server, server_in) = tokio::io::duplex(size);
+    let (server_out, from_server) = tokio::io::duplex(size);
+    let lines = tokio::io::BufReader::new(from_server).lines();
+    (to_server, lines, server_in, server_out)
+}
+
+fn open_call(dir: &Path) -> Call {
+    Call::Open {
+        cwd: dir.join("project"),
+        resume: None,
+        theme: "base16-ocean.dark".into(),
+    }
+}
+
+fn server_app(dir: &Path) -> (Arc<App>, tokio::sync::mpsc::UnboundedReceiver<ServerEvent>) {
+    let (host, events) = ServerHost::channel();
+    let app = App::new(Some(dir.join("user/.cox")), host).expect("app");
+    (app, events)
+}
+
+#[tokio::test]
+async fn app_server_serves_a_scripted_turn() {
+    let dir = scratch(Some(TWO_REPLIES));
+    let (app, events) = server_app(dir.path());
+    let (mut to_server, mut lines, server_in, server_out) = pipes(64 * 1024);
+    let client = async {
+        request(&mut to_server, 1, open_call(dir.path())).await;
+        let Outcome::Ok(Reply::Opened { session, .. }) = response(&mut lines, 1).await else {
+            panic!("open failed");
+        };
+        request(
+            &mut to_server,
+            2,
+            Call::Send {
+                session,
+                intent: send("hi"),
+            },
+        )
+        .await;
+        let mut sent = false;
+        let mut ended = false;
+        while !(sent && ended) {
+            match next_line(&mut lines).await {
+                Line::Response(r) if r.id == 2 => {
+                    assert_eq!(r.outcome, Outcome::Ok(Reply::Sent { child: None }));
+                    sent = true;
+                }
+                Line::Notification(n) => {
+                    if let ServerEvent::Patches {
+                        session: s,
+                        patches,
+                    } = n.event
+                    {
+                        assert_eq!(s, session);
+                        ended |= patches.iter().any(ends_turn);
+                    }
+                }
+                _ => {}
+            }
+        }
+        request(&mut to_server, 3, Call::Projects { limit: 10 }).await;
+        let projects = response(&mut lines, 3).await;
+        assert!(
+            matches!(projects, Outcome::Ok(Reply::Projects(_))),
+            "{projects:?}"
+        );
+        // Closing stdin ends the server; its stream then ends too.
+        drop(to_server);
+        while lines.next_line().await.ok().flatten().is_some() {}
+    };
+    let ((), served) = tokio::join!(client, serve(app, events, server_in, server_out));
+    served.expect("served");
+}
+
+#[tokio::test]
+async fn app_server_never_answers_a_secret() {
+    // No scripted provider and no key in the env: the default provider
+    // needs a key, and the server's host has none to give.
+    let dir = scratch(None);
+    let (host, _events) = ServerHost::channel();
+    assert_eq!(host.secret("anthropic"), None);
+
+    let (app, events) = server_app(dir.path());
+    let (mut to_server, mut lines, server_in, server_out) = pipes(64 * 1024);
+    let client = async {
+        request(&mut to_server, 1, open_call(dir.path())).await;
+        let outcome = response(&mut lines, 1).await;
+        assert!(matches!(outcome, Outcome::Err(_)), "{outcome:?}");
+        drop(to_server);
+        while lines.next_line().await.ok().flatten().is_some() {}
+    };
+    let ((), served) = tokio::join!(client, serve(app, events, server_in, server_out));
+    served.expect("served");
+}
+
+#[tokio::test]
+async fn app_server_stalled_client_does_not_delay_the_turn() {
+    let dir = scratch(Some(WRITE));
+    let (app, events) = server_app(dir.path());
+    // One byte of pipe: once the client stops reading, every write waits.
+    let (mut to_server, mut lines, server_in, server_out) = pipes(1);
+    let client = async {
+        request(&mut to_server, 1, open_call(dir.path())).await;
+        let Outcome::Ok(Reply::Opened { session, .. }) = response(&mut lines, 1).await else {
+            panic!("open failed");
+        };
+        request(
+            &mut to_server,
+            2,
+            Call::Send {
+                session,
+                intent: send("write it"),
+            },
+        )
+        .await;
+        // The client never reads again; the turn still reaches its approval.
+        let waiting = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while app.activity(session) != Activity::WaitingOnYou {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        // The client goes away: the blocked write fails and the server ends.
+        drop(lines);
+        drop(to_server);
+        waiting
+    };
+    let (waiting, _served) = tokio::join!(
+        client,
+        serve(Arc::clone(&app), events, server_in, server_out)
+    );
+    assert!(
+        waiting.is_ok(),
+        "the turn waited on a client that stopped reading"
+    );
 }
