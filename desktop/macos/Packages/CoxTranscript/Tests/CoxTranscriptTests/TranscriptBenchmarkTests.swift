@@ -158,9 +158,10 @@ struct TranscriptBenchmarkTests {
     host.settle()
 
     // 200 tok/s at 60 frames a second, a token about a word, a paragraph every 60 tokens; each
-    // frame sends what the core would: the reply's last paragraph as it now reads. A frame
-    // draws the growing paragraph down, as a window on screen redraws only what changed;
-    // redrawing all 800 pt shown each frame adds about 7 ms that no real frame spends.
+    // frame sends what the core would: the reply's last paragraph as it now reads, which the view
+    // follows down itself (T37.23.7). A frame draws the growing paragraph down, as a window on
+    // screen redraws only what changed; redrawing all 800 pt shown each frame adds about 7 ms
+    // that no real frame spends.
     var paragraphs = [""]
     var sent = 0
     func send(_ frame: Int) {
@@ -174,7 +175,6 @@ struct TranscriptBenchmarkTests {
       host.store.apply([
         .docTail(id: streamed, from: UInt32(last), blocks: [paragraph(paragraphs[last])])
       ])
-      host.text.scrollToEndOfDocument(nil)
     }
     let stats = host.frames(300, drawing: { host.streamedTail }, step: send)
 
