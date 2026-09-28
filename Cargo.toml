@@ -11,7 +11,8 @@ default-members = ["crates/cox"]
 version = "0.1.2"
 edition = "2024"
 rust-version = "1.98"
-license = "MIT OR Apache-2.0"
+# GPLv3 or the royalty-free licence in LICENSE-ROYALTY-FREE.md, at the user's choice (README "License", A68).
+license = "GPL-3.0-only OR LicenseRef-cox-Royalty-Free"
 repository = "https://github.com/listepo/cox"
 
 # Versions verified against crates.io 2026-09-02 (R§4.5). No new dependency
