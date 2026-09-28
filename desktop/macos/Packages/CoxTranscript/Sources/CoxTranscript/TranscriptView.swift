@@ -22,6 +22,8 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
   let approval: @MainActor (Block) -> Approval
   /// Where a prompt's Edit and resend puts its text (`composer(_:)`).
   var composer: ComposerStore?
+  private var textSize = Double(FontToken.transcript.size)
+  private var lineHeight = Double(FontToken.transcript.lineHeight)
 
   public init(
     store: SessionStore, crossBlockSelection: Bool = true,
@@ -32,6 +34,23 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
     self.approval = approval
   }
 
+  /// The prose at `[desktop.transcript]`'s `text_size`, in pt at 100 % text size, and
+  /// `line_height`, a multiple of that size (A93); unset, the `font.transcript` token's.
+  public func text(size: Double, lineHeight: Double) -> Self {
+    var copy = self
+    (copy.textSize, copy.lineHeight) = (size, lineHeight)
+    return copy
+  }
+
+  /// What the text is styled from: the appearance it is drawn at, Reduce Transparency forcing
+  /// Solid as for any view, with the configured text size and line height.
+  private func styling(_ environment: EnvironmentValues) -> TextStyling {
+    TextStyling(
+      appearance: environment.coxAppearance.effective(
+        reduceTransparency: environment.accessibilityReduceTransparency),
+      textSize: textSize, lineHeight: lineHeight)
+  }
+
   public func makeCoordinator() -> TranscriptCoordinator { TranscriptCoordinator() }
 
   public func makeNSView(context: Context) -> NSScrollView {
@@ -39,9 +58,9 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
     let shared = context.coordinator.appearance
     shared.value = appearance
     shared.locale = context.environment.locale
-    let drawn = Self.drawn(context.environment)
-    let text = TranscriptTextView.make(style: .cox(drawn))
-    context.coordinator.styled = drawn
+    let styling = styling(context.environment)
+    let text = TranscriptTextView.make(style: styling.style)
+    context.coordinator.styling = styling
     text.cards = TranscriptCards { [approval] block in
       CardAppearance(shared: shared) { TranscriptCard(block: block, approval: approval) }
     } thumbnail: { name in
@@ -68,13 +87,7 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
     let appearance = context.environment.coxAppearance
     context.coordinator.appearance.value = appearance
     context.coordinator.appearance.locale = context.environment.locale
-    text.map { context.coordinator.restyle($0, at: Self.drawn(context.environment)) }
-  }
-
-  /// The appearance the text is drawn at: Reduce Transparency forces Solid, as for any view.
-  private static func drawn(_ environment: EnvironmentValues) -> Appearance {
-    environment.coxAppearance.effective(
-      reduceTransparency: environment.accessibilityReduceTransparency)
+    text.map { context.coordinator.restyle($0, to: styling(context.environment)) }
   }
 
   public static func dismantleNSView(_ scroll: NSScrollView, coordinator: TranscriptCoordinator) {
@@ -89,8 +102,8 @@ public final class TranscriptCoordinator {
   let appearance = SharedAppearance()
   private weak var store: SessionStore?
   private var tail: TailFollow?
-  /// The appearance the transcript was last styled at.
-  var styled: Appearance?
+  /// What the transcript was last styled from.
+  var styling: TextStyling?
 
   /// Splices each batch the store applies into `text`, after the store, so a block `current`
   /// returns is as the batch left it, keeping the view at the end while the reader is there
@@ -106,16 +119,30 @@ public final class TranscriptCoordinator {
 
   func stop() { store?.didApply = nil }
 
-  /// Restyles `text` at a new text size (T37.23.6) or bubble look — material, Depth or
-  /// opacity (T37.23.9) — staying at the end if the reader was there. Keyed on the appearance,
-  /// so a SwiftUI update that leaves it alone builds no style, and one that leaves the style
-  /// alone restyles nothing.
-  func restyle(_ text: TranscriptTextView, at appearance: Appearance) {
-    guard appearance != styled, let tail else { return }
-    styled = appearance
-    let style = TranscriptStyle.cox(appearance)
+  /// Restyles `text` at a new text size or line height (T37.23.6, A93) or bubble look —
+  /// material, Depth or opacity (T37.23.9) — staying at the end if the reader was there. Keyed
+  /// on the styling, so a SwiftUI update that leaves it alone builds no style, and one that
+  /// leaves the style alone restyles nothing.
+  func restyle(_ text: TranscriptTextView, to styling: TextStyling) {
+    guard styling != self.styling, let tail else { return }
+    self.styling = styling
+    let style = styling.style
     guard style != text.style else { return }
     tail.around(restyling: true) { text.restyle(style) }
+  }
+}
+
+/// What styles the transcript's text: the appearance it is drawn at, whose `textScale` is
+/// ⌘+/⌘−'s, and `[desktop.transcript]`'s `text_size` and `line_height` (A93).
+struct TextStyling: Equatable {
+  let appearance: Appearance
+  let textSize: Double
+  let lineHeight: Double
+
+  @MainActor var style: TranscriptStyle {
+    .cox(
+      appearance, textScale: appearance.textScale * textSize / FontToken.transcript.size,
+      lineHeight: lineHeight)
   }
 }
 
@@ -139,14 +166,17 @@ struct CardAppearance<Content: View>: View {
 
 extension TranscriptStyle {
   /// The transcript drawn with CoxUI's tokens: `font.transcript` prose, `font.transcript.h3`
-  /// headings and `font.mono.code` code at the user's text size, lists indented as the
+  /// headings and `font.mono.code` code at the user's text size, each at its token's line
+  /// height but the prose at `lineHeight` (A93), lists indented as the
   /// mockup's (`space.xxl`), readable colours only (DS§8) — the status colours miss
   /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`. A prompt
   /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5).
   /// `appearance` is what the text is drawn at, Reduce Transparency applied.
   @MainActor
-  static func cox(_ appearance: Appearance) -> TranscriptStyle {
-    let textScale = appearance.textScale
+  static func cox(
+    _ appearance: Appearance, textScale: Double,
+    lineHeight: Double = FontToken.transcript.lineHeight
+  ) -> TranscriptStyle {
     let secondary = TextColour.secondary.nsColor
     return TranscriptStyle(
       body: FontToken.transcript.nsFont(scale: textScale),
@@ -164,7 +194,10 @@ extension TranscriptStyle {
           FontToken.caption.nsFont(scale: textScale), toHaveTrait: .italicFontMask),
         color: secondary, rule: SurfaceColour.separator.nsColor, ruleWidth: Size.hairline,
         indent: Space.l),
-      indent: Space.xxl)
+      indent: Space.xxl,
+      lineHeights: .init(
+        body: lineHeight, code: FontToken.monoCode.lineHeight,
+        heading: FontToken.transcriptH3.lineHeight, thought: FontToken.caption.lineHeight))
   }
 }
 

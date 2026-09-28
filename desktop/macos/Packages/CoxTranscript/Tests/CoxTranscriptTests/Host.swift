@@ -48,19 +48,26 @@ final class Host {
     flush()
   }
 
-  /// Hands the view a new setting, as the app does when the user flips it or the text size.
-  func show(crossBlockSelection: Bool, textScale: Double = 1) {
+  /// Hands the view a new setting, as the app does when the user flips it, the text size or
+  /// `[desktop.transcript]`'s `text_size` and `line_height` (`text`).
+  func show(
+    crossBlockSelection: Bool, textScale: Double = 1,
+    text: (size: Double, lineHeight: Double)? = nil
+  ) {
+    let text = text ?? (Double(FontToken.transcript.size), Double(FontToken.transcript.lineHeight))
     let transcript =
       if let send {
         AnyView(
           TranscriptView(store: store, crossBlockSelection: crossBlockSelection, send: send)
-            .composer(composer))
+            .composer(composer)
+            .text(size: text.size, lineHeight: text.lineHeight))
       } else {
         AnyView(
           TranscriptView(store: store, crossBlockSelection: crossBlockSelection) { block in
             Text(verbatim: Self.slot(block))
           }
-          .composer(composer))
+          .composer(composer)
+          .text(size: text.size, lineHeight: text.lineHeight))
       }
     hosting.rootView = AnyView(
       transcript

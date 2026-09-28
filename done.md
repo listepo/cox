@@ -5019,3 +5019,98 @@ Check:
 - CoxModel 39, CoxTranscriptText 32 (`aQuoteLineLaysOutWithItsBarsAndProseWithout`), CoxTranscript 32 (`replyWithEveryBlockKind` light/dark re-recorded and looked at; `copyAsMarkdownGivesTheStructureBack`, new `copyAsMarkdownOfALoadedReplyGivesItsSource`), CoxCore 10.
 - After merging into `p37-desktop`: cox-render, cox-app, cox-ffi and cox-tui 378/378; CoxCore 12/12, CoxModel 44/44, CoxPlatform 13/13, CoxTranscriptText 33/33, CoxTranscript 37/37.
 Not done: per-level heading sizes (pending token decision); the quote bar uses the thought's hairline, faint in light mode (token question in `ideas.md`).
+
+#### T37.23.14 Empty signed thinking items close like streamed thoughts
+
+Depends: — · Size: ~60 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`
+Goal: T39.2 keeps a tool call's signature as an empty signed `Thinking` item (Gemini over Chat). Since T37.23.10 a streamed thought is closed with `ThinkingDone`, but these empty items open a Timeline thinking block that never gets a duration; the desktop only hides it because its text is empty. Either the core closes them the same way or `Timeline` does not open a block for a signature-only item.
+Check: a cox-app test folding a signature-only thinking item leaves no open thinking block; the T39.2 chat-wire test still passes.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/timeline.rs`: an `ItemStarted` of `ItemKind::Thinking` with empty text and `signature: Some(_)` (T39.2's signature carrier) opens no block, so its `ItemDone` is a no-op and nothing waits for a duration. A streamed thought (`signature: None`) still opens a block closed by `ThinkingDone` (T37.23.10). The core is unchanged, so the rollout and provider history keep the signature.
+Deviations: the Timeline option, not a core `ThinkingDone` for these items (that would close an empty thought at 0 ms and still show it).
+Check:
+- `cargo nextest run -p cox-core -p cox-app`: 349 passed, 1 skipped, including `signature_only_thinking_item_leaves_no_open_thinking_block`; `-p cox-core --test chat_wire`: 1 passed; clippy and fmt clean.
+Not done: how the TUI and ACP show these items was outside the card.
+
+#### T37.29.7 Deleted files and created-file counts in the Changes tab
+
+T37.29.1 left two gaps. CoxUI's `ChangedFileRow.Change` has no `deleted` case, so a `FileChange::Deleted` from `changes()` has no glyph. A `write` that creates a file carries no diff, so the row reads `+0 −0` instead of the new file's line count.
+
+Done means: a `deleted` case with its glyph and snapshot in CoxUI, the mapping in `ChangesTabState`, and a created file counted as all-added lines in `crates/cox-app/src/changes.rs`. Check: the `changes.rs` unit test covers a created file's count; a CoxUI snapshot shows a deleted row.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/changes.rs`: `written(events)` maps a `write` call to its `content` input's line count from the session's rollout (read from the store, not from disk); `build` counts a `Created` row without a diff from it. `LiveSession::changes()` reads the rollout as `open_task` does. A `write` over an existing file and a shell still add nothing.
+- CoxUI `ChangedFileRow.Change.deleted` with SF Symbol `trash`, a `#Preview("deleted")`, `PreviewState.deletedFile` and 4 `changedFileRow-_.deleted-*` snapshots; DESIGN.md DS§3.7 row and the ChangedFileRow glyph list.
+Deviations: `crates/cox-app/tests/app.rs`'s `changes_lists_…` now expects `new.rs` at +1; CoxModel needed a test change only (`ChangesTabState` already carried `FileChange.deleted`).
+Check:
+- `cargo nextest run -p cox-app`: 69/69, including `a_file_a_write_created_counts_its_content_as_added_lines`; clippy and fmt clean. CoxUI InspectorRow snapshots recorded and passed; CoxModel 44/44; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: cox-app 70/70.
+Not done: nothing.
+
+#### T37.29.8 Task kind in the Tasks tab
+
+Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…/TaskRows.swift`
+Goal: T37.29.6 gave `TaskRow` a `kind` (subagent or background shell); `TasksTab.Item` shows it as a glyph and a label ("Open transcript" for a subagent, "Open output" for a shell).
+Check: TasksTab snapshots with one row of each kind.
+Status: done 2026-09-28
+Result:
+- CoxUI `TasksTab.Kind` (`agent`, `shell`) in `Organisms/TasksTab.swift`: a subagent row shows `person.2` and "Open transcript", a shell row `terminal` and "Open output" with `doc.text`; the intent stays `.open(task:)`. The fixture's bash row is a shell, so the 4 `tasksTab` snapshots show one row of each kind; DESIGN.md's TasksTab row updated.
+Deviations: CoxModel `TaskRows.swift` unchanged — `TaskRow.kind` already maps field for field.
+Check: CoxUI `ChangesTab|InspectorRow|TasksTab|Inspector` 18/18 including `aShellRowOpensItsOutputUnderItsOwnGlyph`; CoxModel 44/44; swiftlint and swift-format clean.
+Not done: app wiring (T37.22.3).
+
+#### T37.28.1 Rewind timeline: restore code, conversation or both
+
+Depends: — · Size: ~90 · Files: `…/Organisms/RewindTimeline.swift`, `CoxModel/…/Rewind.swift`, `crates/cox-app/tests/app.rs`
+Goal: pick a checkpoint from `changes().checkpoints` and a scope and send the existing `Intent::Rewind`.
+Check: a fixture rewind restores the expected files in a scratch tree.
+Status: done 2026-09-28
+Result:
+- CoxUI `Organisms/RewindTimeline.swift`: the checkpoints oldest first as CheckpointRows, the selected one raised, each with Restore code (`doc.text`), Restore conversation (`text.bubble`) and Restore both (`arrow.uturn.backward`), reporting `.rewind(checkpoint:code:conversation:)`; previews in `Previews/PreviewState+Rewind.swift`; DESIGN.md DS§6.4 row.
+- CoxModel `Rewind.swift`: `SessionStore.rewind(checkpoint:code:conversation:)` turns the Changes-tab checkpoint (the turn) into `Intent.rewind`; the core's rewind is reused as is.
+- Bug found by the Check and fixed in `crates/cox-sandbox/src/path.rs`: `confine`'s lexical pre-check compared a checkpoint row's canonical path (`/private/var/…`) with the root as opened (`/var/…`), so every restore under a symlinked cwd was refused and reported as "too large to restore". The pre-check now also matches the canonical roots; the canonical check after it still decides.
+Deviations: the trust-guard fix above (reviewed by the orchestrator).
+Check:
+- `cargo nextest run -p cox-sandbox -p cox-app -p cox-tools`: 210 passed, 1 skipped, including `rewinding_code_to_a_checkpoint_restores_its_files_and_keeps_the_conversation`, `rewinding_code_and_conversation_leaves_nothing_to_review` and `a_canonical_path_under_a_symlinked_root_is_confined`; clippy and fmt clean. CoxModel 45/45; CoxUI RewindTimeline, ChangesTab, InspectorRow 13/13; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: cox-sandbox and cox-app 87/87.
+Not done: app wiring (T37.22.3, T37.32). Open questions: the scope of the Changes tab's plain Rewind; whether Review shows the net diff against disk or the model's calls after a code-only rewind; the "too large to restore" notice also covers any failed restore.
+
+#### T37.28 Review pane and rewind timeline
+
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
+Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
+Check: fixture rewind restores the expected files in a scratch worktree.
+Status: done 2026-09-28
+Split at claim into T37.28.1 (rewind timeline, done), T37.28.2 (review pane), T37.28.3 (per-file revert, needs an amendment) and T37.28.4 (line comments).
+
+#### T37.30.5 Coloured page tiles in Settings
+
+Depends: — · Size: ~80 · Files: `desktop/design/tokens/color.*.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxUI/…` (Settings sidebar)
+Goal (A96): `tile.settings.<page>.top/bottom/glyph` tokens mapped to macOS system colours (e.g. `systemBlue`, `systemGray`), with high-contrast variants; the Settings sidebar draws each page's symbol on its coloured tile as in the mockup instead of the plain symbol, and DESIGN.md drops the "need colour tokens that do not exist yet" note.
+Check: the token build's own check; CoxUI snapshots of the Settings sidebar in light, dark and high contrast.
+Status: done 2026-09-28
+Result:
+- `tile.settings.<page>.top/bottom/glyph` in `desktop/design/tokens/color.light.json` and `color.dark.json` (A96), flat as the mockup draws them, white glyph: General systemGray, Models & Providers systemPurple, Permissions systemOrange, Sandbox systemGreen, Budget systemTeal, MCP Servers systemBlue, Plugins systemIndigo, Appearance systemPink, Advanced systemBrown (the mockup has no Advanced tile). Values are macOS 27.0's resolved light, dark and increased-contrast system colours; regenerated `color.*-hc.json`, `tokens.css` and 27 colorsets.
+- `IconTile.init(face:glyph:symbol:)`; `InspectorRow` takes a leading glyph view (its `symbol:` init still works through `SymbolGlyph`); `SettingsSidebar` leads each page with `SettingsPage.tile`; `#Preview("models, high contrast")`. DESIGN.md tile row, `IconTile`/`SettingsSidebar` rows and the Settings paragraph updated.
+Deviations: `high-contrast.mjs` reads a pinned value from `$extensions.cox.highContrast` so High Contrast uses the system's own increased-contrast colour, and its check confirms the pin; in dark High Contrast the glyph (not the face) moves to reach 3:1 (mid-grey). `IconTile.swift` and `InspectorRow.swift` beyond the card's files; ~125 lines.
+Check:
+- `npm ci && npm run build`: light-hc and dark-hc 184 pairs pass, rebuild gives no diff; `npm run check` passes. `settingsSidebar` and every Settings window snapshot re-recorded on purpose; new `settingsSidebarInHighContrast`. CoxUI `Settings|AtomSnapshotTests|InspectorRow|ChangesTab|ToolMolecule` 31, `TasksTab|Inspector` 11; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: CoxUI `Settings|InspectorRow|ChangesTab|TasksTab|Inspector|RewindTimeline|AtomSnapshotTests` 40/40.
+Not done: `mockups.html` keeps inline hex tile colours (T37.17.2).
+
+#### T37.23.13 Transcript text size and line height from config and tokens
+
+Depends: — · Size: ~100 · Files: `crates/cox-config/…` (`[desktop.transcript]`), `docs/config.jsonschema`, `docs/config.md`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A93): `[desktop.transcript]` gets `text_size` and `line_height`; the desktop builds `TranscriptStyle` from them together with `Appearance.textScale` (⌘+/⌘−) and applies the token line heights to the transcript text, restyling in place through T37.23.6's `restyle(_:)`.
+Check: the config-schema drift test; a CoxModel test that the keys reach the style; CoxTranscriptText snapshots at two sizes and line heights.
+Status: done 2026-09-28
+Result:
+- `[desktop.transcript]` gets `text_size` (points at 100 %, 10–24, default 13.5 — the `font.transcript` size) and `line_height` (a multiple of the size, 1–2.5, default 1.55) in `crates/cox-protocol/src/config.rs` and `default.toml` (A93), range-checked like the appearance keys; `docs/config.jsonschema` and `docs/config.md` regenerated.
+- CoxModel `TranscriptSettings.swift`: `DesktopTranscript` and `SettingsStore.transcript` read the settings view the way `[desktop.appearance]` does; one shared `SectionRows` decoder.
+- CoxTranscriptText `TranscriptLineHeights.swift`: `TranscriptStyle.LineHeights` (body, code, heading, thought) as paragraph line spacing, computed like CoxUI's `.textStyle`; every prose paragraph carries a paragraph style. CoxTranscript `TranscriptView.text(size:lineHeight:)` builds the style from textScale × text_size ÷ 13.5 and restyles in place through `restyle(_:)`.
+Deviations: more than 3 files; `Decor.init` gives the bubble and thought paragraphs their spacing; `TailFollow` lays out the viewport before scrolling to the true bottom (the last line now has spacing below it); six transcript snapshot pairs re-recorded; the units (points, a multiple of the size) are the agent's choice.
+Check:
+- `cargo nextest run -p cox-protocol -p cox-config`: 120/120 with both drift tests; `-p cox-app -E 'test(settings)'` 5/5; clippy and fmt clean. CoxModel 46, CoxTranscriptText 33, CoxTranscript 39 (`TranscriptLineHeightTests`, snapshots at 13.5/1.55 and 17/2.0). Real binary under a scratch `COX_HOME`: `config set`/`show` give `text_size = 16.0`, `line_height 3` is rejected.
+- After merging into `p37-desktop`: cox-protocol and cox-config 120/120; CoxModel 47, CoxTranscriptText 33, CoxTranscript 39.
+Not done: the benchmark (skipped) should re-check the per-batch viewport layout; the app passing `SettingsStore.transcript` into the view waits on T37.32.

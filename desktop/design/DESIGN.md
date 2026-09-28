@@ -74,7 +74,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | diff | `add`, `addGutter`, `del`, `delGutter` | Diff lines and gutters |
 | syntax | `keyword`, `string`, `number`, `function`, `comment`, `type` | Highlighting; same roles as `cox-render`'s `StyleToken`, so TUI and app match |
 | data | `meter.sent`, `meter.received`, `context.system/tools/instructions/history` | Token meter and context bar |
-| tile | `tile.<kind>.top/bottom/glyph` for `neutral`, `edit`, `shell`, `search`, `write` | Tool icon tiles |
+| tile | `tile.<kind>.top/bottom/glyph` for `neutral`, `edit`, `shell`, `search`, `write`; `tile.settings.<page>.top/bottom/glyph` per Settings page | Tool icon tiles; Settings page tiles (A96) |
 | shadow | `shadow.tint` | The colour every elevation layer uses |
 
 Mode colours: Ask uses `text.primary` on the selected segment, Plan uses `status.plan`, Auto uses
@@ -176,7 +176,7 @@ names map one-to-one:
 | gear | `gearshape` | shield | `shield` |
 | lock | `lock` | dollar | `dollarsign.circle` |
 | plug | `powerplug` | cpu | `cpu` |
-| — (Settings › Advanced) | `slider.horizontal.3` | | |
+| — (Settings › Advanced) | `slider.horizontal.3` | — (Changes › deleted file) | `trash` |
 
 ## 4. Layout
 
@@ -260,7 +260,7 @@ component.
 | Atom | Variants / states | CSS |
 | --- | --- | --- |
 | `StatusDot` | running, waiting, idle, error | `.dot .d-*` |
-| `IconTile(kind, symbol)` | neutral, edit, shell, search, write; the tool picks the DS§3.7 symbol | `.tool .ic.c-*` |
+| `IconTile(kind, symbol)` | neutral, edit, shell, search, write; the tool picks the DS§3.7 symbol. `IconTile(face:glyph:symbol:)` takes its caller's colours, as a Settings page's | `.tool .ic.c-*`, `.set-side .sq` |
 | `KeyCap` | — | `.kbd` |
 | `Badge` | neutral, user, project, env, default, warning, danger | `.badge .b-*` |
 | `CountBadge` | — | `.sect .cnt` |
@@ -296,7 +296,7 @@ component.
 | `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
 | `MaterialPicker(selection:)` | three swatch tiles (Frosted, Glossy, Solid) on readable glass at e1 with a hairline, the selected one ringed in `accent`; each shows a pane of its own material over a wallpaper, lifted to e2 at the user's Depth | `.mat` |
 | `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
-| `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
+| `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text`/`trash` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
 | `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel | `.group .gr` |
 | `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent | `.sel`, Add key |
 | `ChecklistRow(title, detail:, status:, symbol:, action:, perform:)` | status symbol in its colour (passed `checkmark` in `status.success`, warning, missing `xmark.octagon` in `status.danger`, a step to take in `accent`) in one `size.iconTile` column, SettingLabel, then the fix button (`CoxButtonStyle` small: primary for a step, secondary for a fix); SettingRow's insets | onboarding `.group .gr` |
@@ -320,10 +320,11 @@ component.
 | `AppearancePopover(state:, send:)` | title and KeyCap, MaterialPicker, LabeledSlider ×3 (transparency; blur, or reflection for Glossy; Depth), LabeledToggle (tint), a note in footnote; readable `surface.popover` glass at e4. Solid disables transparency and blur; Reduce Transparency disables all but Depth and the note says why. Reports one intent per `[desktop.appearance]` key; the window draws from the same state | `.appear` |
 | `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot, scrolling in one inset body | `.insp` |
 | `ChangesTab(state:, send:)` | the Changes tab (DT§5.1): `InspectorSection`s (SectionHeader over flush rows, shared by every tab) of ChangedFileRow under a `Review` link with its KeyCap (⌘⇧R, which the app's menu answers), CheckpointRow, and the worktree's KeyValueGrid; an empty section is left out, an empty tab says so. A row click opens Review at the file; the rows' actions report review, revert and rewind | `.ib`, `.ih`, `.fr` |
+| `RewindTimeline(state:, send:)` | the rewind timeline (DT§3, DT§5.4): one `InspectorSection` `Rewind` of CheckpointRows oldest first, the selected one (a gutter mark's) lifted; each row's actions are the scopes — Restore code (`doc.text`), Restore conversation (`text.bubble`), Restore code and conversation (`arrow.uturn.backward`) — reported as one `rewind(checkpoint:code:conversation:)`; empty, it says so. CoxModel's `SessionStore.rewind(checkpoint:code:conversation:)` sends it as `Intent.rewind` (T37.28.1) | `.ih`, `.fr` |
 | `PlanTab(state:)` | the Plan tab (DT§5.1): one `InspectorSection` (`Plan · done of all`) of the model's `todo` list in its order — a box per step (`square` in `text.secondary` pending, `square.inset.filled` in `accent` in progress, `checkmark.square.fill` in `status.success` done), then the step's text in `font.body`, wrapping; a done step is struck through in `text.secondary`. VoiceOver reads the text with the state. Read-only; an empty tab says so. The app fills it from `SessionClient.plan()` (T37.29.2) | `.ib`, `.ih`, `.todo` |
-| `TasksTab(state:, send:)` | the Tasks tab (DT§5.1): one `InspectorSection` (`Subagents & background · n`) of `InspectorRow`s — the agent glyph `person.2`, the label, the tier Badge, the cost in tabular footnote `text.secondary` once the task is done, then the ToolHeader's spinner, check or cross; an empty tab says so. A row click, or its `Open transcript` action, reports the task's id to open its transcript | `.ib`, `.ih`, `.card` |
+| `TasksTab(state:, send:)` | the Tasks tab (DT§5.1): one `InspectorSection` (`Subagents & background · n`) of `InspectorRow`s — the kind's glyph (`person.2` subagent, `terminal` shell), the label, the tier Badge, the cost in tabular footnote `text.secondary` once the task is done, then the ToolHeader's spinner, check or cross; an empty tab says so. A row click, or its `Open transcript` (subagent) or `Open output` (shell) action, reports the task's id to open it | `.ib`, `.ih`, `.card` |
 | `InfoTab(state:)` | the Info tab (DT§5.1): an `InspectorSection` `Session` whose KeyValueGrid lists the session id, folder, worktree with its branch as a detail row, and rollout file, then `Config`: each layer that set a key with its count, its file as a detail row under it; paths start at `~`; an empty tab says so | `.ib`, `.ih`, `.tokpop .grid` |
-| `SettingsSidebar(pages:, selection:, userFile:, projectFile:, select:)` | ShellPane(.sidebar); a plain `InspectorRow` per `SettingsPage` (General … Advanced, DT§5.7, with its §3.7 symbol), the selected one lifted; footer: each config file cut in the middle with its layer Badge | `.set-side` |
+| `SettingsSidebar(pages:, selection:, userFile:, projectFile:, select:)` | ShellPane(.sidebar); an `InspectorRow` per `SettingsPage` (General … Advanced, DT§5.7) led by its §3.7 symbol on an `IconTile` in `tile.settings.<page>` colours, the selected one lifted; footer: each config file cut in the middle with its layer Badge | `.set-side` |
 | `SettingsGroupBox(title, content:)` | SectionHeader over the rows on `fill.primary` at `radius.xl`, a hairline between rows | `.gtitle`, `.group` |
 
 ### 6.5 The glass main screen, decomposed
@@ -336,8 +337,11 @@ It holds no styling of its own; it takes `MainScreenState` and reports `MainScre
 `SettingsGroupBox` per config table of the selected page: the provider's `SettingField` key row, then a
 `SettingRow` per setting (LabeledToggle, LabeledSlider, CoxSegmented or SettingField). It takes
 `SettingsScreenState` and reports `SettingsScreenIntent`; `CoxModel`'s `SettingsStore.tables(in:)` holds
-the titles, details and controls the app copies into that state. The mockup's coloured page tiles need
-colour tokens that do not exist yet, so pages show the plain symbol. The MCP page opens with a
+the titles, details and controls the app copies into that state. Each page's tile is a macOS system
+colour, flat as in the mockup (A96): General `systemGray`, Models & Providers `systemPurple`,
+Permissions `systemOrange`, Sandbox `systemGreen`, Budget `systemTeal`, MCP Servers `systemBlue`,
+Plugins `systemIndigo`, Appearance `systemPink`, Advanced `systemBrown`; the values are SwiftUI's
+colours resolved on macOS 27.0 per scheme and contrast (checked 2026-09-28). The MCP page opens with a
 `Logins` `SettingsGroupBox`: per server a `TitledSetting` with its login line and a small
 `CoxButtonStyle` Log in (primary) or Log out (secondary) button, from `SettingsStore.logins`. A page
 whose keys the project file tried to weaken opens with a `Dropped from the project` `SettingsGroupBox`:
@@ -370,7 +374,10 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
   9.8 thousand received, 71 tokens per second".
 - Honour Reduce Transparency, Reduce Motion and Increase Contrast (§1.6). `high-contrast.mjs` derives
   the Increase Contrast palettes `color.*-hc.json` (A89) and checks them in `just desktop-tokens`: text
-  at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque.
+  at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque. A token that stands
+  for a macOS system colour pins the system's own Increase Contrast variant in
+  `$extensions.cox.highContrast` (A96); the check still holds it to its ratio, moving the glyph on it
+  instead.
 
 ## 9. Rules for agents generating SwiftUI
 

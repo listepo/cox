@@ -1,7 +1,8 @@
 // The Settings screen's check (T37.30.1, DT§5.7): the Models & Providers page in every
 // light/dark × Solid/Frosted cell — the tier the project's config sets is read-only, names the
 // project file and carries the `project` badge, and the provider's key field is empty — the
-// Appearance page's controls, and the sidebar, group box and field per cell.
+// Appearance page's controls, and the sidebar, group box and field per cell; the sidebar's
+// coloured page tiles also in High Contrast (T37.30.5).
 
 import SwiftUI
 import Testing
@@ -21,12 +22,14 @@ import Testing
   }
 
   @Test(arguments: Variant.all) func settingsSidebar(_ variant: Variant) throws {
+    try assertCoxSnapshot(sidebar, variant, named: variant.name)
+  }
+
+  /// A96: each page's tile takes the system colour's Increase Contrast variant.
+  @Test(arguments: Variant.all.filter { $0.material == .solid })
+  func settingsSidebarInHighContrast(_ variant: Variant) throws {
     try assertCoxSnapshot(
-      SettingsSidebar(
-        pages: SettingsPage.allCases, selection: .models, userFile: PreviewState.userFile,
-        projectFile: PreviewState.projectFile
-      ) { _ in }
-      .frame(height: Size.windowMinHeight), variant, named: variant.name)
+      sidebar.environment(\._colorSchemeContrast, .increased), variant, named: variant.name)
   }
 
   @Test(arguments: Variant.all) func settingsGroupBox(_ variant: Variant) throws {
@@ -49,6 +52,14 @@ import Testing
         }
         .fixedSize()
       }, variant, named: variant.name)
+  }
+
+  private var sidebar: some View {
+    SettingsSidebar(
+      pages: SettingsPage.allCases, selection: .models, userFile: PreviewState.userFile,
+      projectFile: PreviewState.projectFile
+    ) { _ in }
+    .frame(height: Size.windowMinHeight)
   }
 
   private func check(

@@ -116,6 +116,13 @@ impl Timeline {
                         text: text.clone(),
                         doc: markdown::parse(text, &self.theme, &UNICODE),
                     },
+                    // T39.2 keeps a tool call's signature as an empty signed
+                    // item for the provider's history; there is no thought to
+                    // show, and no `ThinkingDone` would ever close it.
+                    ItemKind::Thinking {
+                        text,
+                        signature: Some(_),
+                    } if text.is_empty() => return vec![],
                     ItemKind::Thinking { text, .. } => BlockKind::Thinking {
                         text: text.clone(),
                         duration_ms: None,
@@ -819,5 +826,31 @@ mod tests {
             .collect::<Result<_, _>>()
             .expect("rollout lines");
         assert_eq!(fold(&replayed), live);
+    }
+
+    /// T37.23.14: the empty signed item T39.2 emits before a tool call
+    /// opens no thinking block, so none is left waiting for a duration.
+    #[test]
+    fn signature_only_thinking_item_leaves_no_open_thinking_block() {
+        let item = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: Some("sig-1".into()),
+        };
+        let mut timeline = Timeline::default();
+        assert!(
+            timeline
+                .apply(&Event::ItemStarted { item, kind })
+                .is_empty()
+        );
+        assert!(timeline.apply(&Event::ItemDone { item }).is_empty());
+        assert!(
+            !timeline
+                .blocks()
+                .iter()
+                .any(|b| matches!(b.kind, BlockKind::Thinking { .. })),
+            "{:?}",
+            timeline.blocks()
+        );
     }
 }

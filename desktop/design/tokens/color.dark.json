@@ -753,6 +753,459 @@
             "hex": "#ffffff"
           }
         }
+      },
+      "settings": {
+        "$description": "Settings page tiles (A96): the page's macOS system colour, flat as in the mockup; the High Contrast value is the system's own Increase Contrast variant, not derived",
+        "general": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.5961,
+                0.5961,
+                0.6157
+              ],
+              "hex": "#98989d"
+            },
+            "$description": "systemGray",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#98989d"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.5961,
+                0.5961,
+                0.6157
+              ],
+              "hex": "#98989d"
+            },
+            "$description": "systemGray",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#98989d"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "models": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.8588,
+                0.2039,
+                0.949
+              ],
+              "hex": "#db34f2"
+            },
+            "$description": "systemPurple",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#ea8dff"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.8588,
+                0.2039,
+                0.949
+              ],
+              "hex": "#db34f2"
+            },
+            "$description": "systemPurple",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#ea8dff"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "permissions": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                0.5725,
+                0.1882
+              ],
+              "hex": "#ff9230"
+            },
+            "$description": "systemOrange",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#ffa056"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                0.5725,
+                0.1882
+              ],
+              "hex": "#ff9230"
+            },
+            "$description": "systemOrange",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#ffa056"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "sandbox": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.1882,
+                0.8196,
+                0.3451
+              ],
+              "hex": "#30d158"
+            },
+            "$description": "systemGreen",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#4ad968"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.1882,
+                0.8196,
+                0.3451
+              ],
+              "hex": "#30d158"
+            },
+            "$description": "systemGreen",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#4ad968"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "budget": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.0,
+                0.8235,
+                0.8784
+              ],
+              "hex": "#00d2e0"
+            },
+            "$description": "systemTeal",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#3bddec"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.0,
+                0.8235,
+                0.8784
+              ],
+              "hex": "#00d2e0"
+            },
+            "$description": "systemTeal",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#3bddec"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "mcp": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.0,
+                0.5686,
+                1.0
+              ],
+              "hex": "#0091ff"
+            },
+            "$description": "systemBlue",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#5cb8ff"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.0,
+                0.5686,
+                1.0
+              ],
+              "hex": "#0091ff"
+            },
+            "$description": "systemBlue",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#5cb8ff"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "plugins": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.4275,
+                0.4863,
+                1.0
+              ],
+              "hex": "#6d7cff"
+            },
+            "$description": "systemIndigo",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#a7aaff"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.4275,
+                0.4863,
+                1.0
+              ],
+              "hex": "#6d7cff"
+            },
+            "$description": "systemIndigo",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#a7aaff"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "appearance": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                0.2157,
+                0.3725
+              ],
+              "hex": "#ff375f"
+            },
+            "$description": "systemPink",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#ff8ac4"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                0.2157,
+                0.3725
+              ],
+              "hex": "#ff375f"
+            },
+            "$description": "systemPink",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#ff8ac4"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        },
+        "advanced": {
+          "top": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.7176,
+                0.5412,
+                0.4
+              ],
+              "hex": "#b78a66"
+            },
+            "$description": "systemBrown",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#dba679"
+              }
+            }
+          },
+          "bottom": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                0.7176,
+                0.5412,
+                0.4
+              ],
+              "hex": "#b78a66"
+            },
+            "$description": "systemBrown",
+            "$extensions": {
+              "cox": {
+                "highContrast": "#dba679"
+              }
+            }
+          },
+          "glyph": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "srgb",
+              "components": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "hex": "#ffffff"
+            }
+          }
+        }
       }
     }
   }

@@ -6,11 +6,19 @@
 import SwiftUI
 
 /// One `InspectorSection` of task rows, newest last as the core started them; with none, one
-/// quiet line. A row click asks the app to open that task's transcript.
+/// quiet line. A row click asks the app to open that task's transcript, or a shell's output.
 struct TasksTab: View {
   /// What the tab lists, formatted by the core.
   struct State: Equatable, Sendable {
     var items: [Item] = []
+  }
+
+  /// What a task is, which picks its glyph and what opening it shows (T37.29.8).
+  enum Kind: Equatable, Sendable {
+    /// A subagent, whose transcript opens.
+    case agent
+    /// A background shell, whose output opens.
+    case shell
   }
 
   /// A subagent or a background call.
@@ -21,6 +29,7 @@ struct TasksTab: View {
     var label: String
     /// The model tier it runs on, `cheap`.
     var tier: String
+    var kind: Kind
     var state: ToolHeader.State
     /// What it cost, `$0.03`; `nil` while it runs.
     var cost: String?
@@ -28,7 +37,7 @@ struct TasksTab: View {
 
   /// What the tab asks the app to do.
   enum Intent: Equatable, Sendable {
-    /// Open the transcript of the task with this id.
+    /// Open the task with this id: a subagent's transcript or a shell's output.
     case open(task: String)
   }
 
@@ -43,7 +52,7 @@ struct TasksTab: View {
     } else {
       InspectorSection(state.title) {
         ForEach(state.items, id: \.id) { item in
-          let open = Self.openAction(item.id, send: send)
+          let open = Self.openAction(item.id, kind: item.kind, send: send)
           TaskItemRow(item: item, actions: [open])
             .onTapGesture { open.perform() }
             .accessibilityAction { open.perform() }
@@ -59,23 +68,50 @@ extension TasksTab.State {
 }
 
 extension TasksTab {
-  /// A row's action, which a click on the row performs too: open the task's transcript.
+  /// A row's action, which a click on the row performs too: open the task, labelled by what
+  /// opening its kind shows.
   nonisolated static func openAction(
-    _ task: String, send: @escaping @MainActor (Intent) -> Void
+    _ task: String, kind: Kind, send: @escaping @MainActor (Intent) -> Void
   ) -> RowAction {
-    RowAction(title: "Open transcript", symbol: "text.bubble") { send(.open(task: task)) }
+    RowAction(title: kind.openTitle, symbol: kind.openSymbol) { send(.open(task: task)) }
   }
 }
 
-/// An `InspectorRow` with the transcript's agent glyph (DS§3.7 `person.2`, as the task's
-/// ToolCard shows it): the label, the tier as a Badge, the cost in `text.secondary`, then the
+extension TasksTab.Kind {
+  /// The DS§3.7 glyph the transcript's tool row shows for it: `person.2` agent, `terminal` shell.
+  var symbol: String {
+    switch self {
+    case .agent: "person.2"
+    case .shell: "terminal"
+    }
+  }
+
+  /// The open action's title, which is also its tooltip.
+  var openTitle: String {
+    switch self {
+    case .agent: "Open transcript"
+    case .shell: "Open output"
+    }
+  }
+
+  /// The open action's DS§3.7 glyph: `text.bubble` for a transcript, `doc.text` for output.
+  var openSymbol: String {
+    switch self {
+    case .agent: "text.bubble"
+    case .shell: "doc.text"
+    }
+  }
+}
+
+/// An `InspectorRow` with the task kind's glyph (`person.2` or `terminal`, as the transcript's
+/// tool row shows it): the label, the tier as a Badge, the cost in `text.secondary`, then the
 /// ToolHeader's spinner, check or cross.
 private struct TaskItemRow: View {
   let item: TasksTab.Item
   let actions: [RowAction]
 
   var body: some View {
-    InspectorRow(symbol: "person.2", isSelected: false, actions: actions) {
+    InspectorRow(symbol: item.kind.symbol, isSelected: false, actions: actions) {
       Text(item.label).frame(maxWidth: .infinity, alignment: .leading)
       Badge(item.tier)
       if let cost = item.cost {

@@ -2,7 +2,8 @@
 //! changed with their kind, `+n −m` and the call that changed them last; the
 //! turns code can be rewound to; the linked worktree it runs in. Built on
 //! request from what the session already has — its blocks, the
-//! `checkpoints` rows (kinds and times) and git — not folded per event,
+//! `checkpoints` rows (kinds and times), the rollout's `write` inputs and
+//! git — not folded per event,
 //! because only an open tab asks. Separate from the timeline fold, which it
 //! only reads.
 
@@ -11,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use cox_protocol::CheckpointRow;
 use cox_protocol::ids::CallId;
-use cox_protocol::types::CheckpointKind;
+use cox_protocol::types::{CheckpointKind, Event};
 use cox_render::diffmodel::{DiffLineKind, DiffModel};
 use cox_tools::git::Linked;
 use serde::{Deserialize, Serialize};
@@ -44,8 +45,9 @@ pub struct ChangedFile {
     /// Relative to the session's cwd when inside it.
     pub path: PathBuf,
     pub change: FileChange,
-    /// Summed over the calls' diffs; a call without one (`write`, a shell)
-    /// adds nothing.
+    /// Summed over the calls' diffs; a `write` that created the file adds
+    /// all its lines, any other call without a diff (a shell, a `write`
+    /// over an existing file) adds nothing.
     pub added: u32,
     pub removed: u32,
     /// The last call that changed it, and that call's turn.
@@ -64,13 +66,14 @@ pub struct Checkpoint {
     pub time: String,
 }
 
-/// `rows` are the session's checkpoint rows with their times, `cwd` the
-/// directory paths are shown relative to. A row counts only while its
-/// call's block is in `blocks`, so a turn rewound out of the conversation
-/// drops out here too.
+/// `rows` are the session's checkpoint rows with their times, `written`
+/// the line counts from [`written`], `cwd` the directory paths are shown
+/// relative to. A row counts only while its call's block is in `blocks`, so
+/// a turn rewound out of the conversation drops out here too.
 pub fn build(
     blocks: &[Block],
     rows: &[(CheckpointRow, String)],
+    written: &HashMap<CallId, usize>,
     cwd: &Path,
     worktree: Option<Linked>,
 ) -> Changes {
@@ -94,9 +97,13 @@ pub fn build(
         let Some(diff) = diffs.get(&key("call", call)) else {
             continue;
         };
+        let created = || match row.kind {
+            CheckpointKind::Created => (written.get(&call).copied().unwrap_or(0), 0),
+            _ => (0, 0),
+        };
         let (added, removed) = diff
             .filter(|d| row.path.ends_with(&d.path))
-            .map_or((0, 0), counts);
+            .map_or_else(created, counts);
         let path = row.path.strip_prefix(cwd).unwrap_or(&row.path);
         let name = path.file_name().unwrap_or(path.as_os_str());
         let name = name.to_string_lossy().into_owned();
@@ -150,6 +157,22 @@ pub fn build(
             .collect(),
         worktree,
     }
+}
+
+/// The line count of each `write` call's `content`, from the rollout: a
+/// `write` returns no diff, and its input already holds what the created
+/// file contains, so the disk (which may have changed since) is not read.
+pub fn written(events: &[Event]) -> HashMap<CallId, usize> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::ToolCallRequested { call } if call.name == "write" => {
+                let content = call.input.get("content")?.as_str()?;
+                Some((call.id, content.lines().count()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// A file first recorded as `first` and last as `last`.
@@ -238,7 +261,7 @@ mod tests {
             row(3, Some(gone), "/w/src/main.rs", CheckpointKind::Pre),
         ];
         let blocks = [tool(a, 1), tool(b, 2)];
-        let changes = build(&blocks, &rows, Path::new("/w"), None);
+        let changes = build(&blocks, &rows, &HashMap::new(), Path::new("/w"), None);
         let files: Vec<_> = changes
             .files
             .iter()
@@ -255,6 +278,43 @@ mod tests {
             [
                 (1, "Turn 1 · before tmp.txt and 1 more", "14:01"),
                 (2, "Turn 2 · before tmp.txt", "14:02"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_a_write_created_counts_its_content_as_added_lines() {
+        let (new, over) = (CallId::new(), CallId::new());
+        let write = |id, path: &str, content: &str| Event::ToolCallRequested {
+            call: cox_protocol::types::ToolCall {
+                id,
+                name: "write".into(),
+                input: serde_json::json!({ "path": path, "content": content }),
+                risk: Risk::Write,
+                subject: path.into(),
+                segments: None,
+            },
+        };
+        let events = [
+            write(new, "new.rs", "fn main() {\n    run();\n}\n"),
+            write(over, "old.rs", "a\nb\n"),
+        ];
+        let rows = [
+            row(1, Some(new), "/w/new.rs", CheckpointKind::Created),
+            row(1, Some(over), "/w/old.rs", CheckpointKind::Pre),
+        ];
+        let blocks = [tool(new, 1), tool(over, 1)];
+        let changes = build(&blocks, &rows, &written(&events), Path::new("/w"), None);
+        let files: Vec<_> = changes
+            .files
+            .iter()
+            .map(|f| (f.path.to_str(), f.change, f.added, f.removed))
+            .collect();
+        assert_eq!(
+            files,
+            [
+                (Some("new.rs"), FileChange::Created, 3, 0),
+                (Some("old.rs"), FileChange::Edited, 0, 0),
             ]
         );
     }

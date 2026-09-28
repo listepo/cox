@@ -12,6 +12,10 @@ extension PreviewState {
     .init(path: "cox-provider-http/tests/backoff.rs", change: .created, added: 42, removed: 0),
   ]
 
+  /// A file the session removed (T37.29.7).
+  static let deletedFile = ChangedFileRow.File(
+    path: "cox-provider-http/src/backoff_old.rs", change: .deleted, added: 0, removed: 27)
+
   static let checkpoints: [CheckpointRow.Checkpoint] = [
     .init(id: "cp-1", label: "Turn 1 · before edit retry.rs", time: "14:02"),
     .init(id: "cp-2", label: "Turn 1 · before write backoff.rs", time: "14:03"),
@@ -57,6 +61,14 @@ struct ChangedFileList: View {
       }
     }
     .frame(width: Size.inspectorWidth)
+  }
+}
+
+/// A deleted file at the inspector's width.
+struct DeletedFileSample: View {
+  var body: some View {
+    ChangedFileRow(PreviewState.deletedFile, actions: PreviewState.fileActions)
+      .frame(width: Size.inspectorWidth)
   }
 }
 

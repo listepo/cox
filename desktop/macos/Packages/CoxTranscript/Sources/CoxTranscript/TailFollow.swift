@@ -46,19 +46,30 @@ final class TailFollow: NSObject {
     edit()
     guard follow, let text else { return }
     following = true
+    // The scroll stops at the last line's glyphs and the frame grows by the space its line
+    // height leaves under it (A93) only when the viewport is laid out, so lay it out now and
+    // take the clip view to the text's bottom.
     text.scrollToEndOfDocument(nil)
+    text.textLayoutManager?.textViewportLayoutController.layoutViewport()
+    showBottom()
   }
 
   /// Restyled text laid out again below a following view keeps the end in view (T37.23.6). Only
   /// after a restyle: a batch scrolls itself, and a frame change is too common to scroll on each.
   @objc private func resized() {
-    guard pinned, following == true, !moving, let scroll = text?.enclosingScrollView,
-      let document = scroll.documentView
-    else { return }
+    guard pinned, following == true, !moving else { return }
     moving = true
     defer { moving = false }
     // The clip view, not `scrollToEndOfDocument`: while the frame changes, TextKit has not
     // laid out the new last line that scroll would reveal, and the view stays put.
+    showBottom()
+  }
+
+  /// Moves the clip view to the text's bottom edge.
+  private func showBottom() {
+    guard let scroll = text?.enclosingScrollView, let document = scroll.documentView else {
+      return
+    }
     let clip = scroll.contentView
     clip.scroll(to: NSPoint(x: 0, y: max(0, document.frame.maxY - clip.bounds.height)))
     scroll.reflectScrolledClipView(clip)

@@ -1278,6 +1278,15 @@ pub const DESKTOP_MAX_BLUR_PT: f64 = 60.0;
 /// DS§3.4: Depth scales every elevation level by 0…1; 1 draws the
 /// `elevation.*` tokens unscaled, as designed.
 pub const DESKTOP_DEFAULT_DEPTH: f64 = 1.0;
+/// `desktop/design/tokens/base.json` `font.transcript.size` (DS§3.2): the
+/// transcript's prose size in pt at 100 % text size. Copied like the opacity.
+pub const DESKTOP_DEFAULT_TEXT_SIZE_PT: f64 = 13.5;
+/// The transcript text size's bounds in pt; ⌘+/⌘− then scale it 85–150 %.
+pub const DESKTOP_TEXT_SIZE_PT: (f64, f64) = (10.0, 24.0);
+/// `font.transcript.lineHeight` (DS§3.2): prose line height as a multiple of its size.
+pub const DESKTOP_DEFAULT_LINE_HEIGHT: f64 = 1.55;
+/// The transcript line height's bounds, as a multiple of the text size.
+pub const DESKTOP_LINE_HEIGHT: (f64, f64) = (1.0, 2.5);
 
 /// `[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the
 /// app reads them; they live here so they get a schema and provenance like
@@ -1340,19 +1349,30 @@ impl Default for DesktopAppearanceConfig {
     }
 }
 
-/// `[desktop.transcript]` (A67).
+/// `[desktop.transcript]` (A67, A93).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DesktopTranscriptConfig {
     /// Whether a text selection runs across blocks like one document;
     /// `false` clamps it to the block where the drag started.
     pub cross_block_selection: bool,
+    /// The transcript's prose size in pt at 100 % text size, 10 to 24;
+    /// code, headings and thoughts keep their size relative to it.
+    #[serde(deserialize_with = "text_size_pt")]
+    #[schemars(range(min = DESKTOP_TEXT_SIZE_PT.0, max = DESKTOP_TEXT_SIZE_PT.1))]
+    pub text_size: f64,
+    /// The prose line height as a multiple of the text size, 1 to 2.5.
+    #[serde(deserialize_with = "line_height")]
+    #[schemars(range(min = DESKTOP_LINE_HEIGHT.0, max = DESKTOP_LINE_HEIGHT.1))]
+    pub line_height: f64,
 }
 
 impl Default for DesktopTranscriptConfig {
     fn default() -> Self {
         Self {
             cross_block_selection: true,
+            text_size: DESKTOP_DEFAULT_TEXT_SIZE_PT,
+            line_height: DESKTOP_DEFAULT_LINE_HEIGHT,
         }
     }
 }
@@ -1365,6 +1385,16 @@ fn unit_interval<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error
 /// A blur radius in `0.0..=DESKTOP_MAX_BLUR_PT`.
 fn blur_pt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
     in_range(d, 0.0, DESKTOP_MAX_BLUR_PT)
+}
+
+/// A transcript text size in `DESKTOP_TEXT_SIZE_PT`.
+fn text_size_pt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, DESKTOP_TEXT_SIZE_PT.0, DESKTOP_TEXT_SIZE_PT.1)
+}
+
+/// A transcript line height in `DESKTOP_LINE_HEIGHT`.
+fn line_height<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, DESKTOP_LINE_HEIGHT.0, DESKTOP_LINE_HEIGHT.1)
 }
 
 /// Serde, not the loader, rejects an out-of-range number, so the error

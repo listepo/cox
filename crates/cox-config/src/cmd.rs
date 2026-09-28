@@ -278,11 +278,13 @@ mod tests {
     }
 
     #[test]
-    fn config_rejects_out_of_range_desktop_appearance() {
+    fn config_rejects_out_of_range_desktop_values() {
         for (key, value) in [
             ("desktop.appearance.opacity", "1.5"),
             ("desktop.appearance.depth", "-0.1"),
             ("desktop.appearance.blur", "61"),
+            ("desktop.transcript.text_size", "9.5"),
+            ("desktop.transcript.line_height", "2.6"),
         ] {
             match set_then_load(key, value) {
                 Err(CoreError::Config { key: at, message }) => {
@@ -295,5 +297,7 @@ mod tests {
         }
         let loaded = set_then_load("desktop.appearance.blur", "60").expect("the bound loads");
         assert_eq!(loaded.config.desktop.appearance.blur, 60.0);
+        let loaded = set_then_load("desktop.transcript.text_size", "24").expect("the bound loads");
+        assert_eq!(loaded.config.desktop.transcript.text_size, 24.0);
     }
 }

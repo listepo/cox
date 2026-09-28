@@ -93,6 +93,33 @@
   --c-tile-write-top: rgba(199, 166, 255, 1);
   --c-tile-write-bottom: rgba(124, 77, 219, 1);
   --c-tile-write-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-general-top: rgba(142, 142, 147, 1);
+  --c-tile-settings-general-bottom: rgba(142, 142, 147, 1);
+  --c-tile-settings-general-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-models-top: rgba(203, 48, 224, 1);
+  --c-tile-settings-models-bottom: rgba(203, 48, 224, 1);
+  --c-tile-settings-models-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-permissions-top: rgba(255, 141, 40, 1);
+  --c-tile-settings-permissions-bottom: rgba(255, 141, 40, 1);
+  --c-tile-settings-permissions-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-sandbox-top: rgba(52, 199, 89, 1);
+  --c-tile-settings-sandbox-bottom: rgba(52, 199, 89, 1);
+  --c-tile-settings-sandbox-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-budget-top: rgba(0, 195, 208, 1);
+  --c-tile-settings-budget-bottom: rgba(0, 195, 208, 1);
+  --c-tile-settings-budget-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-mcp-top: rgba(0, 136, 255, 1);
+  --c-tile-settings-mcp-bottom: rgba(0, 136, 255, 1);
+  --c-tile-settings-mcp-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-plugins-top: rgba(97, 85, 245, 1);
+  --c-tile-settings-plugins-bottom: rgba(97, 85, 245, 1);
+  --c-tile-settings-plugins-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-appearance-top: rgba(255, 45, 85, 1);
+  --c-tile-settings-appearance-bottom: rgba(255, 45, 85, 1);
+  --c-tile-settings-appearance-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-advanced-top: rgba(172, 127, 94, 1);
+  --c-tile-settings-advanced-bottom: rgba(172, 127, 94, 1);
+  --c-tile-settings-advanced-glyph: rgba(255, 255, 255, 1);
 }
 
 .dark {
@@ -152,6 +179,33 @@
   --c-tile-write-top: rgba(199, 166, 255, 1);
   --c-tile-write-bottom: rgba(124, 77, 219, 1);
   --c-tile-write-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-general-top: rgba(152, 152, 157, 1);
+  --c-tile-settings-general-bottom: rgba(152, 152, 157, 1);
+  --c-tile-settings-general-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-models-top: rgba(219, 52, 242, 1);
+  --c-tile-settings-models-bottom: rgba(219, 52, 242, 1);
+  --c-tile-settings-models-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-permissions-top: rgba(255, 146, 48, 1);
+  --c-tile-settings-permissions-bottom: rgba(255, 146, 48, 1);
+  --c-tile-settings-permissions-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-sandbox-top: rgba(48, 209, 88, 1);
+  --c-tile-settings-sandbox-bottom: rgba(48, 209, 88, 1);
+  --c-tile-settings-sandbox-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-budget-top: rgba(0, 210, 224, 1);
+  --c-tile-settings-budget-bottom: rgba(0, 210, 224, 1);
+  --c-tile-settings-budget-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-mcp-top: rgba(0, 145, 255, 1);
+  --c-tile-settings-mcp-bottom: rgba(0, 145, 255, 1);
+  --c-tile-settings-mcp-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-plugins-top: rgba(109, 124, 255, 1);
+  --c-tile-settings-plugins-bottom: rgba(109, 124, 255, 1);
+  --c-tile-settings-plugins-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-appearance-top: rgba(255, 55, 95, 1);
+  --c-tile-settings-appearance-bottom: rgba(255, 55, 95, 1);
+  --c-tile-settings-appearance-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-advanced-top: rgba(183, 138, 102, 1);
+  --c-tile-settings-advanced-bottom: rgba(183, 138, 102, 1);
+  --c-tile-settings-advanced-glyph: rgba(255, 255, 255, 1);
 }
 
 .hc {
@@ -211,6 +265,33 @@
   --c-tile-write-top: rgba(163, 136, 209, 1);
   --c-tile-write-bottom: rgba(124, 77, 219, 1);
   --c-tile-write-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-general-top: rgba(105, 105, 110, 1);
+  --c-tile-settings-general-bottom: rgba(105, 105, 110, 1);
+  --c-tile-settings-general-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-models-top: rgba(176, 47, 194, 1);
+  --c-tile-settings-models-bottom: rgba(176, 47, 194, 1);
+  --c-tile-settings-models-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-permissions-top: rgba(197, 83, 0, 1);
+  --c-tile-settings-permissions-bottom: rgba(197, 83, 0, 1);
+  --c-tile-settings-permissions-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-sandbox-top: rgba(0, 137, 50, 1);
+  --c-tile-settings-sandbox-bottom: rgba(0, 137, 50, 1);
+  --c-tile-settings-sandbox-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-budget-top: rgba(0, 129, 152, 1);
+  --c-tile-settings-budget-bottom: rgba(0, 129, 152, 1);
+  --c-tile-settings-budget-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-mcp-top: rgba(30, 110, 244, 1);
+  --c-tile-settings-mcp-bottom: rgba(30, 110, 244, 1);
+  --c-tile-settings-mcp-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-plugins-top: rgba(86, 74, 222, 1);
+  --c-tile-settings-plugins-bottom: rgba(86, 74, 222, 1);
+  --c-tile-settings-plugins-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-appearance-top: rgba(231, 18, 77, 1);
+  --c-tile-settings-appearance-bottom: rgba(231, 18, 77, 1);
+  --c-tile-settings-appearance-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-advanced-top: rgba(149, 109, 81, 1);
+  --c-tile-settings-advanced-bottom: rgba(149, 109, 81, 1);
+  --c-tile-settings-advanced-glyph: rgba(255, 255, 255, 1);
 }
 
 .dark.hc {
@@ -270,4 +351,31 @@
   --c-tile-write-top: rgba(163, 136, 209, 1);
   --c-tile-write-bottom: rgba(124, 77, 219, 1);
   --c-tile-write-glyph: rgba(255, 255, 255, 1);
+  --c-tile-settings-general-top: rgba(152, 152, 157, 1);
+  --c-tile-settings-general-bottom: rgba(152, 152, 157, 1);
+  --c-tile-settings-general-glyph: rgba(75, 75, 75, 1);
+  --c-tile-settings-models-top: rgba(234, 141, 255, 1);
+  --c-tile-settings-models-bottom: rgba(234, 141, 255, 1);
+  --c-tile-settings-models-glyph: rgba(94, 94, 94, 1);
+  --c-tile-settings-permissions-top: rgba(255, 160, 86, 1);
+  --c-tile-settings-permissions-bottom: rgba(255, 160, 86, 1);
+  --c-tile-settings-permissions-glyph: rgba(98, 98, 98, 1);
+  --c-tile-settings-sandbox-top: rgba(74, 217, 104, 1);
+  --c-tile-settings-sandbox-bottom: rgba(74, 217, 104, 1);
+  --c-tile-settings-sandbox-glyph: rgba(103, 103, 103, 1);
+  --c-tile-settings-budget-top: rgba(59, 221, 236, 1);
+  --c-tile-settings-budget-bottom: rgba(59, 221, 236, 1);
+  --c-tile-settings-budget-glyph: rgba(112, 112, 112, 1);
+  --c-tile-settings-mcp-top: rgba(92, 184, 255, 1);
+  --c-tile-settings-mcp-bottom: rgba(92, 184, 255, 1);
+  --c-tile-settings-mcp-glyph: rgba(94, 94, 94, 1);
+  --c-tile-settings-plugins-top: rgba(167, 170, 255, 1);
+  --c-tile-settings-plugins-bottom: rgba(167, 170, 255, 1);
+  --c-tile-settings-plugins-glyph: rgba(94, 94, 94, 1);
+  --c-tile-settings-appearance-top: rgba(255, 138, 196, 1);
+  --c-tile-settings-appearance-bottom: rgba(255, 138, 196, 1);
+  --c-tile-settings-appearance-glyph: rgba(93, 93, 93, 1);
+  --c-tile-settings-advanced-top: rgba(219, 166, 121, 1);
+  --c-tile-settings-advanced-bottom: rgba(219, 166, 121, 1);
+  --c-tile-settings-advanced-glyph: rgba(94, 94, 94, 1);
 }

@@ -42,7 +42,10 @@ final class Decor: NSObject {
     super.init()
     styles = (0..<8).map { raw in
       let edge = Edge(rawValue: raw)
-      let paragraph = NSMutableParagraphStyle()
+      let paragraph =
+        kind == .bubble
+        ? TranscriptStyle.lines(style.body, style.lineHeights.body)
+        : TranscriptStyle.lines(thought.font, style.lineHeights.thought)
       let spacing = edge.contains(.last) ? style.blockSpacing : 0
       switch kind {
       case .bubble:
@@ -65,6 +68,10 @@ final class Decor: NSObject {
 
   /// `TranscriptText.respace` for a decorated block: each paragraph from
   /// `from`'s on takes its edge's style, and only one whose style is wrong changes.
+  private func opensWithTile(_ text: NSAttributedString, _ paragraph: NSRange) -> Bool {
+    text.attribute(.attachment, at: paragraph.location, effectiveRange: nil) != nil
+  }
+
   func respace(_ text: NSMutableAttributedString, block: NSRange, from: Int) {
     let string = text.mutableString
     let end = NSMaxRange(block)
@@ -75,8 +82,9 @@ final class Decor: NSObject {
       var edge: Edge = paragraph.location <= block.location ? .first : []
       if NSMaxRange(paragraph) >= end { edge.insert(.last) }
       // A prompt's own characters are never attachments: one opening a later paragraph is a tile.
-      let tile = text.attribute(.attachment, at: paragraph.location, effectiveRange: nil)
-      if kind == .bubble, !edge.contains(.first), tile != nil { edge.insert(.tiles) }
+      if kind == .bubble, !edge.contains(.first), opensWithTile(text, paragraph) {
+        edge.insert(.tiles)
+      }
       let style = styles[edge.rawValue]
       text.enumerateAttribute(.paragraphStyle, in: paragraph) { value, range, _ in
         guard (value as? NSParagraphStyle) !== style else { return }
@@ -118,7 +126,10 @@ final class Decor: NSObject {
     switch kind {
     case .bubble:
       // The whole bubble is drawn and clipped to the slice, so its round ends, sweep and
-      // shadows run on across the paragraphs as one shape.
+      // shadows run on across the paragraphs as one shape. A line height leaves slices at
+      // fractional offsets, where two antialiased clips would both tint the pixel row they
+      // share: snapped to device pixels, each row is one slice's.
+      let rect = Self.snapped(rect, in: context)
       let radius = min(bubble.radius, whole.width / 2, whole.height / 2)
       let shape = CGPath(
         roundedRect: whole, cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -153,6 +164,16 @@ final class Decor: NSObject {
       context.setFillColor(thought.rule.cgColor)
       context.fill(rect)
     }
+  }
+
+  /// `rect` with each edge on the nearest device pixel, so two slices sharing an edge meet
+  /// there exactly.
+  private static func snapped(_ rect: CGRect, in context: CGContext) -> CGRect {
+    let device = context.convertToDeviceSpace(rect)
+    let (minX, minY) = (device.minX.rounded(), device.minY.rounded())
+    let snapped = CGRect(
+      x: minX, y: minY, width: device.maxX.rounded() - minX, height: device.maxY.rounded() - minY)
+    return context.convertToUserSpace(snapped)
   }
 
   /// The bubble's drop shadows around the slice `rect`: past its sides, and past the bubble's
