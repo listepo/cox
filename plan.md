@@ -89,6 +89,24 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T53.7 | todo | P3 | 2 | 0% | |
 | T53.8 | todo | P3 | 2 | 0% | |
 | T53.9 | todo | P3 | 1 | 0% | |
+| T54.1 | todo | P2 | 2 | 0% | |
+| T54.2 | todo | P2 | 3 | 0% | |
+| T54.3 | todo | P2 | 3 | 0% | |
+| T54.4 | todo | P2 | 2 | 0% | |
+| T54.5 | todo | P2 | 3 | 0% | |
+| T54.6 | todo | P2 | 4 | 0% | |
+| T54.7 | todo | P2 | 3 | 0% | |
+| T55.1 | todo | P3 | 2 | 0% | |
+| T56.1 | todo | P3 | 2 | 0% | |
+| T56.2 | todo | P3 | 3 | 0% | |
+| T56.3 | todo | P3 | 3 | 0% | |
+| T56.4 | todo | P3 | 3 | 0% | |
+| T56.5 | todo | P3 | 2 | 0% | |
+| T56.6 | todo | P3 | 4 | 0% | |
+| T56.7 | todo | P3 | 4 | 0% | |
+| T56.8 | todo | P3 | 3 | 0% | |
+| T56.9 | todo | P3 | 1 | 0% | |
+| T56.10 | todo | P3 | 2 | 0% | |
 
 ## Reference
 
@@ -117,7 +135,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D15 | **Each component is designed against the field before it is built.** Every P-phase's first task is a ≤ 1-page `docs/design/<component>.md`: the problem in one measurable number, what Claude Code / Codex / Pi / OpenCode / aider do, what cox does and why it is at least as good, and what would falsify it. Written by the `code` tier; reviewed, not written, by `think`. | rtok D15. Copying a competitor caps cox at that competitor. |
 | D16 | **Observability is `tracing` with an optional OpenTelemetry GenAI exporter.** Spans carry `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.*`. Off by default; `cox stats` reads the ledger locally. | Codex ships opentelemetry 0.31 (R§1.3); the GenAI semconv is still experimental, so it stays behind a feature flag. |
 
-Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; web search provider abstraction beyond Anthropic server tools; A2A; voice; `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
+Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gemini provider; image input and `ratatui-image`; web search provider abstraction beyond Anthropic server tools; A2A; voice (being built as P54, A123: local `whisper-rs` push-to-talk); `gix` instead of shelling out to `git`; aider-style repo map with PageRank; two-model architect/editor mode.
 
 ## 1. Architecture
 
@@ -174,6 +192,8 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1, thiserror |
 | `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading; `wasmtime-exceptions` on, A61), wasmtime 43 (declared only for the `anyhow` feature extism needs without its defaults), sha2 (package digest), figment (`plugin.toml`); linked into `crates/cox` behind the default-on `plugins` feature (A55) |
 | `cox-plugin-sdk` (`plugins/sdk`, the separate guest workspace, never a `crates/*` member) | the Rust guest SDK (T33.27): typed wrappers for every PL§4 export and `cox:host/v1` host function, the `register!` macro, and the wire (`{"Ok"\|"Err"}` host replies) that other-language guests copy; builds for `wasm32-unknown-unknown` | extism-pdk 1.4.1 (`default-features = false`: no extism `http`, no msgpack), cox-plugin-api (path) |
+| `cox-voice` | push-to-talk dictation (P54, A123; planned): `Transcriber` (whisper.cpp through `whisper-rs`, model loaded once), `Recorder` (default input device, mono, resampled to 16 kHz, capped length), and the `Dictation` impl the TUI receives. Its own crate under D1: a heavy C++ build and platform audio. Behind `crates/cox`'s `voice` feature, off by default; audio never leaves the process | whisper-rs 0.16.0 (Unlicense; whisper.cpp MIT; cmake), cpal 0.18.2 (Apache-2.0), rubato 5.0.0 (MIT OR Apache-2.0) |
+| `cox-cursor-cloud` | the Cursor Cloud Agents API client (P56, A123; planned, blocked on the creator's terms go-ahead): hand-written wire types (A40 step 3, never generated from or copied out of Cursor's unlicensed OpenAPI file), create/run/stream/cancel/usage. The one place a socket to `api.cursor.com` opens; not a `Provider`; the host driver that maps runs to task events lives in `cox-session` | cox-provider-http (reqwest, eventsource-stream), serde; no new dependency |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, trycmd 1.2 (`cox run -p` output fixtures, P48), vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
@@ -1777,6 +1797,183 @@ Depends: T53.7, T53.8, and the creator's publish of both crates and the Go tag �
 Goal: `cox plugin new` generates a plugin that depends on the published `cox-plugin-sdk` version and Go module tag instead of a path into this repository, and `docs/plugins.md` shows the published names; the in-repo examples keep their path dependencies.
 Check: `mise exec -- cargo nextest run -p cox plugin_new_` (template snapshots re-recorded on purpose); `just plugin-examples rust` and `just plugin-examples go` build a freshly scaffolded plugin.
 
+### P54 — Voice input (goal: push-to-talk in the TUI turns speech into a prompt on this machine with local whisper, and submits it when the draft was empty; no audio leaves the machine, nothing is downloaded without the user asking)
+
+Rationale in §6 A123 (3). Design: `docs/design/v0.3-voice.md` option 2 (local whisper in its own crate).
+
+New dependencies (crates.io API, checked 2026-09-29): `whisper-rs` 0.16.0 (Unlicense; https://crates.io/crates/whisper-rs, released 2026-03-12; repository https://codeberg.org/tazz4843/whisper-rs, last commit 2026-03-14, not archived; already pinned `=0.16.0` by `apps/runa` and listed in the workspace `rust.md`), which builds whisper.cpp (MIT) through `whisper-rs-sys` 0.15.0 (Unlicense) with cmake and a C++ compiler; `cpal` 0.18.2 (Apache-2.0; https://crates.io/crates/cpal, released 2026-08-16; https://github.com/RustAudio/cpal, last commit 2026-09-20; not yet in `rust.md`); `rubato` 5.0.0 (MIT OR Apache-2.0; https://crates.io/crates/rubato, released 2026-08-10; in `rust.md`). Program: `cmake` through mise. Models: ggml files from https://huggingface.co/ggerganov/whisper.cpp (licence MIT; `ggml-tiny.en.bin` 77,704,715 bytes, `ggml-base.en.bin` 147,964,211, `ggml-small.en.bin` 487,614,201; Hugging Face API, checked 2026-09-29), never in the repository.
+
+Every card in this phase:
+- stays within 200 LOC and 3 source files (manifests, generated schemas, snapshots, fixtures and the docs rows a card must add do not count, as in P35);
+- keeps `whisper-rs`, `cpal` and `rubato` inside `cox-voice` (a `deps.rs` rule), and `cox-voice` behind the `voice` cargo feature of `crates/cox`, off by default, so the C++ build never becomes a requirement of every build;
+- never sends audio anywhere, never writes it to disk, the rollout or the ledger (local transcription is not a request and has no `usage` row);
+- never downloads a model on its own: only `cox voice model download`, after the user confirms;
+- runs `cox_sanitize::sanitize` on a transcript before it reaches the composer; `cox_permission::Engine` is not involved (dictation calls no tool). No new guard;
+- adds its new dependency's `toolchain.md` row (and the workspace `rust.md` row when the crate is new there) in the same commit.
+
+#### T54.1 `cox-vendor whisper-models`: the pinned model table
+
+Depends: — · Size: ~120 · Files: `scripts/vendor/src/cox_vendor/whisper_models.py` (new), `scripts/vendor/src/cox_vendor/cli.py`, `scripts/vendor/tests/test_whisper_models.py` (new); output `crates/cox-voice/data/whisper-models.json` (data)
+Goal: a saved, tested script (A48) reads the Hugging Face API for `ggerganov/whisper.cpp` (`/api/models/ggerganov/whisper.cpp` and its `tree/main`) and writes one row per model cox offers (`tiny.en`, `base.en`, `small.en`, `tiny`, `base`, `small`): name, file, a download URL pinned to the repository commit (`…/resolve/<commit>/ggml-<name>.bin`), size in bytes, SHA-256 (the LFS oid) and licence. No hand-pasted row.
+Steps: 1. fetch both API documents; 2. refuse a file with no LFS oid or size; 3. write sorted, stable JSON with the commit and the date checked; 4. `--check` compares without writing.
+Check: `just vendor-test` (no network: the tests read a recorded API response under `scripts/vendor/tests/fixtures/`) with `test_table_pins_the_commit_in_every_url`, `test_rows_carry_sha256_and_size`, `test_file_without_lfs_oid_is_refused`, `test_output_is_stable`; `just vendor whisper-models` writes the file once.
+Done when: the table exists, written by the script; done.md carries the Check output.
+Out of scope: downloading a model; quantized (`-q5_1`, `-q8_0`) and Core ML files.
+
+#### T54.2 `cox-voice` crate: transcribe a 16 kHz buffer with `whisper-rs`
+
+Depends: — · Size: ~160 · Files: `crates/cox-voice/src/lib.rs` (new), `crates/cox-voice/src/transcribe.rs` (new), `crates/cox/tests/deps.rs`; manifests `crates/cox-voice/Cargo.toml`, the workspace `Cargo.toml`, `mise.toml` (`cmake`)
+Goal: `Transcriber::load(model: &Path) -> Result<Transcriber, VoiceError>` loads a ggml model once; `transcribe(&self, pcm_16k_mono: &[f32], language: Option<&str>) -> Result<String, VoiceError>` runs greedy decoding without timestamps and returns the trimmed text of all segments. whisper.cpp's own logging goes to `tracing`, never to stderr over the TUI. Errors are a `thiserror` enum (`ModelMissing`, `ModelInvalid`, `Whisper`). The crate is its own under D1 (a heavy C++ build, like the grammars in `cox-syntax`); rows in AGENTS.md Layout, `docs/design/crates.md`, §1.1 (already drafted by A123), `toolchain.md` (`whisper-rs`, `cmake`).
+Check: `mise exec -- cargo nextest run -p cox-voice transcriber_rejects_a_missing_model transcriber_rejects_a_file_that_is_not_ggml` and `mise exec -- cargo nextest run -p cox only_cox_voice_depends_on_whisper_cpal_and_rubato`; the opt-in `mise exec -- cargo nextest run -p cox-voice --run-ignored only transcribe_of_silence_is_empty` with `COX_WHISPER_MODEL` set to a downloaded model (never in CI).
+Done when: the crate builds under `mise exec`, the tests above pass, the deps rule holds.
+Out of scope: GPU features (`metal`, `coreml`, `cuda`); streaming or partial transcripts.
+
+#### T54.3 Microphone capture with `cpal`, resampled to 16 kHz with `rubato`
+
+Depends: T54.2 · Size: ~180 · Files: `crates/cox-voice/src/capture.rs` (new), `crates/cox-voice/src/lib.rs`; manifest `crates/cox-voice/Cargo.toml`
+Goal: `Recorder::start(max: Duration) -> Result<Recorder, VoiceError>` opens the default input device, converts any sample format to `f32`, downmixes to mono and keeps at most `max` of audio in memory; `stop(self) -> Result<Vec<f32>, VoiceError>` resamples to 16 kHz with `rubato`; dropping a recorder (cancel) discards the audio. No input device and a failed stream are typed errors whose text hints at the OS microphone permission (macOS asks for the terminal app on first use). The device-free steps are pure functions so they test without a microphone. Rows in `toolchain.md` (`cpal`, `rubato`) and the workspace `rust.md` (`cpal`).
+Check: `mise exec -- cargo nextest run -p cox-voice downmix_averages_the_channels resample_48k_to_16k_keeps_the_duration buffer_stops_growing_at_the_cap i16_and_u16_samples_convert_to_f32`.
+Done when: the tests pass; a manual `cox voice` run is not required here (T54.7).
+Out of scope: device selection (the default input only); voice-activity detection.
+
+#### T54.4 `[voice]` config and the `Dictation` trait
+
+Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/config.rs`, `crates/cox-protocol/src/traits.rs`, `crates/cox-config/src/load.rs`; generated `docs/config.jsonschema`, `docs/config.md`
+Goal: `[voice]` with `enabled` (false), `model` (`"base.en"`), `language` (`"en"`), `key` (`"alt+v"`), `auto_submit` (true), `max_seconds` (120). A project `.cox/config.toml` cannot set any `voice.*` key (added to the project-config guard list): a cloned repository must not switch on the microphone or pick the model file. `trait Dictation: Send { fn start(&mut self) -> Result<(), DictationError>; async fn stop(&mut self) -> Result<String, DictationError>; fn cancel(&mut self); }` in `cox-protocol`, so `cox-tui` depends on the trait, never on `cox-voice`.
+Check: `mise exec -- cargo nextest run -p cox-config voice_defaults_are_off_with_auto_submit project_config_cannot_set_voice_keys` and `config_jsonschema_matches_committed_file`.
+Done when: the section loads, is documented through the generated schema, and the guard holds.
+Out of scope: any audio code.
+
+#### T54.5 `cox voice model list|download <name>`
+
+Depends: T54.1 · Size: ~180 · Files: `crates/cox/src/voice_cmd.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/self_update.rs` (only if T53.2's shared fetch helper has not landed; otherwise `crates/cox/src/plugin_fetch.rs`)
+Goal: `list` prints each row of the vendored table with its size and whether it is present under `$COX_HOME/models/whisper/`. `download <name>` prints the URL and size and asks y/N on a TTY (without a TTY it refuses unless `--yes`), streams to a `.part` file, verifies the SHA-256 from the table, then renames; a mismatch deletes the part file; a present, verified file is a no-op. The reqwest client and SHA-256 helper are the ones `self_update` already has, extracted and shared, not copied. The request carries only the pinned URL and a `cox/<version>` User-Agent, never the user's name or email. Compiled only with the `voice` feature.
+Check: `mise exec -- cargo nextest run -p cox --features voice voice_model_download_verifies_sha256 voice_model_download_hash_mismatch_leaves_no_file voice_model_download_without_a_tty_needs_yes voice_model_list_marks_present_models` (wiremock, already a dev-dependency).
+Done when: the tests pass; `COX_HOME=/tmp/cox-scratch mise exec -- cargo run --features voice -- voice model list` prints the table.
+Out of scope: a model the table does not list; resumable downloads.
+
+#### T54.6 TUI push-to-talk with auto-submit
+
+Depends: T54.4 · Size: ~190 · Files: `crates/cox-tui/src/voice.rs` (new), `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/keymap.rs`; snapshots
+Goal: `app::run` takes an `Option<Box<dyn Dictation>>`. The `[voice] key` starts recording and pressing it again stops; where the terminal reports key releases (the P23 probe, kitty keyboard protocol), holding the key records and releasing it stops. `Esc` while recording cancels and inserts nothing. The status row shows `● rec 0:07`, then `transcribing…`. The transcript is sanitized and trimmed; an empty one inserts nothing and shows a dim notice; otherwise it is inserted at the cursor, and when the draft was empty before recording and `auto_submit` is on it is submitted as `Enter` would (queued while a turn runs, like `Enter`). Text added to a non-empty draft is never auto-submitted: the user reviews the combined text. With no `Dictation` the key shows one notice naming `cox voice`.
+Check: `mise exec -- cargo nextest run -p cox-tui voice_key_starts_and_stops_recording voice_release_stops_when_the_terminal_reports_releases voice_escape_cancels_without_inserting voice_transcript_auto_submits_an_empty_draft voice_transcript_into_a_non_empty_draft_does_not_submit voice_transcript_is_sanitized voice_without_dictation_shows_a_notice`; new `insta` snapshot `voice_recording_status_row` (a fake `Dictation`, no audio).
+Done when: the tests and snapshot pass; the key appears in the keymap help.
+Out of scope: the desktop app; `--plain`, headless and ACP surfaces (no push-to-talk there).
+
+#### T54.7 `crates/cox` wires dictation behind the `voice` feature
+
+Depends: T54.2, T54.3, T54.4, T54.5, T54.6 · Size: ~150 · Files: `crates/cox-voice/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/src/doctor.rs`; manifest `crates/cox/Cargo.toml`; docs `docs/voice.md` (new)
+Goal: `cox-voice` implements `Dictation` over `Recorder` and `Transcriber` (the model loaded on the first press, transcription on a blocking thread). With the `voice` feature and `voice.enabled`, the TUI session passes it to `app::run`; a missing model is one warning naming `cox voice model download <model>` and the key stays off. `cox doctor` reports: feature built, enabled, model present, input device found. `docs/voice.md`: setup, the macOS microphone prompt, and what never happens (audio never leaves the machine, is never stored, never enters the rollout or the ledger).
+Check: `mise exec -- cargo nextest run -p cox --features voice doctor_reports_voice_model_missing voice_disabled_passes_no_dictation`; `mise exec -- cargo build` without the feature pulls no whisper (the `deps.rs` rule); a manual push-to-talk run in the TUI against `COX_HOME=/tmp/cox-scratch` with a downloaded `tiny.en` model, reported in done.md.
+Done when: the tests pass and the manual run is reported.
+Out of scope: turning the feature on in release builds (the creator decides, A123).
+
+### P55 — MCP Apps, option (a) (goal: cox never advertises or renders an MCP App UI and shows the text and structured result of such a tool unchanged, test-backed)
+
+Rationale in §6 A123 (4). Design: `docs/design/v0.3-mcp-apps.md` option (a); (b) deferred, (c) waits for ACP.
+
+#### T55.1 A tool's MCP App UI is ignored; its text and structured result are kept
+
+Depends: — · Size: ~110 · Files: `crates/cox-mcp/src/client.rs` (tests only), `docs/compat.md`
+Goal: make today's behaviour explicit. A scripted in-process rmcp server exposes a tool whose `_meta.ui.resourceUri` is `ui://…` and returns text and structured content, and a twin without `_meta`; both produce the same `ToolOutput`. The client handshake declares no `extensions` entry for `io.modelcontextprotocol/ui`, and no `resources/read` for a `ui://` URI is ever sent. `docs/compat.md` says in one line that cox shows an MCP App tool's text and structured result only.
+Check: `mise exec -- cargo nextest run -p cox-mcp mcp_app_tool_output_matches_the_same_tool_without_ui mcp_client_declares_no_ui_extension mcp_client_never_reads_a_ui_resource`.
+Done when: the tests pass and the doc line exists.
+Out of scope: option (b) (browser page, loopback listener), option (c); any change to `output_of`; an rmcp bump.
+
+### P56 — Cursor Cloud Agents as a background-task backend (goal: a granted plugin's `[[cloud_agents]]` entry runs a background task as a Cursor Cloud Agent run that survives the laptop closing, with the off-machine step approved through `Engine` and a $0 `billed_externally` usage row carrying Cursor's tokens)
+
+Rationale in §6 A123 (5). Design: `docs/design/v0.3-cursor-cloud.md`; the local-CLI sibling is P35 (EA).
+
+**Blocked on the creator.** Every card depends on the creator's written go-ahead on the terms reading in A123 (5): the Acceptable Use Policy prohibits accessing the Service by automated or non-human means, by bot, script or otherwise (https://cursor.com/acceptable-use-policy, last updated 2026-08-11, checked 2026-09-29, paraphrased), which read literally covers any program that calls the API. The go-ahead is recorded as its own amendment (or as Cursor's written answer). No agent claims a P56 card before it.
+
+Every card in this phase:
+- stays within 200 LOC and 3 source files (manifests, generated schemas, snapshots, fixtures and the docs rows a card must add do not count);
+- never copies, vendors or generates from Cursor's OpenAPI file: wire types are hand-written from the public endpoint docs (A40 step 3), citing the page URL and date checked in the module header;
+- never puts the user's name, email or git identity in a request: bodies carry the prompt, the GitHub repository URL with any credentials stripped, the starting ref and the model; the User-Agent is `cox/<version>`; `/v1/me` is never called;
+- reads the key from `CURSOR_API_KEY` through `cox_provider::http::resolve_key` (tests inject `resolve_key_with`; no test touches a real key or keychain) and never writes it to a log, an error or the rollout;
+- runs every string from Cursor (stream text, tool names, artifact names, errors) through `cox_sanitize::sanitize`;
+- makes no network call in tests (wiremock and hand-written fixtures only, D12).
+
+#### T56.1 `cox-cursor-cloud` crate: hand-written wire types
+
+Depends: the creator's terms go-ahead (A123 (5)) · Size: ~170 · Files: `crates/cox-cursor-cloud/src/lib.rs` (new), `crates/cox-cursor-cloud/src/wire.rs` (new); manifests `crates/cox-cursor-cloud/Cargo.toml`, the workspace `Cargo.toml`; fixtures `crates/cox-cursor-cloud/tests/fixtures/*.json`
+Goal: serde types for the endpoints cox uses, written from https://cursor.com/docs/cloud-agent/api/endpoints: create agent (`prompt`, `model`, `repos` with `url` and `startingRef`, `autoCreatePR` defaulting to false), a follow-up run, run status (unknown values kept as `Other(String)`), the stream events (`status`, `assistant`, `thinking`, `tool_call`, `interaction_update`, `heartbeat`, `result`, `error`, `done`, and `Unknown` for anything else), cancel and run usage (`inputTokens`, `outputTokens`, `cacheWriteTokens`, `cacheReadTokens`, `totalTokens`). The crate is its own under D1: the one place a socket to `api.cursor.com` is opened (T56.2), not a `Provider`, and not session assembly; it depends on `cox-protocol` and `cox-provider-http` only. Rows in AGENTS.md Layout and `docs/design/crates.md`; no new dependency.
+Check: `mise exec -- cargo nextest run -p cox-cursor-cloud create_agent_request_has_no_identity_fields stream_event_parses_every_documented_type unknown_stream_event_is_kept_as_unknown run_usage_parses_the_token_counts auto_create_pr_defaults_off`.
+Done when: the tests pass over hand-written fixtures.
+Out of scope: endpoints cox does not use (`/v1/me`, `/v1/repositories`, `/v1/sub-tokens`, archive, artifacts download).
+
+#### T56.2 Cloud Agents client: create, follow up, stream, cancel, usage
+
+Depends: T56.1 · Size: ~190 · Files: `crates/cox-cursor-cloud/src/client.rs` (new), `crates/cox-cursor-cloud/src/lib.rs`
+Goal: a client over `cox-provider-http` (connection setup, Bearer auth, non-2xx mapping, SSE framing, retry): `create_agent`, `create_run`, `get_run`, `stream_run`, `cancel_run`, `usage`. Only GETs are retried; a create is never retried (a retry could start and bill a second run). A dropped stream re-reads the run's status and, when it is not terminal, reopens without delivering an event twice. Errors are a `thiserror` enum whose text never contains the key.
+Check: `mise exec -- cargo nextest run -p cox-cursor-cloud client_sends_the_key_as_bearer_only client_never_retries_create client_stream_reconnects_without_duplicate_events client_error_text_never_contains_the_key client_user_agent_is_cox_version_only` (wiremock).
+Done when: the tests pass.
+Out of scope: webhooks (not in the v1 API); artifacts.
+
+#### T56.3 `[[cloud_agents]]` manifest capability and its grant line
+
+Depends: the creator's terms go-ahead (A123 (5)) · Size: ~150 · Files: `crates/cox-plugin-api/src/manifest.rs`, `crates/cox-plugin/src/grant.rs`; generated `docs/plugin.schema.json`
+Goal: `[[cloud_agents]]` entries with `name`, `backend` (a closed set: `"cursor"`), `key_env` (default `CURSOR_API_KEY`), optional `model` and `description`. There is no URL field: the host for a backend is fixed, so a plugin cannot point the key elsewhere. The grant line names the host `api.cursor.com`, the key env, that the prompt and the repository's GitHub URL are sent, and that Cursor clones the repository and pushes a branch on its servers, billed to the user's Cursor plan; a changed entry asks for the grant again, as every capability does (T33.6).
+Check: `mise exec -- cargo nextest run -p cox-plugin-api manifest_cloud_agent_backend_is_a_closed_set manifest_cloud_agent_has_no_url_field` and `-p cox-plugin grant_lists_cloud_agent_host_key_and_off_machine_code`, plus `plugin_schema_matches_committed_file`.
+Done when: the tests pass and the schema is regenerated.
+Out of scope: any backend other than Cursor.
+
+#### T56.4 `Engine` asks before code leaves the machine: `CloudAgent(<repo>)`
+
+Depends: the creator's terms go-ahead (A123 (5)) · Size: ~140 · Files: `crates/cox-permission/src/rules.rs`, `crates/cox-permission/src/policy.rs`, `crates/cox-permission/src/lib.rs`
+Goal: a new permission subject `CloudAgent(<github owner>/<repo>)` in the rule grammar. It asks in every permission mode, `auto` and `bypass` included, unless the user's own config holds an allow rule for that repository; `plan` mode denies it. A project config's `allow` for it is reverted by the existing A122 rule (tested, not re-implemented). The approval text says the repository, the remote, the starting ref, and that the code is read and edited off this machine. The check lives in `Engine` only, never in the plugin or the driver.
+Check: `mise exec -- cargo nextest run -p cox-permission cloud_agent_asks_in_auto_and_bypass cloud_agent_is_denied_in_plan_mode cloud_agent_user_allow_rule_matches_one_repo cloud_agent_project_allow_is_reverted cloud_agent_approval_text_names_repo_ref_and_off_machine`.
+Done when: the tests pass; the rule grammar docs list the subject.
+Out of scope: any other remote-execution subject.
+
+#### T56.5 `cloud_runs` table: a run outlives the session that started it
+
+Depends: the creator's terms go-ahead (A123 (5)) · Size: ~120 · Files: `crates/cox-store/migrations/00000000000006_cloud_runs/up.sql` and `down.sql` (new), `crates/cox-store/src/models.rs`, `crates/cox-store/src/queries.rs`; generated `crates/cox-store/src/schema.rs`
+Goal: one row per run: session id, task id, backend, agent id, run id, repository, model, status, `usage_recorded`, created and updated times. Diesel models and typed queries (D9): insert, set status, list a session's non-terminal runs, and mark usage recorded exactly once (`UPDATE … WHERE usage_recorded = false` through the DSL, returning whether this call won).
+Check: `mise exec -- cargo nextest run -p cox-store cloud_run_round_trips cloud_runs_lists_only_non_terminal_runs mark_usage_recorded_wins_once`.
+Done when: the migration applies on a fresh and an existing database; the tests pass.
+Out of scope: storing stream text (the transcript goes through the archive as any task result does).
+
+#### T56.6 Host driver: a background task becomes a Cursor Cloud run
+
+Depends: T56.2, T56.3, T56.4, T56.5 · Size: ~190 · Files: `crates/cox-session/src/cloud_agents.rs` (new), `crates/cox-session/src/lib.rs`; manifest `crates/cox-session/Cargo.toml`
+Goal: each granted `[[cloud_agents]]` entry registers as a background-only subagent preset through the path P35's external agents use. On dispatch the driver resolves the repository's GitHub remote (any other host is refused before any call; credentials in the URL are stripped), warns in the approval text when local `HEAD` is not on the remote, asks `Engine` for `CloudAgent(<repo>)`, creates the run, stores it (T56.5), and maps the stream onto the T34.8 task events: `TaskCreated` at create, assistant text accumulated into the result item, and `TaskCompleted` at `done` or a terminal status. Cancelling the task cancels the run. Every string passes `sanitize`.
+Check: `mise exec -- cargo nextest run -p cox-session cloud_agent_refuses_a_non_github_remote cloud_agent_strips_credentials_from_the_remote cloud_agent_denied_by_engine_makes_no_request cloud_agent_stream_maps_to_task_events cloud_agent_task_cancel_cancels_the_run` (wiremock and a fixture repository).
+Done when: the tests pass.
+Out of scope: foreground (blocking) runs; follow-up messages into a run (a later card if wanted).
+
+#### T56.7 Usage row and resume
+
+Depends: T56.6 · Size: ~160 · Files: `crates/cox-session/src/cloud_agents.rs`, `crates/cox-session/src/lineage.rs`
+Goal: at a terminal state the driver reads the run's usage and writes one `usage` row through the path an external agent's reported usage already takes (EA§6; `external_agent_turn_writes_a_billed_externally_usage_row` in `cox-core`): `billed_externally`, cost $0, Cursor's input, output, cache read and cache write tokens, the requested model (or `cursor:auto` when none was named), the task's job tag; `mark_usage_recorded` makes it exactly once. On resume, a session reattaches to its non-terminal runs, and finalizes runs that finished while cox was not running (result item and usage row), which is the number the gate doc asks for.
+Check: `mise exec -- cargo nextest run -p cox-session cloud_agent_usage_row_is_billed_externally_with_cursor_tokens cloud_agent_usage_row_is_written_once resume_reattaches_to_a_running_cloud_run resume_finalizes_a_run_that_finished_while_closed`.
+Done when: the tests pass.
+Out of scope: pricing the tokens in USD (the spend is on the user's Cursor plan).
+
+#### T56.8 Offline end-to-end over hand-written fixtures
+
+Depends: T56.7 · Size: ~160 · Files: `crates/cox/tests/cloud_agents.rs` (new); fixtures `tests/fixtures/cursor-cloud/*.json`, `*.sse` and a fixture plugin package with a `[[cloud_agents]]` entry
+Goal: the real binary against a scratch `COX_HOME`, a wiremock server standing in for `api.cursor.com` (host override for tests only, never a manifest field), and a fixture repository with a GitHub remote: `cox run -p --output-format stream-json` dispatches a background cloud task, the approval is asked (`--answer` allow), the task events appear in the stream, the ledger holds one `billed_externally` row, and no request body contains the fixture's git user name or email.
+Check: `mise exec -- cargo nextest run -p cox cloud_agent_headless_run_end_to_end cloud_agent_requests_carry_no_git_identity`.
+Done when: the tests pass offline with no key.
+Out of scope: a live account (T56.10).
+
+#### T56.9 Docs: cloud agents for users and in EA
+
+Depends: T56.8 · Size: ~90 · Files: `docs/plugins.md`, `docs/design/external-agents.md`, `docs/design/v0.3-cursor-cloud.md`
+Goal: `docs/plugins.md` documents `[[cloud_agents]]`, the grant, the `CloudAgent(<repo>)` rule and exactly what leaves the machine; EA gains a section for the cloud path next to the local CLI; the gate doc's Review links the shipped cards.
+Check: `mise exec -- cargo nextest run -p cox-plugin-api plugin_schema_matches_committed_file` still passes; every relative link in the three docs names a file that exists (`grep -o '](\.\?[^)]*)'` over them, each path tested with `test -e`).
+Done when: the docs are merged with the code.
+Out of scope: marketing copy.
+
+#### T56.10 Optional: live check against a real Cursor account (needs the creator's key)
+
+Depends: T56.8, the creator's key and a scratch GitHub repository the creator names · Size: ~120 · Files: `scripts/vendor/src/cox_vendor/cursor_cloud_live.py` (new), `scripts/vendor/tests/test_cursor_cloud_live.py` (new); fixtures `tests/fixtures/cursor-cloud/live-*.{json,sse}` (data)
+Goal: with an opt-in env var and the creator's `CURSOR_API_KEY`, one real run on the scratch repository, its stream and usage recorded into T56.8's fixture shape with ids and the key redacted; confirms the hand-written types still match the beta API. Never in CI; mirrors T35.10.
+Check: the recorded fixture replays through T56.8's test unchanged; the script's own test asserts it refuses to run without the opt-in env var.
+Done when: the fixture is committed and the replay passes.
+Out of scope: any automated or scheduled live call.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -1960,6 +2157,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A120 T37.45.1–T37.45.5 — by the creator (2026-09-28, "do what is best"): controls the mockups show and the design doc already names but the app lacks — settings filter, provider keys and model pop-ups, permission rules editor and session grants, MCP status and log, the onboarding drop zone — become cards; the settings sidebar stays the floating glass one of DESIGN.md §6.5, not the mockups' flush 220 pt one; the M2/M3 mockups (24–27) stay out of scope. Why: the design pass (T37.44.5) found them missing, and they are features, not layout.
 - A121 §3 (new P51: T51.1–T51.21, P52: T52.1–T52.22, P53: T53.1–T53.9), `roadmap.md`, by the creator (2026-09-28): every `roadmap.md` item moves into the plan as described cards — desktop M2 and the dark glass theme as P51, desktop M3 as P52 (the ACP host no longer waits for a blocked card, A67 §11 Q8), plugin install from git or a URL and the publishing of `cox-plugin-api`, `cox-plugin-sdk` and the Go module as P53. The approved looks are mockups 24-terminal-pane-m2, 25-browser-preview-m2, 26-menu-bar-extra-m2 and 27-external-agents-acp-m3 in `desktop/design/mockups/mockups.html`, which T37.44.11 and A120 left out of P37. One agent implements the cards serially without building or running tests (the creator's instruction); a later verification pass runs each card's Check, builds and tests, and only then does the card merge and move to `done.md`. Decisions taken with them: business logic stays in Rust (`cox-app`), `cox-ffi` stays a one-expression forwarder (D11, A90), Swift never spawns a process; the terminal pane runs the user's login shell in the session cwd under the session's own `cox_sandbox::sandbox::Policy`; browser page text reaching the model is untrusted and passes `cox_sanitize::sanitize` and the archive; remote SSH sessions never send API keys or forward the ssh agent; install from a URL needs a pinned sha256 and from git a named ref, and both end in the existing local-directory install and per-digest grant; publishing stops at a dry run — `cargo publish` and tag pushes are the creator's. New dependencies: SwiftTerm (research.md §9.5.2) and KeyboardShortcuts (§9.5.7) in Swift, `portable-pty` promoted from a dev-dependency to a `cox-app` dependency; each gets its §1.1 and `toolchain.md` rows in the implementing commit. Plugin install from git or a URL reverses PL§12's "out of scope" line for those two sources only (T53.1). Why: the creator approved these items in `roadmap.md` and asked to have all of them planned; `roadmap.md` is left with no items.
 - A122 T22.10 — by the creator (2026-09-28): a project config may only tighten `permissions.allow`/`ask`/`deny`: it can add `deny` and `ask` rules, never remove one, and its `allow` is reverted with a notice; the same holds for the permissions imported from a repository's `.claude/settings.json` (T22.11, creator 2026-09-28). Why: T37.45.3 found that a project config replaced the lists wholesale, so a cloned repository could drop the default `~/.ssh` deny or allow `Bash` without a prompt.
+- A123 §0 (the v0.2+ "voice" entry), §1.1 (new `cox-voice` and `cox-cursor-cloud` rows), §3 (new P54: T54.1–T54.7, P55: T55.1, P56: T56.1–T56.10) — the P49 gate verdicts, by the creator (2026-09-29). (1) **T49.1 remote control: defer.** Why: `docs/design/v0.3-remote-control.md` — no `agent-client-protocol` release ships the HTTP/WebSocket transport, and hand-rolling one the spec may change is falsifier 1. Effect: no card; reopens when such a release ships, with candidate A (loopback only, opt-in, per-run token, the user's own tunnel); never a hosted relay. (2) **T49.2 Windows sandbox: defer.** Why: `docs/design/v0.3-windows-sandbox.md` — there is no Windows release target, so a backend would ship to nobody (falsifier 2). Effect: no card; a Windows release target comes first as its own decision; there is never a token-only backend that relaxes D7's forced prompts; D7 is unchanged. (3) **T49.3 voice: build** option 2 of `docs/design/v0.3-voice.md` — local `whisper-rs` in its own crate `cox-voice`, push-to-talk with auto-submit in the TUI. Why: the creator wants the push-to-talk gap closed; local transcription needs no paid endpoint, no key (D3), no audio leaving the machine and no ledger unit (it is not a request and costs nothing). Effect: P54. New dependencies (crates.io API, checked 2026-09-29): `whisper-rs` 0.16.0 (Unlicense, released 2026-03-12; https://codeberg.org/tazz4843/whisper-rs last commit 2026-03-14, not archived; already pinned by `apps/runa` and in the workspace `rust.md`) with `whisper-rs-sys` 0.15.0 (Unlicense) building whisper.cpp (MIT) through cmake; `cpal` 0.18.2 (Apache-2.0, released 2026-08-16; https://github.com/RustAudio/cpal last commit 2026-09-20; new to `rust.md`); `rubato` 5.0.0 (MIT OR Apache-2.0, released 2026-08-10; in `rust.md`); program `cmake` through mise. `cox-voice` stays behind the `voice` cargo feature of `crates/cox`, off by default; whether release builds turn it on is left to the creator. Models (ggml, MIT, https://huggingface.co/ggerganov/whisper.cpp, 78–488 MB for `tiny.en`–`small.en`, checked 2026-09-29) are pinned by a `scripts/vendor` script (A48) and fetched only by `cox voice model download` after the user confirms, SHA-256 verified; never silently. A project config cannot set `voice.*`. The §0 "voice" entry stays and points at P54. (4) **T49.4 MCP Apps: build (a) only**, as the single card T55.1: cox ignores a tool's `ui://` resource and keeps its text and structured result, test-backed. Why: `docs/design/v0.3-mcp-apps.md` — (a) is today's behaviour and adds no listener, dependency or rmcp bump; no existing MCP phase fits (P47 is elicitation), so it is its own phase. Effect: P55; (b) (browser page over a loopback listener) is deferred and returns as its own gate if its falsifier 1 fires; (c) waits for ACP to carry App resources. (5) **T49.5 Cursor Cloud Agents: build** as `docs/design/v0.3-cursor-cloud.md` describes — a host-driven plugin capability `[[cloud_agents]]`, the off-machine step an `Engine` approval (`CloudAgent(<repo>)`), and $0 `billed_externally` usage rows carrying Cursor-reported tokens. Terms, from the primary sources (checked 2026-09-29; paraphrased with section numbers): the Terms of Service (https://cursor.com/terms-of-service, last updated 2026-09-03) define the Service to include Anysphere's APIs and Documentation, grant a limited right to access and use it (§1.1), forbid reproducing, modifying, translating or making derivative works of it (§1.5(ii)), and grant no implied licences (§5.1); they say nothing about third-party API clients. The Acceptable Use Policy (https://cursor.com/acceptable-use-policy, last updated 2026-08-11), which applies however the Service is accessed, lists among prohibited uses "Accessing the Service through automated or non-human means" (by bot, script or otherwise), and copying or distributing the Service. The API page (https://cursor.com/docs/cloud-agent/api/endpoints) documents API keys for users and service accounts, marks v1 as a public beta that may change before general availability, accepts GitHub repositories only, and returns per-run `inputTokens`/`outputTokens`/`cacheWriteTokens`/`cacheReadTokens`/`totalTokens` with no cost and no model. The OpenAPI file (https://cursor.com/docs-static/cloud-agents-openapi.yaml: HTTP 200, 59,113 bytes, SHA-256 `fef3a8b7272a8b1d0eb8abbc12a4f8a9745f3d56531f86566e60d926cc0dd35f`, OpenAPI 3.0.3, `info.version` 1.0.0) carries no `license`, no `termsOfService` and no copyright statement. Reading: (i) **vendoring the spec is not allowed** — no licence, §5.1 grants none by implication, and §1.5(ii) and the AUP forbid reproducing or distributing the Documentation; so A40 step (2) and the gate doc's `scripts/vendor` step are dropped, the wire types are hand-written from the public docs (A40 step 3), and nothing is generated from or copied out of the OpenAPI file. (ii) **Whether a third-party client may call the API is unresolved**: the API exists for programs, but the AUP line, read literally, forbids any program's access, and no document names third-party clients. This is new since the gate doc (T49.5 cited only the silent ToS). Effect: P56 (T56.1–T56.10), every card blocked on the creator's written go-ahead on (ii), recorded as its own amendment (or Cursor's written answer, e.g. to the spec's contact address); no request carries the user's name, email or git identity (bodies carry the prompt, the credential-stripped GitHub URL, the ref and the model; `/v1/me` is never called); `cox-cursor-cloud` adds no dependency (it builds on `cox-provider-http`). Deferred items (1), (2) and (4b) stay recorded in their gate docs and here; A80 sends nothing back to `roadmap.md` or `ideas.md`, so neither changes.
 
 ## 7. Risk register
 
