@@ -32,7 +32,6 @@
 - T40.10. `cox-vendor models` fills `images` from models.dev
 - T41.9. Optional: live check with real rust-analyzer
 - T43.6. Bench the map on and off
-- T51.1. Dark glass: mock the dark glass surfaces and give them token values
 - T51.2. One sandbox argv for `sh -c` commands and interactive programs
 - T51.3. `cox-app` terminal: the login shell in a PTY, in the session cwd, under the session's sandbox
 - T51.4. `cox-ffi` forwards the terminal handle
@@ -75,11 +74,26 @@
 - T52.20. `cox-app` remote workspace over SSH
 - T52.21. Connect to a host from the app
 - T52.22. App-server and remote-session docs
-- T53.2. `cox plugin install <https-url> --sha256 <hex>`
-- T53.3. `cox plugin install git+<url> --rev <ref>`
-- T53.4. `cox plugin update` for URL and git sources
 - T53.5. Freeze ABI `api = 1`
 - T53.6. `cox-plugin-api` ready for crates.io
 - T53.7. `cox-plugin-sdk` ready for crates.io
 - T53.8. Go SDK module ready to tag
 - T53.9. Templates and docs use the published SDKs
+- T54.1. `cox-vendor whisper-models`: the pinned model table
+- T54.2. `cox-voice` crate: transcribe a 16 kHz buffer with `whisper-rs`
+- T54.3. Microphone capture with `cpal`, resampled to 16 kHz with `rubato`
+- T54.4. `[voice]` config and the `Dictation` trait
+- T54.5. `cox voice model list|download <name>`
+- T54.6. TUI push-to-talk with auto-submit
+- T54.7. `crates/cox` wires dictation behind the `voice` feature
+- T56.1. `cox-cursor-cloud` crate: hand-written wire types
+- T56.2. Cloud Agents client: create, follow up, stream, cancel, usage
+- T56.3. `[[cloud_agents]]` manifest capability and its grant line
+- T56.4. `Engine` asks before code leaves the machine: `CloudAgent(<repo>)`
+- T56.5. `cloud_runs` table: a run outlives the session that started it
+- T56.6. Host driver: a background task becomes a Cursor Cloud run
+- T56.7. Usage row and resume
+- T56.8. Offline end-to-end over hand-written fixtures
+- T56.9. Docs: cloud agents for users and in EA
+- T56.10. Optional: live check against a real Cursor account (needs the creator's key)
+- T51.22. CoxUI draws glass from the `glass.*` tokens

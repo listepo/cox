@@ -7780,3 +7780,85 @@ Deviations: 8 files; the `Ctrl+E theme.edit` KEYMAP row is in commands.rs; `view
 Check: `cargo fmt` only (no-build rule, 2026-09-29). Commits mid-series do not compile alone (T46.3 adds `Ask::StatusLine`, handled from T46.4); the series does.
 
 Not done: the real-binary run; the verification pass runs `nextest -p cox-tui -E 'test(ctrl_e_opens) | test(editor_save) | test(saved_theme) | test(keymap_table_matches_docs) | test(every_action_has_a_keymap_row)'`, `-p cox -E 'test(save_theme_)'`, `-p cox-config -E 'test(config_set)'`, and re-records `help_overlay_snapshot`, `screen_help_overlay`, `screen_theme_picker_over_the_built_ins`.
+
+#### T55.1 A tool's MCP App UI is ignored; its text and structured result are kept
+
+Depends: — · Size: ~110 · Files: `crates/cox-mcp/src/client.rs` (tests only), `docs/compat.md`
+Goal: make today's behaviour explicit. A scripted in-process rmcp server exposes a tool whose `_meta.ui.resourceUri` is `ui://…` and returns text and structured content, and a twin without `_meta`; both produce the same `ToolOutput`. The client handshake declares no `extensions` entry for `io.modelcontextprotocol/ui`, and no `resources/read` for a `ui://` URI is ever sent. `docs/compat.md` says in one line that cox shows an MCP App tool's text and structured result only.
+Check: `mise exec -- cargo nextest run -p cox-mcp mcp_app_tool_output_matches_the_same_tool_without_ui mcp_client_declares_no_ui_extension mcp_client_never_reads_a_ui_resource`.
+Done when: the tests pass and the doc line exists.
+Out of scope: option (b) (browser page, loopback listener), option (c); any change to `output_of`; an rmcp bump.
+Status: done 2026-09-29
+Result: option (a) made explicit and test-backed, with no runtime change. `CoxClient` already declares no `extensions` capability, and `output_of` keeps only text and `structured_content` and never reads `_meta`.
+
+`crates/cox-mcp/tests/client.rs` gains an in-process `UiServer`. It has a tool carrying `_meta.ui.resourceUri` and the same tool without it, and it counts `resources/read`. Three tests:
+- `mcp_app_tool_output_matches_the_same_tool_without_ui`
+- `mcp_client_declares_no_ui_extension`
+- `mcp_client_never_reads_a_ui_resource`
+
+`docs/compat.md` has an MCP Apps row.
+
+Deviations: the tests live in the crate's integration test file (where its rmcp server harnesses are), not in `src/client.rs`.
+
+Check (2026-09-29):
+- `cargo nextest run -p cox-mcp`: 39/39 passed, the three new tests included.
+- `cargo clippy -p cox-mcp --all-targets -- -D warnings`: clean.
+- `cargo fmt --check`: clean.
+
+Not done: none.
+
+#### T51.1 Dark glass: mock the dark glass surfaces and give them token values
+
+Depends: — · Size: ~150 · Files: `desktop/design/mockups/mockups.html`, `desktop/design/tokens/color.dark.json`, `desktop/design/DESIGN.md` (generated CoxUI tokens and `color.dark-hc.json` from `just desktop-tokens` and `high-contrast.mjs` do not count)
+Goal: the glass CSS in the mockups (`.glass .window`, `.sidebar`, `.filter`, `.row.act`, the top-edge highlight) is written for light only — white fills over a dark wallpaper. Add `.dark.glass` rules and the screens `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy` (same layout as 28/29); take the dark glass fill, border and highlight values from those renders into `color.dark.json` beside the light ones (the dark highlight follows A109's `darkHighlight` setting, the High Contrast variant follows A89/A100's rule through `high-contrast.mjs`); DESIGN.md §3.5 lists them. The rendered screens go to the creator for approval before the token values are final.
+Check: `desktop/design/mockups/render.sh 31-main-glass-dark-frosted 32-main-glass-dark-glossy` renders both; `just desktop-tokens` and `npm test` (in `desktop/design`) pass; CoxUI dark-glass snapshots re-recorded on purpose (`swift test --package-path desktop/macos/Packages/CoxUI`); DS§8 contrast holds for text on the dark glass (the contrast test in `desktop/design` passes).
+Status: done 2026-09-29
+Result: the mockups gain `.dark.glass` rules and screens `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy` (same layout and wallpaper as 28/29): a cool near-black tint that lets the wallpaper through, white rims, the specular sweep, and no control highlight (A109 default `none`). A new colour group `glass.fill`/`glass.border`/`glass.highlight`: light `#fff` 0.34/0.75/0.95 (from screen 28), dark `#14141a` 0.34, `#fff` 0.16, `#fff` 0.22; the dark CSS reads them through `var(--c-glass-*)`. High Contrast: fill keeps a quarter of its transparency (alpha 0.835), border is solid (≥3:1), highlight unchanged. DESIGN.md §3.5 mirrors the values with contrast figures (over opaque `surface.window`: primary 15.3:1, secondary 6.7:1, selected subtitle 5.4:1, filter prompt 7.1:1); §3.1 gains a glass row. The creator approved the renders on 2026-09-29.
+
+Deviations: `color.light.json`, `high-contrast.mjs` and `mockups/README.md` also changed (the token build needs a light value and an HC rule for every role). `desktop/design` has no normal-mode 4.5:1 test, so those ratios were computed by hand.
+
+Check (2026-09-29): `render.sh 31-main-glass-dark-frosted 32-main-glass-dark-glossy` ok, ok; `just desktop-tokens` pass (light-hc and dark-hc 265 pairs each), `npm run check` pass; `npm test` in `desktop/design` 11/11. `swift test --package-path desktop/macos/Packages/CoxUI`: ContrastTests pass; 529 snapshot mismatches and 18 missing references that predate this card (light-solid shots fail too) — left to the verification pass; nothing re-recorded here.
+
+Not done: CoxUI does not draw from `glass.*` yet (its dark elevation still uses the 0.95 top-edge highlight where the render uses 0.22) — card T51.22.
+
+#### T53.2 `cox plugin install <https-url> --sha256 <hex>`
+
+Depends: T53.1 · Size: ~170 · Files: `crates/cox/src/plugin_fetch.rs` (new), `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal: download with the reqwest client and SHA-256 helper `self_update` already has (extracted into `plugin_fetch.rs` for both, not copied), refuse on a hash mismatch before anything is unpacked, extract with `tar` into the staging directory, refuse any symlink and any entry resolving outside staging, then hand the directory (without the archive) to `plugin_cmd::install`, recording `{kind: "url", url, sha256}`. Headless never approves (PL§1b), as for a folder.
+Check: `mise exec -- cargo nextest run -p cox plugin_install_url_rejects_a_hash_mismatch plugin_install_url_rejects_http plugin_install_url_rejects_a_symlink_entry plugin_install_url_rejects_dot_dot_entries plugin_install_url_records_the_source` (wiremock, already a dev-dependency); `COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- plugin install <local wiremock url> --sha256 <hex>` in the e2e test.
+Status: done 2026-09-29
+Result: `cox plugin install <https-url> --sha256 <hex>` refuses anything but https with a full hash before a fetch, keeps redirects on https, checks the hash before unpacking, refuses links, absolute and `..` entries, stages in `plugins/.staging/<pid>-<nanos>/` (removed on every exit, a crash's leftover swept next install) and records `{kind:"url",url,sha256}`. Download, SHA-256 and tar helpers moved from `self_update.rs` into `crates/cox/src/plugin_fetch.rs`; `cox self update` uses them. `discover` skips `.staging`.
+
+Deviations: also touched `main.rs`, `self_update.rs` and `cox-plugin/src/discover.rs`. The success path is tested below the CLI (`install_url`), since wiremock serves only http and the binary refuses http.
+
+Check (2026-09-29): `cargo nextest run -p cox plugin_install_url_*` 5/5 plus `plugin_install_url_through_the_binary_refuses_http_and_a_missing_hash`; real binary (`COX_HOME=/tmp/cox-t53-2`): http and missing hash refused, folder install works. Commit 8c581a9c.
+
+Not done: real-binary success run against an https URL (no local https fixture).
+
+#### T53.3 `cox plugin install git+<url> --rev <ref>`
+
+Depends: T53.1, T53.2 · Size: ~160 · Files: `crates/cox/src/plugin_fetch.rs`, `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal: `git clone --depth 1 --no-recurse-submodules --branch <tag>` (or fetch of a commit) into staging with `GIT_TERMINAL_PROMPT=0`, resolve the commit, take `--path` confined inside the clone, copy the package tree without `.git` into the install path, record `{kind: "git", url, rev, commit, path}`; a branch name as `--rev` is refused; `git` is found once in the fixed directories, never through a repository's config.
+Check: `mise exec -- cargo nextest run -p cox plugin_install_git_from_a_local_bare_repo plugin_install_git_refuses_a_branch plugin_install_git_path_cannot_escape_the_clone plugin_install_git_digest_excludes_dot_git` (a `file://` bare repository the test creates).
+Status: done 2026-09-29
+Result: `cox plugin install <git-url> --rev <tag|commit> [--path <dir>]`: `--rev` required, a branch (or a name that is both branch and tag) refused; a tag clones with `--depth 1 --no-recurse-submodules`, a commit is fetched by hash; git runs without prompts or stdin and with `GIT_CEILING_DIRECTORIES`; only https, ssh and file URLs; `.git` removed before the digest; `--path` relative and every step a real directory in the clone. Records `{kind:"git",url,rev,commit,path}`.
+
+Deviations: git is found on `PATH` (as PL§1 says), not in fixed directories as the card worded it; `main.rs` also changed.
+
+Check (2026-09-29): `cargo nextest run -p cox plugin_install_git_*` 4/4; real binary (`COX_HOME=/tmp/cox-t53-3`): branch refused, a tag install gives the same digest as the same files from a folder. Commit 93efbd6b.
+
+Not done: nothing.
+
+#### T53.4 `cox plugin update` for URL and git sources
+
+Depends: T53.2, T53.3 · Size: ~130 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/plugin_fetch.rs`
+Goal: PL§1b step 1 re-reads a URL source (the same URL and hash: a changed file at that URL is a mismatch, never a silent update; a new version is a new `install` with a new hash) and a git source (the same tag: a tag that moved yields a new digest and asks for the grant again, with the capability diff); `--check` fetches but changes nothing.
+Check: `mise exec -- cargo nextest run -p cox plugin_update_url_same_bytes_is_up_to_date plugin_update_url_changed_bytes_is_refused plugin_update_git_moved_tag_asks_again plugin_update_check_changes_nothing`.
+Status: done 2026-09-29
+Result: `cox plugin update` re-reads the recorded source by kind: a URL with changed bytes is refused as a hash mismatch with a hint to reinstall with the new hash; a moved git tag shows the capability diff, asks for the grant again and records the new commit; `--check` fetches and prints, changing nothing.
+
+Deviations: the URL scheme is not re-checked on update (install checked it before recording).
+
+Check (2026-09-29): `cargo nextest run -p cox` update tests 4/4; `test(plugin_install) | test(plugin_update)` 14/14; real binary (`COX_HOME=/tmp/cox-t53-4`): up to date, `--check` shows `+ kv (new)`, headless waits for approval, `--yes` switches and keeps the old version as previous. Commit 11223540.
+
+Not done: nothing. Note: branch t53.2 was cut before the verify fix (cox-tui serde_json dev-dep, cox-session RepoMapper lifetime); it builds once `verify` is merged.
