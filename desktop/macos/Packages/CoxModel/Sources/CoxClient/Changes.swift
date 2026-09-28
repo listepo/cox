@@ -70,3 +70,18 @@ public struct Linked: Equatable, Sendable {
     )
   }
 }
+
+/// One of Review's line comments, field for field as cox-ffi exports
+/// `cox_app::review::LineComment` (T37.28.4).
+public struct LineComment: Equatable, Sendable {
+  public var path: String
+  /// Numbers the file before the session changed it when `removed`, else the file on disk.
+  public var line: UInt32
+  /// The diff shows the line as deleted.
+  public var removed: Bool
+  public var text: String
+
+  public init(path: String, line: UInt32, removed: Bool = false, text: String) {
+    (self.path, self.line, self.removed, self.text) = (path, line, removed, text)
+  }
+}

@@ -10,10 +10,15 @@ struct DiffHunkView: View {
   /// The core's hunk header, `@@ -41,12 +41,26 @@ impl Backoff`.
   let header: String
   let lines: [DiffLineView.Line]
+  /// Review's click on a line's number, by its index in `lines` (T37.28.4).
+  let comment: (@MainActor (Int) -> Void)?
 
-  init(header: String, lines: [DiffLineView.Line]) {
+  init(
+    header: String, lines: [DiffLineView.Line], comment: (@MainActor (Int) -> Void)? = nil
+  ) {
     self.header = header
     self.lines = lines
+    self.comment = comment
   }
 
   var body: some View {
@@ -28,7 +33,8 @@ struct DiffHunkView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.fillPrimary))
       ForEach(lines.indices, id: \.self) { index in
-        DiffLineView(lines[index], widestNumber: widest)
+        DiffLineView(
+          lines[index], widestNumber: widest, comment: comment.map { tap in { tap(index) } })
       }
     }
     .padding(.bottom, Space.s)

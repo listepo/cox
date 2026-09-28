@@ -14,6 +14,7 @@ use cox_app::SessionInfo;
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
+use cox_app::review::LineComment;
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, Dropped,
     FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow,
@@ -548,6 +549,14 @@ pub struct WorktreeInfo {
     pub stale: bool,
     pub merged: bool,
     pub bytes: u64,
+}
+
+#[uniffi::remote(Record)]
+pub struct LineComment {
+    pub path: String,
+    pub line: u32,
+    pub removed: bool,
+    pub text: String,
 }
 
 #[uniffi::remote(Record)]

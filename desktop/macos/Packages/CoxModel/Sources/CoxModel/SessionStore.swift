@@ -17,6 +17,8 @@ public final class SessionStore {
   /// What the core reports beside the blocks: the turns queued behind the running one.
   public private(set) var status = Status()
   public var draft = ""
+  /// Review's line comments, kept while Review opens other files (T37.28.4).
+  public var reviewDraft = ReviewDraft()
   @ObservationIgnored public let session: any SessionClient
 
   public init(session: any SessionClient) {

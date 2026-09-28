@@ -60,6 +60,13 @@ final class LiveSession: SessionClient {
     try await handle.review(path: path).map { CoxClient.DiffModel($0) }
   }
 
+  func reviewMessage(_ comments: [CoxClient.LineComment]) -> String? {
+    CoxFFIBindings.reviewMessage(
+      comments: comments.map {
+        CoxFFIBindings.LineComment(path: $0.path, line: $0.line, removed: $0.removed, text: $0.text)
+      })
+  }
+
   func plan() -> [CoxClient.TodoItem] { handle.plan().map { CoxClient.TodoItem($0) } }
   func openTask(_ task: String) throws -> CoxClient.TaskTarget? {
     try handle.openTask(task: task).map { CoxClient.TaskTarget($0) }
