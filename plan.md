@@ -35,7 +35,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.2 | todo | P2 | 4 | 0% | |
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.22.11 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2789,13 +2788,6 @@ Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer re
 Depends: — · Size: ~80 · Files: `desktop/macos/App/WindowChrome.swift`, `…/GlassPane.swift`, `…/Screens/MainScreen.swift`
 Goal: a regression the orchestrator saw on the approve-write fixture with the window in front (2026-09-28): text inside the panes draws much lighter than its token (`text.primary` reads about `#626366`, the sidebar's "Needs you" about 1.8:1), as if the glass or blur layer sits on top of the content, and the transcript's tool block and the pinned approval are not visible at all, leaving a gap. The toolbar's text, outside the panes, draws at full strength. Snapshot tests do not show it, so it lies in how the app window composes the panes (T37.22.4's `glassPane(frosts: false)`, the behind-window view) or in a later change (T37.22.6, T37.21.11). Find the cause (bisect the merges if needed), fix it so pane content draws above the glass at its token colour, and add a guard a test can hold where possible.
 Check: a screenshot of the app in front on the approve-write fixture shows the tool block, the pinned approval and text at token strength; the measured `text.primary` pixel matches its token within a small tolerance over a plain backdrop.
-
-#### T37.22.11 Selected session row meets 4.5:1 in every appearance
-
-Depends: — · Size: ~40 · Files: the design tokens (`desktop/design`), CoxUI tokens and the sidebar row, `ContrastTests.swift`
-Goal: A115. A new colour token `accent.selected` (light `#eaf3ff` opaque, dark `#3b9bff` α0.14) fills the selected session row instead of `accent.soft`, so `text.primary` and `text.secondary` on it reach ≥ 4.5:1 in every appearance and material. `accent.soft` keeps its value and its other uses.
-Check: `ContrastTests` asserts the selected-row pairs at ≥ 4.5:1 in light and dark, Solid, Frosted and Glossy (glass measured over the window fill, A112); CoxUI snapshots re-recorded on purpose; swift-format and swiftlint strict clean.
-Plan: add `accent.selected` to the design tokens and CoxUI's token set the way other colour tokens are kept in sync, use it for the selected sidebar row, extend `ContrastTests`, re-record CoxUI snapshots; verify CoxUI tests and the linters.
 
 ## 4. Definition of done for v0.1
 
