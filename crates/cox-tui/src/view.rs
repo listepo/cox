@@ -152,6 +152,10 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     };
     let queue = queue_lines(state);
     let queue_rows = u16::try_from(queue.len()).unwrap_or(u16::MAX);
+    // T46.3: the status command's row, above the built-in one and only
+    // while it has something to say, so without it nothing moves.
+    let script = status::script_line(state, area.width);
+    let script_rows = u16::from(script.is_some());
     let [
         banner_area,
         transcript,
@@ -160,6 +164,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         modal_area,
         queue_area,
         composer,
+        script_area,
         status,
     ] = Layout::vertical([
         Constraint::Length(banner),
@@ -169,6 +174,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Constraint::Length(modal),
         Constraint::Length(queue_rows),
         Constraint::Length(composer_rows),
+        Constraint::Length(script_rows),
         Constraint::Length(1),
     ])
     .areas(area);
@@ -325,6 +331,9 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         hints(state, text.width).render(text, buf);
     } else {
         state.composer.widget().render(text, buf);
+    }
+    if let Some(script) = script {
+        script.render(script_area, buf);
     }
     status::line_at(state, status.width).render(status, buf);
 

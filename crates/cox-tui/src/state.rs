@@ -391,6 +391,10 @@ pub struct State {
     /// choice (T33.30), the same two-step shape `rewind_to` above uses for
     /// `/rewind`'s turn-then-what picks.
     pub pending_plugin_new: Option<(String, Vec<String>)>,
+    /// `[tui.status_line]` (T46.3): the user's status command, its last
+    /// input and answer; the runtime sets it at startup when a command is
+    /// configured. `None` leaves the screen exactly as without the key.
+    pub status_script: Option<crate::status::StatusScript>,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -479,6 +483,9 @@ pub enum Msg {
     /// new`/`update`/`remove`/`list` would have printed, joined; `Err`
     /// names why. Shown as a notice, the same as `Event::Notice`.
     PluginMgmt(Result<String, String>),
+    /// The status command's first line (T46.3), `None` when it failed,
+    /// timed out or printed nothing; answers `Ask::StatusLine`.
+    StatusLine(Option<String>),
 }
 
 /// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
@@ -558,13 +565,20 @@ pub enum PluginRequest {
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
 /// on the feed channel. Kept apart from `Submission`: the core never sees it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ask {
     GitDiff,
     /// `/agents` (T27.5): a sibling session's rollout, the same read
     /// `crates/cox/src/resume.rs` does for `--resume` (`Store::rollout_read`);
     /// `crates/cox/src/session.rs` answers it for real.
     Rollout(SessionId),
+    /// `[tui.status_line]` (T46.3): the status command's stdin JSON and
+    /// the terminal width, sent only when either changed; the runtime
+    /// debounces and answers `Msg::StatusLine`.
+    StatusLine {
+        input: serde_json::Value,
+        columns: u16,
+    },
 }
 
 /// `Modal::PluginGrant`'s `y` (T33.8, PL§3): the full requested capability
@@ -749,6 +763,7 @@ impl State {
             term: (80, 24),
             plugin_renderers: Vec::new(),
             pending_plugin_new: None,
+            status_script: None,
         }
     }
 
@@ -886,6 +901,7 @@ impl State {
 pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
     let mut cmds = step(state, msg);
     cmds.extend(progress(state));
+    cmds.extend(crate::status::script_ask(state));
     cmds
 }
 
@@ -991,6 +1007,13 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
                 Err(text) => (Level::Warn, text),
             };
             notice(state, level, text);
+            Vec::new()
+        }
+        // Only the script's own row: the built-in segments never change.
+        Msg::StatusLine(line) => {
+            if let Some(script) = &mut state.status_script {
+                script.line = line;
+            }
             Vec::new()
         }
     }
