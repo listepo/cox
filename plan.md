@@ -37,8 +37,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.44.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T37.44.7 | todo | P2 | 3 | 0% | |
-| T37.44.8 | todo | P2 | 3 | 0% | |
+| T37.44.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.44.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.22.14 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2814,12 +2815,21 @@ Plan: as T37.44.5 for the "Inspector & review" page.
 Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI approval, decision and composer views, their snapshots
 Goal: A114, A119. The Figma pages "Approvals" and "Composer" are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2, which touches the same main-screen parts.
 Check: as T37.44.5.
+Plan: as T37.44.5 for the "Approvals" and "Composer" pages, touching only approval, decision-bar and composer views; merge p37-desktop when T37.44.2 lands.
 
 #### T37.44.8 Navigation screens match the Figma frames
 
 Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI sidebar, inbox, palette and navigation views, their snapshots
 Goal: A114, A119. The Figma page "Navigation" is compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2.
 Check: as T37.44.5.
+Plan: as T37.44.5 for the "Navigation" page, touching only sidebar, inbox, palette and navigation views; merge p37-desktop when T37.44.2 lands.
+
+#### T37.22.14 Transcript card placement is safe on macOS 26
+
+Depends: T37.22.10 · Size: ~40 · Files: `CoxTranscriptText/TranscriptCards.swift`, its tests
+Goal: T37.22.10 re-places cards from an override of `textViewportLayoutControllerDidLayout`, which the SDK declares on `NSTextView` only from macOS 27, while the deployment target is macOS 26 (`project.yml`, `Package.swift`). On macOS 26 the override may never run (cards stay missing) or its `super` call may reach a selector `NSTextView` does not implement. Make the placement pass run on macOS 26 and 27 without calling an unimplemented `super` (an availability or `instancesRespond(to:)` guard, or a hook both versions have), keeping T37.22.10's behaviour on 27.
+Check: the SDK declaration and its availability quoted in the commit body; a test that the placement pass runs through the macOS 26 path; CoxTranscriptText and CoxTranscript tests pass; swift-format and swiftlint strict clean.
+Plan: read the SDK header (`xcrun --show-sdk-path`) for the method's availability, choose the guard or an older hook, add the test, verify with CoxTranscriptText and CoxTranscript tests and the linters.
 
 ## 4. Definition of done for v0.1
 
