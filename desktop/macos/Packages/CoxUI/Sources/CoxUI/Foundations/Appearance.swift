@@ -114,3 +114,27 @@ private struct CoxTransition: ViewModifier {
     content.transition(reduceMotion ? .opacity : movement)
   }
 }
+
+extension View {
+  /// One view that moves between places — a selection pill, a knob: the copy that appears
+  /// slides from the frame of the copy that goes, sharing `id` in `namespace`, or the two
+  /// cross-fade under Reduce Motion (DS§3.6).
+  func coxMatchedGeometry(id: some Hashable, in namespace: Namespace.ID) -> some View {
+    modifier(CoxMatchedGeometry(id: AnyHashable(id), namespace: namespace))
+  }
+}
+
+private struct CoxMatchedGeometry: ViewModifier {
+  let id: AnyHashable
+  let namespace: Namespace.ID
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  /// Both copies fade: while they fly together the hand-over is invisible, and it keeps the
+  /// copy that goes on screen long enough for the one that appears to match its frame.
+  /// Under Reduce Motion nothing is matched, so the fade is all that is left.
+  func body(content: Content) -> some View {
+    content
+      .matchedGeometryEffect(id: id, in: namespace, properties: reduceMotion ? [] : .frame)
+      .transition(.opacity)
+  }
+}

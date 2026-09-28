@@ -201,7 +201,7 @@ Packages/CoxUI/Sources/CoxUI/
 │                 Motion applied once) and the ViewModifiers and styles: Elevation, GlassPane,
 │                 Specular, Hairline, InsetWell, TextStyle, ControlState (rest, hovered, pressed,
 │                 disabled for every button-like style), CoxButtonStyle, CapsuleStyle,
-│                 SegmentedStyle, CoxToggleStyle, CoxSliderStyle
+│                 CoxSegmented, CoxToggleStyle, CoxSlider, Knob
 ├─ Atoms/         one file per atom (§6.2)
 ├─ Molecules/     one file per molecule (§6.3)
 ├─ Organisms/     one file per organism (§6.4)
@@ -233,8 +233,8 @@ component.
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
 | `CapsuleStyle(.plain/.active)` | Toolbar capsules and filter chips: readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
-| `SegmentedStyle` | Segmented control with lifted selection | `e1` | `.seg` |
-| `CoxToggleStyle`, `CoxSliderStyle` | Toggles and sliders with 3D knob | `e1`, `accent` | `.tog`, `.slider` |
+| `CoxSegmented(_ label:, selection:, options:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
+| `CoxToggleStyle`, `CoxSlider(_ label:, value:, in:)` | Toggles and sliders with the shared 3D `Knob` (white disc, hairline rim, e1) over an `insetWell` track filled with `accent`; the toggle's knob slides, or cross-fades under Reduce Motion. The slider is a view: macOS has no public `SliderStyle` | `e1`, `accent`, `fill.secondary` | `.tog`, `.slider` |
 
 ### 6.2 Atoms
 

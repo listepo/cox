@@ -3364,3 +3364,59 @@ Deviations: ~890 lines in 11 files (throwaway spike plus tests); also measured a
 Check: `swift test --no-parallel --package-path desktop/macos/Spikes/Selection` twice, 8/8 each, stable numbers; `swiftlint lint` reports no `Spikes/` files; swift-format applied. Commit 419edd6.
 
 Not done: not measurable headlessly — hand drag with autoscroll, trackpad momentum, GPU/compositing time, VoiceOver, reliable memory, scroller jumps on estimated heights. Numbers come from a shared M3 Max, not the M1 Air 8 GB the budgets target; T37.23's gate still runs there.
+
+#### T37.19.1 `CoxButtonStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: primary, secondary, danger and plain buttons in each DS§6.1 size, built on the Foundations (`elevation`, `specular`, `textStyle`) with hover, pressed and disabled states.
+Check: snapshot per role × size × light/dark × Solid/Frosted; the disabled state keeps the readable floor.
+Status: done 2026-09-28
+Result: `Foundations/CoxButtonStyle.swift` — primary, secondary, danger and plain roles in regular and small sizes, built on `elevation` (e1), `specular`, `hairline` and `textStyle`. New shared `Foundations/ControlState.swift`: rest, hovered, pressed, disabled and the view that resolves them (hover adds `fill.primary`, press adds `fill.secondary` and drops to e0). A disabled button keeps its face at the readable floor and a `text.secondary` label (4.5:1, DS§8) instead of fading; a disabled primary shows the secondary face. DESIGN.md §5 and the §6.1 button row updated.
+
+Deviations: `ControlState.swift` is a new shared file; the primary label is `Color.white` as a named constant (no on-accent colour token exists); the snapshot helper `Tests/CoxUITests/StyleSnapshot.swift` copies the render code of `FoundationsTests.swift`.
+
+Check: 32 snapshots (4 roles × 2 sizes × light/dark × Solid/Frosted, each showing all four states); unit tests: a disabled face stays at or above the readable floor at window opacity 0, which state wins, the pressed/disabled lift; second run passes with nothing re-recorded; `swiftlint --strict` and `swift-format lint --strict` clean. After merging with T37.19.3–T37.19.4: `swift test` in CoxUI 25 tests in 7 suites pass, both linters clean. Commit 7b240e3.
+
+Not done: no `#Preview`s. Built and tested without the SwiftLintPlugins lines (SwiftPM stalls fetching the plugin locally).
+
+#### T37.19.2 `CapsuleStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: the plain and active capsules of DS§6.1 (chips, filters), built on the Foundations.
+Check: snapshot per state × light/dark × Solid/Frosted.
+Status: done 2026-09-28
+Result: `Foundations/CapsuleStyle.swift` — plain and active capsules: a `glassPane` face with `surface.capsule` in the readable role, a hairline, e1 and `.control` text, with `ControlState`'s four states; active takes `surface.window`, an `accent` label and the mockup's 3 pt `accent.soft` halo, drawn as a filled pill behind the face. DESIGN.md §6.1 capsule row updated.
+
+Deviations: the border is the Foundations `hairline` (`separator`), so `surface.capsuleBorder` stays unused; the halo width is a named constant.
+
+Check: 8 snapshots (plain/active × light/dark × Solid/Frosted); two runs pass; both linters clean; merged run as in T37.19.1. Commit 387b44a.
+
+Not done: no icon-only (`.cap.icon`) variant. A stroked pill shows stray vertical bars at its ends in the 2× window capture (why the halo is a fill; the `hairline` capsule snapshot shows a faint bar too) — not checked on screen.
+
+#### T37.19.3 `SegmentedStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: the segmented control of DS§6.1 with the lifted e1 selection, built on the Foundations; selection moves with `coxTransition`.
+Check: snapshot per selection × light/dark × Solid/Frosted; Reduce Motion cross-fades.
+Status: done 2026-09-28
+Result: `Foundations/CoxSegmented.swift` — `CoxSegmented(_ label:, selection:, options:, title:)`: a glass capsule (`glassPane` readable, capsule border, e1) with an e1-lifted pill on the selected segment that slides between segments and cross-fades under Reduce Motion; VoiceOver sees a real segmented `Picker`. `Appearance.swift` gains `coxMatchedGeometry(id:in:)` (matched geometry unless Reduce Motion), keeping the Reduce Motion decision in that one file. DESIGN.md §5 and §6.1 updated.
+
+Deviations: a view, not a `SegmentedStyle` — SwiftUI cannot restyle a segmented picker's segments on macOS. The selection moves with `coxMatchedGeometry`, not `coxTransition` (a transition cannot carry one view between segments). `Tests/CoxUITests/ControlSnapshots.swift` repeats the window-hosted 2× renderer.
+
+Check: 12 snapshots (selection × light/dark × Solid/Frosted); `selectionSlidesThroughTheMiddleSegment` and `reduceMotionCrossFadesTheSelection` sample frames mid-animation (the latter fails with the gate removed); three consecutive passes; merged run as in T37.19.1. Commit e9dc3f0.
+
+Not done: nothing from the card.
+
+#### T37.19.4 `CoxToggleStyle` and `CoxSliderStyle`
+
+Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
+Goal: the DS§6.1 toggle and slider with the 3D knob, built on the Foundations.
+Check: snapshot per on/off and slider value × light/dark × Solid/Frosted.
+Status: done 2026-09-28
+Result: `Foundations/Knob.swift` — the shared 3D knob (white disc shaded towards the shadow tint, hairline rim, e1). `CoxToggleStyle.swift` — the label, then an `insetWell` track filled with `accent` when on; the knob moves with `coxMatchedGeometry` and cross-fades under Reduce Motion. `CoxSlider.swift` — `CoxSlider(_ label:, value:, in:)` with an `insetWell` track, an `accent` gradient fill up to the value, the knob, a drag gesture and clamping. VoiceOver sees a real switch and slider. DESIGN.md §5 and §6.1 updated.
+
+Deviations: `CoxSlider` is a view, not a `CoxSliderStyle` (macOS has no public `SliderStyle`); the toggle's on colour is `accent` per DS§6.1, not the mockup's green; four files (the knob has its own); track and knob sizes are private constants citing the mockup, as `InsetWell` does.
+
+Check: 20 snapshots (on/off and slider 0/50/100 % × light/dark × Solid/Frosted); the knob sits at the value's share of the range; out-of-range values clamp; merged run as in T37.19.1. Commit fb412f5.
+
+Not done: no disabled-state visuals for toggle or slider (the card does not ask).

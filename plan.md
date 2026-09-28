@@ -27,10 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.19.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.19.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.19.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.19.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.40 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.41 | todo | P0 | 3 | 0% | |
 | T37.42 | todo | P0 | 3 | 0% | |
@@ -1081,30 +1077,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.19.1 `CoxButtonStyle`
-
-Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
-Goal: primary, secondary, danger and plain buttons in each DS§6.1 size, built on the Foundations (`elevation`, `specular`, `textStyle`) with hover, pressed and disabled states.
-Check: snapshot per role × size × light/dark × Solid/Frosted; the disabled state keeps the readable floor.
-
-#### T37.19.2 `CapsuleStyle`
-
-Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
-Goal: the plain and active capsules of DS§6.1 (chips, filters), built on the Foundations.
-Check: snapshot per state × light/dark × Solid/Frosted.
-
-#### T37.19.3 `SegmentedStyle`
-
-Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
-Goal: the segmented control of DS§6.1 with the lifted e1 selection, built on the Foundations; selection moves with `coxTransition`.
-Check: snapshot per selection × light/dark × Solid/Frosted; Reduce Motion cross-fades.
-
-#### T37.19.4 `CoxToggleStyle` and `CoxSliderStyle`
-
-Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/*`, its tests and snapshots
-Goal: the DS§6.1 toggle and slider with the 3D knob, built on the Foundations.
-Check: snapshot per on/off and slider value × light/dark × Solid/Frosted.
 
 #### T37.40 `CoxTranscriptText`: the TextKit 2 transcript view
 
