@@ -59,6 +59,32 @@ design/tokens/base.json        ┘                        ├─ CoxUI/Tokens/To
 - A drift test (the `desktop-tokens` CI job) regenerates the outputs and fails on any diff, like
   `docs/config.jsonschema`. Edit the JSON, never a generated file.
 
+### Figma mirror
+
+The Figma file [cox desktop](https://www.figma.com/design/KA9a0R7n6P0QbwDn92e167) mirrors the tokens
+and the mockups for review. It is a mirror, not a source (A114): nothing here reads it back, and a
+change made only in Figma is lost at the next re-sync. Change `tokens/*.json` or `mockups.html`, then
+re-sync.
+
+- **Variables and styles.** Collections `Color` (modes Light, Dark, Light HC, Dark HC), `Spacing`,
+  `Radius`, `Size`, `Type`, `Motion` and `Material`; text styles `font/*` and effect styles
+  `elevation/*`, each variable carrying its CSS name as web code syntax. `figma/variables.mjs` builds
+  them from the JSON (`node --test 'figma/*.test.mjs'` covers it).
+- **Screens.** One page per mockup group holds each rendered screen as a 1520 × 980 frame named by
+  its screen id. `Screen 28 · editable` rebuilds `28-main-glass-frosted` as auto-layout layers bound
+  to the variables, derived from the mockup; values without a token (glass material fills, the
+  wallpaper, the traffic lights) stay raw.
+- **Fonts.** Figma has no SF Mono, so the three mono text styles are skipped and the editable screen
+  uses Roboto Mono. SF Pro loads but does not render where the file is rendered; the generator
+  reports both lists (`missingFonts`, `unrenderedFonts`). Which fonts to use in Figma is open.
+
+Re-sync:
+
+1. `npm run figma -- --out <dir>` writes the scripts; run each `<dir>/NN.js` in order with the Figma
+   MCP tool `use_figma`. Each is idempotent: it updates by name and prunes what the tokens dropped.
+2. `mockups/render.sh <screen-id>…` re-renders the PNGs; upload each with the Figma MCP tool
+   `upload_assets` as the fill of the frame with the same name.
+
 ## 3. Foundations
 
 ### 3.1 Colour — semantic roles

@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "node high-contrast.mjs && node style-dictionary.config.mjs",
-    "check": "node high-contrast.mjs --check"
+    "check": "node high-contrast.mjs --check",
+    "figma": "node figma/variables.mjs",
+    "test": "node --test 'figma/*.test.mjs'"
   },
   "dependencies": {
     "style-dictionary": "5.5.5"
