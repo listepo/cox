@@ -3895,3 +3895,33 @@ Check:
 - `ShellShortcutTests` covers the keys and the tooltip strings.
 - Full CoxUI run: 110 tests in 36 suites passed, with no existing snapshot re-recorded. Lints clean.
 Not done: installing the menu commands. The system `SidebarCommands`/`InspectorCommands` act only on system-built panes, so the app replaces both menu groups with the same titles and keys through `ShellShortcut` (T37.22.3).
+
+#### T37.23 Transcript view and the DT§9 benchmark gate
+
+Depends: T37.22, T37.40–T37.43, T37.21.1–T37.21.6 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
+Goal: lazy transcript from timeline patches with `UserBubble`, `ThinkingDisclosure`, `ToolCard`, `AssistantMessage` and `ApprovalCard` slots; text selection runs across blocks like a document (copy keeps block order and gives Markdown), and `cross_block_selection = false` clamps it to one block (A67); the DT§9 rendering bet is decided by its benchmark with selection on.
+Selection engine (T37.37, `research.md` §9.5.13): our own TextKit 2 view — one `NSTextView` over the transcript with blocks as ranges and cards as view-backed attachments — from the package `CoxTranscriptText`; Textual was rejected.
+Check: the benchmark in DT§9 passes its budget on a 2 000-block fixture; snapshots per block kind; a UI test drags a selection across three blocks and the pasteboard holds all three in order; with the setting off the same drag selects one block.
+Status: done 2026-09-28
+Result (split at claim into three parts, one commit each):
+- T37.23.1 `ToolCard`: `CoxUI/Organisms/ToolCard.swift` is public and built from plain values. A running call shows its tail. A finished call folds its detail behind the chevron; opened, it shows a readable face. ToolHeader, IconTile, RiskChip, TerminalTail, DiffLineView and CodeRun are now public. 20 snapshots.
+- T37.23.2 `TranscriptView`: the new package `Packages/CoxTranscript` joins CoxUI, CoxModel and CoxTranscriptText; CoxUI imports no cox package, and CoxTranscriptText knows nothing of CoxUI. It holds `TranscriptView(store:crossBlockSelection:approval:)` and `TranscriptCard`. CoxUI gains `TextColour` and `FontToken.nsFont`, and `SessionStore` gains `didApply`. Durations are formatted with the SwiftUI locale. DT§4.1, §4.6 and §6 and the DESIGN.md TurnView and TranscriptView rows are updated.
+- T37.23.3 benchmark gate: DT§1 budgets are measured through `TranscriptView` on 2 000 blocks with real cards and a live cross-block selection:
+  - scroll hitch time 0.00–0.04 % against 1 % (p99 about 16 ms);
+  - streaming by `docTail` at 200 tok/s: 19–23 % busy against 25 %, max frame 6–8 ms against 16 ms.
+Deviations:
+- Fixed a bug: a card attachment with no image made TextKit draw its document placeholder under every card. The fix is an empty `image`; the snapshots fail without it.
+- `TurnView` is not a separate view under A72.
+- Approvals and questions use a caller slot until `ApprovalCard` (T37.27).
+- The offscreen benchmark window is occluded, so the harness draws the text into a bitmap itself. While streaming it redraws only the growing paragraph; a full 800 pt redraw would add about 7 ms, about 40 % busy.
+Check:
+- CoxUI `swift test`: 92 tests in 31 suites, second run.
+- CoxTranscript: 6 tests in 3 suites:
+  - a drag across 3 blocks copies Markdown in order;
+  - with `cross_block_selection` off the same drag selects 1 block;
+  - store patches reach the text;
+  - snapshots of every block kind, light and dark.
+- CoxTranscriptText 19 and CoxModel 12 pass; linters are clean.
+- `TranscriptBenchmarkTests` passed 5 of 6 runs at load average 35–108. The failure was one 645 ms frame at load 100.
+- After merging into `p37-desktop`: CoxModel 20 and CoxTranscript 6 pass.
+Not done: user bubble and thinking as TextKit fragments, structured diff hunks, restyle on text size, follow-tail scrolling and styled reply structure are T37.23.4–T37.23.8. The M1 Air XCTest run is in ideas.md.

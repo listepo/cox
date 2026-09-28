@@ -27,7 +27,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.23 | in progress | P0 | 5 | 0% | Claude Code / Opus 5.5 |
+| T37.23.4 | todo | P0 | 3 | 0% | |
+| T37.23.5 | todo | P0 | 3 | 0% | |
+| T37.23.6 | todo | P1 | 2 | 0% | |
+| T37.23.7 | todo | P1 | 2 | 0% | |
+| T37.23.8 | todo | P1 | 3 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
 | T37.27 | todo | P0 | 3 | 0% | |
@@ -1077,12 +1081,35 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.23 Transcript view and the DT§9 benchmark gate
+#### T37.23.4 User bubble and thinking inside the transcript text
 
-Depends: T37.22, T37.40–T37.43, T37.21.1–T37.21.6 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
-Goal: lazy transcript from timeline patches with `UserBubble`, `ThinkingDisclosure`, `ToolCard`, `AssistantMessage` and `ApprovalCard` slots; text selection runs across blocks like a document (copy keeps block order and gives Markdown), and `cross_block_selection = false` clamps it to one block (A67); the DT§9 rendering bet is decided by its benchmark with selection on.
-Selection engine (T37.37, `research.md` §9.5.13): our own TextKit 2 view — one `NSTextView` over the transcript with blocks as ranges and cards as view-backed attachments — from the package `CoxTranscriptText`; Textual was rejected.
-Check: the benchmark in DT§9 passes its budget on a 2 000-block fixture; snapshots per block kind; a UI test drags a selection across three blocks and the pasteboard holds all three in order; with the setting off the same drag selects one block.
+Depends: — · Size: ~150 · Files: `desktop/macos/Packages/CoxTranscript/…`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: user prompts and thinking blocks render in `TranscriptView` with the `UserBubble` and `ThinkingDisclosure` look (T37.21.5), as styled TextKit fragments or card attachments, so their text stays selectable across blocks.
+Check: snapshots of a turn with a user prompt with an attachment and a folded and an open thinking block; a drag from the prompt into the reply copies both in order.
+
+#### T37.23.5 Structured diff hunks from Rust for edit cards
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: `cox-app` sends an edit's hunks as structured lines (kind, old/new numbers, `StyledDoc` spans), so `ToolCard` shows `DiffHunkView`s and Swift never parses a unified diff.
+Check: a `cox-app` test of the hunk shape for a scripted edit; a snapshot of an opened edit card.
+
+#### T37.23.6 Restyle the transcript when the text size changes
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: `TranscriptStyle` is rebuilt when `[desktop.transcript]` text size or line height changes, and the whole text restyles in place without losing the selection.
+Check: snapshots at two text sizes; a selection survives the change.
+
+#### T37.23.7 Follow the tail while a reply streams
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscript/…`
+Goal: while the view is scrolled to the bottom it stays there as a reply streams; scrolling up stops following until the user returns to the bottom.
+Check: a test streams `docTail` patches and the view stays at the bottom; after a scroll up it stays put.
+
+#### T37.23.8 Headings, lists and quotes in replies
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: `StyledDoc` headings, lists, quotes, rules and tables render with their structure (indents, markers, heading sizes from tokens) instead of flat paragraphs.
+Check: a snapshot of a reply with each block kind; Copy as Markdown of it round-trips the structure.
 
 #### T37.24 Composer: mentions, commands, shell mode, attachments, queue
 
