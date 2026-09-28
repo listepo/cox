@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.11 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
@@ -806,14 +805,6 @@ Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding
 Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape. T21.1–T21.2 (below) are the implementation the gate allowed: provider wiring only, no call sites yet.
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
-
-#### T22.11 A repository's `.claude/settings.json` may only tighten the permission rules
-
-Depends: T22.10 · Size: ~60 · Files: the Claude-settings reader in `crates/cox` (`config_load`), its tests, `docs/config.md` if it describes the import
-Goal: A122. The permissions imported from a project `.claude/settings.json` (and `.claude/settings.local.json`) follow T22.10's rule: their `deny` and `ask` rules are added, their `allow` rules are dropped with the same `GuardViolation` notice a project `allow` gets. The user's own `~/.claude/settings.json` import is unchanged.
-Check: `crates/cox` config-load tests: a project `.claude/settings.json` with `allow: ["Bash"]` leaves `Bash` out of the effective allow list and reports it; its `deny` rules are in the effective deny list; a user `~/.claude/settings.json` allow rule still applies.
-
-Plan (Claude Code / opus-5.5): find where the Claude settings are layered into both figments (with and without the project), move the project file's `allow` out of the pre-project figment and through T22.10's guard, add the tests next to `config_claude_settings_import_matches_native_rules`. No build or test run (no-build rule).
 
 ### P23 — Terminal capabilities (goal: one probe, every feature optional, `doctor` shows the verdict)
 

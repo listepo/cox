@@ -5927,3 +5927,19 @@ Deviations: a 4th file (that test); a first version reported a dropped deny/ask 
 Check: `cargo fmt --check` clean. Tests written, not run (no-build rule, 2026-09-28): `project_config_allow_is_reverted_with_a_violation`, `project_config_empty_deny_keeps_the_default_deny`, `project_config_deny_rule_is_appended_to_the_user_deny`, `project_config_ask_keeps_the_user_ask_and_appends_its_own`.
 
 Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-config -p cox-protocol -p cox -p cox-app` and clippy on `cox-config`, `cox`, `cox-app`. `source_of("permissions.deny")` answers "project" whenever the project sets the key, so the desktop Settings screen may show the whole list as the project's. The `.claude/settings.json` import still lets a repository's `allow` rules through — T22.11.
+
+#### T22.11 A repository's `.claude/settings.json` may only tighten the permission rules
+
+Depends: T22.10 · Size: ~60 · Files: the Claude-settings reader in `crates/cox` (`config_load`), its tests, `docs/config.md` if it describes the import
+Goal: A122. The permissions imported from a project `.claude/settings.json` (and `.claude/settings.local.json`) follow T22.10's rule: their `deny` and `ask` rules are added, their `allow` rules are dropped with the same `GuardViolation` notice a project `allow` gets. The user's own `~/.claude/settings.json` import is unchanged.
+Check: `crates/cox` config-load tests: a project `.claude/settings.json` with `allow: ["Bash"]` leaves `Bash` out of the effective allow list and reports it; its `deny` rules are in the effective deny list; a user `~/.claude/settings.json` allow rule still applies.
+
+Plan (Claude Code / opus-5.5): find where the Claude settings are layered into both figments (with and without the project), move the project file's `allow` out of the pre-project figment and through T22.10's guard, add the tests next to `config_claude_settings_import_matches_native_rules`. No build or test run (no-build rule).
+Status: done 2026-09-28
+Result: `cox-config` has a public `ClaudeLayers { user, project }`; the loader's Claude callback returns `Option<ClaudeLayers>`. The repository's layer (`.claude/settings.json` plus `.claude/settings.local.json`) goes only into the figment built with the project, the user's `~/.claude/settings.json` into both, so T22.10's guard treats a repository's imported rules like a project config's: its `allow` rules are dropped with the `permissions.allow` `GuardViolation` and the same stderr warning, its `deny`/`ask` rules are added. `claude_layer` in `crates/cox/src/config_load.rs` reads the two groups separately; the existing `|_| None` callers (cox-app `app.rs`, `settings.rs`, cox-config tests) are unchanged.
+
+Deviations: when the git root is the home directory (a dotfiles repository) `~/.claude` stays the user's file (it was loaded in both roles before); `cox-config/src/load.rs` changed too, since the split cannot be made from the binary alone.
+
+Check: `cargo fmt --check` clean. Tests written, not run (no-build rule): `project_claude_settings_allow_is_dropped_and_its_deny_added`, `user_claude_settings_allow_still_applies`; `config_claude_settings_import_matches_native_rules` unchanged.
+
+Not done: the verification pass runs `mise exec -- cargo nextest run -p cox-config -p cox -p cox-app` and clippy on the same crates. `source_of("permissions.allow")` after a revert probably answers "default" rather than "claude-settings" (figment's `adjoin` keeps the first label), untested.
