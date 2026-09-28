@@ -32,9 +32,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.19.5 | in progress | P2 | 3 | 80% | Claude Code / Opus 5.5 |
-| T37.20.5 | todo | P2 | 2 | 0% | |
-| T37.21.11 | todo | P2 | 2 | 0% | |
+| T37.20.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.11 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2771,12 +2770,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.19.5 Foundation tokens: on-accent text, dark highlight, disabled controls
-
-Depends: — · Size: ~120 · Files: `desktop/design/tokens/*.json`, `…/Foundations/…`
-Goal: an on-accent text token replaces the `Color.white` constant on the primary button; a dark e1 highlight token so dark controls lose the bright rim; `surface.capsuleBorder` is either used by capsules or removed; disabled toggle and slider visuals; check the faint vertical bars at a stroked pill's ends on screen and fix them if they are real.
-Check: snapshots re-recorded on purpose for the changed foundations, and every other suite passes unchanged; SwiftLint's no-literal rules stay clean.
 
 #### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
 
