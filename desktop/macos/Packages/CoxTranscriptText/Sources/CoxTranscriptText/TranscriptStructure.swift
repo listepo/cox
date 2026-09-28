@@ -56,15 +56,19 @@ final class Paragraphs {
 
   private let style: TranscriptStyle
   private let heading: Paragraph
+  /// A code block's lines, at the code face's line height.
+  let code: Paragraph
   /// Between an item's marker and its text: a space of body text.
   private let gap: CGFloat
   private var made: [Shape: Paragraph] = [:]
 
   init(_ style: TranscriptStyle) {
     self.style = style
-    let heading = NSMutableParagraphStyle()
+    let heading = TranscriptStyle.lines(style.heading, style.lineHeights.heading)
     heading.paragraphSpacingBefore = style.blockSpacing
     self.heading = Paragraph(heading, spacing: style.blockSpacing)
+    code = Paragraph(
+      TranscriptStyle.lines(style.code, style.lineHeights.code), spacing: style.blockSpacing)
     gap = (" " as NSString).size(withAttributes: [.font: style.body]).width.rounded(.up)
   }
 
@@ -82,7 +86,7 @@ final class Paragraphs {
     let paragraph =
       heading
       ? self.heading.own.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
-      : NSMutableParagraphStyle()
+      : TranscriptStyle.lines(style.body, style.lineHeights.body)
     let base = CGFloat(line.quote) * style.thought.indent
     (paragraph.firstLineHeadIndent, paragraph.headIndent) = (base, base)
     if let depth {
@@ -121,7 +125,7 @@ final class Paragraphs {
         }
       }
     }
-    let paragraph = NSMutableParagraphStyle()
+    let paragraph = TranscriptStyle.lines(style.body, style.lineHeights.body)
     var location: CGFloat = 0
     paragraph.tabStops = widths.dropLast().map { width in
       location += (width + style.indent).rounded(.up)
@@ -221,14 +225,10 @@ extension TranscriptText {
       let own =
         text.attribute(.transcriptParagraph, at: paragraph.location, effectiveRange: nil)
         as? Paragraph
-      let want = paragraph.location == last ? own?.last ?? look.spacing : own?.own
+      let want = paragraph.location == last ? own?.last ?? look.spacing : own?.own ?? look.line
       text.enumerateAttribute(.paragraphStyle, in: paragraph) { value, range, _ in
         guard (value as? NSParagraphStyle) != want else { return }
-        if let want {
-          text.addAttribute(.paragraphStyle, value: want, range: range)
-        } else {
-          text.removeAttribute(.paragraphStyle, range: range)
-        }
+        text.addAttribute(.paragraphStyle, value: want, range: range)
       }
       location = NSMaxRange(paragraph)
     }

@@ -249,3 +249,5 @@ tint = true                         # tint the glass from the wallpaper
 
 [desktop.transcript]
 cross_block_selection = true        # a text selection runs across blocks like one document; false clamps it to one block (A67)
+text_size = 13.5                    # the transcript's prose size in pt at 100 % text size, 10 … 24; code, headings and thoughts keep their size relative to it (A93)
+line_height = 1.55                  # the prose line height as a multiple of the text size, 1 … 2.5 (A93)

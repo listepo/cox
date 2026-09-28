@@ -5,7 +5,6 @@
 // values to CoxUI's, which CoxModel does not import.
 
 import CoxClient
-import Foundation
 
 /// The window material, spelled as `desktop.appearance.material` stores it.
 public enum WindowMaterial: String, CaseIterable, Sendable {
@@ -60,16 +59,12 @@ public struct DesktopAppearance: Equatable, Sendable {
 extension DesktopAppearance {
   /// `nil` when a key is missing or holds a value of another type.
   init?(_ settings: [Setting]) {
-    let rows = Dictionary(settings.map { ($0.key, $0) }) { first, _ in first }
-    func decode<Value: Decodable>(_ field: String) -> Value? {
-      rows[Self.key(field)].flatMap {
-        try? JSONDecoder().decode(Value.self, from: Data($0.value.utf8))
-      }
-    }
-    guard let name: String = decode("material"), let material = WindowMaterial(rawValue: name),
-      let opacity: Double = decode("opacity"), let blur: Double = decode("blur"),
-      let depth: Double = decode("depth"), let tint: Bool = decode("tint"),
-      case .number(let low?, let high?) = rows[Self.key("blur")]?.kind, low <= high
+    let rows = SectionRows(settings, "desktop.appearance")
+    guard let name: String = rows.decode("material"),
+      let material = WindowMaterial(rawValue: name),
+      let opacity: Double = rows.decode("opacity"), let blur: Double = rows.decode("blur"),
+      let depth: Double = rows.decode("depth"), let tint: Bool = rows.decode("tint"),
+      case .number(let low?, let high?) = rows["blur"]?.kind, low <= high
     else { return nil }
     (self.material, self.opacity, self.blur, self.depth, self.tint) =
       (material, opacity, blur, depth, tint)

@@ -29,18 +29,21 @@ public struct TranscriptStyle: Equatable {
   public var thought: Thought
   /// A list's indent, and the gap between a table's columns (`TranscriptStructure.swift`).
   public var indent: CGFloat
+  /// Each face's line height (`TranscriptLineHeights.swift`).
+  public var lineHeights: LineHeights
 
   public init(
     body: NSFont, code: NSFont, heading: NSFont? = nil, text: NSColor,
     colors: [StyleToken: NSColor] = [:], blockSpacing: CGFloat, inset: NSSize,
-    bubble: Bubble = .system, thought: Thought = .system, indent: CGFloat = 0
+    bubble: Bubble = .system, thought: Thought = .system, indent: CGFloat = 0,
+    lineHeights: LineHeights = .natural
   ) {
     (self.body, self.code, self.text, self.colors) = (body, code, text, colors)
     self.heading = heading ?? NSFontManager.shared.convert(body, toHaveTrait: .boldFontMask)
     (self.blockSpacing, self.inset, self.bubble, self.thought) = (
       blockSpacing, inset, bubble, thought
     )
-    self.indent = indent
+    (self.indent, self.lineHeights) = (indent, lineHeights)
   }
 
   public static var system: TranscriptStyle {
@@ -74,8 +77,10 @@ struct TextLook {
   }
 
   let style: TranscriptStyle
-  /// Only a block's last paragraph carries this (`TranscriptText.respace`).
+  /// A block's last paragraph carries this (`TranscriptText.respace`), every other prose
+  /// paragraph `line`: both space the lines of body text as its line height says.
   let spacing: NSParagraphStyle
+  let line: NSParagraphStyle
   /// A prompt's and a thought's look, one `Decor` each (`TranscriptDecor.swift`).
   let prompt: [NSAttributedString.Key: Any]
   let thought: [NSAttributedString.Key: Any]
@@ -98,7 +103,8 @@ struct TextLook {
 
   private init(_ style: TranscriptStyle) {
     self.style = style
-    let spacing = NSMutableParagraphStyle()
+    line = TranscriptStyle.lines(style.body, style.lineHeights.body)
+    let spacing = TranscriptStyle.lines(style.body, style.lineHeights.body)
     spacing.paragraphSpacing = style.blockSpacing
     self.spacing = spacing
     // A heading is bold by its token's weight, so a bold span in it keeps that weight.
@@ -281,7 +287,8 @@ enum TranscriptText {
         if case (let start, let paragraph?)? = open {
           paragraphs.append((NSRange(start..<out.length), paragraph))
         }
-        open = (out.length, kind.flatMap { look.paragraphs.of($0, line) })
+        let own = kind.flatMap { look.paragraphs.of($0, line) }
+        open = (out.length, own ?? (face == .code ? look.paragraphs.code : nil))
         out.add(line.lead, look.plain(.text, code: false))
         for span in line.spans { out.add(span.text, look.look(span, face)) }
       }
@@ -315,7 +322,7 @@ enum TranscriptText {
   }
 
   /// Only a block's last paragraph, with the separator that ends it, carries
-  /// the block spacing. `from` is where an edit began: paragraphs before it
+  /// the block spacing; the others take the body's line spacing. `from` is where an edit began: paragraphs before it
   /// are as they were. Only characters whose spacing is wrong change, so a
   /// patch's storage edit stays inside what it changed.
   static func respace(
@@ -338,7 +345,9 @@ enum TranscriptText {
     text.enumerateAttribute(.paragraphStyle, in: spaced) { value, range, _ in
       let inLast = NSIntersectionRange(range, last)
       let before = NSRange(range.location..<max(range.location, last.location))
-      if value != nil, before.length > 0 { text.removeAttribute(.paragraphStyle, range: before) }
+      if before.length > 0, (value as? NSParagraphStyle) != look.line {
+        text.addAttribute(.paragraphStyle, value: look.line, range: before)
+      }
       if inLast.length > 0, (value as? NSParagraphStyle) != look.spacing {
         text.addAttribute(.paragraphStyle, value: look.spacing, range: inLast)
       }
