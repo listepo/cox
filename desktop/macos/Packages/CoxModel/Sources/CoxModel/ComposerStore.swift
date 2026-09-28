@@ -1,6 +1,7 @@
 // The composer of one open session as observable state (DT§5.3, DT§4.6): the draft, shell
 // mode, the files picked from `@` rows, the files attached, the rows the core offers for the
-// token at the caret, and the earlier prompt ↑ brought back.
+// token at the caret, and the earlier prompt ↑ brought back; beside it, the session's mode and
+// model as the core reports them, ⇧⇥'s ask for the next mode, and the think toggle (A103).
 // Separate from `SessionStore`, which holds what the core sent back; this holds what the
 // person is about to send. It asks the core for rows (`cox_app::Completer`) and sends one
 // `Intent`; the command table, the ranking and the files all stay in Rust.
@@ -31,6 +32,9 @@ public final class ComposerStore {
   public private(set) var selectedRange: Range<Int>?
   /// Why the last send failed; the draft stays so it can be sent again.
   public private(set) var failure: String?
+  /// The next turn goes to the think tier, as `/think` sends it (A103); off again once the core
+  /// took that turn, so the costly tier never stays on by accident.
+  public private(set) var think = false
   @ObservationIgnored public let session: SessionStore
   /// The session's earlier prompts, newest first, and which one the draft shows, while ↑ ↓ walk
   /// them; `nil` once the draft is typed, sent or walked back to empty.
@@ -179,6 +183,29 @@ public final class ComposerStore {
   /// Prompts queued behind the running turn that have not started, as the core counts them.
   public var queued: Int { Int(session.status.queued) }
 
+  /// The permission mode in force, as the core reports it.
+  public var mode: PermissionMode? { session.status.mode }
+
+  /// The model the main turn runs on and its effort, `claude-sonnet-5 · high`.
+  public var model: String? {
+    guard let model = session.status.model else { return nil }
+    return session.status.effort.map { "\(model) · \($0.rawValue)" } ?? model
+  }
+
+  /// ⇧⇥: asks for the mode the core's cycle puts after this one. The chip moves when the core
+  /// reports the change, never before.
+  public func cycleMode() async {
+    guard let next = session.status.nextMode else { return }
+    do {
+      _ = try await session.send(.setMode(mode: next))
+    } catch {
+      report(error)
+    }
+  }
+
+  /// The think chip: on for the next turn, or off again before it is sent.
+  public func toggleThink() { think.toggle() }
+
   /// Sends the draft: a shell line, a `/` command line for the core's command table, or a
   /// turn with the attachments — queued behind the running turn while one runs. The draft
   /// clears once the core took it; attachments stay for a shell or command line, which cannot
@@ -186,7 +213,9 @@ public final class ComposerStore {
   public func submit() async {
     guard canSend else { return }
     let turn = !isShell && !text.hasPrefix("/")
-    await send(turn && isRunning ? .queue(text: text, attachments: attachments) : draftIntent)
+    await send(
+      turn && isRunning
+        ? .queue(text: text, attachments: attachments, confirmThink: think) : draftIntent)
   }
 
   /// ⌘⏎: interrupts the running turn, then sends the draft as a turn of its own.
@@ -203,14 +232,15 @@ public final class ComposerStore {
 
   private var draftIntent: Intent {
     if isShell { return .shell(command: text, share: shareOutput) }
-    return text.hasPrefix("/") ? .command(line: text) : .send(text: text, attachments: attachments)
+    if text.hasPrefix("/") { return .command(line: text) }
+    return .send(text: text, attachments: attachments, confirmThink: think)
   }
 
   private func send(_ intent: Intent) async {
     do {
       _ = try await session.send(intent)
       switch intent {
-      case .send, .queue: attachments = []
+      case .send, .queue: (attachments, think) = ([], false)
       default: break
       }
       (text, mentions, completions, isShell, failure) = ("", [], [], false, nil)

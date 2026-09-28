@@ -26,7 +26,8 @@ does not have, add it here first (token, component or variant), then build the s
 5. **Glass is for chrome, not for reading.** Transparency applies to the window and panes. Anything that
    carries text a person must read stays at least `material.readableFloor` opaque at every setting.
 6. **The system wins.** Reduce Transparency forces Solid; Reduce Motion drops movement to cross-fades;
-   Increase Contrast switches to high-contrast colour variants; the accent follows the system accent.
+   Increase Contrast switches to high-contrast colour variants, drops the specular sweep and makes glass
+   more opaque (§3.5); the accent follows the system accent.
 
 ## 2. Token pipeline
 
@@ -70,6 +71,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | fill | `primary`, `secondary` | Quiet fills inside a surface |
 | text | `primary`, `secondary`, `tertiary`, `terminal`, `terminalOk` | Foregrounds |
 | line | `separator` | 0.5 pt hairlines |
+| quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
 | intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
 | diff | `add`, `addGutter`, `del`, `delGutter` | Diff lines and gutters |
 | syntax | `keyword`, `string`, `number`, `function`, `comment`, `type` | Highlighting; same roles as `cox-render`'s `StyleToken`, so TUI and app match |
@@ -92,7 +94,9 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 | `font.title.window` | Session title in the toolbar | 13.5 / semibold |
 | `font.body` | Default UI text | 13 / regular |
 | `font.transcript` | Messages | 13.5 / regular, line height 1.55 |
-| `font.transcript.h3` | Markdown headings | 15 / semibold |
+| `font.transcript.h1` | Markdown headings, level 1 (DT§5.9, A94) | 17 / semibold, line height 1.35 |
+| `font.transcript.h3` | Markdown headings, level 2 | 15 / semibold, line height 1.35 |
+| `font.transcript.h4` | Markdown headings, level 3, and levels 4–6, which DT§5.9 does not size | 13 / semibold, line height 1.35 |
 | `font.control` | Buttons, capsules, segments | 12.5 / medium |
 | `font.caption` | Thinking line, notices | 12 / regular |
 | `font.footnote` | Tool status, meter, key–value rows | 11.5 / regular |
@@ -110,7 +114,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
   `popover` → window `window`; pills use `capsule`. Nested shapes are concentric: inner radius = outer
   radius − inset.
 - **Size** fixes the layout skeleton: toolbar 56, sidebar 252, inspector 324, reading column 760,
-  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5.
+  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5,
+  quote bar 3.
 
 ### 3.4 Elevation (depth)
 
@@ -144,6 +149,10 @@ highlights go too and the app looks like a standard macOS app. Only `e5` ignores
   setting.
 - Text-bearing surfaces — messages, code, diffs, terminal, popovers, the composer — never drop below
   `material.readableFloor`. The transparency slider only moves the window and pane backgrounds.
+- Increase Contrast (A89, A100): no specular sweep, and every glass background — window, panes and
+  readable surfaces — keeps `material.highContrast.glassKeep` (a quarter) of its transparency:
+  `opacity' = 1 − (1 − opacity) × glassKeep`. `Appearance.effective` applies it; Reduce Transparency
+  still wins and forces Solid. `high-contrast.mjs` reads the same token for the glass colours.
 - Panes are separate glass layers (sidebar, transcript column, inspector) with an 8 pt gap, so the
   wallpaper shows between them. Group neighbouring glass in one `GlassEffectContainer` so shapes blend
   and render in one pass.
@@ -245,7 +254,7 @@ component.
 | --- | --- | --- | --- |
 | `.elevation(_ level:, cornerRadius:)` | Shadow layers + top highlight, scaled by Depth | `elevation.e0–e5`, Depth | `--lift1…3` |
 | `.glassPane(_ shape:, surface:, role:)` | Pane material: glass or solid per setting; `role: .readable` holds the readable floor | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
-| `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid) | `material.*.specular` | `.window:after` |
+| `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid or under Increase Contrast) | `material.*.specular` | `.window:after` |
 | `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
@@ -284,13 +293,13 @@ component.
 | `ModeSegmented(selection:)` | CoxSegmented; ask, plan, auto, bypass (offered only while on) | `.seg` |
 | `StopButton` | KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
 | `ToolHeader(item, isExpanded:)` | IconTile, summary (subject bold, monospaced for a command), DiffStat, RiskChip, Spinner / check / cross and duration, disclosure chevron; expanded on `fill.primary` over a hairline | `.tool .h` |
-| `DiffLineView(line, widestNumber:)`, `DiffHunkView(header:, lines:)` | gutter number (`text.secondary`, `text.primary` on a `diff.*Gutter`), sign, `CodeRun` syntax runs on `diff.add` / `diff.del`, a replaced pair's changed words (the core's word diff) on `diff.*Gutter`; the hunk: header on `fill.primary`, one gutter width, `surface.code` | `.diff .ln`, `.hh` |
+| `DiffLineView(line, widestNumber:)`, `DiffHunkView(header:, lines:)` | gutter number (`text.secondary`, `text.primary` on a `diff.*Gutter`), sign, `CodeRun` syntax runs on `diff.add` / `diff.del` (coloured by the session theme's light or dark variant, as the view's appearance picks, A95), a replaced pair's changed words (the core's word diff) on `diff.*Gutter`; the hunk: header on `fill.primary`, one gutter width, `surface.code` | `.diff .ln`, `.hh` |
 | `CodeBlockView(language:, lines:, copy:)` | header (language, icon-only `doc.on.doc` copy button, `CoxButtonStyle(.plain, size: .small)`), `CodeRun` lines scrolling sideways on `surface.code`, `radius.l` | `.codeblock` |
 | `TerminalTail(lines, exit:)` | insetWell on `surface.terminal`, `font.mono.terminal` lines in `text.terminal`, cut with an ellipsis; exit line: check + status in `text.terminalOk`, or `status.danger` cross + status in `text.terminal`; none while running | `.tail` |
-| `UserBubble(text, attachments:)` | prompt in `font.transcript`, a row of Thumbnail; readable face at e2, the glass sweep behind the text | `.user`, `.user .att` |
+| `UserBubble(text, attachments:)`, `PromptActions(_:act:)` | prompt in `font.transcript`, a row of Thumbnail `space.m` below the text; readable face at e2, the glass sweep behind the text. On hover, `PromptActions` sits in the bubble's top trailing corner: Edit and resend (`pencil`) and Copy (`doc.on.doc`) as `CoxButtonStyle(.plain, size: .small)` icons on a readable capsule at e1 (T37.23.9) | `.user`, `.user .att` |
 | `ThinkingDisclosure(summary, text:, isExpanded:)` | chevron and caption summary; open, the reasoning in italic caption beside a hairline; open state is the view's own. Its row is public as `ThinkingHeader(summary, isExpanded:, action:)`, which the transcript shows above reasoning it draws as text (T37.23.4) | `.think`, `.think-body` |
 | `NoticeRow(text, kind:, symbol:)`, `TurnDivider(label)`, `TurnMeta(facts)` | symbol in the kind's colour (info, warning, error) + caption in a readable colour / Hairline, caption, Hairline / model, tokens, cache, cost, duration, stop reason in tabular footnote | `.notice`, `.divider`, `.meta` |
-| `ComposerChip(label, kind:, shortcut:, onRemove:)` | mention, attachment, command, shell, queued: symbol, caption label, optional KeyCap and `xmark` remove button on a readable capsule at e1; mention, command and queued tinted `accent` | `.chip`, `.chip.blue` |
+| `ComposerChip(label, kind:, shortcut:, onRemove:)` | mention, attachment, command, shell, queued, model, `think(Bool)`, `mode(SessionMode)`: symbol, caption label, optional KeyCap and `xmark` remove button on a readable capsule at e1; mention, command and queued tinted `accent`; a mode in its DS§3.1 colour (Ask plain, Plan `status.plan`, Auto `accent`, Bypass `status.danger`), as `ModeSegmented` shows it; think (`brain`) plain while off, tinted `accent` while on. `ThinkChip(isOn:, toggle:)` is the think chip as a button with its tooltip (A103) | `.chip`, `.chip.blue` |
 | `CompletionList(state:, pick:)` | SectionHeader over the rows the core ranked for `@` or `/` (title, detail in footnote), the selected one on `accent.soft` at e1; readable `surface.popover` glass at e4, `radius.xxl` | `.pop`, `.pop .it` |
 | `TokenMeter(state:, isOpen:, action:)` | ↑ sent, ↓ received, then behind a hairline StatusDot (running while a turn runs), tok/s and Sparkline, on a CapsuleStyle capsule, active while the popover is open; every figure and the VoiceOver line come formatted from `cox_app::MeterText` | `.meter` |
 | `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
@@ -315,13 +324,15 @@ component.
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |
 | `TurnView` | UserBubble, ThinkingDisclosure, ToolCard, AssistantMessage, TurnMeta. Not a view of its own under A87: a turn is the run of blocks it owns in `TranscriptView`'s one text, the user message and the thought styled text ranges, the tool calls ToolCards (T37.23) | `.turn` |
 | `TranscriptView(store:crossBlockSelection:approval:)` | one TextKit 2 text (`CoxTranscriptText`) of the store's blocks, kept in step by the patches the store applies; tool, tool-group and task blocks are ToolCards hosted as one character each, approvals and questions the `approval` slot; prose in `font.transcript`, code in `font.mono.code`, readable text colours only. Package `CoxTranscript`, where CoxUI, the text view and the store meet (T37.23) | `.scroll` |
-| `Composer(state:, send:)` | text editor (`font.transcript`, `font.mono.code` in shell mode) with its hint, CompletionList floating above, a row of attachment Thumbnails with an `xmark.circle.fill` remove badge, a row of a paperclip `CoxButtonStyle(.plain, size: .small)` and ComposerChip (shell with the "share output" CoxToggleStyle, mentions, queued) and a `CoxButtonStyle(.primary)` send button; readable `surface.window` glass at e3, `radius.pane`. ⏎ sends or picks, ⇧⏎ breaks the line, ⌘⏎ sends now, ↑ ↓ ⇥ ⎋ drive the rows, ⌫ on an empty shell line leaves shell mode, dropped files attach; every key and click is a `Composer.Intent`. TokenMeter sits before Send and opens TokenPopover standing on the composer's top edge (`toggleTokens`) | `.composer` |
+| `Composer(state:, send:)` | text editor (`font.transcript`, `font.mono.code` in shell mode) with its hint, CompletionList floating above, a row of attachment Thumbnails with an `xmark.circle.fill` remove badge, a row of a paperclip `CoxButtonStyle(.plain, size: .small)` and ComposerChip (the permission mode with its ⇧⇥ KeyCap, which cycles it; the model and effort; the think toggle beside it, which sends the next turn to the think tier with `confirm_think` and turns itself off once that turn is sent (A103, `toggleThink`); shell with the "share output" CoxToggleStyle, mentions, queued) and a `CoxButtonStyle(.primary)` send button; readable `surface.window` glass at e3, `radius.pane`. ⏎ sends or picks, ⇧⏎ breaks the line, ⌘⏎ sends now, ↑ ↓ ⇥ ⎋ drive the rows, ⌫ on an empty shell line leaves shell mode, ⇧⇥ or a click on the mode chip asks for the next mode (`cycleMode`; the core names it and moves the chip), dropped files attach; every key and click is a `Composer.Intent`. TokenMeter sits before Send and opens TokenPopover standing on the composer's top edge (`toggleTokens`) | `.composer` |
 | `TokenPopover(state:)` | heading and phase (`accent` while streaming), `font.metric` tok/s beside a Sparkline, the rate line (avg, first token, peak), a turn / session KeyValueGrid, the context heading over a StackedBar and its legend (shown once the core sends the parts), footnote; readable `surface.popover` glass at e4, `size.tokenPopoverWidth` | `.tokpop` |
 | `AppearancePopover(state:, send:)` | title and KeyCap, MaterialPicker, LabeledSlider ×3 (transparency; blur, or reflection for Glossy; Depth), LabeledToggle (tint), a note in footnote; readable `surface.popover` glass at e4. Solid disables transparency and blur; Reduce Transparency disables all but Depth and the note says why. Reports one intent per `[desktop.appearance]` key; the window draws from the same state | `.appear` |
 | `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot, scrolling in one inset body | `.insp` |
-| `ChangesTab(state:, send:)` | the Changes tab (DT§5.1): `InspectorSection`s (SectionHeader over flush rows, shared by every tab) of ChangedFileRow under a `Review` link with its KeyCap (⌘⇧R, which the app's menu answers), CheckpointRow, and the worktree's KeyValueGrid; an empty section is left out, an empty tab says so. A row click opens Review at the file; the rows' actions report review, revert and rewind | `.ib`, `.ih`, `.fr` |
+| `ChangesTab(state:, send:)` | the Changes tab (DT§5.1): `InspectorSection`s (SectionHeader over flush rows, shared by every tab) of ChangedFileRow under a `Review` link with its KeyCap (⌘⇧R, which the app's menu answers), CheckpointRow, and the worktree's KeyValueGrid; an empty section is left out, an empty tab says so. A row click opens Review at the file; the rows' actions report review, revert and rewind (code only, A101) | `.ib`, `.ih`, `.fr` |
 | `RewindTimeline(state:, send:)` | the rewind timeline (DT§3, DT§5.4): one `InspectorSection` `Rewind` of CheckpointRows oldest first, the selected one (a gutter mark's) lifted; each row's actions are the scopes — Restore code (`doc.text`), Restore conversation (`text.bubble`), Restore code and conversation (`arrow.uturn.backward`) — reported as one `rewind(checkpoint:code:conversation:)`; empty, it says so. CoxModel's `SessionStore.rewind(checkpoint:code:conversation:)` sends it as `Intent.rewind` (T37.28.1) | `.ih`, `.fr` |
+| `ReviewPane(state:, send:)` | Review (DT§5.4, T37.28.2): in the transcript column's place, the changed files at the inspector's width grouped by the turn that changed each last (`InspectorSection` per turn of ChangedFileRows, the open one lifted) with a RewindTimeline under them, a trailing hairline, then the open file's hunks as DiffHunkViews clipped to `radius.l` with a hairline rim; with no hunks it says nothing is left (a code-only rewind) or nothing is open. A row click reports `open(path:)`, the timeline's scopes pass through. CoxModel's `SessionStore.review(path:)` reads the net diff (A101); the Changes tab's plain `rewind(checkpoint:)` restores code only | `.ih`, `.fr`, `.diff` |
 | `PlanTab(state:)` | the Plan tab (DT§5.1): one `InspectorSection` (`Plan · done of all`) of the model's `todo` list in its order — a box per step (`square` in `text.secondary` pending, `square.inset.filled` in `accent` in progress, `checkmark.square.fill` in `status.success` done), then the step's text in `font.body`, wrapping; a done step is struck through in `text.secondary`. VoiceOver reads the text with the state. Read-only; an empty tab says so. The app fills it from `SessionClient.plan()` (T37.29.2) | `.ib`, `.ih`, `.todo` |
+| `ContextTab(state:, send:)` | the Context & Cost tab's context block (DT§5.1, mockup 10): an `InspectorSection` headed by the context (`Context · 76.4k`) with its share of the window trailing, over the StackedBar, a legend Grid (swatch in the part's `context.*` colour, the part, its tokens trailing in `text.secondary`; a `Free` row on a `fill.secondary` swatch while the window is known) and `Compact now` (`CoxButtonStyle(.secondary, size: .small)`, reported as `compact`); then a `Cache hit` SectionHeader with the turn's figure; before the core sent the split it says so. CoxModel's `ContextTabState` fills it from the meter's `UsageView` through the shared `ContextSplit` mapping, and `SessionStore.compactNow()` sends `Intent.compact(focus: nil)` (T37.29.3.1) | `.ih`, `.bar`, `.legend`, `.pb` |
 | `TasksTab(state:, send:)` | the Tasks tab (DT§5.1): one `InspectorSection` (`Subagents & background · n`) of `InspectorRow`s — the kind's glyph (`person.2` subagent, `terminal` shell), the label, the tier Badge, the cost in tabular footnote `text.secondary` once the task is done, then the ToolHeader's spinner, check or cross; an empty tab says so. A row click, or its `Open transcript` (subagent) or `Open output` (shell) action, reports the task's id to open it | `.ib`, `.ih`, `.card` |
 | `InfoTab(state:)` | the Info tab (DT§5.1): an `InspectorSection` `Session` whose KeyValueGrid lists the session id, folder, worktree with its branch as a detail row, and rollout file, then `Config`: each layer that set a key with its count, its file as a detail row under it; paths start at `~`; an empty tab says so | `.ib`, `.ih`, `.tokpop .grid` |
 | `SettingsSidebar(pages:, selection:, userFile:, projectFile:, select:)` | ShellPane(.sidebar); an `InspectorRow` per `SettingsPage` (General … Advanced, DT§5.7) led by its §3.7 symbol on an `IconTile` in `tile.settings.<page>` colours, the selected one lifted; footer: each config file cut in the middle with its layer Badge | `.set-side` |
@@ -362,8 +373,9 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
 - **tok/s** during streaming is estimated in `cox-app` from output deltas (`cox-tokens` estimate over a
   rolling window) and replaced by the exact figure when the request's usage arrives. The UI never
   computes it.
-- The context bar reuses the context breakdown the TUI already shows (P28): system, tools, instruction
-  files, history.
+- The context bar draws the core's context breakdown (A98: `Event::ContextBreakdown`, formatted by
+  `cox-app` into the share of the window and the system, tools, instruction files and history
+  parts), the same split the TUI's status line and `/context` overlay show (T37.25.3).
 
 ## 8. Accessibility
 
@@ -374,7 +386,8 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
   9.8 thousand received, 71 tokens per second".
 - Honour Reduce Transparency, Reduce Motion and Increase Contrast (§1.6). `high-contrast.mjs` derives
   the Increase Contrast palettes `color.*-hc.json` (A89) and checks them in `just desktop-tokens`: text
-  at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque. A token that stands
+  at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque by
+  `material.highContrast.glassKeep`, the number CoxUI's materials use too (§3.5). A token that stands
   for a macOS system colour pins the system's own Increase Contrast variant in
   `$extensions.cox.highContrast` (A96); the check still holds it to its ratio, moving the glyph on it
   instead.

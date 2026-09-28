@@ -62,12 +62,31 @@ public enum TimelinePatch: Equatable, Sendable {
   case status(status: Status)
 }
 
-/// `cox_app::Status`: what the session reports beside its blocks.
+/// `cox_app::Status`: what the session reports beside its blocks; `nil` is not known yet.
 public struct Status: Equatable, Sendable, Decodable {
   /// Turns queued behind the running one that have not started yet.
   public var queued: UInt32
+  /// The permission mode in force.
+  public var mode: PermissionMode?
+  /// The mode ⇧⇥ asks for, as the core cycles them.
+  public var nextMode: PermissionMode?
+  /// The model the main turn runs on, and its effort.
+  public var model: String?
+  public var effort: Effort?
 
-  public init(queued: UInt32 = 0) { self.queued = queued }
+  public init(
+    queued: UInt32 = 0, mode: PermissionMode? = nil, nextMode: PermissionMode? = nil,
+    model: String? = nil, effort: Effort? = nil
+  ) {
+    (self.queued, self.mode, self.nextMode, self.model, self.effort) = (
+      queued, mode, nextMode, model, effort
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case queued, mode, model, effort
+    case nextMode = "next_mode"
+  }
 }
 
 public enum ToolState: String, Equatable, Sendable, Decodable { case running, done, failed }
@@ -265,6 +284,9 @@ public struct Span: Equatable, Sendable {
   public var text: String
   public var token: StyleToken = .text
   public var rgb: UInt32?
+  /// The run's colour under the theme's light variant, where the core highlighted it for both
+  /// appearances (a diff, A95); `rgb` is then the dark variant's.
+  public var light: UInt32?
   public var bold = false, italic = false, strike = false, underline = false
   public var link: String?
 
@@ -286,32 +308,6 @@ public struct UsageView: Equatable, Sendable, Decodable {
     case session, turn
     case contextTokens = "context_tokens"
     case text
-  }
-}
-
-/// `cox_app::MeterText`: every figure of the token meter and popover as it is shown.
-public struct MeterText: Equatable, Sendable, Decodable {
-  public var sent = "", received = "", rate = "", spoken = ""
-  public var heading = "", phase = "", rateUnit = "", rateDetail = ""
-  public var rows: [MeterRow] = []
-  public var context = "", footnote = ""
-
-  public init() {}
-
-  enum CodingKeys: String, CodingKey {
-    case sent, received, rate, spoken, heading, phase, rows, context, footnote
-    case rateUnit = "rate_unit"
-    case rateDetail = "rate_detail"
-  }
-}
-
-/// One line of the token popover's grid: a label and its turn and session figures.
-public struct MeterRow: Equatable, Sendable, Decodable {
-  public var label, turn, session: String
-  public var detail: Bool
-
-  public init(label: String, turn: String, session: String, detail: Bool) {
-    (self.label, self.turn, self.session, self.detail) = (label, turn, session, detail)
   }
 }
 

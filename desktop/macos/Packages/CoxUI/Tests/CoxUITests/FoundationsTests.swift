@@ -1,10 +1,16 @@
 // The Foundations' check (T37.19): one snapshot per modifier × light/dark × Solid/Frosted, the
-// Reduce Transparency override, and the appearance arithmetic the modifiers share.
+// Reduce Transparency and Increase Contrast overrides, and the appearance arithmetic the
+// modifiers share.
 
 import SwiftUI
 import Testing
 
 @testable import CoxUI
+
+/// Every material in both schemes, for the Increase Contrast renders (T37.19.6).
+private let everyMaterial = [ColorScheme.light, .dark].flatMap { scheme in
+  GlassMaterial.allCases.map { Variant(scheme: scheme, material: $0) }
+}
 
 @MainActor
 @Suite struct FoundationsSnapshotTests {
@@ -30,6 +36,11 @@ import Testing
 
   @Test(arguments: Variant.all) func textStyle(_ variant: Variant) throws {
     try check(TextStyleSample(), variant)
+  }
+
+  /// Increase Contrast (A100): no sweep, and glass keeps a quarter of its transparency.
+  @Test(arguments: everyMaterial) func glassPaneIncreasedContrast(_ variant: Variant) throws {
+    try check(GlassPaneSample().environment(\._colorSchemeContrast, .increased), variant)
   }
 
   @Test func reduceTransparencyRendersSolid() throws {
@@ -60,6 +71,32 @@ import Testing
     let clear = Appearance(material: .frosted, windowOpacity: 0)
     #expect(clear.backgroundOpacity(.chrome) == 0)
     #expect(clear.backgroundOpacity(.readable) == MaterialToken.readableFloorWindowOpacity)
+  }
+
+  @Test func increaseContrastDropsTheSweepAndKeepsAQuarterOfTheTransparency() {
+    let glass = Appearance(material: .glossy, windowOpacity: 0)
+      .effective(reduceTransparency: false, increaseContrast: true)
+    #expect(glass.material == .glossy)
+    #expect(glass.specular == MaterialToken.solidSpecular)
+    #expect(glass.backgroundOpacity(.chrome) == 1 - MaterialToken.highContrastGlassKeep)
+    #expect(
+      glass.backgroundOpacity(.readable)
+        == 1 - (1 - MaterialToken.readableFloorWindowOpacity) * MaterialToken.highContrastGlassKeep)
+  }
+
+  @Test func reduceTransparencyStillWinsOverIncreaseContrast() {
+    let forced = Appearance(material: .frosted)
+      .effective(reduceTransparency: true, increaseContrast: true)
+    #expect(forced.material == .solid)
+    #expect(forced.backgroundOpacity(.chrome) == MaterialToken.solidWindowOpacity)
+    #expect(forced.backgroundOpacity(.readable) == MaterialToken.solidWindowOpacity)
+  }
+
+  @Test func standardContrastLeavesTheMaterialAlone() {
+    let user = Appearance(material: .glossy)
+    #expect(user.effective(reduceTransparency: false, increaseContrast: false) == user)
+    #expect(user.specular == MaterialToken.glossySpecular)
+    #expect(user.backgroundOpacity(.chrome) == MaterialToken.glossyWindowOpacity)
   }
 
   @Test func windowOpacityDefaultsToTheMaterialToken() {

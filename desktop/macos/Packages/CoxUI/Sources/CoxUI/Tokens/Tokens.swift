@@ -67,6 +67,8 @@ public enum Size {
     public static let iconTile: CGFloat = 22
     public static let statusDot: CGFloat = 9
     public static let hairline: CGFloat = 0.5
+    /// A quote's bar in the transcript (A97), coloured quote.bar
+    public static let quoteBar: CGFloat = 3
     public static let windowMinWidth: CGFloat = 1100
     public static let windowMinHeight: CGFloat = 700
     public static let popoverWidth: CGFloat = 340
@@ -80,8 +82,12 @@ public extension FontToken {
     static let body = FontToken(size: 13, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
     /// Assistant and user messages
     static let transcript = FontToken(size: 13.5, weight: .regular, design: .default, lineHeight: 1.55, tracking: 0)
-    /// Markdown headings in the transcript
+    /// Level-1 Markdown headings in the transcript (DT§5.9, A94)
+    static let transcriptH1 = FontToken(size: 17, weight: .semibold, design: .default, lineHeight: 1.35, tracking: 0)
+    /// Level-2 Markdown headings in the transcript (DT§5.9, A94)
     static let transcriptH3 = FontToken(size: 15, weight: .semibold, design: .default, lineHeight: 1.35, tracking: 0)
+    /// Level-3 Markdown headings in the transcript, and levels 4-6, which DT§5.9 does not size (A94)
+    static let transcriptH4 = FontToken(size: 13, weight: .semibold, design: .default, lineHeight: 1.35, tracking: 0)
     /// Buttons, capsules, segmented items
     static let control = FontToken(size: 12.5, weight: .medium, design: .default, lineHeight: 1.2, tracking: 0)
     /// Thinking line, notices
@@ -166,6 +172,7 @@ public enum MaterialToken {
     public static let solidSaturation: Double = 1
     public static let solidSpecular: Double = 0
     public static let readableFloorWindowOpacity: Double = 0.8
+    public static let highContrastGlassKeep: Double = 0.25
 }
 
 // swiftlint:enable line_length

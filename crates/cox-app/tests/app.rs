@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use cox_app::TimelinePatch;
 use cox_app::app::{App, AppError, Host};
+use cox_app::diffmodel::DiffLineKind;
 use cox_app::live::LiveSession;
 use cox_app::{
     BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Layer, Need,
@@ -148,6 +149,7 @@ fn send(text: &str) -> Intent {
     Intent::Send {
         text: text.into(),
         attachments: vec![],
+        confirm_think: false,
     }
 }
 
@@ -266,6 +268,7 @@ async fn a_queued_turn_carries_its_attachments_and_counts_until_it_starts() {
             media_type: "image/png".into(),
             data_b64: "iVBORw0KGgo=".into(),
         }],
+        confirm_think: false,
     };
     session.send(queue).await.expect("queue");
     // The write waits for approval, so the queued turn cannot start first.
@@ -541,6 +544,40 @@ async fn reverting_one_file_restores_it_and_leaves_the_other() {
     notice(&session, "rewound to T2").await;
     let notes = std::fs::read_to_string(dir.path().join("project/notes.md"));
     assert_eq!(notes.ok().as_deref(), Some("bye\n"));
+}
+
+/// Each line of `path`'s Review diff as `+text`, `-text` or ` text`.
+async fn reviewed(session: &LiveSession, path: &str) -> Vec<String> {
+    let diff = session.review(path).await.expect("review");
+    let diff = diff.unwrap_or_else(|| panic!("{path} has a diff"));
+    assert_eq!(diff.path, Path::new(path));
+    let lines = diff.hunks.iter().flat_map(|h| &h.lines);
+    lines
+        .map(|l| {
+            let sign = match l.kind {
+                DiffLineKind::Add => '+',
+                DiffLineKind::Del => '-',
+                DiffLineKind::Context => ' ',
+            };
+            let text: String = l.spans.iter().map(|s| s.text.as_str()).collect();
+            format!("{sign}{text}")
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn review_diffs_each_file_against_its_checkpoint_and_after_a_code_rewind_nets_to_nothing() {
+    let dir = scratch(Some(TWO_EDITS));
+    let session = edited(dir.path()).await;
+    assert_eq!(reviewed(&session, "notes.md").await, ["-hello", "+bye"]);
+    assert_eq!(reviewed(&session, "new.rs").await, ["+fn main() {}"]);
+    let outside = session.review("../scenario.toml").await.expect("review");
+    assert_eq!(outside, None, "a path outside the roots is not read");
+    assert_eq!(session.review("never.md").await.expect("review"), None);
+
+    rewind(&session, true, false).await;
+    assert!(reviewed(&session, "notes.md").await.is_empty());
+    assert!(reviewed(&session, "new.rs").await.is_empty());
 }
 
 #[tokio::test]

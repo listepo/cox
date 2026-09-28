@@ -211,8 +211,8 @@ enum TimelinePatch {
   AppendText { id: BlockId, text: String }      // thinking, tool output tail
   DocTail { id: BlockId, from: u32, blocks: Vec<DocBlock> }  // markdown: closed blocks are frozen, only the tail is re-sent
   Remove { id: BlockId }
-  Status { status: Status }                     // beside the list: `queued`, the turns waiting behind the running one (T37.24.8); a queue keeps only the latest
-  Usage { usage: UsageView }                    // token meter (DS§7): ledger totals, tok/s, TTFT, and `text` (MeterText, T37.25): every figure formatted; a queue keeps only the latest
+  Status { status: Status }                     // beside the list: `queued`, the turns waiting behind the running one (T37.24.8); `mode`, the `next_mode` ⇧⇥ asks for, and the main turn's `model` and `effort`, seeded from config and kept by `StateChanged`/`TurnStarted`/`ModelSwitched` (T37.24.7); a queue keeps only the latest
+  Usage { usage: UsageView }                    // token meter (DS§7): ledger totals, tok/s, TTFT, and `text` (MeterText, T37.25): every figure formatted, with the window share and the system/tools/instructions/history parts from the core's `ContextBreakdown` scaled to the last call's context (A98, T37.25.1), what the window has left, and the turn's cache hit (the Context tab, T37.29.3.1); a queue keeps only the latest
 }
 ```
 
@@ -223,9 +223,10 @@ be healed by `Reset`. Streaming markdown re-parses only the open tail block.
 first, with `session`, `source` and an expiry flag. Drives the "Needs you"
 section, the Dock badge and notifications.
 
-**Intents.** `Send{text, attachments}`, `Approve{call, decision}`,
-`Answer{question, text}`, `Interrupt`, `Queue{text, attachments}`, `Compact`, `SetMode`,
-`SwitchModel`, `SetEffort`, `Rewind`, `Redo`, `Fork{turn}`, `Handoff`,
+**Intents.** `Send{text, attachments, confirm_think}`,
+`Approve{call, decision}`, `Answer{question, text}`, `Interrupt`,
+`Queue{text, attachments, confirm_think}`, `Compact`, `SetMode`, `SwitchModel`,
+`SetEffort`, `Rewind`, `Redo`, `Fork{turn}`, `Handoff`,
 `Background{call}`, `Shell{command, share}`, `Command{line}` (parsed by the
 shared command table). `send` never awaits a turn: `UserTurn` is spawned, as
 `run.rs` already does (R9.4.3).

@@ -44,11 +44,11 @@ pub use traits::{
 pub use types::ArchiveRef;
 pub use types::{
     ApprovalPolicy, Attachment, Caps, CheckpointFile, CheckpointKind, Concurrency, Content,
-    DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level,
-    LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role,
-    SandboxMode, SandboxPolicy, Segments, SkipReason, SkippedFile, SlashCommand, StopReason,
-    Submission, SystemBlock, Thinking, Tier, TodoItem, TodoState, ToolCall, ToolOutput, ToolResult,
-    ToolSpec, Usage, Why,
+    ContextBreakdown, DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item,
+    ItemKind, Job, Level, LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent,
+    ProviderId, Request, Risk, Role, SandboxMode, SandboxPolicy, Segments, SkipReason, SkippedFile,
+    SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier, TodoItem, TodoState,
+    ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
 };
 
 #[cfg(test)]

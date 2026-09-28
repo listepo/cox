@@ -11,6 +11,7 @@ import Testing
   @Test(arguments: Variant.all) func userBubble(_ variant: Variant) throws {
     try check(UserBubbleSample(hasAttachments: false), variant, "text")
     try check(UserBubbleSample(hasAttachments: true), variant, "attachments")
+    try check(PromptActions { _ in }, variant, "actions")
   }
 
   @Test(arguments: Variant.all) func thinkingDisclosure(_ variant: Variant) throws {

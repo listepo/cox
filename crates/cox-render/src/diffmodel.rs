@@ -7,14 +7,14 @@
 //! with ratatui, and `cox-app` builds without the `ratatui` feature.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use cox_protocol::types::Diff;
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
 
 use crate::doc::{StyledLine, StyledSpan};
-use crate::markdown::highlight_runs;
+use crate::markdown::{highlight_runs, theme_variants};
 
 /// One file's change, hunk by hunk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,14 +269,45 @@ fn cut(spans: StyledLine, words: &[Range<usize>]) -> StyledLine {
     out
 }
 
+/// The change from `old` to `new` of the file at `path`, as [`model`] reads
+/// it: for two texts no tool diffed, such as Review's checkpoint copy and the
+/// file on disk (T37.28.2). Three lines of context, as the edit tools write.
+pub fn between(path: &Path, old: &str, new: &str, theme: &str) -> DiffModel {
+    let unified = TextDiff::from_lines(old, new)
+        .unified_diff()
+        .context_radius(3)
+        .to_string();
+    let diff = Diff {
+        path: path.to_path_buf(),
+        unified,
+    };
+    model(&diff, theme)
+}
+
 /// `diff` as hunks. Bodies go through the one syntect pass the TUI's diff
-/// and fenced blocks use, highlighted by the file's extension with `theme`;
-/// a file without one stays plain, as it does in the TUI. File markers,
-/// `index` and `\ No newline` lines are dropped: the UI draws the path.
+/// and fenced blocks use, highlighted by the file's extension with both of
+/// `theme`'s variants (`rgb` dark, `light` light; A95), so the app draws the
+/// one its appearance asks for; a file without one stays plain, as it does
+/// in the TUI. File markers, `index` and `\ No newline` lines are dropped:
+/// the UI draws the path.
 pub fn model(diff: &Diff, theme: &str) -> DiffModel {
     let (rows, texts) = parse(&diff.unified);
+    let [dark, light] = theme_variants(theme);
     let mut spans = match diff.path.extension().and_then(|e| e.to_str()) {
-        Some(token) => highlight_runs(token, &texts, theme),
+        Some(token) => {
+            let mut spans = highlight_runs(token, &texts, &dark);
+            // Runs split where the syntax's scopes change, whatever the
+            // theme, so both passes cut a line alike.
+            let lit = highlight_runs(token, &texts, &light);
+            for (line, lit) in spans.iter_mut().zip(lit) {
+                for (span, lit) in line.iter_mut().zip(lit) {
+                    if span.text == lit.text {
+                        span.light = lit.rgb;
+                    }
+                }
+            }
+            spans
+        }
         None => Vec::new(),
     };
     spans.resize_with(texts.len(), Vec::new);
@@ -483,5 +514,33 @@ mod tests {
         let lines = &m.hunks[0].lines;
         assert_eq!(lines[0].spans, [StyledSpan::plain("a")]);
         assert!(lines[2].spans.is_empty());
+    }
+
+    #[test]
+    fn a_theme_pairs_with_its_sibling_and_an_unpaired_one_serves_both() {
+        let pair = ["base16-ocean.dark", "base16-ocean.light"].map(String::from);
+        assert_eq!(theme_variants("base16-ocean.dark"), pair);
+        assert_eq!(theme_variants("base16-ocean.light"), pair);
+        assert_eq!(theme_variants("no-such-theme"), pair);
+        let solarized = ["Solarized (dark)", "Solarized (light)"].map(String::from);
+        assert_eq!(theme_variants("Solarized (light)"), solarized);
+        assert_eq!(
+            theme_variants("InspiredGitHub"),
+            ["InspiredGitHub"; 2].map(String::from)
+        );
+    }
+
+    #[test]
+    fn every_highlighted_run_carries_the_light_variant_too() {
+        let m = model(
+            &diff("x.rs", "@@ -1 +1 @@\n+fn main() {}\n"),
+            "base16-ocean.light",
+        );
+        let spans = &m.hunks[0].lines[0].spans;
+        assert!(spans.iter().all(|s| s.rgb.is_some() && s.light.is_some()));
+        // The default foreground differs between the variants.
+        assert!(spans.iter().any(|s| s.rgb != s.light));
+        let plain = model(&diff("NOTES", "@@ -1 +1 @@\n+a\n"), "base16-ocean.dark");
+        assert_eq!(plain.hunks[0].lines[0].spans, [StyledSpan::plain("a")]);
     }
 }

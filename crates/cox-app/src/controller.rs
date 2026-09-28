@@ -13,7 +13,8 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::coalesce;
-use crate::patch::{Block, Status, TimelinePatch};
+use crate::patch::{Block, TimelinePatch};
+use crate::status::StatusFold;
 use crate::timeline::Timeline;
 use crate::usage::Meter;
 
@@ -38,7 +39,7 @@ struct Shared {
 struct State {
     timeline: Timeline,
     meter: Meter,
-    status: Status,
+    status: StatusFold,
     /// The meter's clock origin; tokio's, so a paused-time test scripts it.
     opened: Instant,
     queue: Vec<TimelinePatch>,
@@ -55,16 +56,34 @@ impl Shared {
 }
 
 impl Controller {
-    /// Starts draining `events` into `timeline`. Must be called within a
-    /// tokio runtime.
-    pub fn spawn(timeline: Timeline, mut events: mpsc::Receiver<Event>) -> Self {
+    /// Starts draining `events` into `timeline`, with no status known yet.
+    /// Must be called within a tokio runtime.
+    pub fn spawn(timeline: Timeline, events: mpsc::Receiver<Event>) -> Self {
+        Self::start(timeline, StatusFold::default(), Vec::new(), events)
+    }
+
+    /// As `spawn`, from `status`, which the first pull carries so the
+    /// composer's chips show before the first turn.
+    pub fn open(timeline: Timeline, status: StatusFold, events: mpsc::Receiver<Event>) -> Self {
+        let first = TimelinePatch::Status {
+            status: status.status().clone(),
+        };
+        Self::start(timeline, status, vec![first], events)
+    }
+
+    fn start(
+        timeline: Timeline,
+        status: StatusFold,
+        queue: Vec<TimelinePatch>,
+        mut events: mpsc::Receiver<Event>,
+    ) -> Self {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
                 timeline,
                 meter: Meter::default(),
-                status: Status::default(),
+                status,
                 opened: Instant::now(),
-                queue: Vec::new(),
+                queue,
                 closed: false,
                 last_pull: None,
             }),
@@ -80,6 +99,10 @@ impl Controller {
                     if state.meter.apply(&event, now) {
                         let usage = Box::new(state.meter.view().clone());
                         patches.push(TimelinePatch::Usage { usage });
+                    }
+                    if state.status.apply(&event) {
+                        let status = state.status.status().clone();
+                        patches.push(TimelinePatch::Status { status });
                     }
                     let queued = !patches.is_empty();
                     for patch in patches {
@@ -113,20 +136,20 @@ impl Controller {
 
     /// A turn joined the queue behind the running one.
     pub fn enqueue(&self) {
-        self.status(|s| s.queued += 1);
+        self.status(|queued| *queued += 1);
     }
 
     /// A queued turn started.
     pub fn dequeue(&self) {
-        self.status(|s| s.queued = s.queued.saturating_sub(1));
+        self.status(|queued| *queued = queued.saturating_sub(1));
     }
 
     /// Changes the status and queues the whole of it for the next pull.
-    fn status(&self, change: impl FnOnce(&mut Status)) {
+    fn status(&self, change: impl FnOnce(&mut u32)) {
         {
             let mut state = self.shared.lock();
-            change(&mut state.status);
-            let status = state.status.clone();
+            state.status.queue(change);
+            let status = state.status.status().clone();
             coalesce::push(&mut state.queue, TimelinePatch::Status { status });
         }
         self.shared.ready.notify_one();
@@ -228,7 +251,10 @@ mod tests {
         let (_tx, rx) = mpsc::channel(1);
         let controller = Controller::spawn(Timeline::default(), rx);
         let status = |queued| TimelinePatch::Status {
-            status: Status { queued },
+            status: crate::Status {
+                queued,
+                ..Default::default()
+            },
         };
         controller.enqueue();
         controller.enqueue();
@@ -236,5 +262,26 @@ mod tests {
         controller.dequeue();
         assert!(controller.snapshot().is_empty(), "no block");
         assert_eq!(controller.next_patches().await, Some(vec![status(1)]));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_opened_session_announces_its_status_and_a_mode_change_updates_it() {
+        let (tx, rx) = mpsc::channel(1);
+        let fold = StatusFold::open(&cox_protocol::Config::default());
+        let opened = fold.status().clone();
+        let controller = Controller::open(Timeline::default(), fold, rx);
+        let first = TimelinePatch::Status {
+            status: opened.clone(),
+        };
+        assert_eq!(controller.next_patches().await, Some(vec![first]));
+        let mode = cox_protocol::types::PermissionMode::Auto;
+        let changed = Event::StateChanged { mode, effort: None };
+        tx.send(changed).await.expect("send");
+        let batch = controller.next_patches().await;
+        let Some([TimelinePatch::Status { status }]) = batch.as_deref() else {
+            panic!("one status patch");
+        };
+        assert_eq!(status.mode, Some(mode));
+        assert_eq!(status.model, opened.model);
     }
 }

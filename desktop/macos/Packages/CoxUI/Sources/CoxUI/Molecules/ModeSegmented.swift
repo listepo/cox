@@ -4,13 +4,17 @@
 
 import SwiftUI
 
+/// The session's permission modes, in the order the toolbar shows them: the core's
+/// `PermissionMode`, with `default` named Ask as the person sees it. Public because the composer's
+/// mode chip (T37.24.7) shows the same mode with the same title and colour.
+public enum SessionMode: CaseIterable, Sendable {
+  case ask, plan, auto, bypass
+}
+
 /// A `CoxSegmented` over the modes. Bypass is offered only while it is on: it is turned on
 /// elsewhere (a confirmation, a setting), never by a stray click beside Auto.
 struct ModeSegmented: View {
-  /// The permission modes, in the order the toolbar shows them.
-  enum Mode: CaseIterable, Sendable {
-    case ask, plan, auto, bypass
-  }
+  typealias Mode = SessionMode
 
   @Binding var selection: Mode
 

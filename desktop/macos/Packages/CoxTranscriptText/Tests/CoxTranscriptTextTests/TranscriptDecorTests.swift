@@ -120,4 +120,22 @@ struct TranscriptDecorTests {
     #expect(TranscriptCards.thoughtTitle(header.block.kind) == "Thought for 12 s")
     #expect(TranscriptCards.thoughtTitle(.thinking(text: "", durationMs: 90)) == "Thought for 1 s")
   }
+
+  @Test func aPromptsTileRowSitsAGapBelowItsText() throws {
+    var style = TranscriptStyle.system
+    // swiftlint:disable:next no_literal_radius no_literal_size
+    style.bubble = .init(fill: .gray, radius: 8, padding: NSSize(width: 12, height: 10), gap: 8)
+    let view = TranscriptTextView.make(style: style)
+    view.load([
+      Block(id: "u", turn: 1, kind: .user(text: "One\nTwo", attachments: ["a.log"]))
+    ])
+    let storage = try #require(view.textStorage)
+    func spacingBefore(_ location: Int) -> CGFloat? {
+      (storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle)?
+        .paragraphSpacingBefore
+    }
+    #expect(spacingBefore(0) == 10, "the first line sits the padding below the top")
+    #expect(spacingBefore(4) == 0, "a later line of text follows on")
+    #expect(spacingBefore(8) == 8, "the tile row sits the gap below the text")
+  }
 }

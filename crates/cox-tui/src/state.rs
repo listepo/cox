@@ -11,8 +11,8 @@ use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::plugin::{CommandDecl, CommandOut, KeyDecl, NoticeLevel, RenderIn, Slot, Widget};
 use cox_protocol::types::{
-    Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
-    SlashCommand, StopReason, Submission, Tier, TodoItem, ToolCall, ToolResult,
+    Content, ContextBreakdown, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role,
+    SandboxMode, SlashCommand, StopReason, Submission, Tier, TodoItem, ToolCall, ToolResult,
 };
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -117,8 +117,11 @@ pub struct Status {
     pub model: String,
     pub tier: Option<Tier>,
     pub context_tokens: u32,
-    /// What `ctx N%` is a share of; the binary sets it from the provider.
+    /// What `ctx N%` is a share of: the model's window from the last
+    /// `Event::ContextBreakdown` (A98), a 200k guess until one names it.
     pub context_window: u32,
+    /// The last request's split (A98), which `/context` draws.
+    pub context: Option<ContextBreakdown>,
     pub cost_usd: f64,
     pub sandbox: SandboxMode,
     pub busy: bool,
@@ -133,6 +136,18 @@ pub struct Status {
     /// `/effort` override for the session (T28.1); `SetEffort` keeps it here
     /// next to the mode the composer already shows, and the line badges it.
     pub effort: Option<Effort>,
+}
+
+impl Status {
+    /// The context `ctx N%` and `/context` count (A98): the last call's
+    /// reported context, else the core's estimate for the request about to
+    /// go out — the same rule as the desktop meter's share.
+    pub fn context_used(&self) -> u32 {
+        match (self.context_tokens, self.context) {
+            (0, Some(b)) => b.total,
+            (n, _) => n,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +172,9 @@ pub enum Modal {
     /// `?` on an empty composer (T24.6): `KEYMAP` grouped by context, drawn
     /// over the transcript like the diff view.
     Help,
+    /// `/context` (A98): the last request's window and split, drawn over
+    /// the transcript like `Help`.
+    Context,
     /// `/agents` (T27.5): a navigable list of `agents_rows`, replacing the
     /// static T27.2 `Notice`. `Up`/`Down` move `selected`; `Enter` on a
     /// sibling-session row (`ids[selected].is_some()`) asks the runtime for
@@ -658,6 +676,7 @@ impl State {
                 tier: None,
                 context_tokens: 0,
                 context_window: 200_000,
+                context: None,
                 cost_usd: 0.0,
                 sandbox,
                 busy: false,
@@ -814,6 +833,7 @@ impl State {
             Some(
                 Modal::Diff { .. }
                 | Modal::Help
+                | Modal::Context
                 | Modal::Agents { .. }
                 | Modal::Transcript { .. }
                 | Modal::Plugin { .. },
@@ -1032,6 +1052,7 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
             | Modal::PluginGrant(_)
             | Modal::PluginRemove(_)
             | Modal::Help
+            | Modal::Context
             | Modal::Agents { .. }
             | Modal::Transcript { .. }
             | Modal::Plugin { .. },
@@ -1330,9 +1351,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll });
             Vec::new()
         }
-        Some(Modal::Help) => {
+        Some(modal @ (Modal::Help | Modal::Context)) => {
             if !matches!(key.code, KeyCode::Esc | KeyCode::Char('?')) {
-                state.modal = Some(Modal::Help);
+                state.modal = Some(modal);
             }
             Vec::new()
         }
@@ -1888,6 +1909,7 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             let text = commands::help(&state.keymap);
             notice(state, Level::Info, text);
         }
+        Action::Context => state.modal = Some(Modal::Context),
         Action::Cost => {
             let s = &state.status;
             let text = format!(
@@ -2273,6 +2295,13 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
         }
         // No title row in the TUI yet; the sessions picker reads the store.
         Event::TitleSet { .. } => {}
+        // A98: the status line's share and the `/context` overlay.
+        Event::ContextBreakdown { breakdown, .. } => {
+            if let Some(window) = breakdown.window.filter(|w| *w > 0) {
+                state.status.context_window = window;
+            }
+            state.status.context = Some(breakdown);
+        }
         // T33.20: the `TurnStarted` that follows already carries the
         // advised tier and model, so the status line needs nothing more.
         Event::Advised { .. } => {}
@@ -3299,5 +3328,37 @@ mod tests {
         empty.caps.osc52 = true;
         let shift_y = Msg::Key(KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::SHIFT));
         assert_eq!(update(&mut empty, shift_y), Vec::new());
+    }
+
+    /// A98: `Event::ContextBreakdown` sets the window `ctx N%` divides by
+    /// and keeps the split; one with no window leaves the last known one,
+    /// and `/context` opens the overlay without asking the core.
+    #[test]
+    fn context_breakdown_sets_the_window_and_the_split() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let event = |window| {
+            Msg::Event(Event::ContextBreakdown {
+                turn: TurnId::new(),
+                breakdown: ContextBreakdown {
+                    window,
+                    total: 50_000,
+                    system: 5_000,
+                    tools: 20_000,
+                    instructions: 1_000,
+                    history: 24_000,
+                    cached: 0,
+                },
+            })
+        };
+        update(&mut state, event(Some(1_000_000)));
+        assert_eq!(state.status.context_window, 1_000_000);
+        assert_eq!(state.status.context_used(), 50_000, "estimate before usage");
+        update(&mut state, event(None));
+        assert_eq!(state.status.context_window, 1_000_000);
+        assert_eq!(state.status.context.and_then(|b| b.window), None);
+        assert_eq!(type_command(&mut state, "/context"), Vec::new());
+        assert_eq!(state.modal, Some(Modal::Context));
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert_eq!(state.modal, None);
     }
 }

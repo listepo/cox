@@ -21,16 +21,31 @@ public enum TextColour: CaseIterable, Sendable {
   }
 }
 
-/// The colours AppKit drawing behind text may take (T37.23.4): the user bubble's face and the
-/// hairline beside a thought, from the same assets as `Color(.fillPrimary)` and `.hairline`.
+/// The colours AppKit drawing behind text may take (T37.23.4): the user bubble's tint and
+/// readable face (T37.23.9), the hairline beside a thought and a quote's bar (A97), from the
+/// same assets as `Color(.fillPrimary)`, `.glassPane`'s surface, `.hairline` and `quote.bar`.
 public enum SurfaceColour: CaseIterable, Sendable {
-  case fillPrimary, separator
+  case fillPrimary, separator, window, quoteBar
 
   public var nsColor: NSColor {
     switch self {
     case .fillPrimary: NSColor(resource: .fillPrimary)
     case .separator: NSColor(resource: .separator)
+    case .window: NSColor(resource: .surfaceWindow)
+    case .quoteBar: NSColor(resource: .quoteBar)
     }
+  }
+}
+
+extension Appearance {
+  /// A readable surface's opacity, as `.glassPane(role: .readable)` sets it (DS§3.5), for a
+  /// face AppKit draws (T37.23.9).
+  public var readableOpacity: Double { backgroundOpacity(.readable) }
+
+  /// The glass sweep AppKit draws over a readable face, as `.specular` draws it: white stops
+  /// along the diagonal from the top leading corner; none in Solid (DS§3.5).
+  public var sweepStops: [(opacity: Double, location: Double)] {
+    material == .solid || specular <= 0 ? [] : Self.sweep(specular)
   }
 }
 

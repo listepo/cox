@@ -53,10 +53,28 @@ struct EditCardSnapshotTests {
     #expect(lines[4].runs.map(\.text).joined() == "    let ms = 100 * u64::from(attempt);")
   }
 
+  /// Code runs take the session theme's light or dark variant (A95), so the two differ in more
+  /// than the card's surface.
   @Test(arguments: [false, true])
   func anOpenedEditCard(dark: Bool) throws {
-    let host = Host([], size: size, dark: dark)
+    let host = try opened(dark: dark)
     defer { host.close() }
+    try match(host, dark: dark)
+  }
+
+  /// A window that turns dark redraws the runs in the dark variant with no new state (A95).
+  @Test func aCardFollowsItsWindowIntoTheDarkAppearance() throws {
+    let host = try opened(dark: false)
+    defer { host.close() }
+    host.window.appearance = NSAppearance(named: .darkAqua)
+    host.window.backgroundColor = .black
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    host.flush()
+    try match(host, dark: true)
+  }
+
+  private func opened(dark: Bool) throws -> Host {
+    let host = Host([], size: size, dark: dark)
     host.hosting.rootView = AnyView(
       ToolCard(try editCard(), isExpanded: true)
         .padding(Space.l)
@@ -65,6 +83,10 @@ struct EditCardSnapshotTests {
     // No transcript text is left to settle; one turn lets SwiftUI place the card.
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
     host.flush()
+    return host
+  }
+
+  private func match(_ host: Host, dark: Bool) throws {
     // Anti-aliasing differs slightly between machines; a real change moves far more pixels.
     assertSnapshot(
       of: try host.image(), as: .image(precision: 0.995, perceptualPrecision: 0.98),

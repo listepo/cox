@@ -97,6 +97,7 @@ pub async fn record(
         let send = Intent::Send {
             text: text.clone(),
             attachments: vec![],
+            confirm_think: false,
         };
         Arc::clone(session).send(send).await?;
         while let Some(batch) = Arc::clone(session).next_patches().await {

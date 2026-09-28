@@ -46,8 +46,7 @@ pub fn load_user_themes(dir: &Path) {
 /// of syntect's bundled or user (T24.2) themes, otherwise the `tui.theme`
 /// default (`auto` reads as dark because most terminals are).
 pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
-    let known = |set: &ThemeSet| set.themes.contains_key(chosen);
-    if THEMES.themes.contains_key(chosen) || USER_THEMES.get().is_some_and(known) {
+    if known(chosen) {
         return chosen;
     }
     if dark {
@@ -55,6 +54,35 @@ pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
     } else {
         "base16-ocean.light"
     }
+}
+
+/// Whether `name` is a bundled or user (T24.2) theme.
+fn known(name: &str) -> bool {
+    let has = |set: &ThemeSet| set.themes.contains_key(name);
+    has(&THEMES) || USER_THEMES.get().is_some_and(has)
+}
+
+/// `chosen`'s dark and light variants, for a surface that follows the
+/// system appearance instead of one terminal background (A95): a theme named
+/// `….dark`/`….light` or `… (dark)`/`… (light)` pairs with its sibling when
+/// that is known too, any other known theme serves both, and an unknown one
+/// falls back to `theme_name`'s defaults.
+pub fn theme_variants(chosen: &str) -> [String; 2] {
+    if !known(chosen) {
+        return [theme_name(true, ""), theme_name(false, "")].map(str::to_owned);
+    }
+    let sibling = |from: &str, to: &str| {
+        [(".", ""), (" (", ")")]
+            .into_iter()
+            .find_map(|(open, close)| {
+                let stem = chosen.strip_suffix(&format!("{open}{from}{close}"))?;
+                Some(format!("{stem}{open}{to}{close}")).filter(|name| known(name))
+            })
+    };
+    [
+        sibling("light", "dark").unwrap_or_else(|| chosen.to_owned()),
+        sibling("dark", "light").unwrap_or_else(|| chosen.to_owned()),
+    ]
 }
 
 /// The bundled plus user (T24.2) theme names, for `cox`'s startup warning

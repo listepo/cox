@@ -411,8 +411,14 @@ async fn slow_consumer_never_stalls_the_core() {
                 .await
                 .expect("patches in time")
                 .expect("stream open");
-            // The meter's one patch sits beside the blocks.
-            widest = widest.max(batch.len() - 1);
+            // The meter's and the status's patches sit beside the blocks.
+            let beside = |p: &&TimelinePatch| {
+                matches!(
+                    p,
+                    TimelinePatch::Usage { .. } | TimelinePatch::Status { .. }
+                )
+            };
+            widest = widest.max(batch.len() - batch.iter().filter(beside).count());
             for patch in batch {
                 match patch {
                     TimelinePatch::Usage { usage } => meter = Some(usage.session),

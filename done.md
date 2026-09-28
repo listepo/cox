@@ -5114,3 +5114,199 @@ Check:
 - `cargo nextest run -p cox-protocol -p cox-config`: 120/120 with both drift tests; `-p cox-app -E 'test(settings)'` 5/5; clippy and fmt clean. CoxModel 46, CoxTranscriptText 33, CoxTranscript 39 (`TranscriptLineHeightTests`, snapshots at 13.5/1.55 and 17/2.0). Real binary under a scratch `COX_HOME`: `config set`/`show` give `text_size = 16.0`, `line_height 3` is rejected.
 - After merging into `p37-desktop`: cox-protocol and cox-config 120/120; CoxModel 47, CoxTranscriptText 33, CoxTranscript 39.
 Not done: the benchmark (skipped) should re-check the per-batch viewport layout; the app passing `SettingsStore.transcript` into the view waits on T37.32.
+
+### T50.7. `just test` runs only what a change can break
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~80 · Files: `justfile`, a script under `scripts/` if the recipe needs one, `AGENTS.md` (Commands), `toolchain.md` if a tool is added
+
+Goal (A99): `just test` runs the nextest tests of the workspace crates changed since a git ref — `just test --changed-since <ref>`, default the merge-base with `origin/main`, committed and uncommitted changes both — plus every crate that depends on them (nextest's `rdeps()` filterset over the packages `cargo metadata` says own the changed files). A change outside every crate that can affect all of them (`Cargo.toml`, `Cargo.lock`, `.cargo/`, `mise.toml`, `justfile`, `rust-toolchain*`) runs the whole workspace; a change that touches no crate runs nothing and says so. Prefer nextest's own filtersets or a maintained tool over custom mapping code. The old full run (`cargo nextest run --workspace`, then `dunnage`) becomes `just check-all`; CI keeps running the whole workspace. Swift packages are out of scope.
+
+Check: `just test --changed-since HEAD` with one edited leaf crate runs only it and its dependents; an edited `Cargo.lock` runs the workspace; `just check-all` runs the workspace; AGENTS.md lists both.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Result:
+- `just test [--changed-since REF] [--dry-run] [nextest args…]` (A99): the recipe passes its arguments through `[positional-arguments]` to `scripts/changed_tests.py` (stdlib only, run with `uv run --no-project python`). It collects the files changed since REF (default the merge-base with `origin/main`; committed, staged, unstaged and untracked), maps each to the crate that owns it with `cargo metadata --no-deps`, and runs `cargo nextest run --workspace -E 'rdeps(=a) | rdeps(=b)'`. A change to `Cargo.toml`, `Cargo.lock`, `.cargo/`, `mise.toml`, `justfile` or `rust-toolchain*` runs the workspace; no crate changed prints "nothing to run" and exits 0.
+- The old full run plus `dunnage` is `just check-all`; CI unchanged. AGENTS.md Commands and two `toolchain.md` rows updated; 6 stdlib unit tests in `scripts/test_changed_tests.py`.
+- Ready tools checked 2026-09-28 (sources in the commit body): cargo-delta 0.4.0 (best-effort mapping, runs everything when it finds nothing, no prebuilt binary), cargo-affected (coverage builds, "extremely early"), cargo-rail (large, own config), cargo-test-changed (last release 2025-04-04); nextest has no git-based filter.
+Deviations: a changed file outside every crate also selects any crate whose code names it by path (a `docs/config.jsonschema` change runs `rdeps(=cox-config) | rdeps(=cox-plugin-api)`), so a schema or fixture change alone still runs its drift test. `init.rs` and `evals/hooks/verify.sh` mention `just test` for other projects' commands and were left alone.
+Check:
+- Dry runs: a `cox-sanitize` edit gives `rdeps(=cox-sanitize)`; an untracked file in `cox-patch` gives `rdeps(=cox-patch)`; an edited `Cargo.lock` runs the workspace; `ideas.md` alone or a clean tree prints "nothing to run"; `just --dry-run check-all` expands to the old run plus dunnage; nextest parses the generated filter. Unit tests 6/6; fmt clean.
+- After merging into `p37-desktop`: `python -m unittest test_changed_tests` OK; a `cox-sanitize` edit dry-runs `rdeps(=cox-sanitize)`.
+Not done: `check-all` itself was not run (load). `scripts/leftovers.sh` (in `just check`) already fails on `p37-desktop` before this change, on done.md/compat.md entries.
+
+#### T37.19.6 Increase Contrast in `Appearance`
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`
+Goal (A100): when the system asks for more contrast (`colorSchemeContrast == .increased`), `Appearance` turns the specular sweep off (`MaterialToken.solidSpecular`) and raises window and pane opacity by A89's quarter rule — `opacity' = 1 − (1 − opacity) × glassKeep`, with a new `material.highContrast.glassKeep = 0.25` token in `base.json` regenerated into `MaterialToken`; Reduce Transparency still wins and forces Solid — the part of A89's High Contrast rule that lives in `material.*` numbers rather than colour tokens (T37.17.1 did the colours).
+Check: a snapshot per material with increased contrast shows no sweep and a more opaque glass; the default snapshots are unchanged.
+Status: done 2026-09-28
+Result:
+- `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`: `EffectiveAppearance` reads `\.colorSchemeContrast`; `effective(…, increaseContrast:)` (default `false`) records it; under Increase Contrast `specular` is `solidSpecular` and `backgroundOpacity` applies A100's rule `1 − (1 − opacity) × MaterialToken.highContrastGlassKeep` to window, pane and readable glass. Reduce Transparency still wins and forces Solid.
+- `material.highContrast.glassKeep = 0.25` in `desktop/design/tokens/base.json`, generated into `Tokens.swift`; `high-contrast.mjs` reads it instead of its own `GLASS_KEEP` and rejects a value outside [0, 1) (the high-contrast palettes came out byte-identical). DESIGN.md §1.6, §3.5, §6.1 and §8 document it.
+Deviations: `Specular.swift` checks the effective specular instead of the material (2 lines; Solid unchanged); 7 files, of which `Appearance.swift` and `Specular.swift` are hand-written source.
+Check:
+- `npm ci && npm run build` (184 pairs pass in each high-contrast palette) and `npm run check`. CoxUI Foundations, Appearance, ButtonStyle, CapsuleStyle, MaterialPicker, AppearancePopover 32/32 with 6 new `glassPaneIncreasedContrast` snapshots (looked at: no sweep, denser glass), default snapshots unchanged; SettingsScreen 7/7; 3 new unit tests; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: CoxUI `Foundations|Appearance|ButtonStyle|CapsuleStyle|MaterialPicker|Settings|GlassPane` 42/42.
+Not done: nothing.
+
+#### T37.27.8 One app-local key monitor for the composer and the decision bar
+
+Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/Composer.swift`, `desktop/macos/Packages/CoxUI/…/Organisms/DecisionBar.swift`
+Goal: T37.24.5's private `ComposerPaste.Monitor` and T37.27.5's `WindowKeys` both install an app-local `NSEvent` key monitor scoped to one window; keep one helper (`WindowKeys`, moved to its own file) and let the ⌘V paste use it.
+Check: `ComposerFlowTests` paste tests and `PinnedDecisionTests` pass unchanged.
+Status: done 2026-09-28
+Result:
+- `WindowKeys` moved to `CoxUI/Sources/CoxUI/Foundations/WindowKeys.swift` with a shared `WindowKeys.holds(_:only:)` modifier check; the composer's private `ComposerPaste.Monitor` NSView is gone — `ComposerPaste` is an enum that builds the ⌘V handler and hands it to `WindowKeys`; `DecisionBar` uses the same file.
+Deviations: none.
+Check:
+- CoxTranscript `ComposerFlowTests|PinnedDecisionTests` 11/11; swiftlint and swift-format clean.
+- After merging T37.24.7, T37.23.9, T37.25.1 and T37.23.16 into `p37-desktop` (fixtures re-recorded): `just test --changed-since` 1511 passed, 5 skipped; clippy on the changed crates and fmt clean; CoxCore 12, CoxModel 48, CoxTranscriptText 34, CoxTranscript 45, CoxUI 158.
+Not done: nothing.
+
+#### T37.24.7 Composer status chips
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…`
+Goal: the mode chip (⇧⇥ cycles), model · effort, and the think toggle under the composer (mockup), driven by a Swift mirror of `TimelinePatch::Status`.
+Check: snapshots in the four cells; ⇧⇥ sends `setMode`.
+Status: done 2026-09-28
+Result:
+- `cox_app::Status` gains `mode`, `next_mode`, `model` and `effort`, kept by `crates/cox-app/src/status.rs`: seeded from the session's config (the core writes the opening mode only to the rollout, T50.4), then `StateChanged`, `TurnStarted{Main}` and `ModelSwitched{Code}`; `Controller::open` puts it in the first pull. `next_mode` moved from cox-tui to cox-permission so the TUI and the desktop cycle in one order (cox-tui re-exports it). Mirrors in cox-ffi, CoxClient and CoxCore (`ConvertStatus.swift`).
+- The composer shows a mode chip with a ⇧⇥ keycap and a model · effort chip; ⇧⇥ or a click sends `.setMode` with the core's `nextMode` — no new intent. DESIGN.md and desktop.md rows updated.
+Deviations: ~34 files, mostly snapshots and fixtures; the three fixtures, the PinnedDecision snapshot and the chip-shortcut snapshot re-recorded.
+Check:
+- cox-app 72; cox-tui, cox-permission and cox-ffi 260; clippy and fmt clean. CoxModel 45, CoxCore 12 (dev XCFramework), CoxTranscript 38, targeted CoxUI suites; `shiftTabAsksForTheModeTheCoreNamesNext`.
+- After merging T37.24.7, T37.23.9, T37.25.1 and T37.23.16 into `p37-desktop` (fixtures re-recorded): `just test --changed-since` 1511 passed, 5 skipped; clippy on the changed crates and fmt clean; CoxCore 12, CoxModel 48, CoxTranscriptText 34, CoxTranscript 45, CoxUI 158.
+Not done: the think toggle — what it does needs the creator's decision (one turn per click, sticky, or extended thinking on/off through a new Submission); moved to T37.24.10.
+
+#### T37.23.9 Prompt bubble glass, elevation and hover actions
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: the user bubble drawn by `DecorFragment` gets DS§6.3's glass sweep and e2 elevation from tokens, with a gap between the prompt text and its tile row; hovering a prompt shows its Edit-and-resend and Copy actions, which reach the composer and the pasteboard.
+Check: light/dark snapshots of a prompt at rest and hovered; a test that Copy puts the prompt text on the pasteboard and Edit fills the composer.
+Status: done 2026-09-28
+Result:
+- `DecorFragment` draws the prompt bubble as `UserBubble` looks, from existing tokens: the readable `surface.window` face with `fill.primary`, the specular sweep (stops shared from `Specular.swift` through `Appearance.sweep`/`sweepStops`) and e2 elevation (`ElevationToken.layers(at:)`, shared with the SwiftUI `Elevation` modifier), over the whole bubble across its paragraph slices; slice clips snap to device pixels so no seam shows. A `space.m` gap (`Edge.tiles`) between the prompt text and its tile row.
+- Hover shows the new CoxUI molecule `PromptActions` in the bubble's top trailing corner: Edit and resend (`pencil`) calls `ComposerStore.edit` through `TranscriptView.composer(_:)`, Copy (`doc.on.doc`) puts the prompt on the pasteboard; without a composer only Copy shows. The style input is one `TextStyling` (drawn appearance, text size, line height) after merging T37.23.13.
+Deviations: ~17 source and test files (~294 added, 109 removed) plus 16 PNGs; a TextKit fragment cannot host a live glassEffect, so the bubble draws the readable face and the sweep.
+Check:
+- CoxTranscriptText 34 (the 10 000-block launch budget misses under load on `p37-desktop` too: 410–503 ms at load ~35), CoxTranscript 43, CoxUI 154, CoxModel 47; swiftlint clean.
+- After merging T37.24.7, T37.23.9, T37.25.1 and T37.23.16 into `p37-desktop` (fixtures re-recorded): `just test --changed-since` 1511 passed, 5 skipped; clippy on the changed crates and fmt clean; CoxCore 12, CoxModel 48, CoxTranscriptText 34, CoxTranscript 45, CoxUI 158.
+Not done: Edit and resend's conversation rewind (A102) is T37.23.18.
+
+#### T37.25.1 Core emits the context window and its split
+
+Depends: — · Size: ~150 · Files: `crates/cox-protocol/…` (event), `docs/protocol.jsonschema`, `crates/cox-core/…` (context, session), `crates/cox-app/…` (Meter fold, `MeterText`)
+Goal (A98): after it assembles each request the core emits `Event::ContextBreakdown` with the model's context window from the catalog and the system, tools, instructions and history parts from `cox_core::context::breakdown` (today dead code), scaled to the last usage as that function already does. The rollout records it like any event; cox-app's Meter fold keeps the latest and `MeterText` formats the share of the window and each part.
+Check: the protocol-schema drift test; a cox-core test over the Scripted provider that every request emits the event with a non-empty split and the catalog window; a cox-app test that `MeterText` formats it.
+Status: done 2026-09-28
+Result:
+- `cox-protocol` `ContextBreakdown` (`window` optional, `total`, `system`, `tools`, `instructions`, `history`, `cached`) and `Event::ContextBreakdown { turn, breakdown }` (A98); `docs/protocol.jsonschema` regenerated.
+- `cox-core` `Session::context_breakdown` emits it once per request, after the budget check and before the provider stream, so before that request's `Usage`: the window from the model catalog (else the provider's `max_context`), the split from `context::breakdown` (no longer dead code; `Breakdown::parts` folds nine segments into four), `cached` from the last usage. The request bytes are only read.
+- cox-app's Meter keeps the latest; `MeterText` gains `context_share` ("7.6% of 1M") and `context_parts`, rescaled to the last call's reported context so the legend adds up to "Context · …". Headless stream-json prints the event on its own line.
+Deviations: cox-ffi's `MeterText` mirror gains the two fields and a `ContextPart` record (it must list every field); cox-tui ignores the event until T37.25.3; the core's total uses compaction's bytes/4 estimate, hence the rescale; ~12 source files, ~220 lines.
+Check:
+- `protocol_jsonschema_matches_committed_file`; `turn_every_request_emits_its_context_breakdown`; `the_context_split_is_scaled_to_the_last_call_and_shared_of_the_window`; cox-core, cox-protocol, cox-app, cox-ffi, cox-tui and cox-acp 726; cox-session and cox-store 71; cox `run_cli` 19, `plain`/`ide` 4; clippy and fmt clean. Real binary: stream-json prints `context_breakdown` before each `usage` (window 1000000). Core scenario snapshots gain one block per request (token counts zeroed in the helper).
+- After merging T37.24.7, T37.23.9, T37.25.1 and T37.23.16 into `p37-desktop` (fixtures re-recorded): `just test --changed-since` 1511 passed, 5 skipped; clippy on the changed crates and fmt clean; CoxCore 12, CoxModel 48, CoxTranscriptText 34, CoxTranscript 45, CoxUI 158.
+Not done: the desktop popover (T37.25.2) and the TUI (T37.25.3); a subagent's event is not forwarded to the parent's stream.
+
+#### T37.23.16 Theme colours for syntax runs in edit cards
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/…` (the `CodeRun` it sends), `crates/cox-ffi/src/types.rs` (mirror only), `desktop/macos/Packages/CoxTranscript/…`
+Goal (A95): a diff's `CodeRun` carries the session theme's colour for its span in the theme's light and dark variants, taken from `cox-render`'s highlighter; the edit card draws the one matching the window's effective macOS appearance and redraws when the appearance changes, without a new fold. Runs without a colour stay `.plain`.
+Check: a cox-app test that a Rust edit's keyword run carries both colours; CoxTranscript light/dark snapshots of that edit card; the three Swift fixtures re-recorded.
+Status: done 2026-09-28
+Result:
+- `cox-render` `markdown::theme_variants(chosen)` pairs a theme with its dark/light sibling (`….dark`/`….light`, `… (dark)`/`… (light)`), serves an unpaired known theme to both, and falls back to base16-ocean for an unknown one; `diffmodel::model` highlights with both, `StyledSpan.light` beside `rgb` (dark) (A95). cox-ffi's `Span` conversion carries `light`.
+- CoxClient `Span.light`, CoxCore `Convert.swift`; CoxUI `CodeRun.theme` becomes one dynamic `NSColor` that AppKit resolves against the view's effective appearance, so an appearance change redraws the card without a new fold; runs without `rgb` stay `.plain`. DESIGN.md `DiffLineView` row.
+Deviations: 13 code and doc files (+216/−27, ~100 tests) plus fixtures and PNGs; the cox-render markdown snapshot gains `light: None`; one `swiftlint:disable:next no_literal_colour` citing A95; an extra test that a window turning dark redraws the card.
+Check:
+- `cargo nextest run -p cox-render -p cox-app -p cox-ffi -p cox-tui` 382/382 (`a_rust_edits_keyword_run_carries_the_dark_and_the_light_colour`, `a_theme_pairs_with_its_sibling_and_an_unpaired_one_serves_both`, `every_highlighted_run_carries_the_light_variant_too`); clippy (also `--no-default-features`) and fmt clean. CoxModel 44, CoxUI 149, CoxTranscript 40, CoxCore 12.
+- After merging T37.24.7, T37.23.9, T37.25.1 and T37.23.16 into `p37-desktop` (fixtures re-recorded): `just test --changed-since` 1511 passed, 5 skipped; clippy on the changed crates and fmt clean; CoxCore 12, CoxModel 48, CoxTranscriptText 34, CoxTranscript 45, CoxUI 158.
+Not done: code blocks in replies keep one (dark) colour — A95 covers edit cards.
+
+#### T37.28.2 Review pane: files by turn and their diff
+
+Depends: T37.28.1 · Size: ~180 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs` (new), CoxModel mapping
+Goal (A101): DT§5.4's split view — on the left the files grouped by turn with +/− counts and the RewindTimeline ("Rewind to here"), on the right the selected file's unified `DiffModel` through `DiffHunkView`, with the ⌘⌥D side-by-side toggle. After a code-only rewind the diff is the net difference between the checkpoint copy and the file on disk, not the model's calls one by one. The Changes tab's plain Rewind (`.rewind(checkpoint:)`) restores code only (DT§5.2 "Restore code to here"); the three scopes stay in the timeline.
+Check: a cox-app test gives the per-file diff after two edits; a snapshot per cell.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/review.rs` and `LiveSession::review(path)`: the net diff A101 asks for — the first checkpoint copy of the path from the store's archive (empty if the session created it) against the file on disk, read through `GitCheckpointer::preimages` under `path::confine` against the session's workspace roots (now kept on `LiveSession`). `cox_render::diffmodel::between(path, old, new, theme)` feeds similar's unified text to the existing `model`, so word ranges and highlighting match the edit cards; no hunks when nothing differs, `None` for an unchanged, outside or over-cap path.
+- cox-ffi `SessionHandle::review` (one-expression forward); `SessionClient.review(_:)` (the fixture takes `reviews:`), CoxCore `LiveSession.review`. CoxModel `ReviewState` groups `changes::build`'s files by turn with the checkpoints; `SessionStore.review(path:)`; `SessionStore.rewind(checkpoint:)` is the Changes tab's plain Rewind, code only.
+- CoxUI `Organisms/ReviewPane.swift`: files by turn with +/− counts, the RewindTimeline under them, the open file's diff as `DiffHunkView`s; `Previews/PreviewState+Review.swift`, 6 snapshots, DESIGN.md DS§6.4 row.
+Deviations: ~270 non-test lines in 13 files; the ⌘⌥D side-by-side toggle left out.
+Check:
+- `cargo nextest run -p cox-ffi -p cox-app`: 80/80 including `review_diffs_each_file_against_its_checkpoint_and_after_a_code_rewind_nets_to_nothing`; clippy and fmt clean. CoxModel 50, CoxUI ReviewPane/ChangesTab/RewindTimeline 12, CoxCore 12.
+- After merging into `p37-desktop`: `just test --changed-since` 534 passed, 1 skipped; clippy and fmt clean; CoxCore 12, CoxModel 51, CoxUI ReviewPane/ChangesTab/RewindTimeline 12.
+Not done: app wiring (⌘⇧R, `ReviewState` → `ReviewPane.State`, T37.32); the side-by-side toggle; the file list's +/− counts are still the model's calls, only the diff pane shows the net change.
+
+#### T37.23.18 Edit and resend rewinds the conversation
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/…` (`ComposerStore`, `SessionStore`), `desktop/macos/Packages/CoxTranscript/…`
+Goal (A102): a prompt's Edit and resend (T37.23.9) fills the composer with the prompt and sends `Intent.rewind(toTurn:code: false, conversation: true)` to the turn before that prompt, so the resent prompt does not see the old reply and no file changes; restoring code stays an explicit choice in the rewind timeline.
+Check: a CoxModel test over the fixture that Edit on the second prompt fills the composer and sends one conversation-only rewind to the turn before it.
+Status: done 2026-09-28
+Result:
+- CoxModel `ComposerStore.resend(_ prompt: Block)` in `Rewind.swift` (A102): fills the draft through `edit(text)`, then sends `.rewind(toTurn: prompt.turn, code: false, conversation: true)` — the core's `to_turn` is the first turn cut (`cut_history` drops from the first turn mark with `seq >= to_turn`; the timeline removes blocks with `turn >= to_turn`), so the prompt's own turn removes it and its reply; a send error goes to `report`; a non-prompt block sends nothing. CoxTranscript `PromptActing.swift`: `.edit` calls `composer?.resend(block)`. No Rust change.
+- New data-only scenario `crates/cox-ffi/fixtures/two-prompts.toml` and fixture `desktop/macos/Fixtures/two-prompts.json`, with its record command in the Fixtures README.
+Deviations: the new fixture (no recorded fixture had a second prompt); it joins the fixture loops in CoxModel and CoxTranscriptText.
+Check:
+- CoxModel 53 (the Check test replays `two-prompts.json`, takes the second user block from the replay, and finds the composer filled and exactly one conversation-only rewind to its turn), CoxTranscript 45, CoxTranscriptText 33 of 34 (the load-sensitive launch budget); swiftlint clean.
+- After merging into `p37-desktop`: CoxModel 53, CoxTranscript 45.
+Not done: app wiring (T37.32). With a turn running the core refuses the rewind ("interrupt it first") and the draft is still filled; the client does not interrupt.
+
+#### T37.25.3 Context split in the TUI
+
+Depends: T37.25.1 · Size: ~120 · Files: `crates/cox-tui/src/…` (state, status, a `/context` overlay)
+Goal (A98): the TUI shows what the desktop popover shows: its status-line context share takes the window from `Event::ContextBreakdown` instead of a fixed default, and a `/context` overlay lists the window, the share and the system, tools, instructions and history parts with a bar in the same colour roles.
+Check: `insta` snapshots of the status line and the `/context` overlay in dark, light and no-colour; a state test that the event updates the window.
+Status: done 2026-09-28
+Result:
+- The TUI `/context` overlay and the status line's context share read `Event::ContextBreakdown` (A98): the overlay lists each part with its tokens and share of the window, and the status share comes from the event's window rather than a local estimate (commit fb65f7fc).
+- `cox-core/src/context.rs` drops the stale `/context` dead-code note and the unused `Breakdown::to_json`.
+Deviations: none.
+Check:
+- `just test --changed-since` over the merged batch: 900 passed, 2 skipped; clippy on cox-core and cox-tui clean.
+Not done: `cox --plain` still takes the window from its own estimate, not from `ContextBreakdown`.
+
+#### T37.25.2 Context split in the desktop token popover
+
+Depends: T37.25.1 · Size: ~100 · Files: `crates/cox-ffi/src/types.rs` (mirror only), `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxUI/…` (token popover), `desktop/design/DESIGN.md`
+Goal (A98): the live token popover shows the context share of the window and the StackedBar with its legend (`context.system/tools/instructions/history`) that the preview already draws, fed from T37.25.1's Meter; DESIGN.md's context-bar note stops claiming the TUI already showed the split.
+Check: a CoxModel test that the fixture's breakdown reaches the popover state; a CoxUI snapshot of the live-fed popover; fixtures re-recorded.
+Status: done 2026-09-28
+Result:
+- The desktop token popover shows the context split as a `StackedBar` with the window share (A98, commit 8e162483). The one mapping from `ContextPart` lives in CoxTranscript `TokenPopover.Part.init?(ContextPart)`.
+- Meter types moved to `CoxClient/Meter.swift` and their conversion to `CoxCore/Convert+Meter.swift`.
+- The pinned approval bar's snapshots were re-recorded, because the meter now shows the window share from the recorded fixture (commit 48762171).
+Deviations: the meter types moved into their own files, because SwiftLint's 400-line limit was hit.
+Check:
+- After merging into `p37-desktop`: CoxCore 12 (dev XCFramework), CoxModel 54, CoxTranscriptText 35, CoxTranscript 48 (with Benchmark skipped; PinnedDecision re-recorded, and a second run passed), CoxUI 161.
+Not done: none.
+
+#### T37.23.15 Per-level transcript heading sizes
+
+Depends: — · Size: ~60 · Files: `desktop/design/tokens/base.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A94): tokens `font.transcript.h1` (17 pt semibold) and `font.transcript.h4` (13 pt semibold) beside `font.transcript.h3`, documented in DESIGN.md's type table; T37.23.12's heading paragraphs take their size from the heading level as DT§5.9 maps it instead of one `h3` size.
+Check: the token build's own check; a CoxTranscriptText snapshot of every heading level in light and dark.
+Status: done 2026-09-28
+Result:
+- CoxTranscriptText maps markdown headings to three sizes (A94): level 1 → `font.transcript.h1` (17 pt), level 2 → h3, levels 3–6 → `font.transcript.h4` (13 pt semibold). Commits 14d9d1d9 and 8b73b8b0; the second fixed an earlier mapping in which `####` came out larger than `###`.
+Deviations: none.
+Check:
+- After merging into `p37-desktop`: CoxTranscriptText 35, CoxTranscript 48 (with Benchmark skipped), CoxUI 161.
+Not done: none.
+
+#### T37.23.17 A stronger quote bar from its own token
+
+Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json` (and the generated outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…/TranscriptStructure.swift`
+Goal (A97): a `quote.bar` token (width about 3 pt, a colour stronger than the hairline, with light, dark and high-contrast variants) in DESIGN.md's tables; T37.23.12's `QuoteFragment` draws its bars from it instead of the thought's hairline.
+Check: the token build's own check; CoxTranscriptText light and dark snapshots of a nested quote.
+Status: done 2026-09-28
+Result:
+- New token `quote.bar` (A97), using the text.tertiary value: light #a1a1a6, dark #6c6c72, high contrast #8b8b90 / #7a7a7f. New size `size.quoteBar` = 3 pt. Block quotes in the transcript draw their bar with both (commit eb8a38d1).
+Deviations: none.
+Check:
+- After merging into `p37-desktop`: CoxTranscriptText 35, CoxTranscript 48, CoxUI 161.
+Not done: none.

@@ -66,7 +66,7 @@ extension CoxClient.TimelinePatch {
       self = .docTail(id: id, from: from, blocks: blocks.map { CoxClient.DocBlock($0) })
     case .remove(let id): self = .remove(id: id)
     case .usage(let usage): self = .usage(usage: .init(usage))
-    case .status(let status): self = .status(status: .init(queued: status.queued))
+    case .status(let status): self = .status(status: .init(status))
     }
   }
 }
@@ -134,7 +134,7 @@ extension CoxClient.TextKind {
 extension CoxClient.Span {
   init(_ value: CoxFFIBindings.Span) {
     self.init(text: value.text)
-    (token, rgb, link) = (.init(value.token), value.rgb, value.link)
+    (token, rgb, light, link) = (.init(value.token), value.rgb, value.light, value.link)
     (bold, italic, strike, underline) = (value.bold, value.italic, value.strike, value.underline)
   }
 }
@@ -321,20 +321,6 @@ extension CoxClient.UsageView {
   }
 }
 
-extension CoxClient.MeterText {
-  init(_ value: CoxFFIBindings.MeterText) {
-    self.init()
-    (sent, received, rate, spoken) = (value.sent, value.received, value.rate, value.spoken)
-    (heading, phase, rateUnit, rateDetail) = (
-      value.heading, value.phase, value.rateUnit, value.rateDetail
-    )
-    rows = value.rows.map {
-      .init(label: $0.label, turn: $0.turn, session: $0.session, detail: $0.detail)
-    }
-    (context, footnote) = (value.context, value.footnote)
-  }
-}
-
 extension CoxClient.Tally {
   init(_ value: CoxFFIBindings.Tally) {
     self.init(
@@ -351,5 +337,51 @@ extension CoxClient.TurnUsage {
       turn: value.turn, tally: .init(value.tally), thinkingTokens: value.thinkingTokens,
       ttftMs: value.ttftMs,
       tokPerS: value.tokPerS, exact: value.exact, sparkline: value.sparkline, done: value.done)
+  }
+}
+
+extension CoxFFIBindings.Intent {
+  init(_ value: CoxClient.Intent) {
+    switch value {
+    case .send(let text, let files, let think):
+      self = .send(text: text, attachments: files.map { .init($0) }, confirmThink: think)
+    case .approve(let call, let decision): self = .approve(call: call, decision: .init(decision))
+    case .answer(let question, let text): self = .answer(question: question, text: text)
+    case .interrupt: self = .interrupt
+    case .queue(let text, let files, let think):
+      self = .queue(text: text, attachments: files.map { .init($0) }, confirmThink: think)
+    case .compact(let focus): self = .compact(focus: focus)
+    case .setMode(let mode):
+      switch mode {
+      case .default: self = .setMode(mode: .default)
+      case .plan: self = .setMode(mode: .plan)
+      case .auto: self = .setMode(mode: .auto)
+      case .bypass: self = .setMode(mode: .bypass)
+      }
+    case .switchModel(let tier, let model): self = .switchModel(tier: .init(tier), model: model)
+    case .setEffort(let effort):
+      switch effort {
+      case nil: self = .setEffort(effort: nil)
+      case .low: self = .setEffort(effort: .low)
+      case .medium: self = .setEffort(effort: .medium)
+      case .high: self = .setEffort(effort: .high)
+      case .xhigh: self = .setEffort(effort: .xhigh)
+      }
+    case .rewind(let toTurn, let code, let conversation):
+      self = .rewind(toTurn: toTurn, code: code, conversation: conversation)
+    case .redo: self = .redo
+    case .revertFile(let path, let toTurn): self = .revertFile(path: path, toTurn: toTurn)
+    case .fork(let turn): self = .fork(turn: turn)
+    case .handoff(let objective): self = .handoff(objective: objective)
+    case .background(let call): self = .background(call: call)
+    case .shell(let command, let share): self = .shell(command: command, share: share)
+    case .command(let line): self = .command(line: line)
+    }
+  }
+}
+
+extension CoxFFIBindings.Attachment {
+  init(_ value: CoxClient.Attachment) {
+    self.init(name: value.name, mediaType: value.mediaType, dataB64: value.dataB64)
   }
 }

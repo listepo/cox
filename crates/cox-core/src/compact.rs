@@ -104,7 +104,7 @@ pub(crate) fn estimate_tokens(messages: &[Message]) -> u32 {
 /// The same heuristic over a whole request: cox-core may not call
 /// `cox_provider::tokens::estimate` (`crates/cox/tests/deps.rs`), and the
 /// exact count, when it matters, comes through `Provider::count_tokens`.
-fn estimate(req: &Request) -> u32 {
+pub(crate) fn estimate(req: &Request) -> u32 {
     quarter(serde_json::to_vec(req).map(|v| v.len()).unwrap_or(0))
 }
 

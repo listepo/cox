@@ -2,115 +2,44 @@
   "batches": [
     [
       {
+        "op": "status",
+        "status": {
+          "queued": 0,
+          "mode": "auto",
+          "next_mode": "default",
+          "model": "claude-sonnet-5",
+          "effort": "high"
+        }
+      }
+    ],
+    [
+      {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
+          "id": "turn:01M3KZ1VKJ7XVPBZT2YQ5SC1QS",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
             "model": "claude-sonnet-5",
             "tier": "code",
-            "usage": null,
+            "usage": {
+              "input_tokens": 3709,
+              "output_tokens": 53,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
             "stop": null
           }
         },
         "after": null
       },
       {
-        "op": "usage",
-        "usage": {
-          "session": {
-            "sent": 0,
-            "received": 0,
-            "cache_read": 0,
-            "cache_write": 0,
-            "uncached": 0,
-            "cost_usd": 0.0,
-            "calls": 0,
-            "estimated": false
-          },
-          "turn": {
-            "turn": "01M3KS3FDK76M30R4RDNJ7E63X",
-            "tally": {
-              "sent": 0,
-              "received": 0,
-              "cache_read": 0,
-              "cache_write": 0,
-              "uncached": 0,
-              "cost_usd": 0.0,
-              "calls": 0,
-              "estimated": false
-            },
-            "thinking_tokens": 0,
-            "ttft_ms": null,
-            "tok_per_s": null,
-            "exact": false,
-            "sparkline": [],
-            "done": false
-          },
-          "context_tokens": 0,
-          "text": {
-            "sent": "0",
-            "received": "0",
-            "rate": "",
-            "spoken": "0 tokens sent, 0 received",
-            "heading": "This turn · 0 requests",
-            "phase": "streaming",
-            "rate_unit": "tok/s now",
-            "rate_detail": "",
-            "rows": [
-              {
-                "label": "↑ Sent",
-                "turn": "0",
-                "session": "0",
-                "detail": false
-              },
-              {
-                "label": "cache read",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "cache write",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "uncached",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "↓ Received",
-                "turn": "0",
-                "session": "0",
-                "detail": false
-              },
-              {
-                "label": "of it thinking",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "Cost",
-                "turn": "$0.00",
-                "session": "$0.00",
-                "detail": false
-              }
-            ],
-            "context": "Context · 0",
-            "footnote": "Counts from the provider's usage, one ledger row per request"
-          }
-        }
-      },
-      {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KS3FDKGE0HCTHSCKMZSHGJ",
+          "id": "item:01M3KZ1VKJ2PJ78CDHKKXVC3G3",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -118,14 +47,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KS3FDK76M30R4RDNJ7E63X"
-      }
-    ],
-    [
+        "after": "turn:01M3KZ1VKJ7XVPBZT2YQ5SC1QS"
+      },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KS3FDN3357G1STSSFR5VV7",
+          "id": "item:01M3KZ1VKRSWGBEFM6887ND5FS",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -149,35 +76,12 @@
             }
           }
         },
-        "after": "item:01M3KS3FDKGE0HCTHSCKMZSHGJ"
+        "after": "item:01M3KZ1VKJ2PJ78CDHKKXVC3G3"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
-          "turn": 1,
-          "kind": {
-            "type": "turn_meta",
-            "model": "claude-sonnet-5",
-            "tier": "code",
-            "usage": {
-              "input_tokens": 7504,
-              "output_tokens": 100,
-              "cache_read_tokens": 0,
-              "cache_write_tokens": 0,
-              "estimated": true,
-              "cost_usd": 0.0,
-              "latency_ms": 0
-            },
-            "stop": null
-          }
-        },
-        "after": null
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KS3FDPRPDQVSDTVZMR1DZ9",
+          "id": "call:01M3KZ1VKRMMYR5SQD5ZMTNVRA",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -188,19 +92,19 @@
             "state": "done",
             "tail": "wrote /project/src/lib.rs (152 bytes)",
             "archive": {
-              "id": "01M3KS3FDRR0BT2RCVC7JXR6Z9",
+              "id": "01M3KZ1VKWFT38A09Y1TZCRGTT",
               "bytes": 104
             },
             "diff": null,
-            "duration_ms": 1
+            "duration_ms": 2
           }
         },
-        "after": "item:01M3KS3FDN3357G1STSSFR5VV7"
+        "after": "item:01M3KZ1VKRSWGBEFM6887ND5FS"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "checkpoint:10",
+          "id": "checkpoint:11",
           "turn": 1,
           "kind": {
             "type": "checkpoint",
@@ -209,12 +113,132 @@
             ]
           }
         },
-        "after": "call:01M3KS3FDPRPDQVSDTVZMR1DZ9"
+        "after": "call:01M3KZ1VKRMMYR5SQD5ZMTNVRA"
       },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 3709,
+            "received": 53,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 3709,
+            "cost_usd": 0.0,
+            "calls": 1,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3KZ1VKJ7XVPBZT2YQ5SC1QS",
+            "tally": {
+              "sent": 3709,
+              "received": 53,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 3709,
+              "cost_usd": 0.0,
+              "calls": 1,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 127480.45700541191,
+            "exact": true,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 3709,
+          "text": {
+            "sent": "3.7k",
+            "received": "53",
+            "rate": "127480",
+            "spoken": "3.7 thousand tokens sent, 53 received, 127480 tokens per second",
+            "heading": "This turn · 1 request",
+            "phase": "streaming",
+            "rate_unit": "tok/s last call",
+            "rate_detail": "avg 127480 tok/s · first token 0 ms · peak 127480 tok/s",
+            "rows": [
+              {
+                "label": "↑ Sent",
+                "turn": "3.7k",
+                "session": "3.7k",
+                "detail": false
+              },
+              {
+                "label": "cache read",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "cache write",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "uncached",
+                "turn": "3.7k",
+                "session": "3.7k",
+                "detail": true
+              },
+              {
+                "label": "↓ Received",
+                "turn": "53",
+                "session": "53",
+                "detail": false
+              },
+              {
+                "label": "of it thinking",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "Cost",
+                "turn": "$0.00",
+                "session": "$0.00",
+                "detail": false
+              }
+            ],
+            "context": "Context · 3.7k",
+            "context_share": "0.4% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "107",
+                "share": 0.00010661650321271558
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "3.4k",
+                "share": 0.0034123552587081506
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "16",
+                "share": 0.000015678897531281702
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "174",
+                "share": 0.00017434934054785255
+              }
+            ],
+            "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
+          }
+        }
+      }
+    ],
+    [
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KS3FDSABMPZZMVGQVBE2V8",
+          "id": "item:01M3KZ1VKZCNKT1VYGXQ30V27Q",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -238,103 +262,37 @@
             }
           }
         },
-        "after": "checkpoint:10"
-      },
-      {
-        "op": "usage",
-        "usage": {
-          "session": {
-            "sent": 7504,
-            "received": 100,
-            "cache_read": 0,
-            "cache_write": 0,
-            "uncached": 7504,
-            "cost_usd": 0.0,
-            "calls": 2,
-            "estimated": true
-          },
-          "turn": {
-            "turn": "01M3KS3FDK76M30R4RDNJ7E63X",
-            "tally": {
-              "sent": 7504,
-              "received": 100,
-              "cache_read": 0,
-              "cache_write": 0,
-              "uncached": 7504,
-              "cost_usd": 0.0,
-              "calls": 2,
-              "estimated": true
-            },
-            "thinking_tokens": 0,
-            "ttft_ms": 0,
-            "tok_per_s": 2207401.8410670673,
-            "exact": true,
-            "sparkline": [],
-            "done": false
-          },
-          "context_tokens": 3795,
-          "text": {
-            "sent": "7.5k",
-            "received": "100",
-            "rate": "2207402",
-            "spoken": "7.5 thousand tokens sent, 100 received, 2207402 tokens per second",
-            "heading": "This turn · 2 requests",
-            "phase": "streaming",
-            "rate_unit": "tok/s last call",
-            "rate_detail": "avg 428725 tok/s · first token 0 ms · peak 2207402 tok/s",
-            "rows": [
-              {
-                "label": "↑ Sent",
-                "turn": "7.5k",
-                "session": "7.5k",
-                "detail": false
-              },
-              {
-                "label": "cache read",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "cache write",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "uncached",
-                "turn": "7.5k",
-                "session": "7.5k",
-                "detail": true
-              },
-              {
-                "label": "↓ Received",
-                "turn": "100",
-                "session": "100",
-                "detail": false
-              },
-              {
-                "label": "of it thinking",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "Cost",
-                "turn": "$0.00",
-                "session": "$0.00",
-                "detail": false
-              }
-            ],
-            "context": "Context · 3.8k",
-            "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
-          }
-        }
+        "after": "checkpoint:11"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KS3FDS6E3PTGD89Q36ECBE",
+          "id": "turn:01M3KZ1VKJ7XVPBZT2YQ5SC1QS",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 11375,
+              "output_tokens": 110,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": {
+              "type": "end_turn"
+            }
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KZ1VKZP29KZW5BX3BTAPMQ",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -345,7 +303,7 @@
             "state": "done",
             "tail": "edited /project/src/lib.rs",
             "archive": {
-              "id": "01M3KS3FE4RS04A8MGDCTT3E1V",
+              "id": "01M3KZ1VM9VBQH8DZPX6QYYW1R",
               "bytes": 93
             },
             "diff": {
@@ -365,6 +323,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         }
                       ],
@@ -381,6 +344,11 @@
                             101,
                             115,
                             126
+                          ],
+                          "light": [
+                            167,
+                            173,
+                            186
                           ]
                         },
                         {
@@ -389,6 +357,11 @@
                             101,
                             115,
                             126
+                          ],
+                          "light": [
+                            167,
+                            173,
+                            186
                           ]
                         }
                       ],
@@ -405,19 +378,8 @@
                             180,
                             142,
                             173
-                          ]
-                        },
-                        {
-                          "text": " ",
-                          "rgb": [
-                            192,
-                            197,
-                            206
-                          ]
-                        },
-                        {
-                          "text": "fn",
-                          "rgb": [
+                          ],
+                          "light": [
                             180,
                             142,
                             173
@@ -429,11 +391,47 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
+                          ]
+                        },
+                        {
+                          "text": "fn",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ],
+                          "light": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "backoff",
                           "rgb": [
+                            143,
+                            161,
+                            179
+                          ],
+                          "light": [
                             143,
                             161,
                             179
@@ -445,11 +443,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "attempt",
                           "rgb": [
+                            191,
+                            97,
+                            106
+                          ],
+                          "light": [
                             191,
                             97,
                             106
@@ -461,6 +469,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -469,11 +482,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "u32",
                           "rgb": [
+                            180,
+                            142,
+                            173
+                          ],
+                          "light": [
                             180,
                             142,
                             173
@@ -485,6 +508,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -493,6 +521,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -501,6 +534,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -509,6 +547,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -517,6 +560,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -525,6 +573,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -533,6 +586,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         }
                       ],
@@ -549,6 +607,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -557,6 +620,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -565,6 +633,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -573,6 +646,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -581,11 +659,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "100",
                           "rgb": [
+                            208,
+                            135,
+                            112
+                          ],
+                          "light": [
                             208,
                             135,
                             112
@@ -597,6 +685,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -605,6 +698,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -613,11 +711,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "u64",
                           "rgb": [
+                            180,
+                            142,
+                            173
+                          ],
+                          "light": [
                             180,
                             142,
                             173
@@ -629,6 +737,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -637,6 +750,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -645,6 +763,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -653,6 +776,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -661,6 +789,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -669,6 +802,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -677,6 +815,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         }
                       ],
@@ -702,11 +845,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "let",
                           "rgb": [
+                            180,
+                            142,
+                            173
+                          ],
+                          "light": [
                             180,
                             142,
                             173
@@ -718,6 +871,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -726,6 +884,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -734,11 +897,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "100",
                           "rgb": [
+                            208,
+                            135,
+                            112
+                          ],
+                          "light": [
                             208,
                             135,
                             112
@@ -750,6 +923,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -758,6 +936,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -766,11 +949,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "u64",
                           "rgb": [
+                            180,
+                            142,
+                            173
+                          ],
+                          "light": [
                             180,
                             142,
                             173
@@ -782,6 +975,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -790,6 +988,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -798,6 +1001,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -806,6 +1014,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -814,6 +1027,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -822,6 +1040,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -830,6 +1053,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         }
                       ],
@@ -855,6 +1083,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -863,6 +1096,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -871,6 +1109,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -879,6 +1122,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -887,6 +1135,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -895,6 +1148,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -903,11 +1161,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "min",
                           "rgb": [
+                            150,
+                            181,
+                            180
+                          ],
+                          "light": [
                             150,
                             181,
                             180
@@ -919,11 +1187,21 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
                           "text": "5_000",
                           "rgb": [
+                            208,
+                            135,
+                            112
+                          ],
+                          "light": [
                             208,
                             135,
                             112
@@ -935,6 +1213,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -943,6 +1226,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -951,6 +1239,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         }
                       ],
@@ -967,6 +1260,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         },
                         {
@@ -975,6 +1273,11 @@
                             192,
                             197,
                             206
+                          ],
+                          "light": [
+                            79,
+                            91,
+                            102
                           ]
                         }
                       ],
@@ -984,15 +1287,15 @@
                 }
               ]
             },
-            "duration_ms": 1
+            "duration_ms": 2
           }
         },
-        "after": "item:01M3KS3FDSABMPZZMVGQVBE2V8"
+        "after": "item:01M3KZ1VKZCNKT1VYGXQ30V27Q"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "checkpoint:17",
+          "id": "checkpoint:19",
           "turn": 1,
           "kind": {
             "type": "checkpoint",
@@ -1001,14 +1304,12 @@
             ]
           }
         },
-        "after": "call:01M3KS3FDS6E3PTGD89Q36ECBE"
-      }
-    ],
-    [
+        "after": "call:01M3KZ1VKZP29KZW5BX3BTAPMQ"
+      },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KS3FE5P3WKMFW1CEWGS63T",
+          "id": "item:01M3KZ1VMCRPXX3QAD9ESWCJVJ",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -1032,32 +1333,7 @@
             }
           }
         },
-        "after": "checkpoint:17"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
-          "turn": 1,
-          "kind": {
-            "type": "turn_meta",
-            "model": "claude-sonnet-5",
-            "tier": "code",
-            "usage": {
-              "input_tokens": 11375,
-              "output_tokens": 110,
-              "cache_read_tokens": 0,
-              "cache_write_tokens": 0,
-              "estimated": true,
-              "cost_usd": 0.0,
-              "latency_ms": 0
-            },
-            "stop": {
-              "type": "end_turn"
-            }
-          }
-        },
-        "after": null
+        "after": "checkpoint:19"
       },
       {
         "op": "usage",
@@ -1073,7 +1349,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KS3FDK76M30R4RDNJ7E63X",
+            "turn": "01M3KZ1VKJ7XVPBZT2YQ5SC1QS",
             "tally": {
               "sent": 11375,
               "received": 110,
@@ -1086,7 +1362,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 304182.5095057034,
+            "tok_per_s": 404710.8341090291,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -1095,12 +1371,12 @@
           "text": {
             "sent": "11.4k",
             "received": "110",
-            "rate": "304183",
-            "spoken": "11 thousand tokens sent, 110 received, 304183 tokens per second",
+            "rate": "404711",
+            "spoken": "11 thousand tokens sent, 110 received, 404711 tokens per second",
             "heading": "Last turn · 3 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 413340 tok/s · first token 0 ms · peak 2207402 tok/s",
+            "rate_detail": "avg 234042 tok/s · first token 0 ms · peak 1590955 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -1146,6 +1422,33 @@
               }
             ],
             "context": "Context · 3.9k",
+            "context_share": "0.4% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "106",
+                "share": 0.00010624768518518517
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "3.4k",
+                "share": 0.003423607638888889
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "16",
+                "share": 0.00001600115740740741
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "325",
+                "share": 0.00032514351851851855
+              }
+            ],
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -1155,7 +1458,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KS3FDK76M30R4RDNJ7E63X",
+      "id": "turn:01M3KZ1VKJ7XVPBZT2YQ5SC1QS",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -1176,7 +1479,7 @@
       }
     },
     {
-      "id": "item:01M3KS3FDKGE0HCTHSCKMZSHGJ",
+      "id": "item:01M3KZ1VKJ2PJ78CDHKKXVC3G3",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -1185,7 +1488,7 @@
       }
     },
     {
-      "id": "item:01M3KS3FDN3357G1STSSFR5VV7",
+      "id": "item:01M3KZ1VKRSWGBEFM6887ND5FS",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1210,7 +1513,7 @@
       }
     },
     {
-      "id": "call:01M3KS3FDPRPDQVSDTVZMR1DZ9",
+      "id": "call:01M3KZ1VKRMMYR5SQD5ZMTNVRA",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1221,15 +1524,15 @@
         "state": "done",
         "tail": "wrote /project/src/lib.rs (152 bytes)",
         "archive": {
-          "id": "01M3KS3FDRR0BT2RCVC7JXR6Z9",
+          "id": "01M3KZ1VKWFT38A09Y1TZCRGTT",
           "bytes": 104
         },
         "diff": null,
-        "duration_ms": 1
+        "duration_ms": 2
       }
     },
     {
-      "id": "checkpoint:10",
+      "id": "checkpoint:11",
       "turn": 1,
       "kind": {
         "type": "checkpoint",
@@ -1239,7 +1542,7 @@
       }
     },
     {
-      "id": "item:01M3KS3FDSABMPZZMVGQVBE2V8",
+      "id": "item:01M3KZ1VKZCNKT1VYGXQ30V27Q",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1264,7 +1567,7 @@
       }
     },
     {
-      "id": "call:01M3KS3FDS6E3PTGD89Q36ECBE",
+      "id": "call:01M3KZ1VKZP29KZW5BX3BTAPMQ",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1275,7 +1578,7 @@
         "state": "done",
         "tail": "edited /project/src/lib.rs",
         "archive": {
-          "id": "01M3KS3FE4RS04A8MGDCTT3E1V",
+          "id": "01M3KZ1VM9VBQH8DZPX6QYYW1R",
           "bytes": 93
         },
         "diff": {
@@ -1295,6 +1598,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     }
                   ],
@@ -1311,6 +1619,11 @@
                         101,
                         115,
                         126
+                      ],
+                      "light": [
+                        167,
+                        173,
+                        186
                       ]
                     },
                     {
@@ -1319,6 +1632,11 @@
                         101,
                         115,
                         126
+                      ],
+                      "light": [
+                        167,
+                        173,
+                        186
                       ]
                     }
                   ],
@@ -1335,19 +1653,8 @@
                         180,
                         142,
                         173
-                      ]
-                    },
-                    {
-                      "text": " ",
-                      "rgb": [
-                        192,
-                        197,
-                        206
-                      ]
-                    },
-                    {
-                      "text": "fn",
-                      "rgb": [
+                      ],
+                      "light": [
                         180,
                         142,
                         173
@@ -1359,11 +1666,47 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
+                      ]
+                    },
+                    {
+                      "text": "fn",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ],
+                      "light": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "backoff",
                       "rgb": [
+                        143,
+                        161,
+                        179
+                      ],
+                      "light": [
                         143,
                         161,
                         179
@@ -1375,11 +1718,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "attempt",
                       "rgb": [
+                        191,
+                        97,
+                        106
+                      ],
+                      "light": [
                         191,
                         97,
                         106
@@ -1391,6 +1744,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1399,11 +1757,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "u32",
                       "rgb": [
+                        180,
+                        142,
+                        173
+                      ],
+                      "light": [
                         180,
                         142,
                         173
@@ -1415,6 +1783,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1423,6 +1796,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1431,6 +1809,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1439,6 +1822,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1447,6 +1835,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1455,6 +1848,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1463,6 +1861,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     }
                   ],
@@ -1479,6 +1882,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1487,6 +1895,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1495,6 +1908,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1503,6 +1921,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1511,11 +1934,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "100",
                       "rgb": [
+                        208,
+                        135,
+                        112
+                      ],
+                      "light": [
                         208,
                         135,
                         112
@@ -1527,6 +1960,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1535,6 +1973,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1543,11 +1986,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "u64",
                       "rgb": [
+                        180,
+                        142,
+                        173
+                      ],
+                      "light": [
                         180,
                         142,
                         173
@@ -1559,6 +2012,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1567,6 +2025,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1575,6 +2038,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1583,6 +2051,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1591,6 +2064,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1599,6 +2077,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1607,6 +2090,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     }
                   ],
@@ -1632,11 +2120,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "let",
                       "rgb": [
+                        180,
+                        142,
+                        173
+                      ],
+                      "light": [
                         180,
                         142,
                         173
@@ -1648,6 +2146,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1656,6 +2159,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1664,11 +2172,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "100",
                       "rgb": [
+                        208,
+                        135,
+                        112
+                      ],
+                      "light": [
                         208,
                         135,
                         112
@@ -1680,6 +2198,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1688,6 +2211,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1696,11 +2224,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "u64",
                       "rgb": [
+                        180,
+                        142,
+                        173
+                      ],
+                      "light": [
                         180,
                         142,
                         173
@@ -1712,6 +2250,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1720,6 +2263,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1728,6 +2276,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1736,6 +2289,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1744,6 +2302,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1752,6 +2315,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1760,6 +2328,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     }
                   ],
@@ -1785,6 +2358,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1793,6 +2371,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1801,6 +2384,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1809,6 +2397,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1817,6 +2410,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1825,6 +2423,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1833,11 +2436,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "min",
                       "rgb": [
+                        150,
+                        181,
+                        180
+                      ],
+                      "light": [
                         150,
                         181,
                         180
@@ -1849,11 +2462,21 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
                       "text": "5_000",
                       "rgb": [
+                        208,
+                        135,
+                        112
+                      ],
+                      "light": [
                         208,
                         135,
                         112
@@ -1865,6 +2488,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1873,6 +2501,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1881,6 +2514,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     }
                   ],
@@ -1897,6 +2535,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     },
                     {
@@ -1905,6 +2548,11 @@
                         192,
                         197,
                         206
+                      ],
+                      "light": [
+                        79,
+                        91,
+                        102
                       ]
                     }
                   ],
@@ -1914,11 +2562,11 @@
             }
           ]
         },
-        "duration_ms": 1
+        "duration_ms": 2
       }
     },
     {
-      "id": "checkpoint:17",
+      "id": "checkpoint:19",
       "turn": 1,
       "kind": {
         "type": "checkpoint",
@@ -1928,7 +2576,7 @@
       }
     },
     {
-      "id": "item:01M3KS3FE5P3WKMFW1CEWGS63T",
+      "id": "item:01M3KZ1VMCRPXX3QAD9ESWCJVJ",
       "turn": 1,
       "kind": {
         "type": "assistant",

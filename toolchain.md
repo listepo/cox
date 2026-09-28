@@ -14,9 +14,9 @@ Programs the project uses and the direct packages from its manifests.
 | cargo-nextest | global (cargo install / brew) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | just | cargo install just / brew | Command recipes | https://github.com/casey/just |
 | ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
-| dunnage | ketch | `just test` ends with a lossless cleanup of `target/` | https://github.com/listepo/dunnage |
+| dunnage | ketch | `just check-all` ends with a lossless cleanup of `target/` | https://github.com/listepo/dunnage |
 | uv | global (curl installer / brew) | Runs the `evals/` and `scripts/vendor/` packages (`just eval`, `just vendor`) and locks their Python deps | https://github.com/astral-sh/uv |
-| python | uv (`evals/.python-version`, `scripts/vendor/.python-version`) | Eval harness, the Terminal-Bench agent (must be a Python class), and `cox-vendor` (T30.19: vendored files no package manager fetches) | https://github.com/python/cpython |
+| python | uv (`evals/.python-version`, `scripts/vendor/.python-version`) | Eval harness, the Terminal-Bench agent (must be a Python class), `cox-vendor` (T30.19: vendored files no package manager fetches), and `scripts/changed_tests.py`, which picks the crates `just test` runs (T50.7; stdlib only) | https://github.com/python/cpython |
 | zig | mise (`mise.toml`) | Linker for `cargo zigbuild`: the Linux cox the Terminal-Bench containers run (T30.9) | https://github.com/ziglang/zig |
 | cargo-zigbuild | mise (`mise.toml`, aqua) | Cross-builds that Linux cox from macOS without a Docker build step | https://github.com/rust-cross/cargo-zigbuild |
 | colima | global (mise) | Docker runtime for Terminal-Bench (the creator's choice) | https://github.com/abiosoft/colima |

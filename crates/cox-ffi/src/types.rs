@@ -15,10 +15,10 @@ use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange}
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, Dropped, FileChange,
-    Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need,
-    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
-    TaskTarget, TurnUsage, UsageView,
+    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, Dropped,
+    FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow,
+    MeterText, Need, Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally,
+    TaskKind, TaskTarget, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -66,6 +66,7 @@ uniffi::custom_type!(StyledSpan, Span, {
     remote,
     lower: |s| Span {
         rgb: s.rgb.map(|[r, g, b]| u32::from_be_bytes([0, r, g, b])),
+        light: s.light.map(|[r, g, b]| u32::from_be_bytes([0, r, g, b])),
         text: s.text,
         token: s.token,
         bold: s.bold,
@@ -76,6 +77,10 @@ uniffi::custom_type!(StyledSpan, Span, {
     },
     try_lift: |s| Ok(StyledSpan {
         rgb: s.rgb.map(|c| {
+            let [_, r, g, b] = c.to_be_bytes();
+            [r, g, b]
+        }),
+        light: s.light.map(|c| {
             let [_, r, g, b] = c.to_be_bytes();
             [r, g, b]
         }),
@@ -99,7 +104,8 @@ pub struct Project {
 }
 
 /// What `App::open` opens: a new session in `cwd`, or `resume`'s.
-/// `theme` is the syntect theme code blocks are highlighted with.
+/// `theme` is the syntect theme code blocks are highlighted with; a diff
+/// takes its dark and light variant (A95).
 #[derive(uniffi::Record)]
 pub struct OpenRequest {
     pub cwd: String,
@@ -107,12 +113,13 @@ pub struct OpenRequest {
     pub theme: String,
 }
 
-/// `StyledSpan` with its theme colour as `0xRRGGBB`.
+/// `StyledSpan` with its theme colours as `0xRRGGBB`.
 #[derive(uniffi::Record)]
 pub struct Span {
     pub text: String,
     pub token: StyleToken,
     pub rgb: Option<u32>,
+    pub light: Option<u32>,
     pub bold: bool,
     pub italic: bool,
     pub strike: bool,
@@ -152,6 +159,10 @@ pub enum TimelinePatch {
 #[uniffi::remote(Record)]
 pub struct Status {
     pub queued: u32,
+    pub mode: Option<PermissionMode>,
+    pub next_mode: Option<PermissionMode>,
+    pub model: Option<ModelId>,
+    pub effort: Option<Effort>,
 }
 
 #[uniffi::remote(Record)]
@@ -350,7 +361,19 @@ pub struct MeterText {
     pub rate_detail: String,
     pub rows: Vec<MeterRow>,
     pub context: String,
+    pub context_share: String,
+    pub context_parts: Vec<ContextPart>,
+    pub context_free: String,
+    pub cache_hit: String,
     pub footnote: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct ContextPart {
+    pub kind: String,
+    pub label: String,
+    pub tokens: String,
+    pub share: f64,
 }
 
 #[uniffi::remote(Record)]
@@ -390,6 +413,7 @@ pub enum Intent {
     Send {
         text: String,
         attachments: Vec<Attachment>,
+        confirm_think: bool,
     },
     Approve {
         call: CallId,
@@ -403,6 +427,7 @@ pub enum Intent {
     Queue {
         text: String,
         attachments: Vec<Attachment>,
+        confirm_think: bool,
     },
     Compact {
         focus: Option<String>,

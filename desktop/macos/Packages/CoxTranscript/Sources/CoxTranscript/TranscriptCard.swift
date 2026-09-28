@@ -82,10 +82,11 @@ extension ToolCard.Content {
 }
 
 extension DiffLineView.Line {
-  /// The gutter shows the new number, or the old one for a removed line. The runs stay plain:
-  /// a span's `rgb` is the session's syntect theme, which knows neither the light appearance
-  /// nor DS§8's contrast floor, and no `StyleToken` names a syntax role yet. The core cut the
-  /// spans at every changed word's edge (T37.23.11), so a span is marked whole by where it starts.
+  /// The gutter shows the new number, or the old one for a removed line. A run takes the
+  /// session theme's colours (A95): the core highlighted it with the theme's dark (`rgb`) and
+  /// light variant, and `CodeRun` draws the one the view's appearance asks for; a run with no
+  /// colour stays plain. The core cut the spans at every changed word's edge (T37.23.11), so a
+  /// span is marked whole by where it starts.
   init(_ line: DiffLine) {
     let kind: DiffLineView.Kind =
       switch line.kind {
@@ -98,7 +99,8 @@ extension DiffLineView.Line {
     let runs = line.spans.map { span in
       defer { offset += UInt32(span.text.utf8.count) }
       let changed = line.words.contains { $0.start <= offset && offset < $0.end }
-      return CodeRun(span.text, isChanged: changed)
+      let theme = span.rgb.map { CodeRun.Theme(light: span.light ?? $0, dark: $0) }
+      return CodeRun(span.text, isChanged: changed, theme: theme)
     }
     self.init(kind: kind, number: number, runs: runs)
   }

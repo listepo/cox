@@ -26,7 +26,8 @@ pub struct Timeline {
     /// Events applied so far, less `StateChanged`; keys the blocks no
     /// event id names.
     seq: u64,
-    /// The syntect theme code blocks are highlighted with.
+    /// The syntect theme code blocks are highlighted with; a diff takes its
+    /// dark and light variant (A95).
     theme: String,
     /// Calls not done yet: their input writes the done summary.
     calls: Vec<ToolCall>,
@@ -536,7 +537,7 @@ impl Timeline {
 mod tests {
     use cox_protocol::ids::TurnId;
     use cox_protocol::types::{
-        CompactReason, Job, ModelId, Risk, Segments, Tier, TodoState, ToolResult, Why,
+        CompactReason, Diff, Job, ModelId, Risk, Segments, Tier, TodoState, ToolResult, Why,
     };
     use serde_json::json;
 
@@ -742,6 +743,47 @@ mod tests {
             structured: Some(Box::new(list)),
         };
         timeline.apply(&Event::ToolCallDone { call_id, result });
+    }
+
+    #[test]
+    fn a_rust_edits_keyword_run_carries_the_dark_and_the_light_colour() {
+        let mut timeline = Timeline::new("base16-ocean.dark");
+        let call = ToolCall {
+            id: CallId::new(),
+            name: "edit".into(),
+            input: json!({}),
+            risk: Risk::ReadOnly,
+            subject: String::new(),
+            segments: None,
+        };
+        let call_id = call.id;
+        timeline.apply(&Event::ToolCallRequested { call });
+        let diff = Diff {
+            path: "src/lib.rs".into(),
+            unified: "@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n".into(),
+        };
+        let result = ToolResult {
+            ok: true,
+            visible: String::new(),
+            archive: None,
+            bytes: 0,
+            duration_ms: 0,
+            diff: Some(diff),
+            structured: None,
+        };
+        timeline.apply(&Event::ToolCallDone { call_id, result });
+        let Some(BlockKind::Tool { diff: Some(m), .. }) = timeline.blocks().last().map(|b| &b.kind)
+        else {
+            panic!("expected an edit block with its diff");
+        };
+        let spans = &m.hunks[0].lines[1].spans;
+        let keyword = spans
+            .iter()
+            .find(|s| s.text == "fn")
+            .expect("the keyword run");
+        assert!(keyword.rgb.is_some() && keyword.light.is_some());
+        // base16-ocean's two variants differ in their default foreground.
+        assert!(spans.iter().any(|s| s.light.is_some() && s.light != s.rgb));
     }
 
     #[test]

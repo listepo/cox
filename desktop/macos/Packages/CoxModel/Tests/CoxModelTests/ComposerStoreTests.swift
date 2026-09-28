@@ -200,3 +200,51 @@ private func usage(done: Bool) -> UsageView {
   store.edit("second, edited")
   #expect(!store.isRecalling)
 }
+
+/// T37.24.7: the chips show the mode and the model with its effort as the core's status reports
+/// them, and ⇧⇥ asks for the mode the core named next, leaving the chip to the core's answer.
+@MainActor
+@Test func theStatusNamesTheModeAndModelAndCycleAsksForTheCoresNextMode() async {
+  let (store, session) = composer()
+  #expect(store.mode == nil && store.model == nil)
+  await store.cycleMode()
+  #expect(session.sent.isEmpty)
+
+  let status = Status(mode: .default, nextMode: .plan, model: "claude-sonnet-5", effort: .high)
+  store.session.apply([.status(status: status)])
+  #expect(store.mode == .default)
+  #expect(store.model == "claude-sonnet-5 · high")
+  await store.cycleMode()
+  #expect(session.sent == [.setMode(mode: .plan)])
+  #expect(store.mode == .default)
+}
+
+/// T37.24.10 (A103): the think toggle sends one turn with `confirmThink` — sent now or queued —
+/// then turns itself off; a `/` command line is not a turn, so the toggle waits for one.
+@MainActor
+@Test func theThinkToggleConfirmsOneTurnThenTurnsItselfOff() async {
+  let (store, session) = composer()
+  store.toggleThink()
+  store.edit("/compact")
+  await store.submit()
+  #expect(store.think, "a command line is not the turn the toggle is for")
+
+  store.edit("plan the refactor")
+  await store.submit()
+  store.edit("then do it")
+  await store.submit()
+  #expect(!store.think)
+
+  store.session.apply([.usage(usage: usage(done: false))])
+  store.toggleThink()
+  store.edit("and review it")
+  await store.submit()
+  #expect(
+    session.sent == [
+      .command(line: "/compact"),
+      .send(text: "plan the refactor", attachments: [], confirmThink: true),
+      .send(text: "then do it", attachments: []),
+      .queue(text: "and review it", attachments: [], confirmThink: true),
+    ])
+  #expect(!store.think)
+}

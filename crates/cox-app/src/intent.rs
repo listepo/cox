@@ -13,9 +13,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Intent {
+    /// `confirm_think`: this one turn goes to the think tier, as `/think`
+    /// sends it (A103).
     Send {
         text: String,
         attachments: Vec<Attachment>,
+        #[serde(default)]
+        confirm_think: bool,
     },
     Approve {
         call: CallId,
@@ -27,10 +31,13 @@ pub enum Intent {
         text: Option<String>,
     },
     Interrupt,
-    /// Sent while a turn runs: becomes the next turn when it ends.
+    /// Sent while a turn runs: becomes the next turn when it ends, with
+    /// the `confirm_think` it was sent with.
     Queue {
         text: String,
         attachments: Vec<Attachment>,
+        #[serde(default)]
+        confirm_think: bool,
     },
     Compact {
         focus: Option<String>,
@@ -107,11 +114,19 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
         })
     };
     match intent {
-        Intent::Send { text, attachments } => Ok(Dispatch::Submit {
-            submission: turn(text, attachments)?,
+        Intent::Send {
+            text,
+            attachments,
+            confirm_think,
+        } => Ok(Dispatch::Submit {
+            submission: turn(text, attachments, confirm_think)?,
             spawn: true,
         }),
-        Intent::Queue { text, attachments } => Ok(Dispatch::Queue(turn(text, attachments)?)),
+        Intent::Queue {
+            text,
+            attachments,
+            confirm_think,
+        } => Ok(Dispatch::Queue(turn(text, attachments, confirm_think)?)),
         Intent::Approve { call, decision } => now(Submission::Approve {
             call_id: call,
             decision,
@@ -146,14 +161,18 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
 }
 
 /// A turn needs text or an attachment.
-fn turn(text: String, attachments: Vec<Attachment>) -> Result<Submission, IntentError> {
+fn turn(
+    text: String,
+    attachments: Vec<Attachment>,
+    confirm_think: bool,
+) -> Result<Submission, IntentError> {
     if text.trim().is_empty() && attachments.is_empty() {
         return Err(IntentError::Empty);
     }
     Ok(Submission::UserTurn {
         text,
         attachments,
-        confirm_think: false,
+        confirm_think,
     })
 }
 
