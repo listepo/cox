@@ -785,8 +785,8 @@ S['26-menu-bar-extra-m2']=()=>`<div class="menubar"><span style="font-weight:800
   <div class="sep"></div><div class="it">Today <span class="x">$4.02 · 7 sessions</span></div><div class="it">New session… <span class="x">⌥⌘N</span></div><div class="it">Open cox <span class="x">⌘O</span></div></div>
  <div class="window" style="left:80px;top:90px;width:1000px;height:700px;opacity:.9;background:#1e1e1e"><div class="traffic"><i></i><i></i><i></i></div></div>`;
 
-S['27-external-agents-acp-m3']=()=>shell({side:'cc',sideOpt:{ext:true},tb:{title:'Refactor checkout form',branch:'wt/checkout-form',model:'Claude Code · ACP',cost:'—',ctx:'—'},center:`<div class="reading">
- <div class="notice" style="margin-top:10px">${I('plug',13)}<span>This session is driven by <b>Claude Code</b> over the Agent Client Protocol. Its own model, auth and billing apply; cox renders the stream and answers approvals.</span></div>
+S['27-external-agents-acp-m3']=()=>shell({side:'cc',sideOpt:{ext:true},tb:{title:'Refactor checkout form',branch:'wt/checkout-form',model:'Claude Agent · ACP',cost:'—',ctx:'—'},center:`<div class="reading">
+ <div class="notice" style="margin-top:10px">${I('plug',13)}<span>This session is driven by <b>Claude Agent</b> over the Agent Client Protocol. Its own model, auth and billing apply; cox renders the stream and answers approvals.</span></div>
  ${user('Split CheckoutForm into address, payment and summary components.',1)}
  ${asst('<p>I\'ll extract three components and keep the form state in the parent.</p>')}
  ${tool({icon:'doc',sum:'Read <b>src/checkout/CheckoutForm.tsx</b>',time:''})}
@@ -794,7 +794,7 @@ S['27-external-agents-acp-m3']=()=>shell({side:'cc',sideOpt:{ext:true},tb:{title
  ${tool({icon:'pencil',sum:'Editing <b>src/checkout/PaymentFields.tsx</b>',state:'run',time:''})}
  <div class="card" style="margin-top:14px"><div style="font-size:12px;color:var(--sec);margin-bottom:6px">Compare with a second agent on the same prompt</div><div style="display:flex;gap:8px"><span class="pb">${I('people',13)} Best of 2: + Codex</span><span class="pb">+ cox · Sonnet 5</span></div></div>
  </div>`,below:composer({}),inspTab:'Info',inspBody:`<div class="ih"><span>AGENTS</span></div>
- ${[['cox','built in','#1b2440'],['Claude Code','ACP · claude-agent-acp','#c96442'],['Codex','ACP · codex acp','#111'],['Cursor','plugin · agent acp','#555']].map(([n,d,c])=>`<div class="fr"><span class="agentb" style="background:${c}">${n.split(' ')[0]}</span><span class="p">${n}<div style="font-size:11px;color:var(--sec)">${d}</div></span></div>`).join('')}
+ ${[['cox','built in','#1b2440'],['Claude Agent','ACP · claude-agent-acp --hide-claude-auth','#c96442'],['Codex','ACP · codex acp','#111'],['Cursor','plugin · agent acp','#555']].map(([n,d,c])=>`<div class="fr"><span class="agentb" style="background:${c}">${n.split(' ')[0]}</span><span class="p">${n}<div style="font-size:11px;color:var(--sec)">${d}</div></span></div>`).join('')}
  <div style="font-size:11.5px;color:var(--sec);margin-top:10px">External agents render in the same transcript and review UI. cox still applies its own sandbox to the process it spawns.</div>`});
 
 

@@ -49,3 +49,9 @@ public final class AgentPicker {
     OpenSession(cwd: cwd, theme: theme, agent: chosen)
   }
 }
+
+extension [AgentChoice] {
+  /// What the UI calls the agent `name`: its row's label, or the config name when the list does
+  /// not have it (not read yet, or the agent was removed from the config since).
+  public func label(of name: String) -> String { first { $0.name == name }?.label ?? name }
+}

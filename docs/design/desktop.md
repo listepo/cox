@@ -63,7 +63,7 @@ that already exist in cox's core and that the competitors lack or hide:
 | **Any model** | Anthropic, OpenAI, OpenRouter, Ollama, LM Studio, vLLM; tier routing visible per turn | `cox-provider`, `cox-models`, `TurnStarted{tier, model}` |
 | **Worktrees that clean up** | Each session's worktree with its disk size, merged/stale state and one-click prune | `Worktrees` trait, `GitWorktrees` |
 
-Later (M2/M3) edges from R9.2: an ACP host that renders Claude Code, Codex and
+Later (M2/M3) edges from R9.2: an ACP host that renders Claude Agent, Codex and
 Cursor (P35) sessions in the same UI (Zed's and JetBrains Air's model), a
 browser pane the agent drives, best-of-n across models, plugin panels drawn
 natively from the WASM widget tree.

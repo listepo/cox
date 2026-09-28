@@ -184,3 +184,21 @@ private final class Titled: WorkspaceClient, @unchecked Sendable {
   #expect((store.sections.first?.rows.count ?? 0) >= 2)
   #expect(store.sections.first?.rows.first?.title == "Untitled session")
 }
+
+@MainActor
+@Test func anExternalAgentsSessionRowNamesItsAgentFirst() {
+  let store = SidebarStore(
+    workspace: FixtureWorkspace(
+      projects: [Project(root: "/src/cox", name: "cox")],
+      sessions: [
+        "/src/cox": [
+          SessionEntry(
+            id: "acp", title: "Refactor", cwd: "/src/cox", updatedAt: ago(7200), turns: 1,
+            agent: "claude")
+        ]
+      ]),
+    inbox: nil, locale: Locale(identifier: "en_US_POSIX"))
+  store.refresh(now: now)
+  let row = store.sections.flatMap(\.rows).first { $0.id == "acp" }
+  #expect(row?.subtitle == "claude · 2h ago · done")
+}

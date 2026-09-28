@@ -10,8 +10,9 @@
 // pane under the column (T51.6; the window asks before closing over a running command), ⌘⇧B
 // shows the browser pane beside it (T51.10), plugin panels sit above the composer and a plugin
 // overlay shows as a sheet (T52.17), File › Connect to Host… lists a remote host's sessions in
-// the sidebar and opens one through that host (T52.21), and the Appearance popover writes
-// `[desktop.appearance]`.
+// the sidebar and opens one through that host (T52.21), New session asks which agent drives it
+// and an external agent's transcript opens with its ACP banner (T52.8), and the Appearance
+// popover writes `[desktop.appearance]`.
 // A popped-out window (T51.11) is the same view on one session with no sidebar; every window
 // on a session shares its stores through `AppStore`.
 
@@ -57,6 +58,8 @@ struct SessionWindow: View {
   @State private var isBrowserVisible = false
   /// The Connect to Host sheet, while it shows (T52.21).
   @State private var connecting: ConnectHostSheet.State?
+  /// The New-session sheet's agents, while it shows (T52.8).
+  @State private var picking: AgentPicker?
   @Environment(\.coxAppearance) private var base
   @Environment(\.openWindow) private var openWindow
 
@@ -100,6 +103,7 @@ struct SessionWindow: View {
         }
       }
     }
+    .newSessionSheet($picking) { agent in await open(resume: nil, agent: agent) }
   }
 
   private var isConnecting: Binding<Bool> {
@@ -204,6 +208,12 @@ struct SessionWindow: View {
     } else if let showing {
       HStack(spacing: 0) {
         VStack(spacing: 0) {
+          if let agent = showing.agent(in: model.sidebar) {
+            AcpBanner(agent: agent)
+              .frame(maxWidth: Size.readingWidth)
+              .padding(.horizontal, Space.xl)
+              .padding(.top, Space.ml)
+          }
           TranscriptView(store: showing.store, send: send)
             .composer(showing.composer)
           let panels = PluginWidgets.panels(showing.store)
@@ -240,7 +250,8 @@ struct SessionWindow: View {
   @ViewBuilder private func inspector(_ tab: InspectorTab) -> some View {
     if let showing {
       SessionInspector(
-        store: showing.store, tab: tab, cacheHit: model.settings?.cacheHitScope ?? .turn
+        store: showing.store, tab: tab, cacheHit: model.settings?.cacheHitScope ?? .turn,
+        agents: showing.agents
       ) { request in
         switch request {
         // The tab's Review button shows Review, or hides it again.
@@ -294,7 +305,7 @@ struct SessionWindow: View {
     case .hide: toggleSidebar()
     case .filter(let text): model.sidebar.filter = text
     case .toggle(let project): model.sidebar.toggle(project)
-    case .newSession: Task { await open(resume: nil) }
+    case .newSession: Task { await newSession() }
     case .popOut(let session, let asTab): openPopOut(session, asTab: asTab)
     case .reconnect(let group):
       if let host = RemoteHosts.host(section: group) {
@@ -340,9 +351,15 @@ struct SessionWindow: View {
     screen.appearance = AppearancePopover.State(settings)
   }
 
-  /// Opens a new session, or resumes `resume` where it last ran, and shows it. A session another
-  /// window already shows is joined, not opened again.
-  private func open(resume: String?) async {
+  /// New session: asks who drives it first when an external agent is configured (T52.8).
+  private func newSession() async {
+    picking = await NewSession.picker(model.launch)
+    if picking == nil { await open(resume: nil) }
+  }
+
+  /// Opens a new session, driven by `agent` when one was picked, or resumes `resume` where it
+  /// last ran, and shows it. A session another window already shows is joined, not opened again.
+  private func open(resume: String?, agent: String? = nil) async {
     guard !isOpening else { return }
     isOpening = true
     defer { isOpening = false }
@@ -359,7 +376,7 @@ struct SessionWindow: View {
         let core: any CoreClient
         if let remote { core = remote.workspace } else { core = try model.launch.core.get() }
         let client = try await core.open(
-          OpenSession(cwd: cwd, resume: resume, theme: Self.syntaxTheme))
+          OpenSession(cwd: cwd, resume: resume, theme: Self.syntaxTheme, agent: agent))
         shared = model.registry.adopt(client, window: windowID)
       }
       let client = shared.store.session
@@ -372,6 +389,10 @@ struct SessionWindow: View {
         opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
       }
       model.sidebar.refresh()
+      // Loads the granted plugins, so after it shows; a remote cwd is not a path here either.
+      if remote == nil, let live = try? model.launch.live.get() {
+        opened[client.id]?.agents = (try? await live.agents(cwd: cwd)) ?? []
+      }
       // After it shows: Info asks git about the cwd, which can take a while.
       if let info = try? await client.info() {
         model.register(shared.store, as: info.session)

@@ -26,6 +26,8 @@ public struct SessionInspector: View {
   let store: SessionStore
   let tab: InspectorTab
   let cacheHit: CacheHitScope
+  /// Who can drive a session in its cwd, for the Info tab's Agents list (T52.8).
+  let agents: [AgentChoice]
   let request: @MainActor (Request) -> Void
   @State private var changes = ChangesTabState()
   @State private var costs = CostHistoryState()
@@ -35,10 +37,11 @@ public struct SessionInspector: View {
   @State private var output: Output?
 
   public init(
-    store: SessionStore, tab: InspectorTab, cacheHit: CacheHitScope,
+    store: SessionStore, tab: InspectorTab, cacheHit: CacheHitScope, agents: [AgentChoice] = [],
     request: @escaping @MainActor (Request) -> Void
   ) {
     (self.store, self.tab, self.cacheHit, self.request) = (store, tab, cacheHit, request)
+    self.agents = agents
   }
 
   public var body: some View {
@@ -65,7 +68,7 @@ public struct SessionInspector: View {
       ContextTab(
         state: ContextTab.State(store.contextTab(cacheHit: cacheHit), costs: costs), send: compact)
     case .tasks: TasksTab(state: TasksTab.State(store.tasks), send: opened)
-    case .info: InfoTab(state: InfoTab.State(info))
+    case .info: InfoTab(state: InfoTab.State(info, agents: agents))
     }
   }
 
@@ -205,13 +208,23 @@ extension TasksTab.State {
 }
 
 extension InfoTab.State {
-  init(_ tab: InfoTabState) {
+  init(_ tab: InfoTabState, agents: [AgentChoice] = []) {
     self.init(
       session: tab.session.map {
         KeyValueGrid.Row(label: $0.label, values: $0.values, isDetail: $0.isDetail)
       },
       config: tab.config.map {
         KeyValueGrid.Row(label: $0.label, values: $0.values, isDetail: $0.isDetail)
-      })
+      },
+      agents: agents.map { AgentsList.Row($0) })
+  }
+}
+
+extension AgentsList.Row {
+  /// One agent as the Info tab and the New-session sheet list it.
+  public init(_ agent: AgentChoice) {
+    self.init(
+      id: agent.id, label: agent.label, origin: agent.origin, launch: agent.launch,
+      unavailable: agent.unavailable)
   }
 }

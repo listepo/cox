@@ -1,7 +1,9 @@
 // The session toolbar's figures (DT§5.1 Toolbar, DS§6.4 `SessionToolbar`): the session's title and
 // where it lives, its cost and how full its context is, from the store's meter, the session's row
-// in `cox.db` and its Info. Here, not in CoxUI, because these decide what the bar shows (DS§1);
-// the app copies them into `SessionToolbar.State` field for field.
+// in `cox.db` and its Info; an external agent's session names its agent in the model chip and
+// has no cost, since its billing is the agent's own (mockup 27). Here, not in CoxUI, because
+// these decide what the bar shows (DS§1); the app copies them into `SessionToolbar.State` field
+// for field.
 
 import CoxClient
 import Foundation
@@ -12,8 +14,12 @@ public struct ToolbarState: Equatable, Sendable {
   /// The project's name and the linked worktree's branch, if any.
   public var project = ""
   public var branch: String?
-  /// `$0.42`, the session's cost so far.
+  /// `$0.42`, the session's cost so far; `—` for an external agent's session, which cox's
+  /// ledger never sees.
   public var cost = usd(0)
+  /// `Claude Agent · ACP` for an external agent's session; `nil` for cox's own, whose chip shows
+  /// the composer's model.
+  public var model: String?
   /// `38%` of the window, as the core formatted the share; `–` while the window is unknown.
   public var context = "–"
   /// The share the ring fills, 0…1: the split's parts laid end to end.
@@ -21,14 +27,23 @@ public struct ToolbarState: Equatable, Sendable {
 
   public init() {}
 
-  /// `entry` is the session's row once `cox.db` has one; `info` what the session reported.
-  public init(usage: UsageView?, entry: (session: SessionEntry, project: Project)?, info: Info?) {
+  /// `entry` is the session's row once `cox.db` has one; `info` what the session reported;
+  /// `agents` what the UI calls each external agent.
+  public init(
+    usage: UsageView?, entry: (session: SessionEntry, project: Project)?, info: Info?,
+    agents: [AgentChoice] = []
+  ) {
     if let entry { title = entry.session.name }
+    let agent = entry?.session.agent
+    if let agent {
+      model = "\(agents.label(of: agent)) · ACP"
+      cost = "—"
+    }
     let cwd = info?.cwd ?? entry?.session.cwd ?? ""
     project = entry?.project.name ?? (cwd.isEmpty ? "" : URL(filePath: cwd).lastPathComponent)
     branch = info?.worktree?.branch
     guard let usage else { return }
-    cost = usd(usage.session.costUsd)
+    if agent == nil { cost = usd(usage.session.costUsd) }
     let split = ContextSplit(usage.text)
     // `7.6% of 1M`: the percent the core formatted, without the window it is of.
     if let percent = split.share.components(separatedBy: " of ").first, !percent.isEmpty {

@@ -213,9 +213,10 @@ public final class SidebarStore {
       case .failed: (.error, [ago, "failed"])
       case .idle: (.idle, [ago, entry.turns > 0 ? "done" : nil])
       }
+    // An external agent's session says whose it is first (mockup 27).
     return SidebarRow(
       id: entry.id, session: entry.id, status: status, title: entry.name,
-      subtitle: subtitle.compactMap { $0 }.joined(separator: " · "),
+      subtitle: ([entry.agent] + subtitle).compactMap { $0 }.joined(separator: " · "),
       cost: entry.costUsd > 0 ? usd(entry.costUsd) : nil, isReadOnly: false)
   }
 

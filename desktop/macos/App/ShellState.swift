@@ -21,6 +21,14 @@ struct OpenedSession {
   var info: Info?
   /// The models its cwd's config offers; empty until read.
   var models: [ModelChoice] = []
+  /// Who can drive a session in its cwd (T52.8): the Info tab's Agents list and what the UI
+  /// calls the session's own agent. Empty until read.
+  var agents: [AgentChoice] = []
+
+  /// What the UI calls the external agent driving it, from its row in `cox.db`; `nil` for cox.
+  func agent(in sidebar: SidebarStore) -> String? {
+    sidebar.entry(store.session.id)?.session.agent.map { agents.label(of: $0) }
+  }
   /// Its terminal tabs' views, kept while each tab is open (T51.6).
   let terminals = TerminalSurfaces()
 
@@ -46,10 +54,12 @@ enum ShellState {
   ) -> SessionToolbar.State {
     guard let open else { return SessionToolbar.State(popover: popover) }
     let figures = ToolbarState(
-      usage: open.store.usage, entry: sidebar.entry(open.store.session.id), info: open.info)
+      usage: open.store.usage, entry: sidebar.entry(open.store.session.id), info: open.info,
+      agents: open.agents)
     return SessionToolbar.State(
       title: figures.title, project: figures.project, branch: figures.branch,
-      model: open.composer.model ?? "", mode: open.store.status.mode.map(SessionMode.init) ?? .ask,
+      model: figures.model ?? open.composer.model ?? "",
+      mode: open.store.status.mode.map(SessionMode.init) ?? .ask,
       cost: figures.cost, context: figures.context, contextFraction: figures.contextFraction,
       isRunning: open.store.isTurnRunning, popover: popover,
       pluginStatus: PluginWidgets.status(open.store))
@@ -65,6 +75,13 @@ enum ShellState {
           },
           selected: section.rows.first(where: \.isSelected)?.id)
       })
+  }
+
+  /// The New-session sheet from the picker's list and pick.
+  static func picker(_ picker: AgentPicker) -> AgentPickerSheet.State {
+    AgentPickerSheet.State(
+      rows: picker.choices.map { AgentsList.Row($0) }, selection: picker.selection.id,
+      failure: picker.failure)
   }
 
   /// The local list, then one group per remote host (T52.21).
