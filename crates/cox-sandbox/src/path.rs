@@ -39,11 +39,21 @@ pub fn confine(roots: &[PathBuf], cwd: &Path, input: &str) -> Result<PathBuf, To
 
     let joined = cwd.join(expand_tilde(input)?);
 
-    // Step 3: fast, symlink-free rejection.
+    let canon_roots: Vec<PathBuf> = roots
+        .iter()
+        .map(|r| std::fs::canonicalize(r).unwrap_or_else(|_| lexically_normalize(r)))
+        .collect();
+
+    // Step 3: fast, symlink-free rejection. A root is matched as given and
+    // canonical, so an already-canonical path under a symlinked root (a
+    // checkpoint row's path when cwd is `/var/…` on macOS) is not refused
+    // here; step 4 still decides.
     let lexical = lexically_normalize(&joined);
     if !roots
         .iter()
-        .any(|r| lexical.starts_with(lexically_normalize(r)))
+        .map(|r| lexically_normalize(r))
+        .chain(canon_roots.iter().cloned())
+        .any(|r| lexical.starts_with(r))
     {
         return Err(confined(&lexical, roots));
     }
@@ -58,10 +68,6 @@ pub fn confine(roots: &[PathBuf], cwd: &Path, input: &str) -> Result<PathBuf, To
     }
     let resolved = lexically_normalize(&resolved);
 
-    let canon_roots: Vec<PathBuf> = roots
-        .iter()
-        .map(|r| std::fs::canonicalize(r).unwrap_or_else(|_| lexically_normalize(r)))
-        .collect();
     if canon_roots.iter().any(|r| resolved.starts_with(r)) {
         Ok(resolved)
     } else {
@@ -204,6 +210,26 @@ mod tests {
 
         let err = confine(std::slice::from_ref(&root), &root, "../outside.txt")
             .expect_err("must confine");
+        assert!(matches!(err, ToolError::Confined { .. }));
+    }
+
+    /// A rewind restores the canonical paths its checkpoint rows hold,
+    /// while the root is the cwd as the session was opened.
+    #[cfg(unix)]
+    #[test]
+    fn a_canonical_path_under_a_symlinked_root_is_confined() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let real = std::fs::canonicalize(dir.path()).expect("canonicalize tempdir");
+        std::fs::create_dir(real.join("real")).expect("mkdir");
+        std::os::unix::fs::symlink(real.join("real"), real.join("link")).expect("symlink");
+        let (root, file) = (real.join("link"), real.join("real/a.txt"));
+        std::fs::write(&file, b"hi").expect("write fixture");
+
+        let input = file.to_string_lossy();
+        let got = confine(std::slice::from_ref(&root), &root, &input).expect("confine");
+        assert_eq!(got, file);
+        let outside = real.join("b.txt").to_string_lossy().into_owned();
+        let err = confine(std::slice::from_ref(&root), &root, &outside).expect_err("outside");
         assert!(matches!(err, ToolError::Confined { .. }));
     }
 }
