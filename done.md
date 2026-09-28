@@ -5633,3 +5633,18 @@ Deviations: Motion and Material collections beyond the card; ~190 LOC plus tests
 Check: `cd desktop/design && mise exec -- npm test` 6/6 pass (also on the merged tree); `npm run figma -- --out <dir>` writes one script; `get_variable_defs` on 4:2 returns the token names; about 15 Figma calls.
 
 Not done: fonts — Figma has no SF Mono (mono styles skipped, Roboto Mono stand-in on screen 28) and SF Pro loads but does not render (115 of 135 text layers `hasMissingFont`); the choice is the creator's. The Frosted tile's selection ring does not show; screens other than 28 are images only.
+
+#### T37.22.9 Session titles in the TUI and the app, with rename
+
+Depends: T37.22.8 · Size: ~150 · Files: `crates/cox-tui`, `crates/cox` (a `cox rename` or `/rename`), cox-app/cox-ffi, CoxModel, the app's toolbar and sidebar
+Goal: A113. The TUI shows the session title where it shows the session today and in the resume list; `/rename <title>` in the TUI and a rename in the app (double-click the toolbar title or a sidebar row's context menu) set it through one `Submission` that marks the title as the user's. The app's toolbar and sidebar read the title from the store and follow `TitleSet`.
+Check: a TUI snapshot with a title; a test that a user rename survives a later generated title; a screenshot of the app with titled sessions.
+Plan: add `Submission::Rename { title }` in cox-protocol → core stores it via `Store::session_title_set(.., User)` and emits `TitleSet`; TUI shows the title in the header and resume list and gets `/rename`; cox-app/cox-ffi expose rename and forward `TitleSet`; CoxModel updates the session title; the app renames by double-clicking the toolbar title and from a sidebar row's context menu. Verify: scoped nextest, a TUI insta snapshot, a store/core test that a user title survives a generated one, Swift tests of the touched packages, one app screenshot.
+Status: done 2026-09-28
+Result: `Submission::Rename { title }`: core cleans it (`title::user_title`), stores it as `TitleSource::User` and emits `TitleSet { by_user: true }`; no generated title follows. TUI: `/rename <title>`, the title in the status line before the mode badge (first segment dropped when narrow), seeded from the store on resume. App: double-click the toolbar title for an inline edit, or a sidebar row's "Rename…" menu, both through `Intent.rename`; the sidebar refreshes on `TitleSet`.
+
+Deviations: a closed session has no core, so cox-app `App::rename` (cox-ffi `rename(session:title:)`) writes the user title to the store directly with the same cleaning; the TUI has no header, so the title sits in the status line; 31 files, ~+566/−88; `docs/protocol.jsonschema` regenerated, `/rename` added to the help snapshot and SVG.
+
+Check: nextest cox-protocol, cox-core, cox-store, cox-tui, cox-app, cox-ffi, cox 934 passed (incl. `status_line_shows_the_session_title_and_rename_submits_it`, `a_user_rename_survives_a_later_generated_title`, `rename_is_a_user_title_and_no_generated_title_follows`, `a_rename_reaches_the_session_list_open_or_closed`); clippy and fmt clean; Swift CoxModel 80, CoxUI 182, CoxCore 13, swift-format and swiftlint strict clean; screenshot of three titled sessions in the sidebar (scripted provider). On the merged tree (with T37.22.7): 18 title/rename/schema tests and cox-app + cox-ffi 110 passed, clippy clean.
+
+Not done: the screenshot shows no in-app rename (osascript keystrokes did not reach the app); rename in the app is covered by tests only.

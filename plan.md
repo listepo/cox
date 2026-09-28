@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.2 | todo | P2 | 4 | 0% | |
-| T37.22.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2776,13 +2775,6 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
 Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
 Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
-
-#### T37.22.9 Session titles in the TUI and the app, with rename
-
-Depends: T37.22.8 · Size: ~150 · Files: `crates/cox-tui`, `crates/cox` (a `cox rename` or `/rename`), cox-app/cox-ffi, CoxModel, the app's toolbar and sidebar
-Goal: A113. The TUI shows the session title where it shows the session today and in the resume list; `/rename <title>` in the TUI and a rename in the app (double-click the toolbar title or a sidebar row's context menu) set it through one `Submission` that marks the title as the user's. The app's toolbar and sidebar read the title from the store and follow `TitleSet`.
-Check: a TUI snapshot with a title; a test that a user rename survives a later generated title; a screenshot of the app with titled sessions.
-Plan: add `Submission::Rename { title }` in cox-protocol → core stores it via `Store::session_title_set(.., User)` and emits `TitleSet`; TUI shows the title in the header and resume list and gets `/rename`; cox-app/cox-ffi expose rename and forward `TitleSet`; CoxModel updates the session title; the app renames by double-clicking the toolbar title and from a sidebar row's context menu. Verify: scoped nextest, a TUI insta snapshot, a store/core test that a user title survives a generated one, Swift tests of the touched packages, one app screenshot.
 
 #### T37.22.10 The running app draws pane content under the glass
 
