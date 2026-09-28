@@ -12,6 +12,9 @@
 //! the same per-plugin state through `check_plugins`, so the two surfaces
 //! never disagree.
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
+//! The API-key, sandbox and git checks and the row type live in
+//! `cox_session::doctor` (T37.31), shared with the desktop app's first-run
+//! checklist.
 
 use std::collections::HashMap;
 use std::env;
@@ -22,52 +25,11 @@ use std::process::Stdio;
 #[cfg(feature = "plugins")]
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-
 use cox_protocol::Store as _;
 use cox_protocol::config::McpServerConfig;
 use cox_provider::usage::{Price, load_price_table};
-
-/// One check result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResult {
-    pub check: String,
-    pub status: String,
-    pub detail: String,
-    pub fix: String,
-}
-
-impl CheckResult {
-    /// Create an `ok` result.
-    fn ok(check: &str, detail: String) -> Self {
-        CheckResult {
-            check: check.to_string(),
-            status: "ok".to_string(),
-            detail,
-            fix: String::new(),
-        }
-    }
-
-    /// Create a `warn` result.
-    fn warn(check: &str, detail: String, fix: String) -> Self {
-        CheckResult {
-            check: check.to_string(),
-            status: "warn".to_string(),
-            detail,
-            fix,
-        }
-    }
-
-    /// Create a `fail` result.
-    fn fail(check: &str, detail: String, fix: String) -> Self {
-        CheckResult {
-            check: check.to_string(),
-            status: "fail".to_string(),
-            detail,
-            fix,
-        }
-    }
-}
+pub use cox_session::doctor::CheckResult;
+use cox_session::doctor::{check_api_keys, check_git, check_sandbox};
 
 /// Run all doctor checks. Returns exit code 0 when no `fail`, 1 otherwise.
 /// `tui_theme` is `config.tui.theme`, shown (and queried when `"auto"`) by
@@ -247,120 +209,6 @@ fn db_result(opened: Result<(), cox_protocol::StoreError>, home: &std::path::Pat
             "db",
             format!("cannot open database: {}", e),
             format!("remove {} and retry", home.join("cox.db").display()),
-        ),
-    }
-}
-
-/// What the `code` tier's provider needs for a key (T30.21).
-#[derive(Debug, PartialEq)]
-enum KeyRequirement<'a> {
-    /// The section's name, the env var its `api_key_env` names, and whether
-    /// a missing key is fatal: Anthropic and Jev fail without one;
-    /// OpenAI-shaped sections run keyless against a local server.
-    Key(&'a str, &'a str, bool),
-    /// `local` never sends a key.
-    None,
-    /// No `[providers.<name>]` section: the session refuses to start, so
-    /// doctor must not call this "needs no key".
-    UnknownProvider(&'a str),
-}
-
-fn key_requirement(config: &cox_protocol::Config) -> KeyRequirement<'_> {
-    let section = config.tiers.code.provider.as_str();
-    let p = &config.providers;
-    match section {
-        "anthropic" => KeyRequirement::Key(section, p.anthropic.api_key_env.as_str(), true),
-        "typesafe" => KeyRequirement::Key(section, p.typesafe.api_key_env.as_str(), true),
-        "openai" => KeyRequirement::Key(section, p.openai.api_key_env.as_str(), false),
-        "local" => KeyRequirement::None,
-        // T30.15: same optional-key shape as `openai` — LM Studio runs
-        // keyless unless "Require Authentication" is on.
-        "lmstudio" => KeyRequirement::Key(section, p.lmstudio.api_key_env.as_str(), false),
-        _ => match p.custom.get(section) {
-            Some(c) => KeyRequirement::Key(section, c.api_key_env.as_str(), false),
-            None => KeyRequirement::UnknownProvider(section),
-        },
-    }
-}
-
-/// [`check_api_keys`]'s body with the credential lookup injected, so a test
-/// can exercise every branch (unknown provider, keyless, found, missing)
-/// without ever touching the real keyring (A49, T30.28).
-fn check_api_keys_with(
-    config: &cox_protocol::Config,
-    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
-) -> CheckResult {
-    let (section, env_var, required) = match key_requirement(config) {
-        KeyRequirement::Key(section, env_var, required) => (section, env_var, required),
-        KeyRequirement::None => {
-            return CheckResult::ok(
-                "API keys",
-                "the code tier's provider needs no key".to_string(),
-            );
-        }
-        KeyRequirement::UnknownProvider(section) => {
-            return CheckResult::fail(
-                "API keys",
-                format!("tiers.code.provider `{section}` has no [providers.{section}] section"),
-                format!(
-                    "add [providers.{section}] or point tiers.code.provider at a configured provider"
-                ),
-            );
-        }
-    };
-    if resolve(env_var, section).is_ok() {
-        return CheckResult::ok("API keys", format!("{section} key found"));
-    }
-    let detail = format!("{env_var} is not set and keyring entry 'cox/{section}' not found");
-    let fix = format!(
-        "set {env_var} or run `security add-generic-password -s cox -a {section} -w` (macOS) or your platform's keyring equivalent"
-    );
-    if required {
-        CheckResult::fail("API keys", detail, fix)
-    } else {
-        CheckResult::warn(
-            "API keys",
-            format!("{detail}; requests go out without a key"),
-            fix,
-        )
-    }
-}
-
-/// Resolves the key exactly as the provider will (`cox_provider::http::resolve_key`:
-/// the section's env var, then keyring `cox/<section>`), so doctor and the
-/// session never disagree about whether a key exists.
-fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
-    check_api_keys_with(config, cox_provider::http::resolve_key)
-}
-
-fn check_sandbox() -> CheckResult {
-    match cox_tools::sandbox::backend(cox_protocol::LinuxBackend::Auto) {
-        Some(backend) => CheckResult::ok("sandbox", backend.name().to_string()),
-        None => CheckResult::warn(
-            "sandbox",
-            "none: shell commands run unconfined".to_string(),
-            match env::consts::OS {
-                "macos" => "sandbox-exec is part of macOS; check your installation".to_string(),
-                "linux" => {
-                    "install bubblewrap: apt install bubblewrap (Debian/Ubuntu) or equivalent"
-                        .to_string()
-                }
-                _ => "sandbox is not supported on this platform".to_string(),
-            },
-        ),
-    }
-}
-
-fn check_git() -> CheckResult {
-    match ProcessCommand::new("git").arg("--version").output() {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout);
-            CheckResult::ok("git", version.trim().to_string())
-        }
-        _ => CheckResult::fail(
-            "git",
-            "git not found on PATH".to_string(),
-            "install git from https://git-scm.com/".to_string(),
         ),
     }
 }
@@ -1216,84 +1064,6 @@ mod tests {
         assert_eq!(warn.status, "warn");
         assert!(warn.detail.contains("send"), "{}", warn.detail);
         assert!(warn.detail.contains("transcript"), "{}", warn.detail);
-    }
-
-    #[test]
-    fn doctor_checks_the_key_the_code_tier_provider_names() {
-        let mut config = cox_protocol::Config::default();
-        config.tiers.code.provider = "anthropic".into();
-        config.providers.anthropic.api_key_env = "MY_ANTHROPIC_KEY".into();
-        assert_eq!(
-            key_requirement(&config),
-            KeyRequirement::Key("anthropic", "MY_ANTHROPIC_KEY", true)
-        );
-        config.tiers.code.provider = "local".into();
-        assert_eq!(key_requirement(&config), KeyRequirement::None);
-        config.tiers.code.provider = "lmstudio".into();
-        config.providers.lmstudio.api_key_env = "LM_API_TOKEN".into();
-        assert_eq!(
-            key_requirement(&config),
-            KeyRequirement::Key("lmstudio", "LM_API_TOKEN", false)
-        );
-        config.tiers.code.provider = "deepseek".into();
-        config.providers.custom.insert(
-            "deepseek".into(),
-            cox_protocol::config::CompatibleProviderConfig {
-                api_key_env: "DEEPSEEK_API_KEY".into(),
-                ..Default::default()
-            },
-        );
-        assert_eq!(
-            key_requirement(&config),
-            KeyRequirement::Key("deepseek", "DEEPSEEK_API_KEY", false)
-        );
-    }
-
-    #[test]
-    fn doctor_fails_when_the_code_tier_names_an_unknown_provider() {
-        // The session refuses this config ("unknown provider"); doctor must
-        // not report it as a provider that needs no key. Returns before any
-        // keyring lookup — enforced here by a lookup that panics if called
-        // (A49, T30.28).
-        let mut config = cox_protocol::Config::default();
-        config.tiers.code.provider = "nosuch".into();
-        let result = check_api_keys_with(&config, |_, _| {
-            panic!("an unknown provider must fail before any key is resolved")
-        });
-        assert_eq!(result.status, "fail", "{}", result.detail);
-        assert!(
-            result.detail.contains("[providers.nosuch]"),
-            "{}",
-            result.detail
-        );
-    }
-
-    #[test]
-    fn doctor_warns_not_fails_when_a_keyless_section_has_no_key() {
-        // A section name no keyring holds and an env var nobody sets —
-        // simulated with an injected lookup rather than the real keyring
-        // (A49, T30.28).
-        let section = "cox-doctor-test-keyless";
-        let mut config = cox_protocol::Config::default();
-        config.tiers.code.provider = section.into();
-        config.providers.custom.insert(
-            section.into(),
-            cox_protocol::config::CompatibleProviderConfig {
-                api_key_env: "COX_DOCTOR_TEST_UNSET_KEY".into(),
-                ..Default::default()
-            },
-        );
-        let result = check_api_keys_with(&config, |_, _| {
-            Err(cox_protocol::errors::ProviderError::Auth)
-        });
-        assert_eq!(result.status, "warn", "{}", result.detail);
-        // The keyring hint names service `cox`, account `<section>` — the
-        // order `keyring::Entry::new("cox", section)` reads.
-        assert!(
-            result.fix.contains(&format!("-s cox -a {section}")),
-            "{:?}",
-            result.fix
-        );
     }
 
     #[test]

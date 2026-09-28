@@ -18,6 +18,7 @@ use cox_protocol::types::Level;
 use cox_store::Store;
 use cox_tools::send_message::SendMessageTool;
 
+pub mod doctor;
 pub mod env;
 #[cfg(feature = "plugins")]
 pub mod external_agents;

@@ -44,6 +44,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 # `write_grant` stores a grant's capability list as JSON (T33.8).
 serde_json = { workspace = true }
+# `doctor::CheckResult` is `cox doctor --json`'s row (T37.31 moved it here).
+serde = { workspace = true }
 # `plugin_mcp` checks a plugin HTTP server's host against its `net` grant.
 reqwest = { workspace = true }
 # T35.13: the external-agent drivers implement `ExternalAgent`
