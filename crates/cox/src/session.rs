@@ -211,6 +211,14 @@ pub async fn open(
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
     session.set_agent_defs(agents_found.agents);
+    // T7.8: the chain is read here, once, and handed to the core as text.
+    let chain = instructions(
+        &home,
+        Some(&claude_home),
+        cwd,
+        loaded.config.context.instruction_budget_tokens,
+    );
+    session.set_instructions(chain.block);
     // T35.13: one driver per granted `[[external_agents]]` entry; an entry
     // whose CLI or key is missing is left out with one warning (EA§7).
     #[cfg(feature = "plugins")]
@@ -272,13 +280,35 @@ pub async fn open(
     for warning in served.iter().flat_map(|s| s.model.warnings()) {
         session.notice(Level::Warn, warning).await?;
     }
-    for warning in plugin_warnings {
+    for warning in chain.notices.into_iter().chain(plugin_warnings) {
         session.notice(Level::Warn, warning).await?;
     }
     for (level, text) in plugin_started {
         session.notice(level, text).await?;
     }
     Ok((session, loaded))
+}
+
+/// The `AGENTS.md`/`CLAUDE.md` chain for a session in `cwd` (T7.1 order),
+/// read by the surface because `cox-core` opens no file (D2). `cwd` is
+/// canonicalized like the git root `find_git_root` returns, or a symlinked
+/// path (macOS `/var` → `/private/var`) would lose every directory between
+/// them. `claude_home` is `None` in tests, which must not read the
+/// developer's own `~/.claude/CLAUDE.md`.
+pub(crate) fn instructions(
+    home: &Path,
+    claude_home: Option<&Path>,
+    cwd: &Path,
+    budget_tokens: u32,
+) -> cox_ext::instructions::Loaded {
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let roots = cox_ext::instructions::Roots {
+        cox_home: Some(home.to_path_buf()),
+        claude_home: claude_home.map(Path::to_path_buf),
+        git_root: config_load::find_git_root(&cwd),
+        cwd,
+    };
+    cox_ext::instructions::load(&roots, budget_tokens)
 }
 
 /// The TUI's ends of the plugin UI channels (T33.23): where `Msg::Plugin`
@@ -2382,6 +2412,57 @@ mod tests {
             .expect("turn");
     }
 
+    /// T7.8: an `AGENTS.md` in the workspace (and one in the directory
+    /// the session runs in) is the recorded request's `system[2]`, root
+    /// first, on every turn — the chain `open` and the ACP factory load.
+    #[tokio::test]
+    async fn agents_md_in_the_workspace_reaches_system_2() {
+        let (home, repo) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("repo"),
+        );
+        std::fs::create_dir(repo.path().join(".git")).expect("git");
+        let work = repo.path().join("crate");
+        std::fs::create_dir(&work).expect("work");
+        std::fs::write(repo.path().join("AGENTS.md"), "Run `just test`.\n").expect("root");
+        std::fs::write(work.join("AGENTS.md"), "Never touch `vendor/`.\n").expect("nested");
+        let chain = instructions(home.path(), None, &work, 8_000);
+        assert_eq!(chain.files, ["AGENTS.md", "crate/AGENTS.md"]);
+        assert!(chain.notices.is_empty(), "{:?}", chain.notices);
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let recorder = Arc::new(Recorder {
+            inner: cox_provider::scripted::Scripted::from_toml(
+                "[[turn]]\ntext = \"one\"\n[[turn]]\ntext = \"two\"\n",
+                "",
+            )
+            .expect("scenario"),
+            sent: std::sync::Mutex::default(),
+        });
+        let session = Session::new(
+            Config::default(),
+            recorder.clone(),
+            vec![],
+            store.clone(),
+            store,
+            work.clone(),
+        )
+        .expect("session");
+        session.set_instructions(chain.block);
+        user_turn(&session, "one").await;
+        user_turn(&session, "two").await;
+        let sent = recorder.sent.lock().expect("sent").clone();
+        assert_eq!(sent.len(), 2);
+        let system = &sent[0].system[2].text;
+        let (root, nested) = (
+            system.find("Run `just test`.").expect("root AGENTS.md"),
+            system
+                .find("Never touch `vendor/`.")
+                .expect("nested AGENTS.md"),
+        );
+        assert!(root < nested, "root first: {system}");
+        assert_eq!(sent[0].system[..=2], sent[1].system[..=2], "byte-stable");
+    }
+
     fn texts(history: &History) -> Vec<String> {
         history
             .messages
@@ -3401,13 +3482,11 @@ mod tests {
     }
 
     /// T33.12: every request a scripted session sends, for prefix checks.
-    #[cfg(feature = "plugins")]
     struct Recorder {
         inner: cox_provider::scripted::Scripted,
         sent: std::sync::Mutex<Vec<cox_protocol::types::Request>>,
     }
 
-    #[cfg(feature = "plugins")]
     #[async_trait::async_trait]
     impl Provider for Recorder {
         fn id(&self) -> ProviderId {

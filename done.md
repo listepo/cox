@@ -1,4 +1,37 @@
 
+#### T7.8 The instruction chain reaches the model
+
+Model: Claude Code / claude-opus-5-5 · Status: done 2026-09-28 · Depends: T7.1 · Size: ~200 · Priority: P1 · Complexity: 3
+Goal: the `AGENTS.md`/`CLAUDE.md` chain `cox_ext::instructions::load` builds (T7.1) is the `system[2]` text of every request in every surface (TUI, `run -p`, ACP) and of the session's subagents, byte-stable within a session; today `system[2]` is the stub `"Follow repository instruction files when present."` and the loader runs only for `cox ext list`.
+Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs` (`set_instructions`, copied to children), `crates/cox/src/session.rs` (one `instructions` helper, called by `open`), `crates/cox/src/acp_cmd.rs` (the factory bypasses `open`), `crates/cox/src/ext_cmd.rs` (reuses the helper), `cox-provider-testkit`/`cox-provider` scripted (`when_system_contains`), `crates/cox/tests/run_cli.rs` + one scenario.
+Steps: (1) `assemble_with_skills` takes the loaded block; an empty block keeps the stub, so a workspace without instruction files keeps its exact prefix bytes; the `minimal` profile keeps the block (it drops only the skills and memory indexes). (2) `Session::set_instructions` stores it once (like `set_agent_defs`), `spawn_child` shares it, and the turn passes it to assembly — `cox-core` still reads no file (D2). (3) The surface loads the chain once per session build with `context.instruction_budget_tokens`; budget and include notices become `Warn` notices. (4) The scripted provider's `when_system_contains` pins a turn to a request whose system blocks carry a marker.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core -E 'test(instructions)'
+mise exec -- cargo nextest run -p cox -E 'test(agents_md)'
+```
+Done when: a unit test proves the loaded block is `system[2]` and byte-identical between turns and in a child; a session test proves a workspace `AGENTS.md` reaches the recorded request's `system[2]`; an e2e `cox run -p` with the scripted provider answers only because the request's system blocks carry the `AGENTS.md` marker.
+Out of scope: re-reading instruction files after compaction (§1.10 step 5), threading the skills index (T22.2's recorded split), a provider-counted token budget.
+
+What landed: `cox_core::Session::set_instructions` stores the block once (a second call is ignored, like `set_agent_defs`) and `spawn_child` shares it; the turn passes it to `assemble_with_skills`, which now takes the chain before the skills index. An empty chain keeps the old stub (`NO_INSTRUCTIONS`), so a workspace with no instruction file sends the same prefix bytes as before; `minimal` keeps the chain and drops only the skills index. `crates/cox/src/session.rs::instructions` builds the `Roots` (cwd canonicalized, so a symlinked tempdir keeps the directories between it and the git root) and is called by `open`, the ACP factory and `cox ext list`; its notices join the session's `Warn` notices. The scripted provider gained `when_system_contains` (turns with any marker are served only to a request meeting every marker it sets). The card touched more than three source files, as A67 records.
+Not done: re-reading instruction files after compaction (§1.10 step 5) and threading the skills index through `Session` (T22.2's split) stay open; neither has a card yet.
+```
+$ mise exec -- cargo nextest run -p cox-core -E 'test(instructions)'
+        PASS cox-core context::tests::instructions_block_is_system_2_and_byte_stable
+        PASS cox-core session::tests::instructions_are_set_once_and_shared_with_children
+     Summary 2 tests run: 2 passed, 254 skipped
+$ mise exec -- cargo nextest run -p cox -E 'test(agents_md)'
+        PASS cox::bin/cox session::tests::agents_md_in_the_workspace_reaches_system_2
+        PASS cox::run_cli agents_md_in_the_workspace_reaches_the_system_prompt
+     Summary 2 tests run: 2 passed, 170 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     Summary 1315 tests run: 1315 passed, 4 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings   # also -p cox --no-default-features
+clean.
+$ mise exec -- cargo fmt --check
+clean.
+```
+
 #### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
 
 Model: Cursor / grok 4.7 · Status: done 2026-09-27 · Depends: none · Size: ~200 · Priority: P2 · Complexity: 3

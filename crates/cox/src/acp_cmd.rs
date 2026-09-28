@@ -36,9 +36,16 @@ impl cox_acp::SessionFactory for AcpFactory {
         let mdir = session::memory_dir_for(&config, &home, &req.cwd);
         let tools = session::tools(self.answer.clone(), &store, mdir);
         let tools = session::with_client_tools(tools, req.link, req.client_fs, req.client_terminal);
+        let claude_home = config_load::home_dir().join(".claude");
+        let budget = config.context.instruction_budget_tokens;
+        let chain = session::instructions(&home, Some(&claude_home), &req.cwd, budget);
         let warnings = session::plugin_notices(&config, &home, &req.cwd, store.clone());
+        let warnings: Vec<String> = chain.notices.into_iter().chain(warnings).collect();
         let session =
             cox_core::Session::new(config, provider, tools, store.clone(), store, req.cwd)?;
+        // T7.8: this factory builds its session without `session::open`,
+        // so it hands the core the same instruction chain `open` does.
+        session.set_instructions(chain.block);
         // `create` is sync but runs on the ACP server's runtime; the
         // notices queue in the session's event channel ahead of any prompt.
         if !warnings.is_empty() {

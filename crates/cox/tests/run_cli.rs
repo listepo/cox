@@ -39,6 +39,29 @@ fn text_format_prints_the_final_assistant_text() {
         .stdout("hello from scripted\n");
 }
 
+/// T7.8: the workspace `AGENTS.md` reaches the model's system blocks — the
+/// scenario's one turn answers only a request that carries its marker, so
+/// the same run without the file finds no turn and fails.
+#[test]
+fn agents_md_in_the_workspace_reaches_the_system_prompt() {
+    let marker = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/scenarios/agents_md_marker.toml"
+    );
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir(work.path().join(".git")).unwrap();
+    cox(work.path(), home.path(), marker).assert().failure();
+    std::fs::write(
+        work.path().join("AGENTS.md"),
+        "Rule: cox-e2e-agents-md-marker.\n",
+    )
+    .unwrap();
+    cox(work.path(), home.path(), marker)
+        .assert()
+        .success()
+        .stdout("followed AGENTS.md\n");
+}
+
 #[test]
 fn json_format_reports_result_usage_cost_and_stop() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());

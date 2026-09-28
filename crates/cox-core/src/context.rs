@@ -12,8 +12,10 @@ use cox_protocol::types::{
     ArchiveRef, Content, Job, Message, ModelId, Request, SystemBlock, Tier, Usage,
 };
 
-/// Instruction-file stub until T7.1 reads the AGENTS.md chain.
-const INSTRUCTIONS: &str = "Follow repository instruction files when present.";
+/// `system[2]` when no instruction file loaded (T7.8): a provider may reject
+/// an empty text block, and keeping the old bytes leaves the prefix of a
+/// workspace without `AGENTS.md`/`CLAUDE.md` unchanged.
+const NO_INSTRUCTIONS: &str = "Follow repository instruction files when present.";
 
 const PROMPT: &str = include_str!("prompt.md");
 
@@ -69,15 +71,16 @@ pub fn assemble_with(
     cwd: &Path,
     date: &str,
 ) -> Request {
-    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "")
+    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "", "")
 }
 
-/// `assemble_with` plus the `system[2]` skills index (T22.2), appended last
-/// in the block. An empty index appends nothing, so a user without skills
-/// keeps the exact prefix bytes of every earlier session and `system[0..=2]`
-/// stays byte-stable across turns either way (D6e). The surface builds the
-/// index with `cox_ext::skills::index`; threading it through `Session` is
-/// the recorded T22.2 split, so the core's own call sites pass `""` for now.
+/// `assemble_with` plus the two `system[2]` texts: the instruction chain
+/// the surface loaded with `cox_ext::instructions::load` (T7.8; empty keeps
+/// `NO_INSTRUCTIONS`) and the skills index (T22.2), appended last. Both are
+/// fixed for a session, so `system[0..=2]` stays byte-stable across turns
+/// (D6e); an empty index appends nothing. The surface builds the index with
+/// `cox_ext::skills::index`; threading it through `Session` is the recorded
+/// T22.2 split, so the core's own call sites pass `""` for now.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_with_skills(
     history: &[Message],
@@ -87,6 +90,7 @@ pub fn assemble_with_skills(
     discovered: &[String],
     cwd: &Path,
     date: &str,
+    instructions: &str,
     skills_index: &str,
 ) -> Request {
     let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
@@ -127,11 +131,18 @@ pub fn assemble_with_skills(
     // the `prefix_bytes_identical_between_turns` test pins still holds.
     let prompt = if minimal { PROMPT_MINIMAL } else { PROMPT };
     // Under `minimal` the skills index never joins `system[2]`: it would
-    // grow the prefix past the cap, and the profile promises no index.
-    let instructions = if minimal || skills_index.is_empty() {
-        INSTRUCTIONS.to_string()
+    // grow the prefix past the cap, and the profile promises no index. The
+    // instruction chain stays: it is the repository's rules, and its size
+    // is the user's own `instruction_budget_tokens`.
+    let base = if instructions.is_empty() {
+        NO_INSTRUCTIONS
     } else {
-        format!("{INSTRUCTIONS}\n{skills_index}")
+        instructions
+    };
+    let instructions = if minimal || skills_index.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}\n{skills_index}")
     };
     let system = vec![
         SystemBlock {
@@ -542,6 +553,7 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
+            "",
             index,
         );
         assert!(
@@ -581,6 +593,7 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
+            "",
             index,
         );
         assert!(
@@ -606,10 +619,53 @@ mod tests {
             Path::new("/w"),
             "d",
             "",
+            "",
         );
         assert_eq!(
             serde_json::to_vec(&plain.system[0..=2]).expect("plain"),
             serde_json::to_vec(&empty.system[0..=2]).expect("empty"),
         );
+    }
+
+    /// T7.8: the chain the surface loaded is `system[2]`, cached, the same
+    /// bytes on every turn and under `minimal`; the skills index follows it;
+    /// with no file loaded `system[2]` keeps its old bytes.
+    #[test]
+    fn instructions_block_is_system_2_and_byte_stable() {
+        let chain = "# Instructions\n## AGENTS.md\nRun `just test` before committing.\n";
+        let config = cox_protocol::Config::default();
+        let one: Vec<Message> = serde_json::from_value(serde_json::json!([
+            {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+        ]))
+        .expect("history");
+        let mut two = one.clone();
+        two.extend(
+            serde_json::from_value::<Vec<Message>>(serde_json::json!([
+                {"role": "assistant", "content": [{"type": "text", "text": "hello"}]},
+                {"role": "user", "content": [{"type": "text", "text": "again"}]},
+            ]))
+            .expect("second turn"),
+        );
+        let at = |history: &[Message], config: &cox_protocol::Config, index: &str| {
+            let w = Path::new("/w");
+            assemble_with_skills(history, config, Tier::Code, &[], &[], w, "d", chain, index)
+        };
+        let first = at(&one, &config, "");
+        assert_eq!(first.system[2].text, chain);
+        assert!(first.system[2].cache && first.cache_breakpoints.contains(&2));
+        assert_eq!(
+            serde_json::to_vec(&first.system[0..=2]).expect("first"),
+            serde_json::to_vec(&at(&two, &config, "").system[0..=2]).expect("second"),
+        );
+        let index = "# Skills\n- greeting: Greet.\n";
+        assert_eq!(
+            at(&one, &config, index).system[2].text,
+            format!("{chain}\n{index}")
+        );
+        let mut minimal = config.clone();
+        minimal.core.profile = "minimal".to_string();
+        assert_eq!(at(&one, &minimal, index).system[2].text, chain);
+        let none = assemble(&one, &config, &[], Path::new("/w"), "d");
+        assert_eq!(none.system[2].text, NO_INSTRUCTIONS);
     }
 }

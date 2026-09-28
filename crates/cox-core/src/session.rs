@@ -24,7 +24,7 @@ use tracing::Instrument as _;
 use crate::budget;
 use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
-use crate::context::assemble_with;
+use crate::context::assemble_with_skills;
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
@@ -163,6 +163,11 @@ pub struct Session {
     /// installed like `worktrees`, empty until then. Not copied to
     /// children — only `new`/`resume` push the `agent` tool at all.
     agent_defs: Arc<OnceLock<Vec<AgentDef>>>,
+    /// The `AGENTS.md`/`CLAUDE.md` chain the surface loaded (T7.8:
+    /// `cox_ext::instructions::load`, which this crate never calls), set
+    /// once so `system[2]` stays byte-stable (D6e). Shared with children:
+    /// a subagent works in the same repository under the same rules.
+    instructions: Arc<OnceLock<String>>,
     /// The task id `send_message`'s `Relay` impl stamps a child's own
     /// message with (T34.6, SM§4), set once by `subagent::spawn` right
     /// after the child session exists; unset for the session the user is
@@ -346,6 +351,7 @@ impl Session {
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
         child.worktrees = self.worktrees.clone();
+        child.instructions = self.instructions.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
         // T34.9: share this session's name→TaskId registry so the child can
         // resolve a sibling by name itself (`resolve_name_or_id`).
@@ -444,6 +450,7 @@ impl Session {
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
+            instructions: Arc::new(OnceLock::new()),
             self_task: Arc::new(OnceLock::new()),
             external_agents: Arc::new(OnceLock::new()),
             event_tap: Arc::new(OnceLock::new()),
@@ -665,6 +672,13 @@ impl Session {
     /// byte-stable for the rest of the session (D6e).
     pub fn set_agent_defs(&self, defs: Vec<AgentDef>) {
         let _ = self.agent_defs.set(defs);
+    }
+
+    /// Installs the loaded instruction chain (T7.8); a second call is
+    /// ignored like `set_agent_defs`, so the cached prefix never changes
+    /// mid-session.
+    pub fn set_instructions(&self, block: String) {
+        let _ = self.instructions.set(block);
     }
 
     pub(crate) fn agent_defs(&self) -> &[AgentDef] {
@@ -1315,13 +1329,15 @@ impl Session {
                 }
                 _ => req_messages,
             };
-            let mut req = assemble_with(
+            let mut req = assemble_with_skills(
                 &req_messages,
                 &self.config,
                 route.tier,
                 &self.tools,
                 &discovered,
                 &self.cwd,
+                "",
+                self.instructions.get().map_or("", String::as_str),
                 "",
             );
             req.model = route.model.clone();
@@ -2029,6 +2045,33 @@ mod tests {
         let probe = Arc::new(Probe::default());
         session.set_hook(probe.clone());
         (session, probe)
+    }
+
+    /// T7.8: the chain is set once — a later call cannot move the cached
+    /// prefix — and a subagent sees the same rules as its parent.
+    #[tokio::test]
+    async fn instructions_are_set_once_and_shared_with_children() {
+        let (session, _) = open(&[]);
+        session.set_instructions("# Instructions\nfirst".into());
+        session.set_instructions("# Instructions\nsecond".into());
+        let child = session
+            .spawn_child(
+                session.config.clone(),
+                vec![],
+                Job::Explore,
+                Tier::Code,
+                None,
+                None,
+                "explore-1".into(),
+                "explore".into(),
+            )
+            .expect("child");
+        for s in [&session, &child] {
+            assert_eq!(
+                s.instructions.get().map(String::as_str),
+                Some("# Instructions\nfirst")
+            );
+        }
     }
 
     #[tokio::test]
