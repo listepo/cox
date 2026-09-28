@@ -390,8 +390,110 @@ pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
     let owner = format!("cox / pid {}", std::process::id());
     let rt = tokio::runtime::Runtime::new()?;
     let wt = rt.block_on(cox_tools::git::worktree_add(cwd, &name, &owner))?;
-    cli.cwd = Some(wt.path.clone());
-    Ok(wt.path)
+    // A new session has no record yet, so a fresh id excludes nobody.
+    Ok(switch_to_worktree(cli, &rt, wt.path, &SessionId::new()))
+}
+
+/// What `--worktree` and a resumed worktree session share once the tree
+/// exists: the holder warning, then `--cwd <worktree>` for the rest of the
+/// run. `cli.worktree` being set is what makes `open` add the main checkout
+/// as a read-only root, keep only the worktree writable and put the
+/// worktree in the presence record (`SessionSpec::worktree`).
+fn switch_to_worktree(
+    cli: &mut Cli,
+    rt: &tokio::runtime::Runtime,
+    worktree: PathBuf,
+    me: &SessionId,
+) -> PathBuf {
+    let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    warn_worktree_holder(rt, &home, &worktree, me);
+    cli.cwd = Some(worktree.clone());
+    worktree
+}
+
+/// `cox --resume <id>` of a session that ran in a linked worktree of this
+/// project (T44.4, A75): the run moves into that worktree exactly as
+/// `--worktree` would, so the sandbox roots follow. A worktree that is gone
+/// is refused with a hint — cox never runs `git worktree add` on resume.
+/// Any other recorded cwd (the main checkout, another project, no row)
+/// leaves `cwd` as it was. Returns the cwd to use.
+pub fn resume_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
+    let (Some(id), None) = (cli.resume.clone(), cli.worktree.as_ref()) else {
+        return Ok(cwd.to_path_buf());
+    };
+    let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    let Some(recorded) = resume::recorded_cwd(&home, &id) else {
+        return Ok(cwd.to_path_buf());
+    };
+    let rt = tokio::runtime::Runtime::new()?;
+    let main = rt.block_on(project_root(cwd));
+    if recorded == main || recorded == cwd {
+        return Ok(cwd.to_path_buf());
+    }
+    let repo = main
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dir_name = recorded
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    // `worktree_add` names the tree `<repo>-<name>`; the rest is the name.
+    let name = dir_name
+        .strip_prefix(&format!("{repo}-"))
+        .unwrap_or(dir_name.as_str())
+        .to_string();
+    if !recorded.is_dir() {
+        // Gone, so git cannot say whose it was: cox's own layout
+        // (`_worktrees/<repo>-<name>`) is the evidence it was ours.
+        let ours = recorded
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|p| p == "_worktrees")
+            && dir_name.starts_with(&format!("{repo}-"));
+        if !ours {
+            return Ok(cwd.to_path_buf());
+        }
+        anyhow::bail!(
+            "session {id} ran in worktree {}, which no longer exists; \
+             `git worktree list` shows the worktrees there are, and \
+             `cox --worktree {name} --resume {id}` recreates it on branch {name}",
+            recorded.display()
+        );
+    }
+    let linked_here = crate::sessions::is_linked_worktree(&recorded)
+        && rt.block_on(project_root(&recorded)) == main;
+    if !linked_here {
+        return Ok(cwd.to_path_buf());
+    }
+    cli.worktree = Some(name);
+    // The resumed session's own record is not another holder.
+    let me: SessionId = id.parse()?;
+    Ok(switch_to_worktree(cli, &rt, recorded, &me))
+}
+
+/// T44.2 (A75): another live session of this project already running in
+/// `worktree` is warned about by id before this one starts there — warn,
+/// not block (fail open, no lock). Printed on the same `cox: warning:` path
+/// as `open`'s warnings, which stays above the TUI's inline viewport. `me`
+/// is left out, so a resumed session never warns about its own record.
+fn warn_worktree_holder(
+    rt: &tokio::runtime::Runtime,
+    home: &Path,
+    worktree: &Path,
+    me: &SessionId,
+) {
+    let project = rt.block_on(project_root(worktree));
+    let now = cox_ext::presence::now_secs();
+    if let Some(other) = cox_ext::presence::holder(home, &project, worktree, me, now) {
+        eprintln!(
+            "cox: warning: session {} (pid {}) is already working in worktree {}; \
+             two sessions editing one tree will overwrite each other's changes",
+            other.session,
+            other.pid,
+            worktree.display()
+        );
+    }
 }
 
 /// After `/quit` in a worktree session: a clean tree is offered for
@@ -672,6 +774,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                 .push(cox_tui::state::Cell::Notice { level, text });
         }
         state.files = cox_tools::glob::workspace_files(cwd);
+        // T45.6: what `@name task` may dispatch, as the `agent` tool resolves it.
+        state.agent_names = session.agent_names();
         state.cwd = cwd.to_path_buf();
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
         state.worktree = cli.worktree.clone();
@@ -957,7 +1061,31 @@ mod tests {
     #[test]
     fn worktree_flag_sets_roots() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let repo = tmp.path().join("repo");
+        let Some(repo) = git_repo(tmp.path()) else {
+            return; // no usable git here
+        };
+        // A scratch home: `enter_worktree` reads (and sweeps) presence records.
+        let home = tmp.path().join("home");
+        let home_arg = home.display().to_string();
+        let mut cli = Cli::parse_from(["cox", "--worktree", "T9", "--home", &home_arg]);
+        let cwd = enter_worktree(&mut cli, &repo).expect("enter");
+        let root = std::fs::canonicalize(tmp.path()).expect("canon");
+        assert_eq!(cwd, root.join("_worktrees").join("repo-t9"));
+        assert!(cwd.join("a.txt").is_file(), "the worktree is checked out");
+        let mut loaded = config_load::load(&cwd, &cli).expect("load");
+        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone()]);
+        assert!(cli.add_dir.is_empty(), "the main checkout is not writable");
+        let project = rt_project_root(&cwd);
+        assert_eq!(project, repo);
+        add_read_root(&mut loaded.config, &project);
+        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone(), repo]);
+        assert_eq!(cli.cwd.as_deref(), Some(cwd.as_path()));
+    }
+
+    /// A repository with one commit at `<tmp>/repo`, canonical; `None`
+    /// where no usable git is installed.
+    fn git_repo(tmp: &Path) -> Option<PathBuf> {
+        let repo = tmp.join("repo");
         std::fs::create_dir(&repo).expect("mkdir");
         let git = |args: &[&str]| {
             std::process::Command::new("git")
@@ -968,7 +1096,7 @@ mod tests {
                 .unwrap_or(false)
         };
         if !git(&["init", "-q", "--initial-branch=trunk"]) {
-            return; // no usable git here
+            return None;
         }
         std::fs::write(repo.join("a.txt"), "a\n").expect("write");
         assert!(git(&["add", "a.txt"]));
@@ -982,20 +1110,79 @@ mod tests {
             "-m",
             "first"
         ]));
-        let repo = std::fs::canonicalize(&repo).expect("canon");
-        let mut cli = Cli::parse_from(["cox", "--worktree", "T9"]);
-        let cwd = enter_worktree(&mut cli, &repo).expect("enter");
-        let root = std::fs::canonicalize(tmp.path()).expect("canon");
-        assert_eq!(cwd, root.join("_worktrees").join("repo-t9"));
-        assert!(cwd.join("a.txt").is_file(), "the worktree is checked out");
-        let mut loaded = config_load::load(&cwd, &cli).expect("load");
-        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone()]);
-        assert!(cli.add_dir.is_empty(), "the main checkout is not writable");
-        let project = rt_project_root(&cwd);
-        assert_eq!(project, repo);
-        add_read_root(&mut loaded.config, &project);
-        assert_eq!(loaded.config.core.workspace_roots, vec![cwd.clone(), repo]);
-        assert_eq!(cli.cwd.as_deref(), Some(cwd.as_path()));
+        Some(std::fs::canonicalize(&repo).expect("canon"))
+    }
+
+    /// A stored session that ran in `cwd`, as `session_create` records it.
+    fn recorded_session(home: &Path, cwd: &Path) -> String {
+        let store = Store::open(home).expect("store");
+        let id = SessionId::new();
+        store
+            .session_create(&cox_protocol::SessionRow {
+                id,
+                created_at: String::new(),
+                cwd: cwd.to_path_buf(),
+                project_slug: "repo".into(),
+                title: None,
+                parent_id: None,
+                rollout_path: home.join(format!("{id}.jsonl")),
+            })
+            .expect("session row");
+        id.to_string()
+    }
+
+    /// `cox --worktree <name> --home <home>` from `repo`: the worktree path.
+    fn made_worktree(repo: &Path, home: &str, name: &str) -> PathBuf {
+        let mut cli = Cli::parse_from(["cox", "--worktree", name, "--home", home]);
+        enter_worktree(&mut cli, repo).expect("enter")
+    }
+
+    /// T44.4: resuming a worktree session moves the run into that worktree
+    /// the way `--worktree` does; a main-checkout session stays put.
+    #[test]
+    fn resume_uses_recorded_worktree_cwd() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some(repo) = git_repo(tmp.path()) else {
+            return; // no usable git here
+        };
+        let home = tmp.path().join("home");
+        let home_arg = home.display().to_string();
+        let wt = made_worktree(&repo, &home_arg, "t9");
+        let id = recorded_session(&home, &wt);
+        let mut cli = Cli::parse_from(["cox", "--resume", &id, "--home", &home_arg]);
+        let cwd = resume_worktree(&mut cli, &repo).expect("resume");
+        assert_eq!(cwd, wt);
+        assert_eq!(cli.cwd.as_deref(), Some(wt.as_path()));
+        // What makes `open` add the main checkout as a read root and put
+        // the worktree in the presence record.
+        assert_eq!(cli.worktree.as_deref(), Some("t9"));
+        let main_id = recorded_session(&home, &repo);
+        let mut cli = Cli::parse_from(["cox", "--resume", &main_id, "--home", &home_arg]);
+        assert_eq!(resume_worktree(&mut cli, &repo).expect("resume"), repo);
+        assert!(cli.worktree.is_none() && cli.cwd.is_none());
+    }
+
+    /// T44.4: a worktree that is gone is refused with the way back, and
+    /// resume never recreates it.
+    #[test]
+    fn resume_refuses_missing_worktree() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some(repo) = git_repo(tmp.path()) else {
+            return; // no usable git here
+        };
+        let home = tmp.path().join("home");
+        let home_arg = home.display().to_string();
+        let wt = made_worktree(&repo, &home_arg, "t9");
+        let id = recorded_session(&home, &wt);
+        std::fs::remove_dir_all(&wt).expect("remove the worktree");
+        let mut cli = Cli::parse_from(["cox", "--resume", &id, "--home", &home_arg]);
+        let err = resume_worktree(&mut cli, &repo)
+            .expect_err("a missing worktree is refused")
+            .to_string();
+        assert!(err.contains("git worktree list"), "{err}");
+        assert!(err.contains("--worktree t9"), "{err}");
+        assert!(!wt.exists(), "resume never runs `git worktree add`");
+        assert!(cli.cwd.is_none());
     }
 
     fn rt_project_root(cwd: &Path) -> PathBuf {

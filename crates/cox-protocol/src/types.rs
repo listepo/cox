@@ -1081,6 +1081,16 @@ pub enum Submission {
         /// `!!`: append the output to history for the model.
         share: bool,
     },
+    /// A composer `@name task` line (T45.5): runs subagent `name` through the
+    /// `agent` tool on the model's own path (hooks, permission engine,
+    /// budget, agent slots). The line and the answer join history at its
+    /// tail, so the next model turn sees them.
+    UserAgent {
+        /// A preset, agent definition or external agent name.
+        name: String,
+        /// What the subagent is asked to do.
+        task: String,
+    },
     /// Wind down the session cleanly.
     Shutdown,
     /// `/rename`, or a rename in the app (A113, T37.22.9): the session's
@@ -1820,6 +1830,7 @@ mod tests {
     #[case::revert_file(Submission::RevertFile { path: "src/a.rs".into(), to_turn: 2 })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
+    #[case::user_agent(Submission::UserAgent { name: "explore".into(), task: "find the router".into() })]
     #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
     #[case::rename(Submission::Rename { title: "Fix the ledger".into() })]

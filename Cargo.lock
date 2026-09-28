@@ -1123,6 +1123,7 @@ version = "0.1.2"
 dependencies = [
  "async-trait",
  "cox-protocol",
+ "cox-sanitize",
  "insta",
  "nix 0.31.3",
  "pathdiff",

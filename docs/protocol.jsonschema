@@ -3281,6 +3281,29 @@
         ]
       },
       {
+        "description": "A composer `@name task` line (T45.5): runs subagent `name` through the\n`agent` tool on the model's own path (hooks, permission engine,\nbudget, agent slots). The line and the answer join history at its\ntail, so the next model turn sees them.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "A preset, agent definition or external agent name.",
+            "type": "string"
+          },
+          "task": {
+            "description": "What the subagent is asked to do.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "user_agent"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "task"
+        ]
+      },
+      {
         "description": "Wind down the session cleanly.",
         "type": "object",
         "properties": {

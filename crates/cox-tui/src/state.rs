@@ -243,6 +243,9 @@ pub struct State {
     pub banner: Option<Banner>,
     /// Workspace-relative paths the `@` picker offers; the runtime walks them.
     pub files: Vec<String>,
+    /// Names `@name task` dispatches (T45.6), from `Session::agent_names`
+    /// at start, like `files`; the `@` picker lists them first.
+    pub agent_names: Vec<String>,
     /// Local branch names for `git checkout <Tab>` (T15.4); the runtime
     /// lists them at start, like `files`.
     pub git_branches: Vec<String>,
@@ -705,6 +708,7 @@ impl State {
             scroll: 0,
             banner: None,
             files: Vec::new(),
+            agent_names: Vec::new(),
             git_branches: Vec::new(),
             commands: COMMANDS
                 .iter()
@@ -1147,7 +1151,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         // picker typing the sigil would have opened, its query pre-filled.
         if let Some((sigil, query)) = state.composer.take_token() {
             let picker = match sigil {
-                '@' => Picker::open(Kind::Files, state.files.clone()),
+                '@' => Picker::open(
+                    Kind::Files,
+                    picker::at_candidates(&state.agent_names, &state.files),
+                ),
                 _ => Picker::open(
                     Kind::Commands,
                     state.commands.iter().map(|(n, ..)| n.clone()).collect(),
@@ -1321,7 +1328,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     }
                 }
                 Pick::Chosen(choice) => match picker.kind {
-                    Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
+                    Kind::Files | Kind::Commands => {
+                        let choice = picker::untag(&choice);
+                        state.composer.insert(&format!("{choice} "));
+                    }
                     // Resuming in place needs `app::run` to return a request;
                     // until then the command is the answer (T16.5).
                     Kind::Sessions => {
@@ -1614,6 +1624,9 @@ fn toggle_fold(state: &mut State, i: usize) -> Vec<Cmd> {
 fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     match state.composer.key(key, state.status.busy) {
         Edit::Submit(text) => {
+            if let Some((name, task)) = agent_line(&state.agent_names, &text) {
+                return user_agent(state, name, task);
+            }
             let tier = state.status.tier.unwrap_or(Tier::Code);
             // T22.2: a file command's name reaches the core as
             // `Submission::Command`; the T5.5 parser owns the
@@ -1639,7 +1652,7 @@ fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         Edit::OpenFiles => {
             state.modal = Some(Modal::Picker(Picker::open(
                 Kind::Files,
-                state.files.clone(),
+                picker::at_candidates(&state.agent_names, &state.files),
             )));
             Vec::new()
         }
@@ -1671,6 +1684,26 @@ fn set_mode(state: &mut State, mode: PermissionMode) -> Vec<Cmd> {
 /// interrupt this triggers, once `TurnDone{Interrupted}` acknowledges it,
 /// flushes everything typed so far as one turn instead of leaving it queued
 /// for the next natural finish.
+/// `@name task` at line start with a dispatchable `name` and a task
+/// (T45.6); anything else — an `@file` mention included — is a normal turn.
+fn agent_line(names: &[String], text: &str) -> Option<(String, String)> {
+    let (name, task) = text.strip_prefix('@')?.split_once(' ')?;
+    let task = task.trim();
+    (names.iter().any(|n| n == name) && !task.is_empty())
+        .then(|| (name.to_string(), task.to_string()))
+}
+
+/// Submits `@name task`; mid-turn it is refused here, as `!` is, since the
+/// core would refuse it anyway.
+fn user_agent(state: &mut State, name: String, task: String) -> Vec<Cmd> {
+    if state.status.busy {
+        let text = format!("a turn is running; `@{name}` waits until it ends");
+        notice(state, Level::Warn, text);
+        return Vec::new();
+    }
+    vec![Cmd::Submit(Submission::UserAgent { name, task })]
+}
+
 fn send_now(state: &mut State, text: String) -> Vec<Cmd> {
     if !text.trim().is_empty() {
         state.queue.push_back(text);
@@ -1766,16 +1799,23 @@ fn agents_rows(
     agents: &[Presence],
     tasks: &[(TaskId, String, Tier, u64, Option<String>)],
     tick: u64,
+    worktree_glyph: &str,
 ) -> Vec<(String, Option<SessionId>)> {
     let mut rows: Vec<(String, Option<SessionId>)> = agents
         .iter()
         .map(|a| {
-            let text = crate::text::sanitize(&format!(
+            let mut text = format!(
                 "{} · preset - · tier - · cost - · elapsed - · {}",
                 a.session,
                 a.status.name()
-            ));
-            (text, Some(a.session))
+            );
+            // T44.3: which worktree the session holds, by its directory name
+            // (the full path is the project's `_worktrees/` prefix again),
+            // behind the status line's worktree glyph.
+            if let Some(name) = a.worktree.as_deref().and_then(std::path::Path::file_name) {
+                text.push_str(&format!(" · {worktree_glyph} {}", name.to_string_lossy()));
+            }
+            (crate::text::sanitize(&text), Some(a.session))
         })
         .collect();
     rows.extend(tasks.iter().map(|(_, label, tier, started, last)| {
@@ -1952,7 +1992,12 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         // T27.5: an empty list stays the T27.2 `Notice` (nothing to
         // navigate); otherwise `/agents` opens the navigable overlay.
         Action::Agents => {
-            let entries = agents_rows(&state.agents, &state.tasks, state.tick);
+            let entries = agents_rows(
+                &state.agents,
+                &state.tasks,
+                state.tick,
+                state.glyphs.worktree,
+            );
             if entries.is_empty() {
                 notice(state, Level::Info, "no live agents".to_string());
             } else {
@@ -2538,13 +2583,55 @@ mod tests {
     /// composer, so — as `clear_command_emits_cmd_clear` established — `Esc`
     /// closes the palette without losing it, then the rest types normally.
     fn type_command(state: &mut State, line: &str) -> Vec<Cmd> {
-        let rest = line.strip_prefix('/').unwrap_or(line);
-        update(state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        type_after_sigil(state, '/', line)
+    }
+
+    /// `line` after the picker its leading `sigil` opens was closed with
+    /// `Esc`, which keeps the sigil in the composer; then `Enter`.
+    fn type_after_sigil(state: &mut State, sigil: char, line: &str) -> Vec<Cmd> {
+        let rest = line.strip_prefix(sigil).unwrap_or(line);
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Char(sigil))));
         update(state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
         for c in rest.chars() {
             update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
         }
         update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)))
+    }
+
+    /// T45.6: `@<agent> task` at line start runs that agent directly.
+    #[test]
+    fn at_agent_name_submits_user_agent() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.agent_names = vec!["explore".into(), "reviewer".into()];
+        let cmds = type_after_sigil(&mut state, '@', "@explore find the router");
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserAgent {
+                name: "explore".into(),
+                task: "find the router".into(),
+            })]
+        );
+    }
+
+    /// T45.6: an `@file` mention, an unknown name and a bare agent name
+    /// with no task all stay ordinary user turns.
+    #[test]
+    fn at_file_path_stays_a_user_turn() {
+        for line in ["@src/main.rs explain it", "@nope do it", "@explore"] {
+            let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+            state.agent_names = vec!["explore".into()];
+            state.files = vec!["src/main.rs".into()];
+            let cmds = type_after_sigil(&mut state, '@', line);
+            assert_eq!(
+                cmds,
+                vec![Cmd::Submit(Submission::UserTurn {
+                    text: line.into(),
+                    attachments: Vec::new(),
+                    confirm_think: false,
+                })],
+                "{line}"
+            );
+        }
     }
 
     #[test]
