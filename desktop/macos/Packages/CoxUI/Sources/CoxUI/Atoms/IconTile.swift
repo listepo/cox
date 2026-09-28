@@ -10,12 +10,20 @@ public struct IconTile: View {
     case neutral, edit, shell, search, write
   }
 
-  let kind: Kind
+  /// Top and bottom of the tile's gradient.
+  let face: [Color]
+  let glyph: Color
   /// An SF Symbol from the DS§3.7 map.
   let symbol: String
 
   init(_ kind: Kind, symbol: String) {
-    self.kind = kind
+    self.init(face: kind.face, glyph: kind.glyph, symbol: symbol)
+  }
+
+  /// A tile in colours its caller owns, as a Settings page's (A96).
+  init(face: [Color], glyph: Color, symbol: String) {
+    self.face = face
+    self.glyph = glyph
     self.symbol = symbol
   }
 
@@ -24,10 +32,10 @@ public struct IconTile: View {
     Image(systemName: symbol)
       // The mockup's 13 pt glyph is `font.body`'s size, so it scales with the text size.
       .symbolStyle(.body)
-      .foregroundStyle(kind.glyph)
+      .foregroundStyle(glyph)
       .frame(width: Size.iconTile, height: Size.iconTile)
       .background {
-        shape.fill(LinearGradient(colors: kind.face, startPoint: .top, endPoint: .bottom))
+        shape.fill(LinearGradient(colors: face, startPoint: .top, endPoint: .bottom))
       }
       .elevation(.e1, cornerRadius: Radius.s)
       .accessibilityHidden(true)
@@ -35,7 +43,6 @@ public struct IconTile: View {
 }
 
 extension IconTile.Kind {
-  /// Top and bottom of the tile's gradient.
   var face: [Color] {
     switch self {
     case .neutral: [Color(.tileNeutralTop), Color(.tileNeutralBottom)]
