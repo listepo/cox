@@ -505,7 +505,7 @@ pub trait RepoMapper: Send + Sync {
         &self,
         root: &Path,
         budget_bytes: usize,
-        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+        admit: &(dyn for<'p> Fn(&'p Path) -> bool + Send + Sync),
     ) -> String;
 }
 
