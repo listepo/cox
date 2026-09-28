@@ -40,6 +40,8 @@ pub(crate) struct Streamed {
     pub text: String,
     pub thinking: String,
     pub calls: Vec<(CallId, String, Value)>,
+    /// Thought signatures by call id (T39.1); opaque, for replay only.
+    pub signatures: HashMap<CallId, String>,
     pub usage: Option<Usage>,
     pub response_model: Option<ModelId>,
     pub stop: Option<StopReason>,
@@ -91,6 +93,11 @@ pub(crate) async fn consume_provider(
                     name,
                     input: String::new(),
                 });
+            }
+            P::ToolUseSignature { signature } => {
+                if let Some(acc) = current.as_ref() {
+                    out.signatures.insert(acc.id, signature);
+                }
             }
             P::ToolUseInputDelta { text } => {
                 if let Some(acc) = current.as_mut() {
@@ -653,5 +660,64 @@ pub(crate) fn results_message(results: Vec<(CallId, ToolResult)>) -> Message {
                 is_error: !result.ok,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use cox_protocol::types::ProviderEvent;
+    use cox_provider::scripted::Scripted;
+
+    use super::*;
+    use crate::MemoryStore;
+
+    /// T39.1: a signature the wire streamed between a call's start and end
+    /// is kept under that call's id, and the call itself still commits.
+    #[tokio::test]
+    async fn consume_provider_keeps_signature_by_call_id() {
+        let store = Arc::new(MemoryStore::new());
+        let session = Session::new(
+            cox_protocol::Config::default(),
+            Arc::new(Scripted::from_toml("", "").expect("scenario")),
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-turn-signature"),
+        )
+        .expect("session");
+        let (tx, mut rx) = mpsc::channel(8);
+        let signed = CallId::new();
+        let unsigned = CallId::new();
+        for ev in [
+            ProviderEvent::ToolUseStart {
+                id: signed,
+                name: "read".into(),
+            },
+            ProviderEvent::ToolUseSignature {
+                signature: "sig-1".into(),
+            },
+            ProviderEvent::ToolUseInputDelta {
+                text: r#"{"path":"a.rs"}"#.into(),
+            },
+            ProviderEvent::ToolUseEnd,
+            ProviderEvent::ToolUseStart {
+                id: unsigned,
+                name: "read".into(),
+            },
+            ProviderEvent::ToolUseEnd,
+        ] {
+            tx.send(ev).await.expect("send");
+        }
+        drop(tx);
+        let streamed = consume_provider(&session, &mut rx, ItemId::new())
+            .await
+            .expect("stream");
+        assert_eq!(streamed.calls.len(), 2);
+        assert_eq!(
+            streamed.signatures,
+            HashMap::from([(signed, "sig-1".to_string())])
+        );
     }
 }

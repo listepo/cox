@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T39.1 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.2 | todo | P1 | 4 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -1124,43 +1123,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers:** T39.1 → T39.2 → T39.3 is the signature path; T39.5 is independent; T39.6 needs T39.3 and T39.5.
-
-### T39.1. Chat wire captures a tool call's thought signature
-
-- Model: Claude Code / opus-5.5
-- Status: in progress
-- Depends: T38.1 (Chat wire emits `ToolUseEnd`)
-- Size: ~150
-- Priority: P1
-- Complexity: 3
-- Goal: when a Chat Completions stream carries `extra_content.google.thought_signature` on a tool-call chunk, the stream emits one new `ProviderEvent::ToolUseSignature { signature }` between that call's `ToolUseStart` and `ToolUseEnd`, and `consume_provider` keeps it keyed by call id.
-- Files: `crates/cox-protocol/src/types.rs`, `crates/cox-provider-openai/src/chat.rs`, `crates/cox-core/src/turn.rs` (plus the regenerated `docs/protocol.jsonschema`)
-- Steps:
-  1. Add `ProviderEvent::ToolUseSignature { signature: String }` in `types.rs`, with a doc comment saying it is opaque, is replayed only to the wire that produced it, and follows its `ToolUseStart`. Add an rstest case beside the existing `ProviderEvent` serde cases. Regenerate `docs/protocol.jsonschema` through its drift test.
-  2. `chat.rs`: add `signature: Option<String>` and `wire_id: Option<String>` to `AccruedCall`. In `on_tool_call_chunk`, read `chunk["extra_content"]["google"]["thought_signature"]` (a string; the last one wins) and `chunk["id"]`.
-  3. Robustness: `index` currently defaults to 0 when absent, which would merge parallel calls from a server that omits it. When a chunk has no `index` and carries a wire `id` different from the current call's `wire_id`, start a new call instead.
-  4. `flush` emits `ToolUseSignature` after `ToolUseStart` and before the input delta when a signature was captured.
-  5. `turn.rs`: add `signatures: HashMap<CallId, String>` to `Streamed` (it derives `Default`). The new match arm stores the signature under `current`'s id. This is the only exhaustive match on `ProviderEvent` outside the provider crates (checked with grep on 2026-09-28).
-  6. Tests:
-     - `chat_stream_emits_signature_between_start_and_end`, from a new fixture `fixtures/openai-chat/gemini-tool-signature.sse`.
-     - `chat_stream_splits_calls_without_index_by_wire_id`.
-     - A `consume_provider` unit test proving the signature lands in `Streamed.signatures`.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(signature) | test(without_index)'
-  mise exec -- cargo nextest run -p cox-core -E 'test(consume_provider)'
-  mise exec -- cargo nextest run -p cox-protocol
-  ```
-- Done when: the three tests pass and the schema drift test is green. done.md records that the field path is unverified until T39.7.
-- Out of scope:
-  - Putting the signature into history (T39.2) and replaying it (T39.3).
-  - The Anthropic `signature_delta`, which is still dropped by `cox-provider-anthropic/src/stream.rs`; that stays as is.
-- Execution plan:
-  1. Tests first: fixture `fixtures/openai-chat/gemini-tool-signature.sse` (one `read` call whose chunk carries `extra_content.google.thought_signature`); `chat_stream_emits_signature_between_start_and_end` and `chat_stream_splits_calls_without_index_by_wire_id` in `chat.rs`; `consume_provider_keeps_signature_by_call_id` in `turn.rs`; a `provider_event_json_roundtrip` rstest in `types.rs` with the new variant. Confirm they fail (do not compile) on the current code.
-  2. `types.rs`: `ProviderEvent::ToolUseSignature { signature }` with the opaque/replay-to-its-own-wire doc comment.
-  3. `chat.rs`: `AccruedCall.{signature, wire_id}`; the field path is read in one helper, `thought_signature(chunk)`, commented as unverified until T39.7; an index-less chunk with a new wire id starts a new call; `flush` emits the signature after `ToolUseStart`.
-  4. `turn.rs`: `Streamed.signatures`, stored under the current call's id.
-  5. Verify: the card's Check, then fmt, clippy and the full nextest run. `docs/protocol.jsonschema` covers only `Event`/`Submission`, so its drift test should stay green unchanged.
 
 ### T39.2. Core keeps a tool call's signature in history and the rollout
 

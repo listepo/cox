@@ -205,6 +205,21 @@ pub struct AccruedCall {
     pub name: String,
     /// The JSON input, accumulated one string chunk at a time.
     pub arguments: String,
+    /// The server's own id for the call, which tells apart calls from a
+    /// server that omits `index`.
+    pub wire_id: Option<String>,
+    /// The call's thought signature (Gemini); the last one sent wins.
+    pub signature: Option<String>,
+}
+
+/// Where Gemini puts a tool call's thought signature on the Chat wire.
+/// UNVERIFIED: the page that documented `extra_content.google.thought_signature`
+/// is now a "moved" notice (plan.md P39); T39.7 checks it against the live
+/// endpoint, so every read of the path stays here.
+fn thought_signature(chunk: &Value) -> Option<&str> {
+    chunk
+        .pointer("/extra_content/google/thought_signature")
+        .and_then(Value::as_str)
 }
 
 /// The state carried across one `POST /v1/chat/completions` SSE body:
@@ -356,15 +371,40 @@ impl OpenAiChatStream {
     /// delta names no call, so a chunk interleaved from another index would
     /// land in the wrong one — [`Self::flush`] emits each call whole.
     fn on_tool_call_chunk(&mut self, chunk: &Value) {
-        let idx = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let wire_id = chunk
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty());
+        let idx = match chunk.get("index").and_then(Value::as_u64) {
+            Some(idx) => idx as usize,
+            // No index: continue the current call unless a new wire id says
+            // this chunk opens another one (else parallel calls would merge).
+            None => {
+                let last = self.calls.len().saturating_sub(1);
+                let opens_new = wire_id.is_some_and(|id| {
+                    self.calls
+                        .get(last)
+                        .is_some_and(|c| c.wire_id.as_deref() != Some(id))
+                });
+                if opens_new { last + 1 } else { last }
+            }
+        };
         while self.calls.len() <= idx {
             self.calls.push(AccruedCall {
                 id: CallId::new(),
                 name: String::new(),
                 arguments: String::new(),
+                wire_id: None,
+                signature: None,
             });
         }
         let call = &mut self.calls[idx];
+        if let Some(id) = wire_id {
+            call.wire_id = Some(id.to_string());
+        }
+        if let Some(signature) = thought_signature(chunk) {
+            call.signature = Some(signature.to_string());
+        }
         let function = chunk.get("function");
 
         // Some servers resend the name on later chunks; the last one wins.
@@ -382,7 +422,8 @@ impl OpenAiChatStream {
     }
 
     /// Emits the batch in wire-index order, each call as `ToolUseStart` →
-    /// its input → `ToolUseEnd`, and drains it so a second flush is a no-op.
+    /// its signature, if any → its input → `ToolUseEnd`, and drains it so a
+    /// second flush is a no-op.
     /// `cox-core` commits a call only on `ToolUseEnd` (the bug T30.6 fixed
     /// for Anthropic, T38.1 here). A call that never got a name has no tool
     /// to run and is dropped.
@@ -392,6 +433,9 @@ impl OpenAiChatStream {
                 id: call.id,
                 name: call.name,
             });
+            if let Some(signature) = call.signature {
+                events.push(ProviderEvent::ToolUseSignature { signature });
+            }
             if !call.arguments.is_empty() {
                 events.push(ProviderEvent::ToolUseInputDelta {
                     text: call.arguments,
@@ -661,6 +705,22 @@ mod tests {
             .collect()
     }
 
+    /// Test-only: the tool-call and stop events as short strings, so an
+    /// ordering assertion reads as the sequence it pins.
+    fn tool_shape(events: &[ProviderEvent]) -> Vec<String> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderEvent::ToolUseStart { name, .. } => Some(format!("start {name}")),
+                ProviderEvent::ToolUseSignature { signature } => Some(format!("sig {signature}")),
+                ProviderEvent::ToolUseInputDelta { text } => Some(format!("delta {text}")),
+                ProviderEvent::ToolUseEnd => Some("end".into()),
+                ProviderEvent::Stop { .. } => Some("stop".into()),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn run_fixture(name: &str) -> Vec<ProviderEvent> {
         let mut stream = OpenAiChatStream::new();
         let mut events = Vec::new();
@@ -687,18 +747,8 @@ mod tests {
     #[test]
     fn chat_stream_parallel_tool_calls_come_out_whole_each_ending_before_the_next() {
         let events = run_fixture("parallel_tool_calls");
-        let shape: Vec<String> = events
-            .iter()
-            .filter_map(|e| match e {
-                ProviderEvent::ToolUseStart { name, .. } => Some(format!("start {name}")),
-                ProviderEvent::ToolUseInputDelta { text } => Some(format!("delta {text}")),
-                ProviderEvent::ToolUseEnd => Some("end".into()),
-                ProviderEvent::Stop { .. } => Some("stop".into()),
-                _ => None,
-            })
-            .collect();
         assert_eq!(
-            shape,
+            tool_shape(&events),
             [
                 "start read",
                 r#"delta {"path":"a.rs"} more"#,
@@ -730,6 +780,49 @@ mod tests {
             ]
         ));
         assert!(stream.finish().is_empty(), "a flush drains the batch");
+    }
+
+    /// T39.1: a Gemini tool-call chunk's thought signature comes out once,
+    /// between its call's `ToolUseStart` and `ToolUseEnd`.
+    #[test]
+    fn chat_stream_emits_signature_between_start_and_end() {
+        let events = run_fixture("gemini-tool-signature");
+        assert_eq!(
+            tool_shape(&events),
+            [
+                "start read",
+                "sig sig-fixture",
+                r#"delta {"path":"src/main.rs"}"#,
+                "end",
+                "stop"
+            ],
+            "{events:?}"
+        );
+    }
+
+    /// T39.1: a server that omits `index` must not merge parallel calls into
+    /// call 0; a new wire `id` starts a new call.
+    #[test]
+    fn chat_stream_splits_calls_without_index_by_wire_id() {
+        let mut stream = OpenAiChatStream::new();
+        for frame in [
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"a","function":{"name":"read","arguments":"{\"path\":"}}]}}]}"#,
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"\"a.rs\"}"}}]}}]}"#,
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"b","function":{"name":"grep","arguments":"{}"}}]}}]}"#,
+        ] {
+            assert!(stream.feed(frame).expect("well-formed").is_empty());
+        }
+        assert_eq!(
+            tool_shape(&stream.finish()),
+            [
+                "start read",
+                r#"delta {"path":"a.rs"}"#,
+                "end",
+                "start grep",
+                "delta {}",
+                "end"
+            ]
+        );
     }
 
     #[test]
