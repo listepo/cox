@@ -29,16 +29,20 @@ public struct SessionToolbar: View {
     public var contextFraction: Double
     public var isRunning: Bool
     public var popover: Popover?
+    /// The plugins' `status.left` then `status.right` segments (PL§8, T52.17): the first thing
+    /// the bar drops when it runs out of room.
+    public var pluginStatus: [PluginWidget]
 
     public init(
       title: String = "", project: String = "", branch: String? = nil, model: String = "",
       mode: SessionMode = .ask, cost: String = "", context: String = "",
-      contextFraction: Double = 0, isRunning: Bool = false, popover: Popover? = nil
+      contextFraction: Double = 0, isRunning: Bool = false, popover: Popover? = nil,
+      pluginStatus: [PluginWidget] = []
     ) {
       (self.title, self.project, self.branch, self.model, self.mode) =
         (title, project, branch, model, mode)
       (self.cost, self.context, self.contextFraction) = (cost, context, contextFraction)
-      (self.isRunning, self.popover) = (isRunning, popover)
+      (self.isRunning, self.popover, self.pluginStatus) = (isRunning, popover, pluginStatus)
     }
   }
 
@@ -88,6 +92,13 @@ public struct SessionToolbar: View {
         send(.rename($0))
       }
       Spacer(minLength: Space.ml)
+      if !state.pluginStatus.isEmpty {
+        // `ViewThatFits` falls back to nothing, so the segments go before any capsule does.
+        ViewThatFits(in: .horizontal) {
+          PluginStatusSegments(widgets: state.pluginStatus)
+          Color.clear.frame(width: 0, height: 0)
+        }
+      }
       ModelCapsule(state.model, isOpen: state.popover == .model) { send(.open(.model)) }
         .anchorPreference(key: ModelCapsuleAnchor.self, value: .bounds) { $0 }
       ModeSegmented(selection: Binding(get: { state.mode }, set: { send(.mode($0)) }))
@@ -119,6 +130,29 @@ public struct SessionToolbar: View {
           .accessibilityHidden(true)
       }
     }
+  }
+}
+
+/// The plugins' status segments in a row, each at most PL§8's `SEGMENT_COLS` cells of the code
+/// face wide and one line tall, truncated past that.
+struct PluginStatusSegments: View {
+  let widgets: [PluginWidget]
+
+  /// PL§8's `SEGMENT_COLS`, in the code face's advance, which is about 0.6 of its size.
+  private static let segmentWidth: CGFloat = FontToken.monoCode.size * 0.6 * 24
+
+  var body: some View {
+    HStack(spacing: Space.ml) {
+      ForEach(Array(widgets.enumerated()), id: \.offset) { _, widget in
+        PluginWidgetView(widget)
+          .lineLimit(1)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: Self.segmentWidth, alignment: .leading)
+          .clipped()
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Plugin status")
   }
 }
 

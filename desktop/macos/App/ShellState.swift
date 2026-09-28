@@ -51,7 +51,8 @@ enum ShellState {
       title: figures.title, project: figures.project, branch: figures.branch,
       model: open.composer.model ?? "", mode: open.store.status.mode.map(SessionMode.init) ?? .ask,
       cost: figures.cost, context: figures.context, contextFraction: figures.contextFraction,
-      isRunning: open.store.isTurnRunning, popover: popover)
+      isRunning: open.store.isTurnRunning, popover: popover,
+      pluginStatus: PluginWidgets.status(open.store))
   }
 
   static func models(_ menu: ModelMenu?) -> ModelPopover.State {

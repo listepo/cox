@@ -85,6 +85,7 @@ final class LiveSession: SessionClient {
   }
 
   func close() { handle.close() }
+  func closePluginOverlay() { handle.closePluginOverlay() }
 }
 
 /// A terminal pane's shell over the generated handle (T51.6): `outputs` pulls `nextOutput`

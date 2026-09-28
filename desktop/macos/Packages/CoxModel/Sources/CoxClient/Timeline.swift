@@ -60,6 +60,8 @@ public enum TimelinePatch: Equatable, Sendable {
   case remove(id: BlockID)
   case usage(usage: UsageView)
   case status(status: Status)
+  /// One plugin slot's new state (T52.17); it replaces that slot only and survives `reset`.
+  case pluginSlot(slot: PluginSlot)
 }
 
 /// `cox_app::Status`: what the session reports beside its blocks; `nil` is not known yet.

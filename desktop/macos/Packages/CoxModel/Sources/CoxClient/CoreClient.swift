@@ -63,6 +63,14 @@ public protocol SessionClient: AnyObject, Sendable {
   func openTerminal(cols: UInt16, rows: UInt16) throws -> any TerminalClient
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
+  /// Hides the plugin overlay shown, as Esc does
+  /// (`cox_app::live::LiveSession::close_plugin_overlay`, T52.17).
+  func closePluginOverlay()
+}
+
+extension SessionClient {
+  /// A client with no plugins has no overlay to hide.
+  public func closePluginOverlay() {}
 }
 
 /// What opening a task shows (`cox_app::TaskTarget`).

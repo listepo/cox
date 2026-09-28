@@ -8,9 +8,10 @@
 // as `/model` does, the inspector's tabs read the open session,
 // Review replaces the transcript column, the shell's panes fold, ⌃` shows the session's terminal
 // pane under the column (T51.6; the window asks before closing over a running command), ⌘⇧B
-// shows the browser pane beside it (T51.10) and the Appearance popover writes
-// `[desktop.appearance]`. A popped-out window (T51.11) is the same view on one session with no
-// sidebar; every window on a session shares its stores through `AppStore`.
+// shows the browser pane beside it (T51.10), plugin panels sit above the composer and a plugin
+// overlay shows as a sheet (T52.17), and the Appearance popover writes `[desktop.appearance]`.
+// A popped-out window (T51.11) is the same view on one session with no sidebar; every window
+// on a session shares its stores through `AppStore`.
 
 import CoxClient
 import CoxModel
@@ -153,6 +154,14 @@ struct SessionWindow: View {
     openWindow(value: PopOut(session: session, asTab: asTab))
   }
 
+  /// A plugin overlay shows as a sheet while the core says it is shown; Esc, which dismisses the
+  /// sheet, hides it in the core too, so the next patch agrees.
+  private func pluginOverlay(_ store: SessionStore) -> Binding<Bool> {
+    Binding(
+      get: { PluginWidgets.overlay(store) != nil },
+      set: { if !$0 { store.closePluginOverlay() } })
+  }
+
   private var isRefused: Binding<Bool> {
     Binding(get: { refused != nil }, set: { if !$0 { refused = nil } })
   }
@@ -169,6 +178,8 @@ struct SessionWindow: View {
         VStack(spacing: 0) {
           TranscriptView(store: showing.store, send: send)
             .composer(showing.composer)
+          let panels = PluginWidgets.panels(showing.store)
+          if !panels.isEmpty { PluginPanel(panels).fixedSize(horizontal: false, vertical: true) }
           // At its own height, so the transcript takes the rest of the column.
           SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
           if isTerminalShown {
@@ -185,6 +196,12 @@ struct SessionWindow: View {
       }
       // A new view per session, so the transcript's text is rebuilt from the one it shows.
       .id(current)
+      .sheet(isPresented: pluginOverlay(showing.store)) {
+        if let overlay = PluginWidgets.overlay(showing.store) {
+          ScrollView { PluginWidgetView(overlay).padding(Space.xl) }
+            .frame(minWidth: Size.readingWidth, minHeight: Size.popoverWidth)
+        }
+      }
     } else if let failure {
       Text(failure).textSelection(.enabled)
     } else {

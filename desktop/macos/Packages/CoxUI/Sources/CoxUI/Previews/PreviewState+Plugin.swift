@@ -52,4 +52,16 @@ extension PreviewState {
     PluginSample(name: "stack", widget: pluginStack),
     PluginSample(name: "block", widget: pluginBlock),
   ]
+
+  /// Two status segments, the second longer than a segment's width, so it truncates (T52.17).
+  static let pluginStatus = [
+    PluginWidget.text([[.init("main", .accent), .init(" +12", .diffAdd)]]),
+    PluginWidget.text([[.init("cache hit 81% · 3 retries · last sync 2 min ago", .dim)]]),
+  ]
+
+  /// Two shown panels, the first taller than a panel's eight rows, so it scrolls (T52.17).
+  static let pluginPanels = [
+    PluginPanelItem(plugin: "acme", widget: pluginBlock),
+    PluginPanelItem(plugin: "usage", widget: pluginStack),
+  ]
 }
