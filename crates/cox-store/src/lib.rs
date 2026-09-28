@@ -362,8 +362,14 @@ impl StoreTrait for Store {
             .append(now_rfc3339(), ev)
             .map_err(|_| StoreError::Io)?;
         drop(writers);
-        if matches!(ev, Event::TurnDone { .. }) {
-            self.finish_session_turn(id)?;
+        match ev {
+            Event::TurnDone { .. } => self.finish_session_turn(id)?,
+            // A113: the core's generated title; a rename (T37.22.9) calls
+            // `session_title_set` with `TitleSource::User` instead.
+            Event::TitleSet { title } => {
+                self.session_title_set(id, title, TitleSource::Auto)?;
+            }
+            _ => {}
         }
         Ok(seq)
     }
@@ -811,8 +817,55 @@ impl PluginStoreTrait for Store {
     }
 }
 
+/// Who set a session's title (A113), stored in `sessions.title_source`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleSource {
+    /// The `title` job's answer after the first turn.
+    Auto,
+    /// A rename; an automatic title never replaces it.
+    User,
+}
+
+impl TitleSource {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::User => "user",
+        }
+    }
+}
+
 /// Public query methods for surfaces like `cox stats`.
 impl Store {
+    /// Stores `title` as the session's title, set by `source`. An `Auto`
+    /// title never replaces a `User` one (A113); returns whether the row
+    /// changed.
+    pub fn session_title_set(
+        &self,
+        id: &SessionId,
+        title: &str,
+        source: TitleSource,
+    ) -> Result<bool, StoreError> {
+        use schema::sessions::dsl as s;
+        let row = s::sessions.filter(s::id.eq(id.to_string()));
+        let values = (s::title.eq(title), s::title_source.eq(source.tag()));
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let changed = match source {
+            TitleSource::User => diesel::update(row).set(values).execute(&mut *conn),
+            TitleSource::Auto => diesel::update(
+                row.filter(
+                    s::title_source
+                        .is_null()
+                        .or(s::title_source.ne(TitleSource::User.tag())),
+                ),
+            )
+            .set(values)
+            .execute(&mut *conn),
+        }
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(changed > 0)
+    }
+
     /// Every checkpoint row of a session in insertion order, each with its
     /// RFC 3339 `created_at`: the desktop Changes tab shows when a turn it
     /// can rewind to started (T37.29.1); the trait's rows carry no time.
@@ -1026,7 +1079,7 @@ mod tests {
             err,
             StoreError::SchemaNewer {
                 db: "99991231000000".into(),
-                binary: "00000000000004".into(),
+                binary: "00000000000005".into(),
             }
         );
     }
@@ -1222,6 +1275,46 @@ mod tests {
             .expect("session");
 
         assert_eq!(store.latest_session_for_cwd(&cwd).expect("latest"), newer);
+    }
+
+    /// A113: a `TitleSet` in the rollout lands in `sessions.title`, where
+    /// the session list reads it, and never replaces a user's title.
+    #[test]
+    fn session_title_round_trips_and_keeps_a_user_title() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let (auto, renamed) = (SessionId::new(), SessionId::new());
+        for id in [auto, renamed] {
+            store
+                .session_create(&SessionRow {
+                    id,
+                    created_at: String::new(),
+                    cwd: PathBuf::from("/tmp"),
+                    project_slug: String::new(),
+                    title: None,
+                    parent_id: None,
+                    rollout_path: PathBuf::new(),
+                })
+                .expect("session");
+        }
+        let generated = Event::TitleSet {
+            title: "Fix the ledger".into(),
+        };
+        store.rollout_append(&auto, &generated).expect("append");
+        assert!(
+            store
+                .session_title_set(&renamed, "Mine", TitleSource::User)
+                .expect("rename")
+        );
+        store.rollout_append(&renamed, &generated).expect("append");
+        let titles: HashMap<_, _> = store
+            .sessions_tree(10)
+            .expect("list")
+            .into_iter()
+            .map(|row| (row.info.id, row.info.title))
+            .collect();
+        assert_eq!(titles[&auto.to_string()].as_deref(), Some("Fix the ledger"));
+        assert_eq!(titles[&renamed.to_string()].as_deref(), Some("Mine"));
     }
 
     #[test]

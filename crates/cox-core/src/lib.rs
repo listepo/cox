@@ -23,8 +23,10 @@ mod rewind;
 mod rollout;
 pub mod router;
 mod session;
+mod side;
 pub mod subagent;
 pub mod tasks;
+mod title;
 mod truncate;
 mod turn;
 

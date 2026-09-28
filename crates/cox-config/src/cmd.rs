@@ -307,6 +307,18 @@ mod tests {
         assert!(set_then_load("desktop.review.send", "later").is_err());
     }
 
+    /// A113: `default.toml` names sessions; the user can turn it off.
+    #[test]
+    fn config_set_session_auto_title_round_trips() {
+        assert!(!cox_protocol::Config::default().session.auto_title);
+        let loaded = set_then_load("session.auto_title", "false").expect("load succeeds");
+        assert!(!loaded.config.session.auto_title);
+        assert_eq!(loaded.source_of("session.auto_title"), "user");
+        let loaded = set_then_load("tui.theme", "auto").expect("load succeeds");
+        assert!(loaded.config.session.auto_title);
+        assert!(set_then_load("session.auto_title", "sometimes").is_err());
+    }
+
     /// A109: no dark highlight on controls unless the user picks the subtle one or every level.
     #[test]
     fn config_set_desktop_dark_highlight_round_trips() {

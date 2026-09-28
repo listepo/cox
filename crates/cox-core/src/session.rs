@@ -1134,10 +1134,17 @@ impl Session {
             error.type = tracing::field::Empty,
             otel.status_code = tracing::field::Empty,
         );
+        // A113: the title job reads the prompt as the user typed it.
+        let first_prompt = self.title_prompt(&text).await;
         let result = self
             .run_turn_inner(turn, text, attachments, confirm_think)
             .instrument(span.clone())
             .await;
+        if result.is_ok()
+            && let Some(prompt) = first_prompt
+        {
+            self.auto_title(&prompt).await;
+        }
         // T33.20: `route` advice holds for its own turn only, however the
         // turn ended.
         self.inner.lock().await.routed = None;

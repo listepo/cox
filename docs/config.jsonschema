@@ -292,6 +292,13 @@
         "salience_min": 0.3
       }
     },
+    "session": {
+      "description": "`[session]`",
+      "$ref": "#/$defs/SessionConfig",
+      "default": {
+        "auto_title": false
+      }
+    },
     "telemetry": {
       "description": "`[telemetry]`",
       "$ref": "#/$defs/TelemetryConfig",
@@ -1788,6 +1795,18 @@
           "type": "number",
           "format": "double",
           "default": 0.3
+        }
+      },
+      "additionalProperties": false
+    },
+    "SessionConfig": {
+      "description": "`[session]` (A113): per-session behaviour that is not a turn's own.",
+      "type": "object",
+      "properties": {
+        "auto_title": {
+          "description": "Whether one `title` job names the session after its first turn.\n`default.toml` turns it on; the Rust default is off so a\n`Config::default()` built by a test or an embedder never makes a\nmodel call nobody configured.",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false

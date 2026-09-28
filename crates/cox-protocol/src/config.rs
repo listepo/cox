@@ -61,6 +61,8 @@ pub struct Config {
     pub plugins: PluginsConfig,
     /// `[memory]`
     pub memory: MemoryConfig,
+    /// `[session]`
+    pub session: SessionConfig,
     /// `[telemetry]`
     pub telemetry: TelemetryConfig,
     /// `[record]`
@@ -1241,6 +1243,17 @@ impl Default for MemoryConfig {
             salience_min: 0.3,
         }
     }
+}
+
+/// `[session]` (A113): per-session behaviour that is not a turn's own.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct SessionConfig {
+    /// Whether one `title` job names the session after its first turn.
+    /// `default.toml` turns it on; the Rust default is off so a
+    /// `Config::default()` built by a test or an embedder never makes a
+    /// model call nobody configured.
+    pub auto_title: bool,
 }
 
 /// `[telemetry]` (plan.md §1.6).
