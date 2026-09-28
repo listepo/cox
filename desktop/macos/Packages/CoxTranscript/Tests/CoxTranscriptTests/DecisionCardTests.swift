@@ -17,8 +17,9 @@ private func approval(
   Block(
     id: id, turn: 1,
     kind: .approval(
-      call: "call-\(id)", tool: tool, summary: "git push -u origin main", why: why,
-      source: source, decision: decision, by: decider))
+      call: "call-\(id)", tool: tool, summary: "git push -u origin main",
+      input: #"{"command":"git push -u origin main"}"#, grants: ["git push -u origin main"],
+      why: why, source: source, decision: decision, by: decider))
 }
 
 private func question(_ id: BlockID, options: [String] = [], answer: String? = nil) -> Block {
@@ -66,6 +67,28 @@ private func question(_ id: BlockID, options: [String] = [], answer: String? = n
   #expect(ApprovalCard.Action.allow.decision == .allow)
   #expect(ApprovalCard.Action.allowForSession.decision == .allowForSession)
   #expect(ApprovalCard.Action.deny.decision == .deny(reason: "denied by user"))
+}
+
+@Test func anApprovalShowsWhatAllowForSessionGrantsAndItsInputToEdit() throws {
+  let content = try #require(ApprovalCard.Content(approval("g", why: .risk(risk: .exec))))
+  #expect(content.grant == "bash: git push -u origin main")
+  #expect(content.input == "{\n  \"command\" : \"git push -u origin main\"\n}")
+  #expect(
+    ApprovalCard.Content.grant("bash", ["git status", "npm test"])
+      == "bash: git status · npm test")
+  #expect(ApprovalCard.Content.grant("bash", []) == nil)
+  #expect(ApprovalCard.Content.editable("null") == nil)
+}
+
+@MainActor
+@Test func anEditSendsTheEditedJSONAsTheDecision() {
+  var sent: [Intent] = []
+  let card = DecisionCard(block: approval("e", why: .risk(risk: .exec))) { sent.append($0) }
+  card.edit(#"{"command": "git push origin main"}"#)
+  #expect(
+    sent == [
+      .approve(call: "call-e", decision: .edit(input: #"{"command": "git push origin main"}"#))
+    ])
 }
 
 @Test func aQuestionFillsItsCardAndAnAnswerCollapsesIt() throws {

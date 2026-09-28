@@ -13,6 +13,7 @@ use cox_protocol::types::{
 use cox_render::diffmodel::DiffModel;
 use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::summary::Icon;
 use crate::usage::UsageView;
@@ -81,6 +82,13 @@ pub enum BlockKind {
         call: CallId,
         tool: String,
         summary: String,
+        /// The call's input as the model sent it: what Edit… starts from
+        /// (T37.27.6).
+        input: Value,
+        /// The subjects "Allow for session" would grant `tool`, as the
+        /// engine records them (`grants_for`): one per command of a split
+        /// line. Shown only; the engine alone decides what a grant covers.
+        grants: Vec<String>,
         why: Why,
         source: Option<Source>,
         /// `None` while pending.

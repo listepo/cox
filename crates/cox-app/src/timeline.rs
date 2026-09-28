@@ -5,6 +5,7 @@
 
 use std::fmt::Display;
 
+use cox_core::permission::grants_for;
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::types::{Event, ItemKind, ToolCall};
 use cox_render::diffmodel;
@@ -208,6 +209,8 @@ impl Timeline {
                     call: call.id,
                     tool: call.name.clone(),
                     summary: one_line(&call.subject),
+                    input: call.input.clone(),
+                    grants: grants_for(call).into_iter().map(|(_, s)| s).collect(),
                     why: why.clone(),
                     source: source.clone(),
                     decision: None,
@@ -497,7 +500,7 @@ impl Timeline {
 #[cfg(test)]
 mod tests {
     use cox_protocol::ids::TurnId;
-    use cox_protocol::types::{CompactReason, Job, ModelId, Risk, Tier};
+    use cox_protocol::types::{CompactReason, Job, ModelId, Risk, Segments, Tier, Why};
     use serde_json::json;
 
     use super::*;
@@ -621,6 +624,38 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, ["group", "read", "glob", "bash", "read"]);
+    }
+
+    #[test]
+    fn an_approval_carries_the_input_and_what_allow_for_session_grants() {
+        let mut timeline = Timeline::default();
+        let input = json!({"command": "git status && npm test"});
+        let call = ToolCall {
+            id: CallId::new(),
+            name: "bash".into(),
+            input: input.clone(),
+            risk: Risk::Exec,
+            subject: "git status && npm test".into(),
+            segments: Some(Segments {
+                commands: vec!["git status".into(), "npm test".into()],
+                opaque: false,
+            }),
+        };
+        timeline.apply(&Event::ApprovalRequired {
+            call,
+            why: Why::Risk { risk: Risk::Exec },
+            source: None,
+        });
+        let BlockKind::Approval {
+            input: carried,
+            grants,
+            ..
+        } = &timeline.blocks()[0].kind
+        else {
+            panic!("expected an approval block");
+        };
+        assert_eq!(carried, &input);
+        assert_eq!(grants, &["git status", "npm test"]);
     }
 
     #[test]

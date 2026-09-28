@@ -92,7 +92,7 @@ enum MarkdownCopy {
   static func card(_ kind: BlockKind) -> String? {
     switch kind {
     case .tool(_, let summary, _, _, _, _, _, _, _), .toolGroup(let summary, _, _),
-      .approval(_, _, let summary, _, _, _, _):
+      .approval(_, _, let summary, _, _, _, _, _, _):
       return summary
     case .question(_, let question, _, _): return question
     case .task(_, let label, _, _, _, _): return label

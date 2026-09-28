@@ -234,7 +234,7 @@ extension [TimelinePatch] {
     var calls: Set<String> = []
     for case .upsert(let block, _) in self {
       switch block.kind {
-      case .approval(let call, _, _, _, _, let decision, _):
+      case .approval(let call, _, _, _, _, _, _, let decision, _):
         if decision == nil { calls.insert(call) } else { calls.remove(call) }
       case .question(let call, _, _, let answer):
         if answer == nil { calls.insert(call) } else { calls.remove(call) }

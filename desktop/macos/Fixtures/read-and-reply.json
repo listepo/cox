@@ -4,7 +4,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KKGQFQK7MTG70JEYT7K24D",
+          "id": "turn:01M3KPQYS1TPQPF7Y12B738APB",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -15,6 +15,46 @@
           }
         },
         "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KPQYS1FT4ZM2P3ZECR9PX8",
+          "turn": 1,
+          "kind": {
+            "type": "user",
+            "text": "Read the notes",
+            "attachments": []
+          }
+        },
+        "after": "turn:01M3KPQYS1TPQPF7Y12B738APB"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KPQYSZBFYWZR71F581GGSH",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Reading the notes."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KPQYS1FT4ZM2P3ZECR9PX8"
       },
       {
         "op": "usage",
@@ -30,7 +70,7 @@
             "estimated": false
           },
           "turn": {
-            "turn": "01M3KKGQFQK7MTG70JEYT7K24D",
+            "turn": "01M3KPQYS1TPQPF7Y12B738APB",
             "tally": {
               "sent": 0,
               "received": 0,
@@ -42,7 +82,7 @@
               "estimated": false
             },
             "thinking_tokens": 0,
-            "ttft_ms": null,
+            "ttft_ms": 0,
             "tok_per_s": null,
             "exact": false,
             "sparkline": [],
@@ -57,7 +97,7 @@
             "heading": "This turn · 0 requests",
             "phase": "streaming",
             "rate_unit": "tok/s now",
-            "rate_detail": "",
+            "rate_detail": "first token 0 ms",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -106,24 +146,177 @@
             "footnote": "Counts from the provider's usage, one ledger row per request"
           }
         }
-      },
+      }
+    ],
+    [
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KKGQFQ4MR86F4KNR36KE5Y",
+          "id": "turn:01M3KPQYS1TPQPF7Y12B738APB",
           "turn": 1,
           "kind": {
-            "type": "user",
-            "text": "Read the notes",
-            "attachments": []
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 3709,
+              "output_tokens": 10,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": null
           }
         },
-        "after": "turn:01M3KKGQFQK7MTG70JEYT7K24D"
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 3709,
+            "received": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 3709,
+            "cost_usd": 0.0,
+            "calls": 1,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3KPQYS1TPQPF7Y12B738APB",
+            "tally": {
+              "sent": 3709,
+              "received": 10,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 3709,
+              "cost_usd": 0.0,
+              "calls": 1,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 7544.322897019992,
+            "exact": true,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 3709,
+          "text": {
+            "sent": "3.7k",
+            "received": "10",
+            "rate": "7544",
+            "spoken": "3.7 thousand tokens sent, 10 received, 7544 tokens per second",
+            "heading": "This turn · 1 request",
+            "phase": "streaming",
+            "rate_unit": "tok/s last call",
+            "rate_detail": "avg 7544 tok/s · first token 0 ms · peak 7544 tok/s",
+            "rows": [
+              {
+                "label": "↑ Sent",
+                "turn": "3.7k",
+                "session": "3.7k",
+                "detail": false
+              },
+              {
+                "label": "cache read",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "cache write",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "uncached",
+                "turn": "3.7k",
+                "session": "3.7k",
+                "detail": true
+              },
+              {
+                "label": "↓ Received",
+                "turn": "10",
+                "session": "10",
+                "detail": false
+              },
+              {
+                "label": "of it thinking",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "Cost",
+                "turn": "$0.00",
+                "session": "$0.00",
+                "detail": false
+              }
+            ],
+            "context": "Context · 3.7k",
+            "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
+          }
+        }
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KKGQFTZF5RDTE2QPJP5F46",
+          "id": "item:01M3KPQYSZBFYWZR71F581GGSH",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Reading the notes.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Reading the notes."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KPQYS1FT4ZM2P3ZECR9PX8"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KPQYT0AX7F2E7ZW450ACDP",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "read",
+            "summary": "Read `notes.md` · 1 line",
+            "icon": "read",
+            "risk": "read_only",
+            "state": "done",
+            "tail": "1\thello\n\n[1 lines total]",
+            "archive": {
+              "id": "01M3KPQYT3DZ7K931ZXVF10BE3",
+              "bytes": 24
+            },
+            "diff": null,
+            "duration_ms": 0
+          }
+        },
+        "after": "item:01M3KPQYSZBFYWZR71F581GGSH"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KPQYT54GS4M49W5BN6PZTX",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -133,14 +326,14 @@
             }
           }
         },
-        "after": "item:01M3KKGQFQ4MR86F4KNR36KE5Y"
+        "after": "call:01M3KPQYT0AX7F2E7ZW450ACDP"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KKGQFQK7MTG70JEYT7K24D",
+          "id": "turn:01M3KPQYS1TPQPF7Y12B738APB",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -165,57 +358,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KKGQFTZF5RDTE2QPJP5F46",
-          "turn": 1,
-          "kind": {
-            "type": "assistant",
-            "text": "Reading the notes.",
-            "doc": {
-              "blocks": [
-                {
-                  "type": "text",
-                  "kind": "paragraph",
-                  "lines": [
-                    [
-                      {
-                        "text": "Reading the notes."
-                      }
-                    ]
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        "after": "item:01M3KKGQFQ4MR86F4KNR36KE5Y"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "call:01M3KKGQFTRRTJB8AGJ3RYN11C",
-          "turn": 1,
-          "kind": {
-            "type": "tool",
-            "tool": "read",
-            "summary": "Read `notes.md` · 1 line",
-            "icon": "read",
-            "risk": "read_only",
-            "state": "done",
-            "tail": "1\thello\n\n[1 lines total]",
-            "archive": {
-              "id": "01M3KKGQFXBZQ15PABB4EMJYTQ",
-              "bytes": 24
-            },
-            "diff": null,
-            "duration_ms": 1
-          }
-        },
-        "after": "item:01M3KKGQFTZF5RDTE2QPJP5F46"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3KKGQFYCW0FHW96NWRH66T7",
+          "id": "item:01M3KPQYT54GS4M49W5BN6PZTX",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -426,7 +569,7 @@
             }
           }
         },
-        "after": "call:01M3KKGQFTRRTJB8AGJ3RYN11C"
+        "after": "call:01M3KPQYT0AX7F2E7ZW450ACDP"
       },
       {
         "op": "usage",
@@ -442,7 +585,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KKGQFQK7MTG70JEYT7K24D",
+            "turn": "01M3KPQYS1TPQPF7Y12B738APB",
             "tally": {
               "sent": 7437,
               "received": 35,
@@ -455,7 +598,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 644462.775830068,
+            "tok_per_s": 578034.6820809249,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -464,12 +607,12 @@
           "text": {
             "sent": "7.4k",
             "received": "35",
-            "rate": "644463",
-            "spoken": "7.4 thousand tokens sent, 35 received, 644463 tokens per second",
+            "rate": "578035",
+            "spoken": "7.4 thousand tokens sent, 35 received, 578035 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 172342 tok/s · first token 0 ms · peak 644463 tok/s",
+            "rate_detail": "avg 25571 tok/s · first token 0 ms · peak 578035 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -521,9 +664,10 @@
       }
     ]
   ],
+  "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KKGQFQK7MTG70JEYT7K24D",
+      "id": "turn:01M3KPQYS1TPQPF7Y12B738APB",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -544,7 +688,7 @@
       }
     },
     {
-      "id": "item:01M3KKGQFQ4MR86F4KNR36KE5Y",
+      "id": "item:01M3KPQYS1FT4ZM2P3ZECR9PX8",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -553,7 +697,7 @@
       }
     },
     {
-      "id": "item:01M3KKGQFTZF5RDTE2QPJP5F46",
+      "id": "item:01M3KPQYSZBFYWZR71F581GGSH",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -576,7 +720,7 @@
       }
     },
     {
-      "id": "call:01M3KKGQFTRRTJB8AGJ3RYN11C",
+      "id": "call:01M3KPQYT0AX7F2E7ZW450ACDP",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -587,15 +731,15 @@
         "state": "done",
         "tail": "1\thello\n\n[1 lines total]",
         "archive": {
-          "id": "01M3KKGQFXBZQ15PABB4EMJYTQ",
+          "id": "01M3KPQYT3DZ7K931ZXVF10BE3",
           "bytes": 24
         },
         "diff": null,
-        "duration_ms": 1
+        "duration_ms": 0
       }
     },
     {
-      "id": "item:01M3KKGQFYCW0FHW96NWRH66T7",
+      "id": "item:01M3KPQYT54GS4M49W5BN6PZTX",
       "turn": 1,
       "kind": {
         "type": "assistant",

@@ -184,6 +184,8 @@ pub enum BlockKind {
         call: CallId,
         tool: String,
         summary: String,
+        input: Value,
+        grants: Vec<String>,
         why: Why,
         source: Option<Source>,
         decision: Option<Decision>,
