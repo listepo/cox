@@ -312,7 +312,8 @@ Rules:
 | --- | --- | --- |
 | `CoxCore` | `binaryTarget` `CoxFFI.xcframework`; generated `cox_ffi.swift` (target `CoxFFIBindings`, Swift 5 mode, a symlink into `build/bindings/`); `LiveCoreClient` converting its values to `CoxClient`'s | `CoxModel`'s `CoxClient` |
 | `CoxModel` | Target `CoxClient`: the timeline and intent values, the `CoreClient` protocol and `FixtureCoreClient` — here, not in `CoxCore`, because a package declaring the binary target does not load before the XCFramework is built (T37.16). Target `CoxModel`: `@Observable @MainActor` stores: `AppStore` (projects, sessions, inbox, badge), `SessionStore` (ordered blocks by id, status, composer draft), `SettingsStore`. `apply(_ patches:)` and `send(_ intent:)` only | swift-collections |
-| `CoxUI` | Views and the design system (DT§5.9) | `CoxModel` |
+| `CoxUI` | Views and the design system (DT§5.9) | `CoxModel`, `CoxTranscriptText` |
+| `CoxTranscriptText` | `TranscriptTextView`: the transcript as one TextKit 2 `NSTextView`, every timeline block a tracked text range (`BlockRanges`: id → range, location → id), styled by a `TranscriptStyle` the caller builds from tokens, so it depends on no CoxUI (T37.40, DT§5.2, `research.md` §9.5.13) | `CoxModel`'s `CoxClient` |
 | `CoxPlatform` | `Host` implementation, notifications with actions, Sparkle, OAuth handoff, `NSWorkspace` "open in editor", SwiftTerm and `WebView` panes (M2) | `CoxModel` |
 | App target | `@main`, scenes, menus, entitlements, Info.plist, assets | all |
 
@@ -565,6 +566,7 @@ apps/cox/
 │  │  ├─ CoxCore/                  Package.swift (binaryTarget ../../build/CoxFFI.xcframework)
 │  │  ├─ CoxModel/                 stores + Tests/
 │  │  ├─ CoxUI/                    views, DesignSystem/ + Tests/ (snapshots)
+│  │  ├─ CoxTranscriptText/        TextKit 2 transcript view + Tests/
 │  │  └─ CoxPlatform/              Host, notifications, Sparkle, terminal, web
 │  ├─ Fixtures/                    patch streams recorded from scripted scenarios
 │  └─ UITests/

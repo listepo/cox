@@ -1,0 +1,56 @@
+// `TranscriptTextView` (T37.40, DT§5.2): one TextKit 2 `NSTextView` over the
+// whole transcript, so AppKit's own drag selection runs across blocks — the
+// engine spike T37.37 chose over per-block views (research.md §9.5.13). Its own
+// file because the view is the one AppKit type the app hosts; the text and the
+// block ranges it shows come from `TranscriptText` and `BlockRanges`.
+
+import AppKit
+import CoxClient
+
+public final class TranscriptTextView: NSTextView {
+  public private(set) var style = TranscriptStyle.system
+  /// Where each block's text sits; kept in step with the text storage.
+  public private(set) var blockRanges = BlockRanges()
+
+  /// A read-only, selectable transcript on TextKit 2. `NSTextView()` would
+  /// also be TextKit 2, but this names it: reading `layoutManager` falls back
+  /// to TextKit 1 for good, so nothing in this package ever does.
+  public static func make(style: TranscriptStyle = .system) -> TranscriptTextView {
+    let view = TranscriptTextView(usingTextLayoutManager: true)
+    view.style = style
+    view.isEditable = false
+    view.isSelectable = true
+    view.isRichText = true
+    view.textContainerInset = style.inset
+    view.isVerticallyResizable = true
+    view.isHorizontallyResizable = false
+    view.autoresizingMask = [.width]
+    view.textContainer?.widthTracksTextView = true
+    return view
+  }
+
+  /// A vertically scrolling host, sized to `frame`, with this view as its document.
+  public func inScrollView(frame: NSRect) -> NSScrollView {
+    let scroll = NSScrollView(frame: frame)
+    scroll.hasVerticalScroller = true
+    scroll.autoresizingMask = [.width, .height]
+    let content = scroll.contentSize
+    self.frame = NSRect(origin: .zero, size: content)
+    minSize = NSSize(width: 0, height: content.height)
+    maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+    scroll.documentView = self
+    return scroll
+  }
+
+  /// Replaces the whole text with `blocks`, in order.
+  public func load(_ blocks: some Sequence<Block>) {
+    let (text, ranges) = TranscriptText.build(blocks, style: style)
+    blockRanges = ranges
+    textStorage?.setAttributedString(text)
+  }
+
+  public func range(of id: BlockID) -> NSRange? { blockRanges.range(of: id) }
+
+  /// The block whose text holds `location` (see `BlockRanges.index(at:)`).
+  public func blockID(at location: Int) -> BlockID? { blockRanges.blockID(at: location) }
+}
