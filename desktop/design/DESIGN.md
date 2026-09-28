@@ -273,7 +273,7 @@ component.
 | `UserBubble(text, attachments:)` | prompt in `font.transcript`, a row of Thumbnail; readable face at e2, the glass sweep behind the text | `.user`, `.user .att` |
 | `ThinkingDisclosure(summary, text:, isExpanded:)` | chevron and caption summary; open, the reasoning in italic caption beside a hairline; open state is the view's own | `.think`, `.think-body` |
 | `NoticeRow(text, kind:, symbol:)`, `TurnDivider(label)`, `TurnMeta(facts)` | symbol in the kind's colour (info, warning, error) + caption in a readable colour / Hairline, caption, Hairline / model, tokens, cache, cost, duration, stop reason in tabular footnote | `.notice`, `.divider`, `.meta` |
-| `ComposerChip` | icon, label, KeyCap | `.chip` |
+| `ComposerChip(label, kind:, shortcut:, onRemove:)` | mention, attachment, command: symbol, caption label, optional KeyCap and `xmark` remove button on a readable capsule at e1; mention and command tinted `accent` | `.chip`, `.chip.blue` |
 | `TokenMeter` | ↑ sent, ↓ received, StatusDot, tok/s, Sparkline | `.meter` |
 | `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
 | `MaterialPicker` | three swatches | `.mat` |
