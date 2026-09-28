@@ -275,9 +275,9 @@ component.
 | `NoticeRow`, `TurnDivider`, `TurnMeta` | icon, caption | `.notice`, `.divider`, `.meta` |
 | `ComposerChip` | icon, label, KeyCap | `.chip` |
 | `TokenMeter` | ↑ sent, ↓ received, StatusDot, tok/s, Sparkline | `.meter` |
-| `KeyValueGrid` | rows of label / values | `.tokpop .grid` |
+| `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
 | `MaterialPicker` | three swatches | `.mat` |
-| `LabeledSlider`, `LabeledToggle` | CoxSliderStyle / CoxToggleStyle | `.appear .lbl` |
+| `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
 | `ChangedFileRow`, `CheckpointRow` | icon, path, DiffStat / time | inspector rows |
 
 ### 6.4 Organisms
