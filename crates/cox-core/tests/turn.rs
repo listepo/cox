@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use common::{drain, open, run_with, scenario, spawn_turn, tool_results};
 use cox_core::{MemoryStore, Session};
-use cox_protocol::traits::Tool;
+use cox_protocol::traits::{Store as _, Tool};
 use cox_protocol::types::{Content, DecidedBy, Decision, Event, StopReason, Submission};
 use tokio::sync::mpsc;
 
@@ -316,6 +316,63 @@ async fn turn_allow_for_session_covers_the_next_call() {
             ..
         }
     )));
+}
+
+#[tokio::test]
+async fn turn_a_revoked_grant_asks_again() {
+    let (session, store, mut rx) = open(&scenario("revoke_grant"), cox_protocol::Config::default());
+    let first = spawn_turn(&session, "write");
+    let events = until(&mut rx, |e| matches!(e, Event::ApprovalRequired { .. })).await;
+    let call_id = events
+        .iter()
+        .find_map(|e| match e {
+            Event::ApprovalRequired { call, .. } => Some(call.id),
+            _ => None,
+        })
+        .expect("prompt");
+    session
+        .submit(Submission::Approve {
+            call_id,
+            decision: Decision::AllowForSession,
+        })
+        .await
+        .expect("approve");
+    first.await.expect("join").expect("turn");
+    let covered = drain(&mut rx).await;
+    assert!(
+        !covered
+            .iter()
+            .any(|e| matches!(e, Event::ApprovalRequired { .. }))
+    );
+    let grant = ("touch".to_string(), "a".to_string());
+    assert_eq!(session.grants().await, std::slice::from_ref(&grant));
+
+    session
+        .submit(Submission::RevokeGrant {
+            tool: grant.0.clone(),
+            subject: grant.1.clone(),
+        })
+        .await
+        .expect("revoke");
+    assert_eq!(
+        rx.recv().await,
+        Some(Event::GrantRevoked {
+            tool: grant.0.clone(),
+            subject: grant.1.clone(),
+        })
+    );
+    assert!(session.grants().await.is_empty());
+
+    let third = spawn_turn(&session, "write again");
+    let asked = until(&mut rx, |e| matches!(e, Event::ApprovalRequired { .. })).await;
+    assert!(matches!(asked.last(), Some(Event::ApprovalRequired { .. })));
+    session.interrupt();
+    let _ = third.await;
+
+    // Resume replays the revoke: the grant does not come back.
+    let rollout = store.rollout_read(&session.id()).expect("rollout");
+    let history = cox_core::History::from_events(&rollout);
+    assert!(history.grants.is_empty());
 }
 
 #[tokio::test]

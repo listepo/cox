@@ -880,6 +880,7 @@ impl Session {
                 };
                 self.emit(changed).await
             }
+            Submission::RevokeGrant { tool, subject } => self.revoke(tool, subject).await,
             Submission::Compact { focus } => self
                 .compact(compact::Trigger::Manual, focus)
                 .await
@@ -1059,6 +1060,36 @@ impl Session {
     /// Records an `AllowForSession` grant.
     pub(crate) async fn grant(&self, tool: String, subject: String) {
         self.inner.lock().await.grants.push((tool, subject));
+    }
+
+    /// The `AllowForSession` grants in force, as `(tool, subject prefix)`,
+    /// oldest first and without repeats, for the app's Settings (T37.45.3).
+    pub async fn grants(&self) -> Vec<(String, String)> {
+        let mut grants = self.inner.lock().await.grants.clone();
+        let mut seen = std::collections::HashSet::new();
+        grants.retain(|g| seen.insert(g.clone()));
+        grants
+    }
+
+    /// Drops every copy of a grant, so the engine asks for the next call
+    /// it covered; `GrantRevoked` lets resume drop it too. A grant the
+    /// session does not hold is a warning, not an event.
+    async fn revoke(&self, tool: String, subject: String) -> Result<(), CoreError> {
+        let removed = {
+            let mut inner = self.inner.lock().await;
+            let before = inner.grants.len();
+            inner.grants.retain(|(t, s)| *t != tool || *s != subject);
+            inner.grants.len() < before
+        };
+        if !removed {
+            return self
+                .emit(Event::Notice {
+                    level: Level::Warn,
+                    text: format!("no session grant {tool} {subject}"),
+                })
+                .await;
+        }
+        self.emit(Event::GrantRevoked { tool, subject }).await
     }
 
     /// Dedup bookkeeping for a read-only result; `Some` is the pointer text

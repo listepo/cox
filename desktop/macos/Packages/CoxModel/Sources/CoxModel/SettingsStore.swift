@@ -74,6 +74,9 @@ public final class SettingsStore {
   public private(set) var view: SettingsView?
   /// Why the last load or edit failed; the next success clears it.
   public private(set) var failure: String?
+  /// Why Rust refused the last rule edit or revoke (T37.45.3): the rule grammar's message, or a
+  /// list a layer above the user file sets. The next one that succeeds clears it.
+  public private(set) var ruleFailure: String?
   /// The providers whose key the `SecretStore` holds, read again after each load, store and
   /// removal so the Settings rows that show it redraw.
   public private(set) var storedKeys: Set<String> = []
@@ -110,6 +113,18 @@ public final class SettingsStore {
       try await $0.client.mcpLogin(cwd: $0.cwd, server: server, login: login)
       return try await $0.client.settings(cwd: $0.cwd)
     }
+  }
+
+  /// Adds (`old` nil), replaces or removes (`new` nil) one permission rule, in the user file only.
+  public func editRule(_ kind: RuleKind, old: String?, new: String?) async {
+    await attempt(\.ruleFailure) {
+      try await $0.client.setPermissionRule(cwd: $0.cwd, kind: kind, old: old, new: new)
+    }
+  }
+
+  /// Revokes an "allow for session" grant through its session's core.
+  public func revoke(_ grant: SessionGrant) async {
+    await attempt(\.ruleFailure) { try await $0.client.revokeGrant(cwd: $0.cwd, grant: grant) }
   }
 
   /// Non-empty groups in DT§5.7's order, keys sorted within each, narrowed to `filter`.
@@ -153,14 +168,17 @@ public final class SettingsStore {
     storedKeys = Set(providers.filter { ((try? secrets.secret(for: $0)) ?? nil) != nil })
   }
 
-  private func attempt(_ fetch: (SettingsStore) async throws -> SettingsView) async {
+  private func attempt(
+    _ failed: ReferenceWritableKeyPath<SettingsStore, String?> = \.failure,
+    _ fetch: (SettingsStore) async throws -> SettingsView
+  ) async {
     do {
       view = try await fetch(self)
-      failure = nil
+      self[keyPath: failed] = nil
       readKeys()
       models = (try? catalog?.models(cwd: cwd)) ?? []
     } catch {
-      failure = String(describing: error)
+      self[keyPath: failed] = String(describing: error)
     }
   }
 }

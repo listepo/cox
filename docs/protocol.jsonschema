@@ -288,6 +288,29 @@
         ]
       },
       {
+        "description": "An `AllowForSession` grant was revoked (`Submission::RevokeGrant`).",
+        "type": "object",
+        "properties": {
+          "tool": {
+            "description": "The grant's tool.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The grant's subject prefix.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "grant_revoked"
+          }
+        },
+        "required": [
+          "type",
+          "tool",
+          "subject"
+        ]
+      },
+      {
         "description": "Streamed stdout/stderr from a running tool, already sanitised for display.",
         "type": "object",
         "properties": {
@@ -2994,6 +3017,29 @@
         "required": [
           "type",
           "mode"
+        ]
+      },
+      {
+        "description": "Revoke an `AllowForSession` grant (T37.45.3): the next call it\ncovered goes back through the rules and asks. The core answers with\n`GrantRevoked`, which resume replays, so the grant stays gone.",
+        "type": "object",
+        "properties": {
+          "tool": {
+            "description": "The grant's tool, as `grants_for` recorded it.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The grant's subject prefix.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "revoke_grant"
+          }
+        },
+        "required": [
+          "type",
+          "tool",
+          "subject"
         ]
       },
       {
