@@ -216,6 +216,16 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[record]`
 
 - `redact` = `true`
+## `[desktop.appearance]`
+
+- `material` = `"frosted"` — frosted | glossy | solid — solid is forced by Reduce Transparency
+- `opacity` = `0.42` — window and pane background opacity, 0 (clear) … 1 (opaque); text panels never drop below 0.8
+- `blur` = `34` — background blur in pt, 0 … 60 (frosted); glossy reads it as reflection
+- `depth` = `1.0` — elevation scale, 0 (flat, standard macOS look) … 1 (full shadows and highlights)
+- `tint` = `true` — tint the glass from the wallpaper
+## `[desktop.transcript]`
+
+- `cross_block_selection` = `true` — a text selection runs across blocks like one document; false clamps it to one block (A67)
 ## `~/.cox/keybindings.toml`
 
 Rebinds the TUI's keys (T25.5). Each line is an action id and a key, or a list of keys; dotted ids may be written as TOML tables. The keys you give replace the action's defaults, in every context the action has (`idle`, `running`), and take the key from whatever action held it by default. A missing file means the defaults in `docs/getting-started.md`.

@@ -260,6 +260,22 @@
       "default": {
         "redact": true
       }
+    },
+    "desktop": {
+      "description": "`[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)",
+      "$ref": "#/$defs/DesktopConfig",
+      "default": {
+        "appearance": {
+          "material": "frosted",
+          "opacity": 0.42,
+          "blur": 34.0,
+          "depth": 1.0,
+          "tint": true
+        },
+        "transcript": {
+          "cross_block_selection": true
+        }
+      }
     }
   },
   "additionalProperties": false,
@@ -1645,6 +1661,104 @@
       "properties": {
         "redact": {
           "description": "Whether secrets are redacted from a re-recorded cassette.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "DesktopConfig": {
+      "description": "`[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the\napp reads them; they live here so they get a schema and provenance like\nevery other setting.",
+      "type": "object",
+      "properties": {
+        "appearance": {
+          "description": "`[desktop.appearance]`",
+          "$ref": "#/$defs/DesktopAppearanceConfig",
+          "default": {
+            "material": "frosted",
+            "opacity": 0.42,
+            "blur": 34.0,
+            "depth": 1.0,
+            "tint": true
+          }
+        },
+        "transcript": {
+          "description": "`[desktop.transcript]`",
+          "$ref": "#/$defs/DesktopTranscriptConfig",
+          "default": {
+            "cross_block_selection": true
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DesktopAppearanceConfig": {
+      "description": "`[desktop.appearance]` (DS§3.5): what the Appearance popover and\nSettings › Appearance edit.",
+      "type": "object",
+      "properties": {
+        "material": {
+          "description": "`frosted` | `glossy` | `solid`.",
+          "$ref": "#/$defs/Material",
+          "default": "frosted"
+        },
+        "opacity": {
+          "description": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.42
+        },
+        "blur": {
+          "description": "Background blur in pt, 0 to 60 (frosted); glossy reads it as reflection.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 60.0,
+          "default": 34.0
+        },
+        "depth": {
+          "description": "Elevation scale, 0 (flat) to 1 (full shadows and highlights).",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 1.0
+        },
+        "tint": {
+          "description": "Tint the glass from the wallpaper.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Material": {
+      "description": "The window's glass material (DS§3.5).",
+      "oneOf": [
+        {
+          "description": "`glassEffect(.regular)`, heavy blur.",
+          "type": "string",
+          "const": "frosted"
+        },
+        {
+          "description": "`glassEffect(.clear)` plus the specular streak, light blur.",
+          "type": "string",
+          "const": "glossy"
+        },
+        {
+          "description": "Opaque `surface.window`; what Reduce Transparency forces.",
+          "type": "string",
+          "const": "solid"
+        }
+      ]
+    },
+    "DesktopTranscriptConfig": {
+      "description": "`[desktop.transcript]` (A67).",
+      "type": "object",
+      "properties": {
+        "cross_block_selection": {
+          "description": "Whether a text selection runs across blocks like one document;\n`false` clamps it to the block where the drag started.",
           "type": "boolean",
           "default": true
         }
