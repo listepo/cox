@@ -2946,3 +2946,15 @@ Check:
 - e2e `an_assignment_prefix_asks_instead_of_auto_allowing` (scenario `bash_assignment_prefix.toml`): the real binary in a scratch `COX_HOME` denies `GIT_PAGER='touch x' git log` headless, exit 2, `x` not created.
 - In the worktree: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
+
+#### T37.0 Land the desktop design docs and tokens
+
+Depends: — · Size: ~0 (docs and data) · Files: `docs/design/desktop.md`, `desktop/design/DESIGN.md`, `desktop/design/tokens/*.json`
+Goal: the design doc, the design-system guide, the DTCG token files and the HTML mockups are in the tree, so every later card can cite DT§n and DS§n.
+Check: `docs/design/desktop.md` and `desktop/design/DESIGN.md` exist; each token file parses as JSON; every DS§6 CSS class named in the catalogue occurs in `desktop/design/mockups/mockups.html`.
+Status: done 2026-09-28
+Result: `docs/design/desktop.md` (DT§n), `desktop/design/DESIGN.md` (DS§n), the DTCG 2025.10 token files in `desktop/design/tokens/` with their generator `desktop/design/build_tokens.py` (temporary until T37.17), and the HTML mockups with `render.sh` in `desktop/design/mockups/` are in the tree. Rendered PNGs stay out of git (`mockups/.gitignore`); `render.sh` recreates them.
+Check:
+- `python3 -c 'import json,glob; [json.load(open(f)) for f in glob.glob("desktop/design/tokens/*.json")]'` exits 0 (3 files).
+- All 61 mockup CSS classes named in DS§6 occur in `mockups.html` (the other 6 names the check picked up are SF Symbol names from DS§3.7).
+- `build_tokens.py` regenerates the token files with no diff.

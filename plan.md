@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.0 | todo | P0 | 1 | 0% | |
 | T37.1 | todo | P0 | 4 | 0% | |
 | T37.2 | todo | P1 | 2 | 0% | |
 | T37.3 | todo | P1 | 2 | 0% | |
@@ -1100,12 +1099,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.0 Land the desktop design docs and tokens
-
-Depends: — · Size: ~0 (docs and data) · Files: `docs/design/desktop.md`, `desktop/design/DESIGN.md`, `desktop/design/tokens/*.json`
-Goal: the design doc, the design-system guide, the DTCG token files and the HTML mockups are in the tree, so every later card can cite DT§n and DS§n.
-Check: `docs/design/desktop.md` and `desktop/design/DESIGN.md` exist; each token file parses as JSON; every DS§6 CSS class named in the catalogue occurs in `desktop/design/mockups/mockups.html`.
 
 #### T37.1 Extract `cox-session` from `crates/cox/src/session.rs`
 

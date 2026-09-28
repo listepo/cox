@@ -1,0 +1,1174 @@
+{
+  "space": {
+    "xxs": {
+      "$type": "dimension",
+      "$value": {
+        "value": 2,
+        "unit": "px"
+      }
+    },
+    "xs": {
+      "$type": "dimension",
+      "$value": {
+        "value": 4,
+        "unit": "px"
+      }
+    },
+    "s": {
+      "$type": "dimension",
+      "$value": {
+        "value": 6,
+        "unit": "px"
+      }
+    },
+    "m": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      }
+    },
+    "ml": {
+      "$type": "dimension",
+      "$value": {
+        "value": 10,
+        "unit": "px"
+      }
+    },
+    "l": {
+      "$type": "dimension",
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "xl": {
+      "$type": "dimension",
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      }
+    },
+    "xxl": {
+      "$type": "dimension",
+      "$value": {
+        "value": 20,
+        "unit": "px"
+      }
+    },
+    "xxxl": {
+      "$type": "dimension",
+      "$value": {
+        "value": 24,
+        "unit": "px"
+      }
+    },
+    "huge": {
+      "$type": "dimension",
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      }
+    }
+  },
+  "radius": {
+    "xs": {
+      "$type": "dimension",
+      "$value": {
+        "value": 4,
+        "unit": "px"
+      }
+    },
+    "s": {
+      "$type": "dimension",
+      "$value": {
+        "value": 6,
+        "unit": "px"
+      }
+    },
+    "m": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      }
+    },
+    "l": {
+      "$type": "dimension",
+      "$value": {
+        "value": 10,
+        "unit": "px"
+      }
+    },
+    "xl": {
+      "$type": "dimension",
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "xxl": {
+      "$type": "dimension",
+      "$value": {
+        "value": 14,
+        "unit": "px"
+      }
+    },
+    "panel": {
+      "$type": "dimension",
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      }
+    },
+    "pane": {
+      "$type": "dimension",
+      "$value": {
+        "value": 18,
+        "unit": "px"
+      }
+    },
+    "popover": {
+      "$type": "dimension",
+      "$value": {
+        "value": 20,
+        "unit": "px"
+      }
+    },
+    "window": {
+      "$type": "dimension",
+      "$value": {
+        "value": 22,
+        "unit": "px"
+      }
+    },
+    "capsule": {
+      "$type": "dimension",
+      "$value": {
+        "value": 999,
+        "unit": "px"
+      }
+    }
+  },
+  "size": {
+    "toolbarHeight": {
+      "$type": "dimension",
+      "$value": {
+        "value": 56,
+        "unit": "px"
+      }
+    },
+    "sidebarWidth": {
+      "$type": "dimension",
+      "$value": {
+        "value": 252,
+        "unit": "px"
+      }
+    },
+    "inspectorWidth": {
+      "$type": "dimension",
+      "$value": {
+        "value": 324,
+        "unit": "px"
+      }
+    },
+    "readingWidth": {
+      "$type": "dimension",
+      "$value": {
+        "value": 760,
+        "unit": "px"
+      }
+    },
+    "paneGap": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      }
+    },
+    "capsuleHeight": {
+      "$type": "dimension",
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      }
+    },
+    "buttonHeight": {
+      "$type": "dimension",
+      "$value": {
+        "value": 28,
+        "unit": "px"
+      }
+    },
+    "buttonHeightSmall": {
+      "$type": "dimension",
+      "$value": {
+        "value": 24,
+        "unit": "px"
+      }
+    },
+    "iconTile": {
+      "$type": "dimension",
+      "$value": {
+        "value": 22,
+        "unit": "px"
+      }
+    },
+    "statusDot": {
+      "$type": "dimension",
+      "$value": {
+        "value": 9,
+        "unit": "px"
+      }
+    },
+    "hairline": {
+      "$type": "dimension",
+      "$value": {
+        "value": 0.5,
+        "unit": "px"
+      }
+    },
+    "windowMinWidth": {
+      "$type": "dimension",
+      "$value": {
+        "value": 1100,
+        "unit": "px"
+      }
+    },
+    "windowMinHeight": {
+      "$type": "dimension",
+      "$value": {
+        "value": 700,
+        "unit": "px"
+      }
+    },
+    "popoverWidth": {
+      "$type": "dimension",
+      "$value": {
+        "value": 340,
+        "unit": "px"
+      }
+    },
+    "tokenPopoverWidth": {
+      "$type": "dimension",
+      "$value": {
+        "value": 360,
+        "unit": "px"
+      }
+    }
+  },
+  "font": {
+    "title": {
+      "window": {
+        "$type": "typography",
+        "$description": "Session title in the toolbar",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 13.5,
+            "unit": "px"
+          },
+          "fontWeight": 600,
+          "lineHeight": 1.3,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      }
+    },
+    "body": {
+      "$type": "typography",
+      "$description": "Default UI text",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 13,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.45,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "rem"
+        }
+      }
+    },
+    "transcript": {
+      "$type": "typography",
+      "$description": "Assistant and user messages",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 13.5,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.55,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "rem"
+        }
+      },
+      "h3": {
+        "$type": "typography",
+        "$description": "Markdown headings in the transcript",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 15,
+            "unit": "px"
+          },
+          "fontWeight": 600,
+          "lineHeight": 1.35,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      }
+    },
+    "control": {
+      "$type": "typography",
+      "$description": "Buttons, capsules, segmented items",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 12.5,
+          "unit": "px"
+        },
+        "fontWeight": 500,
+        "lineHeight": 1.2,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "rem"
+        }
+      }
+    },
+    "caption": {
+      "$type": "typography",
+      "$description": "Thinking line, notices",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 12,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.4,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "rem"
+        }
+      }
+    },
+    "footnote": {
+      "$type": "typography",
+      "$description": "Tool status, meter, key-value rows",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 11.5,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.4,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "rem"
+        }
+      }
+    },
+    "label": {
+      "$type": "typography",
+      "$description": "Uppercase section headers",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 11,
+          "unit": "px"
+        },
+        "fontWeight": 600,
+        "lineHeight": 1.3,
+        "letterSpacing": {
+          "value": 0.03,
+          "unit": "rem"
+        }
+      }
+    },
+    "micro": {
+      "$type": "typography",
+      "$description": "Key caps, legends, badges",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 10.5,
+          "unit": "px"
+        },
+        "fontWeight": 500,
+        "lineHeight": 1.3,
+        "letterSpacing": {
+          "value": 0,
+          "unit": "rem"
+        }
+      }
+    },
+    "metric": {
+      "$type": "typography",
+      "$description": "Big numbers (tok/s); tabular digits",
+      "$value": {
+        "fontFamily": [
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui"
+        ],
+        "fontSize": {
+          "value": 26,
+          "unit": "px"
+        },
+        "fontWeight": 650,
+        "lineHeight": 1.0,
+        "letterSpacing": {
+          "value": -0.02,
+          "unit": "rem"
+        }
+      }
+    },
+    "mono": {
+      "code": {
+        "$type": "typography",
+        "$description": "Code blocks, diffs",
+        "$value": {
+          "fontFamily": [
+            "SF Mono",
+            "ui-monospace",
+            "Menlo"
+          ],
+          "fontSize": {
+            "value": 12,
+            "unit": "px"
+          },
+          "fontWeight": 400,
+          "lineHeight": 1.55,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      },
+      "inline": {
+        "$type": "typography",
+        "$description": "Inline code in prose",
+        "$value": {
+          "fontFamily": [
+            "SF Mono",
+            "ui-monospace",
+            "Menlo"
+          ],
+          "fontSize": {
+            "value": 12,
+            "unit": "px"
+          },
+          "fontWeight": 400,
+          "lineHeight": 1.3,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      },
+      "terminal": {
+        "$type": "typography",
+        "$description": "Terminal tail",
+        "$value": {
+          "fontFamily": [
+            "SF Mono",
+            "ui-monospace",
+            "Menlo"
+          ],
+          "fontSize": {
+            "value": 11.5,
+            "unit": "px"
+          },
+          "fontWeight": 400,
+          "lineHeight": 1.5,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      }
+    }
+  },
+  "elevation": {
+    "e0": {
+      "$type": "shadow",
+      "$description": "Flat: transcript prose, collapsed tool rows",
+      "$value": []
+    },
+    "e1": {
+      "$type": "shadow",
+      "$description": "Chips, capsules, icon tiles, selected row",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.1
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 2,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.08
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 4,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 10,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff",
+            "alpha": 0.95
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          },
+          "inset": true
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff",
+            "alpha": 0.55
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 0,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0.5,
+            "unit": "px"
+          },
+          "inset": true
+        }
+      ]
+    },
+    "e2": {
+      "$type": "shadow",
+      "$description": "Cards: user bubble, expanded tool, sidebar, inspector",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.1
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 2,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 4,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.14
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 10,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 26,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff",
+            "alpha": 0.95
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          },
+          "inset": true
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff",
+            "alpha": 0.55
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 0,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0.5,
+            "unit": "px"
+          },
+          "inset": true
+        }
+      ]
+    },
+    "e3": {
+      "$type": "shadow",
+      "$description": "Composer: the one thing that floats highest in a pane",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.14
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 4,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 10,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.26
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 24,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 60,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff",
+            "alpha": 0.95
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          },
+          "inset": true
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff",
+            "alpha": 0.55
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 0,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0.5,
+            "unit": "px"
+          },
+          "inset": true
+        }
+      ]
+    },
+    "e4": {
+      "$type": "shadow",
+      "$description": "Popovers and menus",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.17
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 8,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 20,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.098,
+              0.1176,
+              0.3137
+            ],
+            "hex": "#191e50",
+            "alpha": 0.33
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 30,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 70,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "hex": "#ffffff"
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 0,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          },
+          "inset": true
+        }
+      ]
+    },
+    "e5": {
+      "$type": "shadow",
+      "$description": "The window over the wallpaper",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.0314,
+              0.0392,
+              0.1569
+            ],
+            "hex": "#080a28",
+            "alpha": 0.3
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 16,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 40,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0.0314,
+              0.0392,
+              0.1569
+            ],
+            "hex": "#080a28",
+            "alpha": 0.55
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 50,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 120,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        }
+      ]
+    }
+  },
+  "motion": {
+    "duration": {
+      "fast": {
+        "$type": "duration",
+        "$description": "Hover, press",
+        "$value": {
+          "value": 120,
+          "unit": "ms"
+        }
+      },
+      "base": {
+        "$type": "duration",
+        "$description": "Disclosure expand/collapse",
+        "$value": {
+          "value": 200,
+          "unit": "ms"
+        }
+      },
+      "slow": {
+        "$type": "duration",
+        "$description": "Popover, sheet, pane slide",
+        "$value": {
+          "value": 320,
+          "unit": "ms"
+        }
+      }
+    },
+    "easing": {
+      "standard": {
+        "$type": "cubicBezier",
+        "$description": "Most transitions",
+        "$value": [
+          0.2,
+          0,
+          0,
+          1
+        ]
+      },
+      "decelerate": {
+        "$type": "cubicBezier",
+        "$description": "Things entering",
+        "$value": [
+          0,
+          0,
+          0.2,
+          1
+        ]
+      }
+    }
+  },
+  "material": {
+    "frosted": {
+      "windowOpacity": {
+        "$type": "number",
+        "$value": 0.42
+      },
+      "blur": {
+        "$type": "number",
+        "$value": 34
+      },
+      "saturation": {
+        "$type": "number",
+        "$value": 1.9
+      },
+      "specular": {
+        "$type": "number",
+        "$value": 0.35
+      },
+      "$description": "SwiftUI Glass.regular"
+    },
+    "glossy": {
+      "windowOpacity": {
+        "$type": "number",
+        "$value": 0.3
+      },
+      "blur": {
+        "$type": "number",
+        "$value": 6
+      },
+      "saturation": {
+        "$type": "number",
+        "$value": 1.9
+      },
+      "specular": {
+        "$type": "number",
+        "$value": 0.55
+      },
+      "$description": "SwiftUI Glass.clear + specular streak"
+    },
+    "solid": {
+      "windowOpacity": {
+        "$type": "number",
+        "$value": 1.0
+      },
+      "blur": {
+        "$type": "number",
+        "$value": 0
+      },
+      "saturation": {
+        "$type": "number",
+        "$value": 1.0
+      },
+      "specular": {
+        "$type": "number",
+        "$value": 0
+      },
+      "$description": "Opaque; forced by Reduce Transparency"
+    },
+    "readableFloor": {
+      "windowOpacity": {
+        "$type": "number",
+        "$value": 0.8
+      },
+      "$description": "Minimum opacity of any text-bearing panel at every setting"
+    }
+  }
+}

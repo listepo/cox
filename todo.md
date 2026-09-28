@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
-- T37.0. Land the desktop design docs and tokens
 - T37.1. Extract `cox-session` from `crates/cox/src/session.rs`
 - T37.2. Route `cox acp` through `cox-session`
 - T37.3. `ToolResult.structured`; TUI and ACP drop their todo re-parsers

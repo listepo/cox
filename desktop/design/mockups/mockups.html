@@ -1,0 +1,837 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>cox desktop mockups</title>
+<style>
+:root{
+  --wall1:#9fb8e8;--wall2:#e7b7d6;--wall3:#f4d6a8;
+  --win:#ffffff;--side:rgba(242,242,246,.86);--side-b:rgba(0,0,0,.06);
+  --text:#1d1d1f;--sec:#6e6e73;--ter:#a1a1a6;--sep:rgba(0,0,0,.09);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.07);
+  --accent:#0a7cff;--accent-soft:rgba(10,124,255,.12);--orange:#f08a00;--orange-soft:rgba(255,149,0,.12);
+  --green:#1f9d45;--green-soft:rgba(52,199,89,.14);--red:#e5352b;--red-soft:rgba(255,59,48,.11);--purple:#8e44d8;--blue:#2f6fde;
+  --add:rgba(52,199,89,.16);--add-g:rgba(52,199,89,.32);--del:rgba(255,59,48,.13);--del-g:rgba(255,59,48,.3);
+  --code-bg:#f6f6f8;--glass:rgba(255,255,255,.72);--glass-b:rgba(0,0,0,.08);--shadow:0 30px 80px rgba(20,30,60,.35),0 0 0 .5px rgba(0,0,0,.25);
+  --kw:#ad3da4;--str:#c41a16;--num:#1c00cf;--fn:#326d74;--com:#707f8c;--ty:#0b4f79;
+}
+.dark{
+  --win:#1f1f22;--side:rgba(44,44,48,.86);--side-b:rgba(255,255,255,.07);
+  --text:#f2f2f5;--sec:#a1a1a8;--ter:#6c6c72;--sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.06);--fill2:rgba(255,255,255,.1);
+  --accent:#3b9bff;--accent-soft:rgba(59,155,255,.18);--orange:#ffa53a;--orange-soft:rgba(255,159,10,.16);
+  --green:#3bd06a;--green-soft:rgba(48,209,88,.16);--red:#ff6259;--red-soft:rgba(255,69,58,.16);
+  --add:rgba(48,209,88,.14);--add-g:rgba(48,209,88,.28);--del:rgba(255,69,58,.14);--del-g:rgba(255,69,58,.28);
+  --code-bg:#28282c;--glass:rgba(50,50,54,.72);--glass-b:rgba(255,255,255,.1);
+  --kw:#ff7ab2;--str:#ff8170;--num:#d9c97c;--fn:#67b7a4;--com:#7f8c98;--ty:#5dd8ff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1520px;height:980px;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:13px;line-height:1.45;color:var(--text);
+  background:radial-gradient(1200px 700px at 15% 10%,var(--wall1),transparent 60%),radial-gradient(900px 700px at 90% 20%,var(--wall2),transparent 60%),radial-gradient(1000px 800px at 60% 100%,var(--wall3),transparent 60%),#c9cfe6;-webkit-font-smoothing:antialiased}
+body.dark{background:radial-gradient(1200px 700px at 15% 10%,#2b3a66,transparent 60%),radial-gradient(900px 700px at 90% 20%,#5a2b50,transparent 60%),radial-gradient(1000px 800px at 60% 100%,#5b4320,transparent 60%),#1a1c26}
+.mono,code,pre{font-family:"SF Mono",ui-monospace,Menlo,monospace}
+.window{position:absolute;left:40px;top:40px;width:1440px;height:900px;background:var(--win);border-radius:22px;box-shadow:var(--shadow);overflow:hidden;display:flex}
+.window.small{width:980px;height:700px;left:270px;top:140px}
+/* sidebar */
+.sidebar{position:absolute;left:8px;top:8px;bottom:8px;width:252px;background:var(--side);border-radius:16px;border:.5px solid var(--side-b);backdrop-filter:blur(30px);display:flex;flex-direction:column;z-index:3;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.traffic{display:flex;gap:8px;padding:18px 16px 10px}
+.traffic i{width:12px;height:12px;border-radius:50%;display:block}
+.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+.side-top{display:flex;align-items:center;justify-content:space-between;padding-right:12px}
+.filter{margin:6px 12px 10px;height:28px;border-radius:9px;background:var(--fill);display:flex;align-items:center;gap:6px;padding:0 9px;color:var(--ter)}
+.sect{font-size:11px;font-weight:600;color:var(--ter);padding:10px 18px 4px;display:flex;justify-content:space-between;letter-spacing:.02em}
+.sect .cnt{background:var(--orange);color:#fff;border-radius:8px;padding:0 6px;font-size:10px;line-height:16px}
+.proj{padding:6px 14px 2px 16px;font-weight:600;font-size:12px;color:var(--sec);display:flex;align-items:center;gap:6px}
+.row{margin:1px 8px;padding:6px 10px;border-radius:9px;display:flex;gap:9px;align-items:flex-start}
+.row.act{background:var(--accent-soft)}
+.row .dot{width:9px;height:9px;border-radius:50%;margin-top:4px;flex:none}
+.row .t{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .s{font-size:11px;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .b{min-width:0;flex:1}
+.row .c{font-size:11px;color:var(--ter);margin-left:auto;flex:none}
+.d-run{background:var(--green);box-shadow:0 0 0 3px var(--green-soft)}
+.d-wait{background:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.d-idle{border:1.5px solid var(--ter)}
+.d-err{background:var(--red)}
+.side-foot{margin-top:auto;padding:10px 14px 14px;display:flex;align-items:center;justify-content:space-between;color:var(--sec);font-size:12px;border-top:.5px solid var(--sep)}
+.btn-new{display:flex;align-items:center;gap:6px;font-weight:500;color:var(--text)}
+.kbd{font-size:10.5px;color:var(--ter);border:.5px solid var(--sep);border-radius:4px;padding:0 4px;line-height:15px;font-family:-apple-system}
+/* main */
+.main{position:absolute;left:268px;top:0;right:0;bottom:0;display:flex;flex-direction:column}
+.main.noside{left:0}
+.toolbar{height:56px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px 0 16px;position:relative;z-index:2}
+.cap{height:32px;border-radius:16px;background:var(--glass);border:.5px solid var(--glass-b);box-shadow:0 1px 3px rgba(0,0,0,.06);display:flex;align-items:center;padding:0 12px;gap:7px;font-size:12.5px;font-weight:500;backdrop-filter:blur(20px);white-space:nowrap}
+.cap.icon{width:32px;padding:0;justify-content:center}
+.crumb{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13.5px}
+.crumb .sub{color:var(--sec);font-weight:500;font-size:12.5px}
+.seg{display:flex;height:32px;border-radius:16px;background:var(--glass);border:.5px solid var(--glass-b);padding:3px;gap:2px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.seg span{padding:0 11px;border-radius:13px;display:flex;align-items:center;font-size:12px;font-weight:500;color:var(--sec)}
+.seg span.on{background:var(--win);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.seg span.plan.on{color:var(--blue)}
+.seg span.byp.on{background:var(--red);color:#fff}
+.spacer{flex:1}
+.stop{background:var(--text);color:var(--win);border-radius:16px;height:32px;padding:0 12px;display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px}
+.ring{width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--accent) 0 38%,var(--fill2) 38% 100%);-webkit-mask:radial-gradient(circle 4px,transparent 98%,#000 100%)}
+.bypass-strip{position:absolute;left:0;right:0;top:0;height:3px;background:var(--red);z-index:5}
+.body{flex:1;display:flex;min-height:0}
+.col{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.scroll{flex:1;overflow:hidden;padding:6px 0 0;position:relative;}
+.reading{width:760px;margin:0 auto;position:relative}
+.fadeTop{position:absolute;top:0;left:0;right:0;height:26px;background:linear-gradient(var(--win),transparent);z-index:1}
+/* blocks */
+.turn{position:relative;padding-left:0;margin-bottom:6px}
+.gutter{position:absolute;left:-44px;top:4px;width:32px;text-align:right;font-size:11px;color:var(--ter);font-variant-numeric:tabular-nums}
+.user{background:var(--fill);border-radius:12px;padding:10px 14px;margin:14px 0 10px;font-size:13.5px}
+.user .att{display:flex;gap:8px;margin-top:8px}
+.thumb{width:92px;height:60px;border-radius:8px;background:linear-gradient(135deg,#dfe7f7,#f5e3ef);border:.5px solid var(--sep);display:flex;align-items:flex-end;padding:4px 6px;font-size:10px;color:var(--sec)}
+.asst{font-size:13.5px;margin:10px 0;line-height:1.55}
+.asst p{margin:0 0 8px}
+.asst code{font-size:12px;background:var(--fill);padding:1px 5px;border-radius:5px}
+.asst h3{font-size:15px;margin:12px 0 6px}
+.asst ul{padding-left:20px;margin:0 0 8px}
+.think{color:var(--sec);font-size:12.5px;display:flex;align-items:center;gap:6px;margin:8px 0}
+.think-body{color:var(--sec);font-size:12.5px;font-style:italic;border-left:2px solid var(--sep);padding:2px 0 2px 12px;margin:-2px 0 10px}
+.tool{border-radius:10px;margin:4px 0;font-size:13px}
+.tool .h{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:10px}
+.tool.exp{border:.5px solid var(--sep);background:var(--win)}
+.tool.exp .h{border-bottom:.5px solid var(--sep);border-radius:10px 10px 0 0;background:var(--fill)}
+.tool .ic{width:22px;height:22px;border-radius:6px;background:var(--fill2);display:flex;align-items:center;justify-content:center;flex:none;color:var(--sec)}
+.tool .sum{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool .sum b{font-weight:600}
+.tool .st{font-size:11.5px;color:var(--sec);display:flex;align-items:center;gap:6px;flex:none}
+.plus{color:var(--green);font-weight:600}.minus{color:var(--red);font-weight:600}
+.ok{color:var(--green)}.bad{color:var(--red)}
+.tail{margin:2px 0 6px 41px;background:var(--code-bg);border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.5;color:var(--sec);border:.5px solid var(--sep)}
+.tail .l{white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--fill2);border-top-color:var(--accent);display:inline-block}
+.risk{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:5px;background:var(--orange-soft);color:var(--orange)}
+.diff{font-size:11.8px;line-height:1.55;padding:6px 0}
+.diff .ln{display:flex;white-space:pre}
+.diff .n{width:38px;text-align:right;padding-right:10px;color:var(--ter);flex:none;user-select:none}
+.diff .c{flex:1;padding-left:8px;overflow:hidden;text-overflow:ellipsis}
+.diff .a{background:var(--add)}.diff .a .n{background:var(--add-g);color:var(--text)}
+.diff .d{background:var(--del)}.diff .d .n{background:var(--del-g);color:var(--text)}
+.diff .hh{color:var(--sec);background:var(--fill);padding:2px 10px;font-size:11px}
+.kw{color:var(--kw)}.str{color:var(--str)}.num{color:var(--num)}.fn{color:var(--fn)}.com{color:var(--com)}.ty{color:var(--ty)}
+.more{font-size:12px;color:var(--accent);padding:6px 12px;border-top:.5px solid var(--sep)}
+.codeblock{background:var(--code-bg);border-radius:10px;border:.5px solid var(--sep);margin:8px 0 10px;overflow:hidden}
+.codeblock .ch{display:flex;justify-content:space-between;font-size:11px;color:var(--sec);padding:5px 12px;border-bottom:.5px solid var(--sep)}
+.codeblock pre{font-size:12px;padding:10px 12px;line-height:1.55}
+.meta{font-size:11px;color:var(--ter);display:flex;gap:12px;margin:4px 0 14px}
+.notice{font-size:12px;color:var(--sec);display:flex;gap:8px;align-items:center;margin:8px 0}
+.divider{display:flex;align-items:center;gap:12px;color:var(--sec);font-size:12px;margin:18px 0}
+.divider:before,.divider:after{content:"";flex:1;height:.5px;background:var(--sep)}
+/* approval */
+.appr{border-radius:14px;border:.5px solid var(--sep);background:var(--win);box-shadow:0 2px 10px rgba(0,0,0,.06);overflow:hidden;margin:10px 0;position:relative}
+.appr:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--orange)}
+.appr .ah{display:flex;align-items:center;gap:8px;padding:12px 16px 6px 20px;font-weight:600;font-size:13.5px}
+.appr .cmd{margin:4px 16px 8px 20px;background:var(--code-bg);border-radius:9px;padding:9px 12px;font-size:12.5px;border:.5px solid var(--sep)}
+.appr .why{margin:0 16px 10px 20px;font-size:12px;color:var(--sec);display:flex;flex-direction:column;gap:3px}
+.appr .why b{color:var(--text);font-weight:500}
+.appr .acts{display:flex;gap:8px;padding:10px 16px 12px 20px;border-top:.5px solid var(--sep);background:var(--fill);align-items:center}
+.pb{height:28px;border-radius:8px;padding:0 12px;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;background:var(--win);border:.5px solid var(--sep);box-shadow:0 1px 2px rgba(0,0,0,.06);white-space:nowrap}
+.pb.pri{background:var(--accent);color:#fff;border-color:transparent}
+.pb.dan{color:var(--red)}
+.pb .k{font-size:10.5px;opacity:.7}
+.grant{font-size:11.5px;color:var(--sec);margin-left:auto}
+.pinned{margin:0 auto 8px;width:760px;border-radius:12px;background:var(--orange-soft);border:.5px solid rgba(255,149,0,.35);padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:12.5px}
+.pinned .pb{height:24px;font-size:12px}
+/* composer */
+.composer{width:760px;margin:0 auto 18px;border-radius:18px;background:var(--win);border:.5px solid var(--sep);box-shadow:0 4px 18px rgba(0,0,0,.08),0 0 0 .5px rgba(0,0,0,.04);position:relative}
+.composer .ta{padding:13px 16px 6px;font-size:13.5px;min-height:46px}
+.composer .ph{color:var(--ter)}
+.composer .chips{display:flex;align-items:center;gap:6px;padding:6px 10px 10px}
+.chip{height:26px;border-radius:13px;padding:0 10px;background:var(--fill);display:flex;align-items:center;gap:5px;font-size:12px;color:var(--sec);white-space:nowrap}
+.chip.blue{color:var(--blue);background:rgba(47,111,222,.12)}
+.send{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;margin-left:auto}
+.send.off{background:var(--fill2);color:var(--ter)}
+.pill{display:inline-flex;align-items:center;gap:4px;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:0 6px;font-size:12.5px;font-weight:500}
+.caret{display:inline-block;width:1.5px;height:17px;background:var(--accent);vertical-align:-3px}
+.pop{position:absolute;bottom:calc(100% + 8px);left:14px;width:470px;background:var(--glass);backdrop-filter:blur(30px);border:.5px solid var(--glass-b);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);padding:6px;z-index:10}
+.body.dark .pop{background:rgba(40,40,44,.92)}
+.pop .it{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;font-size:13px}
+.pop .it.on{background:var(--accent);color:#fff}
+.pop .it.on .x{color:rgba(255,255,255,.8)}
+.pop .it .x{color:var(--sec);font-size:11.5px;margin-left:auto;white-space:nowrap}
+.pop .hdr{font-size:11px;font-weight:600;color:var(--ter);padding:6px 10px 3px}
+.hl{color:var(--accent);font-weight:600}
+.pop .it.on .hl{color:#fff;text-decoration:underline}
+/* inspector */
+.insp{width:330px;flex:none;border-left:.5px solid var(--sep);display:flex;flex-direction:column;background:var(--win)}
+.tabs{display:flex;gap:2px;padding:0 12px 10px;border-bottom:.5px solid var(--sep)}
+.tabs span{font-size:12px;padding:4px 9px;border-radius:7px;color:var(--sec);font-weight:500}
+.tabs span.on{background:var(--fill2);color:var(--text)}
+.ib{padding:14px 16px;overflow:hidden;flex:1}
+.ih{font-size:11px;font-weight:600;color:var(--ter);margin:4px 0 8px;letter-spacing:.02em;display:flex;justify-content:space-between}
+.fr{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:12.5px}
+.fr.on{background:var(--accent-soft)}
+.fr .p{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fr .p .dir{color:var(--sec)}
+.todo{display:flex;gap:9px;align-items:flex-start;padding:6px 2px;font-size:12.5px}
+.box{width:15px;height:15px;border-radius:5px;border:1.5px solid var(--ter);flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff}
+.box.done{background:var(--green);border-color:var(--green)}
+.box.doing{border-color:var(--accent);box-shadow:inset 0 0 0 3px var(--win),inset 0 0 0 10px var(--accent)}
+.todo.done span{color:var(--sec);text-decoration:line-through}
+.bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--fill2);margin:6px 0 8px}
+.legend{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12px}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px}
+.kv .k{color:var(--sec)}
+table.t{width:100%;border-collapse:collapse;font-size:11.8px;font-variant-numeric:tabular-nums}
+table.t th{font-weight:500;color:var(--ter);text-align:right;padding:4px 4px;border-bottom:.5px solid var(--sep);font-size:11px}
+table.t th:first-child,table.t td:first-child{text-align:left}
+table.t td{text-align:right;padding:5px 4px;border-bottom:.5px solid var(--sep)}
+.card{border:.5px solid var(--sep);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.badge{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:5px;background:var(--fill2);color:var(--sec);white-space:nowrap}
+.badge.b-user{background:var(--accent-soft);color:var(--accent)}
+.badge.b-project{background:rgba(142,68,216,.13);color:var(--purple)}
+.badge.b-env{background:var(--green-soft);color:var(--green)}
+.badge.b-default{background:var(--fill2);color:var(--sec)}
+.badge.b-warn{background:var(--orange-soft);color:var(--orange)}
+.badge.b-red{background:var(--red-soft);color:var(--red)}
+.gauge{height:6px;border-radius:3px;background:var(--fill2);overflow:hidden;margin-top:6px}
+.gauge i{display:block;height:100%;background:var(--accent)}
+/* overlays */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.18);z-index:20}
+.palette{position:absolute;left:50%;top:120px;transform:translateX(-50%);width:640px;background:var(--glass);backdrop-filter:blur(40px) saturate(1.4);border:.5px solid var(--glass-b);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.35);z-index:21;overflow:hidden}
+.dark .palette,.dark .sheet{background:rgba(44,44,48,.94)}
+.palette .q{display:flex;align-items:center;gap:10px;padding:16px 18px;font-size:18px;border-bottom:.5px solid var(--sep)}
+.palette .lst{padding:6px}
+.palette .it{display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:10px;font-size:13.5px}
+.palette .it.on{background:var(--accent);color:#fff}
+.palette .it .x{margin-left:auto;font-size:11.5px;color:var(--sec)}
+.palette .it.on .x{color:rgba(255,255,255,.8)}
+.palette .it .ic2{width:26px;height:26px;border-radius:7px;background:var(--fill2);display:flex;align-items:center;justify-content:center;color:var(--sec)}
+.palette .it.on .ic2{background:rgba(255,255,255,.2);color:#fff}
+.palette .hdr{font-size:11px;font-weight:600;color:var(--ter);padding:8px 12px 4px}
+.sheet{position:absolute;left:50%;top:70px;transform:translateX(-50%);width:600px;background:var(--win);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35),0 0 0 .5px rgba(0,0,0,.2);z-index:21;padding:22px 24px}
+.sheet h2{font-size:17px;margin-bottom:4px}
+.sheet .sub{color:var(--sec);font-size:12.5px;margin-bottom:16px}
+.field{display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;margin-bottom:12px;font-size:13px}
+.field .lab{color:var(--sec);text-align:right}
+.input{height:30px;border-radius:8px;border:.5px solid var(--sep);background:var(--fill);display:flex;align-items:center;padding:0 10px;gap:8px;font-size:13px}
+.radio{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:10px;border:.5px solid var(--sep);margin-bottom:6px}
+.radio.on{border-color:var(--accent);background:var(--accent-soft)}
+.radio .o{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--ter);flex:none;margin-top:2px}
+.radio.on .o{border:4.5px solid var(--accent)}
+.radio small{display:block;color:var(--sec);font-size:11.5px}
+.sheet .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.popover{position:absolute;background:var(--glass);backdrop-filter:blur(30px);border:.5px solid var(--glass-b);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.25);padding:5px;z-index:12;font-size:13px}
+.dark .popover{background:rgba(44,44,48,.95)}
+.popover .it{padding:6px 12px;border-radius:7px;display:flex;gap:10px;align-items:center;white-space:nowrap}
+.popover .it.on{background:var(--accent);color:#fff}
+.popover .it .x{margin-left:auto;color:var(--ter);font-size:11.5px;padding-left:18px}
+.popover .it.on .x{color:rgba(255,255,255,.8)}
+.popover .sep{height:.5px;background:var(--sep);margin:4px 8px}
+.popover .hdr{font-size:11px;color:var(--ter);font-weight:600;padding:5px 12px 3px}
+/* settings */
+.set-side{width:220px;flex:none;background:var(--side);border-right:.5px solid var(--sep);padding:0 8px}
+.set-side .it{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:8px;font-size:13px;margin:1px 0}
+.set-side .it.on{background:var(--accent);color:#fff}
+.set-side .it .sq{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff}
+.set-main{flex:1;padding:18px 28px;overflow:hidden}
+.set-main h1{font-size:20px;margin:6px 0 16px}
+.group{background:var(--fill);border-radius:12px;margin-bottom:16px;overflow:hidden}
+.group .gr{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:.5px solid var(--sep);font-size:13px}
+.group .gr:last-child{border-bottom:none}
+.group .gr .l{flex:1}
+.group .gr .l small{display:block;color:var(--sec);font-size:11.5px}
+.gtitle{font-size:12px;font-weight:600;color:var(--sec);margin:0 0 6px 4px}
+.sel{height:24px;border-radius:6px;background:var(--win);border:.5px solid var(--sep);padding:0 8px;display:flex;align-items:center;gap:6px;font-size:12.5px;box-shadow:0 1px 1px rgba(0,0,0,.05)}
+.tog{width:32px;height:19px;border-radius:10px;background:var(--green);position:relative}
+.tog:after{content:"";position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.tog.off{background:var(--fill2)}.tog.off:after{right:auto;left:2px}
+/* misc */
+.menubar{position:absolute;left:0;right:0;top:0;height:30px;background:rgba(255,255,255,.35);backdrop-filter:blur(30px);display:flex;align-items:center;padding:0 16px;gap:20px;font-size:13px;font-weight:500;z-index:30}
+.dark .menubar{background:rgba(0,0,0,.3)}
+.menubar .r{margin-left:auto;display:flex;gap:16px;align-items:center}
+.notif{position:absolute;right:20px;top:44px;width:370px;background:rgba(246,246,248,.8);backdrop-filter:blur(40px) saturate(1.6);border-radius:22px;box-shadow:0 10px 40px rgba(0,0,0,.25),0 0 0 .5px rgba(0,0,0,.12);z-index:31;padding:12px 14px}
+.notif .appi{width:36px;height:36px;border-radius:9px;flex:none}
+.dock{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);height:74px;padding:8px 10px;border-radius:24px;background:rgba(255,255,255,.35);backdrop-filter:blur(30px);border:.5px solid rgba(255,255,255,.5);display:flex;gap:10px;z-index:30;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+.dock .a{width:56px;height:56px;border-radius:14px;position:relative}
+.dock .a .bd{position:absolute;right:-4px;top:-4px;background:#ff3b30;color:#fff;border-radius:10px;font-size:12px;font-weight:600;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;padding:0 5px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.appicon{background:linear-gradient(145deg,#1b2440,#2d3d6e);display:flex;align-items:center;justify-content:center;color:#ffd27a;font-weight:800;font-size:22px;font-family:"SF Mono",ui-monospace,monospace;letter-spacing:-1px}
+.term{background:#15161a;color:#d9dde5;font-size:12px;line-height:1.5;padding:10px 14px;flex:none;height:250px;border-top:.5px solid var(--sep)}
+.term .p1{color:#7ee787}.term .p2{color:#79c0ff}
+.panehead{display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:12px;color:var(--sec);border-top:.5px solid var(--sep);background:var(--fill)}
+.panehead .tb{padding:2px 9px;border-radius:6px}
+.panehead .tb.on{background:var(--win);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.caption{position:absolute;left:40px;bottom:12px;font-size:12px;color:rgba(0,0,0,.55);font-weight:500}
+.dark .caption{color:rgba(255,255,255,.55)}
+.agentb{font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;color:#fff}
+/* ===== glass theme: adjustable window transparency, frosted / glossy material, more depth ===== */
+body.glass{background:#20264d}
+.wallart{position:absolute;inset:0;overflow:hidden;z-index:0}
+.wallart i{position:absolute;display:block;border-radius:50%}
+.glass{--wa:.42;--wb:34px;--depth:1;
+  --win:rgba(255,255,255,.74);--code-bg:rgba(248,249,252,.72);--fill:rgba(255,255,255,.42);--fill2:rgba(255,255,255,.55);
+  --sep:rgba(40,45,90,.12);--text:#141726;--sec:#4d5270;--ter:#8388a6;--glass:rgba(255,255,255,.5);--glass-b:rgba(255,255,255,.75);
+  --hl:inset 0 1px 0 rgba(255,255,255,.95),inset 0 0 0 .5px rgba(255,255,255,.55);
+  --lift1:0 1px 2px rgba(25,30,80,.10),0 4px 10px rgba(25,30,80,.08);
+  --lift2:0 2px 4px rgba(25,30,80,.10),0 10px 26px rgba(25,30,80,.14);
+  --lift3:0 4px 10px rgba(25,30,80,.14),0 24px 60px rgba(25,30,80,.26);}
+.glass .window{background:rgba(255,255,255,var(--wa));backdrop-filter:blur(var(--wb)) saturate(1.9);-webkit-backdrop-filter:blur(var(--wb)) saturate(1.9);
+  border:.5px solid rgba(255,255,255,.55);box-shadow:0 50px 120px rgba(8,10,40,.55),0 16px 40px rgba(8,10,40,.3),inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(255,255,255,.25)}
+/* specular sweep across the whole pane: strong for glossy, faint for frosted */
+.glass .window:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:40;
+  background:linear-gradient(118deg,rgba(255,255,255,.34) 0%,rgba(255,255,255,.08) 22%,rgba(255,255,255,0) 38%,rgba(255,255,255,0) 72%,rgba(255,255,255,.10) 100%);mix-blend-mode:soft-light}
+.glass.glossy .window:after{background:linear-gradient(118deg,rgba(255,255,255,.55) 0%,rgba(255,255,255,.14) 18%,rgba(255,255,255,0) 30%,rgba(255,255,255,0) 64%,rgba(255,255,255,.22) 66%,rgba(255,255,255,0) 72%);mix-blend-mode:normal;opacity:.55}
+.glass.glossy{--wb:6px;--wa:.30}
+.glass .fadeTop{display:none}
+.glass .sidebar{background:rgba(255,255,255,.34);border:.5px solid rgba(255,255,255,.8);box-shadow:var(--lift2),var(--hl),inset 0 -1px 0 rgba(30,30,80,.05);backdrop-filter:blur(24px) saturate(1.6)}
+.glass .filter{background:rgba(255,255,255,.55);box-shadow:inset 0 1px 2px rgba(25,30,80,.10),0 1px 0 rgba(255,255,255,.8)}
+.glass .row.act{background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.72));box-shadow:var(--lift1),var(--hl)}
+.glass .row.act .t{color:#0a5fd6}
+.glass .sect .cnt{background:linear-gradient(180deg,#ffae3d,#f08a00);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 5px rgba(240,138,0,.4)}
+.glass .d-run{background:radial-gradient(circle at 35% 30%,#8ff0a8,#1f9d45 70%)}
+.glass .d-wait{background:radial-gradient(circle at 35% 30%,#ffd28a,#f08a00 70%)}
+.glass .d-err{background:radial-gradient(circle at 35% 30%,#ffa39d,#e5352b 70%)}
+.glass .side-foot{border-top:.5px solid rgba(255,255,255,.6)}
+.glass .cap,.glass .seg{background:rgba(255,255,255,.55);border:.5px solid rgba(255,255,255,.85);box-shadow:var(--lift1),var(--hl);backdrop-filter:blur(16px)}
+.glass .seg span.on{background:linear-gradient(180deg,#fff,#f1f3fa);box-shadow:0 1px 3px rgba(25,30,80,.2),inset 0 1px 0 #fff}
+.glass .cap.hot{background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(236,242,255,.9));color:var(--accent);box-shadow:0 0 0 3px rgba(10,124,255,.18),var(--lift1),var(--hl)}
+.glass .stop{background:linear-gradient(180deg,#3a3d4d,#16171f);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 4px 12px rgba(10,12,30,.35)}
+.glass .col{margin:0 8px 8px 0;border-radius:18px;background:rgba(255,255,255,.30);border:.5px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 12px 30px rgba(255,255,255,.18),0 2px 10px rgba(25,30,80,.06)}
+.glass .insp{margin:0 8px 8px 0;border-radius:18px;background:rgba(255,255,255,.40);border:.5px solid rgba(255,255,255,.8);box-shadow:var(--lift2),var(--hl)}
+.glass .tabs{border-bottom:.5px solid rgba(255,255,255,.7)}
+.glass .tabs span.on{background:linear-gradient(180deg,#fff,#eef1f8);box-shadow:var(--lift1),var(--hl);color:var(--text)}
+.glass .fr.on{background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(255,255,255,.75));box-shadow:var(--lift1),var(--hl)}
+.glass .user{background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.72));box-shadow:var(--lift2),var(--hl)}
+.glass .tool .h{background:rgba(255,255,255,.38);box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 1px 2px rgba(25,30,80,.05)}
+.glass .tool.exp{background:rgba(255,255,255,.82);border:.5px solid rgba(255,255,255,.9);box-shadow:var(--lift2),var(--hl)}
+.glass .tool.exp .h{background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(244,246,252,.9));box-shadow:none}
+.glass .tool .ic{background:linear-gradient(180deg,#ffffff,#e4e8f3);box-shadow:inset 0 1px 0 #fff,0 1px 2px rgba(25,30,80,.22),0 0 0 .5px rgba(25,30,80,.08);color:#3d4466}
+.glass .tool .ic.c-edit{background:linear-gradient(180deg,#5aa8ff,#1668e3);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 4px rgba(22,104,227,.35)}
+.glass .tool .ic.c-term{background:linear-gradient(180deg,#4a4f63,#1d2030);color:#9ef0b5;box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 2px 4px rgba(10,12,30,.35)}
+.glass .tool .ic.c-search{background:linear-gradient(180deg,#6fe0d0,#1aa39a);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 4px rgba(26,163,154,.35)}
+.glass .tool .ic.c-doc{background:linear-gradient(180deg,#c7a6ff,#7c4ddb);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 2px 4px rgba(124,77,219,.35)}
+.glass .tail{background:linear-gradient(180deg,rgba(24,27,40,.86),rgba(18,20,30,.9));color:#c8cde0;border:.5px solid rgba(255,255,255,.15);box-shadow:inset 0 2px 8px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.7)}
+.glass .tail .l:nth-last-child(-n+2){color:#8ff0a8}
+.glass .diff .hh{background:rgba(240,242,250,.8)}
+.glass .asst code{background:rgba(255,255,255,.7);box-shadow:inset 0 0 0 .5px rgba(25,30,80,.12)}
+.glass .composer{background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.8));border:.5px solid rgba(255,255,255,.95);box-shadow:var(--lift3),var(--hl);backdrop-filter:blur(20px)}
+.glass .chip{background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(238,241,249,.9));box-shadow:0 1px 2px rgba(25,30,80,.12),inset 0 1px 0 #fff;color:var(--sec)}
+.glass .send{background:linear-gradient(180deg,#4aa3ff,#0a66ee);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 4px rgba(0,40,120,.25),0 6px 14px rgba(10,102,238,.45)}
+.glass .kbd{background:rgba(255,255,255,.6);border-color:rgba(25,30,80,.12);box-shadow:0 1px 0 rgba(25,30,80,.12)}
+/* appearance popover */
+.appear{position:absolute;right:44px;top:62px;width:340px;z-index:50;border-radius:20px;padding:14px 16px 16px;
+  background:rgba(250,251,255,.9);backdrop-filter:blur(40px) saturate(1.8);border:.5px solid rgba(255,255,255,.9);
+  box-shadow:0 30px 70px rgba(10,12,40,.35),0 8px 20px rgba(10,12,40,.18),inset 0 1px 0 #fff}
+.appear:before{content:"";position:absolute;right:22px;top:-7px;width:14px;height:14px;transform:rotate(45deg);background:rgba(255,255,255,.8);border-left:.5px solid rgba(255,255,255,.9);border-top:.5px solid rgba(255,255,255,.9)}
+.appear h4{font-size:13px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.appear .lbl{font-size:11.5px;color:var(--sec);font-weight:600;margin:12px 0 6px;display:flex;justify-content:space-between}
+.appear .lbl b{color:var(--text);font-variant-numeric:tabular-nums}
+.mat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mat div{border-radius:12px;padding:6px 6px 7px;text-align:center;font-size:11.5px;font-weight:500;background:rgba(255,255,255,.5);box-shadow:var(--lift1),var(--hl)}
+.mat div.on{box-shadow:0 0 0 2px var(--accent),var(--lift1),var(--hl)}
+.mat .sw{height:40px;border-radius:8px;margin-bottom:5px;position:relative;overflow:hidden;background:linear-gradient(135deg,#3b58c7,#b04fb0 55%,#f2a45a)}
+.mat .sw:after{content:"";position:absolute;inset:6px;border-radius:6px}
+.mat .fro .sw:after{background:rgba(255,255,255,.55);backdrop-filter:blur(6px);box-shadow:inset 0 1px 0 #fff}
+.mat .glo .sw:after{background:linear-gradient(125deg,rgba(255,255,255,.75),rgba(255,255,255,.12) 40%,rgba(255,255,255,0) 60%,rgba(255,255,255,.35));box-shadow:inset 0 1px 0 #fff,inset 0 0 0 .5px rgba(255,255,255,.8)}
+.mat .sol .sw:after{background:#fff}
+.slider{height:22px;position:relative;display:flex;align-items:center}
+.slider .tr{height:6px;border-radius:3px;flex:1;background:rgba(25,30,80,.12);box-shadow:inset 0 1px 2px rgba(25,30,80,.2);position:relative}
+.slider .fi{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#6fb4ff,#0a6cf0)}
+.slider .kn{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,#fff,#eceff6);box-shadow:0 2px 6px rgba(20,25,70,.35),inset 0 1px 0 #fff,0 0 0 .5px rgba(20,25,70,.15)}
+.appear .ends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ter);margin-top:2px}
+.appear .row2{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;margin-top:12px}
+.appear .note{font-size:11px;color:var(--ter);margin-top:12px;line-height:1.4}
+
+/* live token meter: sent / received / current speed */
+.meter{margin-left:auto;display:flex;align-items:center;gap:10px;height:28px;padding:0 10px;border-radius:14px;font-size:11.5px;color:var(--sec);font-variant-numeric:tabular-nums;background:var(--fill);position:relative}
+.meter+.send{margin-left:6px}
+.meter b{color:var(--text);font-weight:600}
+.meter .up{color:#0a6cf0}.meter .dn{color:#1f9d45}
+.meter .spd{display:flex;align-items:center;gap:6px;padding-left:10px;border-left:.5px solid var(--sep)}
+.meter .pulse{width:7px;height:7px;border-radius:50%;background:#1fbf55;box-shadow:0 0 0 3px rgba(31,191,85,.2)}
+.glass .meter{background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(238,241,249,.9));box-shadow:0 1px 2px rgba(25,30,80,.12),inset 0 1px 0 #fff}
+.tokpop{position:absolute;right:-6px;bottom:44px;width:360px;z-index:60;border-radius:18px;padding:14px 16px;text-align:left;color:var(--text);
+  background:rgba(250,251,255,.975);backdrop-filter:blur(40px) saturate(1.8);border:.5px solid rgba(255,255,255,.95);
+  box-shadow:0 30px 70px rgba(10,12,40,.32),0 8px 20px rgba(10,12,40,.16),inset 0 1px 0 #fff}
+.tokpop:after{content:"";position:absolute;right:60px;bottom:-7px;width:14px;height:14px;transform:rotate(45deg);background:rgba(250,251,255,.95)}
+.tokpop h5{font-size:11px;letter-spacing:.04em;color:var(--sec);margin:0 0 8px;display:flex;justify-content:space-between;font-weight:600}
+.tokpop .grid{display:grid;grid-template-columns:1fr auto auto;gap:5px 14px;font-size:12px;margin-bottom:12px}
+.tokpop .grid span:nth-child(3n+2),.tokpop .grid span:nth-child(3n){text-align:right;font-variant-numeric:tabular-nums}
+.tokpop .grid .h{color:var(--ter);font-size:10.5px}
+.tokpop .grid .dim{color:var(--sec)}
+.tokpop .bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:2px 0 12px;box-shadow:inset 0 1px 2px rgba(25,30,80,.2)}
+.tokpop .leg{display:flex;gap:9px;font-size:10px;color:var(--sec);margin:-6px 0 12px;flex-wrap:wrap}
+.tokpop .leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.tokpop .big{display:flex;align-items:flex-end;gap:14px;margin-bottom:4px}
+.tokpop .big .n{font-size:26px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.tokpop .big .u{font-size:12px;color:var(--sec);margin:0 0 5px -10px}
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// ---------- icons ----------
+const P = {
+  doc:'<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/>',
+  pencil:'<path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/>',
+  term:'<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 7l2 1.5L5 10M8.5 10.5H11"/>',
+  search:'<circle cx="7" cy="7" r="4"/><path d="M10 10l3.5 3.5"/>',
+  globe:'<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/>',
+  check:'<path d="M3.5 8.5l3 3 6-7"/>',
+  list:'<path d="M6 4.5h7M6 8h7M6 11.5h7"/><circle cx="3.2" cy="4.5" r=".7"/><circle cx="3.2" cy="8" r=".7"/><circle cx="3.2" cy="11.5" r=".7"/>',
+  people:'<circle cx="6" cy="6" r="2.3"/><path d="M2 13c.5-2.5 2-3.5 4-3.5s3.5 1 4 3.5"/><circle cx="11.3" cy="6.5" r="1.8"/><path d="M11 9.6c1.6 0 2.7.9 3 3"/>',
+  chev:'<path d="M6 4l4 4-4 4"/>',
+  chevd:'<path d="M4 6l4 4 4-4"/>',
+  gear:'<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4L5 11M11 5l1.4-1.4"/>',
+  plus:'<path d="M8 3v10M3 8h10"/>',
+  side:'<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6 3v10"/>',
+  insp:'<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M10 3v10"/>',
+  branch:'<circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2-6 1.5-6 3"/>',
+  stop:'<rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor"/>',
+  up:'<path d="M8 13V3M4 7l4-4 4 4"/>',
+  clip:'<path d="M10.5 5L6 9.5a1.5 1.5 0 002 2L13 6.5a3 3 0 00-4-4L4 7.5a4.3 4.3 0 006 6l3.5-3.5"/>',
+  sparkle:'<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
+  warn:'<path d="M8 2.5l6 10.5H2z"/><path d="M8 6.5v3M8 11.2v.3"/>',
+  q:'<circle cx="8" cy="8" r="5.8"/><path d="M6.3 6.3a1.8 1.8 0 113 1.4c-.8.5-1.3.9-1.3 1.8M8 11.2v.2"/>',
+  clock:'<circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.2 1.4"/>',
+  bolt:'<path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"/>',
+  folder:'<path d="M2 4.5a1 1 0 011-1h3l1.5 1.5H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1z"/>',
+  rewind:'<path d="M7.5 4L3 8l4.5 4zM13 4L8.5 8 13 12z"/>',
+  x:'<path d="M4 4l8 8M12 4l-8 8"/>',
+  key:'<circle cx="5.5" cy="10.5" r="2.5"/><path d="M7.3 8.7L13 3M11 5l1.5 1.5"/>',
+  shield:'<path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z"/>',
+  plug:'<path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 01-7 0zM8 11v3"/>',
+  cpu:'<rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"/>',
+  dollar:'<path d="M8 2v12M11 5c0-1.2-1.3-2-3-2s-3 .8-3 2 1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2-3-.8-3-2"/>',
+  paint:'<circle cx="8" cy="8" r="5.8"/><circle cx="6" cy="6.5" r=".8"/><circle cx="9.5" cy="5.8" r=".8"/><circle cx="10.8" cy="8.8" r=".8"/>',
+  eye:'<path d="M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="2"/>',
+  arrowr:'<path d="M3 8h10M9 4l4 4-4 4"/>',
+  comment:'<path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/>',
+  bell:'<path d="M4 11V7a4 4 0 018 0v4l1 1.5H3zM6.5 14h3"/>',
+  trash:'<path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.7 9h5.6l.7-9"/>',
+  refresh:'<path d="M13 8a5 5 0 11-1.5-3.5M13 2.5v3h-3"/>',
+  lock:'<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/>',
+  cmd:'<path d="M6 6h4v4H6zM6 6V4.5A1.5 1.5 0 104.5 6zM10 6V4.5A1.5 1.5 0 1111.5 6zM6 10v1.5A1.5 1.5 0 114.5 10zM10 10v1.5a1.5 1.5 0 101.5-1.5z"/>',
+};
+const I=(n,s=14,st='')=>`<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;${st}">${P[n]}</svg>`;
+
+// ---------- sidebar ----------
+function sidebar(active='jitter',o={}){
+  const r=(id,dot,t,s,c='')=>`<div class="row ${active===id?'act':''}"><span class="dot ${dot}"></span><div class="b"><div class="t">${t}</div><div class="s">${s}</div></div>${c?`<span class="c">${c}</span>`:''}</div>`;
+  const ext=o.ext;
+  return `<div class="sidebar">
+  <div class="side-top"><div class="traffic"><i></i><i></i><i></i></div><span style="color:var(--sec)">${I('side',16)}</span></div>
+  <div class="filter">${I('search',13)}<span>Filter sessions</span><span class="kbd" style="margin-left:auto">⌘K</span></div>
+  <div class="sect"><span>NEEDS YOU</span><span class="cnt">${o.needs??2}</span></div>
+  ${r('pkce','d-wait','Migrate auth to OAuth PKCE','acme-web · approve git push','')}
+  ${o.q?r('q','d-wait','Retry cap for 429s','cox · question waiting',''):r('flaky','d-wait','Flaky e2e checkout test','acme-web · question waiting','')}
+  <div class="sect"><span>RUNNING</span></div>
+  ${r('jitter','d-run','Add retry jitter to HTTP client','cox · running cargo nextest','$0.42')}
+  ${ext?r('cc','d-run','Refactor checkout <span class="agentb" style="background:#c96442">Claude</span>','acme-web · editing 3 files',''):''}
+  <div class="proj">${I('chevd',11)} cox</div>
+  ${r('bench','d-idle','Bench plugin cold start','2 h ago · done','$1.18')}
+  ${r('clippy','d-idle','Fix clippy on nightly','yesterday · done','$0.09')}
+  ${r('explain','d-idle','Explain compaction','Mon · done','$0.21')}
+  <div class="proj">${I('chevd',11)} acme-web</div>
+  ${ext?r('codex','d-idle','Dark mode toggle <span class="agentb" style="background:#111">Codex</span>','3 h ago · done',''):r('dark','d-idle','Dark mode toggle','3 h ago · done','$0.64')}
+  ${r('seo','d-err','Sitemap generator','failed · build error','$0.12')}
+  <div class="proj">${I('chev',11)} dotfiles</div>
+  <div class="side-foot"><span class="btn-new">${I('plus',14)} New session <span class="kbd">⌘N</span></span><span style="display:flex;align-items:center;gap:6px"><span class="dot d-run" style="width:7px;height:7px;border-radius:50%;box-shadow:none"></span>3 providers</span></div>
+  </div>`;
+}
+
+// ---------- toolbar ----------
+function toolbar(o={}){
+  const mode=o.mode||'ask';
+  const seg=`<div class="seg"><span class="${mode==='ask'?'on':''}">Ask</span><span class="plan ${mode==='plan'?'on':''}">Plan</span><span class="${mode==='auto'?'on':''}">Auto</span>${mode==='bypass'?'<span class="byp on">Bypass</span>':''}</div>`;
+  return `<div class="toolbar">
+   <div class="crumb">${o.title||'Add retry jitter to HTTP client'} <span class="sub">${I('chev',10)}</span><span class="sub" style="display:flex;align-items:center;gap:5px">cox ${I('branch',13)} ${o.branch||'wt/retry-jitter'}</span></div>
+   <div class="spacer"></div>
+   <div class="cap">${I('sparkle',13,'color:var(--purple)')} ${o.model||'Sonnet 5 · high'} ${I('chevd',10)}</div>
+   ${seg}
+   <div class="cap"><span class="ring"></span>${o.cost||'$0.42'} <span style="color:var(--sec);font-weight:400">· ctx ${o.ctx||'38%'}</span></div>
+   ${o.running===false?'':`<div class="stop">${I('stop',12)} Stop <span style="opacity:.6;font-weight:400">⌘.</span></div>`}
+   ${o.appear?`<div class="cap icon ${o.appear===true?'hot':''}">${I('paint',16)}</div>`:''}<div class="cap icon">${I('insp',16)}</div>
+  </div>`;
+}
+
+// ---------- transcript pieces ----------
+const user=(t,g,extra='')=>`<div class="turn"><div class="gutter">${g??''}</div><div class="user">${t}${extra}</div></div>`;
+const asst=h=>`<div class="asst">${h}</div>`;
+const think=(s,open,body)=>`<div class="think">${I(open?'chevd':'chev',11)} Thought for ${s}</div>${open?`<div class="think-body">${body}</div>`:''}`;
+function tool(o){
+  const st=o.state==='run'?`<span class="spin"></span> ${o.time||''}`:o.state==='fail'?`<span class="bad">${I('x',12)}</span> ${o.time||''}`:`<span class="ok">${I('check',12)}</span> ${o.time||''}`;
+  return `<div class="tool ${o.exp?'exp':''}"><div class="h"><span class="ic c-${({pencil:'edit',term:'term',search:'search',doc:'doc'})[o.icon||'doc']||'x'}">${I(o.icon||'doc',13)}</span><span class="sum">${o.sum}</span>${o.risk?`<span class="risk">${o.risk}</span>`:''}<span class="st">${st}</span>${o.exp!==undefined?`<span style="color:var(--ter)">${I(o.exp?'chevd':'chev',11)}</span>`:''}</div>${o.body||''}</div>${o.tail?`<div class="tail mono">${o.tail.map(l=>`<div class="l">${l}</div>`).join('')}</div>`:''}`;
+}
+const meta=(t)=>`<div class="meta">${t.map(x=>`<span>${x}</span>`).join('')}</div>`;
+function diff(lines){return `<div class="diff mono">${lines.map(l=>{if(l[0]==='@')return `<div class="hh">${l.slice(1)}</div>`;const k=l[0],n=l[1],c=l[2];return `<div class="ln ${k==='+'?'a':k==='-'?'d':''}"><span class="n">${n}</span><span class="c">${k===' '?' ':k} ${c}</span></div>`}).join('')}</div>`}
+const retryDiff=diff([
+ ['@','@@ -41,12 +41,26 @@ impl Backoff'],
+ [' ','41','<span class="kw">pub fn</span> <span class="fn">delay</span>(&amp;<span class="kw">self</span>, attempt: <span class="ty">u32</span>) -&gt; <span class="ty">Duration</span> {'],
+ ['-','42','    <span class="kw">self</span>.base * <span class="num">2</span><span class="kw">u32</span>.pow(attempt)'],
+ ['+','42','    <span class="kw">let</span> ceiling = <span class="kw">self</span>.base.saturating_mul(<span class="num">1</span> &lt;&lt; attempt.min(<span class="num">16</span>));'],
+ ['+','43','    <span class="kw">let</span> capped = ceiling.min(<span class="kw">self</span>.cap);'],
+ ['+','44','    <span class="com">// full jitter: uniform in [0, capped], so retries spread out</span>'],
+ ['+','45','    capped.mul_f64(<span class="kw">self</span>.rng.lock().gen::&lt;<span class="ty">f64</span>&gt;())'],
+ [' ','46','}'],
+]);
+const explored=`<div class="tool"><div class="h"><span class="ic c-search">${I('search',13)}</span><span class="sum">Explored <b>6 files</b> <span style="color:var(--sec)">· retry.rs, http.rs, sse.rs, lib.rs +2</span></span><span class="st"><span class="ok">${I('check',12)}</span> 1.1 s</span><span style="color:var(--ter)">${I('chev',11)}</span></div></div>`;
+
+function composer(o={}){
+  const txt=o.text||`<span class="ph">Ask cox… &nbsp;@ files &nbsp;/ commands &nbsp;! shell</span>`;
+  return `<div class="composer">${o.pop||''}<div class="ta ${o.mono?'mono':''}">${txt}</div>
+  ${o.atts?`<div style="display:flex;gap:8px;padding:0 16px 4px">${o.atts}</div>`:''}
+  <div class="chips"><span class="chip">${I('clip',13)}</span><span class="chip ${o.mode==='plan'?'blue':''}">${o.mode==='plan'?'Plan':o.shell?'Shell · share output':'Ask'} <span class="kbd">⇧⇥</span></span><span class="chip">${I('sparkle',12)} Sonnet 5 · high</span><span class="chip">${I('bolt',12)} think</span>${o.queued?`<span class="chip" style="color:var(--accent)">Queued · 1</span>`:''}${o.meter?meter(o.meter):''}<div class="send ${o.off?'off':''}">${I('up',15)}</div></div></div>`;
+}
+
+
+function spark(pts,w,h,col){const mx=Math.max(...pts);const d=pts.map((v,i)=>`${(i*w/(pts.length-1)).toFixed(1)},${(h-1-v/mx*(h-3)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="sg${w}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".35"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs><polygon points="0,${h} ${d} ${w},${h}" fill="url(#sg${w})"/><polyline points="${d}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/></svg>`}
+const SPD=[0,0,18,52,66,74,70,63,69,77,72,58,40,0,0,0,34,61,70,73,68,71,75,71];
+function meter(o){
+  const pop=o.open?`<div class="tokpop">
+    <h5><span>THIS TURN · 4 REQUESTS</span><span style="color:var(--accent)">streaming</span></h5>
+    <div class="big"><span class="n">71</span><span class="u">tok/s now</span><span style="margin-left:auto">${spark(SPD,150,34,'#1f9d45')}</span></div>
+    <div style="font-size:11px;color:var(--sec);margin-bottom:12px">avg 64 tok/s · first token 0.8 s · peak 77 tok/s</div>
+    <div class="grid"><span class="h"></span><span class="h">TURN</span><span class="h">SESSION</span>
+      <span><b class="up">↑</b> Sent</span><span>41.6k</span><span>218.5k</span>
+      <span class="dim">&nbsp;&nbsp;&nbsp;cache read</span><span class="dim">38.9k</span><span class="dim">152.3k</span>
+      <span class="dim">&nbsp;&nbsp;&nbsp;cache write</span><span class="dim">1.1k</span><span class="dim">34.0k</span>
+      <span class="dim">&nbsp;&nbsp;&nbsp;uncached</span><span class="dim">1.6k</span><span class="dim">32.2k</span>
+      <span><b class="dn">↓</b> Received</span><span>1.9k</span><span>9.8k</span>
+      <span class="dim">&nbsp;&nbsp;&nbsp;of it thinking</span><span class="dim">0.6k</span><span class="dim">3.1k</span>
+      <span>Cost</span><span>$0.05</span><span>$0.42</span></div>
+    <h5><span>CONTEXT · 76.4k / 200k</span><span>38%</span></h5>
+    <div class="bar"><i style="width:3%;background:#8a93b8"></i><i style="width:5%;background:#b58cff"></i><i style="width:6%;background:#5fc8ff"></i><i style="width:24%;background:#0a6cf0"></i><i style="flex:1;background:rgba(25,30,80,.07)"></i></div>
+    <div class="leg"><span><i style="background:#8a93b8"></i>system 6.2k</span><span><i style="background:#b58cff"></i>tools 9.8k</span><span><i style="background:#5fc8ff"></i>AGENTS.md 11.5k</span><span><i style="background:#0a6cf0"></i>history 48.9k</span></div>
+    <div style="font-size:11px;color:var(--ter)">Cache hit 94% this turn · counts from the provider's usage, one ledger row per request</div></div>`:'';
+  return `<span class="meter ${o.open?'hot':''}">${pop}<span><b class="up">↑</b> <b>218.5k</b> sent</span><span><b class="dn">↓</b> <b>9.8k</b> recv</span><span class="spd"><span class="pulse"></span><b>71</b> tok/s ${spark(SPD.slice(-12),44,16,'#1f9d45')}</span></span>`;
+}
+
+// ---------- inspector ----------
+function insp(tab,body){
+  const tabs=['Changes','Plan','Context','Tasks','Info'];
+  return `<div class="insp"><div style="height:56px;display:flex;align-items:center;padding:0 16px;font-weight:600;font-size:13px">Inspector</div><div class="tabs">${tabs.map(t=>`<span class="${t===tab?'on':''}">${t}</span>`).join('')}</div><div class="ib">${body}</div></div>`;
+}
+const changesBody=`<div class="ih"><span>THIS SESSION · 3 FILES</span><span style="color:var(--accent);font-weight:500">Review ⌘⇧R</span></div>
+ <div class="fr on">${I('pencil',13)}<span class="p"><span class="dir">cox-provider-http/src/</span>retry.rs</span><span class="plus">+18</span><span class="minus">−4</span></div>
+ <div class="fr">${I('pencil',13)}<span class="p"><span class="dir">cox-provider-http/</span>Cargo.toml</span><span class="plus">+1</span></div>
+ <div class="fr">${I('doc',13)}<span class="p"><span class="dir">cox-provider-http/tests/</span>backoff.rs</span><span class="plus">+42</span></div>
+ <div class="ih" style="margin-top:18px"><span>CHECKPOINTS</span></div>
+ <div class="fr">${I('clock',13)}<span class="p">Turn 1 · before edit retry.rs</span><span style="color:var(--ter);font-size:11px">14:02</span></div>
+ <div class="fr">${I('clock',13)}<span class="p">Turn 1 · before write backoff.rs</span><span style="color:var(--ter);font-size:11px">14:03</span></div>
+ <div class="ih" style="margin-top:18px"><span>WORKTREE</span></div>
+ <div class="kv"><span class="k">Branch</span><span>wt/retry-jitter</span><span class="k">Base</span><span>main @ 4273daa</span><span class="k">Size</span><span>412 MB (target/ 398 MB)</span></div>`;
+
+// ---------- main transcript scenario ----------
+function mainTranscript(o={}){
+  return `<div class="reading">
+  ${user('Add jitter to the retry backoff in the provider HTTP client. Full jitter, capped at 30 s. Keep the existing tests green and add one for the cap.',1)}
+  ${think('9 s',false)}
+  ${explored}
+  ${asst(`<p>The backoff lives in <code>retry.rs</code>: <code>delay(attempt)</code> returns <code>base · 2ⁿ</code> with no jitter and no cap, so parallel sessions retry in lockstep after a 529.</p><p>I'll switch to <b>full jitter</b> — a uniform draw in <code>[0, min(cap, base · 2ⁿ)]</code> — and inject the RNG so the tests stay deterministic.</p>`)}
+  ${tool({icon:'pencil',sum:'Edited <b>crates/cox-provider-http/src/retry.rs</b> &nbsp;<span class="plus">+18</span> <span class="minus">−4</span>',time:'0.1 s',exp:true,body:retryDiff+`<div class="more">Show full diff · 3 hunks</div>`})}
+  ${tool({icon:'doc',sum:'Wrote <b>crates/cox-provider-http/tests/backoff.rs</b> &nbsp;<span class="plus">+42</span>',time:'0.1 s',exp:false})}
+  ${o.approval?'':tool({icon:'term',sum:'Running <b class="mono" style="font-weight:500">cargo nextest run -p cox-provider-http</b>',state:'run',time:'12 s',tail:['   Compiling cox-provider-http v0.9.0 (crates/cox-provider-http)','    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.84s','    Starting 38 tests across 4 binaries','        PASS [   0.004s] cox-provider-http retry::tests::delay_never_exceeds_cap','        PASS [   0.006s] cox-provider-http retry::tests::jitter_is_uniform_over_seeded_rng']})}
+  ${o.after||''}
+  </div>`;
+}
+
+function shell({side='jitter',sideOpt={},tb={},center,inspTab,inspBody,below='',overlay='',win='',bypass=false,noInsp=false,top=false}){
+  return `<div class="window ${win}">${bypass?'<div class="bypass-strip"></div>':''}${sidebar(side,sideOpt)}<div class="main">${toolbar(tb)}<div class="body"><div class="col"><div class="fadeTop"></div><div class="scroll ${top?'top':''}">${center}</div>${below}</div>${noInsp?'':insp(inspTab||'Changes',inspBody||changesBody)}</div></div>${overlay}</div>`;
+}
+
+// ---------- screens ----------
+const S={};
+S['01-main-session-streaming']=()=>shell({center:mainTranscript(),below:composer({queued:false})});
+S['02-main-session-dark']=()=>{document.body.classList.add('dark');return S['01-main-session-streaming']()};
+
+S['03-approval-required']=()=>shell({tb:{},center:mainTranscript({approval:true,after:`
+  ${tool({icon:'term',sum:'Ran <b class="mono" style="font-weight:500">cargo nextest run -p cox-provider-http</b> — 38 passed',time:'14.2 s',exp:false})}
+  ${asst('<p>All 38 tests pass, including the new cap test. Pushing the branch so CI can run the full matrix.</p>')}
+  <div class="appr"><div class="ah"><span style="color:var(--orange)">${I('warn',16)}</span> Run this command? <span class="risk" style="margin-left:6px">network · writes remote</span></div>
+   <div class="cmd mono"><span class="fn">git</span> push <span class="kw">-u</span> origin wt/retry-jitter</div>
+   <div class="why"><span><b>Why you are asked:</b> matches ask rule <code class="mono">Bash(git push:*)</code> <span class="badge b-user">user config</span></span><span><b>Sandbox:</b> workspace-write, network allowed for git remotes</span></div>
+   <div class="acts"><span class="pb pri">Allow <span class="k">⏎</span></span><span class="pb">Allow for session <span class="k">⌘⏎</span></span><span class="pb">Edit… <span class="k">⌘E</span></span><span class="pb dan">Deny <span class="k">⎋</span></span><span class="grant">Session grant: <code class="mono">git push *</code></span></div></div>`}),
+  below:`<div class="pinned"><span style="color:var(--orange)">${I('warn',15)}</span><span style="flex:1">Waiting for you: <b class="mono" style="font-weight:600">git push -u origin wt/retry-jitter</b></span><span class="pb pri">Allow</span><span class="pb">For session</span><span class="pb dan">Deny</span></div>`+composer({}),tb:{ctx:'41%',cost:'$0.47'}});
+
+S['04-question-ask-user']=()=>shell({side:'q',sideOpt:{q:true},tb:{title:'Retry cap for 429s',branch:'main',cost:'$0.08',ctx:'12%'},center:`<div class="reading">
+  ${user('Make the provider client respect rate limits properly.',1)}
+  ${explored}
+  ${asst('<p>429 responses from Anthropic and OpenAI both carry <code>retry-after</code>. Before I change behaviour, one decision is yours:</p>')}
+  <div class="appr" style=""><div class="ah"><span style="color:var(--accent)">${I('q',16)}</span> Question from cox</div>
+   <div style="padding:2px 20px 10px;font-size:13.5px">When a 429 arrives with <code class="mono">retry-after: 120</code>, which should win?</div>
+   <div style="display:flex;flex-direction:column;gap:6px;padding:0 20px 12px">
+     <div class="radio on"><span class="o"></span><div>Respect <b>retry-after</b>, even above the 30 s cap<small>Correct per RFC 9110; a turn may pause up to 2 minutes</small></div></div>
+     <div class="radio"><span class="o"></span><div>Always cap at 30 s<small>Faster feedback; risks another 429</small></div></div>
+     <div class="radio"><span class="o"></span><div>Ask me each time it exceeds the cap</div></div>
+   </div>
+   <div class="acts"><div class="input" style="flex:1;background:var(--win)"><span style="color:var(--ter)">Or type your own answer…</span></div><span class="pb pri">Answer ⏎</span></div></div>
+  </div>`,below:composer({off:true}),inspTab:'Plan',inspBody:planBody(),tb:{title:'Retry cap for 429s',branch:'main',cost:'$0.08',ctx:'12%',running:false}});
+
+function planBody(){return `<div class="ih"><span>PLAN · 2 OF 5</span><span style="font-weight:500">updated 14:03</span></div>
+ ${[['done','Read retry.rs and callers'],['done','Switch delay() to full jitter with a cap'],['doing','Add delay_never_exceeds_cap test'],['','Run cox-provider-http tests'],['','Push branch and open PR']].map(([s,t])=>`<div class="todo ${s==='done'?'done':''}"><span class="box ${s}">${s==='done'?'✓':''}</span><span>${t}</span></div>`).join('')}
+ <div class="ih" style="margin-top:20px"><span>FROM THE MODEL</span></div><div style="font-size:12px;color:var(--sec)">The list is the agent's own <code class="mono">todo</code> tool state, delivered as structured data — not re-parsed text.</div>`}
+
+S['05-composer-file-mention']=()=>shell({tb:{running:false,ctx:'44%',cost:'$0.51'},center:mainTranscript({approval:true,after:`${tool({icon:'term',sum:'Ran <b class="mono" style="font-weight:500">git push -u origin wt/retry-jitter</b>',time:'2.1 s'})}${asst('<p>Pushed. CI is running on <code>wt/retry-jitter</code>.</p>')}${meta(['Sonnet 5','in 48.2k · out 3.1k','cache 91%','$0.44','2 m 18 s','end turn'])}`}),
+ below:composer({text:`Now apply the same backoff to MCP reconnects in <span class="pill">${I('doc',11)} client.rs</span> and <span style="color:var(--accent)">@mcp/au</span><span class="caret"></span>`,pop:`<div class="pop"><div class="hdr">FILES · ranked by fuzzy match</div>
+  <div class="it on">${I('doc',13)}<span><span class="hl">mcp</span>/src/<span class="hl">au</span>th.rs</span><span class="x">crates/cox-mcp · 412 lines</span></div>
+  <div class="it">${I('doc',13)}<span><span class="hl">mcp</span>/tests/o<span class="hl">au</span>th_flow.rs</span><span class="x">crates/cox-mcp</span></div>
+  <div class="it">${I('doc',13)}<span>cox-<span class="hl">mcp</span>/src/<span class="hl">au</span>th/store.rs</span><span class="x">crates/cox-mcp</span></div>
+  <div class="it">${I('folder',13)}<span>docs/<span class="hl">mc</span>p-<span class="hl">au</span>th.md</span><span class="x">docs</span></div>
+  <div style="font-size:11px;color:var(--ter);padding:6px 10px 2px">↑↓ to move · ⏎ to insert · ⇥ to open preview</div></div>`}),inspTab:'Changes'});
+
+S['06-composer-slash-commands']=()=>shell({tb:{running:false,ctx:'44%',cost:'$0.51'},center:mainTranscript({approval:true,after:`${tool({icon:'term',sum:'Ran <b class="mono" style="font-weight:500">git push -u origin wt/retry-jitter</b>',time:'2.1 s'})}${asst('<p>Pushed. CI is running on <code>wt/retry-jitter</code>.</p>')}`}),
+ below:composer({text:`<span style="color:var(--accent)">/co</span><span class="caret"></span>`,pop:`<div class="pop" style="width:520px"><div class="hdr">COMMANDS</div>
+  <div class="it on"><b>/compact</b><span class="x">Summarize history now · optional focus</span></div>
+  <div class="it"><b>/cost</b><span class="x">Session, project and period totals</span></div>
+  <div class="it"><b>/config</b><span class="x">Open settings at a key</span></div>
+  <div class="it"><b>/commit</b><span class="x">skill · write a commit for staged changes</span></div>
+  <div class="it"><b>/code-review</b><span class="x">skill · review the current diff</span></div>
+  <div style="font-size:11px;color:var(--ter);padding:6px 10px 2px">Built-ins, skills and plugin commands from one table shared with the TUI</div></div>`}),inspTab:'Changes'});
+
+S['07-shell-mode-and-queue']=()=>shell({tb:{},center:mainTranscript(),below:composer({shell:true,mono:true,queued:true,text:`<span style="color:var(--green);font-weight:700">!</span> git log --oneline -5 wt/retry-jitter<span class="caret"></span>`})});
+
+S['08-review-diff']=()=>{
+  const sbs=(l,r)=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);overflow:hidden;border-top:.5px solid var(--sep)">${diff(l)}<div style="border-left:.5px solid var(--sep)">${diff(r)}</div></div>`;
+  const center=`<div style="display:flex;height:100%;margin-top:-6px">
+   <div style="width:260px;border-right:.5px solid var(--sep);padding:12px 10px;flex:none">
+     <div class="ih" style="padding:0 6px"><span>TURN 1 · 3 FILES</span><span class="plus">+61 <span class="minus">−4</span></span></div>
+     <div class="fr on">${I('pencil',13)}<span class="p">retry.rs</span><span class="plus">+18</span><span class="minus">−4</span></div>
+     <div class="fr">${I('pencil',13)}<span class="p">Cargo.toml</span><span class="plus">+1</span></div>
+     <div class="fr">${I('doc',13)}<span class="p">backoff.rs</span><span class="plus">+42</span></div>
+     <div class="ih" style="padding:0 6px;margin-top:16px"><span>COMMENTS · DRAFT</span></div>
+     <div class="card" style="font-size:12px"><div style="color:var(--sec);font-size:11px;margin-bottom:4px">retry.rs:45</div>Use <code class="mono">rand::rng()</code> directly in release builds; keep injection for tests only.</div>
+     <div class="pb pri" style="justify-content:center">${I('comment',13)} Send 1 comment to agent</div>
+   </div>
+   <div style="flex:1;min-width:0;padding:12px 16px">
+     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><b style="font-size:14px">crates/cox-provider-http/src/retry.rs</b><span class="plus">+18</span><span class="minus">−4</span><span class="spacer"></span><div class="seg" style="height:28px"><span>Unified</span><span class="on">Split</span></div><span class="pb">${I('rewind',13)} Revert to before turn 1</span><span class="pb">Open in Zed</span></div>
+     <div style="border:.5px solid var(--sep);border-radius:12px;overflow:hidden">
+     ${sbs([['@','@@ -41,6'],[' ','41','<span class="kw">pub fn</span> <span class="fn">delay</span>(&amp;<span class="kw">self</span>, attempt: <span class="ty">u32</span>) -&gt; <span class="ty">Duration</span> {'],['-','42','    <span class="kw">self</span>.base * <span class="num">2</span><span class="kw">u32</span>.pow(attempt)'],[' ','',' '],[' ','',' '],[' ','',' '],[' ','43','}']],
+           [['@','@@ +41,9'],[' ','41','<span class="kw">pub fn</span> <span class="fn">delay</span>(&amp;<span class="kw">self</span>, attempt: <span class="ty">u32</span>) -&gt; <span class="ty">Duration</span> {'],['+','42','    <span class="kw">let</span> ceiling = <span class="kw">self</span>.base.saturating_mul(<span class="num">1</span> &lt;&lt; attempt.min(<span class="num">16</span>));'],['+','43','    <span class="kw">let</span> capped = ceiling.min(<span class="kw">self</span>.cap);'],['+','44','    <span class="com">// full jitter: uniform in [0, capped]</span>'],['+','45','    capped.mul_f64(<span class="kw">self</span>.rng.lock().gen::&lt;<span class="ty">f64</span>&gt;())'],[' ','46','}']])}
+     <div style="margin:6px 16px 10px 60px;border:.5px solid var(--accent);border-radius:10px;padding:8px 10px;font-size:12.5px;background:var(--accent-soft)"><b>You</b> · line 45 &nbsp;Use <code class="mono">rand::rng()</code> directly in release builds; keep injection for tests only.</div>
+     ${sbs([['@','@@ -88,4'],[' ','88','<span class="kw">impl</span> <span class="ty">Default</span> <span class="kw">for</span> <span class="ty">Backoff</span> {'],['-','89','    <span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="ty">Self</span> { <span class="ty">Self</span> { base: ms(<span class="num">500</span>) } }'],[' ','',' ']],
+           [['@','@@ +95,6'],[' ','95','<span class="kw">impl</span> <span class="ty">Default</span> <span class="kw">for</span> <span class="ty">Backoff</span> {'],['+','96','    <span class="kw">fn</span> <span class="fn">default</span>() -&gt; <span class="ty">Self</span> {'],['+','97','        <span class="ty">Self</span> { base: ms(<span class="num">500</span>), cap: secs(<span class="num">30</span>), rng: seeded() }']])}
+     </div></div></div>`;
+  return `<div class="window">${sidebar('jitter')}<div class="main">${toolbar({title:'Review · Add retry jitter to HTTP client',running:false})}<div class="body"><div class="col"><div class="scroll" style="padding:0">${center}</div></div></div></div></div>`;
+};
+
+S['09-inspector-plan']=()=>shell({center:mainTranscript(),below:composer({}),inspTab:'Plan',inspBody:planBody()});
+
+S['10-inspector-context-cost']=()=>shell({center:mainTranscript(),below:composer({}),inspTab:'Context',inspBody:`
+ <div class="ih"><span>CONTEXT WINDOW · SONNET 5</span><span style="font-weight:500">76k / 200k</span></div>
+ <div class="bar"><i style="width:4%;background:#8e8e93"></i><i style="width:6%;background:#af52de"></i><i style="width:3%;background:#5ac8fa"></i><i style="width:25%;background:var(--accent)"></i></div>
+ <div class="legend"><span><i style="background:#8e8e93"></i>System prompt</span><span>7.9k</span><span><i style="background:#af52de"></i>Tool schemas (14)</span><span>12.1k</span><span><i style="background:#5ac8fa"></i>Instructions · AGENTS.md</span><span>5.4k</span><span><i style="background:var(--accent)"></i>History (3 turns)</span><span>50.6k</span><span style="color:var(--sec)"><i style="background:var(--fill2)"></i>Free</span><span style="color:var(--sec)">124k</span></div>
+ <div style="display:flex;gap:8px;margin:12px 0 18px"><span class="pb">Compact now</span><span class="pb">Auto-compact at 85%</span></div>
+ <div class="ih"><span>CACHE</span><span style="font-weight:500;color:var(--green)">91% hit</span></div>
+ <div class="gauge"><i style="width:91%;background:var(--green)"></i></div>
+ <div class="ih" style="margin-top:18px"><span>COST BY TURN</span></div>
+ <table class="t"><tr><th>Turn</th><th>In</th><th>Out</th><th>Cache r/w</th><th>$</th></tr>
+ <tr><td>1 · mid</td><td>31.4k</td><td>2.2k</td><td>28.0k/3.1k</td><td>0.29</td></tr>
+ <tr><td>↳ reviewer · low</td><td>9.8k</td><td>0.6k</td><td>0/9.8k</td><td>0.03</td></tr>
+ <tr><td>2 · mid</td><td>16.8k</td><td>0.9k</td><td>15.9k/0.8k</td><td>0.10</td></tr>
+ <tr><td><b>Session</b></td><td>58.0k</td><td>3.7k</td><td></td><td><b>0.42</b></td></tr></table>
+ <div class="ih" style="margin-top:18px"><span>BUDGET</span><span style="font-weight:500">$0.42 of $5.00</span></div>
+ <div class="gauge"><i style="width:8.4%"></i></div>
+ <div style="font-size:11.5px;color:var(--sec);margin-top:8px">Project <b>cox</b> today: $3.18 · this week: $21.40. Every number is a row in the cost ledger.</div>`});
+
+S['11-inspector-tasks-subagents']=()=>shell({center:mainTranscript({after:`<div class="card" style="margin:8px 0"><div style="display:flex;align-items:center;gap:8px"><span class="ic" style="width:22px;height:22px;border-radius:6px;background:var(--fill2);display:flex;align-items:center;justify-content:center">${I('people',13)}</span><b>reviewer</b><span class="badge">low · Haiku 4.5</span><span style="margin-left:auto;font-size:11.5px;color:var(--sec);display:flex;gap:6px;align-items:center"><span class="spin"></span> reading retry.rs · $0.03</span></div><div style="font-size:12px;color:var(--sec);margin-top:6px">“Check the jitter change for overflow on large attempts and for a biased RNG.”</div></div>`}),below:composer({}),inspTab:'Tasks',inspBody:`
+ <div class="ih"><span>SUBAGENTS & BACKGROUND · 3</span></div>
+ <div class="card"><div style="display:flex;align-items:center;gap:8px"><span class="dot d-run" style="width:8px;height:8px;border-radius:50%"></span><b>reviewer</b><span class="badge" style="margin-left:auto">low</span></div><div style="font-size:12px;color:var(--sec);margin:4px 0">reading retry.rs · 4 tool calls</div><div style="display:flex;justify-content:space-between;font-size:11.5px"><span>Haiku 4.5</span><span>$0.03 · 22 s</span></div></div>
+ <div class="card"><div style="display:flex;align-items:center;gap:8px"><span class="ok">${I('check',12)}</span><b>test-writer</b><span class="badge" style="margin-left:auto">mid</span></div><div style="font-size:12px;color:var(--sec);margin:4px 0">wrote tests/backoff.rs · exit 0</div><div style="display:flex;justify-content:space-between;font-size:11.5px"><span>Sonnet 5</span><span>$0.07 · 48 s</span></div></div>
+ <div class="card"><div style="display:flex;align-items:center;gap:8px"><span class="spin"></span><b class="mono" style="font-weight:500;font-size:12px">cargo nextest run</b><span class="badge" style="margin-left:auto">background</span></div><div style="font-size:12px;color:var(--sec);margin:4px 0">detached from turn 1 · output archived</div><div style="display:flex;gap:6px"><span class="pb" style="height:24px">Show output</span><span class="pb dan" style="height:24px">Kill</span></div></div>`});
+
+S['12-command-palette']=()=>shell({center:mainTranscript(),below:composer({}),overlay:`<div class="scrim"></div><div class="palette"><div class="q">${I('search',18)}<span>rev</span><span class="caret" style="height:22px"></span><span class="kbd" style="margin-left:auto">esc</span></div><div class="lst">
+ <div class="hdr">ACTIONS</div>
+ <div class="it on"><span class="ic2">${I('eye',14)}</span>Review changes<span class="x">⌘⇧R</span></div>
+ <div class="it"><span class="ic2">${I('rewind',14)}</span>Rewind to turn…<span class="x">code, conversation or both</span></div>
+ <div class="it"><span class="ic2">${I('refresh',14)}</span>Revert file to checkpoint…</div>
+ <div class="hdr">SESSIONS</div>
+ <div class="it"><span class="ic2">${I('comment',14)}</span><span>Code <b>rev</b>iew for plugin loader</span><span class="x">cox · last week</span></div>
+ <div class="it"><span class="ic2">${I('comment',14)}</span><span><b>Rev</b>ert broken sitemap change</span><span class="x">acme-web · Sep 12</span></div>
+ <div class="hdr">COMMANDS & FILES</div>
+ <div class="it"><span class="ic2">/</span><span>/code-<b>rev</b>iew</span><span class="x">skill</span></div>
+ <div class="it"><span class="ic2">${I('doc',14)}</span><span>docs/design/<b>rev</b>iew.md</span><span class="x">cox</span></div>
+ </div></div>`});
+
+S['13-search-all-sessions']=()=>shell({center:`<div class="reading" style="padding-top:8px">
+ <div class="input" style="height:40px;font-size:15px;border-radius:12px;margin-bottom:16px">${I('search',16)} <span>sandbox-exec nested</span><span class="caret"></span><span style="margin-left:auto;font-size:12px;color:var(--sec)">14 matches in 5 sessions</span></div>
+ ${[['Why bwrap fails on CI runners','cox · Sep 24 · turn 3','…macOS uses <mark>sandbox-exec</mark> with a Seatbelt profile; a <mark>nested</mark> sandbox is refused by the kernel, which is why the App Store build…'],['Bench plugin cold start','cox · 2 h ago · turn 5','…wasmtime JIT needs <code>allow-jit</code> under Hardened Runtime; <mark>sandbox-exec</mark> itself is unaffected…'],['Sandbox policy for plugins','cox · Sep 19 · turn 1','…the plugin MCP server runs under the same <mark>sandbox-exec</mark> profile as bash; <mark>nested</mark> invocation from a hook…'],['Flaky e2e checkout test','acme-web · today · turn 2','…Playwright spawns Chromium, which refuses to start inside <mark>sandbox-exec</mark> without --no-sandbox…']].map(([t,s,x])=>`<div class="card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between"><b>${t}</b><span style="font-size:11.5px;color:var(--sec)">${s}</span></div><div style="font-size:12.5px;color:var(--sec);margin-top:4px">${x.replace(/<mark>/g,'<mark style="background:rgba(255,204,0,.35);color:var(--text);border-radius:3px;padding:0 2px">')}</div></div>`).join('')}
+ <div style="font-size:11.5px;color:var(--ter);text-align:center;margin-top:8px">Full-text search over every rollout in ~/.cox — sessions from the TUI included</div></div>`,below:'',tb:{title:'Search all sessions',branch:'—',running:false},noInsp:true,top:true});
+
+S['14-rewind-edit-resend']=()=>shell({tb:{running:false},center:`<div class="reading">
+  ${user('Add jitter to the retry backoff in the provider HTTP client. Full jitter, capped at 30 s. Keep the existing tests green and add one for the cap.',1)}
+  ${think('9 s',false)}${explored}
+  ${asst('<p>Done: full jitter with a 30 s cap, a deterministic RNG in tests, and <code>delay_never_exceeds_cap</code>. 38 tests pass.</p>')}
+  ${meta(['Sonnet 5','in 31.4k · out 2.2k','cache 89%','$0.29','1 m 40 s'])}
+  <div class="turn" style="position:relative">
+   <div class="gutter" style="color:var(--accent);font-weight:600">2 ${I('rewind',11)}</div>
+   <div class="user" style="outline:2px solid var(--accent);outline-offset:0">Also make the cap configurable per provider in config.toml.
+   <div style="position:absolute;right:10px;top:22px;display:flex;gap:6px"><span class="pb" style="height:24px">${I('pencil',12)} Edit and resend</span><span class="pb" style="height:24px">Copy</span></div></div>
+   <div class="popover" style="left:-44px;top:44px;width:330px"><div class="hdr">REWIND TO BEFORE TURN 2</div>
+    <div class="it on">${I('rewind',13)} Code and conversation<span class="x">2 files restored</span></div>
+    <div class="it">${I('doc',13)} Code only<span class="x">keep the chat</span></div>
+    <div class="it">${I('comment',13)} Conversation only<span class="x">keep the files</span></div>
+    <div class="sep"></div><div class="it">${I('branch',13)} Fork a new session here</div></div>
+  </div>
+  <div style="opacity:.35">${tool({icon:'pencil',sum:'Edited <b>crates/cox-config/src/config.rs</b> <span class="plus">+9</span>',time:'0.1 s'})}${tool({icon:'pencil',sum:'Edited <b>docs/config.jsonschema</b> <span class="plus">+14</span>',time:'0.1 s'})}</div>
+  </div>`,below:composer({}),inspTab:'Changes'});
+
+S['15-bypass-mode-budget-stop']=()=>shell({bypass:true,tb:{mode:'bypass',cost:'$5.00',ctx:'71%',running:false},center:`<div class="reading">
+  ${user('Upgrade every workspace crate to edition 2024 idioms and fix all new clippy lints.',4)}
+  ${tool({icon:'term',sum:'Ran <b class="mono" style="font-weight:500">cargo clippy --workspace --all-targets</b> — 212 warnings',time:'41 s'})}
+  ${tool({icon:'pencil',sum:'Edited <b>38 files</b> <span class="plus">+402</span> <span class="minus">−377</span>',time:'1 m 12 s'})}
+  ${tool({icon:'term',sum:'Ran <b class="mono" style="font-weight:500">cargo clippy --workspace --all-targets</b> — 17 warnings',time:'38 s'})}
+  <div class="appr" style="border-color:var(--red-soft)"><div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)"></div>
+   <div class="ah" style="color:var(--red)">${I('dollar',16)} Budget reached — turn stopped</div>
+   <div style="padding:0 20px 12px;font-size:13px">This session hit its <b>$5.00</b> cap. The next request was projected at <b>$0.31</b>, so cox stopped <i>before</i> sending it. Nothing was lost: the last checkpoint is turn 4, 17 lints remain.</div>
+   <div class="acts"><span class="pb pri">Raise cap to $10 and continue</span><span class="pb">Continue on low tier</span><span class="pb">Stop here</span><span class="grant">Projected finish: ~$1.20</span></div></div>
+  <div class="notice" style="color:var(--red)">${I('shield',13)} Bypass mode is on: tools run without asking. The shell still runs inside the sandbox.</div>
+  </div>`,below:composer({}),inspTab:'Context',inspBody:`<div class="ih"><span>BUDGET</span><span style="font-weight:500;color:var(--red)">$5.00 of $5.00</span></div><div class="gauge"><i style="width:100%;background:var(--red)"></i></div><div style="font-size:12px;color:var(--sec);margin-top:10px">Warned at 80% (turn 3). Cap from <span class="badge b-project">project</span> <code class="mono">budget.session_usd = 5</code></div>`});
+
+S['16-new-session-sheet']=()=>shell({center:mainTranscript(),below:composer({}),overlay:`<div class="scrim"></div><div class="sheet">
+ <h2>New session</h2><div class="sub">Runs alongside your other sessions. Nothing here is shared with them.</div>
+ <div class="field"><span class="lab">Project</span><div class="input">${I('folder',14)} cox <span style="color:var(--sec)">~/GitHub/listepo/apps/cox</span><span style="margin-left:auto">${I('chevd',11)}</span></div></div>
+ <div class="field" style="align-items:start"><span class="lab" style="padding-top:10px">Where</span><div>
+   <div class="radio"><span class="o"></span><div>In place on <b>main</b><small>Edits your checkout directly</small></div></div>
+   <div class="radio on"><span class="o"></span><div>New worktree<small>Isolated copy under ~/.cox/worktrees/cox — safe to run in parallel</small><div class="input" style="margin-top:6px;background:var(--win)">${I('branch',13)} wt/<b>mcp-reconnect-backoff</b></div></div></div></div></div>
+ <div class="field"><span class="lab">Model</span><div style="display:flex;gap:8px"><div class="sel">${I('sparkle',12)} Sonnet 5 · high ${I('chevd',10)}</div><div class="sel">Plan first ${I('chevd',10)}</div><div class="sel">Budget $5 ${I('chevd',10)}</div></div></div>
+ <div class="field" style="align-items:start"><span class="lab" style="padding-top:8px">Prompt</span><div class="input" style="height:74px;align-items:flex-start;padding-top:8px">Apply the jitter backoff from retry.rs to MCP reconnects…</div></div>
+ <div class="foot"><span class="pb">Cancel</span><span class="pb pri">Start session ⌘⏎</span></div></div>`});
+
+S['17-worktrees-manager']=()=>shell({center:`<div class="reading" style="width:880px">
+ <div style="display:flex;align-items:center;gap:10px;margin:6px 0 14px"><h2 style="font-size:18px">Worktrees · cox</h2><span class="badge">5 worktrees · 3.4 GB</span><span class="spacer"></span><span class="pb">${I('refresh',13)} Refresh</span><span class="pb pri">${I('trash',13)} Prune 3 merged · frees 2.1 GB</span></div>
+ <table class="t" style="font-size:12.5px"><tr><th></th><th>Branch</th><th>Session</th><th>Status</th><th>Size</th><th>Last change</th></tr>
+ ${[['','wt/retry-jitter','Add retry jitter to HTTP client','<span class="badge b-env">running</span>','412 MB','now'],['✓','wt/plugin-bench','Bench plugin cold start','<span class="badge">merged</span>','1.1 GB','2 h'],['✓','wt/clippy-nightly','Fix clippy on nightly','<span class="badge">merged</span>','640 MB','1 d'],['✓','wt/acp-fix','—  session deleted','<span class="badge b-warn">orphaned</span>','380 MB','9 d'],['','wt/tui-vim','Vim motions in composer','<span class="badge b-user">open PR #212</span>','890 MB','3 d']].map(r=>`<tr><td><span class="box ${r[0]?'done':''}" style="display:inline-flex">${r[0]}</span></td><td class="mono" style="text-align:left">${r[1]}</td><td style="text-align:left">${r[2]}</td><td style="text-align:left">${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</table>
+ <div style="font-size:12px;color:var(--sec);margin-top:12px">Sizes include build output (target/, node_modules/). Pruning removes the worktree and its git metadata; branches that are not merged are never selected by default.</div></div>`,tb:{title:'Worktrees',branch:'main',running:false},noInsp:true,top:true});
+
+function settings(active,content){
+  const items=[['General','gear','#8e8e93'],['Models & Providers','sparkle','#af52de'],['Permissions','shield','#ff9500'],['Sandbox','lock','#34c759'],['Budget','dollar','#30b0c7'],['MCP Servers','plug','#007aff'],['Plugins','cpu','#5856d6'],['Appearance','paint','#ff2d55']];
+  return `<div class="window" style="width:1100px;height:760px;left:210px;top:110px"><div class="set-side"><div class="traffic" style="padding:18px 8px 14px"><i></i><i></i><i></i></div>
+  <div class="filter" style="margin:0 2px 10px">${I('search',13)}<span>Search settings</span></div>
+  ${items.map(([t,i,c])=>`<div class="it ${t===active?'on':''}"><span class="sq" style="background:${c}">${I(i,13)}</span>${t}</div>`).join('')}
+  <div style="position:absolute;bottom:18px;left:18px;font-size:11px;color:var(--ter);width:190px">~/.cox/config.toml<br>.cox/config.toml (project)</div></div>
+  <div class="set-main">${content}</div></div>`;
+}
+S['18-settings-models-providers']=()=>settings('Models & Providers',`<h1>Models & Providers</h1>
+ <div class="gtitle">PROVIDERS</div><div class="group">
+ <div class="gr"><span class="l"><b>Anthropic</b><small>Key in Keychain · 3 models</small></span><span class="badge b-env">connected</span><span class="pb">Change key</span></div>
+ <div class="gr"><span class="l"><b>OpenAI</b><small>OPENAI_API_KEY from login shell</small></span><span class="badge b-env">connected</span><span class="badge b-env">env</span></div>
+ <div class="gr"><span class="l"><b>LM Studio</b><small>localhost:1234 · qwen3-coder-30b loaded</small></span><span class="badge b-env">local</span></div>
+ <div class="gr"><span class="l"><b>OpenRouter</b><small>No key</small></span><span class="pb pri">Add key</span></div></div>
+ <div class="gtitle">TIERS · which model does which job</div><div class="group">
+ <div class="gr"><span class="l">Low<small>summaries, titles, background agents, shell</small></span><div class="sel">Haiku 4.5 ${I('chevd',10)}</div><span class="badge b-default">default</span></div>
+ <div class="gr"><span class="l">Mid<small>coding turns</small></span><div class="sel">Sonnet 5 ${I('chevd',10)}</div><span class="badge b-user">user</span></div>
+ <div class="gr"><span class="l">High<small>hard reasoning — asks before switching up</small></span><div class="sel">Opus 5.5 ${I('chevd',10)}</div><span class="badge b-project">project</span></div>
+ <div class="gr"><span class="l">Default effort</span><div class="seg" style="height:26px"><span>low</span><span>medium</span><span class="on">high</span></div><span class="badge b-user">user</span></div></div>
+ <div style="font-size:11.5px;color:var(--sec)">Badges show where each value comes from. <span class="badge b-project">project</span> values are set in the repository's .cox/config.toml and are read-only here.</div>`);
+S['19-settings-permissions']=()=>settings('Permissions',`<h1>Permissions</h1>
+ <div class="group"><div class="gr"><span class="l">Default mode<small>for new sessions</small></span><div class="seg" style="height:26px"><span class="on">Ask</span><span>Plan</span><span>Auto</span></div><span class="badge b-default">default</span></div>
+ <div class="gr"><span class="l">Approval policy</span><div class="sel">on-request ${I('chevd',10)}</div><span class="badge b-default">default</span></div>
+ <div class="gr"><span class="l">Allow Bypass mode<small>shows a red strip while on; shell stays sandboxed</small></span><span class="tog off"></span><span class="badge b-user">user</span></div></div>
+ <div class="gtitle" style="display:flex;justify-content:space-between">RULES · first match wins<span style="color:var(--accent);font-weight:500">+ Add rule</span></div><div class="group">
+ ${[['allow','Bash(cargo nextest:*)','user'],['allow','Bash(git status)','default'],['ask','Bash(git push:*)','user'],['ask','Edit(**/*.lock)','project'],['deny','Bash(rm -rf:*)','default'],['deny','Read(~/.ssh/**)','default']].map(([k,r,s])=>`<div class="gr"><span class="badge b-${k==='allow'?'env':k==='ask'?'warn':'red'}" style="width:44px;text-align:center">${k}</span><span class="l mono" style="font-size:12.5px">${r}</span><span class="badge b-${s}">${s}</span></div>`).join('')}</div>
+ <div class="gtitle">SESSION GRANTS · this session only</div><div class="group"><div class="gr"><span class="l mono" style="font-size:12.5px">git push *</span><span style="font-size:11.5px;color:var(--sec)">granted 14:06 in “Add retry jitter…”</span><span class="pb dan" style="height:22px">Revoke</span></div></div>`);
+S['20-settings-mcp-servers']=()=>settings('MCP Servers',`<h1>MCP Servers</h1><div class="group">
+ ${[['github','https://api.githubcopilot.com/mcp','connected · 38 tools','env','OAuth · Log out'],['linear','https://mcp.linear.app/sse','needs login','warn','Log in…'],['postgres','npx @modelcontextprotocol/server-postgres','connected · 4 tools','env','stdio · sandboxed'],['sentry','uvx sentry-mcp','failed · exit 127','red','Show log']].map(([n,u,s,c,a])=>`<div class="gr"><span class="l"><b>${n}</b><small class="mono">${u}</small></span><span class="badge b-${c}">${s}</span><span class="pb ${a.startsWith('Log in')?'pri':''}">${a}</span></div>`).join('')}</div>
+ <div style="font-size:12px;color:var(--sec);margin-bottom:16px">A broken server is shown here and skipped — it never stops a session. Tokens live in the macOS Keychain.</div>
+ <div class="gtitle">DISCOVERED FROM</div><div class="group"><div class="gr"><span class="l mono" style="font-size:12.5px">~/.cox/config.toml</span><span class="badge b-user">user</span></div><div class="gr"><span class="l mono" style="font-size:12.5px">.mcp.json</span><span class="badge b-project">project</span></div></div>`);
+
+S['21-onboarding']=()=>`<div class="window small" style="left:270px;top:110px;height:760px"><div class="traffic" style="position:absolute;left:0;top:0"><i></i><i></i><i></i></div>
+ <div style="display:flex;flex-direction:column;align-items:center;padding:56px 70px 0;width:100%">
+  <div class="appicon" style="width:84px;height:84px;border-radius:20px;font-size:34px;box-shadow:0 10px 30px rgba(0,0,0,.25)">cx</div>
+  <h1 style="font-size:26px;margin:18px 0 4px">Welcome to cox</h1><div style="color:var(--sec);margin-bottom:26px">A coding agent that shows you what it costs and never loses your work.</div>
+  <div style="width:100%;border:1.5px dashed var(--sep);border-radius:16px;padding:22px;display:flex;align-items:center;gap:16px;margin-bottom:22px"><span style="color:var(--accent)">${I('folder',30)}</span><div><b>Open a project</b><div style="color:var(--sec);font-size:12.5px">Choose a folder or drop it here. A git repository is recommended.</div></div><span class="pb pri" style="margin-left:auto">Choose Folder…</span></div>
+  <div style="width:100%" class="group">
+  ${[['ok','Provider key','Anthropic key found in Keychain',''],['ok','Git','git 2.51 · repository detected',''],['ok','Sandbox','sandbox-exec profile works',''],['warn','Shell environment','zsh took 2.4 s to load; PATH resolved','Details'],['q','Claude Code settings','~/.claude/settings.json found — import permissions and MCP servers?','Import']].map(([s,t,d,a])=>`<div class="gr"><span style="color:${s==='ok'?'var(--green)':s==='warn'?'var(--orange)':'var(--accent)'}">${I(s==='ok'?'check':s==='warn'?'warn':'q',16)}</span><span class="l"><b>${t}</b><small>${d}</small></span>${a?`<span class="pb ${a==='Import'?'pri':''}">${a}</span>`:''}</div>`).join('')}</div>
+ </div></div>`;
+
+S['22-empty-session']=()=>shell({side:'new',tb:{title:'New session',branch:'main',running:false,cost:'$0.00',ctx:'0%'},center:`<div class="reading" style="padding-top:170px;text-align:center">
+ <div class="appicon" style="width:56px;height:56px;border-radius:14px;margin:0 auto 14px">cx</div>
+ <h2 style="font-size:20px;margin-bottom:4px">What should we do in cox?</h2><div style="color:var(--sec);margin-bottom:24px">Rust workspace · 31 crates · AGENTS.md loaded</div>
+ <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:left">
+ ${[['Explain the architecture','How do cox-core, cox-protocol and the surfaces fit together?'],['Find and fix a failing test','Run cargo nextest and fix the first failure'],['Review my uncommitted diff','Check git diff for bugs before I commit']].map(([t,d])=>`<div class="card" style="padding:12px 14px"><b style="font-size:13px">${t}</b><div style="font-size:12px;color:var(--sec);margin-top:4px">${d}</div></div>`).join('')}</div></div>`,below:composer({off:true}),noInsp:true,top:true});
+
+S['23-notification-and-dock']=()=>`<div class="menubar"><span style="font-weight:800"></span><b>Safari</b><span>File</span><span>Edit</span><span>View</span><span>History</span><div class="r"><span>${I('bolt',14)}</span><span>Mon 28 Sep 14:07</span></div></div>
+ <div class="window" style="left:120px;top:70px;width:1200px;height:760px;background:#fff;display:block;color:#222"><div style="height:52px;background:#f3f3f5;border-bottom:.5px solid #ddd;display:flex;align-items:center;padding:0 16px;gap:8px"><div class="traffic" style="padding:0"><i></i><i></i><i></i></div><div style="margin-left:120px;width:520px;height:30px;border-radius:9px;background:#e6e6ea;display:flex;align-items:center;padding:0 12px;color:#777;font-size:12.5px">docs.rs/rand/latest/rand</div></div>
+ <div style="padding:40px 80px;color:#333"><h1 style="font-size:28px;margin-bottom:12px">Crate rand</h1><p style="max-width:700px;color:#555">Utilities for random number generation…</p></div></div>
+ <div class="notif"><div style="display:flex;gap:10px"><div class="appi appicon" style="font-size:15px">cx</div><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;font-size:13px"><b>Approval needed · cox</b><span style="color:#888;font-size:11.5px">now</span></div><div style="font-size:12.5px;color:#333">Migrate auth to OAuth PKCE (acme-web)</div><div class="mono" style="font-size:12px;color:#555;margin-top:2px">git push -u origin wt/oauth-pkce</div></div></div>
+  <div style="display:flex;gap:8px;margin-top:10px"><span class="pb" style="flex:1;justify-content:center;background:rgba(255,255,255,.7)">Allow once</span><span class="pb" style="flex:1;justify-content:center;background:rgba(255,255,255,.7);color:var(--red)">Deny</span><span class="pb" style="flex:1;justify-content:center;background:rgba(255,255,255,.7)">Open</span></div></div>
+ <div class="notif" style="top:190px;opacity:.95"><div style="display:flex;gap:10px"><div class="appi appicon" style="font-size:15px">cx</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:13px"><b>Turn finished · $0.18</b><span style="color:#888;font-size:11.5px">2 m ago</span></div><div style="font-size:12.5px;color:#333">Add retry jitter to HTTP client — 38 tests pass, branch pushed.</div></div></div></div>
+ <div class="dock">${['#4a90e2,#1e5bb8','#f5f5f5,#d9d9d9','#34c759,#1f9d45','#ff9500,#ff5e3a','#8e8e93,#48484a'].map((c,i)=>`<div class="a" style="background:linear-gradient(145deg,${c})"></div>`).join('')}<div class="a appicon" style="width:56px;height:56px;border-radius:14px">cx<span class="bd">2</span></div><div class="a" style="background:linear-gradient(145deg,#5ac8fa,#007aff)"></div></div>`;
+
+S['24-terminal-pane-m2']=()=>shell({center:mainTranscript(),below:`<div class="panehead"><span class="tb on">${I('term',12)} zsh — wt/retry-jitter</span><span class="tb">+</span><span class="spacer"></span><span>⌃\` toggle</span></div><div class="term mono"><div><span class="p1">➜</span> <span class="p2">retry-jitter</span> git:(wt/retry-jitter) cargo nextest run -p cox-provider-http retry</div><div>    Finished \`test\` profile [unoptimized + debuginfo] target(s) in 0.41s</div><div>    Starting 6 tests across 1 binary (32 skipped)</div><div>        <span style="color:#7ee787">PASS</span> [   0.004s] retry::tests::delay_never_exceeds_cap</div><div>        <span style="color:#7ee787">PASS</span> [   0.005s] retry::tests::jitter_is_uniform_over_seeded_rng</div><div>        <span style="color:#7ee787">PASS</span> [   0.003s] retry::tests::zero_attempt_waits_at_most_base</div><div>────────────</div><div>     Summary [   0.021s] 6 tests run: 6 <span style="color:#7ee787">passed</span>, 32 skipped</div><div><span class="p1">➜</span> <span class="p2">retry-jitter</span> git:(wt/retry-jitter) <span style="background:#d9dde5;color:#15161a"> </span></div></div>`,inspTab:'Changes'});
+
+S['25-browser-preview-m2']=()=>{
+  const web=`<div style="width:560px;flex:none;border-left:.5px solid var(--sep);display:flex;flex-direction:column">
+  <div style="height:56px;display:flex;align-items:center;gap:8px;padding:0 12px"><span style="color:var(--sec)">${I('chev',12,'transform:rotate(180deg)')}</span><div class="input" style="flex:1;height:28px;font-size:12px">${I('lock',12)} localhost:5173/checkout</div><span class="cap icon" style="width:28px;height:28px">${I('refresh',13)}</span></div>
+  <div style="flex:1;margin:0 12px 12px;border-radius:12px;border:.5px solid var(--sep);overflow:hidden;position:relative;background:#fafafa;color:#222">
+   <div style="height:44px;background:#111;color:#fff;display:flex;align-items:center;padding:0 16px;font-weight:700">acme<span style="margin-left:auto;font-weight:400;font-size:12px">Cart (2)</span></div>
+   <div style="padding:20px"><div style="font-size:20px;font-weight:700;margin-bottom:12px">Checkout</div>
+   ${['Email','Card number','Expiry'].map(l=>`<div style="font-size:12px;color:#666;margin:10px 0 4px">${l}</div><div style="height:34px;border:1px solid #ccc;border-radius:6px;background:#fff"></div>`).join('')}
+   <div style="position:relative;margin-top:18px"><div style="height:40px;border-radius:8px;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600">Pay $48.00</div><div style="position:absolute;inset:-5px;border:2px solid #ff9500;border-radius:11px"></div><div style="position:absolute;right:-6px;top:-30px;background:#ff9500;color:#fff;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600">agent: button.pay — contrast 3.1:1</div></div></div>
+  </div></div>`;
+  return `<div class="window">${sidebar('cc',{ext:false})}<div class="main">${toolbar({title:'Fix checkout contrast',branch:'wt/contrast',cost:'$0.23',ctx:'22%'})}<div class="body"><div class="col"><div class="scroll"><div class="reading" style="width:560px">
+  ${user('The Pay button fails WCAG contrast. Fix it and verify in the browser.',1)}
+  ${tool({icon:'globe',sum:'Opened <b>localhost:5173/checkout</b> in preview',time:'0.8 s'})}
+  ${tool({icon:'eye',sum:'Inspected <b class="mono" style="font-weight:500">button.pay</b> — contrast 3.1 : 1 (needs 4.5)',time:'0.2 s'})}
+  ${tool({icon:'pencil',sum:'Edited <b>src/checkout/Pay.css</b> <span class="plus">+2</span> <span class="minus">−2</span>',time:'0.1 s'})}
+  ${tool({icon:'globe',sum:'Reloaded and took a screenshot',state:'run',time:'1 s'})}
+  </div></div>${composer({}).replace('width:760px','')}</div>${web}</div></div></div>`.replace('<div class="composer">','<div class="composer" style="width:560px">');
+};
+
+S['26-menu-bar-extra-m2']=()=>`<div class="menubar"><span style="font-weight:800"></span><b>Xcode</b><span>File</span><span>Edit</span><span>View</span><div class="r"><span style="display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.12);padding:2px 8px;border-radius:6px"><b class="mono" style="font-size:12px">cx</b><span style="background:#ff3b30;color:#fff;border-radius:7px;font-size:10px;padding:0 5px">2</span></span><span>${I('bolt',14)}</span><span>Mon 28 Sep 14:07</span></div></div>
+ <div class="popover" style="right:150px;top:36px;width:360px;z-index:40;padding:8px">
+  <div class="hdr">NEEDS YOU</div>
+  <div class="it" style="align-items:flex-start"><span class="dot d-wait" style="width:8px;height:8px;border-radius:50%;margin-top:6px"></span><div><b>Migrate auth to OAuth PKCE</b><div class="mono" style="font-size:11.5px;color:var(--sec)">git push -u origin wt/oauth-pkce</div></div><span style="margin-left:auto;display:flex;gap:4px"><span class="pb pri" style="height:22px;font-size:11.5px">Allow</span><span class="pb" style="height:22px;font-size:11.5px">Deny</span></span></div>
+  <div class="it"><span class="dot d-wait" style="width:8px;height:8px;border-radius:50%"></span><div><b>Flaky e2e checkout test</b><div style="font-size:11.5px;color:var(--sec)">asks: retry flaky tests or quarantine?</div></div></div>
+  <div class="sep"></div><div class="hdr">RUNNING</div>
+  <div class="it"><span class="spin"></span><div><b>Add retry jitter to HTTP client</b><div style="font-size:11.5px;color:var(--sec)">cargo nextest · 12 s · $0.42</div></div></div>
+  <div class="sep"></div><div class="it">Today <span class="x">$4.02 · 7 sessions</span></div><div class="it">New session… <span class="x">⌥⌘N</span></div><div class="it">Open cox <span class="x">⌘O</span></div></div>
+ <div class="window" style="left:80px;top:90px;width:1000px;height:700px;opacity:.9;background:#1e1e1e"><div class="traffic"><i></i><i></i><i></i></div></div>`;
+
+S['27-external-agents-acp-m3']=()=>shell({side:'cc',sideOpt:{ext:true},tb:{title:'Refactor checkout form',branch:'wt/checkout-form',model:'Claude Code · ACP',cost:'—',ctx:'—'},center:`<div class="reading">
+ <div class="notice" style="margin-top:10px">${I('plug',13)}<span>This session is driven by <b>Claude Code</b> over the Agent Client Protocol. Its own model, auth and billing apply; cox renders the stream and answers approvals.</span></div>
+ ${user('Split CheckoutForm into address, payment and summary components.',1)}
+ ${asst('<p>I\'ll extract three components and keep the form state in the parent.</p>')}
+ ${tool({icon:'doc',sum:'Read <b>src/checkout/CheckoutForm.tsx</b>',time:''})}
+ ${tool({icon:'pencil',sum:'Edited <b>src/checkout/AddressFields.tsx</b> <span class="plus">+64</span>',time:''})}
+ ${tool({icon:'pencil',sum:'Editing <b>src/checkout/PaymentFields.tsx</b>',state:'run',time:''})}
+ <div class="card" style="margin-top:14px"><div style="font-size:12px;color:var(--sec);margin-bottom:6px">Compare with a second agent on the same prompt</div><div style="display:flex;gap:8px"><span class="pb">${I('people',13)} Best of 2: + Codex</span><span class="pb">+ cox · Sonnet 5</span></div></div>
+ </div>`,below:composer({}),inspTab:'Info',inspBody:`<div class="ih"><span>AGENTS</span></div>
+ ${[['cox','built in','#1b2440'],['Claude Code','ACP · claude-agent-acp','#c96442'],['Codex','ACP · codex acp','#111'],['Cursor','plugin · agent acp','#555']].map(([n,d,c])=>`<div class="fr"><span class="agentb" style="background:${c}">${n.split(' ')[0]}</span><span class="p">${n}<div style="font-size:11px;color:var(--sec)">${d}</div></span></div>`).join('')}
+ <div style="font-size:11.5px;color:var(--sec);margin-top:10px">External agents render in the same transcript and review UI. cox still applies its own sandbox to the process it spawns.</div>`});
+
+
+function slider(v,a,b){return `<div class="slider"><div class="tr"><div class="fi" style="width:${v}%"></div><div class="kn" style="left:${v}%"></div></div></div><div class="ends"><span>${a}</span><span>${b}</span></div>`}
+function glassMain(mat,tok){
+  document.body.classList.add('glass'); if(mat==='glossy')document.body.classList.add('glossy');
+  const wall=`<div class="wallart">
+    <i style="left:-220px;top:-260px;width:980px;height:980px;background:radial-gradient(circle at 40% 40%,#4f7cff,#2b3fb0 55%,transparent 70%)"></i>
+    <i style="left:520px;top:-180px;width:820px;height:820px;background:radial-gradient(circle at 50% 50%,#c255c9,#8a3cc0 50%,transparent 70%)"></i>
+    <i style="left:980px;top:260px;width:760px;height:760px;background:radial-gradient(circle at 45% 45%,#ff8a5c,#f0508a 50%,transparent 70%)"></i>
+    <i style="left:120px;top:520px;width:720px;height:720px;background:radial-gradient(circle at 50% 50%,#2fd2c6,#1c8fb8 50%,transparent 70%)"></i>
+    <i style="left:760px;top:600px;width:520px;height:520px;background:radial-gradient(circle,#ffd36b,#ff9f45 45%,transparent 70%)"></i>
+    <i style="left:300px;top:140px;width:1100px;height:260px;border-radius:200px;transform:rotate(-14deg);background:linear-gradient(90deg,rgba(255,255,255,.0),rgba(255,255,255,.35),rgba(255,255,255,0))"></i>
+    <i style="left:40px;top:660px;width:1300px;height:120px;border-radius:200px;transform:rotate(8deg);background:linear-gradient(90deg,rgba(20,20,60,0),rgba(20,20,60,.35),rgba(20,20,60,0))"></i>
+  </div>`;
+  const pop=`<div class="appear"><h4>Appearance <span class="kbd">⌘⌥A</span></h4>
+    <div class="lbl" style="margin-top:0">MATERIAL</div>
+    <div class="mat"><div class="fro ${mat==='frosted'?'on':''}"><div class="sw"></div>Frosted</div><div class="glo ${mat==='glossy'?'on':''}"><div class="sw"></div>Glossy</div><div class="sol"><div class="sw"></div>Solid</div></div>
+    <div class="lbl">WINDOW TRANSPARENCY <b>${mat==='glossy'?'70':'58'}%</b></div>${slider(mat==='glossy'?70:58,'Opaque','Clear')}
+    <div class="lbl">${mat==='glossy'?'REFLECTION':'FROST (BLUR)'} <b>${mat==='glossy'?'Strong':'34 pt'}</b></div>${slider(mat==='glossy'?78:62,mat==='glossy'?'Matte':'Light',mat==='glossy'?'Mirror':'Heavy')}
+    <div class="lbl">DEPTH <b>High</b></div>${slider(80,'Flat','3D')}
+    <div class="row2"><span>Tint from wallpaper</span><span class="tog"></span></div>
+    <div class="row2"><span>Keep text panels readable</span><span class="tog"></span></div>
+    <div class="note">Text blocks stay at least 80% opaque at any setting. Respects System Settings › Accessibility › Reduce transparency.</div></div>`;
+  return wall+shell({tb:{appear:tok?'idle':true},center:mainTranscript(),below:composer({meter:{open:tok}}),overlay:tok?'':pop});
+}
+S['28-main-glass-frosted']=()=>glassMain('frosted');
+S['29-main-glass-glossy']=()=>glassMain('glossy');
+S['30-main-glass-tokens']=()=>glassMain('frosted',true);
+
+// ---------- render ----------
+const key=decodeURIComponent(location.hash.slice(1))||'01-main-session-streaming';
+if(key==='__list'){document.getElementById('root').textContent=Object.keys(S).join('\n')}
+else{
+  document.getElementById('root').innerHTML=S[key]();
+  document.querySelectorAll('.scroll:not(.top)').forEach(e=>{e.scrollTop=e.scrollHeight});
+}
+</script>
+</body>
+</html>
