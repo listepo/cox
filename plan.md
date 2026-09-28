@@ -39,7 +39,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.29 | todo | P1 | 3 | 0% | |
 | T37.30.3 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.30.4 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.31 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -1153,12 +1152,6 @@ Depends: T37.30.1 · Size: ~150 · Files: `crates/cox-app/src/settings.rs`, `…
 Goal: the Settings screen lists project values the guard list threw out, with the reason, so a user sees why a project setting did not apply.
 Check: snapshot of a project file that raises the budget: the value is listed as dropped with its reason.
 
-#### T37.31 Onboarding and doctor checklist
-
-Depends: T37.30.1, T37.30.2, T37.11 · Size: ~120 · Files: `…/Screens/OnboardingScreen.swift`
-Goal: first run finds providers, checks the sandbox and shell env, and explains what is missing.
-Check: snapshots for no-provider and all-green states.
-
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
 Depends: T37.15 · Size: ~150 · Files: `.github/workflows/release.yml`, `desktop/macos/Cox.xcodeproj/…`, `scripts/desktop/…`
@@ -1204,7 +1197,7 @@ Check: the changed snapshots are re-recorded on purpose; each fixed text pair me
 #### T37.22.3 App window setup and the public CoxUI surface
 
 Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
-Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display. The app's View menu replaces the system sidebar and inspector command groups with items of the same titles and keys from `ShellShortcut` (T37.22.2), because the system commands act only on system-built panes and the shell is laid out by hand.
+Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display. The app's View menu replaces the system sidebar and inspector command groups with items of the same titles and keys from `ShellShortcut` (T37.22.2), because the system commands act only on system-built panes and the shell is laid out by hand. The onboarding checklist (`App::checklist`, T37.31) is forwarded through `cox-ffi` and shown on first run.
 Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
 
 ## 4. Definition of done for v0.1

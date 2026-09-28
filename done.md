@@ -3925,3 +3925,32 @@ Check:
 - `TranscriptBenchmarkTests` passed 5 of 6 runs at load average 35–108. The failure was one 645 ms frame at load 100.
 - After merging into `p37-desktop`: CoxModel 20 and CoxTranscript 6 pass.
 Not done: user bubble and thinking as TextKit fragments, structured diff hunks, restyle on text size, follow-tail scrolling and styled reply structure are T37.23.4–T37.23.8. The M1 Air XCTest run is in ideas.md.
+
+#### T37.31 Onboarding and doctor checklist
+
+Depends: T37.30.1, T37.30.2, T37.11 · Size: ~120 · Files: `…/Screens/OnboardingScreen.swift`
+Goal: first run finds providers, checks the sandbox and shell env, and explains what is missing.
+Check: snapshots for no-provider and all-green states.
+Status: done 2026-09-28
+Result:
+- `crates/cox-session/src/doctor.rs` now holds the checks `cox doctor` and the app share: `CheckResult`, the provider-key check (with `check_api_keys_in` over the app's own key store), `check_sandbox` and `check_git`. They moved from `crates/cox/src/doctor.rs`, which imports them.
+- `crates/cox-app/src/onboarding.rs` returns the checklist rows (provider key, git, sandbox, shell environment), each with ok/warn/fail and a one-line detail.
+  - `App::checklist(cwd)` asks the host for the provider key.
+  - `load_login_env` records its result for the shell row.
+  - `App::config(cwd)` replaces the config loading `live.rs` did inline.
+- `CoxUI/Screens/OnboardingScreen.swift` shows the "Open a project" step and the check rows, built from the new `Molecules/ChecklistRow.swift`. It emits `chooseFolder`, `openSettings` and `retry`.
+- DESIGN.md §6.3 and §6.5, DT§5.8 and the AGENTS.md cox-session and cox-app rows are updated.
+Deviations:
+- About 11 files and 250 new lines (moved code not counted), against 1 file.
+- `serde` (workspace version) is now a direct dependency of cox-session, because `CheckResult` is `cox doctor --json`'s row type.
+Check:
+- Snapshots `noProvider` and `allGreen` in all 4 cells, plus `checklistRows`, pass on a second run.
+- Full CoxUI suite: 108/108.
+- `cargo nextest run` on cox-session, cox-app and cox's doctor and deps tests: 120/120, then 21/21. Clippy `-D warnings` and `fmt --check` are clean.
+- Swift lints are clean.
+- `cox doctor` against a scratch `COX_HOME` prints the key, sandbox and git rows as before.
+- After merging into `p37-desktop`, `swift build --build-tests` for CoxUI succeeds.
+Not done:
+- No `cox-ffi` export of `checklist`: its forwarding code is at 299 of D11's 300 lines. This goes to T37.22.3.
+- The welcome header needs a title token and an app icon asset.
+- The Claude-settings import row and dropping a folder onto the window are not included.
