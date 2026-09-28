@@ -25,7 +25,7 @@ use tracing::Instrument as _;
 use crate::budget;
 use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
-use crate::context::assemble_with_skills;
+use crate::context::{Stable, assemble_with_skills};
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
@@ -130,6 +130,9 @@ pub(crate) struct Inner {
     /// `additional_context` from the `SessionStart` hook (T22.3), appended
     /// to `system[3]`, the one block after the last cache breakpoint.
     startup_context: String,
+    /// The repo map last in `system[2]` (P43): set once at session start or
+    /// on resume, then only by `/repomap refresh` or compaction.
+    repomap: Option<String>,
 }
 
 /// The mode and effort as they stand after a change, for every surface to
@@ -533,6 +536,7 @@ impl Session {
                 retried_after_too_long: false,
                 startup: (!is_child).then_some(if is_resume { "resume" } else { "startup" }),
                 startup_context: String::new(),
+                repomap: None,
             })),
         };
         let started = Event::SessionStarted {
@@ -1457,7 +1461,7 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives, startup_context, routed) = {
+        let (history, calls_so_far, discovered, marks, archives, startup_context, routed, repomap) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -1467,6 +1471,7 @@ impl Session {
                 inner.archives.clone(),
                 inner.startup_context.clone(),
                 inner.routed.is_some(),
+                inner.repomap.clone(),
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -1521,8 +1526,11 @@ impl Session {
                 &discovered,
                 &self.cwd,
                 "",
-                self.instructions.get().map_or("", String::as_str),
-                self.skills_index.get().map_or("", String::as_str),
+                &Stable {
+                    instructions: self.instructions.get().map_or("", String::as_str),
+                    skills_index: self.skills_index.get().map_or("", String::as_str),
+                    repomap: repomap.as_deref().unwrap_or(""),
+                },
             );
             req.model = route.model.clone();
             // T22.3: `SessionStart` hook context goes into `system[3]` — the

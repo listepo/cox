@@ -43,6 +43,24 @@ const MINIMAL_TOOLS: &[&str] = &[
     "expand",
 ];
 
+/// Opens the repo map at the end of `system[2]` (P43).
+pub(crate) const REPO_MAP_OPEN: &str = "<repo_map>\n";
+
+/// Closes it; `system[2]` ends with this exactly when a map is present.
+pub(crate) const REPO_MAP_CLOSE: &str = "\n</repo_map>";
+
+/// The byte-stable text of `system[2]` after the `INSTRUCTIONS` line, in
+/// that order: the instruction files (T50.1), the skills index (T22.2) and
+/// the repo map (P43), each read or built once per session by a surface or
+/// the session. A struct so the next stable part does not grow the
+/// argument list of `assemble_with_skills` again.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Stable<'a> {
+    pub instructions: &'a str,
+    pub skills_index: &'a str,
+    pub repomap: &'a str,
+}
+
 /// Whether `config` asks for the `minimal` prefix: `core.profile`, or the
 /// `context.system_prompt` it implies when set directly.
 fn is_minimal(config: &cox_protocol::Config) -> bool {
@@ -74,14 +92,25 @@ pub fn assemble_with(
     cwd: &Path,
     date: &str,
 ) -> Request {
-    assemble_with_skills(history, config, tier, tools, discovered, cwd, date, "", "")
+    assemble_with_skills(
+        history,
+        config,
+        tier,
+        tools,
+        discovered,
+        cwd,
+        date,
+        &Stable::default(),
+    )
 }
 
-/// `assemble_with` plus the `system[2]` instruction-file block (T50.1) and
-/// skills index (T22.2), in that order after the `INSTRUCTIONS` line. An
+/// `assemble_with` plus the `system[2]` instruction-file block (T50.1),
+/// skills index (T22.2) and repo map (P43), in that order after the
+/// `INSTRUCTIONS` line; the map is last so a `/repomap refresh` leaves the
+/// bytes before it alone and breakpoint 1 stays after `system[2]`. An
 /// empty part appends nothing, so a user without either keeps the exact
 /// prefix bytes of every earlier session and `system[0..=2]` stays
-/// byte-stable across turns either way (D6e). The surface reads both once
+/// byte-stable across turns either way (D6e). The surface reads the first two once
 /// (`cox_ext::instructions::load`, `cox_ext::skills::index`) and hands them
 /// to `Session::set_instructions`; this crate reads no files.
 #[allow(clippy::too_many_arguments)]
@@ -93,8 +122,7 @@ pub fn assemble_with_skills(
     discovered: &[String],
     cwd: &Path,
     date: &str,
-    instructions: &str,
-    skills_index: &str,
+    stable: &Stable,
 ) -> Request {
     let all: Vec<_> = tools.iter().map(|t| t.spec()).collect();
     let deferring = config.context.deferred_tools;
@@ -136,13 +164,22 @@ pub fn assemble_with_skills(
     // Under `minimal` the skills index never joins `system[2]`: it would
     // grow the prefix past the cap, and the profile promises no index. The
     // instruction files join under every profile: they are the user's
-    // rules for the repository, not cox's scaffolding.
-    let index = if minimal { "" } else { skills_index };
-    let mut stable = INSTRUCTIONS.to_string();
-    for part in [instructions, index] {
+    // rules for the repository, not cox's scaffolding. The repo map goes
+    // with the index: it is cox's scaffolding too.
+    let index = if minimal { "" } else { stable.skills_index };
+    let map = if minimal || stable.repomap.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{REPO_MAP_OPEN}{}{REPO_MAP_CLOSE}",
+            stable.repomap.trim_end_matches('\n')
+        )
+    };
+    let mut block2 = INSTRUCTIONS.to_string();
+    for part in [stable.instructions, index, map.as_str()] {
         if !part.is_empty() {
-            stable.push('\n');
-            stable.push_str(part);
+            block2.push('\n');
+            block2.push_str(part);
         }
     }
     let system = vec![
@@ -155,7 +192,7 @@ pub fn assemble_with_skills(
             cache: true,
         },
         SystemBlock {
-            text: stable,
+            text: block2,
             cache: true,
         },
         SystemBlock {
@@ -297,7 +334,7 @@ const SUMMARY_HEADER: &str = "[Compacted summary of ";
 /// plus the whole and the cached share. `total` is the T1.8 estimator's
 /// request total verbatim — cox-core may not depend on cox-provider, so the
 /// provider-owning caller passes `cox_provider::tokens::estimate`'s number —
-/// and the nine segment fields distribute it exactly.
+/// and the ten segment fields distribute it exactly.
 pub struct Breakdown {
     pub tools: u32,
     pub system: u32,
@@ -308,14 +345,16 @@ pub struct Breakdown {
     pub history_verbatim: u32,
     pub history_pointers: u32,
     pub summary: u32,
+    /// The repo map at the end of `system[2]` (P43).
+    pub repomap: u32,
     pub total: u32,
     pub cached_estimate: u32,
 }
 
 impl Breakdown {
     /// The four parts the surfaces draw (A98), with the model's `window`.
-    /// The volatile block counts as system, skills and memory as
-    /// instructions (both are appended to those blocks today), and the
+    /// The volatile block counts as system, skills, memory and the repo map
+    /// as instructions (both are appended to those blocks today), and the
     /// summary and archive pointers as history.
     pub fn parts(&self, window: Option<u32>) -> ContextBreakdown {
         ContextBreakdown {
@@ -323,7 +362,7 @@ impl Breakdown {
             total: self.total,
             system: self.system + self.volatile,
             tools: self.tools,
-            instructions: self.instructions + self.skills + self.memory,
+            instructions: self.instructions + self.skills + self.memory + self.repomap,
             history: self.history_verbatim + self.history_pointers + self.summary,
             cached: self.cached_estimate,
         }
@@ -331,7 +370,7 @@ impl Breakdown {
 }
 
 /// Splits `total` (the T1.8 estimator's request total for `req`) across the
-/// segments by rendered bytes; cumulative rounding keeps the nine shares
+/// segments by rendered bytes; cumulative rounding keeps the ten shares
 /// summing to `total` exactly, so the modal's bars never disagree with the
 /// estimate. `last_usage` supplies `cached_estimate` from its
 /// `cache_read_tokens` — what the last call actually served from cache.
@@ -339,8 +378,14 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
     // Byte weights per segment (index order is `Breakdown`'s); the
     // estimator's byte term is itself a heuristic, so attributing each
     // content by its rendered JSON length is close enough for the split.
-    let mut w = [0u64; 9];
+    let mut w = [0u64; 10];
     for (i, block) in req.system.iter().enumerate() {
+        if i == 2 {
+            let map = repomap_bytes(&block.text);
+            w[2] += (block.text.len() - map) as u64 + 1;
+            w[9] += map as u64;
+            continue;
+        }
         let seg = match i {
             0 => 0, // tool specs
             1 => 1, // system prompt
@@ -365,7 +410,7 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
         }
     }
     let sum: u64 = w.iter().sum();
-    let mut shares = [0u32; 9];
+    let mut shares = [0u32; 10];
     let (mut acc, mut prev) = (0u64, 0u64);
     for (i, weight) in w.iter().enumerate() {
         acc += weight;
@@ -386,9 +431,20 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
         history_verbatim: shares[6],
         history_pointers: shares[7],
         summary: shares[8],
+        repomap: shares[9],
         total,
         cached_estimate: last_usage.map_or(0, |u| u.cache_read_tokens),
     }
+}
+
+/// The bytes of `system[2]` text that are the repo map, its tags included;
+/// 0 without one. Found from the end because the map is always last.
+pub(crate) fn repomap_bytes(text: &str) -> usize {
+    if !text.ends_with(REPO_MAP_CLOSE) {
+        return 0;
+    }
+    text.rfind(&format!("\n{REPO_MAP_OPEN}"))
+        .map_or(0, |at| text.len() - at)
 }
 
 /// The image types every wire takes (Anthropic's base64 source allows
@@ -543,7 +599,8 @@ mod tests {
                 + b.volatile
                 + b.history_verbatim
                 + b.history_pointers
-                + b.summary,
+                + b.summary
+                + b.repomap,
             b.total,
             "the segments sum to the estimate"
         );
@@ -666,8 +723,10 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
-            "",
-            index,
+            &Stable {
+                skills_index: index,
+                ..Stable::default()
+            },
         );
         assert!(
             first.system[2].text.ends_with(index),
@@ -706,8 +765,10 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
-            "",
-            index,
+            &Stable {
+                skills_index: index,
+                ..Stable::default()
+            },
         );
         assert!(
             serde_json::to_string(&second)
@@ -731,8 +792,7 @@ mod tests {
             &[],
             Path::new("/w"),
             "d",
-            "",
-            "",
+            &Stable::default(),
         );
         assert_eq!(
             serde_json::to_vec(&plain.system[0..=2]).expect("plain"),
@@ -757,8 +817,11 @@ mod tests {
                 &[],
                 Path::new("/w"),
                 "d",
-                block,
-                index,
+                &Stable {
+                    instructions: block,
+                    skills_index: index,
+                    repomap: "",
+                },
             )
             .system[2]
                 .text
@@ -769,5 +832,108 @@ mod tests {
         let mut minimal = cox_protocol::Config::default();
         minimal.core.profile = "minimal".to_string();
         assert_eq!(two(&minimal), format!("{INSTRUCTIONS}\n{block}"));
+    }
+
+    fn with_map(config: &cox_protocol::Config, history: &[Message], map: &str) -> Request {
+        assemble_with_skills(
+            history,
+            config,
+            Tier::Code,
+            &[],
+            &[],
+            Path::new("/w"),
+            "d",
+            &Stable {
+                instructions: "# Instructions\nBe terse.\n",
+                skills_index: "# Skills\n- a: b\n",
+                repomap: map,
+            },
+        )
+    }
+
+    const MAP: &str = "src/lib.rs\n  1: pub fn run()\n";
+
+    /// P43: the map is the last thing in `system[2]`, after the instruction
+    /// files and the skills index; breakpoint 1 still sits after `system[2]`.
+    #[test]
+    fn repomap_sits_last_in_system_two() {
+        let config = cox_protocol::Config::default();
+        let req = with_map(&config, &[], MAP);
+        let two = &req.system[2].text;
+        assert!(
+            two.ends_with("<repo_map>\nsrc/lib.rs\n  1: pub fn run()\n</repo_map>"),
+            "{two:?}"
+        );
+        let (skills, map) = (
+            two.find("# Skills").expect("index"),
+            two.find(REPO_MAP_OPEN).expect("map"),
+        );
+        assert!(two.find("Be terse.").expect("files") < skills && skills < map);
+        assert_eq!(req.cache_breakpoints.first().copied(), Some(2));
+        assert!(!req.system[3].text.contains("pub fn run"));
+        let without = with_map(&config, &[], "");
+        assert!(!without.system[2].text.contains("repo_map"));
+        assert!(two.starts_with(&without.system[2].text), "only appended");
+    }
+
+    #[test]
+    fn minimal_profile_omits_repomap() {
+        let mut minimal = cox_protocol::Config::default();
+        minimal.core.profile = "minimal".to_string();
+        let req = with_map(&minimal, &[], MAP);
+        assert!(!req.system[2].text.contains("repo_map"), "{req:?}");
+        assert!(req.system[2].text.contains("Be terse."), "files stay");
+    }
+
+    /// The map is byte-stable between turns like the rest of the prefix.
+    #[test]
+    fn prefix_bytes_identical_between_turns_with_repomap() {
+        let config = cox_protocol::Config::default();
+        let history: Vec<Message> = serde_json::from_value(serde_json::json!([
+            {"role": "user", "content": [{"type": "text", "text": "one"}]},
+        ]))
+        .expect("history");
+        let mut longer = history.clone();
+        longer.extend(
+            serde_json::from_value::<Vec<Message>>(serde_json::json!([
+                {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
+                {"role": "user", "content": [{"type": "text", "text": "two"}]},
+            ]))
+            .expect("more"),
+        );
+        let a = with_map(&config, &history, MAP);
+        let b = with_map(&config, &longer, MAP);
+        assert_eq!(
+            serde_json::to_vec(&a.system[0..=2]).expect("a"),
+            serde_json::to_vec(&b.system[0..=2]).expect("b"),
+        );
+    }
+
+    #[test]
+    fn breakdown_counts_repomap_tokens() {
+        let config = cox_protocol::Config::default();
+        let plain = with_map(&config, &[], "");
+        let mapped = with_map(&config, &[], &MAP.repeat(40));
+        let none = breakdown(&plain, 1_000, None);
+        assert_eq!(none.repomap, 0);
+        let some = breakdown(&mapped, 1_000, None);
+        assert!(some.repomap > 0, "the map has a share");
+        assert!(
+            some.repomap > some.instructions,
+            "the map's bytes are not counted as instructions: {} vs {}",
+            some.repomap,
+            some.instructions
+        );
+        assert_eq!(
+            some.parts(None).instructions,
+            some.instructions + some.skills + some.memory + some.repomap
+        );
+        assert_eq!(repomap_bytes(&mapped.system[2].text), {
+            let map = format!(
+                "\n{REPO_MAP_OPEN}{}{REPO_MAP_CLOSE}",
+                MAP.repeat(40).trim_end()
+            );
+            map.len()
+        });
     }
 }
