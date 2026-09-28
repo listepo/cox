@@ -1,5 +1,6 @@
 //! T6.1: `cox run -p` against the real binary with the scripted provider —
-//! the three output shapes and the exit codes a script relies on.
+//! what the `tests/cmd` fixtures (T48) cannot check: stdin answers mid-run,
+//! prefix rules, and that a denied write left no file on disk.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -29,34 +30,6 @@ const WRITE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/scenarios/write_then_done.toml"
 );
-
-#[test]
-fn text_format_prints_the_final_assistant_text() {
-    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    cox(work.path(), home.path(), TEXT_ONLY)
-        .assert()
-        .success()
-        .stdout("hello from scripted\n");
-}
-
-#[test]
-fn json_format_reports_result_usage_cost_and_stop() {
-    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let out = cox(work.path(), home.path(), TEXT_ONLY)
-        .args(["--output-format", "json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let v: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(v["result"], "hello from scripted");
-    assert_eq!(v["stop"]["type"], "end_turn");
-    assert_eq!(v["turns"], 1);
-    assert_eq!(v["cost_usd"], 0.0);
-    assert!(v["session"].as_str().unwrap().len() == 26, "{v}");
-    assert!(v["usage"]["input_tokens"].is_number(), "{v}");
-}
 
 #[test]
 fn stream_json_lists_every_event_and_the_claude_aliases() {
@@ -187,15 +160,6 @@ fn auto_mode_writes_the_file_and_exits_0() {
         std::fs::read_to_string(work.path().join("a.txt")).unwrap(),
         "x"
     );
-}
-
-#[test]
-fn unknown_output_format_is_an_error() {
-    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    cox(work.path(), home.path(), TEXT_ONLY)
-        .args(["--output-format", "yaml"])
-        .assert()
-        .code(1);
 }
 
 fn predicates_str_contains(needle: &'static str) -> impl predicates::Predicate<[u8]> {
