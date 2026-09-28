@@ -17,6 +17,8 @@ cox-render = { path = "../cox-render", version = "0.1.2", default-features = fal
 serde = { workspace = true }
 # Tool inputs and `ToolResult.structured` are JSON values (`summary.rs`).
 serde_json = { workspace = true }
+# T37.9 (DT§4.5): the drain task, its wake-up and the per-frame pull.
+tokio = { workspace = true }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and
@@ -25,4 +27,5 @@ cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 async-trait = { workspace = true }
 insta = { workspace = true }
-tokio = { workspace = true }
+# Paused time: a consumer that naps 2 s per pull stays a fast test.
+tokio = { workspace = true, features = ["test-util"] }

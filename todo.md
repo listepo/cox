@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
-- T37.9. `cox-app`: drain task, coalescer, never-stall
 - T37.10. `cox-app`: workspace, inbox, status, intents, completion
 - T37.12. `cox-app`: usage and throughput view state
 - T37.14. `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder

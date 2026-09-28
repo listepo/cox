@@ -3132,3 +3132,17 @@ Deviations: ~450 non-test lines against ~200 (mostly rustfmt-expanded code for 1
 Check: `tests/scenarios.rs` runs 10 cox-core scripted scenarios live (text_only, one_tool, three_parallel, big_tool_output, provider_error, max_turns, interrupt, ask_then_approve, ask_then_deny, allow_for_session) with one insta snapshot each (one JSON line per patch, ULIDs numbered, timings zeroed) and `replay_equals_live` over the JSONL round-trip of the rollout; 3 unit tests (DocTail freezing, tool tail, rewind `Remove`). `cargo nextest run -p cox-app -p cox-render` 51/51 (snapshots stable over 3 more runs with `INSTA_UPDATE=no`); `-p cox --test deps` 7/7; clippy and fmt clean. Re-run after merge: same. Commit ca4a0f2.
 
 Not done: DT§4.3 Rust-made tool summaries ("Ran `x` — exit 0 · 4.2 s") and grouping consecutive read/grep/glob/outline calls into "Explored N files" (in `roadmap.md`); the `Status` patch is T37.10's; Compaction block has no summary text; attachments carried by name only; the whole reply is re-parsed on each delta; subagent, checkpoint and rewind scenarios not covered.
+
+#### T37.9 `cox-app`: drain task, coalescer, never-stall
+
+Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/controller.rs`, `crates/cox-app/src/patch.rs`
+Goal: the core never blocks on a slow UI: events drain into the fold continuously and patches coalesce while the consumer is behind.
+Check: `slow_consumer_never_stalls_the_core` — a consumer that sleeps 2 s per pull still sees the turn finish on time and a coalesced final state.
+Status: done 2026-09-28
+Result: `crates/cox-app/src/controller.rs`: `Controller::spawn(Timeline, mpsc::Receiver<Event>)` starts a tokio task that drains the core's event channel continuously, folds each event and queues the patches. `next_patches()` is an async pull (`Option<Vec<TimelinePatch>>`) that waits on a `Notify`, returns at most one batch per 16 ms frame unless 64 patches are queued, and `None` once the stream is closed and drained; `snapshot()` returns the whole block list and drops the queue; `close()`/`Drop` stop the drain, not the session. `coalesce.rs`: `push` merges patches for the same block so the queue is bounded by live blocks, not events; `apply` is a reference consumer the tests prove coalescing against. AGENTS.md `cox-app` row updated.
+
+Deviations: ~285 non-test lines against ~150; the coalescer is its own `coalesce.rs` (not `patch.rs`) to keep merges with T37.38 easy; tokio is a regular dependency of cox-app (already in the workspace; dev-dep gains `test-util`); the scenario-file read in `tests/scenarios.rs` became a shared `scenario()` helper.
+
+Check: `slow_consumer_never_stalls_the_core` (paused time) over the six scenarios that need no person plus an inline 60-round "flood" (>256 events, the core channel's capacity): a consumer sleeping 2 s per pull still sees the turn finish in under 2 s, no batch exceeds the block count, and the coalesced final state equals applying every uncoalesced patch. Deliberate breakages caught: a drain that waited on the consumer took 8 s; turning coalescing off broke the queue bound. 5 coalescing unit tests + 1 controller test. `nextest -p cox-app` 12/12 (re-run after merge 12/12), `-p cox --test deps` 7/7, clippy and fmt clean. Commit 019733c.
+
+Not done: approval and interrupt scenarios are not in the slow-consumer test (the consumer sees patches, not events); the 64-patch early return is checked only when a pull starts.

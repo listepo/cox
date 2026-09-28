@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.9 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.10 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.12 | todo | P1 | 3 | 0% | |
 | T37.14 | todo | P0 | 4 | 0% | |
@@ -1088,12 +1087,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.9 `cox-app`: drain task, coalescer, never-stall
-
-Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/controller.rs`, `crates/cox-app/src/patch.rs`
-Goal: the core never blocks on a slow UI: events drain into the fold continuously and patches coalesce while the consumer is behind.
-Check: `slow_consumer_never_stalls_the_core` — a consumer that sleeps 2 s per pull still sees the turn finish on time and a coalesced final state.
 
 #### T37.10 `cox-app`: workspace, inbox, status, intents, completion
 

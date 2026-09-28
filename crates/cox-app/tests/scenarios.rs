@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use cox_app::{Timeline, TimelinePatch};
+use cox_app::{Block, BlockKind, Controller, Timeline, TimelinePatch, coalesce};
 use cox_core::{MemoryStore, Session};
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Store, Tool, ToolCx};
@@ -155,14 +155,13 @@ impl Checkpointer for Fake {
 
 /// `common::open` plus the exploring stubs and, for the rewind case, the
 /// fake checkpointer.
-fn open(case: &Case) -> (Session, Arc<MemoryStore>, mpsc::Receiver<Event>) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../{}/tests/scenarios", case.home))
-        .join(format!("{}.toml", case.name));
-    let toml = std::fs::read_to_string(&path).expect("scenario file");
-    let mut config = case.config.clone();
+fn open(
+    toml: &str,
+    mut config: Config,
+    act: &Act,
+) -> (Session, Arc<MemoryStore>, mpsc::Receiver<Event>) {
     config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
-    let provider = Arc::new(Scripted::from_toml(&toml, "").expect("scenario"));
+    let provider = Arc::new(Scripted::from_toml(toml, "").expect("scenario"));
     let mut tools = common::tools();
     tools.push(Arc::new(Stub {
         name: "read",
@@ -177,7 +176,7 @@ fn open(case: &Case) -> (Session, Arc<MemoryStore>, mpsc::Receiver<Event>) {
     let session =
         Session::new(config, provider, tools, store.clone(), store.clone(), cwd).expect("session");
     // The other scenarios keep the default checkpointer, as in cox-core.
-    if matches!(case.act, Act::RewindSecondTurn) {
+    if matches!(act, Act::RewindSecondTurn) {
         session.set_checkpointer(Arc::new(Fake));
     }
     let rx = session.events().expect("events once");
@@ -186,7 +185,7 @@ fn open(case: &Case) -> (Session, Arc<MemoryStore>, mpsc::Receiver<Event>) {
 
 /// The scenario's user turns: the live events, then the rollout.
 async fn run(case: &Case) -> (Vec<Event>, Vec<Event>) {
-    let (session, store, mut rx) = open(case);
+    let (session, store, mut rx) = open(&scenario(case), case.config.clone(), &case.act);
     let mut running = common::spawn_turn(&session, case.name);
     let mut live = Vec::new();
     let mut turns = 0;
@@ -239,6 +238,14 @@ async fn run(case: &Case) -> (Vec<Event>, Vec<Event>) {
     }
     let rollout = store.rollout_read(&session.id()).expect("rollout");
     (live, rollout)
+}
+
+/// The case's TOML, from the `tests/scenarios` of the crate it lives in.
+fn scenario(case: &Case) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../{}/tests/scenarios", case.home))
+        .join(format!("{}.toml", case.name));
+    std::fs::read_to_string(&path).expect("scenario file")
 }
 
 fn fold(events: &[Event]) -> Vec<TimelinePatch> {
@@ -327,5 +334,86 @@ async fn patches_match_snapshot_per_scenario() {
             })
             .collect();
         insta::assert_snapshot!(case.name, lines.join("\n"));
+    }
+}
+
+/// Sixty tool rounds in one user turn: more events than the core's channel
+/// (256) holds, so a drain that waited on the consumer would stall the turn.
+fn flood() -> String {
+    let mut toml = String::new();
+    for i in 0..60 {
+        toml += &format!(
+            "[[turn]]\ntext = \"round {i}\"\ntool_calls = [{{ name = \"echo\", input = {{ text = \"e{i}\" }} }}]\n\n"
+        );
+    }
+    toml + "[[turn]]\ntext = \"done\"\n"
+}
+
+fn turn_over(blocks: &[Block]) -> bool {
+    blocks
+        .iter()
+        .any(|b| matches!(&b.kind, BlockKind::TurnMeta { stop: Some(_), .. }))
+}
+
+fn mirror(patches: Vec<TimelinePatch>) -> Vec<Block> {
+    let mut blocks = Vec::new();
+    patches
+        .into_iter()
+        .for_each(|p| coalesce::apply(&mut blocks, p));
+    blocks
+}
+
+/// Paused time: the consumer's 2 s naps cost nothing, and the clock only
+/// advances past one when every task is idle, so a core blocked on a full
+/// channel would finish at 2 s or later.
+#[tokio::test(start_paused = true)]
+async fn slow_consumer_never_stalls_the_core() {
+    let nap = Duration::from_secs(2);
+    let mut runs: Vec<(String, String, Config)> = cases()
+        .into_iter()
+        .filter(|case| matches!(case.act, Act::Nothing))
+        .map(|case| (case.name.to_owned(), scenario(&case), case.config))
+        .collect();
+    runs.push(("flood".into(), flood(), Config::default()));
+    for (name, toml, config) in runs {
+        let (session, store, rx) = open(&toml, config, &Act::Nothing);
+        let controller = Controller::spawn(Timeline::new("base16-ocean.dark"), rx);
+        let start = tokio::time::Instant::now();
+        let turn = common::spawn_turn(&session, &name);
+        let finished = tokio::spawn(async move {
+            let _ = turn.await;
+            start.elapsed()
+        });
+        let (mut blocks, mut widest) = (Vec::new(), 0);
+        while !turn_over(&blocks) {
+            let batch = tokio::time::timeout(Duration::from_secs(60), controller.next_patches())
+                .await
+                .expect("patches in time")
+                .expect("stream open");
+            widest = widest.max(batch.len());
+            batch
+                .into_iter()
+                .for_each(|p| coalesce::apply(&mut blocks, p));
+            tokio::time::sleep(nap).await;
+        }
+        let took = finished.await.expect("join");
+        assert!(
+            took < nap,
+            "{name}: the turn waited on the consumer ({took:?})"
+        );
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        if name == "flood" {
+            assert!(events.len() > 256, "flood emitted only {}", events.len());
+        }
+        assert!(
+            widest <= blocks.len(),
+            "{name}: a batch of {widest} patches for {} blocks",
+            blocks.len()
+        );
+        assert_eq!(
+            blocks,
+            mirror(fold(&events)),
+            "{name}: coalesced state differs from applying every patch"
+        );
     }
 }
