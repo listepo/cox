@@ -4599,3 +4599,35 @@ Check:
 - swiftlint and swift-format are clean.
 - After merging into `p37-desktop`, `swift build --build-tests` for CoxUI succeeds.
 Not done: the other tabs and the data calls are T37.29.1–T37.29.5.
+
+#### T37.23.5 Structured diff hunks from Rust for edit cards
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: `cox-app` sends an edit's hunks as structured lines (kind, old/new numbers, `StyledDoc` spans), so `ToolCard` shows `DiffHunkView`s and Swift never parses a unified diff.
+Check: a `cox-app` test of the hunk shape for a scripted edit; a snapshot of an opened edit card.
+Status: done 2026-09-28
+Result:
+- `crates/cox-render/src/diffmodel.rs` defines `DiffModel`, `DiffHunk`, `DiffLine` and `DiffLineKind`, highlighted through `highlight_runs`. It builds without the ratatui feature.
+- The unified-diff parse moved there from `diff.rs`, and the TUI calls it too, so there is still one diff engine.
+- cox-app: `BlockKind::Tool.diff` is `Option<DiffModel>`, built on `ToolCallDone`.
+- cox-ffi: remote declarations replace the `Diff` record, and no export was added.
+- Swift:
+  - CoxClient's `Diff` becomes `DiffModel` and the types under it.
+  - CoxCore's `Convert.swift` maps them.
+  - `TranscriptCard` fills `ToolCard`'s `.diff` hunks.
+- New fixture `desktop/macos/Fixtures/edit.json` (a write then an edit), recorded from `crates/cox-ffi/fixtures/edit.toml`.
+Deviations:
+- More than 3 files.
+- `CodeRun` roles stay `.plain`: spans carry theme colours and no `StyleToken` names a syntax role.
+- There is no word-level diff on the desktop (T37.23.11).
+- The fixture is recorded with `COX_PERMISSIONS_MODE=auto`.
+- `CoxTranscriptTests/Host.swift`'s `hosting` is no longer private.
+Check:
+- `nextest -p cox-render -p cox-app -p cox-ffi -p cox-tui`: 348/348, including `scenarios__edit.snap` and 3 `diffmodel` tests.
+- Clippy and fmt are clean.
+- Swift: CoxModel 20/20 (replays both fixtures), CoxTranscriptText 23/23, CoxTranscript 8/8 with `EditCardSnapshotTests` (light and dark).
+- swiftlint and swift-format are clean.
+- After merging into `p37-desktop`: `nextest -p cox-render -p cox-app -p cox-ffi -p cox-tui` 355/355 (forward_only included), CoxModel 30/30, CoxTranscript 13/13.
+Not done:
+- CoxCore was not compiled; its names were checked against generated bindings.
+- Syntax roles for `CodeRun` wait on the creator: either `StyleToken` gets syntax roles, or the desktop uses theme colours.

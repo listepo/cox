@@ -27,11 +27,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.23.5 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.6 | todo | P1 | 2 | 0% | |
 | T37.23.8 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.9 | todo | P2 | 2 | 0% | |
 | T37.23.10 | todo | P2 | 2 | 0% | |
+| T37.23.11 | todo | P3 | 2 | 0% | |
 | T37.25 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.24.5 | todo | P2 | 2 | 0% | |
 | T37.24.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2757,12 +2757,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.23.5 Structured diff hunks from Rust for edit cards
-
-Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscript/…`
-Goal: `cox-app` sends an edit's hunks as structured lines (kind, old/new numbers, `StyledDoc` spans), so `ToolCard` shows `DiffHunkView`s and Swift never parses a unified diff.
-Check: a `cox-app` test of the hunk shape for a scripted edit; a snapshot of an opened edit card.
-
 #### T37.23.6 Restyle the transcript when the text size changes
 
 Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
@@ -2787,6 +2781,12 @@ Depends: — · Size: ~80 · Files: `crates/cox-app/src/timeline.rs`, `desktop/m
 Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
 Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
 Held for the creator: the event stream carries no reasoning timing, and live reasoning deltas are keyed to the reply's `AssistantMessage` item, so `Timeline` drops them (`cox-core/src/turn.rs`). The proposed fix, a protocol change, needs approval first: `cox-core` gives streamed reasoning its own `Thinking` item (`ItemStarted` → deltas → `ItemDone`) and records the first-to-last-delta time in the rollout, either as a new `Event::ThinkingDone { item, duration_ms }` or as `ItemDone.duration_ms: Option<u64>`.
+
+#### T37.23.11 Word-level diff in the desktop hunks
+
+Depends: — · Size: ~80 · Files: `crates/cox-render/src/diffmodel.rs`, `crates/cox-render/Cargo.toml`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: `DiffLine` carries the changed word ranges of a paired del/add line, computed in `diffmodel` (so `similar` no longer needs the ratatui feature and the TUI keeps one word-diff path), and the edit card marks them.
+Check: a `diffmodel` test for a one-word change; the TUI word-diff snapshots unchanged; an edit-card snapshot with the marked words.
 
 #### T37.25 Token meter and token popover
 

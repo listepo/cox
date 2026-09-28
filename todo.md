@@ -21,11 +21,11 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.23.5. Structured diff hunks from Rust for edit cards
 - T37.23.6. Restyle the transcript when the text size changes
 - T37.23.8. Headings, lists and quotes in replies
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.10. Thought duration in the thinking header
+- T37.23.11. Word-level diff in the desktop hunks
 - T37.25. Token meter and token popover
 - T37.24.5. Paste into the composer
 - T37.24.6. Prompt history in the composer
