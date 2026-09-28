@@ -192,6 +192,19 @@
           "hex": "#8ff0a8"
         },
         "$description": "Passing lines in a terminal tail"
+      },
+      "onAccent": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "hex": "#ffffff"
+        },
+        "$description": "Label on an accent or status fill: primary button, Bypass segment (the mockup's white .pb.pri label)"
       }
     },
     "separator": {

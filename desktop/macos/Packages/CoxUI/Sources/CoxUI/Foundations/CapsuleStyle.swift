@@ -50,7 +50,7 @@ struct CapsuleFace<Label: View>: View {
       .frame(width: isIcon ? Size.capsuleHeight : nil, height: Size.capsuleHeight)
       .background { shape.fill(state.tint) }
       .glassPane(shape, surface: emphasis.surface, role: .readable)
-      .hairline(in: shape)
+      .hairline(in: shape, color: Color(.surfaceCapsuleBorder))
       .elevation(state.elevation(.e1), cornerRadius: Radius.capsule)
       .background {
         // Filled behind the face, not stroked: a stroked pill renders with stray side bars.

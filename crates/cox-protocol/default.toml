@@ -246,6 +246,8 @@ opacity = 0.42                      # window and pane background opacity, 0 (cle
 blur = 34                           # background blur in pt, 0 … 60 (frosted); glossy reads it as reflection
 depth = 1.0                         # elevation scale, 0 (flat, standard macOS look) … 1 (full shadows and highlights)
 tint = true                         # tint the glass from the wallpaper
+dark_highlight = "none"             # none | subtle — the top-edge highlight in dark mode: none (the dark mockup) or white at 10 % of the light one (A109)
+dark_highlight_scope = "controls"   # controls | all — dark_highlight applies to controls (e1) or every lifted level (e1–e4, the user bubble too) (A109)
 
 [desktop.transcript]
 cross_block_selection = true        # a text selection runs across blocks like one document; false clamps it to one block (A67)

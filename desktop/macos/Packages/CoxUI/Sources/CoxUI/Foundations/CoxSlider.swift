@@ -1,6 +1,7 @@
 // `CoxSlider` (DS§6.1, the mockup's `.slider`): a sunken track, an `accent` fill up to the
 // value and the 3D knob on top. A view rather than a style: macOS has no public `SliderStyle`,
-// so this takes a slider's inputs and VoiceOver sees a slider.
+// so this takes a slider's inputs and VoiceOver sees a slider. Disabled, it drops the fill and
+// the knob's lift, as a disabled button drops its accent and lift (DS§6.1).
 
 import SwiftUI
 
@@ -9,6 +10,7 @@ struct CoxSlider: View {
   let label: LocalizedStringKey
   @Binding var value: Double
   let range: ClosedRange<Double>
+  @Environment(\.isEnabled) private var isEnabled
 
   /// The mockup's 22 pt row, 6 pt track and 20 pt knob.
   private static let height: CGFloat = 22
@@ -31,13 +33,15 @@ struct CoxSlider: View {
         Color.clear
           .frame(height: Self.track)
           .insetWell(Color(.fillSecondary), cornerRadius: Self.track / 2)
-        Capsule()
-          .fill(
-            LinearGradient(
-              colors: [Color(.accent).mix(with: .white, by: Self.fillLift), Color(.accent)],
-              startPoint: .leading, endPoint: .trailing)
-          )
-          .frame(width: centre, height: Self.track)
+        if isEnabled {
+          Capsule()
+            .fill(
+              LinearGradient(
+                colors: [Color(.accent).mix(with: .white, by: Self.fillLift), Color(.accent)],
+                startPoint: .leading, endPoint: .trailing)
+            )
+            .frame(width: centre, height: Self.track)
+        }
         Knob(diameter: Self.knob).offset(x: centre - Self.knob / 2)
       }
       .frame(maxHeight: .infinity)

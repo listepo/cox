@@ -307,6 +307,29 @@ mod tests {
         assert!(set_then_load("desktop.review.send", "later").is_err());
     }
 
+    /// A109: no dark highlight on controls unless the user picks the subtle one or every level.
+    #[test]
+    fn config_set_desktop_dark_highlight_round_trips() {
+        use cox_protocol::config::{DarkHighlight, DarkHighlightScope};
+        let defaults = cox_protocol::Config::default().desktop.appearance;
+        assert_eq!(defaults.dark_highlight, DarkHighlight::None);
+        assert_eq!(defaults.dark_highlight_scope, DarkHighlightScope::Controls);
+        let loaded =
+            set_then_load("desktop.appearance.dark_highlight", "subtle").expect("load succeeds");
+        assert_eq!(
+            loaded.config.desktop.appearance.dark_highlight,
+            DarkHighlight::Subtle
+        );
+        let loaded =
+            set_then_load("desktop.appearance.dark_highlight_scope", "all").expect("load succeeds");
+        assert_eq!(
+            loaded.config.desktop.appearance.dark_highlight_scope,
+            DarkHighlightScope::All
+        );
+        assert!(set_then_load("desktop.appearance.dark_highlight", "bright").is_err());
+        assert!(set_then_load("desktop.appearance.dark_highlight_scope", "e2").is_err());
+    }
+
     #[test]
     fn config_rejects_out_of_range_desktop_values() {
         for (key, value) in [

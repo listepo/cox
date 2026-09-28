@@ -1,6 +1,6 @@
 // `CoxToggleStyle` and `CoxSlider`'s check (T37.19.4): a snapshot per on/off and per slider
-// value × light/dark × Solid/Frosted, and the slider placing its knob by the value's share of
-// the range, clamped to it.
+// value × light/dark × Solid/Frosted, disabled ones too (T37.19.5), and the slider placing its
+// knob by the value's share of the range, clamped to it.
 
 import AppKit
 import SwiftUI
@@ -22,6 +22,19 @@ import Testing
       try assertCoxSnapshot(
         SliderSample(value: value), variant, named: "value\(Int(value * 100)).\(variant.name)")
     }
+  }
+
+  @Test(arguments: Variant.all) func disabledToggle(_ variant: Variant) throws {
+    for isOn in [false, true] {
+      try assertCoxSnapshot(
+        ToggleSample(isOn: isOn).disabled(true), variant,
+        named: "\(isOn ? "on" : "off").\(variant.name)")
+    }
+  }
+
+  @Test(arguments: Variant.all) func disabledSlider(_ variant: Variant) throws {
+    try assertCoxSnapshot(
+      SliderSample(value: 0.5).disabled(true), variant, named: "value50.\(variant.name)")
   }
 
   @Test func sliderPlacesTheKnobByTheValuesShareOfTheRange() throws {

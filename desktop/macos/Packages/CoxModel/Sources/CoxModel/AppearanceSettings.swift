@@ -72,7 +72,38 @@ extension DesktopAppearance {
   }
 }
 
+/// `[desktop.appearance] dark_highlight`, spelled as Rust stores it (A109).
+public enum DarkHighlightSetting: String, Equatable, Sendable, Decodable {
+  /// No highlight in dark mode: the dark mockup's look.
+  case none
+  /// White at a tenth of the light highlight's strength.
+  case subtle
+}
+
+/// `[desktop.appearance] dark_highlight_scope`, spelled as Rust stores it (A109).
+public enum DarkHighlightScope: String, Equatable, Sendable, Decodable {
+  /// Controls only (e1).
+  case controls
+  /// Every lifted level (e1–e4), the transcript's user bubble included.
+  case all
+}
+
 extension SettingsStore {
+  /// `[desktop.appearance] dark_highlight`; none before the first load or when the key holds
+  /// something else.
+  public var darkHighlight: DarkHighlightSetting {
+    view.flatMap { SectionRows($0.settings, "desktop.appearance").decode("dark_highlight") }
+      ?? .none
+  }
+
+  /// `[desktop.appearance] dark_highlight_scope`; controls before the first load or when the key
+  /// holds something else.
+  public var darkHighlightScope: DarkHighlightScope {
+    view.flatMap {
+      SectionRows($0.settings, "desktop.appearance").decode("dark_highlight_scope")
+    } ?? .controls
+  }
+
   /// `[desktop.appearance]` from the loaded view; `nil` before the first load.
   public var appearance: DesktopAppearance? { view.flatMap { DesktopAppearance($0.settings) } }
 

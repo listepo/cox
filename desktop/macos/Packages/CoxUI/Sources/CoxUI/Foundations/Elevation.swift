@@ -42,13 +42,16 @@ private struct Elevation: ViewModifier {
 
 extension ElevationToken {
   /// The level's layers at `appearance`'s Depth (DS§3.4): each layer's opacity, and a drop
-  /// shadow's offset down, scaled by Depth; the window's level ignores it. Public for the
-  /// transcript's AppKit bubble (T37.23.9), so it lifts as `.elevation` does.
+  /// shadow's offset down, scaled by Depth; the window's level ignores it. The highlight also
+  /// takes the dark-mode share (A109). Public for the transcript's AppKit bubble (T37.23.9), so
+  /// it lifts as `.elevation` does.
   public func layers(at appearance: Appearance) -> [ShadowLayer] {
     let scale = self == .e5 ? 1 : appearance.depth
+    let highlight = scale * appearance.highlightStrength(self)
     return layers.map {
       ShadowLayer(
-        color: $0.color.opacity(scale), x: $0.x, y: $0.inset ? $0.y : $0.y * scale,
+        color: $0.color.opacity($0.inset ? highlight : scale), x: $0.x,
+        y: $0.inset ? $0.y : $0.y * scale,
         blur: $0.blur, spread: $0.spread, inset: $0.inset)
     }
   }

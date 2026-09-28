@@ -52,6 +52,7 @@
   --c-text-tertiary: rgba(161, 161, 166, 1);
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
+  --c-text-onAccent: rgba(255, 255, 255, 1);
   --c-separator: rgba(0, 0, 0, 0.09);
   --c-quote-bar: rgba(161, 161, 166, 1);
   --c-accent: rgba(10, 124, 255, 1);
@@ -139,6 +140,7 @@
   --c-text-tertiary: rgba(108, 108, 114, 1);
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
+  --c-text-onAccent: rgba(255, 255, 255, 1);
   --c-separator: rgba(255, 255, 255, 0.09);
   --c-quote-bar: rgba(108, 108, 114, 1);
   --c-accent: rgba(59, 155, 255, 1);
@@ -226,6 +228,7 @@
   --c-text-tertiary: rgba(72, 72, 75, 1);
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
+  --c-text-onAccent: rgba(255, 255, 255, 1);
   --c-separator: rgba(140, 140, 140, 1);
   --c-quote-bar: rgba(139, 139, 144, 1);
   --c-accent: rgba(6, 71, 145, 1);
@@ -313,6 +316,7 @@
   --c-text-tertiary: rgba(210, 210, 212, 1);
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
+  --c-text-onAccent: rgba(62, 62, 62, 1);
   --c-separator: rgba(122, 122, 124, 1);
   --c-quote-bar: rgba(122, 122, 127, 1);
   --c-accent: rgba(176, 215, 255, 1);

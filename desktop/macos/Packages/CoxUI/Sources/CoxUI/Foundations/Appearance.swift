@@ -1,14 +1,31 @@
-// The appearance every Foundation reads (DS§3.4–3.6): material, window opacity, Depth and text
-// size, plus the one place the system's Reduce Transparency, Increase Contrast and Reduce Motion
-// override them (DS§1.6, DS§8). Separate so no modifier resolves a setting on its own. CoxModel
-// fills `coxAppearance` from `[desktop.appearance]`; CoxUI never reads config. The modifiers in
-// Foundations are internal: only CoxUI's own components style a view (DS§5).
+// The appearance every Foundation reads (DS§3.4–3.6): material, window opacity, Depth, text
+// size and the dark highlight (A109), plus the one place the system's Reduce Transparency,
+// Increase Contrast and Reduce Motion override them (DS§1.6, DS§8). Separate so no modifier
+// resolves a setting on its own. CoxModel fills `coxAppearance` from `[desktop.appearance]`;
+// CoxUI never reads config. The modifiers in Foundations are internal: only CoxUI's own
+// components style a view (DS§5).
 
 import SwiftUI
 
 /// The window material the user picked (DS§3.5).
 public enum GlassMaterial: String, Sendable, CaseIterable {
   case solid, frosted, glossy
+}
+
+/// The top-edge highlight lifted things draw in dark mode (A109), as `dark_highlight` spells it.
+public enum DarkHighlight: String, Sendable, CaseIterable {
+  /// None: the dark mockup's look.
+  case none
+  /// `MaterialToken.darkHighlightSubtle` of the light highlight's strength.
+  case subtle
+}
+
+/// The elevation levels `DarkHighlight` applies to (A109); the others keep the light highlight.
+public enum HighlightScope: String, Sendable, CaseIterable {
+  /// Controls only: e1.
+  case controls
+  /// Every lifted level, e1–e4.
+  case all
 }
 
 /// What a glass surface carries, which decides whether it may go below the readable floor.
@@ -28,25 +45,37 @@ public struct Appearance: Sendable, Equatable {
   public var depth: Double
   /// Text size, 1 = 100 % (DS§3.2).
   public var textScale: Double
+  /// The highlight dark mode draws, and on which levels (A109).
+  public var darkHighlight: DarkHighlight
+  public var highlightScope: HighlightScope
   /// The system asked for more contrast; only `effective` sets it, the config never does.
   private(set) var increaseContrast = false
+  /// The view is drawn dark; only `effective` sets it, from the environment's colour scheme.
+  private(set) var isDark = false
 
   /// `windowOpacity` defaults to the material's token.
   public init(
     material: GlassMaterial = .frosted, windowOpacity: Double? = nil, depth: Double = 1,
-    textScale: Double = 1
+    textScale: Double = 1, darkHighlight: DarkHighlight = .none,
+    highlightScope: HighlightScope = .controls
   ) {
     self.material = material
     self.windowOpacity = windowOpacity ?? Self.defaultOpacity(material)
     self.depth = depth
     self.textScale = textScale
+    self.darkHighlight = darkHighlight
+    self.highlightScope = highlightScope
   }
 
   /// What a view draws: Reduce Transparency forces Solid (DS§1.6); Increase Contrast drops the
   /// specular sweep and makes glass more opaque (A89, A100), and Solid stays Solid under both.
-  public func effective(reduceTransparency: Bool, increaseContrast: Bool = false) -> Appearance {
+  /// `colorScheme` picks the dark highlight (A109).
+  public func effective(
+    reduceTransparency: Bool, increaseContrast: Bool = false, colorScheme: ColorScheme = .light
+  ) -> Appearance {
     var drawn = self
     drawn.increaseContrast = increaseContrast
+    drawn.isDark = colorScheme == .dark
     guard reduceTransparency, material != .solid else { return drawn }
     drawn.material = .solid
     drawn.windowOpacity = MaterialToken.solidWindowOpacity
@@ -77,6 +106,16 @@ public struct Appearance: Sendable, Equatable {
     }
   }
 
+  /// The share of `level`'s inset highlight to draw: all of it in light, and in dark the
+  /// `darkHighlight` share on the levels `highlightScope` names (A109).
+  func highlightStrength(_ level: ElevationToken) -> Double {
+    guard isDark, highlightScope == .all || level == .e1 else { return 1 }
+    return switch darkHighlight {
+    case .none: MaterialToken.darkHighlightNone
+    case .subtle: MaterialToken.darkHighlightSubtle
+    }
+  }
+
   private static func defaultOpacity(_ material: GlassMaterial) -> Double {
     switch material {
     case .solid: MaterialToken.solidWindowOpacity
@@ -98,10 +137,12 @@ struct EffectiveAppearance: DynamicProperty {
   @Environment(\.coxAppearance) private var appearance
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorSchemeContrast) private var contrast
+  @Environment(\.colorScheme) private var colorScheme
 
   var wrappedValue: Appearance {
     appearance.effective(
-      reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
+      reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased,
+      colorScheme: colorScheme)
   }
 }
 

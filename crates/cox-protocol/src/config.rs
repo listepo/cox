@@ -1339,6 +1339,33 @@ pub struct DesktopAppearanceConfig {
     pub depth: f64,
     /// Tint the glass from the wallpaper.
     pub tint: bool,
+    /// `none` | `subtle`: the top-edge highlight in dark mode (A109).
+    pub dark_highlight: DarkHighlight,
+    /// `controls` | `all`: the elevation levels `dark_highlight` applies to (A109).
+    pub dark_highlight_scope: DarkHighlightScope,
+}
+
+/// The top-edge highlight lifted things draw in dark mode (A109, DS§3.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DarkHighlight {
+    /// No highlight: the dark mockup's look.
+    #[default]
+    None,
+    /// White at a tenth of the light highlight's strength.
+    Subtle,
+}
+
+/// Which elevation levels `dark_highlight` applies to (A109); the others
+/// keep the light highlight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DarkHighlightScope {
+    /// Controls only: e1 (chips, capsules, buttons, knobs).
+    #[default]
+    Controls,
+    /// Every level, e1 to e4, the transcript's user bubble included.
+    All,
 }
 
 impl Default for DesktopAppearanceConfig {
@@ -1349,6 +1376,8 @@ impl Default for DesktopAppearanceConfig {
             blur: DESKTOP_DEFAULT_BLUR_PT,
             depth: DESKTOP_DEFAULT_DEPTH,
             tint: true,
+            dark_highlight: DarkHighlight::None,
+            dark_highlight_scope: DarkHighlightScope::Controls,
         }
     }
 }

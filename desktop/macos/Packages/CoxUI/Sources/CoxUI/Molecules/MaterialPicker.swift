@@ -45,9 +45,12 @@ extension GlassMaterial {
 
 extension Appearance {
   /// What a swatch of `material` draws with: that material at its own default opacity, at this
-  /// appearance's Depth and text size, so every swatch previews the lift the user set.
+  /// appearance's Depth, text size and dark highlight, so every swatch previews the lift the
+  /// user set.
   func swatch(_ material: GlassMaterial) -> Appearance {
-    Appearance(material: material, depth: depth, textScale: textScale)
+    Appearance(
+      material: material, depth: depth, textScale: textScale, darkHighlight: darkHighlight,
+      highlightScope: highlightScope)
   }
 }
 
