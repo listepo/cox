@@ -4,7 +4,8 @@
 // `NSWorkspace`. Separate from the Keychain store because this is the
 // AppKit side; the store stays usable without it. Only `secret` and the URL
 // check are tested: the notification centre needs an app bundle, and a test
-// must never post a notification or open a URL.
+// must never post a notification or open a URL. T51.9: with a
+// `BrowserController`, the browser methods drive its page.
 
 import AppKit
 import CoxClient
@@ -13,8 +14,13 @@ import UserNotifications
 
 public struct MacHost: PlatformHost {
   private let secrets: any SecretStore
+  private let browser: BrowserController?
 
-  public init(secrets: any SecretStore = KeychainSecretStore()) { self.secrets = secrets }
+  public init(
+    secrets: any SecretStore = KeychainSecretStore(), browser: BrowserController? = nil
+  ) {
+    (self.secrets, self.browser) = (secrets, browser)
+  }
 
   /// A Keychain error reads as no key: Rust then reports the key missing and
   /// names the setting, which is the remedy the person can act on.
@@ -43,6 +49,23 @@ public struct MacHost: PlatformHost {
   public func open(_ url: String) {
     guard let url = Self.openable(url) else { return }
     Task { @MainActor in _ = NSWorkspace.shared.open(url) }
+  }
+
+  public var hasBrowser: Bool { browser != nil }
+
+  public func browserLoad(_ url: String) async throws(BrowserFailure) {
+    guard let browser else { throw .noPage }
+    try await browser.load(url)
+  }
+
+  public func browserText() async throws(BrowserFailure) -> PageText {
+    guard let browser else { throw .noPage }
+    return try await browser.text()
+  }
+
+  public func browserSnapshot() async throws(BrowserFailure) -> [UInt8] {
+    guard let browser else { throw .noPage }
+    return try await browser.snapshot()
   }
 
   /// Web links only: the URL comes from an MCP server or the model, and a

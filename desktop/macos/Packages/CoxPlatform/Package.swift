@@ -2,8 +2,8 @@
 // CoxPlatform (DT§4.6): what the app asks macOS for — today the provider
 // keys in the Keychain over the Security framework, no wrapper package
 // (research.md 9.5.8) — and notifications with Allow, Deny and Answer
-// actions (T37.27); the terminal pane over SwiftTerm (T51.5); later Sparkle and the OAuth
-// handoff.
+// actions (T37.27); the terminal pane over SwiftTerm (T51.5); the agent's browser page
+// over WebKit's `WebPage` (T51.9, no dependency); later Sparkle and the OAuth handoff.
 // Depends on CoxClient only, for the `SecretStore` seam, so it builds and
 // tests without the Rust XCFramework.
 import PackageDescription
