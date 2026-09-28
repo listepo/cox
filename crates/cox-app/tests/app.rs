@@ -8,9 +8,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use cox_app::TimelinePatch;
 use cox_app::app::{App, AppError, Host};
 use cox_app::live::LiveSession;
-use cox_app::{BlockKind, CheckId, CheckStatus, InboxItem, Intent, Need, TimelinePatch};
+use cox_app::{BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Need};
 use cox_protocol::types::{Decision, StopReason};
 
 /// Reads `notes.md`, then replies in markdown.
@@ -28,6 +29,19 @@ const WRITE: &str = r#"
 [[turn]]
 text = "Writing it."
 tool_calls = [{ name = "write", input = { path = "out.txt", content = "approved\n" } }]
+
+[[turn]]
+text = "Done."
+"#;
+
+/// Edits `notes.md` and creates `new.rs` in one turn: one checkpoint.
+const TWO_EDITS: &str = r#"
+[[turn]]
+text = "Changing two files."
+tool_calls = [
+  { name = "edit", input = { path = "notes.md", old = "hello", new = "bye" } },
+  { name = "write", input = { path = "new.rs", content = "fn main() {}\n" } },
+]
 
 [[turn]]
 text = "Done."
@@ -268,4 +282,47 @@ fn the_checklist_asks_the_host_for_the_provider_key() {
         .checklist(&project)
         .expect("checklist");
     assert_eq!(rows[0].status, CheckStatus::Ok, "{}", rows[0].detail);
+}
+
+#[tokio::test]
+async fn changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to() {
+    let dir = scratch(Some(TWO_EDITS));
+    let config = "[permissions]\nallow = [\"edit\", \"write\"]\n";
+    std::fs::create_dir_all(dir.path().join("user/.cox")).expect("home");
+    std::fs::write(dir.path().join("user/.cox/config.toml"), config).expect("config");
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session.send(send("change them")).await.expect("send");
+    finish(&session).await;
+
+    let changes = session.changes().await.expect("changes");
+    let mut files = changes.files.clone();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    let got: Vec<_> = files
+        .iter()
+        .map(|f| (f.path.to_str(), f.change, f.added, f.removed, f.turn))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (Some("new.rs"), FileChange::Created, 0, 0, 1),
+            (Some("notes.md"), FileChange::Edited, 1, 1, 1),
+        ]
+    );
+    let blocks = session.snapshot();
+    for file in &files {
+        let id = BlockId(format!("call:{}", file.call));
+        let tool = blocks.iter().find(|b| b.id == id).map(|b| &b.kind);
+        assert!(matches!(tool, Some(BlockKind::Tool { .. })), "{file:?}");
+    }
+    let [checkpoint] = changes.checkpoints.as_slice() else {
+        panic!("one turn changed files: {:?}", changes.checkpoints);
+    };
+    assert_eq!(checkpoint.turn, 1);
+    assert!(
+        checkpoint.label.starts_with("Turn 1 · before "),
+        "{checkpoint:?}"
+    );
+    assert!(checkpoint.label.ends_with(" and 1 more"), "{checkpoint:?}");
+    assert!(checkpoint.time.starts_with("20"), "{checkpoint:?}");
+    assert_eq!(changes.worktree, None, "a tempdir is no linked worktree");
 }

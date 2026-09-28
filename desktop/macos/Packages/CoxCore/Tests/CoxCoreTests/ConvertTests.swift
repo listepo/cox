@@ -46,3 +46,15 @@ import Testing
   #expect(CoxFFIBindings.Intent(intent) == want)
   #expect(CoxFFIBindings.Intent(.setEffort(effort: nil)) == .setEffort(effort: nil))
 }
+
+@Test func aChangesRecordConvertsFieldForField() {
+  let live = CoxFFIBindings.Changes(
+    files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
+    checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
+    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
+  let want = CoxClient.Changes(
+    files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
+    checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
+    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
+  #expect(CoxClient.Changes(live) == want)
+}

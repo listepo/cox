@@ -43,7 +43,7 @@ struct Run {
     searches: usize,
 }
 
-fn key(kind: &str, id: impl Display) -> BlockId {
+pub(crate) fn key(kind: &str, id: impl Display) -> BlockId {
     BlockId(format!("{kind}:{id}"))
 }
 

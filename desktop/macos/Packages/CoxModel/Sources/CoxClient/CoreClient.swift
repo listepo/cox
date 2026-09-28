@@ -35,6 +35,8 @@ public protocol SessionClient: AnyObject, Sendable {
   /// Rows for the composer's token, `@que…` or `/que…`, best first, at most `limit`
   /// (`cox_app::Completer`, DT§5.3).
   func complete(_ token: String, limit: UInt32) -> [Completion]
+  /// What the inspector's Changes tab lists (`cox_app::live::LiveSession::changes`, T37.29.1).
+  func changes() async throws -> Changes
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
 }
@@ -72,11 +74,12 @@ public struct FixtureCoreClient: CoreClient {
 
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
-/// fixed list instead of the Rust completer.
+/// fixed list instead of the Rust completer, and lists fixed changes.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
   private let fixture: Fixture
   private let completions: [Completion]
+  private let fixedChanges: Changes
   private let state = Mutex(State())
 
   private struct State {
@@ -85,9 +88,10 @@ public final class FixtureSession: SessionClient {
     var sent: [Intent] = []
   }
 
-  public init(fixture: Fixture, completions: [Completion] = []) {
+  public init(fixture: Fixture, completions: [Completion] = [], changes: Changes = Changes()) {
     self.fixture = fixture
     self.completions = completions
+    fixedChanges = changes
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -123,6 +127,8 @@ public final class FixtureSession: SessionClient {
     }
     return Array(rows.prefix(Int(limit)))
   }
+
+  public func changes() async throws -> Changes { fixedChanges }
 
   public func close() { state.withLock { $0.closed = true } }
 }

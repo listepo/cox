@@ -14,9 +14,9 @@ use cox_app::SessionInfo;
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, Completion, Dropped, Icon, InboxItem, Intent, Layer, McpLogin, McpServer, Need,
-    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TurnUsage,
-    UsageView,
+    Activity, ChangedFile, Changes, Checkpoint, Completion, Dropped, FileChange, Icon, InboxItem,
+    Intent, Layer, Linked, McpLogin, McpServer, Need, Project, SearchHit, SessionEntry, Setting,
+    SettingKind, SettingsView, Tally, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -458,6 +458,46 @@ pub struct WorktreeInfo {
     pub locked: Option<String>,
     pub stale: bool,
     pub merged: bool,
+    pub bytes: u64,
+}
+
+#[uniffi::remote(Record)]
+pub struct Changes {
+    pub files: Vec<ChangedFile>,
+    pub checkpoints: Vec<Checkpoint>,
+    pub worktree: Option<Linked>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ChangedFile {
+    pub path: PathBuf,
+    pub change: FileChange,
+    pub added: u32,
+    pub removed: u32,
+    pub call: CallId,
+    pub turn: u32,
+}
+
+#[uniffi::remote(Enum)]
+pub enum FileChange {
+    Edited,
+    Created,
+    Deleted,
+}
+
+#[uniffi::remote(Record)]
+pub struct Checkpoint {
+    pub turn: u32,
+    pub label: String,
+    pub time: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct Linked {
+    pub path: PathBuf,
+    pub branch: Option<String>,
+    pub base: Option<String>,
+    pub commit: Option<String>,
     pub bytes: u64,
 }
 

@@ -587,40 +587,11 @@ impl StoreTrait for Store {
     }
 
     fn checkpoint_list(&self, session: &SessionId) -> Result<Vec<CheckpointRow>, StoreError> {
-        let rows: Vec<CheckpointDbRow> = {
-            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-            schema::checkpoints::table
-                .filter(schema::checkpoints::session_id.eq(session.to_string()))
-                .order(schema::checkpoints::id.asc())
-                .select(CheckpointDbRow::as_select())
-                .load(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?
-        };
-        // A tag or id that no longer parses is a corrupt row, not a
-        // defaultable one — same stance as `usage_for_session`.
-        let corrupt = || StoreError::Corrupt {
-            path: self.home.join("cox.db"),
-        };
-        rows.into_iter()
-            .map(|r| {
-                Ok(CheckpointRow {
-                    session: *session,
-                    turn: r.turn as u32,
-                    call: r
-                        .call_id
-                        .as_deref()
-                        .map(|c| c.parse().map_err(|_| corrupt()))
-                        .transpose()?,
-                    path: PathBuf::from(r.path),
-                    kind: from_tag(&r.kind).ok_or_else(corrupt)?,
-                    archive: r
-                        .archive_id
-                        .as_deref()
-                        .map(|a| a.parse().map_err(|_| corrupt()))
-                        .transpose()?,
-                })
-            })
-            .collect()
+        Ok(self
+            .checkpoint_rows(session)?
+            .into_iter()
+            .map(|(row, _)| row)
+            .collect())
     }
 }
 
@@ -833,6 +804,50 @@ impl PluginStoreTrait for Store {
 
 /// Public query methods for surfaces like `cox stats`.
 impl Store {
+    /// Every checkpoint row of a session in insertion order, each with its
+    /// RFC 3339 `created_at`: the desktop Changes tab shows when a turn it
+    /// can rewind to started (T37.29.1); the trait's rows carry no time.
+    pub fn checkpoint_rows(
+        &self,
+        session: &SessionId,
+    ) -> Result<Vec<(CheckpointRow, String)>, StoreError> {
+        let rows: Vec<CheckpointDbRow> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            schema::checkpoints::table
+                .filter(schema::checkpoints::session_id.eq(session.to_string()))
+                .order(schema::checkpoints::id.asc())
+                .select(CheckpointDbRow::as_select())
+                .load(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        // A tag or id that no longer parses is a corrupt row, not a
+        // defaultable one — same stance as `usage_for_session`.
+        let corrupt = || StoreError::Corrupt {
+            path: self.home.join("cox.db"),
+        };
+        rows.into_iter()
+            .map(|r| {
+                let row = CheckpointRow {
+                    session: *session,
+                    turn: r.turn as u32,
+                    call: r
+                        .call_id
+                        .as_deref()
+                        .map(|c| c.parse().map_err(|_| corrupt()))
+                        .transpose()?,
+                    path: PathBuf::from(r.path),
+                    kind: from_tag(&r.kind).ok_or_else(corrupt)?,
+                    archive: r
+                        .archive_id
+                        .as_deref()
+                        .map(|a| a.parse().map_err(|_| corrupt()))
+                        .transpose()?,
+                };
+                Ok((row, r.created_at))
+            })
+            .collect()
+    }
+
     /// Updates the denormalized session counters at a durable turn boundary.
     /// Usage is recorded before `TurnDone`, so the ledger is the source of
     /// truth for the stored cost rather than a second accumulator.
@@ -1277,6 +1292,11 @@ mod tests {
             })
             .expect("another session's row");
         assert_eq!(store.checkpoint_list(&session).expect("list"), rows);
+        let timed = store.checkpoint_rows(&session).expect("rows");
+        assert!(
+            timed.iter().all(|(_, at)| at.starts_with("20")),
+            "{timed:?}"
+        );
     }
 
     #[test]

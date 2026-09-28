@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::app::{App, AppError};
+use crate::changes::{self, Changes};
 use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
 use crate::{TimelinePatch, dispatch};
 
@@ -131,6 +132,16 @@ impl LiveSession {
         Self::open(app, cwd, Some(child), self.theme.clone())
             .await
             .map(Some)
+    }
+
+    /// What the inspector's Changes tab lists (T37.29.1): the blocks, the
+    /// checkpoint rows and, through git, the linked worktree.
+    pub async fn changes(&self) -> Result<Changes, AppError> {
+        let rows = self.app.workspace().store().checkpoint_rows(&self.id())?;
+        let worktree = cox_tools::git::linked(&self.cwd).await;
+        // Checkpoint paths are confined, so canonical.
+        let cwd = std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone());
+        Ok(changes::build(&self.snapshot(), &rows, &cwd, worktree))
     }
 
     /// `/` commands and `@` files for the composer's token.

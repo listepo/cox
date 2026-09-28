@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use cox_app::live::LiveSession;
-use cox_app::{Block, Completion, Intent, TimelinePatch};
+use cox_app::{Block, Changes, Completion, Intent, TimelinePatch};
 use cox_protocol::ids::SessionId;
 
 use crate::{AppError, on_runtime};
@@ -54,6 +54,11 @@ impl SessionHandle {
         Ok(on_runtime(async move { self.live.send(intent).await })
             .await??
             .map(Self::new))
+    }
+
+    /// What the inspector's Changes tab lists (T37.29.1).
+    pub async fn changes(self: Arc<Self>) -> Result<Changes, AppError> {
+        Ok(on_runtime(async move { self.live.changes().await }).await??)
     }
 
     /// `/` commands and `@` files for the composer's token.
