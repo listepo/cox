@@ -31,6 +31,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.19.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.19.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.19.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.40 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.41 | todo | P0 | 3 | 0% | |
+| T37.42 | todo | P0 | 3 | 0% | |
+| T37.43 | todo | P0 | 4 | 0% | |
 | T37.20 | todo | P0 | 3 | 0% | |
 | T37.21 | todo | P0 | 4 | 0% | |
 | T37.22 | todo | P0 | 3 | 0% | |
@@ -45,7 +49,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.37 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -1103,6 +1106,30 @@ Depends: T37.19 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/Co
 Goal: the DS§6.1 toggle and slider with the 3D knob, built on the Foundations.
 Check: snapshot per on/off and slider value × light/dark × Solid/Frosted.
 
+#### T37.40 `CoxTranscriptText`: the TextKit 2 transcript view
+
+Depends: T37.37 · Size: ~200 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: a new package with `TranscriptTextView`, one TextKit 2 `NSTextView` over the whole transcript built from timeline blocks, each block a tracked text range; SwiftLint and `swift test` wired like the other packages (research.md §9.5.13).
+Check: a test builds the view from a fixture and maps every block id to its range and back; `swift test` and both linters pass.
+
+#### T37.41 Cards as view-backed attachments
+
+Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
+Goal: tool, approval and subagent cards sit in the text as view-backed attachments hosting SwiftUI views; a card that collapses or expands keeps the text below it stable.
+Check: a test expands and collapses a card and the range and frame of the next block stay correct; a drag across a card selects the card as one unit.
+
+#### T37.42 Copy as Markdown and the one-block clamp
+
+Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
+Goal: copy of a selection writes Markdown in block order (cards as their summary lines) next to plain text; with `cross_block_selection = false` a drag is clamped to the block it started in, in both directions (A67).
+Check: a test drags across three blocks and the pasteboard holds their Markdown in order; with the setting off the same drag stays in the first block.
+
+#### T37.43 Incremental text from `StyledDoc` spans
+
+Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
+Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
+Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
+
 #### T37.20 `CoxUI` Atoms
 
 Depends: T37.19.1–T37.19.4 · Size: split at claim · Files: `…/CoxUI/Atoms/*`, `…/CoxUI/Previews/PreviewState.swift`
@@ -1123,8 +1150,9 @@ Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/
 
 #### T37.23 Transcript view and the DT§9 benchmark gate
 
-Depends: T37.22, T37.37 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
+Depends: T37.22, T37.40–T37.43 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
 Goal: lazy transcript from timeline patches with `UserBubble`, `ThinkingDisclosure`, `ToolCard`, `AssistantMessage` and `ApprovalCard` slots; text selection runs across blocks like a document (copy keeps block order and gives Markdown), and `cross_block_selection = false` clamps it to one block (A67); the DT§9 rendering bet is decided by its benchmark with selection on.
+Selection engine (T37.37, `research.md` §9.5.13): our own TextKit 2 view — one `NSTextView` over the transcript with blocks as ranges and cards as view-backed attachments — from the package `CoxTranscriptText`; Textual was rejected.
 Check: the benchmark in DT§9 passes its budget on a 2 000-block fixture; snapshots per block kind; a UI test drags a selection across three blocks and the pasteboard holds all three in order; with the setting off the same drag selects one block.
 
 #### T37.24 Composer: mentions, commands, shell mode, attachments, queue
@@ -1186,12 +1214,6 @@ Check: `spctl --assess` accepts the release build; the appcast validates.
 Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.37 Spike: the cross-block selection engine
-
-Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `desktop/macos/Spikes/Selection/…`, `research.md`
-Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
-Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
 
 ## 4. Definition of done for v0.1
 
@@ -1325,6 +1347,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A69 §3 (new P38: T38.1–T38.3), by the creator on 2026-09-28. Why: every open P33 card waits on T33.43 (no extism release after 1.30.0 pins wasmtime ≥ 48; checked on crates.io 2026-09-28) or on the creator's key, and the creator asked to fill the slots from `ideas.md`, excluding benchmarks and comparisons with other agents. Effect: three ideas move to P38 and leave `ideas.md`: the OpenAI Chat `ToolUseEnd` bug, the orphaned detached `bash` on quit and `adaptive_thinking` from models.dev. T38.3 (`adaptive_thinking`) went back to `ideas.md` the same day: models.dev `reasoning_options` has only `effort`, `toggle` and `budget_tokens` and no adaptive marker (https://models.dev/api.json and `packages/core/src/schema.ts` in sst/models.dev at `6947a51`, checked 2026-09-28), so the flag cannot be vendored without guessing. No decision changes.
 - A70 §3 P37, T37.38 — T37.8 built the timeline fold without the DT§4.3 tool summaries, the `ToolGroup` row and the compaction summary, and no card claimed them. Why: they are part of the approved design (A67) and the Swift views must not parse tool output. Effect: one card T37.38 after T37.8; P37 now has 39 cards T37.0–T37.38.
 - A71 §3 P37, T37.39 — T37.14 put session ownership in `cox-ffi` (it depends on cox-session, core, config, store, render, tools; lib + session + host = 499 lines against D11's 300) because `deps.rs` banned `anyhow` from `cox-app`'s resolved tree, stricter than D1's "depend on". Why: D11 and DT§4.2 keep the FFI a thin forwarder so logic is tested in Rust once. Effect: T37.39 narrows the rule to direct dependencies and moves the ownership into `cox-app`.
+- A72 §3 P37, T37.40–T37.43, `docs/design/desktop.md` §5.2, §9, §11 — spike T37.37 rejected Textual 0.5.0 (per-block views keep a drag in one block, copy gives plain text and HTML, no clamp API, one-document mode 5.5 s to first frame) and passed our TextKit 2 view on all four criteria (`research.md` §9.5.13). Why: T37.37's card makes the TextKit 2 view its own package with its own cards when Textual fails. Effect: four cards for `CoxTranscriptText`; T37.23 depends on them instead of T37.37. No decision changes.
 
 ## 7. Risk register
 

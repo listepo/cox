@@ -25,6 +25,10 @@
 - T37.19.2. `CapsuleStyle`
 - T37.19.3. `SegmentedStyle`
 - T37.19.4. `CoxToggleStyle` and `CoxSliderStyle`
+- T37.40. `CoxTranscriptText`: the TextKit 2 transcript view
+- T37.41. Cards as view-backed attachments
+- T37.42. Copy as Markdown and the one-block clamp
+- T37.43. Incremental text from `StyledDoc` spans
 - T37.20. `CoxUI` Atoms
 - T37.21. `CoxUI` Molecules
 - T37.22. Window shell: split view, sidebar, toolbar, inspector frame
@@ -39,4 +43,3 @@
 - T37.31. Onboarding and doctor checklist
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.37. Spike: the cross-block selection engine

@@ -451,7 +451,9 @@ Default window 1 440 × 900, minimum 900 × 600. A three-column
 
 Selection: text selection is enabled per block; "Copy as Markdown" on every
 block and on a multi-block selection made with ⇧-click in the gutter.
-Cross-block drag selection depends on the DT§9 benchmark outcome.
+Cross-block drag selection (on by default, `cross_block_selection = false`
+clamps it to one block) runs on our own TextKit 2 view, package
+`CoxTranscriptText`, chosen by spike T37.37 (`research.md` §9.5.13).
 
 ### 5.3 Composer
 
@@ -634,9 +636,9 @@ a guess: card T37.23 builds the transcript on `LazyVStack` with stable ids
 and a realized window (turns older than the last 30 collapse to one-line turn
 summaries until scrolled to), runs the DT§1 scroll and streaming budgets on
 the 10k-block fixture, and switches to the `NSTableView` host if it misses.
-Cross-block text selection, if the creator wants it (DT§11 Q7), needs a
-single TextKit 2 document (`NSTextView`) instead; that is a third option the
-same benchmark can include.
+Cross-block text selection (DT§11 Q7, on by default) needs a single TextKit 2
+document (`NSTextView`); spike T37.37 measured it within the scroll budget at
+2 000 and 10 000 blocks (`research.md` §9.5.13), so the benchmark includes it.
 
 ## 10. Trust boundaries
 
@@ -662,7 +664,8 @@ JavaScript bridge to the app.
    sessions without redesign.
 4. ~~**License and repo.**~~ Resolved 2026-09-28: this repository, `desktop/macos/`, under the repository's licence.
 5. ~~**Swift dependencies**~~ Resolved 2026-09-28: `research.md` §9.5 and A67;
-   cross-block selection engine decided by spike T37.37.
+   cross-block selection engine: our own TextKit 2 view (`CoxTranscriptText`),
+   decided by spike T37.37 (`research.md` §9.5.13); Textual was rejected.
 6. ~~**Concurrent processes on `cox.db`.**~~ Resolved 2026-09-28: one shared
    database (WAL and busy timeout already on, `cox-store/src/lib.rs:190`);
    one process drives a session under an OS file lock, others follow or fork
