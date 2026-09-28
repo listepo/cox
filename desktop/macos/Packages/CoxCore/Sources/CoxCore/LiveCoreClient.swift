@@ -40,6 +40,12 @@ final class LiveSession: SessionClient {
     try await handle.send(intent: CoxFFIBindings.Intent(intent)).map { LiveSession($0) }
   }
 
+  func complete(_ token: String, limit: UInt32) -> [CoxClient.Completion] {
+    handle.complete(token: token, limit: limit).map {
+      CoxClient.Completion(insert: $0.insert, detail: $0.detail)
+    }
+  }
+
   func close() { handle.close() }
 }
 
