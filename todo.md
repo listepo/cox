@@ -24,6 +24,8 @@
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.13. Transcript text size and line height from config and tokens
 - T37.23.14. Empty signed thinking items close like streamed thoughts
+- T37.23.15. Per-level transcript heading sizes
+- T37.23.16. Theme colours for syntax runs in edit cards
 - T37.25.1. Context window size and split in the token popover
 - T37.24.7. Composer status chips
 - T37.27.8. One app-local key monitor for the composer and the decision bar
@@ -31,6 +33,7 @@
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.7. Deleted files and created-file counts in the Changes tab
 - T37.29.8. Task kind in the Tasks tab
+- T37.30.5. Coloured page tiles in Settings
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`

@@ -30,6 +30,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.23.9 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.13 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.14 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.23.15 | todo | P3 | 2 | 0% | |
+| T37.23.16 | todo | P3 | 3 | 0% | |
 | T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27.8 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
@@ -37,6 +39,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.29.3 | todo | P2 | 4 | 0% | |
 | T37.29.7 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.8 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
+| T37.30.5 | todo | P3 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2767,6 +2770,18 @@ Depends: — · Size: ~60 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-a
 Goal: T39.2 keeps a tool call's signature as an empty signed `Thinking` item (Gemini over Chat). Since T37.23.10 a streamed thought is closed with `ThinkingDone`, but these empty items open a Timeline thinking block that never gets a duration; the desktop only hides it because its text is empty. Either the core closes them the same way or `Timeline` does not open a block for a signature-only item.
 Check: a cox-app test folding a signature-only thinking item leaves no open thinking block; the T39.2 chat-wire test still passes.
 
+#### T37.23.15 Per-level transcript heading sizes
+
+Depends: — · Size: ~60 · Files: `desktop/design/tokens/base.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A94): tokens `font.transcript.h1` (17 pt semibold) and `font.transcript.h4` (13 pt semibold) beside `font.transcript.h3`, documented in DESIGN.md's type table; T37.23.12's heading paragraphs take their size from the heading level as DT§5.9 maps it instead of one `h3` size.
+Check: the token build's own check; a CoxTranscriptText snapshot of every heading level in light and dark.
+
+#### T37.23.16 Theme colours for syntax runs in edit cards
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/…` (the `CodeRun` it sends), `crates/cox-ffi/src/types.rs` (mirror only), `desktop/macos/Packages/CoxTranscript/…`
+Goal (A95): a diff's `CodeRun` carries the session theme's colour for its span in the theme's light and dark variants, taken from `cox-render`'s highlighter; the edit card draws the one matching the window's effective macOS appearance and redraws when the appearance changes, without a new fold. Runs without a colour stay `.plain`.
+Check: a cox-app test that a Rust edit's keyword run carries both colours; CoxTranscript light/dark snapshots of that edit card; the three Swift fixtures re-recorded.
+
 #### T37.25.1 Context window size and split in the token popover
 
 T37.25's popover shows only "Context · 76.4k" for a live session: cox-app never learns the model's context window or the system/tools/instructions/history split. `cox_core::context::breakdown` exists but is dead code, and no event carries it.
@@ -2808,6 +2823,12 @@ Done means: a `deleted` case with its glyph and snapshot in CoxUI, the mapping i
 Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…/TaskRows.swift`
 Goal: T37.29.6 gave `TaskRow` a `kind` (subagent or background shell); `TasksTab.Item` shows it as a glyph and a label ("Open transcript" for a subagent, "Open output" for a shell).
 Check: TasksTab snapshots with one row of each kind.
+
+#### T37.30.5 Coloured page tiles in Settings
+
+Depends: — · Size: ~80 · Files: `desktop/design/tokens/color.*.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxUI/…` (Settings sidebar)
+Goal (A96): `tile.settings.<page>.top/bottom/glyph` tokens mapped to macOS system colours (e.g. `systemBlue`, `systemGray`), with high-contrast variants; the Settings sidebar draws each page's symbol on its coloured tile as in the mockup instead of the plain symbol, and DESIGN.md drops the "need colour tokens that do not exist yet" note.
+Check: the token build's own check; CoxUI snapshots of the Settings sidebar in light, dark and high contrast.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
@@ -3011,6 +3032,9 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A91 T37.23.10 — streamed reasoning becomes its own `Thinking` item and a new `Event::ThinkingDone { item, duration_ms }` carries how long the model thought, by the creator (2026-09-28; chosen over `ItemDone.duration_ms`). Why: the desktop's "Thought for 12 s" header needs the timing, and live reasoning keyed to the reply item was dropped by `Timeline`.
 - A92 T37.23.12 — `cox-render`'s `StyledDoc` sends a block's kind, level and marker apart from its text, by the creator (2026-09-28). Why: the desktop hides `#` markers and draws a real quote bar and list markers instead of printing the source characters; a DT-3 view-model change the TUI can ignore.
 - A93 T37.23.13 — `[desktop.transcript]` gets `text_size` and `line_height`, and the transcript applies the token line heights, by the creator (2026-09-28). Why: a text size set once in config, not only by ⌘+/⌘−, and the line spacing the design tokens specify.
+- A94 T37.23.15 — tokens `font.transcript.h1` 17 pt and `font.transcript.h4` 13 pt semibold beside `font.transcript.h3`, by the creator (2026-09-28). Why: headings of different levels read as different levels, as DT§5.9 sizes them.
+- A95 T37.23.16 — syntax runs in edit cards take the session theme's colours, the light or dark variant chosen by the macOS appearance, by the creator (2026-09-28). Why: the TUI and the app highlight code the same way without a second palette of syntax tokens to keep in step.
+- A96 T37.30.5 — `tile.settings.*` tokens mapped to macOS system colours for the Settings page tiles, by the creator (2026-09-28). Why: the mockup's coloured tiles, with colours that follow the system's light, dark and high-contrast variants.
 
 ## 7. Risk register
 
