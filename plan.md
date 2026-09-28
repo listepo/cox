@@ -29,9 +29,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.20.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.20.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21 | todo | P0 | 4 | 0% | |
+| T37.21 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.22 | todo | P0 | 3 | 0% | |
 | T37.23 | todo | P0 | 5 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
@@ -1091,18 +1089,6 @@ Check: a test expands and collapses a card and the range and frame of the next b
 Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
 Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
 Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
-
-#### T37.20.1 `Spinner` and `ProgressRing`
-
-Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
-Goal: the DS§6.2 indeterminate spinner and `ProgressRing(fraction)`, with the Reduce Motion fallback resolved in `Appearance`.
-Check: snapshot per variant × light/dark × Solid/Frosted; under Reduce Motion the spinner does not rotate.
-
-#### T37.20.2 `Sparkline` and `StackedBar`
-
-Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
-Goal: the token meter's data graphics: `Sparkline(samples)` (tint, gradient fill) and `StackedBar(segments)` (segment colours from tokens).
-Check: snapshots for empty, one-sample and full series and for a bar of each segment mix × light/dark.
 
 #### T37.21 `CoxUI` Molecules
 

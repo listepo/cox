@@ -3504,3 +3504,31 @@ Deviations: Markdown goes under its own pasteboard type next to plain text in `.
 Check: `swift test --no-parallel` 11/11 (5 new in `SelectionTests.swift`, real `NSEvent` drags in an offscreen window, a private named `NSPasteboard`): `dragAcrossThreeBlocksCopiesTheirMarkdownInOrder`, `withTheSettingOffTheDragStaysInItsFirstBlockBothWays`; both clamp tests fail with the clamp disabled; `swift build --build-tests` no warnings; `swift-format lint --strict` and `swiftlint --strict` clean (scratch manifests without the plugin). Commit 8ba9d64.
 
 Not done: the "Copy as Markdown" context-menu item and ⇧-click gutter selection (DT§5.2) are not in this card. Mid-stream, `Block.assistant.text` can lag because `docTail` updates only the doc, so a whole-reply copy while streaming may return an older source (fix belongs in `SessionStore`). Partial-reply copy assumes the doc-block layout `TranscriptText.run` produces now.
+
+#### T37.20.1 `Spinner` and `ProgressRing`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the DS§6.2 indeterminate spinner and `ProgressRing(fraction)`, with the Reduce Motion fallback resolved in `Appearance`.
+Check: snapshot per variant × light/dark × Solid/Frosted; under Reduce Motion the spinner does not rotate.
+Status: done 2026-09-28
+Result: `Atoms/Spinner.swift` — the mockup's `.spin`: a `fill.secondary` ring with an `accent` quarter arc, turned by a new `coxSpin(period:)` modifier in `Foundations/Appearance.swift` that holds it still under Reduce Motion (Reduce Motion stays read only in Foundations). `Atoms/ProgressRing.swift` — `ProgressRing(fraction)`, the mockup's `.ring`: an `accent` arc clockwise from twelve o'clock over `fill.secondary`; the fraction clamps to 0…1 (NaN as 0) and VoiceOver reads a percent. Headers name their DS§6.2 rows; `#Preview`s through `PreviewMatrix`; fixtures in `Previews/PreviewState+Meter.swift`; tests `ProgressAtomTests.swift` (16 snapshots).
+
+Deviations: the spinner snapshot is taken with Reduce Motion on (the still pose), so the image does not depend on first-frame timing. Named private constants: spinner 12 pt, line 2 pt, arc 0.25; ring 14 pt, line 3 pt; spin period 1 s.
+
+Check: recorded once, two runs pass without re-recording (5 tests); `spinnerTurns` sees more than one distinct frame, `spinnerHoldsStillUnderReduceMotion` exactly one; `swiftlint --strict` and `swift-format lint --strict` clean. Commit 282f6e3.
+
+Not done: nothing.
+
+#### T37.20.2 `Sparkline` and `StackedBar`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the token meter's data graphics: `Sparkline(samples)` (tint, gradient fill) and `StackedBar(segments)` (segment colours from tokens).
+Check: snapshots for empty, one-sample and full series and for a bar of each segment mix × light/dark.
+Status: done 2026-09-28
+Result: `Atoms/Sparkline.swift` — `Sparkline(samples, tint:)`: a tinted line over a fill fading to nothing (tint defaults to `meter.received`); the largest sample at the top, negative or non-finite samples drawn as zero, one sample a flat line; fills the caller's frame; hidden from VoiceOver (the meter reads its numbers, DS§8). `Atoms/StackedBar.swift` — `StackedBar(segments)`: one segment per context part (system, tools, instruction files, history) in `context.*` colours over a `fill.secondary` capsule; an overrunning share is cut; VoiceOver reads each part with its share. Fixtures and preview wrappers in `PreviewState+Meter.swift`; tests `MeterAtomTests.swift` (32 snapshots: empty, one-sample, full and sent-tint series; empty, history-only, the mockup's turn and full bars; × light/dark × Solid/Frosted).
+
+Deviations: snapshots also cover Solid/Frosted. Named private constants: line 1.5 pt, fill opacity 0.35, insets 2 pt top and 1 pt bottom, bar height 12.
+
+Check: recorded once, two runs pass (6 tests); both linters clean. The whole CoxUI suite (48 tests, 11 suites) failed once on the older timing test `SegmentedTests.reduceMotionCrossFadesTheSelection` (missed its mid-fade frame under load) and passed alone and in the next two full runs. Commit ec3f05e.
+
+Not done: nothing.
