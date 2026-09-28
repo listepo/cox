@@ -34,7 +34,9 @@ public enum BlockKind: Equatable, Sendable {
     // swiftlint:disable:next identifier_name
     by: DecidedBy?)
   case question(call: String, question: String, options: [String], answer: String?)
-  case task(task: String, label: String, tier: Tier, done: Bool, costUsd: Double, exitCode: Int32?)
+  case task(
+    task: String, label: String, tier: Tier, done: Bool, costUsd: Double, exitCode: Int32?,
+    kind: TaskKind)
   case compaction(
     beforeTokens: UInt32, afterTokens: UInt32, reason: CompactReason, summary: String?)
   case checkpoint(files: [String])
@@ -67,6 +69,10 @@ public enum Risk: String, Equatable, Sendable, Decodable {
 }
 
 public enum Tier: String, Equatable, Sendable, Decodable { case cheap, code, think }
+
+/// What a task runs (`cox_app::TaskKind`): a subagent opens its transcript, a background shell
+/// its output.
+public enum TaskKind: String, Equatable, Sendable, Decodable { case agent, shell }
 
 public enum Level: String, Equatable, Sendable, Decodable { case info, warn, budget, security }
 

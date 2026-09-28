@@ -17,7 +17,8 @@ use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, Dropped, FileChange, Icon, InboxItem,
     Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need, Project, SearchHit,
-    SessionEntry, Setting, SettingKind, SettingsView, Tally, TurnUsage, UsageView,
+    SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnUsage,
+    UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -202,6 +203,7 @@ pub enum BlockKind {
         done: bool,
         cost_usd: f64,
         exit_code: Option<i32>,
+        kind: TaskKind,
     },
     Compaction {
         before_tokens: u32,
@@ -233,6 +235,18 @@ pub enum ToolState {
     Running,
     Done,
     Failed,
+}
+
+#[uniffi::remote(Enum)]
+pub enum TaskKind {
+    Agent,
+    Shell,
+}
+
+#[uniffi::remote(Enum)]
+pub enum TaskTarget {
+    Transcript { session: SessionId },
+    Output { archive: ArchiveId },
 }
 
 #[uniffi::remote(Enum)]

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use cox_core::{History, Session};
-use cox_protocol::ids::SessionId;
+use cox_protocol::ids::{SessionId, TaskId};
 use cox_protocol::traits::Store as _;
 use cox_protocol::types::{Event, Submission};
 use cox_session::SessionSpec;
@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 
 use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
+use crate::tasks::{self, TaskTarget};
 use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
 use crate::{TimelinePatch, dispatch};
 
@@ -142,6 +143,21 @@ impl LiveSession {
         // Checkpoint paths are confined, so canonical.
         let cwd = std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone());
         Ok(changes::build(&self.snapshot(), &rows, &cwd, worktree))
+    }
+
+    /// What a Tasks-tab click on `task` opens (T37.29.6): read from this
+    /// session's rollout and its children in the store.
+    pub fn open_task(&self, task: TaskId) -> Result<Option<TaskTarget>, AppError> {
+        let store = self.app.workspace().store();
+        let events = store.rollout_read(&self.id())?;
+        let children = store.children(&self.id())?;
+        Ok(tasks::open(&events, task, &children, |child| {
+            // A child whose rollout cannot be read is paired with no task.
+            store
+                .rollout_read(child)
+                .ok()
+                .and_then(|e| tasks::first_prompt(&e))
+        }))
     }
 
     /// `/` commands and `@` files for the composer's token.

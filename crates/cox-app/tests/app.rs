@@ -12,6 +12,8 @@ use cox_app::TimelinePatch;
 use cox_app::app::{App, AppError, Host};
 use cox_app::live::LiveSession;
 use cox_app::{BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Need};
+use cox_app::{TaskKind, TaskTarget, tasks};
+use cox_protocol::traits::{Archive as _, Store as _};
 use cox_protocol::types::{Decision, StopReason};
 
 /// Reads `notes.md`, then replies in markdown.
@@ -51,6 +53,23 @@ tool_calls = [
   { name = "edit", input = { path = "notes.md", old = "hello", new = "bye" } },
   { name = "write", input = { path = "new.rs", content = "fn main() {}\n" } },
 ]
+
+[[turn]]
+text = "Done."
+"#;
+
+/// A foreground subagent, then a background shell.
+const AGENT_AND_SHELL: &str = r#"
+[[turn]]
+text = "Delegating."
+tool_calls = [{ name = "agent", input = { task = "find x", preset = "explore" } }]
+
+[[turn]]
+text = "result: x"
+
+[[turn]]
+text = "Building."
+tool_calls = [{ name = "bash", input = { command = "echo built", background = true } }]
 
 [[turn]]
 text = "Done."
@@ -363,4 +382,51 @@ async fn changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to() 
     assert!(checkpoint.label.ends_with(" and 1 more"), "{checkpoint:?}");
     assert!(checkpoint.time.starts_with("20"), "{checkpoint:?}");
     assert_eq!(changes.worktree, None, "a tempdir is no linked worktree");
+}
+
+#[tokio::test]
+async fn open_task_finds_the_subagents_session_and_the_shells_output() {
+    let dir = scratch(Some(AGENT_AND_SHELL));
+    std::fs::create_dir_all(dir.path().join("user/.cox")).expect("home");
+    let config = "[permissions]\nallow = [\"bash\"]\n";
+    std::fs::write(dir.path().join("user/.cox/config.toml"), config).expect("config");
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session
+        .send(send("delegate, then build"))
+        .await
+        .expect("send");
+    let tasks = loop {
+        let tasks: Vec<_> = session
+            .snapshot()
+            .into_iter()
+            .filter_map(|b| match b.kind {
+                BlockKind::Task {
+                    task, done, kind, ..
+                } => Some((task, done, kind)),
+                _ => None,
+            })
+            .collect();
+        if tasks.len() == 2 && tasks.iter().all(|t| t.1) {
+            break tasks;
+        }
+        session.next_patches().await.expect("the stream stays open");
+    };
+    let [(agent, _, TaskKind::Agent), (shell, _, TaskKind::Shell)] = tasks[..] else {
+        panic!("a subagent, then a shell: {tasks:?}");
+    };
+
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let Some(TaskTarget::Transcript { session: child }) = session.open_task(agent).expect("agent")
+    else {
+        panic!("a subagent opens its session");
+    };
+    assert_ne!(child, session.id());
+    let rollout = store.rollout_read(&child).expect("child rollout");
+    assert_eq!(tasks::first_prompt(&rollout).as_deref(), Some("find x"));
+
+    let Some(TaskTarget::Output { archive }) = session.open_task(shell).expect("shell") else {
+        panic!("a finished shell opens its output");
+    };
+    let output = store.get(&archive).await.expect("archived output");
+    assert!(String::from_utf8_lossy(&output).contains("built"));
 }

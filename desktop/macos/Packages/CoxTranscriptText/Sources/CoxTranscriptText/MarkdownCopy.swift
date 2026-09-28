@@ -95,7 +95,7 @@ enum MarkdownCopy {
       .approval(_, _, let summary, _, _, _, _):
       return summary
     case .question(_, let question, _, _): return question
-    case .task(_, let label, _, _, _, _): return label
+    case .task(_, let label, _, _, _, _, _): return label
     default: return nil
     }
   }

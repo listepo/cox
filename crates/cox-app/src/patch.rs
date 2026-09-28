@@ -15,6 +15,7 @@ use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 
 use crate::summary::Icon;
+use crate::tasks::TaskKind;
 use crate::usage::UsageView;
 
 /// How many trailing lines of output a running `Tool` block keeps.
@@ -101,6 +102,9 @@ pub enum BlockKind {
         done: bool,
         cost_usd: f64,
         exit_code: Option<i32>,
+        /// Which the Tasks tab labels it; a click opens a transcript or an
+        /// output (T37.29.6).
+        kind: TaskKind,
     },
     Compaction {
         before_tokens: u32,

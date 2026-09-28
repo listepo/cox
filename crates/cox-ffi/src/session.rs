@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use cox_app::live::LiveSession;
-use cox_app::{Block, Changes, Completion, Intent, TimelinePatch};
-use cox_protocol::ids::SessionId;
+use cox_app::{Block, Changes, Completion, Intent, TaskTarget, TimelinePatch};
+use cox_protocol::ids::{SessionId, TaskId};
 
 use crate::{AppError, on_runtime};
 
@@ -59,6 +59,12 @@ impl SessionHandle {
     /// What the inspector's Changes tab lists (T37.29.1).
     pub async fn changes(self: Arc<Self>) -> Result<Changes, AppError> {
         Ok(on_runtime(async move { self.live.changes().await }).await??)
+    }
+
+    /// What a Tasks-tab click opens (T37.29.6): a subagent's session or a
+    /// finished shell's output; `None` while there is nothing to open.
+    pub fn open_task(&self, task: TaskId) -> Result<Option<TaskTarget>, AppError> {
+        Ok(self.live.open_task(task)?)
     }
 
     /// `/` commands and `@` files for the composer's token.

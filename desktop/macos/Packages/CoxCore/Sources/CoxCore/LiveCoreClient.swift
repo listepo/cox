@@ -56,6 +56,10 @@ final class LiveSession: SessionClient {
     CoxClient.Changes(try await handle.changes())
   }
 
+  func openTask(_ task: String) throws -> CoxClient.TaskTarget? {
+    try handle.openTask(task: task).map { CoxClient.TaskTarget($0) }
+  }
+
   func close() { handle.close() }
 }
 

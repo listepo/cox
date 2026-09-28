@@ -36,10 +36,10 @@ extension CoxClient.BlockKind {
         by: decidedBy.map { CoxClient.DecidedBy($0) })
     case .question(let call, let question, let options, let answer):
       self = .question(call: call, question: question, options: options, answer: answer)
-    case .task(let task, let label, let tier, let done, let costUsd, let exitCode):
+    case .task(let task, let label, let tier, let done, let costUsd, let exitCode, let kind):
       self = .task(
         task: task, label: label, tier: .init(tier), done: done, costUsd: costUsd,
-        exitCode: exitCode)
+        exitCode: exitCode, kind: .init(kind))
     case .compaction(let before, let after, let reason, let summary):
       self = .compaction(
         beforeTokens: before, afterTokens: after, reason: .init(reason), summary: summary)

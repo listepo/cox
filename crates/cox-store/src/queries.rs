@@ -2,7 +2,8 @@
 //! tier and job, plus top tools by archived bytes. Raw SQL lives here —
 //! `cox-store` is the only crate that contains SQL (D9); callers group
 //! nothing themselves. Also the session tree `/sessions` and `cox sessions`
-//! nest forks and handoffs by (T26.3), over Diesel's typed DSL.
+//! nest forks and handoffs by (T26.3) and one session's children
+//! (T37.29.6), over Diesel's typed DSL.
 
 use std::collections::{HashMap, HashSet};
 
@@ -295,6 +296,27 @@ impl Store {
         }
         Ok(out)
     }
+
+    /// Every session whose parent is `parent`, oldest first: its forks,
+    /// handoffs and subagents (T37.29.6).
+    pub fn children(&self, parent: &SessionId) -> Result<Vec<SessionId>, StoreError> {
+        let ids: Vec<String> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            sessions::table
+                .filter(sessions::parent_id.eq(parent.to_string()))
+                .select(sessions::id)
+                .order_by((sessions::created_at.asc(), sessions::id.asc()))
+                .load(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        ids.iter()
+            .map(|id| {
+                id.parse().map_err(|_| StoreError::Corrupt {
+                    path: self.home.join("cox.db"),
+                })
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -375,6 +397,20 @@ mod tests {
             page.iter().all(|r| r.depth == 0),
             "a parent outside the page makes its child a root: {page:?}"
         );
+    }
+
+    /// T37.29.6: a session's direct children only, oldest first.
+    #[test]
+    fn children_lists_direct_children_oldest_first() {
+        let home = tempfile::tempdir().expect("home");
+        let store = Store::open(home.path()).expect("store");
+        let root = create(&store, None);
+        let first = create(&store, Some(root));
+        create(&store, Some(first));
+        create(&store, None);
+        let second = create(&store, Some(root));
+
+        assert_eq!(store.children(&root).expect("children"), [first, second]);
     }
 
     /// T28.2: the project aggregate is one `GROUP BY` row whose totals equal
