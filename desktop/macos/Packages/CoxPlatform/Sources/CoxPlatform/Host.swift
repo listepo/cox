@@ -37,6 +37,10 @@ public struct MacHost: PlatformHost {
     }
   }
 
+  public func badge(_ count: Int) {
+    Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+  }
+
   public func open(_ url: String) {
     guard let url = Self.openable(url) else { return }
     Task { @MainActor in _ = NSWorkspace.shared.open(url) }

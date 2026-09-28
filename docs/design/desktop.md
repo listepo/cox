@@ -285,8 +285,9 @@ Rules:
   in-memory store, never the real Keychain (A49).
 - The host (T37.30.2): CoxPlatform's `MacHost` implements CoxClient's
   `PlatformHost` — `secret` over `KeychainSecretStore`, `notify` through
-  `UNUserNotificationCenter`, `open` through `NSWorkspace` for `http(s)`
-  links only — and CoxCore's `HostBridge` adapts it to the generated
+  `UNUserNotificationCenter`, `badge` when the count falls with no new item
+  (an approval or question answered, its session closed; T37.27), `open`
+  through `NSWorkspace` for `http(s)` links only — and CoxCore's `HostBridge` adapts it to the generated
   `AppHost`, so CoxPlatform tests without the XCFramework and CoxCore never
   links AppKit. The app passes `HostBridge(MacHost())` to `LiveCoreClient`.
 

@@ -15,6 +15,8 @@ public final class HostBridge: AppHost {
     host.notify(HostNote(CoxClient.InboxItem(item), badge: Int(badge)))
   }
 
+  public func badge(badge: UInt32) { host.badge(Int(badge)) }
+
   public func openUrl(url: String) { host.open(url) }
 
   public func secret(section: String) -> String? { host.secret(for: section) }

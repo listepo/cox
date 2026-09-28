@@ -14,6 +14,7 @@ final class NoteHost: PlatformHost {
 
   func secret(for section: String) -> String? { nil }
   func notify(_ note: HostNote) { notes.withLock { $0.append(note) } }
+  func badge(_ count: Int) {}
   func open(_ url: String) {}
 }
 
