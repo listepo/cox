@@ -18,8 +18,10 @@ use crate::Warning;
 /// A resolved environment, sorted so callers and tests see a stable order.
 pub type Env = BTreeMap<OsString, OsString>;
 
-/// DT§4.8: long enough for a slow rc file, short enough not to stall launch.
-pub const TIMEOUT: Duration = Duration::from_secs(3);
+/// DT§4.8: an interactive zsh with a typical rc file took ~2 s on a loaded
+/// machine, so 3 s fell back too often; 10 s (VS Code's cap) is only an upper
+/// bound, a fast shell still answers at once.
+pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[cfg(target_os = "macos")]
 const DEFAULT_SHELL: &str = "/bin/zsh";
