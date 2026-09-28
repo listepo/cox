@@ -46,7 +46,7 @@ extension Variant {
   private func checkWindow(
     _ screen: some View, _ variant: Variant, test: String = #function
   ) throws {
-    try assertCoxWindowSnapshot(screen, variant, named: variant.name, testName: test)
+    try assertCoxWindowSnapshot(screen, variant, testName: test)
   }
 }
 

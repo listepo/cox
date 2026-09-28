@@ -173,6 +173,10 @@ names map one-to-one:
 | insp | `sidebar.right` | comment | `text.bubble` |
 | sparkle | `sparkle` | bolt | `bolt` |
 | branch | `arrow.triangle.branch` | stop | `stop.fill` |
+| gear | `gearshape` | shield | `shield` |
+| lock | `lock` | dollar | `dollarsign.circle` |
+| plug | `powerplug` | cpu | `cpu` |
+| — (Settings › Advanced) | `slider.horizontal.3` | | |
 
 ## 4. Layout
 
@@ -286,6 +290,7 @@ component.
 | `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
 | `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
 | `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel | `.group .gr` |
+| `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent | `.sel`, Add key |
 
 ### 6.4 Organisms
 
@@ -303,12 +308,21 @@ component.
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
 | `AppearancePopover(state:, send:)` | title and KeyCap, MaterialPicker, LabeledSlider ×3 (transparency; blur, or reflection for Glossy; Depth), LabeledToggle (tint), a note in footnote; readable `surface.popover` glass at e4. Solid disables transparency and blur; Reduce Transparency disables all but Depth and the note says why. Reports one intent per `[desktop.appearance]` key; the window draws from the same state | `.appear` |
 | `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot | `.insp` |
+| `SettingsSidebar(pages:, selection:, userFile:, projectFile:, select:)` | ShellPane(.sidebar); a plain `InspectorRow` per `SettingsPage` (General … Advanced, DT§5.7, with its §3.7 symbol), the selected one lifted; footer: each config file cut in the middle with its layer Badge | `.set-side` |
+| `SettingsGroupBox(title, content:)` | SectionHeader over the rows on `fill.primary` at `radius.xl`, a hairline between rows | `.gtitle`, `.group` |
 
 ### 6.5 The glass main screen, decomposed
 
 `MainScreen` = `ShellPane(.window)` holding `Sidebar` + `SessionToolbar` + `ShellPane(.column)`
 (`TranscriptView` + `Composer`) + `Inspector`, with `AppearancePopover` or `TokenPopover` as popovers.
 It holds no styling of its own; it takes `MainScreenState` and reports `MainScreenIntent`.
+
+`SettingsScreen` = `ShellPane(.window)` holding `SettingsSidebar` + `ShellPane(.column)` with one
+`SettingsGroupBox` per config table of the selected page: the provider's `SettingField` key row, then a
+`SettingRow` per setting (LabeledToggle, LabeledSlider, CoxSegmented or SettingField). It takes
+`SettingsScreenState` and reports `SettingsScreenIntent`; `CoxModel`'s `SettingsStore.tables(in:)` holds
+the titles, details and controls the app copies into that state. The mockup's coloured page tiles need
+colour tokens that do not exist yet, so pages show the plain symbol.
 
 ## 7. Data shown in the token meter
 

@@ -121,15 +121,16 @@ func assertCoxSnapshot(
     fileID: fileID, file: filePath, testName: testName, line: line)
 }
 
-/// Asserts a whole window at 1× — its structure is the check, and the organisms' own snapshots
-/// hold the detail at 2× — so the committed images stay a few hundred kilobytes each.
+/// Asserts `screen` at `size` in `variant` as a whole window at 1× — its structure is the check,
+/// and the organisms' own snapshots hold the detail at 2× — so the committed images stay a few
+/// hundred kilobytes each.
 @MainActor
 func assertCoxWindowSnapshot(
-  _ screen: some View, _ variant: Variant, reduceTransparency: Bool = false,
-  named name: String, testName: String = #function, filePath: StaticString = #filePath,
-  fileID: StaticString = #fileID, line: UInt = #line
+  _ screen: some View, _ variant: Variant, size: CGSize = PreviewState.window,
+  reduceTransparency: Bool = false, named name: String? = nil, testName: String = #function,
+  filePath: StaticString = #filePath, fileID: StaticString = #fileID, line: UInt = #line
 ) throws {
-  let sample = screen.frame(width: PreviewState.window.width, height: PreviewState.window.height)
+  let sample = screen.frame(width: size.width, height: size.height)
   let full = try SnapshotHost(sample, variant, reduceTransparency: reduceTransparency).bitmap()
   let rep = try #require(
     NSBitmapImageRep(
@@ -144,6 +145,7 @@ func assertCoxWindowSnapshot(
   let image = NSImage(size: rep.size)
   image.addRepresentation(rep)
   assertSnapshot(
-    of: image, as: .image(precision: 0.995, perceptualPrecision: 0.98), named: name,
+    of: image, as: .image(precision: 0.995, perceptualPrecision: 0.98),
+    named: name ?? variant.name,
     fileID: fileID, file: filePath, testName: testName, line: line)
 }

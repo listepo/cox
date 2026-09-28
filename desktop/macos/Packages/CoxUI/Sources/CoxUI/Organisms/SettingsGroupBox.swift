@@ -1,0 +1,42 @@
+// `SettingsGroupBox` (DS§6.4 row `SettingsGroupBox`, the mockup's Settings `.gtitle` over a
+// `.group`): the settings of one config table as a card — a header naming the table, then the
+// rows with a hairline between each two. Separate so every Settings page draws its boxes the
+// same way, whatever rows they hold.
+
+import SwiftUI
+
+/// A `SectionHeader` over `content`'s rows on a `fill.primary` card of `Radius.xl`, each row
+/// after the first under a hairline.
+struct SettingsGroupBox<Content: View>: View {
+  let title: String
+  let content: Content
+
+  init(_ title: String, @ViewBuilder content: () -> Content) {
+    self.title = title
+    self.content = content()
+  }
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+    VStack(alignment: .leading, spacing: Space.s) {
+      // Level with the rows' text inside the card.
+      SectionHeader(title).padding(.horizontal, Space.xs)
+      Group(subviews: content) { rows in
+        VStack(spacing: 0) {
+          ForEach(rows) { row in row.hairline(row.id == rows.first?.id ? [] : .top) }
+        }
+      }
+      .background(Color(.fillPrimary), in: shape)
+      .clipShape(shape)
+    }
+  }
+}
+
+#Preview("rows") {
+  PreviewMatrix {
+    SettingsGroupBox(PreviewState.boxTitle) {
+      SettingRowSample.control
+      SettingRowSample.readOnly
+    }
+  }
+}
