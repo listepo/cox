@@ -91,11 +91,17 @@ private struct RowSelection: ViewModifier {
   }
 }
 
-/// A row's plain symbol, in the row's text colour.
+/// A row's plain symbol, in the row's text colour, centred in a column one body em wide (the
+/// mockup's 13 pt `.fr` icon box), so every label starts at the same x whatever the symbol's
+/// width: `doc.text` is narrower than `pencil`, `terminal` than `person.2`.
 struct SymbolGlyph: View {
   let symbol: String
+  @Environment(\.coxAppearance) private var appearance
 
-  var body: some View { Image(systemName: symbol).symbolStyle(.body) }
+  var body: some View {
+    Image(systemName: symbol).symbolStyle(.body)
+      .frame(width: FontToken.body.size * appearance.textScale)
+  }
 }
 
 /// An action's glyph as a bare button, named by its tooltip (DS§8); a line high, so showing

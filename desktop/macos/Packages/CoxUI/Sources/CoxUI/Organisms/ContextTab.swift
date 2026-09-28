@@ -117,7 +117,8 @@ public struct ContextTab: View {
         row(Color(.fillSecondary), "Free", state.free, text: Color(.textSecondary))
       }
     }
-    .textStyle(.footnote, tabularDigits: true)
+    // The mockup's `.legend` is 12 pt, a size up from a footnote.
+    .textStyle(.caption, tabularDigits: true)
   }
 
   private func row(_ swatch: Color, _ label: String, _ tokens: String, text: Color) -> some View {
