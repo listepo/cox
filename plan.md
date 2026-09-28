@@ -38,7 +38,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T40.10 | todo | P3 | 2 | 0% | |
 | T41.9 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T51.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T51.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T51.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
@@ -59,6 +58,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T51.19 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T51.20 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T51.21 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.22 | todo | P2 | 2 | 0% | |
 | T52.1 | todo | P2 | 2 | 0% | |
 | T52.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T52.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
@@ -1471,12 +1471,6 @@ Every card in this phase keeps the P37 rules (business logic in `cox-app`, `cox-
 - a Swift card that draws an M2 screen compares it with its mockup by `npm run diff` in `desktop/design`;
 - a new dependency is named in its card and gets its §1.1 and `toolchain.md` rows in the same commit.
 
-#### T51.1 Dark glass: mock the dark glass surfaces and give them token values
-
-Depends: — · Size: ~150 · Files: `desktop/design/mockups/mockups.html`, `desktop/design/tokens/color.dark.json`, `desktop/design/DESIGN.md` (generated CoxUI tokens and `color.dark-hc.json` from `just desktop-tokens` and `high-contrast.mjs` do not count)
-Goal: the glass CSS in the mockups (`.glass .window`, `.sidebar`, `.filter`, `.row.act`, the top-edge highlight) is written for light only — white fills over a dark wallpaper. Add `.dark.glass` rules and the screens `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy` (same layout as 28/29); take the dark glass fill, border and highlight values from those renders into `color.dark.json` beside the light ones (the dark highlight follows A109's `darkHighlight` setting, the High Contrast variant follows A89/A100's rule through `high-contrast.mjs`); DESIGN.md §3.5 lists them. The rendered screens go to the creator for approval before the token values are final.
-Check: `desktop/design/mockups/render.sh 31-main-glass-dark-frosted 32-main-glass-dark-glossy` renders both; `just desktop-tokens` and `npm test` (in `desktop/design`) pass; CoxUI dark-glass snapshots re-recorded on purpose (`swift test --package-path desktop/macos/Packages/CoxUI`); DS§8 contrast holds for text on the dark glass (the contrast test in `desktop/design` passes).
-
 #### T51.2 One sandbox argv for `sh -c` commands and interactive programs
 
 Depends: — · Size: ~70 · Files: `crates/cox-sandbox/src/sandbox/mod.rs`
@@ -1606,6 +1600,12 @@ Every card keeps the P51 rules, and:
 - an external agent's usage is its own billing: no `usage` row is invented for it, and the cost pill shows "—" as the mockup does;
 - a remote session never sends API keys or the Keychain's secrets over the wire and never forwards the ssh agent;
 - plugin widgets reach the screen only through `cox_sanitize::sanitize` and PL§8's limits, as in the TUI.
+
+#### T51.22 CoxUI draws glass from the `glass.*` tokens
+
+Depends: T51.1 · Size: ~60 · Files: CoxUI elevation/material code, its snapshot tests, `desktop/design/DESIGN.md` §3.5
+Goal: T51.1 gave glass its own tokens (`glass.fill`, `glass.border`, `glass.highlight`, light, dark and High Contrast), approved by the creator on 2026-09-29, but CoxUI still draws the dark top-edge highlight at the light 0.95. CoxUI's glass surfaces read the generated `glass.*` tokens, so the dark glass in the app matches screens 31/32.
+Check: `swift test --package-path desktop/macos/Packages/CoxUI` passes with the dark-glass snapshots re-recorded on purpose and compared against renders 31/32; no colour literal outside the token files.
 
 #### T52.1 ACP host design: launch table for Claude Code, Codex, Gemini CLI and Cursor
 

@@ -7806,3 +7806,17 @@ Check (2026-09-29):
 - `cargo fmt --check`: clean.
 
 Not done: none.
+
+#### T51.1 Dark glass: mock the dark glass surfaces and give them token values
+
+Depends: — · Size: ~150 · Files: `desktop/design/mockups/mockups.html`, `desktop/design/tokens/color.dark.json`, `desktop/design/DESIGN.md` (generated CoxUI tokens and `color.dark-hc.json` from `just desktop-tokens` and `high-contrast.mjs` do not count)
+Goal: the glass CSS in the mockups (`.glass .window`, `.sidebar`, `.filter`, `.row.act`, the top-edge highlight) is written for light only — white fills over a dark wallpaper. Add `.dark.glass` rules and the screens `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy` (same layout as 28/29); take the dark glass fill, border and highlight values from those renders into `color.dark.json` beside the light ones (the dark highlight follows A109's `darkHighlight` setting, the High Contrast variant follows A89/A100's rule through `high-contrast.mjs`); DESIGN.md §3.5 lists them. The rendered screens go to the creator for approval before the token values are final.
+Check: `desktop/design/mockups/render.sh 31-main-glass-dark-frosted 32-main-glass-dark-glossy` renders both; `just desktop-tokens` and `npm test` (in `desktop/design`) pass; CoxUI dark-glass snapshots re-recorded on purpose (`swift test --package-path desktop/macos/Packages/CoxUI`); DS§8 contrast holds for text on the dark glass (the contrast test in `desktop/design` passes).
+Status: done 2026-09-29
+Result: the mockups gain `.dark.glass` rules and screens `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy` (same layout and wallpaper as 28/29): a cool near-black tint that lets the wallpaper through, white rims, the specular sweep, and no control highlight (A109 default `none`). A new colour group `glass.fill`/`glass.border`/`glass.highlight`: light `#fff` 0.34/0.75/0.95 (from screen 28), dark `#14141a` 0.34, `#fff` 0.16, `#fff` 0.22; the dark CSS reads them through `var(--c-glass-*)`. High Contrast: fill keeps a quarter of its transparency (alpha 0.835), border is solid (≥3:1), highlight unchanged. DESIGN.md §3.5 mirrors the values with contrast figures (over opaque `surface.window`: primary 15.3:1, secondary 6.7:1, selected subtitle 5.4:1, filter prompt 7.1:1); §3.1 gains a glass row. The creator approved the renders on 2026-09-29.
+
+Deviations: `color.light.json`, `high-contrast.mjs` and `mockups/README.md` also changed (the token build needs a light value and an HC rule for every role). `desktop/design` has no normal-mode 4.5:1 test, so those ratios were computed by hand.
+
+Check (2026-09-29): `render.sh 31-main-glass-dark-frosted 32-main-glass-dark-glossy` ok, ok; `just desktop-tokens` pass (light-hc and dark-hc 265 pairs each), `npm run check` pass; `npm test` in `desktop/design` 11/11. `swift test --package-path desktop/macos/Packages/CoxUI`: ContrastTests pass; 529 snapshot mismatches and 18 missing references that predate this card (light-solid shots fail too) — left to the verification pass; nothing re-recorded here.
+
+Not done: CoxUI does not draw from `glass.*` yet (its dark elevation still uses the 0.95 top-edge highlight where the render uses 0.22) — card T51.22.

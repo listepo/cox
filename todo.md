@@ -32,7 +32,6 @@
 - T40.10. `cox-vendor models` fills `images` from models.dev
 - T41.9. Optional: live check with real rust-analyzer
 - T43.6. Bench the map on and off
-- T51.1. Dark glass: mock the dark glass surfaces and give them token values
 - T51.2. One sandbox argv for `sh -c` commands and interactive programs
 - T51.3. `cox-app` terminal: the login shell in a PTY, in the session cwd, under the session's sandbox
 - T51.4. `cox-ffi` forwards the terminal handle
@@ -100,3 +99,4 @@
 - T56.8. Offline end-to-end over hand-written fixtures
 - T56.9. Docs: cloud agents for users and in EA
 - T56.10. Optional: live check against a real Cursor account (needs the creator's key)
+- T51.22. CoxUI draws glass from the `glass.*` tokens
