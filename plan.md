@@ -111,7 +111,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
-| T50.7 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -2736,16 +2735,6 @@ Check: a test drives the plain surface through `/permissions plan` and finds `pl
 Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
-
-### T50.7. `just test` runs only what a change can break
-
-Model: mid-tier · Status: in progress · Depends: — · Size: ~80 · Files: `justfile`, a script under `scripts/` if the recipe needs one, `AGENTS.md` (Commands), `toolchain.md` if a tool is added
-
-Goal (A99): `just test` runs the nextest tests of the workspace crates changed since a git ref — `just test --changed-since <ref>`, default the merge-base with `origin/main`, committed and uncommitted changes both — plus every crate that depends on them (nextest's `rdeps()` filterset over the packages `cargo metadata` says own the changed files). A change outside every crate that can affect all of them (`Cargo.toml`, `Cargo.lock`, `.cargo/`, `mise.toml`, `justfile`, `rust-toolchain*`) runs the whole workspace; a change that touches no crate runs nothing and says so. Prefer nextest's own filtersets or a maintained tool over custom mapping code. The old full run (`cargo nextest run --workspace`, then `dunnage`) becomes `just check-all`; CI keeps running the whole workspace. Swift packages are out of scope.
-
-Check: `just test --changed-since HEAD` with one edited leaf crate runs only it and its dependents; an edited `Cargo.lock` runs the workspace; `just check-all` runs the workspace; AGENTS.md lists both.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 

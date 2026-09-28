@@ -5114,3 +5114,23 @@ Check:
 - `cargo nextest run -p cox-protocol -p cox-config`: 120/120 with both drift tests; `-p cox-app -E 'test(settings)'` 5/5; clippy and fmt clean. CoxModel 46, CoxTranscriptText 33, CoxTranscript 39 (`TranscriptLineHeightTests`, snapshots at 13.5/1.55 and 17/2.0). Real binary under a scratch `COX_HOME`: `config set`/`show` give `text_size = 16.0`, `line_height 3` is rejected.
 - After merging into `p37-desktop`: cox-protocol and cox-config 120/120; CoxModel 47, CoxTranscriptText 33, CoxTranscript 39.
 Not done: the benchmark (skipped) should re-check the per-batch viewport layout; the app passing `SettingsStore.transcript` into the view waits on T37.32.
+
+### T50.7. `just test` runs only what a change can break
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~80 · Files: `justfile`, a script under `scripts/` if the recipe needs one, `AGENTS.md` (Commands), `toolchain.md` if a tool is added
+
+Goal (A99): `just test` runs the nextest tests of the workspace crates changed since a git ref — `just test --changed-since <ref>`, default the merge-base with `origin/main`, committed and uncommitted changes both — plus every crate that depends on them (nextest's `rdeps()` filterset over the packages `cargo metadata` says own the changed files). A change outside every crate that can affect all of them (`Cargo.toml`, `Cargo.lock`, `.cargo/`, `mise.toml`, `justfile`, `rust-toolchain*`) runs the whole workspace; a change that touches no crate runs nothing and says so. Prefer nextest's own filtersets or a maintained tool over custom mapping code. The old full run (`cargo nextest run --workspace`, then `dunnage`) becomes `just check-all`; CI keeps running the whole workspace. Swift packages are out of scope.
+
+Check: `just test --changed-since HEAD` with one edited leaf crate runs only it and its dependents; an edited `Cargo.lock` runs the workspace; `just check-all` runs the workspace; AGENTS.md lists both.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Result:
+- `just test [--changed-since REF] [--dry-run] [nextest args…]` (A99): the recipe passes its arguments through `[positional-arguments]` to `scripts/changed_tests.py` (stdlib only, run with `uv run --no-project python`). It collects the files changed since REF (default the merge-base with `origin/main`; committed, staged, unstaged and untracked), maps each to the crate that owns it with `cargo metadata --no-deps`, and runs `cargo nextest run --workspace -E 'rdeps(=a) | rdeps(=b)'`. A change to `Cargo.toml`, `Cargo.lock`, `.cargo/`, `mise.toml`, `justfile` or `rust-toolchain*` runs the workspace; no crate changed prints "nothing to run" and exits 0.
+- The old full run plus `dunnage` is `just check-all`; CI unchanged. AGENTS.md Commands and two `toolchain.md` rows updated; 6 stdlib unit tests in `scripts/test_changed_tests.py`.
+- Ready tools checked 2026-09-28 (sources in the commit body): cargo-delta 0.4.0 (best-effort mapping, runs everything when it finds nothing, no prebuilt binary), cargo-affected (coverage builds, "extremely early"), cargo-rail (large, own config), cargo-test-changed (last release 2025-04-04); nextest has no git-based filter.
+Deviations: a changed file outside every crate also selects any crate whose code names it by path (a `docs/config.jsonschema` change runs `rdeps(=cox-config) | rdeps(=cox-plugin-api)`), so a schema or fixture change alone still runs its drift test. `init.rs` and `evals/hooks/verify.sh` mention `just test` for other projects' commands and were left alone.
+Check:
+- Dry runs: a `cox-sanitize` edit gives `rdeps(=cox-sanitize)`; an untracked file in `cox-patch` gives `rdeps(=cox-patch)`; an edited `Cargo.lock` runs the workspace; `ideas.md` alone or a clean tree prints "nothing to run"; `just --dry-run check-all` expands to the old run plus dunnage; nextest parses the generated filter. Unit tests 6/6; fmt clean.
+- After merging into `p37-desktop`: `python -m unittest test_changed_tests` OK; a `cox-sanitize` edit dry-runs `rdeps(=cox-sanitize)`.
+Not done: `check-all` itself was not run (load). `scripts/leftovers.sh` (in `just check`) already fails on `p37-desktop` before this change, on done.md/compat.md entries.
