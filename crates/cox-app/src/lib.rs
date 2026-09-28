@@ -5,6 +5,7 @@
 //! it later and no UI toolkit leaks in (`crates/cox/tests/deps.rs`).
 
 pub mod app;
+pub mod changes;
 pub mod coalesce;
 pub mod complete;
 pub mod controller;
@@ -20,6 +21,7 @@ pub mod timeline;
 pub mod usage;
 pub mod workspace;
 
+pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;
 pub use inbox::{Activity, Inbox, InboxItem, Need};
@@ -39,3 +41,4 @@ pub use cox_render::diffmodel;
 pub use cox_render::doc;
 pub use cox_store::fts::SessionInfo;
 pub use cox_store::lock::Holder;
+pub use cox_tools::git::Linked;

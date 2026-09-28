@@ -38,6 +38,8 @@ public protocol SessionClient: AnyObject, Sendable {
   /// This session's earlier prompts, newest first, at most `limit`: what ↑ walks in an empty
   /// composer (`cox_app::live::LiveSession::history`).
   func history(limit: UInt32) throws -> [String]
+  /// What the inspector's Changes tab lists (`cox_app::live::LiveSession::changes`, T37.29.1).
+  func changes() async throws -> Changes
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
 }
@@ -104,8 +106,9 @@ public struct FixtureCoreClient: CoreClient {
 
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
-/// fixed list instead of the Rust completer, and serves a fixed prompt history. Waiting on
-/// the person, it plays the core: the turn resumes when the card is answered.
+/// fixed list instead of the Rust completer, serves a fixed prompt history and lists fixed
+/// changes. Waiting on the person, it plays the core: the turn resumes when the card is
+/// answered.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
   private let fixture: Fixture
@@ -114,6 +117,7 @@ public final class FixtureSession: SessionClient {
   private let waitsForYou: Bool
   /// Newest first, as the core returns them.
   private let prompts: [String]
+  private let fixedChanges: Changes
   private let state = Mutex(State())
 
   private struct State {
@@ -128,10 +132,11 @@ public final class FixtureSession: SessionClient {
 
   public init(
     fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
-    waitsForYou: Bool = false, prompts: [String] = []
+    waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes()
   ) {
     (self.fixture, self.completions, self.host, self.waitsForYou, self.prompts) =
       (fixture, completions, host, waitsForYou, prompts)
+    fixedChanges = changes
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -181,6 +186,8 @@ public final class FixtureSession: SessionClient {
   }
 
   public func history(limit: UInt32) -> [String] { Array(prompts.prefix(Int(limit))) }
+
+  public func changes() async throws -> Changes { fixedChanges }
 
   public func close() {
     let resume = state.withLock { state in

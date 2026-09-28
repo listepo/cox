@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use cox_protocol::errors::WorktreeError;
 use cox_protocol::traits::{Worktree, WorktreeInfo, Worktrees};
+use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
 /// Branch and working-tree line counts, as the status line shows them.
@@ -369,6 +370,55 @@ pub async fn worktree_list(from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeErr
     Ok(rows)
 }
 
+/// The linked worktree a session runs in, as the desktop Changes tab shows
+/// it (T37.29.1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Linked {
+    pub path: PathBuf,
+    /// `None` when detached.
+    pub branch: Option<String>,
+    /// What the branch is compared with: `origin/<default>`, else the main
+    /// checkout's branch; `None` when git cannot say.
+    pub base: Option<String>,
+    /// The short merge-base of `HEAD` and `base`.
+    pub commit: Option<String>,
+    pub bytes: u64,
+}
+
+/// The linked worktree `dir` is in, with where its branch left the main
+/// checkout and its disk size; `None` in the main checkout or outside git.
+pub async fn linked(dir: &Path) -> Option<Linked> {
+    let main = main_checkout(dir).await.ok()?;
+    let top = git(dir, &["rev-parse", "--show-toplevel"]).await?;
+    let record = worktree_record(&main, Path::new(top.trim())).await.ok()??;
+    if record.path == main {
+        return None;
+    }
+    let mut base = Some(base_ref(&main).await);
+    if base.as_deref() == Some("HEAD") {
+        let branch = git(&main, &["rev-parse", "--abbrev-ref", "HEAD"]).await;
+        base = branch.map(|b| b.trim().to_string());
+    }
+    let commit = match &base {
+        Some(base) => match git(dir, &["merge-base", "HEAD", base]).await {
+            Some(full) => git(dir, &["rev-parse", "--short", full.trim()]).await,
+            None => None,
+        },
+        None => None,
+    };
+    let path = record.path.clone();
+    let bytes = tokio::task::spawn_blocking(move || dir_size(&path))
+        .await
+        .unwrap_or(0);
+    Some(Linked {
+        path: record.path,
+        branch: record.branch,
+        commit: commit.map(|c| c.trim().to_string()),
+        base,
+        bytes,
+    })
+}
+
 /// Best-effort recursive byte total of `dir`; an unreadable entry is
 /// skipped rather than failing the whole count, and symlinks are not
 /// followed. Blocking: async callers run it on the blocking pool.
@@ -561,6 +611,26 @@ mod tests {
                 .is_some_and(|r| r.starts_with("cox / s1"))
         );
         assert!(row.bytes >= 8, "a.txt is on disk: {}", row.bytes);
+    }
+
+    #[tokio::test]
+    async fn linked_names_the_branch_and_where_it_left_the_main_checkout() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let head = git(&main, &["rev-parse", "--short", "HEAD"]).await;
+        let wt = worktree_add(&main, "t9", "cox / s1").await.expect("add");
+        let got = linked(&wt.path).await.expect("a linked worktree");
+        assert_eq!(got.path, wt.path);
+        assert_eq!(got.branch.as_deref(), Some("t9"));
+        assert_eq!(
+            got.base.as_deref(),
+            Some("trunk"),
+            "no remote: main's branch"
+        );
+        assert_eq!(got.commit, head.map(|h| h.trim().to_string()));
+        assert!(got.bytes >= 8, "a.txt is on disk: {}", got.bytes);
+        assert_eq!(linked(&main).await, None, "the main checkout is not linked");
     }
 
     #[tokio::test]

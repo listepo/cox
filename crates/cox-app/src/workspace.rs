@@ -72,6 +72,12 @@ impl Workspace {
         })
     }
 
+    /// The store the workspace reads; a live session reads its checkpoint
+    /// rows from it too (T37.29.1).
+    pub(crate) fn store(&self) -> &Store {
+        &self.store
+    }
+
     /// Projects of the `limit` most recent sessions, most recently active
     /// first, as the TUI's `/resume` groups them (`find_git_root`).
     pub fn projects(&self, limit: i64) -> Result<Vec<Project>, WorkspaceError> {
