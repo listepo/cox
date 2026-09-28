@@ -10,48 +10,6 @@
 import AppKit
 import CoxClient
 
-extension TranscriptStyle {
-  /// A user prompt's face behind its text and its attachments' tiles.
-  public struct Bubble: Equatable {
-    public var fill: NSColor
-    public var radius: CGFloat
-    /// From the bubble's edge to its text.
-    public var padding: NSSize
-    /// Between two attachment tiles.
-    public var gap: CGFloat
-
-    public init(fill: NSColor, radius: CGFloat, padding: NSSize, gap: CGFloat) {
-      (self.fill, self.radius, self.padding, self.gap) = (fill, radius, padding, gap)
-    }
-
-    public static var system: Bubble {
-      Bubble(fill: .quaternarySystemFill, radius: 0, padding: .zero, gap: 0)
-    }
-  }
-
-  /// A thought's reasoning and the rule beside it.
-  public struct Thought: Equatable {
-    public var font: NSFont
-    public var color: NSColor
-    public var rule: NSColor
-    public var ruleWidth: CGFloat
-    /// From the rule to the reasoning.
-    public var indent: CGFloat
-
-    public init(font: NSFont, color: NSColor, rule: NSColor, ruleWidth: CGFloat, indent: CGFloat) {
-      (self.font, self.color, self.rule) = (font, color, rule)
-      (self.ruleWidth, self.indent) = (ruleWidth, indent)
-    }
-
-    public static var system: Thought {
-      Thought(
-        font: .preferredFont(forTextStyle: .body), color: .secondaryLabelColor,
-        rule: .separatorColor,
-        ruleWidth: 1, indent: 0)
-    }
-  }
-}
-
 extension NSAttributedString.Key {
   /// The `Decor` of a prompt's or a thought's characters.
   static let transcriptDecor = NSAttributedString.Key("cox.transcript.decor")
@@ -64,15 +22,17 @@ extension NSAttributedString.Key {
 final class Decor: NSObject {
   enum Kind { case bubble, thought }
 
-  /// Whether a paragraph is its block's first, last, both or neither.
+  /// Whether a paragraph is its block's first, last, both or neither, and whether it is a
+  /// prompt's row of tiles under its text.
   struct Edge: OptionSet {
     let rawValue: Int
     static let first = Edge(rawValue: 1)
     static let last = Edge(rawValue: 2)
+    static let tiles = Edge(rawValue: 4)
   }
 
   let kind: Kind
-  private let bubble: TranscriptStyle.Bubble
+  let bubble: TranscriptStyle.Bubble
   private let thought: TranscriptStyle.Thought
   /// One paragraph style per `Edge` raw value.
   private var styles: [NSParagraphStyle] = []
@@ -80,7 +40,7 @@ final class Decor: NSObject {
   init(_ kind: Kind, _ style: TranscriptStyle) {
     (self.kind, bubble, thought) = (kind, style.bubble, style.thought)
     super.init()
-    styles = (0..<4).map { raw in
+    styles = (0..<8).map { raw in
       let edge = Edge(rawValue: raw)
       let paragraph = NSMutableParagraphStyle()
       let spacing = edge.contains(.last) ? style.blockSpacing : 0
@@ -90,7 +50,8 @@ final class Decor: NSObject {
         (paragraph.firstLineHeadIndent, paragraph.headIndent, paragraph.tailIndent) = (
           side, side, -side
         )
-        paragraph.paragraphSpacingBefore = edge.contains(.first) ? bubble.padding.height : 0
+        paragraph.paragraphSpacingBefore =
+          edge.contains(.first) ? bubble.padding.height : edge.contains(.tiles) ? bubble.gap : 0
         paragraph.paragraphSpacing = spacing + (edge.contains(.last) ? bubble.padding.height : 0)
       case .thought:
         // The first paragraph is the fold header, at the margin; the reasoning sits past the rule.
@@ -113,6 +74,9 @@ final class Decor: NSObject {
       let paragraph = string.paragraphRange(for: NSRange(location: location, length: 0))
       var edge: Edge = paragraph.location <= block.location ? .first : []
       if NSMaxRange(paragraph) >= end { edge.insert(.last) }
+      // A prompt's own characters are never attachments: one opening a later paragraph is a tile.
+      let tile = text.attribute(.attachment, at: paragraph.location, effectiveRange: nil)
+      if kind == .bubble, !edge.contains(.first), tile != nil { edge.insert(.tiles) }
       let style = styles[edge.rawValue]
       text.enumerateAttribute(.paragraphStyle, in: paragraph) { value, range, _ in
         guard (value as? NSParagraphStyle) !== style else { return }
@@ -147,35 +111,86 @@ final class Decor: NSObject {
     }
   }
 
-  func draw(_ rect: CGRect, _ edge: Edge, in context: CGContext) {
+  /// Draws a paragraph's slice `rect` of the decoration; `whole` is the bubble it is a slice of.
+  func draw(_ rect: CGRect, whole: CGRect, _ edge: Edge, in context: CGContext) {
     context.saveGState()
     defer { context.restoreGState() }
     switch kind {
     case .bubble:
-      // Only the bubble's own ends are round: a slice runs on past a cut edge and is clipped there.
-      var shape = rect
-      if !edge.contains(.first) {
-        (shape.origin.y, shape.size.height) = (
-          rect.minY - bubble.radius, shape.height + bubble.radius
-        )
-      }
-      if !edge.contains(.last) { shape.size.height += bubble.radius }
-      let radius = min(bubble.radius, shape.width / 2, shape.height / 2)
+      // The whole bubble is drawn and clipped to the slice, so its round ends, sweep and
+      // shadows run on across the paragraphs as one shape.
+      let radius = min(bubble.radius, whole.width / 2, whole.height / 2)
+      let shape = CGPath(
+        roundedRect: whole, cornerWidth: radius, cornerHeight: radius, transform: nil)
+      dropShadows(shape, rect, edge, in: context)
       context.clip(to: rect)
-      context.addPath(
-        CGPath(roundedRect: shape, cornerWidth: radius, cornerHeight: radius, transform: nil))
-      context.setFillColor(bubble.fill.cgColor)
-      context.fillPath()
+      context.addPath(shape)
+      context.clip()
+      for color in [bubble.face, bubble.fill] {
+        context.setFillColor(color.cgColor)
+        context.fill(whole)
+      }
+      let stops = bubble.sweep
+      let sweep = CGGradient(
+        colorsSpace: nil, colors: stops.map(\.color.cgColor) as CFArray,
+        locations: stops.map(\.location))
+      if !stops.isEmpty, let sweep {
+        context.drawLinearGradient(
+          sweep, start: whole.origin, end: CGPoint(x: whole.maxX, y: whole.maxY), options: [])
+      }
+      for layer in bubble.shadows where layer.inset {
+        // The highlight: the bubble less itself shrunk by the spread and moved by the offset.
+        let inner = whole.insetBy(dx: layer.spread, dy: layer.spread)
+          .offsetBy(dx: layer.offset.width, dy: layer.offset.height)
+        let corner = max(0, radius - layer.spread)
+        context.addPath(shape)
+        context.addPath(
+          CGPath(roundedRect: inner, cornerWidth: corner, cornerHeight: corner, transform: nil))
+        context.setFillColor(layer.color.cgColor)
+        context.fillPath(using: .evenOdd)
+      }
     case .thought:
       context.setFillColor(thought.rule.cgColor)
       context.fill(rect)
+    }
+  }
+
+  /// The bubble's drop shadows around the slice `rect`: past its sides, and past the bubble's
+  /// own ends — a cut edge is the next slice's to draw. Never under the face, which lets the
+  /// wallpaper show through.
+  private func dropShadows(_ shape: CGPath, _ rect: CGRect, _ edge: Edge, in context: CGContext) {
+    let reach = bubble.reach
+    var outer = rect.insetBy(dx: -reach, dy: 0)
+    if edge.contains(.first) {
+      (outer.origin.y, outer.size.height) = (outer.minY - reach, outer.height + reach)
+    }
+    if edge.contains(.last) { outer.size.height += reach }
+    // A shadow's offset and blur are in device space: the transform scales them and, in a
+    // flipped view, turns down into its negative. CSS blur is twice Core Graphics', as it is
+    // twice SwiftUI's shadow radius.
+    let ctm = context.ctm
+    // A drop shadow's spread is not drawn: the shape casting it is clipped away, so a larger one
+    // would show; no elevation token spreads one (DS§3.4).
+    for layer in bubble.shadows where !layer.inset {
+      context.saveGState()
+      context.clip(to: outer)
+      context.addRect(outer)
+      context.addPath(shape)
+      context.clip(using: .evenOdd)
+      context.setShadow(
+        offset: CGSize(width: layer.offset.width * ctm.a, height: layer.offset.height * ctm.d),
+        blur: layer.blur / 2 * abs(ctm.a), color: layer.color.cgColor)
+      context.addPath(shape)
+      context.setFillColor(NSColor.black.cgColor)
+      context.fillPath()
+      context.restoreGState()
     }
   }
 }
 
 /// A decorated paragraph's layout: the bubble or the rule under its text.
 final class DecorFragment: NSTextLayoutFragment {
-  private var decoration: (decor: Decor, edge: Decor.Edge)? {
+  var decoration: (decor: Decor, edge: Decor.Edge)? {
     guard let text = (textElement as? NSTextParagraph)?.attributedString, text.length > 0,
       let decor = text.attribute(.transcriptDecor, at: 0, effectiveRange: nil) as? Decor
     else { return nil }
@@ -186,14 +201,40 @@ final class DecorFragment: NSTextLayoutFragment {
   override var renderingSurfaceBounds: CGRect {
     let bounds = super.renderingSurfaceBounds
     guard let (decor, edge) = decoration, let area = decor.area(self, edge) else { return bounds }
-    return bounds.union(area)
+    let reach = decor.kind == .bubble ? decor.bubble.reach : 0
+    return bounds.union(area.insetBy(dx: -reach, dy: -reach))
   }
 
   override func draw(at point: CGPoint, in context: CGContext) {
     if let (decor, edge) = decoration, let area = decor.area(self, edge) {
-      decor.draw(area.offsetBy(dx: point.x, dy: point.y), edge, in: context)
+      let whole = decor.kind == .bubble ? bubble(area, decor, edge) : area
+      decor.draw(
+        area.offsetBy(dx: point.x, dy: point.y), whole: whole.offsetBy(dx: point.x, dy: point.y),
+        edge, in: context)
     }
     super.draw(at: point, in: context)
+  }
+
+  /// The whole bubble `slice` is part of, in this fragment's coordinates: the slices of its
+  /// block's paragraphs laid out so far, from the first to the last.
+  func bubble(_ slice: CGRect, _ decor: Decor, _ edge: Decor.Edge) -> CGRect {
+    guard let manager = textLayoutManager else { return slice }
+    var whole = slice
+    let origin = layoutFragmentFrame.origin
+    func join(_ options: NSTextLayoutFragment.EnumerationOptions, until end: Decor.Edge) {
+      manager.enumerateTextLayoutFragments(from: rangeInElement.location, options: options) {
+        if $0.rangeInElement.isEqual(to: self.rangeInElement) { return true }
+        guard let other = $0 as? DecorFragment, let (kind, edge) = other.decoration,
+          kind === decor, let area = kind.area(other, edge)
+        else { return false }
+        let frame = other.layoutFragmentFrame
+        whole = whole.union(area.offsetBy(dx: frame.minX - origin.x, dy: frame.minY - origin.y))
+        return !edge.contains(end)
+      }
+    }
+    if !edge.contains(.first) { join(.reverse, until: .first) }
+    if !edge.contains(.last) { join([], until: .last) }
+    return whole
   }
 }
 

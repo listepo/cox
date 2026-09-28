@@ -29,6 +29,8 @@ public final class TranscriptTextView: NSTextView {
   public var cards = TranscriptCards.summary
   /// The thoughts the reader opened; any other shows folded (`TranscriptDecor.swift`).
   public internal(set) var openThoughts: Set<BlockID> = []
+  /// The prompt the pointer is over and its actions' view (`PromptHover.swift`).
+  var promptHover: (id: BlockID, view: NSView)?
 
   /// A read-only, selectable transcript on TextKit 2. `NSTextView()` would
   /// also be TextKit 2, but this names it: reading `layoutManager` falls back
@@ -45,6 +47,7 @@ public final class TranscriptTextView: NSTextView {
     view.autoresizingMask = [.width]
     view.textContainer?.widthTracksTextView = true
     view.addGutterClick()
+    view.trackPrompts()
     view.textLayoutManager?.delegate = DecorLayout.shared
     return view
   }

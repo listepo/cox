@@ -25,6 +25,8 @@ public struct TranscriptCards {
   /// Set by the view that hosts the cards: whether a thought is open, and its fold toggled.
   var isOpen: @MainActor (BlockID) -> Bool = { _ in false }
   var toggle: @MainActor (BlockID) -> Void = { _ in }
+  /// The actions a hovered prompt shows over its bubble (`PromptHover.swift`); `nil` shows none.
+  public var promptActions: (@MainActor (Block) -> AnyView)?
 
   public init<Card: View, Tile: View, Header: View>(
     _ view: @escaping @MainActor (Block) -> Card,

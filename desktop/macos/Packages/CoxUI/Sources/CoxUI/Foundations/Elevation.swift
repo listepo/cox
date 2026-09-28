@@ -19,39 +19,48 @@ private struct Elevation: ViewModifier {
   let shape: RoundedRectangle
   @EffectiveAppearance private var appearance
 
-  /// Depth scales every level but the window's (DS§3.4).
-  private var scale: Double { level == .e5 ? 1 : appearance.depth }
-
   func body(content: Content) -> some View {
-    content
-      .modifier(DropShadows(layers: level.layers.filter { !$0.inset }, scale: scale))
-      .overlay { highlights }
+    let layers = level.layers(at: appearance)
+    return
+      content
+      .modifier(DropShadows(layers: layers.filter { !$0.inset }))
+      .overlay { highlights(layers.filter(\.inset)) }
   }
 
-  private var highlights: some View {
+  private func highlights(_ layers: [ShadowLayer]) -> some View {
     ZStack {
-      ForEach(Array(level.layers.filter(\.inset).enumerated()), id: \.offset) { _, layer in
+      ForEach(Array(layers.enumerated()), id: \.offset) { _, layer in
         shape.subtracting(
           shape.inset(by: layer.spread).offset(x: layer.x, y: layer.y)
         )
-        .fill(layer.color.opacity(scale))
+        .fill(layer.color)
       }
     }
     .allowsHitTesting(false)
   }
 }
 
+extension ElevationToken {
+  /// The level's layers at `appearance`'s Depth (DS§3.4): each layer's opacity, and a drop
+  /// shadow's offset down, scaled by Depth; the window's level ignores it. Public for the
+  /// transcript's AppKit bubble (T37.23.9), so it lifts as `.elevation` does.
+  public func layers(at appearance: Appearance) -> [ShadowLayer] {
+    let scale = self == .e5 ? 1 : appearance.depth
+    return layers.map {
+      ShadowLayer(
+        color: $0.color.opacity(scale), x: $0.x, y: $0.inset ? $0.y : $0.y * scale,
+        blur: $0.blur, spread: $0.spread, inset: $0.inset)
+    }
+  }
+}
+
 /// Stacks one `.shadow` per layer; CSS blur is twice SwiftUI's radius.
 private struct DropShadows: ViewModifier {
   let layers: [ShadowLayer]
-  let scale: Double
 
   func body(content: Content) -> some View {
     layers.reduce(AnyView(content)) { view, layer in
-      AnyView(
-        view.shadow(
-          color: layer.color.opacity(scale), radius: layer.blur / 2, x: layer.x,
-          y: layer.y * scale))
+      AnyView(view.shadow(color: layer.color, radius: layer.blur / 2, x: layer.x, y: layer.y))
     }
   }
 }

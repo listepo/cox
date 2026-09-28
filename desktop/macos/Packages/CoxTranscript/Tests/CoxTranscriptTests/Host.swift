@@ -21,6 +21,8 @@ final class Host {
   private let material: GlassMaterial
   /// Set, the approval slot holds the real `DecisionCard`s and their intents go here.
   private let send: (@MainActor (Intent) -> Void)?
+  /// Where a prompt's Edit and resend goes; `nil` offers Copy only.
+  var composer: ComposerStore?
 
   init(
     _ blocks: [Block], size: NSSize, crossBlockSelection: Bool = true, dark: Bool = false,
@@ -50,12 +52,15 @@ final class Host {
   func show(crossBlockSelection: Bool, textScale: Double = 1) {
     let transcript =
       if let send {
-        AnyView(TranscriptView(store: store, crossBlockSelection: crossBlockSelection, send: send))
+        AnyView(
+          TranscriptView(store: store, crossBlockSelection: crossBlockSelection, send: send)
+            .composer(composer))
       } else {
         AnyView(
           TranscriptView(store: store, crossBlockSelection: crossBlockSelection) { block in
             Text(verbatim: Self.slot(block))
-          })
+          }
+          .composer(composer))
       }
     hosting.rootView = AnyView(
       transcript
