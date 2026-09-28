@@ -5399,3 +5399,21 @@ Check:
 Not done:
 - No real-binary run of a `confirm_think` turn on a code-tier session: only the TUI can send one.
 - A think turn's thinking blocks stay in history for the next code-tier turn, the same as a turn `route` advice sent to cheap (T33.40.8).
+
+#### T37.28.4 Line comments sent to the agent
+
+Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs`
+Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
+Check: a cox-app test of the message; a snapshot of a draft.
+Status: done 2026-09-28
+Result:
+- cox-app `review.rs`: `LineComment { path, line, removed, text }` and `message(&[LineComment]) -> Option<String>`, the prompt with one `` `path:line` `` bullet per comment in draft order. A removed line is marked, and blank comments are skipped. cox-ffi has the record and a one-expression `review_message` forwarder (commit 8b532490).
+- CoxClient `LineComment` and `SessionClient.reviewMessage`. CoxModel `ReviewDraft` (`pick`, `save`, `remove`) lives in `SessionStore.reviewDraft`, so it survives switching files. `sendReview()` posts one `Intent.send` and empties the draft.
+- CoxUI `ReviewPane` has a draft panel under the diff with the anchors, a comment field, a count and "Send to agent". `DiffHunkView`/`DiffLineView` take a tap on the line number, with an accessibility action.
+Deviations: 15 files. The message crosses from cox-app to Swift through the FFI record, the client protocol and its two conformers, the model and two molecules.
+Check:
+- In the branch: cox-app and cox-ffi 89 passed (`review::tests`); clippy and fmt clean; CoxModel 62, CoxCore 12, CoxUI 165, CoxTranscript 48; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: `just test --changed-since` 89 passed; CoxCore 12, CoxModel 62, CoxTranscript 48, CoxUI Review/Diff 5.
+Not done:
+- App wiring of the draft into `ReviewPane.State` waits for T37.32.
+- Open question: "Send to agent" always sends; the composer queues a prompt while a turn runs. Should review comments queue too?

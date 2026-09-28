@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.28.4 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3 | todo | P2 | 4 | 25% | |
 | T37.29.3.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3.3 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -2743,12 +2742,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.28.4 Line comments sent to the agent
-
-Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs`
-Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
-Check: a cox-app test of the message; a snapshot of a draft.
 
 #### T37.29.3 Inspector Context & Cost tab
 
