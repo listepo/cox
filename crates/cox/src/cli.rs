@@ -119,6 +119,42 @@ pub enum Command {
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate(SelfUpdateArgs),
+    /// Push-to-talk dictation: the local whisper models (T54.5).
+    #[cfg(feature = "voice")]
+    Voice(VoiceArgs),
+}
+
+/// `cox voice model list|download <name>` (T54.5).
+#[cfg(feature = "voice")]
+#[derive(Args, Debug, Clone)]
+pub struct VoiceArgs {
+    #[command(subcommand)]
+    pub action: VoiceAction,
+}
+
+/// `cox voice` subcommands.
+#[cfg(feature = "voice")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum VoiceAction {
+    /// The whisper models cox can download and use.
+    #[command(subcommand)]
+    Model(VoiceModelAction),
+}
+
+/// `cox voice model` subcommands.
+#[cfg(feature = "voice")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum VoiceModelAction {
+    /// Every pinned model with its size and whether it is downloaded.
+    List,
+    /// Download one pinned model and verify its SHA-256.
+    Download {
+        /// Model name from `cox voice model list` (`base.en`).
+        name: String,
+        /// Download without asking (required when stdin is not a terminal).
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 /// `cox self update [--version v]` (plan.md §1.12/T12.2).

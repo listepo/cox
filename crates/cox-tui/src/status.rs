@@ -336,7 +336,9 @@ fn built_in_segments(state: &State) -> Vec<(bool, String)> {
             format!(" {sep} {n} agent{plural}{bang}")
         }
     };
-    let suffix = format!("{agents}{tail}{vim}");
+    // T54.6: `● rec 0:07`, then `transcribing…`, never dropped.
+    let voice = crate::voice::status(state).map_or(String::new(), |v| format!(" {sep} {v}"));
+    let suffix = format!("{agents}{tail}{vim}{voice}");
     let mut out = vec![(true, model.to_string()), (true, ctx)];
     out.push((true, cost));
     out.push((false, sandbox.to_string()));

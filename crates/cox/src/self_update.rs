@@ -6,8 +6,9 @@
 //! `plugin_fetch`, shared with `cox plugin install <https-url>` (T53.2).
 
 use std::path::PathBuf;
+use std::time::Duration;
 
-use crate::plugin_fetch::{fetch, sha256_hex, untar};
+use crate::plugin_fetch::{fetch, http_client, sha256_hex, untar};
 
 /// `listepo/cox` releases carry `cox-<target>.tar.xz` built by
 /// `scripts/package.sh` and published by `.github/workflows/release.yml`.
@@ -24,6 +25,9 @@ fn target() -> anyhow::Result<&'static str> {
     }
 }
 
+/// Whole-request limit for a release archive or its checksum.
+const TIMEOUT: Duration = Duration::from_secs(120);
+
 fn asset_base(tag: &str, target: &str) -> String {
     format!("https://github.com/{REPO}/releases/download/{tag}/cox-{target}.tar.xz")
 }
@@ -33,6 +37,7 @@ async fn latest_tag(client: &reqwest::Client) -> anyhow::Result<String> {
     let tag: serde_json::Value = client
         .get(format!("https://api.github.com/{REPO}/releases/latest"))
         .header("User-Agent", "cox-self-update")
+        .timeout(TIMEOUT)
         .send()
         .await?
         .error_for_status()?
@@ -51,9 +56,7 @@ pub async fn run(version: Option<String>) -> anyhow::Result<()> {
     }
     let target = target()?;
     let current = env!("CARGO_PKG_VERSION");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()?;
+    let client = http_client()?;
     let tag = match version {
         Some(v) => v,
         None => latest_tag(&client).await?,

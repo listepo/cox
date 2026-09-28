@@ -261,7 +261,7 @@ pub(crate) mod tests {
             &self,
             root: &Path,
             _budget_bytes: usize,
-            admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+            admit: &(dyn for<'p> Fn(&'p Path) -> bool + Send + Sync),
         ) -> String {
             let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             let mut out = if self.frozen {

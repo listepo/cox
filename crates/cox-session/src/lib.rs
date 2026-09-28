@@ -520,7 +520,7 @@ impl cox_protocol::traits::RepoMapper for ToolsRepoMapper {
         &self,
         root: &Path,
         budget_bytes: usize,
-        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+        admit: &(dyn for<'p> Fn(&'p Path) -> bool + Send + Sync),
     ) -> String {
         cox_tools::repomap::build(root, budget_bytes, admit).await
     }

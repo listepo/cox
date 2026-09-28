@@ -29,9 +29,21 @@ mod sessions;
 mod stats;
 mod status_line;
 mod telemetry;
+#[cfg(feature = "voice")]
+mod voice_cmd;
 
 use clap::Parser;
 use cli::{Cli, Command, ConfigAction};
+
+/// `[y/N]` on stdin, same idiom as `session::offer_worktree_removal`; the
+/// one prompt `cox plugin` and `cox voice` ask before acting.
+#[cfg(any(feature = "plugins", feature = "voice"))]
+pub(crate) fn confirm(question: &str) -> bool {
+    eprint!("{question} [y/N] ");
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    matches!(answer.trim(), "y" | "Y" | "yes")
+}
 
 fn main() -> anyhow::Result<()> {
     load_dotenv()?;
@@ -164,6 +176,11 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Expand(args)) => {
             let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
             expand_cmd::run(&home, &args.id, args.lines.as_deref())
+        }
+        #[cfg(feature = "voice")]
+        Some(Command::Voice(args)) => {
+            let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+            voice_cmd::run(&home, &args.action)
         }
         Some(Command::SelfUpdate(args)) => {
             let version = match &args.action {

@@ -231,6 +231,14 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `command` = `"gopls"`
 - `args` = `[]`
 - `extensions` = `["go"]`
+## `[voice]`
+
+- `enabled` = `false` — push-to-talk dictation in the TUI (P54), transcribed on this machine with whisper; only in a cox built with the `voice` feature. User config only: a project config cannot set any voice.* key (a repository must not switch the microphone on or choose the model file)
+- `model` = `"base.en"` — whisper model: tiny.en, base.en, small.en, tiny, base or small; fetched only by `cox voice model download <name>` after you confirm
+- `language` = `"en"` — ISO-639-1 code for whisper, or "auto" to detect
+- `key` = `"alt+v"` — press to record, press again to stop; where the terminal reports key releases, hold to record
+- `auto_submit` = `true` — submit the transcript like Enter, only when the draft was empty before recording
+- `max_seconds` = `120` — longest recording kept in memory; audio is never written to disk
 ## `[plugins]`
 
 - `enabled` = `true` — WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins. A [plugins.<id>] table is that plugin's own config, passed unchanged to its cox_init as InitIn.config; the plugin validates it
@@ -290,7 +298,7 @@ newline = ["enter", "shift+enter"]
 mode.cycle = "shift+tab"
 ```
 
-- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
+- Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, `thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`, `voice`. `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
 - `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two plugins goes to the lower plugin id and `cox doctor` reports it.
 - Keys: modifiers `ctrl`, `alt` (`opt`, `meta`), `shift`, `cmd` (`super`), then one key: a character, `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, arrows, `pageup`, `pagedown`, `home`, `end`, `f1`–`f12`. Any case. Chords (`ctrl+x ctrl+s`) are not supported.
 - A plain terminal sends the same byte for `Enter` and `Ctrl+Enter`; `ctrl+enter` needs a terminal that reports it (kitty keyboard protocol, see `cox doctor`).

@@ -38,6 +38,7 @@ use cox_store::Store;
 
 use crate::cli::Cli;
 use crate::config_load::{self, cox_home, find_git_root};
+use crate::confirm;
 use crate::plugin_fetch;
 
 /// `cox plugin list [--json]`.
@@ -905,14 +906,6 @@ fn decide(
 /// The one place a `PluginGrant` row is assembled (PL§3, T33.8), shared
 /// with the TUI's grant dialog (`session.rs`'s `write_plugin_grant`).
 pub(crate) use cox_session::write_grant;
-
-/// `[y/N]` on stdin, same idiom as `session::offer_worktree_removal`.
-fn confirm(question: &str) -> bool {
-    eprint!("{question} [y/N] ");
-    let mut answer = String::new();
-    let _ = std::io::stdin().read_line(&mut answer);
-    matches!(answer.trim(), "y" | "Y" | "yes")
-}
 
 /// The `source` a grant records when nothing was stored yet: a project
 /// plugin is repository content, so there is no external path to

@@ -1,7 +1,7 @@
 //! Fetching what `cox` installs from outside the machine (T53.2, PL§1): the
-//! download and SHA-256 helpers `cox self update` and `cox plugin install
-//! <https-url>` share, the `tar` shell-out both unpack with, and the
-//! staging directory a downloaded or cloned (`git+<url>`, T53.3) plugin
+//! HTTP client, download and SHA-256 helpers `cox self update`, `cox plugin
+//! install <https-url>` and `cox voice model download` share, the `tar`
+//! shell-out the first two unpack with, and the staging directory a downloaded or cloned (`git+<url>`, T53.3) plugin
 //! lands in before the local install path (`plugin_cmd`) takes over.
 //! Separate from `plugin_cmd` so the
 //! self-update path reuses one fetch without the plugin host, and so every
@@ -13,6 +13,7 @@
 #![cfg_attr(not(feature = "plugins"), allow(dead_code))]
 
 use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -32,6 +33,38 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// The client cox's own downloads go through: a `cox/<version>`
+/// User-Agent and nothing else about the user. A whole-request limit is
+/// each caller's, since a voice model is hundreds of MB; a stalled read
+/// still fails.
+pub(crate) fn http_client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(30))
+        .read_timeout(Duration::from_secs(60))
+        .build()
+}
+
+/// SHA-256 of everything `reader` yields, as lowercase hex; read in
+/// chunks so a voice model is never held in memory whole (T54.5).
+#[cfg_attr(not(feature = "voice"), allow(dead_code))]
+pub(crate) fn sha256_read(mut reader: impl Read) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    let mut chunk = vec![0; 1 << 16];
+    loop {
+        let n = reader.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&chunk[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// Downloads `url` fully.

@@ -497,6 +497,72 @@ fn warn_worktree_holder(
     }
 }
 
+/// Push-to-talk for one TUI session (T54.7): `[voice] key` and
+/// `auto_submit` into `state`, and the `Dictation` `app::run` takes. Every
+/// reason there is none (the build, `enabled`, a missing model) leaves the
+/// key showing how to turn it on; only a missing model is also a warning.
+fn voice(
+    state: &mut State,
+    config: &Config,
+    #[cfg_attr(not(feature = "voice"), allow(unused_variables))] home: &Path,
+) -> Option<Box<dyn cox_protocol::traits::Dictation>> {
+    state.voice.auto_submit = config.voice.auto_submit;
+    let default = cox_tui::keymap::parse("alt+v");
+    if cox_tui::keymap::parse(&config.voice.key) != default
+        && let Err(text) = state.keymap.rebind(
+            cox_tui::keymap::Action::Voice,
+            std::slice::from_ref(&config.voice.key),
+        )
+    {
+        state.transcript.push(cox_tui::state::Cell::Notice {
+            level: Level::Warn,
+            text: format!("voice.key: {text}"),
+        });
+    }
+    #[cfg(feature = "voice")]
+    match dictation(config, home) {
+        Ok(dictation) => return dictation,
+        Err(text) => state.transcript.push(cox_tui::state::Cell::Notice {
+            level: Level::Warn,
+            text,
+        }),
+    }
+    None
+}
+
+/// `[voice] enabled` with the model on disk: the dictation; enabled
+/// without it: the warning naming the download command.
+#[cfg(feature = "voice")]
+fn dictation(
+    config: &Config,
+    home: &Path,
+) -> Result<Option<Box<dyn cox_protocol::traits::Dictation>>, String> {
+    let voice = &config.voice;
+    if !voice.enabled {
+        return Ok(None);
+    }
+    let Some(path) = crate::voice_cmd::model_path(home, &voice.model) else {
+        return Err(format!(
+            "voice: no pinned model named {}; `cox voice model list` shows them",
+            voice.model
+        ));
+    };
+    if !path.is_file() {
+        return Err(format!(
+            "voice: model {m} is not downloaded; run `cox voice model download {m}`",
+            m = voice.model
+        ));
+    }
+    let language = match voice.language.trim() {
+        "" | "auto" => None,
+        code => Some(code.to_string()),
+    };
+    let max = std::time::Duration::from_secs(u64::from(voice.max_seconds));
+    Ok(Some(Box::new(cox_voice::PushToTalk::new(
+        path, language, max,
+    ))))
+}
+
 /// After `/quit` in a worktree session: a clean tree is offered for
 /// removal on the terminal the TUI just gave back; a dirty one is kept and
 /// said so. The branch always stays — merging is the user's action.
@@ -860,6 +926,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             tracing::debug!("{skipped}");
         }
         state.keymap = keys.keymap;
+        let dictation = voice(&mut state, config, &home);
         if let Some(history) = seed {
             state.transcript_from_history(&history);
         }
@@ -1096,6 +1163,7 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             grant_tx,
             plugin_tx,
             plugin_mgmt_tx,
+            dictation,
         ))?;
         poll.abort();
         // `/handoff`'s summary is the parent's `compact` call, so it runs
@@ -1492,5 +1560,51 @@ mod tests {
             file
         );
         assert_eq!(file.dark.accent, cox_tui::theme::parse_color("#ff0000"));
+    }
+
+    /// T54.7: `[voice] enabled = false` hands the TUI no dictation and no
+    /// warning; enabled without the model, one warning naming the download;
+    /// with the model on disk, a dictation (no microphone opens until the
+    /// key). A non-default `[voice] key` rebinds the action.
+    #[cfg(feature = "voice")]
+    #[test]
+    fn voice_disabled_passes_no_dictation() {
+        use cox_tui::state::Cell;
+
+        let home = tempfile::tempdir().expect("tempdir");
+        let mut config = Config::default();
+        let fresh = || {
+            State::new(
+                cox_protocol::types::PermissionMode::Default,
+                cox_protocol::types::SandboxMode::WorkspaceWrite,
+            )
+        };
+        let mut state = fresh();
+        assert!(voice(&mut state, &config, home.path()).is_none());
+        assert!(state.transcript.is_empty(), "off is not a warning");
+
+        config.voice.enabled = true;
+        assert!(voice(&mut state, &config, home.path()).is_none());
+        assert!(matches!(
+            state.transcript.as_slice(),
+            [Cell::Notice { level: Level::Warn, text }]
+                if text.contains("cox voice model download base.en")
+        ));
+
+        let model = crate::voice_cmd::model_path(home.path(), "base.en").expect("pinned");
+        std::fs::create_dir_all(model.parent().expect("dir")).expect("mkdir");
+        std::fs::write(&model, b"ggml").expect("model");
+        config.voice.key = "f5".into();
+        let mut state = fresh();
+        assert!(voice(&mut state, &config, home.path()).is_some());
+        assert!(state.transcript.is_empty());
+        let f5 = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::F(5),
+            crossterm::event::KeyModifiers::NONE,
+        );
+        assert_eq!(
+            state.keymap.resolve(f5, cox_tui::commands::Context::Idle),
+            Some(cox_tui::keymap::Action::Voice)
+        );
     }
 }

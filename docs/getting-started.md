@@ -54,6 +54,7 @@ binding; a plugin's slash commands show up in the `/` palette as
 | `Ctrl+O` | transcript | idle |
 | `Ctrl+E` | expand | idle |
 | `Ctrl+G` | diff | idle |
+| `Alt+V` | voice | idle |
 | `Ctrl+K` | plugin.leader | idle |
 | `Ctrl+C` | quit | idle |
 | `Ctrl+D` | quit | idle |
