@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.41. Cards as view-backed attachments
-- T37.42. Copy as Markdown and the one-block clamp
 - T37.43. Incremental text from `StyledDoc` spans
 - T37.20.1. `Spinner` and `ProgressRing`
 - T37.20.2. `Sparkline` and `StackedBar`

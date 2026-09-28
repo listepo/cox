@@ -3490,3 +3490,17 @@ Deviations: snapshots cover orientation × light/dark × Solid/Frosted (`Variant
 Check: 8 snapshots recorded, then a full `swift test` 39 tests in 11 suites pass, the Foundations `hairline` references unchanged; `swiftlint --strict` and `swift-format lint --strict` clean. Commit ffb4282.
 
 Not done: nothing.
+
+#### T37.42 Copy as Markdown and the one-block clamp
+
+Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
+Goal: copy of a selection writes Markdown in block order (cards as their summary lines) next to plain text; with `cross_block_selection = false` a drag is clamped to the block it started in, in both directions (A67).
+Check: a test drags across three blocks and the pasteboard holds their Markdown in order; with the setting off the same drag stays in the first block.
+Status: done 2026-09-28
+Result: `CoxTranscriptText/MarkdownCopy.swift` — copying a selection writes Markdown (new `NSPasteboard.PasteboardType.markdown`, `net.daringfireball.markdown`) and plain text (`.string`), blocks in transcript order, from each block's timeline value rather than the drawn text: a whole reply copies as its source (rebuilt from the `StyledDoc` when empty); tool, tool group, approval, question and task blocks copy as their summary line however they are drawn; a cut code block stays fenced. `Selection.swift` — with `crossBlockSelection` off, `setSelectedRanges` keeps a drag inside the block it started in, both directions; a settled change touching the current block (⇧-arrow, select all) stays in it, a change elsewhere (find) moves to that block. `TranscriptTextView` gains `crossBlockSelection` (passed in by the app), a `blocks` map filled in `load`, and `dragAnchor` (+11 lines). DT§5.2 updated.
+
+Deviations: Markdown goes under its own pasteboard type next to plain text in `.string` (the spike put Markdown in `.string`); ~210 lines in 3 files.
+
+Check: `swift test --no-parallel` 11/11 (5 new in `SelectionTests.swift`, real `NSEvent` drags in an offscreen window, a private named `NSPasteboard`): `dragAcrossThreeBlocksCopiesTheirMarkdownInOrder`, `withTheSettingOffTheDragStaysInItsFirstBlockBothWays`; both clamp tests fail with the clamp disabled; `swift build --build-tests` no warnings; `swift-format lint --strict` and `swiftlint --strict` clean (scratch manifests without the plugin). Commit 8ba9d64.
+
+Not done: the "Copy as Markdown" context-menu item and ⇧-click gutter selection (DT§5.2) are not in this card. Mid-stream, `Block.assistant.text` can lag because `docTail` updates only the doc, so a whole-reply copy while streaming may return an older source (fix belongs in `SessionStore`). Partial-reply copy assumes the doc-block layout `TranscriptText.run` produces now.

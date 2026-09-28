@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.42 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.20.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -1086,12 +1085,6 @@ Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same 
 Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
 Goal: tool, approval and subagent cards sit in the text as view-backed attachments hosting SwiftUI views; a card that collapses or expands keeps the text below it stable.
 Check: a test expands and collapses a card and the range and frame of the next block stay correct; a drag across a card selects the card as one unit.
-
-#### T37.42 Copy as Markdown and the one-block clamp
-
-Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
-Goal: copy of a selection writes Markdown in block order (cards as their summary lines) next to plain text; with `cross_block_selection = false` a drag is clamped to the block it started in, in both directions (A67).
-Check: a test drags across three blocks and the pasteboard holds their Markdown in order; with the setting off the same drag stays in the first block.
 
 #### T37.43 Incremental text from `StyledDoc` spans
 
