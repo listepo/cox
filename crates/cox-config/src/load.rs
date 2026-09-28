@@ -5,7 +5,9 @@
 //! `cox config show --sources` can print it.
 //!
 //! `.claude/settings.json` (T7.5) is one more layer above project config (plan.md §1.6
-//! "Out of scope").
+//! "Out of scope"). A repository's own `.claude` files count as project
+//! config for the guard list (T22.11, A122), the user's `~/.claude` file does
+//! not.
 //!
 //! T32.16: moved here from `crates/cox`. The two inputs that come from the
 //! binary's side stay there and are passed in: the CLI-flag layer (built
@@ -398,10 +400,23 @@ impl LoadedConfig {
     }
 }
 
+/// The imported `.claude/settings.json` layers for one `cwd`, split by owner
+/// (T22.11, A122): a repository's files are left out of the figment without
+/// the project, so the guard list treats their rules like a project
+/// config's (`allow` reverted, `deny`/`ask` added), while the user's own
+/// file counts like user config.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClaudeLayers {
+    /// `~/.claude/settings.json`, as `cox_ext::claude_settings` lifts it.
+    pub user: Option<JsonValue>,
+    /// A repository's `.claude/settings.json` and `.claude/settings.local.json`.
+    pub project: Option<JsonValue>,
+}
+
 fn build_figment(
     user_path: &Path,
     project_path: Option<&Path>,
-    claude: Option<&JsonValue>,
+    claude: &[&JsonValue],
     flags: &JsonValue,
 ) -> Figment {
     // `Toml::file` (not `file_exact`): both paths here are always absolute
@@ -415,12 +430,12 @@ fn build_figment(
     if let Some(project_path) = project_path {
         fig = fig.merge(named("project", Toml::file(project_path)));
     }
-    if let Some(claude) = claude {
+    for claude in claude {
         // `adjoin`, not `merge`: imported rules and hooks add to the `.cox`
         // lists rather than replace them (D13: imported, read-only).
         fig = fig.adjoin(named(
             "claude-settings",
-            Serialized::defaults(claude.clone()),
+            Serialized::defaults((*claude).clone()),
         ));
     }
     let key_tree = default_key_tree();
@@ -503,13 +518,13 @@ fn to_core_error(err: figment::Error) -> CoreError {
 /// list, and returns the effective config plus provenance.
 ///
 /// `flags` is the sparse CLI-flag override tree; `claude_layer` reads the
-/// imported `.claude/settings.json` layer for `cwd`, and is called only when
+/// imported `.claude/settings.json` layers for `cwd`, and is called only when
 /// the `.cox` layers leave `permissions.import_claude_settings` on. The
 /// caller reports `violations` (T32.16: no terminal output in this crate).
 pub fn load(
     cwd: &Path,
     flags: &JsonValue,
-    claude_layer: impl FnOnce(&Path) -> Option<JsonValue>,
+    claude_layer: impl FnOnce(&Path) -> Option<ClaudeLayers>,
 ) -> Result<LoadedConfig, CoreError> {
     load_in(&user_config_path(), cwd, flags, claude_layer)
 }
@@ -520,23 +535,28 @@ pub fn load_in(
     user_path: &Path,
     cwd: &Path,
     flags: &JsonValue,
-    claude_layer: impl FnOnce(&Path) -> Option<JsonValue>,
+    claude_layer: impl FnOnce(&Path) -> Option<ClaudeLayers>,
 ) -> Result<LoadedConfig, CoreError> {
     let user_path = user_path.to_path_buf();
     let project_path = project_config_path(cwd);
 
     // Whether to import is itself a config key, so the `.cox` layers decide
     // before the Claude layer exists.
-    let native: Config = build_figment(&user_path, project_path.as_deref(), None, flags)
+    let native: Config = build_figment(&user_path, project_path.as_deref(), &[], flags)
         .extract()
         .map_err(to_core_error)?;
     let claude = native
         .permissions
         .import_claude_settings
         .then(|| claude_layer(cwd))
-        .flatten();
-    let full_fig = build_figment(&user_path, project_path.as_deref(), claude.as_ref(), flags);
-    let pre_project_fig = build_figment(&user_path, None, claude.as_ref(), flags);
+        .flatten()
+        .unwrap_or_default();
+    // T22.11: a repository's `.claude` files join only the figment with the
+    // project, so the guard list sees their rules as the project's.
+    let user_claude: Vec<&JsonValue> = claude.user.iter().collect();
+    let all_claude: Vec<&JsonValue> = claude.user.iter().chain(&claude.project).collect();
+    let full_fig = build_figment(&user_path, project_path.as_deref(), &all_claude, flags);
+    let pre_project_fig = build_figment(&user_path, None, &user_claude, flags);
 
     let full_cfg: Config = full_fig.extract().map_err(to_core_error)?;
     let without_project_cfg: Config = pre_project_fig.extract().map_err(to_core_error)?;
