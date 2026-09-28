@@ -92,6 +92,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.4 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T50.5 | todo | P3 | 1 | 0% | |
+| T50.6 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
 
@@ -2802,6 +2803,18 @@ Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
 
+### T50.6. `headless_run_does_not_wait_for_a_background_shell` is not timing-flaky
+
+Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~60 · Files: the test file that holds it (`crates/cox/tests/subagent_messaging.rs`), plus the code under test only if the test exposes a real bug
+
+Goal: the e2e test fails under full-workspace load (seen by T40.1 and T41.2 on 2026-09-28: 3 of 3 failures when run alone under load at 10–20 s, passes in ~3 s when idle). Find whether it is a fixed wall-clock bound, a race with the detached shell's teardown (T38.2 changed session-end cancellation), or a real bug; make the test wait on an event or a deadline that holds under load, never on a fixed sleep; fix the code instead if it is a real bug.
+
+Check: the test passes 20 times in a row under load (e.g. `cargo nextest run --workspace` in parallel with a second nextest run, or `stress`-style repeat with `--test-threads` high); the root cause is written in the done.md entry.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: other slow tests.
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -2948,6 +2961,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A81 §3 (new P50: T50.1; T45.1 raised to P0), by the creator on 2026-09-28, and the answers to the P39–P49 planning questions. Why: planning P42–P45 found that instruction files and the skills index never reach the model (system[2] is still the pre-T7.1 stub) and that a subagent copies the configured permission mode instead of its parent's live one, so after Shift+Tab to plan a child still runs auto (T45.1). Answers: new dependencies approved — `base64` (T40.1, also replaces the hand-rolled encoder in `cox-tui/src/term.rs`), `url` (T41.3), `trycmd` as a dev-dependency (P48) and rmcp's `elicitation` feature as a dev-dependency of `cox-mcp` (T47.2), each with its §1 row in the implementing commit; Gemini stays a type-2 preset with the signature passthrough (P39); the scripted status line is plain text, `cox_sanitize::sanitize` is unchanged (P46); the Windows gate (T49.2) stays and decides the order of a Windows build and sandbox. Every other open question from planning takes the option the cards propose. No decision in §0 changes.
 - A82 §3 P50 (new T50.2, T50.3), by the creator on 2026-09-28 ("create everything there is"). Why: T45.1 found that mode changes are never written to the rollout, so a resumed session and a child woken by `TaskMessage` come back in `Default` (a child can be wider than a Plan-mode parent), and that the volatile block shows the configured mode, not the live one. Effect: two cards; `cox_permission::Engine` stays the single guard. No decision changes.
 - A83 §3 P50 (new T50.4, T50.5), by the creator on 2026-09-28 ("create everything there is"). Why: T50.2 found that resume ignores the starting mode (a session started in Plan through config comes back in `Default`, i.e. wider) and that `cox --plain` keeps showing the configured mode after `/permissions`. Effect: two cards; on resume an explicit `--permission-mode` flag wins, then the recorded mode, then config. `cox_permission::Engine` stays the single guard. No decision changes.
+- A84 §3 P50 (new T50.6), by the creator on 2026-09-28 ("create everything there is"). Why: `headless_run_does_not_wait_for_a_background_shell` failed under full-workspace load in two task runs the same day and stops fail-fast runs for every parallel agent. Effect: one card. No decision changes.
 
 ## 7. Risk register
 
