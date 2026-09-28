@@ -18,3 +18,10 @@ Not approved yet. Move nothing from here into `plan.md` or `roadmap.md` without 
 
 - The ledger's `usage.turn` holds the call number within a turn, not the turn number, so `cox stats --session` lists call indices as turns. Found by T37.29.3.2, whose cost history infers turns from where the number resets to 1. Store the real turn (or add a column) and fix `cox stats`.
 - `project_totals(slug)` behind `/sessions` returns zeros because the core writes `project_slug` empty. Found by T37.29.3.3, which matches the project by cwd instead. Fill the slug at session open, or switch `project_totals` to the cwd match.
+
+## Follow-ups left by T37.22.7–T37.22.13
+
+- The TUI still shows model ids; threading the models.dev display names (A111) into `cox-tui` would match the app.
+- `cox run -p --output-format stream-json` stores the generated title but never prints `TitleSet`, which arrives after `TurnDone`; the run could wait for it or print it when it comes.
+- `subagent::summarize` and `memory_extract` still build their own one-shot requests; they could move onto `Session::side_call`.
+- The UI preview sample data (`PreviewState+ModelPopover.swift`) lists efforts without `medium`.
