@@ -124,8 +124,8 @@ private struct ToolHeaderRow: View {
   }
 }
 
-/// A spinner, check or cross, then the duration, the mockup's `.st`.
-private struct ToolHeaderStatus: View {
+/// A spinner, check or cross, then the duration, the mockup's `.st`; a task row shows it too.
+struct ToolHeaderStatus: View {
   let state: ToolHeader.State
   let duration: String?
 
