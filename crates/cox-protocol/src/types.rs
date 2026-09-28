@@ -350,6 +350,52 @@ pub struct CheckpointFile {
     pub kind: CheckpointKind,
 }
 
+/// A file a code rewind left as it is (`Event::Rewound`), and why (A101).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct SkippedFile {
+    /// The confined absolute path.
+    pub path: PathBuf,
+    /// Why it was not restored.
+    pub reason: SkipReason,
+}
+
+impl<'de> Deserialize<'de> for SkippedFile {
+    /// Also reads a bare path: rollouts written before A101 carried no
+    /// reason, and an unreadable line in the middle fails the whole resume.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Path(PathBuf),
+            File { path: PathBuf, reason: SkipReason },
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Path(path) => Self {
+                path,
+                reason: SkipReason::Failed {
+                    error: "no reason recorded".into(),
+                },
+            },
+            Wire::File { path, reason } => Self { path, reason },
+        })
+    }
+}
+
+/// Why a rewind could not restore a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SkipReason {
+    /// Its pre-image was over the size cap, so no bytes were kept.
+    TooLarge,
+    /// The path no longer confines to the workspace roots.
+    OutsideRoots,
+    /// Reading the pre-image or writing the file failed.
+    Failed {
+        /// The error, as shown to the user.
+        error: String,
+    },
+}
+
 /// `permissions.mode` (plan.md §1.6/§1.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1149,8 +1195,8 @@ pub enum Event {
         conversation: bool,
         /// Paths written back or removed.
         restored: Vec<PathBuf>,
-        /// Paths whose pre-image was too large to keep, left as they are.
-        skipped: Vec<PathBuf>,
+        /// Paths left as they are, each with why.
+        skipped: Vec<SkippedFile>,
     },
     /// A background task (subagent or detached `bash`) was created.
     TaskCreated {
@@ -1615,6 +1661,27 @@ mod tests {
         });
         let event: Event = serde_json::from_value(json).expect("old rollout line");
         assert!(matches!(event, Event::TurnStarted { seq: 0, .. }));
+    }
+
+    #[test]
+    fn a_skipped_path_without_a_reason_still_loads() {
+        let json = serde_json::json!({
+            "type": "rewound", "to_turn": 1, "code": true, "conversation": false,
+            "restored": [], "skipped": ["big.bin"]
+        });
+        let event: Event = serde_json::from_value(json).expect("old rollout line");
+        let Event::Rewound { skipped, .. } = event else {
+            panic!("not a rewind: {event:?}");
+        };
+        assert_eq!(skipped[0].path, PathBuf::from("big.bin"));
+        assert!(matches!(skipped[0].reason, SkipReason::Failed { .. }));
+        let now = SkippedFile {
+            path: "a.rs".into(),
+            reason: SkipReason::OutsideRoots,
+        };
+        let back: SkippedFile =
+            serde_json::from_value(serde_json::to_value(&now).expect("ser")).expect("de");
+        assert_eq!(back, now);
     }
 
     #[rstest]

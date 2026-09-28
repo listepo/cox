@@ -14,7 +14,7 @@ use cox_core::History;
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Archive, Store};
 use cox_protocol::types::{CheckpointKind, Event, Level, Role, Submission};
-use cox_protocol::{Before, Change, Checkpointer, PreImage, Snapshot};
+use cox_protocol::{Before, Change, Checkpointer, PreImage, SkipReason, SkippedFile, Snapshot};
 
 /// `a.rs` held "old" when the turn touched it and "now" by the time the
 /// rewind looks; every restore is recorded.
@@ -405,5 +405,85 @@ async fn undo_then_redo_is_identity() {
         disk.snapshot(),
         edited,
         "a second redo does not undo the first"
+    );
+}
+
+/// `a.rs` is over the size cap and `new.rs` cannot be written back.
+struct Stuck;
+
+#[async_trait]
+impl Checkpointer for Stuck {
+    async fn preimages(&self, roots: &[PathBuf], _cwd: &Path, paths: &[String]) -> Vec<PreImage> {
+        paths
+            .iter()
+            .map(|p| PreImage {
+                path: roots[0].join(p),
+                before: if p.ends_with("a.rs") {
+                    Before::TooLarge
+                } else {
+                    Before::Bytes(b"x".to_vec())
+                },
+            })
+            .collect()
+    }
+    async fn snapshot(&self, _roots: &[PathBuf]) -> Result<Snapshot, ToolError> {
+        Ok(Snapshot::default())
+    }
+    async fn changes(&self, _b: &Snapshot, _a: &Snapshot) -> Result<Vec<Change>, ToolError> {
+        Ok(vec![])
+    }
+    async fn restore(
+        &self,
+        _roots: &[PathBuf],
+        _cwd: &Path,
+        _path: &Path,
+        _bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        Err(ToolError::Io)
+    }
+}
+
+/// A101: each file a rewind could not restore says why, and the notice
+/// counts them by reason instead of calling every failure too large.
+#[tokio::test]
+async fn a_skipped_restore_carries_its_reason() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    session.set_checkpointer(Arc::new(Stuck));
+    turn(&session, &mut rx, "edit a.rs and new.rs").await;
+    session
+        .submit(Submission::Rewind {
+            to_turn: 1,
+            code: true,
+            conversation: false,
+        })
+        .await
+        .expect("rewind");
+    let events = until_rewound(&mut rx).await;
+    let Some(Event::Rewound { skipped, .. }) =
+        events.iter().find(|e| matches!(e, Event::Rewound { .. }))
+    else {
+        panic!("no Rewound: {events:?}");
+    };
+    assert_eq!(
+        skipped,
+        &vec![
+            SkippedFile {
+                path: PathBuf::from("/tmp/cox-turn/a.rs"),
+                reason: SkipReason::TooLarge,
+            },
+            SkippedFile {
+                path: PathBuf::from("/tmp/cox-turn/new.rs"),
+                reason: SkipReason::Failed {
+                    error: "io error".into()
+                },
+            },
+        ]
+    );
+    let Some(Event::Notice { text, .. }) = events.last() else {
+        panic!("no notice: {events:?}");
+    };
+    assert_eq!(
+        text,
+        "rewound to T1: 0 files restored, 1 too large to restore, 1 failed: io error"
     );
 }

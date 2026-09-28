@@ -9,9 +9,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use cox_protocol::CheckpointRow;
-use cox_protocol::errors::CoreError;
+use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::types::{CheckpointKind, Event, Level};
+use cox_protocol::{CheckpointRow, SkipReason, SkippedFile};
 
 use crate::checkpoint;
 use crate::session::{Session, State};
@@ -65,9 +65,7 @@ impl Session {
         let mut parts = Vec::new();
         if code {
             parts.push(format!("{} files restored", restored.len()));
-            if !skipped.is_empty() {
-                parts.push(format!("{} too large to restore", skipped.len()));
-            }
+            parts.extend(skip_counts(&skipped));
         }
         if conversation {
             parts.push("conversation cut".into());
@@ -121,7 +119,10 @@ impl Session {
     /// Writes the earliest pre-image of every file touched since `to_turn`
     /// back, under a fresh turn number so the rewind's own pre-images make
     /// it undoable. Returns `(restored, skipped)`.
-    async fn restore_files(&self, to_turn: u32) -> Result<(Vec<PathBuf>, Vec<PathBuf>), CoreError> {
+    async fn restore_files(
+        &self,
+        to_turn: u32,
+    ) -> Result<(Vec<PathBuf>, Vec<SkippedFile>), CoreError> {
         let Some(cp) = self.checkpointer() else {
             self.emit(Event::Notice {
                 level: Level::Warn,
@@ -159,14 +160,15 @@ impl Session {
                 (CheckpointKind::Created, _) => None,
                 (_, Some(id)) => match self.archive.get(&id).await {
                     Ok(bytes) => Some(bytes),
-                    Err(_) => {
-                        skipped.push(row.path);
+                    Err(e) => {
+                        let error = e.to_string();
+                        skipped.push(skip(row.path, SkipReason::Failed { error }));
                         continue;
                     }
                 },
                 // A pre-image over the size cap was recorded without bytes.
                 (_, None) => {
-                    skipped.push(row.path);
+                    skipped.push(skip(row.path, SkipReason::TooLarge));
                     continue;
                 }
             };
@@ -182,7 +184,7 @@ impl Session {
                 .await
             {
                 Ok(()) => restored.push(row.path),
-                Err(_) => skipped.push(row.path),
+                Err(e) => skipped.push(skip(row.path, skip_reason(&e))),
             }
         }
         Ok((restored, skipped))
@@ -199,5 +201,96 @@ impl Session {
         let start = inner.turn_marks[at].start;
         inner.history.truncate(start);
         inner.turn_marks.truncate(at);
+    }
+}
+
+fn skip(path: PathBuf, reason: SkipReason) -> SkippedFile {
+    SkippedFile { path, reason }
+}
+
+/// What a failed `Checkpointer::restore` means to the user.
+fn skip_reason(error: &ToolError) -> SkipReason {
+    match error {
+        ToolError::Confined { .. } => SkipReason::OutsideRoots,
+        ToolError::TooLarge { .. } => SkipReason::TooLarge,
+        other => SkipReason::Failed {
+            error: other.to_string(),
+        },
+    }
+}
+
+/// The notice's skipped parts, one per reason in a fixed order:
+/// `2 too large to restore, 1 failed: <first error>`.
+fn skip_counts(skipped: &[SkippedFile]) -> Vec<String> {
+    let count = |want: fn(&SkipReason) -> bool| skipped.iter().filter(|s| want(&s.reason)).count();
+    let large = count(|r| matches!(r, SkipReason::TooLarge));
+    let outside = count(|r| matches!(r, SkipReason::OutsideRoots));
+    let failed = count(|r| matches!(r, SkipReason::Failed { .. }));
+    let first_error = skipped.iter().find_map(|s| match &s.reason {
+        SkipReason::Failed { error } => Some(error.as_str()),
+        _ => None,
+    });
+    let mut parts = Vec::new();
+    if large > 0 {
+        parts.push(format!("{large} too large to restore"));
+    }
+    if outside > 0 {
+        parts.push(format!("{outside} outside the workspace roots"));
+    }
+    if let (true, Some(error)) = (failed > 0, first_error) {
+        parts.push(format!("{failed} failed: {error}"));
+    }
+    parts
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn a_confined_restore_is_outside_the_roots_and_an_io_error_failed() {
+        let confined = ToolError::Confined {
+            path: PathBuf::from("/etc/passwd"),
+            root: PathBuf::from("/w"),
+        };
+        assert_eq!(skip_reason(&confined), SkipReason::OutsideRoots);
+        assert_eq!(
+            skip_reason(&ToolError::Io),
+            SkipReason::Failed {
+                error: "io error".into()
+            }
+        );
+    }
+
+    #[test]
+    fn skipped_files_are_counted_by_reason() {
+        let skipped = [
+            skip("a".into(), SkipReason::TooLarge),
+            skip("b".into(), SkipReason::OutsideRoots),
+            skip("c".into(), SkipReason::TooLarge),
+            skip(
+                "d".into(),
+                SkipReason::Failed {
+                    error: "io error".into(),
+                },
+            ),
+            skip(
+                "e".into(),
+                SkipReason::Failed {
+                    error: "other".into(),
+                },
+            ),
+        ];
+        assert_eq!(
+            skip_counts(&skipped),
+            [
+                "2 too large to restore",
+                "1 outside the workspace roots",
+                "2 failed: io error"
+            ]
+        );
+        assert!(skip_counts(&[]).is_empty());
     }
 }
