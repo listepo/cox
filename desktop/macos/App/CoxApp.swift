@@ -4,7 +4,8 @@
 // hides its title bar (DS§4); a session pops out into its own window or a native tab (T51.11);
 // Settings opens from the app menu (⌘,); the menu-bar extra shows what needs you (T51.14);
 // two recorded global hotkeys open that menu and a new session (T51.15); session titles are
-// in Spotlight, and a result opens its session (T51.16).
+// in Spotlight, and a result opens its session (T51.16); App Intents ask cox in a project and
+// open a session (T51.17).
 
 import AppKit
 import CoxClient
@@ -29,7 +30,7 @@ struct CoxApp: App {
 
   var body: some Scene {
     WindowGroup("Cox", id: Self.mainWindow) {
-      SessionWindow(model: model).opensWindowsForHotkeys(model).opensSpotlightResults()
+      SessionWindow(model: model).lendsOpenWindow(to: model).opensSpotlightResults()
     }
     .windowStyle(.hiddenTitleBar)
     .commands { ShellCommands() }
@@ -38,7 +39,7 @@ struct CoxApp: App {
       MenuBarContent(model: model)
     } label: {
       Text(model.sidebar.inboxItems.isEmpty ? "cx" : "cx \(model.sidebar.inboxItems.count)")
-        .opensWindowsForHotkeys(model)
+        .lendsOpenWindow(to: model)
     }
     .menuBarExtraStyle(.window)
     // One session popped out of a window, alone or as a native tab (T51.11).
@@ -64,9 +65,11 @@ final class AppModel {
   let sidebar: SidebarStore
   /// The open sessions every window shares (T51.11).
   let registry = AppStore()
-  /// A scene's `openWindow`, for the hotkeys, which fire outside every view (T51.15); `nil`
-  /// until the first window or the menu-bar label appears.
-  var openWindow: OpenWindowAction?
+  /// A scene's `openWindow`, for the hotkeys and the intents, which fire outside every view
+  /// (T51.15, T51.17); `nil` until the first window or the menu-bar label appears.
+  private var openWindow: OpenWindowAction?
+  /// Pop-outs asked for before any scene lent its `openWindow`, as when an intent launches cox.
+  private var waiting: [PopOut] = []
   /// The listed sessions' titles in Spotlight (T51.16).
   private let spotlight = SpotlightIndex(store: CoreSpotlightStore())
   private var loginEnv: Task<Void, Never>?
@@ -87,6 +90,7 @@ final class AppModel {
     UNUserNotificationCenter.current().delegate = responder
     self.responder = responder
     Hotkeys.register(self)
+    CoxIntents.register(self)
     sidebar.didRefresh = { [weak self] in self?.indexSessions() }
   }
 
@@ -108,6 +112,22 @@ final class AppModel {
     loginEnv = read
     await read.value
   }
+
+  /// Takes a scene's `openWindow` and opens what waited for one.
+  func lend(_ action: OpenWindowAction) {
+    openWindow = action
+    for popOut in waiting { action(value: popOut) }
+    waiting = []
+  }
+
+  /// Opens `popOut` now, or once a scene lends its `openWindow`.
+  func show(_ popOut: PopOut) {
+    guard let openWindow else { return waiting.append(popOut) }
+    openWindow(value: popOut)
+  }
+
+  /// Opens a window of the scene `id`; nothing before a scene appeared, as launching opens one.
+  func show(id: String) { openWindow?.callAsFunction(id: id) }
 
   /// Makes `store` the target of the notifications for `session`.
   func register(_ store: SessionStore, as session: String) {

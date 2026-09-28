@@ -22,6 +22,8 @@ struct SessionWindow: View {
   let model: AppModel
   /// Set for a popped-out window: the one session it shows, and the window it joins as a tab.
   let popOut: PopOut?
+  /// The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
+  static let syntaxTheme = "base16-ocean.dark"
   /// This window's hold on the sessions it shows in `AppStore`.
   @State private var windowID = UUID()
   /// Set once first run chose a project; a fixture launch never asks.
@@ -302,11 +304,12 @@ struct SessionWindow: View {
         shared = joined
       } else {
         let client = try await model.launch.core.get().open(
-          // The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
-          OpenSession(cwd: cwd, resume: resume, theme: "base16-ocean.dark"))
+          OpenSession(cwd: cwd, resume: resume, theme: Self.syntaxTheme))
         shared = model.registry.adopt(client, window: windowID)
       }
       let client = shared.store.session
+      // An asked session was held for this window (T51.17); the window holds it now.
+      if let handoff = popOut?.handoff { model.registry.release(client.id, window: handoff) }
       if opened[client.id] == nil { opened[client.id] = OpenedSession(shared) }
       (current, failure, reviewing) = (client.id, nil, nil)
       opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []

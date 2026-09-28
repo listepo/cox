@@ -37,7 +37,7 @@ enum Hotkeys {
     KeyboardShortcuts.onKeyUp(for: .newSession) { [weak model] in
       NSApp.activate()
       // A new main window opens a new session, as the menu bar's New session does.
-      model?.openWindow?.callAsFunction(id: CoxApp.mainWindow)
+      model?.show(id: CoxApp.mainWindow)
     }
     KeyboardShortcuts.onKeyUp(for: .showCoxMenu) { [weak model] in
       if let button = statusButton() {
@@ -45,7 +45,7 @@ enum Hotkeys {
       } else {
         // `desktop.menu_bar` is off: the app is the next best place for what needs you.
         NSApp.activate()
-        model?.openWindow?.callAsFunction(id: CoxApp.mainWindow)
+        model?.show(id: CoxApp.mainWindow)
       }
     }
   }
@@ -64,17 +64,18 @@ enum Hotkeys {
 }
 
 extension View {
-  /// Hands this scene's `openWindow` to the hotkeys.
-  func opensWindowsForHotkeys(_ model: AppModel) -> some View {
-    modifier(HotkeyWindows(model: model))
+  /// Hands this scene's `openWindow` to the model, for the hotkeys and the intents, which fire
+  /// outside every view.
+  func lendsOpenWindow(to model: AppModel) -> some View {
+    modifier(LentOpenWindow(model: model))
   }
 }
 
-private struct HotkeyWindows: ViewModifier {
+private struct LentOpenWindow: ViewModifier {
   let model: AppModel
   @Environment(\.openWindow) private var openWindow
 
   func body(content: Content) -> some View {
-    content.onAppear { model.openWindow = openWindow }
+    content.onAppear { model.lend(openWindow) }
   }
 }

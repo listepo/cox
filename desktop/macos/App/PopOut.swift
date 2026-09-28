@@ -11,12 +11,20 @@ import SwiftUI
 struct PopOut: Codable, Hashable {
   var session: String
   var tabOf: Int?
+  /// The registry token an "Ask cox" intent held the session under until this window joins it
+  /// (T51.17); a restored window finds it gone, and releasing it again is a no-op.
+  var handoff: UUID?
 
   /// For the key window's Open in New Tab, or a plain Open in New Window.
   @MainActor
   init(session: String, asTab: Bool) {
     self.session = session
     tabOf = asTab ? NSApp.keyWindow?.windowNumber : nil
+  }
+
+  /// A session an intent opened and holds under `handoff`.
+  init(session: String, handoff: UUID) {
+    (self.session, self.handoff) = (session, handoff)
   }
 }
 
