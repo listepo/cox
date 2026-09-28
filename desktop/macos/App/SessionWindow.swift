@@ -9,7 +9,9 @@
 // Review replaces the transcript column, the shell's panes fold, ⌃` shows the session's terminal
 // pane under the column (T51.6; the window asks before closing over a running command), ⌘⇧B
 // shows the browser pane beside it (T51.10), plugin panels sit above the composer and a plugin
-// overlay shows as a sheet (T52.17), and the Appearance popover writes `[desktop.appearance]`.
+// overlay shows as a sheet (T52.17), File › Connect to Host… lists a remote host's sessions in
+// the sidebar and opens one through that host (T52.21), and the Appearance popover writes
+// `[desktop.appearance]`.
 // A popped-out window (T51.11) is the same view on one session with no sidebar; every window
 // on a session shares its stores through `AppStore`.
 
@@ -53,6 +55,8 @@ struct SessionWindow: View {
   @State private var terminalHeight = SessionTerminal.defaultHeight
   /// The browser pane shows beside the column; UI-only, like the terminal's.
   @State private var isBrowserVisible = false
+  /// The Connect to Host sheet, while it shows (T52.21).
+  @State private var connecting: ConnectHostSheet.State?
   @Environment(\.coxAppearance) private var base
   @Environment(\.openWindow) private var openWindow
 
@@ -88,6 +92,28 @@ struct SessionWindow: View {
       if !appearanceWrites.isPending { readAppearance() }
     }
     .alert(refused ?? "", isPresented: isRefused) {}
+    .sheet(isPresented: isConnecting) {
+      ConnectHostSheet(state: connecting ?? .init()) {
+        switch $0 {
+        case .cancel: connecting = nil
+        case .connect(let host): Task { await connect(host) }
+        }
+      }
+    }
+  }
+
+  private var isConnecting: Binding<Bool> {
+    Binding(get: { connecting != nil }, set: { if !$0 { connecting = nil } })
+  }
+
+  /// The sheet's Connect: it closes once the host answered, and says why when it did not.
+  private func connect(_ host: String) async {
+    connecting = ConnectHostSheet.State(isConnecting: true)
+    if let failure = await model.remotes.connect(host) {
+      connecting = ConnectHostSheet.State(failure: failure)
+    } else {
+      connecting = nil
+    }
   }
 
   private var main: some View {
@@ -100,10 +126,12 @@ struct SessionWindow: View {
           toggleSidebar: { toggleSidebar() },
           toggleInspector: { screen.isInspectorVisible.toggle() },
           toggleTerminal: { toggleTerminal() }, toggleBrowser: { isBrowserVisible.toggle() },
-          popOut: current.map { session -> (Bool) -> Void in { openPopOut(session, asTab: $0) } })
+          popOut: current.map { session -> (Bool) -> Void in { openPopOut(session, asTab: $0) } },
+          connectHost: model.remotes.canConnect ? { connecting = ConnectHostSheet.State() } : nil)
       )
       .task { if current == nil { await open(resume: popOut?.session) } }
       .task { await watch() }
+      .task { if popOut == nil { await model.remotes.watch() } }
       .onDisappear {
         for session in opened.values { session.close(in: model.registry, window: windowID) }
       }
@@ -116,7 +144,7 @@ struct SessionWindow: View {
     state.toolbar = ShellState.toolbar(showing, sidebar: model.sidebar, popover: screen.popover)
     state.model = ShellState.models(showing?.menu)
     state.sidebar = ShellState.sidebar(
-      model.sidebar, selection: current,
+      model.sidebar, remotes: model.remotes, selection: current,
       providers: ProviderHealth(usable: usable, check: providerCheck))
     return state
   }
@@ -268,6 +296,10 @@ struct SessionWindow: View {
     case .toggle(let project): model.sidebar.toggle(project)
     case .newSession: Task { await open(resume: nil) }
     case .popOut(let session, let asTab): openPopOut(session, asTab: asTab)
+    case .reconnect(let group):
+      if let host = RemoteHosts.host(section: group) {
+        Task { await model.remotes.reconnect(host) }
+      }
     case .rename(let session, let title):
       // An open session renames through its core; the store takes a closed one's directly.
       if let store = opened[session]?.store {
@@ -315,12 +347,18 @@ struct SessionWindow: View {
     isOpening = true
     defer { isOpening = false }
     do {
-      let cwd = resume.flatMap { model.sidebar.entry($0)?.session.cwd } ?? LaunchCore.project()
+      // A remote host's session opens through that host, in its cwd there (T52.21).
+      let remote = resume.flatMap { model.remotes.workspace(for: $0) }
+      let cwd =
+        remote?.cwd ?? resume.flatMap { model.sidebar.entry($0)?.session.cwd }
+        ?? LaunchCore.project()
       let shared: AppStore.Shared
       if let resume, let joined = model.registry.join(resume, window: windowID) {
         shared = joined
       } else {
-        let client = try await model.launch.core.get().open(
+        let core: any CoreClient
+        if let remote { core = remote.workspace } else { core = try model.launch.core.get() }
+        let client = try await core.open(
           OpenSession(cwd: cwd, resume: resume, theme: Self.syntaxTheme))
         shared = model.registry.adopt(client, window: windowID)
       }
@@ -329,7 +367,10 @@ struct SessionWindow: View {
       if let handoff = popOut?.handoff { model.registry.release(client.id, window: handoff) }
       if opened[client.id] == nil { opened[client.id] = OpenedSession(shared) }
       (current, failure, reviewing) = (client.id, nil, nil)
-      opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
+      // The local config's models; a remote session's cwd is not a path here.
+      if remote == nil {
+        opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
+      }
       model.sidebar.refresh()
       // After it shows: Info asks git about the cwd, which can take a while.
       if let info = try? await client.info() {

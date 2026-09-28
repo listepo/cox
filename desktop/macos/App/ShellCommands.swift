@@ -5,7 +5,8 @@
 // window's panes through the actions it publishes. Show/Hide Terminal on ⌃` folds the session's
 // terminal pane under the column (DT§5.5, T51.6); Show/Hide Browser on ⌘⇧B puts the browser pane
 // beside it (DT§5.5, T51.10). The Window menu's Open in New Window and Open in New Tab pop the
-// shown session out (T51.11).
+// shown session out (T51.11). File › Connect to Host… opens the focused window's sheet for an ssh
+// host alias (T52.21).
 
 import CoxUI
 import SwiftUI
@@ -22,6 +23,8 @@ struct ShellActions {
   var toggleBrowser: () -> Void
   /// Opens the shown session in a new window, or a tab when `true`; `nil` with none shown.
   var popOut: ((Bool) -> Void)?
+  /// Shows the Connect to Host sheet; `nil` for a launch that cannot connect (a fixture).
+  var connectHost: (() -> Void)?
 }
 
 extension FocusedValues {
@@ -32,6 +35,10 @@ struct ShellCommands: Commands {
   @FocusedValue(\.shell) private var shell
 
   var body: some Commands {
+    CommandGroup(after: .newItem) {
+      Button("Connect to Host…") { shell?.connectHost?() }
+        .disabled(shell?.connectHost == nil)
+    }
     CommandGroup(replacing: .sidebar) {
       Button(shell?.isSidebarVisible == false ? "Show Sidebar" : "Hide Sidebar") {
         shell?.toggleSidebar()

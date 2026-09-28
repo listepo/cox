@@ -2,8 +2,10 @@
 // filter, the status sections ("Needs you", "Running"), the projects as disclosure groups, and
 // the footer with New session and the providers' health. A "Needs you" row is one inbox item
 // (T37.27.7), which opens its session and, once expired, is read-only. A row's context menu
-// renames its session (A113) and opens it in a new window or tab (T51.11). Separate so the window
-// shell shows sessions from one value the core fills, and reports what the person does as intents.
+// renames its session (A113) and opens it in a new window or tab (T51.11). A remote host's
+// sessions are a group of their own under a host badge, disconnected with a Reconnect action once
+// its connection dropped (T52.21). Separate so the window shell shows sessions from one value the
+// core fills, and reports what the person does as intents.
 
 import SwiftUI
 
@@ -64,6 +66,8 @@ public struct Sidebar: View {
     case rename(Session.ID, String)
     /// The row's Open in New Window or Open in New Tab (T51.11).
     case popOut(Session.ID, asTab: Bool)
+    /// A disconnected host group's Reconnect (T52.21).
+    case reconnect(Group.ID)
   }
 
   let state: State
@@ -142,6 +146,8 @@ extension Sidebar.Group {
     case section(count: String?)
     /// A project, open or folded.
     case project(isExpanded: Bool)
+    /// A remote host's sessions (T52.21), and whether its connection holds.
+    case host(isConnected: Bool)
   }
 }
 
@@ -179,6 +185,9 @@ private struct SidebarGroup: View {
       .buttonStyle(.plain)
       .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
       if isExpanded { rows }
+    case .host(let isConnected):
+      HostHeader(host: group.title, isConnected: isConnected) { send(.reconnect(group.id)) }
+      rows
     }
   }
 
@@ -206,6 +215,44 @@ private struct SidebarGroup: View {
         Button("Open in New Tab") { send(.popOut(session.opens, asTab: true)) }
       }
     }
+  }
+}
+
+/// A remote host's header: the host badge — a server glyph and the `ssh` alias in a well — then,
+/// once the connection dropped, a failed dot, "Disconnected" and Reconnect. Its rows are read-only
+/// meanwhile; the core marks them so.
+struct HostHeader: View {
+  let host: String
+  let isConnected: Bool
+  let reconnect: () -> Void
+
+  var body: some View {
+    HStack(spacing: Space.s) {
+      HStack(spacing: Space.xs) {
+        Image(systemName: "server.rack").symbolStyle(.micro)
+        Text(host).textStyle(.control).lineLimit(1).truncationMode(.middle)
+      }
+      .foregroundStyle(Color(.textSecondary))
+      .padding(.horizontal, Space.s)
+      .padding(.vertical, Space.xxs)
+      .insetWell(Color(.fillPrimary), cornerRadius: Radius.s)
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("Host \(host)")
+      if isConnected {
+        Spacer(minLength: 0)
+      } else {
+        StatusDot(.error)
+        Text("Disconnected").textStyle(.caption).foregroundStyle(Color(.textSecondary))
+          .lineLimit(1)
+        Spacer(minLength: Space.s)
+        Button("Reconnect", action: reconnect)
+          .buttonStyle(CoxButtonStyle(.plain, size: .small))
+      }
+    }
+    .padding(.leading, Space.xl)
+    .padding(.trailing, Space.l)
+    .padding(.top, Space.s)
+    .padding(.bottom, Space.xxs)
   }
 }
 
@@ -243,6 +290,11 @@ private struct SidebarFooter: View {
 #Preview("main") {
   PreviewMatrix {
     Sidebar(state: PreviewState.sidebar) { _ in }.frame(height: Size.windowMinHeight)
+  }
+}
+#Preview("hosts") {
+  PreviewMatrix {
+    Sidebar(state: PreviewState.hostSidebar) { _ in }.frame(height: Size.windowMinHeight)
   }
 }
 #Preview("needs you") {

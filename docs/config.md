@@ -263,6 +263,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[desktop]`
 
 - `menu_bar` = `true` — show cox's menu-bar extra: what needs you, what runs, today's spend (T51.14)
+- `remote_hosts` = `[]` — ssh host aliases the app connects to, each its own sidebar group (T52.21); user config only — a project config cannot set it
 ## `[desktop.appearance]`
 
 - `material` = `"frosted"` — frosted | glossy | solid — solid is forced by Reduce Transparency

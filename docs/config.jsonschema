@@ -345,7 +345,8 @@
         },
         "review": {
           "send": "queue"
-        }
+        },
+        "remote_hosts": []
       }
     }
   },
@@ -1963,6 +1964,14 @@
           "default": {
             "send": "queue"
           }
+        },
+        "remote_hosts": {
+          "description": "`ssh` host aliases the app connects to at launch, shown as sidebar\ngroups (T52.21). User config only: a project config cannot set it,\nsince a repository must not choose where the app opens a shell.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "additionalProperties": false

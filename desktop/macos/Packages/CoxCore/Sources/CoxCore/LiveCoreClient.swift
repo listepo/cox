@@ -63,10 +63,7 @@ final class LiveSession: SessionClient {
   }
 
   func reviewMessage(_ comments: [CoxClient.LineComment]) -> String? {
-    CoxFFIBindings.reviewMessage(
-      comments: comments.map {
-        CoxFFIBindings.LineComment(path: $0.path, line: $0.line, removed: $0.removed, text: $0.text)
-      })
+    CoxFFIBindings.reviewMessage(comments: comments.map { CoxFFIBindings.LineComment($0) })
   }
 
   func plan() -> [CoxClient.TodoItem] { handle.plan().map { CoxClient.TodoItem($0) } }
@@ -86,6 +83,13 @@ final class LiveSession: SessionClient {
 
   func close() { handle.close() }
   func closePluginOverlay() { handle.closePluginOverlay() }
+}
+
+// A local and a remote session build the one review prompt the same way (T52.21).
+extension CoxFFIBindings.LineComment {
+  init(_ value: CoxClient.LineComment) {
+    self.init(path: value.path, line: value.line, removed: value.removed, text: value.text)
+  }
 }
 
 /// A terminal pane's shell over the generated handle (T51.6): `outputs` pulls `nextOutput`

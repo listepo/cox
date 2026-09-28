@@ -30,6 +30,8 @@ public struct SidebarSection: Identifiable, Equatable, Sendable {
   public enum Kind: Equatable, Sendable {
     case section(count: String?)
     case project(isExpanded: Bool)
+    /// A remote host's sessions (T52.21), and whether its connection holds.
+    case host(isConnected: Bool)
   }
 
   public let id: String

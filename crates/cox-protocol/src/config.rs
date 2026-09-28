@@ -1376,6 +1376,10 @@ pub struct DesktopConfig {
     pub context: DesktopContextConfig,
     /// `[desktop.review]`
     pub review: DesktopReviewConfig,
+    /// `ssh` host aliases the app connects to at launch, shown as sidebar
+    /// groups (T52.21). User config only: a project config cannot set it,
+    /// since a repository must not choose where the app opens a shell.
+    pub remote_hosts: Vec<String>,
 }
 
 impl Default for DesktopConfig {
@@ -1386,6 +1390,7 @@ impl Default for DesktopConfig {
             transcript: DesktopTranscriptConfig::default(),
             context: DesktopContextConfig::default(),
             review: DesktopReviewConfig::default(),
+            remote_hosts: Vec::new(),
         }
     }
 }

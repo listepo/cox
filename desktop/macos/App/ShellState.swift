@@ -67,11 +67,13 @@ enum ShellState {
       })
   }
 
+  /// The local list, then one group per remote host (T52.21).
   static func sidebar(
-    _ store: SidebarStore, selection: String?, providers: ProviderHealth
+    _ store: SidebarStore, remotes: RemoteHosts, selection: String?, providers: ProviderHealth
   ) -> Sidebar.State {
     Sidebar.State(
-      filter: store.filter, groups: store.sections.map(group), selection: selection,
+      filter: store.filter, groups: (store.sections + remotes.sections).map(group),
+      selection: selection,
       providers: providers.text, providerStatus: status(providers.status))
   }
 
@@ -80,6 +82,7 @@ enum ShellState {
       switch section.kind {
       case .section(let count): .section(count: count)
       case .project(let isExpanded): .project(isExpanded: isExpanded)
+      case .host(let isConnected): .host(isConnected: isConnected)
       }
     return Sidebar.Group(
       id: section.id, title: section.title, kind: kind,

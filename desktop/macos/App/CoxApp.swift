@@ -65,6 +65,8 @@ final class AppModel {
   let sidebar: SidebarStore
   /// The open sessions every window shares (T51.11).
   let registry = AppStore()
+  /// The remote hosts the sidebar lists (T52.21); a fixture launch connects none.
+  let remotes: RemoteHosts
   /// A scene's `openWindow`, for the hotkeys and the intents, which fire outside every view
   /// (T51.15, T51.17); `nil` until the first window or the menu-bar label appears.
   private var openWindow: OpenWindowAction?
@@ -84,6 +86,8 @@ final class AppModel {
     sidebar = SidebarStore(
       workspace: launch.isFixture ? nil : try? launch.live.get(),
       inbox: (try? launch.core.get() as? any InboxClient).map { InboxStore(client: $0) })
+    remotes = RemoteHosts(
+      connector: launch.isFixture ? nil : try? launch.live.get(), settings: settings)
     let responder = NotificationResponder(
       handle: { [weak self] route in Task { @MainActor in self?.route(route) } },
       show: { _ in Task { @MainActor in NSApp.activate() } })
