@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 90% | |
-| T37.22.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2778,12 +2777,6 @@ Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`
 Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
 
 Waits for the creator: the filter prompt's `text.secondary` is 4.19:1 on the light sidebar filter well (4.5 needs about `#69696e`) — `text.primary`, a new placeholder token, a darker light `text.secondary`, or accept; and which backdrop DS§8's Frosted and Glossy contrast is measured on (over the snapshot backdrop no text token but light `text.primary` reaches 4.5:1). The finished work for all five items is kept as a patch by the orchestrator.
-
-#### T37.22.4 App glass, window chrome and composer stats match mockup 28
-
-Depends: T37.22.3 · Size: ~150 · Files: `desktop/macos/App/WindowChrome.swift`, `…/Screens/MainScreen.swift`, the composer stats view
-Goal: fixes the running app's differences from mockup 28 that the creator's local look (2026-09-28) found. (1) The window strip behind the toolbar is fully clear: whatever is behind the window reads sharp through it; the behind-window blur and wallpaper tint must cover the whole window, as on the mockup. (2) The panes render nearly opaque white; they must follow `window transparency` (58 % on the mockup) and frost so the wallpaper colour shows through, while text blocks stay readable (the popover note: at least 80 % opaque). (3) The sidebar pane encloses the traffic lights, as on the mockup, and every pane keeps the mockup's margin to the window edges; the composer does not touch the bottom edge. (4) The composer's rate reads `183763 tok/s` on the approve-write fixture: a rate over a near-zero duration must not show (the mockup shows `71 tok/s` with its sparkline). (5) The model pill reads `claude-…t-5 · high`; it shows the catalog display name (`Sonnet 5 · high`).
-Check: a screenshot of the app on the approve-write fixture next to mockup 28 shows the glass, margins, rate and model name matching by eye; a unit test for the rate guard.
 
 #### T37.22.6 App wiring leftovers: model popover, session titles, provider count, live session list
 
