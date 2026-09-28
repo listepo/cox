@@ -34,8 +34,13 @@ public final class SessionStore {
     try await session.send(intent)
   }
 
+  /// Told each batch once the store has applied it, so a view that keeps its own copy of the
+  /// timeline — the transcript text (T37.23) — splices the same patches.
+  @ObservationIgnored public var didApply: (@MainActor ([TimelinePatch]) -> Void)?
+
   public func apply(_ patches: [TimelinePatch]) {
     for patch in patches { apply(patch) }
+    didApply?(patches)
   }
 
   private func apply(_ patch: TimelinePatch) {

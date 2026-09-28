@@ -297,8 +297,8 @@ component.
 | `ToolCard(content, isExpanded:)` | ToolHeader + one detail: the edit's DiffHunkViews or a TerminalTail. A running call shows its tail under a flat header; a finished one folds the detail behind the chevron (open state is the card's own); opened, a readable face at e2 with a hairline rim, `radius.l`. Public with the value types it takes (T37.23) | `.tool`, `.tool.exp` |
 | `ApprovalCard` | header, command well, reasons, CoxButtonStyle row | `.appr` |
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |
-| `TurnView` | UserBubble, ThinkingDisclosure, ToolCard, AssistantMessage, TurnMeta | `.turn` |
-| `TranscriptView` | lazy list of TurnView from timeline patches | `.scroll` |
+| `TurnView` | UserBubble, ThinkingDisclosure, ToolCard, AssistantMessage, TurnMeta. Not a view of its own under A72: a turn is the run of blocks it owns in `TranscriptView`'s one text, the user message and the thought styled text ranges, the tool calls ToolCards (T37.23) | `.turn` |
+| `TranscriptView(store:crossBlockSelection:approval:)` | one TextKit 2 text (`CoxTranscriptText`) of the store's blocks, kept in step by the patches the store applies; tool, tool-group and task blocks are ToolCards hosted as one character each, approvals and questions the `approval` slot; prose in `font.transcript`, code in `font.mono.code`, readable text colours only. Package `CoxTranscript`, where CoxUI, the text view and the store meet (T37.23) | `.scroll` |
 | `Composer` | text field, ComposerChip, TokenMeter, send button | `.composer` |
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
 | `AppearancePopover` | MaterialPicker, LabeledSlider ×3, LabeledToggle ×2 | `.appear` |
