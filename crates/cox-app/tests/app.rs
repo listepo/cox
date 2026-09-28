@@ -847,3 +847,47 @@ async fn the_cache_hit_is_formatted_for_the_last_turn_and_for_the_session() {
     assert_eq!(text.cache_hit, hit(&ledger[last..], "this turn"));
     assert_eq!(text.cache_hit_session, hit(&ledger, "this session"));
 }
+
+/// T51.3: the terminal pane is the user's own terminal — what its shell
+/// prints reaches the pane and nothing else: not the timeline, not the
+/// rollout, not the ledger. macOS only: the pane's shell runs under
+/// Seatbelt, and Landlock cannot wrap a PTY's argv.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn terminal_output_is_not_in_the_rollout() {
+    let dir = scratch(Some(TWO_REPLIES));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session.send(send("one")).await.expect("send");
+    finish(&session).await;
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let rows = store.usage_ledger(&session.id()).expect("ledger").len();
+
+    let term = session.open_terminal(80, 24).expect("terminal");
+    // The shell computes the marker, so the echoed input never contains it.
+    term.write(b"echo TERM-MARK-$((6*7))\n").expect("write");
+    let seen = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let mut seen = Vec::new();
+        while let Some(bytes) = term.next_output().await {
+            seen.extend(bytes);
+            if String::from_utf8_lossy(&seen).contains("TERM-MARK-42") {
+                return true;
+            }
+        }
+        false
+    })
+    .await
+    .unwrap_or(false);
+    assert!(seen, "the pane got the shell's output");
+    term.close();
+    let after = store.usage_ledger(&session.id()).expect("ledger").len();
+    assert_eq!(after, rows, "the pane adds no usage row");
+
+    // The session goes on writing its rollout after the pane closed.
+    session.send(send("two")).await.expect("send");
+    finish(&session).await;
+    let rollout = store.rollout_read(&session.id()).expect("rollout");
+    let json = serde_json::to_string(&rollout).expect("json");
+    assert!(!json.contains("TERM-MARK"), "{json}");
+    let blocks = format!("{:?}", session.snapshot());
+    assert!(!blocks.contains("TERM-MARK"), "{blocks}");
+}

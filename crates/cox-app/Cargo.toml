@@ -46,6 +46,11 @@ cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 # T37.22.7 (A111): the status names its model from the catalog. Already
 # in the app's tree through cox-session.
 cox-models = { path = "../cox-models", version = "0.1.2" }
+# T51.3 (DT§3.2): the terminal pane's login shell runs in a PTY
+# (wezterm's portable-pty, already the workspace's PTY for the TUI e2e
+# tests), and closing it signals its process groups (nix, as `bash` does).
+portable-pty = { workspace = true }
+nix = { workspace = true, features = ["signal", "process"] }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and

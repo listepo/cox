@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use cox_core::{History, Session};
 use cox_protocol::Checkpointer as _;
+use cox_protocol::SandboxPolicy;
 use cox_protocol::ids::{ArchiveId, SessionId, TaskId};
 use cox_protocol::traits::Store as _;
 use cox_protocol::types::{Event, Submission, TodoItem};
@@ -25,6 +26,7 @@ use crate::info::{self, Info};
 use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
+use crate::terminal::{self, TerminalHandle, TerminalSpec};
 use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
 use crate::{TimelinePatch, dispatch};
 
@@ -40,6 +42,9 @@ pub struct LiveSession {
     cwd: PathBuf,
     /// The workspace roots a path Review reads is confined to.
     roots: Vec<PathBuf>,
+    /// The session's resolved `[sandbox]`, which its terminal panes run
+    /// under as its `bash` calls do (T51.3).
+    sandbox: SandboxPolicy,
     theme: String,
     warnings: Vec<String>,
     /// The turn spawned last; a queued one starts after it.
@@ -88,6 +93,7 @@ impl LiveSession {
             controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
             turn: Mutex::new(None),
+            sandbox: cox_session::sandbox_policy(&opened.config),
             roots: opened.config.core.workspace_roots,
             app,
             session,
@@ -263,6 +269,26 @@ impl LiveSession {
             &settings,
             rollout,
         ))
+    }
+
+    /// A terminal pane (T51.3): the user's login shell in this session's
+    /// cwd, under this session's sandbox policy — the policy `bash` runs
+    /// under, bare only when the session chose `danger-full-access`. The
+    /// app never opens a session in a worktree of its own, so the writable
+    /// roots are the workspace roots, as for its tools. What the shell
+    /// prints goes to the pane alone, never into this session's events.
+    pub fn open_terminal(&self, cols: u16, rows: u16) -> Result<TerminalHandle, AppError> {
+        let env_shell = std::env::var("SHELL").ok();
+        let spec = TerminalSpec {
+            shell: terminal::shell(env_shell.as_deref())?,
+            cwd: self.cwd.clone(),
+            policy: self.sandbox.clone(),
+            roots: self.roots.clone(),
+            writable_roots: self.roots.clone(),
+            cols,
+            rows,
+        };
+        Ok(terminal::open(&spec)?)
     }
 
     /// `/` commands and `@` files for the composer's token.

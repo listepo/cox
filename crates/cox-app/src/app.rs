@@ -65,6 +65,9 @@ pub enum AppError {
     McpLogin(#[from] LoginError),
     #[error("the session's events were already taken")]
     EventsTaken,
+    /// T51.3: the terminal pane's shell could not start or be driven.
+    #[error(transparent)]
+    Terminal(#[from] crate::TerminalError),
 }
 
 impl From<SessionError> for AppError {

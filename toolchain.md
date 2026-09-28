@@ -78,7 +78,7 @@ Programs the project uses and the direct packages from its manifests.
 | opentelemetry-otlp | local | https://crates.io/crates/opentelemetry-otlp | Rust dependency |
 | opentelemetry_sdk | local | https://crates.io/crates/opentelemetry_sdk | Rust dependency |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
-| portable-pty | local | https://crates.io/crates/portable-pty | Rust dependency |
+| portable-pty | local | https://crates.io/crates/portable-pty | Rust dependency: the TUI e2e tests' PTY and, T51.3, `cox-app`'s terminal pane (0.9.0, the latest release, 2025-02-11) |
 | predicates | local | https://crates.io/crates/predicates | Rust dependency |
 | pretty_assertions | local | https://crates.io/crates/pretty_assertions | Rust dependency |
 | proptest | local | https://crates.io/crates/proptest | Rust dependency |
