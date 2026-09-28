@@ -10,6 +10,9 @@ mod models;
 pub mod queries;
 mod rollout;
 pub mod schema;
+mod watch;
+
+pub use watch::ChangeToken;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -156,6 +159,55 @@ fn scope_from_text(s: &str) -> Option<GrantScope> {
     }
 }
 
+/// The error a write transaction's closure hands back to Diesel's
+/// transaction manager. `immediate_transaction` needs
+/// `E: From<diesel::result::Error>` (for a failing `BEGIN`/`COMMIT`), which
+/// `StoreError` cannot implement: `cox-protocol` has no Diesel dependency.
+struct TxError(StoreError);
+
+impl From<diesel::result::Error> for TxError {
+    fn from(_: diesel::result::Error) -> Self {
+        Self(StoreError::Sqlite)
+    }
+}
+
+/// Runs a write that reads first, or spans several statements, under
+/// `BEGIN IMMEDIATE` (T37.35). The write lock is taken before the first
+/// read, so a commit by another process (the app beside the TUI) makes
+/// `BEGIN` wait up to `busy_timeout` instead of the read going stale or a
+/// deferred transaction's upgrade failing with `SQLITE_BUSY_SNAPSHOT`; and
+/// the statements commit together or not at all. A single `INSERT`,
+/// `UPDATE` or `DELETE` is atomic on its own and stays in autocommit.
+fn write_tx<T>(
+    conn: &mut SqliteConnection,
+    body: impl FnOnce(&mut SqliteConnection) -> Result<T, StoreError>,
+) -> Result<T, StoreError> {
+    conn.immediate_transaction(|c| body(c).map_err(TxError))
+        .map_err(|TxError(e)| e)
+}
+
+/// Switches `cox.db` to WAL. The switch needs an exclusive lock, and SQLite
+/// skips the busy handler when two connections both hold a shared lock and
+/// wait to upgrade (it would deadlock), so a second process opening a fresh
+/// file at the same moment gets "database is locked" at once despite
+/// `busy_timeout`. Retry within the same 5 s budget; WAL persists in the
+/// file, so only the very first opens can contend here.
+fn enable_wal(conn: &mut SqliteConnection) -> Result<(), StoreError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match conn.batch_execute("PRAGMA journal_mode = WAL;") {
+            Ok(()) => return Ok(()),
+            Err(diesel::result::Error::DatabaseError(_, info))
+                if info.message() == "database is locked"
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(_) => return Err(StoreError::Open),
+        }
+    }
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -186,13 +238,19 @@ impl StoreTrait for Store {
         let mut conn = SqliteConnection::establish(&db_path.to_string_lossy())
             .map_err(|_| StoreError::Open)?;
 
-        conn.batch_execute(
-            "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
-        )
-        .map_err(|_| StoreError::Open)?;
+        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;")
+            .map_err(|_| StoreError::Open)?;
+        enable_wal(&mut conn)?;
 
-        conn.run_pending_migrations(MIGRATIONS)
-            .map_err(|_| StoreError::Migrate { from: 0, to: 1 })?;
+        // Reading the applied versions and then migrating is a read-then-write:
+        // two processes opening an older `cox.db` at once would both find the
+        // same migration pending. Diesel nests each migration's own
+        // transaction as a savepoint inside this one.
+        write_tx(&mut conn, |c| {
+            c.run_pending_migrations(MIGRATIONS)
+                .map(|_| ())
+                .map_err(|_| StoreError::Migrate { from: 0, to: 1 })
+        })?;
 
         Ok(Self {
             home: home.to_path_buf(),
@@ -394,57 +452,59 @@ impl StoreTrait for Store {
         // The FTS row carries the memory row's rowid explicitly, so the
         // `memory_search` join lines up on re-saves as well as first saves.
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let existing: Option<i32> = schema::memory::table
-            .filter(schema::memory::project_slug.eq(project))
-            .filter(schema::memory::name.eq(name))
-            .select(schema::memory::id)
-            .first(&mut *conn)
-            .optional()
-            .map_err(|_| StoreError::Sqlite)?;
-        let rowid = match existing {
-            Some(id) => {
-                diesel::update(schema::memory::table.filter(schema::memory::id.eq(id)))
-                    .set((
-                        schema::memory::path.eq(path),
-                        schema::memory::kind.eq(kind),
-                        schema::memory::updated_at.eq(now_rfc3339()),
+        write_tx(&mut conn, |conn| {
+            let existing: Option<i32> = schema::memory::table
+                .filter(schema::memory::project_slug.eq(project))
+                .filter(schema::memory::name.eq(name))
+                .select(schema::memory::id)
+                .first(&mut *conn)
+                .optional()
+                .map_err(|_| StoreError::Sqlite)?;
+            let rowid = match existing {
+                Some(id) => {
+                    diesel::update(schema::memory::table.filter(schema::memory::id.eq(id)))
+                        .set((
+                            schema::memory::path.eq(path),
+                            schema::memory::kind.eq(kind),
+                            schema::memory::updated_at.eq(now_rfc3339()),
+                        ))
+                        .execute(&mut *conn)
+                        .map_err(|_| StoreError::Sqlite)?;
+                    diesel::sql_query("DELETE FROM memory_fts WHERE rowid = ?")
+                        .bind::<diesel::sql_types::BigInt, _>(i64::from(id))
+                        .execute(&mut *conn)
+                        .map_err(|_| StoreError::Sqlite)?;
+                    i64::from(id)
+                }
+                None => {
+                    diesel::insert_into(schema::memory::table)
+                        .values(&NewMemory {
+                            project_slug: project.to_string(),
+                            name: name.to_string(),
+                            path: path.to_string(),
+                            kind: kind.to_string(),
+                            updated_at: now_rfc3339(),
+                        })
+                        .execute(&mut *conn)
+                        .map_err(|_| StoreError::Sqlite)?;
+                    diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                        "last_insert_rowid()",
                     ))
-                    .execute(&mut *conn)
-                    .map_err(|_| StoreError::Sqlite)?;
-                diesel::sql_query("DELETE FROM memory_fts WHERE rowid = ?")
-                    .bind::<diesel::sql_types::BigInt, _>(i64::from(id))
-                    .execute(&mut *conn)
-                    .map_err(|_| StoreError::Sqlite)?;
-                i64::from(id)
-            }
-            None => {
-                diesel::insert_into(schema::memory::table)
-                    .values(&NewMemory {
-                        project_slug: project.to_string(),
-                        name: name.to_string(),
-                        path: path.to_string(),
-                        kind: kind.to_string(),
-                        updated_at: now_rfc3339(),
-                    })
-                    .execute(&mut *conn)
-                    .map_err(|_| StoreError::Sqlite)?;
-                diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
-                    "last_insert_rowid()",
-                ))
-                .get_result(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?
-            }
-        };
-        diesel::sql_query(
-            "INSERT INTO memory_fts(rowid, name, body, project_slug) VALUES(?,?,?,?)",
-        )
-        .bind::<diesel::sql_types::BigInt, _>(rowid)
-        .bind::<diesel::sql_types::Text, _>(name)
-        .bind::<diesel::sql_types::Text, _>(body)
-        .bind::<diesel::sql_types::Text, _>(project)
-        .execute(&mut *conn)
-        .map_err(|_| StoreError::Sqlite)?;
-        Ok(())
+                    .get_result(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?
+                }
+            };
+            diesel::sql_query(
+                "INSERT INTO memory_fts(rowid, name, body, project_slug) VALUES(?,?,?,?)",
+            )
+            .bind::<diesel::sql_types::BigInt, _>(rowid)
+            .bind::<diesel::sql_types::Text, _>(name)
+            .bind::<diesel::sql_types::Text, _>(body)
+            .bind::<diesel::sql_types::Text, _>(project)
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+            Ok(())
+        })
     }
 
     fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError> {
@@ -573,27 +633,30 @@ impl PluginStoreTrait for Store {
             decided_at: grant.decided_at.clone(),
         };
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let updated = diesel::update(
-            schema::plugin_grants::table
-                .filter(schema::plugin_grants::plugin_id.eq(&row.plugin_id))
-                .filter(schema::plugin_grants::scope.eq(&row.scope))
-                .filter(schema::plugin_grants::digest.eq(&row.digest)),
-        )
-        .set((
-            schema::plugin_grants::capabilities.eq(&row.capabilities),
-            schema::plugin_grants::enabled.eq(row.enabled),
-            schema::plugin_grants::source.eq(&row.source),
-            schema::plugin_grants::decided_at.eq(&row.decided_at),
-        ))
-        .execute(&mut *conn)
-        .map_err(|_| StoreError::Sqlite)?;
-        if updated == 0 {
-            diesel::insert_into(schema::plugin_grants::table)
-                .values(&row)
-                .execute(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?;
-        }
-        Ok(())
+        // Update-else-insert: two writers must not both see "no row".
+        write_tx(&mut conn, |conn| {
+            let updated = diesel::update(
+                schema::plugin_grants::table
+                    .filter(schema::plugin_grants::plugin_id.eq(&row.plugin_id))
+                    .filter(schema::plugin_grants::scope.eq(&row.scope))
+                    .filter(schema::plugin_grants::digest.eq(&row.digest)),
+            )
+            .set((
+                schema::plugin_grants::capabilities.eq(&row.capabilities),
+                schema::plugin_grants::enabled.eq(row.enabled),
+                schema::plugin_grants::source.eq(&row.source),
+                schema::plugin_grants::decided_at.eq(&row.decided_at),
+            ))
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+            if updated == 0 {
+                diesel::insert_into(schema::plugin_grants::table)
+                    .values(&row)
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+            }
+            Ok(())
+        })
     }
 
     fn grant_set_enabled(
@@ -646,44 +709,48 @@ impl PluginStoreTrait for Store {
             return Err(StoreError::QuotaExceeded);
         }
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        // Sum every other key's bytes for this plugin so a re-saved key
-        // does not double-count its own previous value against the quota.
-        let other_bytes: usize = schema::plugin_kv::table
-            .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
-            .filter(schema::plugin_kv::key.ne(key))
-            .select(schema::plugin_kv::value)
-            .load::<Vec<u8>>(&mut *conn)
-            .map_err(|_| StoreError::Sqlite)?
-            .iter()
-            .map(Vec::len)
-            .sum();
-        if other_bytes + value.len() > KV_PLUGIN_LIMIT {
-            return Err(StoreError::QuotaExceeded);
-        }
-        let row = PluginKvDbRow {
-            plugin_id: plugin_id.to_string(),
-            key: key.to_string(),
-            value: value.to_vec(),
-            updated_at: now_rfc3339(),
-        };
-        let updated = diesel::update(
-            schema::plugin_kv::table
+        // The quota read and the write must see one snapshot, or two writers
+        // each pass the check and together go over.
+        write_tx(&mut conn, |conn| {
+            // Sum every other key's bytes for this plugin so a re-saved key
+            // does not double-count its own previous value against the quota.
+            let other_bytes: usize = schema::plugin_kv::table
                 .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
-                .filter(schema::plugin_kv::key.eq(key)),
-        )
-        .set((
-            schema::plugin_kv::value.eq(&row.value),
-            schema::plugin_kv::updated_at.eq(&row.updated_at),
-        ))
-        .execute(&mut *conn)
-        .map_err(|_| StoreError::Sqlite)?;
-        if updated == 0 {
-            diesel::insert_into(schema::plugin_kv::table)
-                .values(&row)
-                .execute(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?;
-        }
-        Ok(())
+                .filter(schema::plugin_kv::key.ne(key))
+                .select(schema::plugin_kv::value)
+                .load::<Vec<u8>>(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+                .iter()
+                .map(Vec::len)
+                .sum();
+            if other_bytes + value.len() > KV_PLUGIN_LIMIT {
+                return Err(StoreError::QuotaExceeded);
+            }
+            let row = PluginKvDbRow {
+                plugin_id: plugin_id.to_string(),
+                key: key.to_string(),
+                value: value.to_vec(),
+                updated_at: now_rfc3339(),
+            };
+            let updated = diesel::update(
+                schema::plugin_kv::table
+                    .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+                    .filter(schema::plugin_kv::key.eq(key)),
+            )
+            .set((
+                schema::plugin_kv::value.eq(&row.value),
+                schema::plugin_kv::updated_at.eq(&row.updated_at),
+            ))
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+            if updated == 0 {
+                diesel::insert_into(schema::plugin_kv::table)
+                    .values(&row)
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+            }
+            Ok(())
+        })
     }
 
     fn kv_delete(&self, plugin_id: &str, key: &str) -> Result<(), StoreError> {
@@ -715,20 +782,24 @@ impl Store {
     fn finish_session_turn(&self, id: &SessionId) -> Result<(), StoreError> {
         let session_id = id.to_string();
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let cost: Option<f64> = schema::usage::table
-            .filter(schema::usage::session_id.eq(&session_id))
-            .select(diesel::dsl::sum(schema::usage::cost_usd))
-            .first(&mut *conn)
-            .map_err(|_| StoreError::Sqlite)?;
-        diesel::update(schema::sessions::table.filter(schema::sessions::id.eq(session_id)))
-            .set((
-                schema::sessions::turns.eq(schema::sessions::turns + 1),
-                schema::sessions::cost_usd.eq(cost.unwrap_or_default()),
-                schema::sessions::updated_at.eq(now_rfc3339()),
-            ))
-            .execute(&mut *conn)
-            .map_err(|_| StoreError::Sqlite)?;
-        Ok(())
+        // The ledger sum and the counter update commit as one, so a usage row
+        // another process adds in between is not lost from `cost_usd`.
+        write_tx(&mut conn, |conn| {
+            let cost: Option<f64> = schema::usage::table
+                .filter(schema::usage::session_id.eq(&session_id))
+                .select(diesel::dsl::sum(schema::usage::cost_usd))
+                .first(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?;
+            diesel::update(schema::sessions::table.filter(schema::sessions::id.eq(session_id)))
+                .set((
+                    schema::sessions::turns.eq(schema::sessions::turns + 1),
+                    schema::sessions::cost_usd.eq(cost.unwrap_or_default()),
+                    schema::sessions::updated_at.eq(now_rfc3339()),
+                ))
+                .execute(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?;
+            Ok(())
+        })
     }
 
     /// Reads a rollout and reports whether a crash-truncated final line was
