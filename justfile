@@ -84,6 +84,11 @@ release:
     mise exec -- cargo build --profile dist -p cox
     @ls -lh "$(mise exec -- cargo metadata --format-version 1 --no-deps | tr ',' '\n' | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)/dist/cox" | awk '{print "cox  " $5}'
 
+# The macOS app's Rust core (T37.15, DT§7): desktop/macos/build/CoxFFI.xcframework
+# (aarch64-apple-darwin only, macOS 26.0) plus the generated Swift bindings.
+desktop-xcframework:
+    mise exec -- bash scripts/desktop/xcframework.sh
+
 # $CARGO_HOME sizes (no deletes) and ./target
 cache:
     mise exec -- cargo-cache

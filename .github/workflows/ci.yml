@@ -173,6 +173,41 @@ jobs:
       - name: footprint regression check
         run: bash scripts/footprint.sh --check
 
+  # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
+  # (A67), then `swift test` for every package under desktop/macos/Packages
+  # (none until T37.16, so the loop is empty until then). macos-26 is the
+  # arm64 image whose Xcode 26 carries the macOS 26 SDK the app targets.
+  desktop-macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: CoxFFI.xcframework
+        run: bash scripts/desktop/xcframework.sh
+
+      - name: arm64 only
+        run: |
+          set -euo pipefail
+          libs=$(find desktop/macos/build/CoxFFI.xcframework -name '*.a')
+          [ -n "$libs" ] || { echo "no library in CoxFFI.xcframework" >&2; exit 1; }
+          for lib in $libs; do
+            archs=$(lipo -archs "$lib")
+            echo "$lib: $archs"
+            [ "$archs" = arm64 ] || { echo "expected arm64 only" >&2; exit 1; }
+          done
+
+      - name: swift test
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for manifest in desktop/macos/Packages/*/Package.swift; do
+            swift test --package-path "$(dirname "$manifest")"
+          done
+
   revert-on-failure:
     name: revert-on-failure
     needs:

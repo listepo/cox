@@ -7,3 +7,5 @@ target/
 __pycache__/
 # libFuzzer crash repros and grown corpora; seed files in fuzz/corpus/ are committed.
 fuzz/artifacts/
+# The macOS app build output: CoxFFI.xcframework and the generated bindings (T37.15).
+desktop/macos/build/
