@@ -10,8 +10,8 @@ use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store,
-    Tool, Worktrees,
+    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, HunkReverter,
+    Provider, Store, Tool, Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Attachment, Content, ContextBreakdown, Decision, Event, HookEvent, HookOutcome,
@@ -179,6 +179,9 @@ pub struct Session {
     /// Where pre-images come from (T26.1); installed by the surface like
     /// the hook, shared with children. Absent in tests and in `cox mcp`.
     checkpointer: Arc<OnceLock<Arc<dyn Checkpointer>>>,
+    /// What puts one of Review's hunks back (T51.19); installed by the
+    /// surface like the checkpointer, since it is cox-render's.
+    hunks: Arc<OnceLock<Arc<dyn HunkReverter>>>,
     /// Roots mutation may target. Empty until a worktree-isolated surface
     /// narrows it; ordinary sessions write anywhere they can read.
     writable_roots: Arc<OnceLock<Vec<PathBuf>>>,
@@ -380,6 +383,7 @@ impl Session {
         )?;
         child.hook = self.hook.clone();
         child.checkpointer = self.checkpointer.clone();
+        child.hunks = self.hunks.clone();
         child.worktrees = self.worktrees.clone();
         child.instructions = self.instructions.clone();
         child.checkpoint_warned = self.checkpoint_warned.clone();
@@ -484,6 +488,7 @@ impl Session {
             ended,
             hook: Arc::new(OnceLock::new()),
             checkpointer: Arc::new(OnceLock::new()),
+            hunks: Arc::new(OnceLock::new()),
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
@@ -719,6 +724,16 @@ impl Session {
         self.checkpointer.get().cloned()
     }
 
+    /// Installs what `Submission::RevertHunk` computes the new bytes with
+    /// (T51.19); a second call is ignored, as for the checkpointer.
+    pub fn set_hunk_reverter(&self, hunks: Arc<dyn HunkReverter>) {
+        let _ = self.hunks.set(hunks);
+    }
+
+    pub(crate) fn hunk_reverter(&self) -> Option<Arc<dyn HunkReverter>> {
+        self.hunks.get().cloned()
+    }
+
     /// Narrows mutations without hiding read-only workspace roots.
     pub fn set_writable_roots(&self, roots: Vec<PathBuf>) {
         let _ = self.writable_roots.set(roots);
@@ -893,6 +908,12 @@ impl Session {
             Submission::Redo => self.redo().await,
             Submission::Rename { title } => self.rename(&title).await,
             Submission::RevertFile { path, to_turn } => self.revert_file(&path, to_turn).await,
+            Submission::RevertHunk {
+                path,
+                to_turn,
+                hunk,
+                now_digest,
+            } => self.revert_hunk(&path, to_turn, hunk, &now_digest).await,
             Submission::Background { call_id } => self.background(call_id).await,
             Submission::UserShell { command, share } => self.user_shell(command, share).await,
             Submission::Command { command } if command.name == "compact" => {

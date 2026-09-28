@@ -1,6 +1,6 @@
 //! `/rewind` (T26.2): put the workspace, the conversation or both back to
-//! the start of an earlier turn, or one file back to before a turn
-//! (T37.28.3). Separate from `checkpoint.rs` because that
+//! the start of an earlier turn, one file back to before a turn
+//! (T37.28.3), or one hunk of a file's net diff (T51.19). Separate from `checkpoint.rs` because that
 //! module records and this one replays; from `compact.rs` because a rewind
 //! is the user's cut, not the budget's. Two rules hold here: the rollout is
 //! append-only (a `Rewound` marker is emitted, nothing earlier is edited —
@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use cox_protocol::errors::{CoreError, ToolError};
-use cox_protocol::types::{CheckpointKind, Event, Level};
-use cox_protocol::{CheckpointRow, SkipReason, SkippedFile};
+use cox_protocol::types::{CheckpointKind, Event, Level, content_digest};
+use cox_protocol::{Before, CheckpointRow, SkipReason, SkippedFile};
 
 use crate::checkpoint;
 use crate::session::{Session, State};
@@ -130,6 +130,133 @@ impl Session {
         self.emit(notice).await
     }
 
+    /// Handles `Submission::RevertHunk` (T51.19): hunk `hunk` of Review's
+    /// diff of one file put back. The path is confined as for
+    /// `RevertFile`; the bytes on disk must still digest to `now_digest`,
+    /// the ones Review diffed; the diff starts from the file's first
+    /// pre-image from `to_turn` on, as Review's does. The current bytes are
+    /// checkpointed under a turn of their own before the write, and
+    /// `Rewound` (code only) lets `/redo` undo it like any rewind. Every
+    /// refusal is a Notice that leaves the file as it is.
+    pub(crate) async fn revert_hunk(
+        &self,
+        path: &str,
+        to_turn: u32,
+        hunk: u32,
+        now_digest: &str,
+    ) -> Result<(), CoreError> {
+        let warn = |text: String| Event::Notice {
+            level: Level::Warn,
+            text: format!("revert hunk: {text}"),
+        };
+        if let Some(text) = self.refusal(to_turn).await {
+            return self.emit(warn(text)).await;
+        }
+        let (Some(cp), Some(hunks)) = (self.checkpointer(), self.hunk_reverter()) else {
+            let text = "no checkpoints in this session; files left as they are";
+            return self.emit(warn(text.into())).await;
+        };
+        let current = cp
+            .preimages(self.writable_roots(), &self.cwd, &[path.to_string()])
+            .await
+            .into_iter()
+            .next();
+        let Some(current) = current else {
+            return self
+                .emit(warn(format!(
+                    "{path} is outside the workspace roots or cannot be read"
+                )))
+                .await;
+        };
+        let now = match &current.before {
+            Before::Absent => Vec::new(),
+            Before::Bytes(bytes) => bytes.clone(),
+            Before::TooLarge => {
+                return self.emit(warn(format!("{path} is too large"))).await;
+            }
+        };
+        if content_digest(&now) != now_digest {
+            let text = format!("{path} changed since Review showed it; review it again");
+            return self.emit(warn(text)).await;
+        }
+        let rows = self
+            .store
+            .checkpoint_list(&self.id)
+            .map_err(|error| CoreError::Store { error })?;
+        let base = rows.into_iter().find(|r| {
+            r.turn >= to_turn && r.kind != CheckpointKind::Turn && r.path == current.path
+        });
+        let Some(base) = base else {
+            let text = format!("{path} has no checkpoint from T{to_turn} on; left as it is");
+            return self.emit(warn(text)).await;
+        };
+        let before = match (base.kind, base.archive) {
+            (CheckpointKind::Created, _) => Vec::new(),
+            (_, Some(id)) => match self.archive.get(&id).await {
+                Ok(bytes) => bytes,
+                Err(e) => return self.emit(warn(format!("{path}: {e}"))).await,
+            },
+            (_, None) => return self.emit(warn(format!("{path} is too large"))).await,
+        };
+        let (Ok(before), Ok(now)) = (std::str::from_utf8(&before), std::str::from_utf8(&now))
+        else {
+            let text = format!("{path} is not text; revert the whole file instead");
+            return self.emit(warn(text)).await;
+        };
+        let index = usize::try_from(hunk).unwrap_or(usize::MAX);
+        let Some(reverted) = hunks.revert(before, now, index) else {
+            let text = format!("hunk {hunk} of {path} is no longer in the diff; review it again");
+            return self.emit(warn(text)).await;
+        };
+        let seq = self.rewind_turn().await;
+        let confined = current.path.clone();
+        checkpoint::store_rows(self, seq, None, vec![(current.path, false, current.before)]).await;
+        let written = cp
+            .restore(
+                self.writable_roots(),
+                &self.cwd,
+                &confined,
+                Some(reverted.as_bytes()),
+            )
+            .await;
+        let (restored, skipped, notice) = match written {
+            Ok(()) => (
+                vec![confined],
+                Vec::new(),
+                Event::Notice {
+                    level: Level::Info,
+                    text: format!("reverted hunk {hunk} of {path}"),
+                },
+            ),
+            Err(e) => {
+                let skipped = vec![skip(confined, skip_reason(&e))];
+                let text = format!("{path} not restored: {}", skip_counts(&skipped).join(", "));
+                (Vec::new(), skipped, warn(text))
+            }
+        };
+        self.emit(Event::Rewound {
+            to_turn,
+            code: true,
+            conversation: false,
+            restored,
+            skipped,
+        })
+        .await?;
+        self.emit(notice).await
+    }
+
+    /// A fresh turn number for a rewind's own pre-images, marked so
+    /// `/redo` finds it.
+    async fn rewind_turn(&self) -> u32 {
+        let seq = {
+            let mut inner = self.inner.lock().await;
+            inner.turn_seq += 1;
+            inner.turn_seq
+        };
+        checkpoint::mark_turn(self, seq);
+        seq
+    }
+
     /// Why a rewind or revert to `to_turn` cannot run now, if it cannot.
     async fn refusal(&self, to_turn: u32) -> Option<String> {
         let inner = self.inner.lock().await;
@@ -215,12 +342,7 @@ impl Session {
         if targets.is_empty() {
             return Ok((Vec::new(), Vec::new()));
         }
-        let seq = {
-            let mut inner = self.inner.lock().await;
-            inner.turn_seq += 1;
-            inner.turn_seq
-        };
-        checkpoint::mark_turn(self, seq);
+        let seq = self.rewind_turn().await;
         let roots = self.writable_roots();
         let mut restored = Vec::new();
         let mut skipped = Vec::new();

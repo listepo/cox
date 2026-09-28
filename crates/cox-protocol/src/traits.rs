@@ -408,6 +408,16 @@ pub trait Archive: Send + Sync {
     async fn get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError>;
 }
 
+/// Puts one hunk of a file's net diff back (T51.19): cox-render's
+/// `diffmodel::revert_hunk`, installed by the surface like the
+/// `Checkpointer`, because cox-core may not depend on cox-render
+/// (`deps.rs`). Pure: no file is read or written here.
+pub trait HunkReverter: Send + Sync {
+    /// `now` with hunk `index` of the line diff from `before` put back to
+    /// `before`'s lines; `None` when the diff has no such hunk.
+    fn revert(&self, before: &str, now: &str, index: usize) -> Option<String>;
+}
+
 /// Where the loop gets a file's bytes before a call changes it (T26.1).
 /// Implemented by `cox-tools` (`checkpoint::GitCheckpointer`), which is
 /// the crate allowed to read files and run git; `cox-core` only decides
