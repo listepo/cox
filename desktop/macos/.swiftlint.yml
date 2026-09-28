@@ -33,6 +33,8 @@
 excluded:
   - build
   - LintFixtures
+  # Throwaway spikes (T37.37) keep literals; they are in no package and no build of the app.
+  - Spikes
   - Packages/*/.build
 
 # Token steps are short by design (`Space.l`, `Radius.xs`, `.e2`, DS§3).
