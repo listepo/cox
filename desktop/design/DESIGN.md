@@ -270,8 +270,8 @@ component.
 | `DiffLineView`, `DiffHunkView` | gutter, syntax runs | `.diff .ln`, `.hh` |
 | `CodeBlockView` | header, copy button, highlighted runs | `.codeblock` |
 | `TerminalTail` | insetWell, lines | `.tail` |
-| `UserBubble` | text, Thumbnail | `.user` |
-| `ThinkingDisclosure` | caption, disclosure | `.think` |
+| `UserBubble(text, attachments:)` | prompt in `font.transcript`, a row of Thumbnail; readable face at e2, the glass sweep behind the text | `.user`, `.user .att` |
+| `ThinkingDisclosure(summary, text:, isExpanded:)` | chevron and caption summary; open, the reasoning in italic caption beside a hairline; open state is the view's own | `.think`, `.think-body` |
 | `NoticeRow`, `TurnDivider`, `TurnMeta` | icon, caption | `.notice`, `.divider`, `.meta` |
 | `ComposerChip` | icon, label, KeyCap | `.chip` |
 | `TokenMeter` | ↑ sent, ↓ received, StatusDot, tok/s, Sparkline | `.meter` |
