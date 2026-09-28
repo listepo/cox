@@ -1,0 +1,98 @@
+# SwiftLint for the macOS app (T37.18, DS§9, research.md §9.5.4). One config for every
+# package under Packages/: SwiftLint's default rules plus custom rules that reject literal
+# colours, sizes, fonts, radii, shadows and durations outside `Tokens/` and `Foundations/`,
+# the only two places a design value may be spelled out. Formatting is not SwiftLint's job:
+# the toolchain's own `swift-format` (default configuration) owns it (research.md §9.5.5).
+#
+# Version: SwiftLint 0.65.1, pinned in the repository's mise.toml. Each package pins the
+# same version of SwiftLintPlugins; bump the two together.
+#
+# Attaching a package (CoxCore, CoxModel, CoxUI, …) — the build-tool plugin lints every
+# target it is attached to on each `swift build`/`swift test` and fails the build on an
+# error-severity violation:
+#
+#   // Package.swift
+#   dependencies: [
+#     .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", exact: "0.65.1"),
+#   ],
+#   targets: [
+#     .target(
+#       name: "CoxUI",
+#       plugins: [.plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")]
+#     ),
+#   ]
+#
+#   # Packages/<Name>/.swiftlint.yml — the plugin looks for a config only inside the
+#   # package directory, so each package points back here:
+#   parent_config: ../../.swiftlint.yml
+#
+# Checked in CI (`desktop-macos-lint`): LintFixtures/Accepted passes `swiftlint lint
+# --strict`; every file in LintFixtures/Rejected fails with the rule its name gives.
+# LintFixtures is in no package, so no build ever compiles or lints it.
+
+excluded:
+  - build
+  - LintFixtures
+  - Packages/*/.build
+
+# Token steps are short by design (`Space.l`, `Radius.xs`, `.e2`, DS§3).
+identifier_name:
+  excluded: [id, x, y, s, m, l, xs, ml, xl, e0, e1, e2, e3, e4, e5]
+
+disabled_rules:
+  # swift-format adds trailing commas to multi-line collections; SwiftLint's default
+  # would flag every one of them.
+  - trailing_comma
+
+# A literal zero is not a design value (`spacing: 0`, `.padding(0)`), so the size, radius
+# and duration patterns match only non-zero numbers: (?!0+(?:\.0+)?(?![\d.]))\d[\d_]*(?:\.\d+)?
+custom_rules:
+  no_literal_colour:
+    name: No literal colour
+    regex: '\b(?:Color|NSColor|CGColor)\s*\(\s*(?:\.sRGB\w*\s*,\s*)?(?:red|hue|white|srgbRed|calibratedRed|deviceRed|calibratedWhite|deviceWhite|displayP3Red|hex|gray|genericGrayGamma2_2Gray)\s*:|#colorLiteral\s*\('
+    message: 'Use a colour token, `Color.<role>` (DS§3, DS§9)'
+    severity: error
+    excluded: '/(?:Tokens|Foundations)/'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+
+  no_literal_size:
+    name: No literal size
+    regex: '(?:\.padding\s*\(\s*(?:\.\w+\s*,\s*)?|\b(?:width|height|minWidth|idealWidth|maxWidth|minHeight|idealHeight|maxHeight|spacing|minLength|lineSpacing|top|leading|bottom|trailing|x|y)\s*:\s*|\.(?:lineSpacing|tracking|kerning)\s*\(\s*)-?(?!0+(?:\.0+)?(?![\d.]))\d[\d_]*(?:\.\d+)?'
+    message: 'Use a size token, `Space.<step>` or `Size.<name>` (DS§3, DS§9)'
+    severity: error
+    excluded: '/(?:Tokens|Foundations)/'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+
+  no_literal_font:
+    name: No literal font
+    regex: '\.(?:system|custom)\s*\([^()]*\bsize\s*:|\bofSize\s*:|\bFont\.custom\s*\('
+    message: 'Use a text style, `.textStyle(.<token>)` (DS§3, DS§9)'
+    severity: error
+    excluded: '/(?:Tokens|Foundations)/'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+
+  no_literal_radius:
+    name: No literal radius
+    regex: '(?:\.cornerRadius\s*\(\s*|\b(?:cornerRadius|radius|topLeadingRadius|topTrailingRadius|bottomLeadingRadius|bottomTrailingRadius)\s*:\s*)-?(?!0+(?:\.0+)?(?![\d.]))\d[\d_]*(?:\.\d+)?'
+    message: 'Use a radius token, `Radius.<step>` (DS§3, DS§9)'
+    severity: error
+    excluded: '/(?:Tokens|Foundations)/'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+
+  # Shadows belong to `.elevation(.<level>)` alone (DS§3 Elevation, DS§6.1): even a
+  # token-built `.shadow` outside Foundations would bypass the Depth setting.
+  no_literal_shadow:
+    name: No shadow outside Foundations
+    regex: '\.shadow\s*\('
+    message: 'Use `.elevation(.<level>)` (DS§3, DS§9)'
+    severity: error
+    excluded: '/(?:Tokens|Foundations)/'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]
+
+  no_literal_duration:
+    name: No literal duration
+    regex: '(?:\b(?:duration|response|dampingFraction|blendDuration|bounce|extraBounce|delay|speed)\s*:\s*|\.(?:delay|speed)\s*\(\s*)-?(?!0+(?:\.0+)?(?![\d.]))\d[\d_]*(?:\.\d+)?'
+    message: 'Use a motion token, `Motion.<token>` (DS§3, DS§9)'
+    severity: error
+    excluded: '/(?:Tokens|Foundations)/'
+    excluded_match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field, string]

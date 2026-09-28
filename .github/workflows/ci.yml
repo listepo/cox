@@ -173,6 +173,45 @@ jobs:
       - name: footprint regression check
         run: bash scripts/footprint.sh --check
 
+  # SwiftLint's no-literal rules and swift-format for the macOS app (T37.18,
+  # DS§9). The fixtures prove the custom rules still reject what DS§9 bans; the
+  # packages are linted by the SwiftLintPlugins build-tool plugin during
+  # desktop-macos' `swift test`. SwiftLint is the mise.toml pin.
+  desktop-macos-lint:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: aqua:realm/SwiftLint
+
+      - name: swiftlint fixtures
+        working-directory: desktop/macos
+        run: |
+          set -euo pipefail
+          find LintFixtures/Accepted -name '*.swift' -print0 \
+            | xargs -0 swiftlint lint --strict --no-cache --quiet
+          for fixture in LintFixtures/Rejected/*.swift; do
+            rule=$(basename "$fixture" .swift)
+            if out=$(swiftlint lint --no-cache --quiet "$fixture"); then
+              echo "$fixture: passed, expected $rule to fail it" >&2
+              exit 1
+            fi
+            if ! grep -q "($rule)\$" <<<"$out"; then
+              echo "$fixture: failed without a $rule violation:" >&2
+              echo "$out" >&2
+              exit 1
+            fi
+          done
+
+      - name: swift-format
+        run: |
+          set -euo pipefail
+          dirs=(desktop/macos/LintFixtures)
+          if [ -d desktop/macos/Packages ]; then dirs+=(desktop/macos/Packages); fi
+          xcrun swift-format lint --strict --recursive "${dirs[@]}"
+
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
   # (A67), then `swift test` for every package under desktop/macos/Packages
   # (none until T37.16, so the loop is empty until then). macos-26 is the
