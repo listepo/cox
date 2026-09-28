@@ -199,8 +199,8 @@ Packages/CoxUI/Sources/CoxUI/
 ├─ Tokens/        generated: Tokens.swift, Colors.xcassets — never edited by hand
 ├─ Foundations/   Appearance (the settings every modifier reads, with Reduce Transparency and Reduce
 │                 Motion applied once) and the ViewModifiers and styles: Elevation, GlassPane,
-│                 Specular, Hairline, InsetWell, TextStyle, ControlState (rest, hovered, pressed,
-│                 disabled for every button-like style), CoxButtonStyle, CapsuleStyle,
+│                 Specular, HairlineModifier, InsetWell, TextStyle, ControlState (rest, hovered,
+│                 pressed, disabled for every button-like style), CoxButtonStyle, CapsuleStyle,
 │                 CoxSegmented, CoxToggleStyle, CoxSlider, Knob
 ├─ Atoms/         one file per atom (§6.2)
 ├─ Molecules/     one file per molecule (§6.3)
@@ -251,7 +251,7 @@ component.
 | `StackedBar(segments)` | — | `.tokpop .bar` |
 | `DiffStat(added, removed)` | — | `.plus`, `.minus` |
 | `SectionHeader(title, trailing)` | — | `.sect`, `.ih` |
-| `InlineCode`, `Hairline` | — | `code`, separators |
+| `InlineCode`, `Hairline(orientation)` | `Hairline`: horizontal, vertical; drawn by `.hairline` | `code`, `.divider:before`, `.sep` |
 | `Thumbnail(attachment)` | image, file | `.thumb` |
 
 ### 6.3 Molecules
