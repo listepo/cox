@@ -33,8 +33,6 @@
 - T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
 - T37.28. Review pane and rewind timeline
 - T37.29. Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
-- T37.30.3. MCP login status and OAuth
-- T37.30.4. Show dropped project values
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`

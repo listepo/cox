@@ -4438,3 +4438,54 @@ Check:
 Not done:
 - The thought duration: T37.23.10.
 - The bubble's glass and elevation, and the prompt's hover actions: T37.23.9.
+
+#### T37.30.3 MCP login status and OAuth
+
+Depends: T37.30.1, T37.30.2 · Size: ~150 · Files: `crates/cox-app/…`, `…/Screens/SettingsScreen.swift`
+Goal: per MCP server, its login status on the Settings screen, and Log in / Log out through `Host::open_url` and the existing `cox-mcp` OAuth.
+Check: a fixture server shows logged out, then logged in after a scripted callback; tests use `cox_mcp::auth`'s memory store.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/mcp_login.rs` has two calls:
+  - `servers()` lists each MCP server with its login state: stdio, logged out, logged in with time left, expired, or unreadable.
+  - `set_login()` runs cox-mcp's OAuth, opening the page through `Host::open_url`, or logs out with `auth::logout`.
+- A `Flow` seam lets tests script the OAuth callback. `App::with_mcp` injects `cox_mcp::auth`'s memory store.
+- cox-ffi changes:
+  - `settings` and `set_setting` are async, because reading a token can wait on the keychain.
+  - `mcp_login` is new, a one-expression forward (A90).
+- On the Swift side:
+  - CoxClient: `McpServer`, `McpLogin` and `mcpLogin`.
+  - CoxModel: `SettingsStore.setLogin` and `.logins`.
+  - CoxUI: a `Logins` box on the MCP page.
+  - CoxCore converts the new types.
+Deviations:
+- `ProjectRow` became `cox_app::Project` with `sessions: u64`, so cox-ffi forwards it without mapping.
+- `cox_mcp::auth::human` is public.
+- cox-app depends on cox-mcp and rmcp directly. Both were already in its tree through cox-session.
+- The change touches more than 3 files.
+Check:
+- `nextest -p cox-app -p cox-ffi -p cox-config -p cox-mcp`: 75/75. Clippy `-D warnings` and fmt are clean.
+- Swift: CoxModel 22/22, CoxUI 107, and CoxCore 9/9 against a rebuilt XCFramework with `COX_KEYRING=off`. swiftlint and swift-format are clean.
+- After merging into `p37-desktop`, the same Rust suites passed 80/80 once main's `lsp.servers` guard (T41.1) got its own reason.
+Not done:
+- `-p cox --test deps` was not run locally; it is left to CI. The new edges add no terminal toolkit, `clap` or `anyhow` to cox-app.
+
+#### T37.30.4 Show dropped project values
+
+Depends: T37.30.1 · Size: ~150 · Files: `crates/cox-app/src/settings.rs`, `…/Screens/SettingsScreen.swift`
+Goal: the Settings screen lists project values the guard list threw out, with the reason, so a user sees why a project setting did not apply.
+Check: snapshot of a project file that raises the budget: the value is listed as dropped with its reason.
+Status: done 2026-09-28
+Result:
+- cox-config: `GuardViolation::reason()`, with a test that every guarded key has its own reason.
+- cox-app: `SettingsView.dropped` (key, value, kept, reason), filled from `LoadedConfig.violations`.
+- cox-ffi: a remote `Dropped` record only, with no new forward.
+- CoxModel: `SettingsStore.dropped(in:)`, grouped by page.
+- CoxUI: a "Dropped from the project" box with a warning badge (`999 → 5`).
+- DESIGN.md §6.5 and DT§5.7 have a sentence each.
+Deviations: none beyond T37.30.3's.
+Check:
+- The insta snapshot `a_project_value_the_guard_drops_is_listed_with_its_reason` shows `budget.session_usd`: project value 999, kept 5, reason "A project may not raise a budget above your own".
+- 4 CoxUI PNG snapshots of the Budget page.
+- The Rust and Swift suites listed in T37.30.3.
+Not done: nothing.

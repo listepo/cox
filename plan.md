@@ -39,8 +39,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.30.3 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.30.4 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2824,18 +2822,6 @@ Check: fixture rewind restores the expected files in a scratch worktree.
 Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
 Goal: DT§5 inspector built from DS§6 rows.
 Check: snapshot per tab.
-
-#### T37.30.3 MCP login status and OAuth
-
-Depends: T37.30.1, T37.30.2 · Size: ~150 · Files: `crates/cox-app/…`, `…/Screens/SettingsScreen.swift`
-Goal: per MCP server, its login status on the Settings screen, and Log in / Log out through `Host::open_url` and the existing `cox-mcp` OAuth.
-Check: a fixture server shows logged out, then logged in after a scripted callback; tests use `cox_mcp::auth`'s memory store.
-
-#### T37.30.4 Show dropped project values
-
-Depends: T37.30.1 · Size: ~150 · Files: `crates/cox-app/src/settings.rs`, `…/Screens/SettingsScreen.swift`
-Goal: the Settings screen lists project values the guard list threw out, with the reason, so a user sees why a project setting did not apply.
-Check: snapshot of a project file that raises the budget: the value is listed as dropped with its reason.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
