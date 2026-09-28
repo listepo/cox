@@ -61,7 +61,6 @@ row is a card, not this audit.)
 | T5.3 | No closed-block cache for very long streaming replies. | Finished cells leave the viewport for scrollback, so per-frame work is already bounded. |
 | T5.3 | `ToolResult` carries no exit code; `bash` puts it in `visible` instead. | The protocol type has no such field, and duplicating it would split the source of truth. |
 | T5.4 | Collapse is per session (`Ctrl+O`), not per file. | With the inline viewport a finished cell is already in scrollback, so there is nothing to select. |
-| T5.5 | `ToolOutput.structured` does not cross the `Event` boundary. | `ToolResult` has no such field, so the panel reads the rendered text. |
 | T5.5 | `/sandbox` forwards as a `Command` for lack of a `Submission` variant. | No `Submission` variant sets the sandbox, so the core routes it through the generic one. |
 | T5.5 | `arboard` unused; `Cmd::Copy` was a no-op (now owned by open card T23.4). | Native clipboard crates were out of scope; the terminal OSC 52 path is T23.4. |
 | T5.6 | The composer's own text is trusted input and is not sanitised. | Sanitising what the user just typed would mangle their own keystrokes. |

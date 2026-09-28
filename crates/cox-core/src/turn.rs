@@ -593,6 +593,7 @@ async fn run_one(
         bytes,
         duration_ms: started.elapsed().as_millis() as u64,
         diff: output.diff,
+        structured: output.structured.map(Box::new),
     };
     // T8.2: the request microcompacts old results to `Pointer`s; the stored
     // history keeps the visible text, so remember the handle here.
@@ -639,6 +640,7 @@ fn failed_result(msg: &str) -> ToolResult {
         bytes: msg.len() as u64,
         duration_ms: 0,
         diff: None,
+        structured: None,
     }
 }
 

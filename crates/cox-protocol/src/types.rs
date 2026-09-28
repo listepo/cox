@@ -573,6 +573,43 @@ pub struct ToolResult {
     pub duration_ms: u64,
     /// A unified diff, for edit-shaped tools.
     pub diff: Option<Diff>,
+    /// The tool's machine-readable payload (`ToolOutput.structured`), so a
+    /// surface reads data instead of re-parsing `visible` (DT G3). Absent
+    /// from rollouts written before it existed. Boxed: it is rare, and every
+    /// `Event::ToolCallDone` would otherwise carry its full width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured: Option<Box<Value>>,
+}
+
+impl ToolResult {
+    /// The list a `todo` result carries in `structured`, or `None` when the
+    /// payload is not one.
+    pub fn todo_list(&self) -> Option<Vec<TodoItem>> {
+        Vec::<TodoItem>::deserialize(self.structured.as_deref()?).ok()
+    }
+}
+
+/// One row of the `todo` tool's list, the shape of its `structured` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TodoItem {
+    /// Unique within the list.
+    pub id: String,
+    /// What the step is.
+    pub text: String,
+    /// Where the step stands.
+    pub state: TodoState,
+}
+
+/// Where a todo step stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoState {
+    /// Not started.
+    Pending,
+    /// Being worked on.
+    InProgress,
+    /// Finished.
+    Done,
 }
 
 /// An approval decision, for both `Submission::Approve` and `ApprovalDecided`.
@@ -1478,7 +1515,7 @@ mod tests {
     #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
-    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None } })]
+    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None, structured: None } })]
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
     #[case::usage(Event::Usage { turn: TurnId::new(), usage: sample_usage() })]
     #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200, reason: CompactReason::PreCall })]
@@ -1564,7 +1601,7 @@ mod tests {
     #[case::session_started(Event::SessionStarted { session: SessionId::new(), config_digest: "d".into(), cwd: PathBuf::from(".") })]
     #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), seq: 1, job: Job::Main, tier: Tier::Code, model: ModelId("m".into()) })]
     #[case::rewound(Event::Rewound { to_turn: 2, code: true, conversation: false, restored: vec![PathBuf::from("a.rs")], skipped: vec![] })]
-    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None } })]
+    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None, structured: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
     fn event_tags_are_snake_case(#[case] event: Event) {
         let json = serde_json::to_value(&event).expect("serialize");
@@ -1599,5 +1636,39 @@ mod tests {
         };
         assert_eq!(spec.input_schema, schema_value);
         assert!(schema_value.get("properties").is_some());
+    }
+
+    #[test]
+    fn tool_result_from_an_old_rollout_loads_without_structured() {
+        let old = serde_json::json!({
+            "ok": true, "visible": "[ ] 1: a", "archive": null,
+            "bytes": 8, "duration_ms": 0, "diff": null
+        });
+        let result: ToolResult = serde_json::from_value(old).expect("old shape loads");
+        assert_eq!(result.structured, None);
+        assert_eq!(result.todo_list(), None);
+    }
+
+    #[test]
+    fn todo_list_reads_the_structured_payload() {
+        let result = ToolResult {
+            ok: true,
+            visible: String::new(),
+            archive: None,
+            bytes: 0,
+            duration_ms: 0,
+            diff: None,
+            structured: Some(Box::new(serde_json::json!([
+                {"id": "1", "text": "a", "state": "in_progress"}
+            ]))),
+        };
+        assert_eq!(
+            result.todo_list(),
+            Some(vec![TodoItem {
+                id: "1".into(),
+                text: "a".into(),
+                state: TodoState::InProgress,
+            }])
+        );
     }
 }

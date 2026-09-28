@@ -12,7 +12,7 @@ use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::plugin::{CommandDecl, CommandOut, KeyDecl, NoticeLevel, RenderIn, Slot, Widget};
 use cox_protocol::types::{
     Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
-    SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
+    SlashCommand, StopReason, Submission, Tier, TodoItem, ToolCall, ToolResult,
 };
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -29,7 +29,6 @@ use crate::keymap::{self, Keymap};
 use crate::markdown;
 use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer, RemoveConfirm};
 use crate::picker::{self, Kind, Pick, Picker};
-use crate::status::parse_todo;
 use crate::tasks;
 use crate::term::{Caps, Progress};
 use crate::theme::{Theme, ThemeFile};
@@ -268,8 +267,8 @@ pub struct State {
     /// can hit-test a click — interior mutability, so `view` keeps its
     /// `&State` every render call site and test already assumes.
     pub cell_rows: RefCell<Vec<(Range<u16>, usize)>>,
-    /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
-    pub todo: Vec<(String, String)>,
+    /// The `todo` tool's latest list; `/todo` shows it.
+    pub todo: Vec<TodoItem>,
     pub show_todo: bool,
     /// `-v`: show a glyph where `text::sanitize` removed something.
     pub marks: bool,
@@ -2215,7 +2214,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }) = state.tool_mut(call_id)
             {
                 if call.name == "todo" && result.ok {
-                    todo = Some(parse_todo(&result.visible));
+                    todo = result.todo_list();
                 }
                 *r = Some(result);
             }
@@ -3204,6 +3203,7 @@ mod tests {
                     bytes: 0,
                     duration_ms: 8,
                     diff: None,
+                    structured: None,
                 },
             }),
         );

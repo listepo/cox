@@ -1106,6 +1106,9 @@
                 "type": "null"
               }
             ]
+          },
+          "structured": {
+            "description": "The tool's machine-readable payload (`ToolOutput.structured`), so a\nsurface reads data instead of re-parsing `visible` (DT G3). Absent\nfrom rollouts written before it existed. Boxed: it is rare, and every\n`Event::ToolCallDone` would otherwise carry its full width."
           }
         },
         "required": [

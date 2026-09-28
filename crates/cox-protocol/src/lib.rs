@@ -44,7 +44,7 @@ pub use types::{
     DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level,
     LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role,
     SandboxMode, SandboxPolicy, Segments, SlashCommand, StopReason, Submission, SystemBlock,
-    Thinking, Tier, ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
+    Thinking, Tier, TodoItem, TodoState, ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
 };
 
 #[cfg(test)]

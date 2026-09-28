@@ -618,6 +618,7 @@ mod tests {
             bytes: 0,
             duration_ms: 0,
             diff: None,
+            structured: None,
         };
         let (label, rest) = result_lines(&result);
         assert_eq!(label, "ok, 10 lines");
@@ -644,6 +645,7 @@ mod tests {
             bytes: 0,
             duration_ms: 0,
             diff: None,
+            structured: None,
         };
         let (label, rest) = result_lines(&result);
         assert_eq!(label, "failed, 1 line");

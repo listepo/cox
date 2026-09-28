@@ -43,6 +43,7 @@ fn edit_done(state: &mut State, path: &str, unified: &str) {
                     path: PathBuf::from(path),
                     unified: unified.into(),
                 }),
+                structured: None,
             },
         }),
     );

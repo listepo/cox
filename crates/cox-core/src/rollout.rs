@@ -430,6 +430,7 @@ mod tests {
                     bytes: 0,
                     duration_ms: 0,
                     diff: None,
+                    structured: None,
                 },
             },
             Event::TurnDone {

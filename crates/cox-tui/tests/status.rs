@@ -182,6 +182,11 @@ fn command_todo_shows_the_panel_from_the_tool_output() {
                 bytes: 0,
                 duration_ms: 1,
                 diff: None,
+                structured: Some(Box::new(serde_json::json!([
+                    {"id": "1", "text": "read the loop", "state": "done"},
+                    {"id": "2", "text": "write cells", "state": "in_progress"},
+                    {"id": "3", "text": "snapshots", "state": "pending"},
+                ]))),
             },
         }),
     );

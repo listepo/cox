@@ -13,7 +13,9 @@ use agent_client_protocol::schema::v1::{
     ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
 };
 use cox_protocol::ids::CallId;
-use cox_protocol::types::{Event, Risk, StopReason as CoxStop, ToolCall as CoxCall};
+use cox_protocol::types::{
+    Event, Risk, StopReason as CoxStop, TodoItem, TodoState, ToolCall as CoxCall,
+};
 
 /// Remembers each live call's name and subject between `ToolCallRequested`
 /// and `ToolCallDone` (the latter carries only an id).
@@ -87,7 +89,7 @@ pub fn updates_for(calls: &mut CallTable, event: &Event, cwd: &Path) -> Vec<Sess
             let mut out = vec![SessionUpdate::ToolCallUpdate(update)];
             if name == "todo"
                 && result.ok
-                && let Some(plan) = plan_from(&result.visible)
+                && let Some(plan) = result.todo_list().and_then(plan_from)
             {
                 out.push(SessionUpdate::Plan(plan));
             }
@@ -152,24 +154,76 @@ fn locations_for(name: &str, subject: &str, cwd: &Path) -> Vec<ToolCallLocation>
     vec![ToolCallLocation::new(path)]
 }
 
-/// Parses the `todo` tool's `[mark] id: text` list into a `Plan`.
-fn plan_from(visible: &str) -> Option<Plan> {
-    let entries: Vec<PlanEntry> = visible
-        .lines()
-        .filter_map(|line| {
-            let (mark, rest) = line.strip_prefix('[')?.split_once("] ")?;
-            let (_, text) = rest.split_once(": ")?;
-            let status = match mark {
-                "x" => PlanEntryStatus::Completed,
-                "~" => PlanEntryStatus::InProgress,
-                _ => PlanEntryStatus::Pending,
+/// The `todo` tool's structured list as a `Plan`.
+fn plan_from(items: Vec<TodoItem>) -> Option<Plan> {
+    let entries: Vec<PlanEntry> = items
+        .into_iter()
+        .map(|item| {
+            let status = match item.state {
+                TodoState::Done => PlanEntryStatus::Completed,
+                TodoState::InProgress => PlanEntryStatus::InProgress,
+                TodoState::Pending => PlanEntryStatus::Pending,
             };
-            Some(PlanEntry::new(
-                text.to_string(),
-                PlanEntryPriority::Medium,
-                status,
-            ))
+            PlanEntry::new(item.text, PlanEntryPriority::Medium, status)
         })
         .collect();
     (!entries.is_empty()).then(|| Plan::new(entries))
+}
+
+#[cfg(test)]
+mod tests {
+    use cox_protocol::types::ToolResult;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn todo_plan_comes_from_the_structured_list_not_the_text() {
+        let mut calls = CallTable::default();
+        let id = CallId::new();
+        let call = CoxCall {
+            id,
+            name: "todo".into(),
+            input: json!({}),
+            risk: Risk::ReadOnly,
+            subject: "todo".into(),
+            segments: None,
+        };
+        updates_for(
+            &mut calls,
+            &Event::ToolCallRequested { call },
+            Path::new("/"),
+        );
+        let done = Event::ToolCallDone {
+            call_id: id,
+            result: ToolResult {
+                ok: true,
+                visible: "not a parseable list".into(),
+                archive: None,
+                bytes: 0,
+                duration_ms: 0,
+                diff: None,
+                structured: Some(Box::new(json!([
+                    {"id": "1", "text": "read", "state": "done"},
+                    {"id": "2", "text": "write", "state": "in_progress"},
+                ]))),
+            },
+        };
+        let updates = updates_for(&mut calls, &done, Path::new("/"));
+        let Some(SessionUpdate::Plan(plan)) = updates.last() else {
+            panic!("expected a plan update, got {updates:?}");
+        };
+        let got: Vec<_> = plan
+            .entries
+            .iter()
+            .map(|e| (e.content.as_str(), e.status.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("read", PlanEntryStatus::Completed),
+                ("write", PlanEntryStatus::InProgress),
+            ]
+        );
+    }
 }

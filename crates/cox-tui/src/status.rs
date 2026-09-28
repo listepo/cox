@@ -13,7 +13,7 @@
 //! places a render is asked for, so drawing the row never reaches a plugin.
 
 use cox_protocol::plugin::{RenderIn, Slot, Widget};
-use cox_protocol::types::{PresenceStatus, SandboxMode};
+use cox_protocol::types::{PresenceStatus, SandboxMode, TodoState};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -444,33 +444,19 @@ fn spans_for(state: &State, text: &str) -> Vec<Span<'static>> {
     vec![Span::raw(text.to_string())]
 }
 
-/// The `todo` tool's rendered list (`[x] id: text` per line) as
-/// `(mark, text)` pairs; `structured` does not cross the event boundary, so
-/// the panel reads what the model saw.
-pub fn parse_todo(visible: &str) -> Vec<(String, String)> {
-    visible
-        .lines()
-        .filter_map(|l| {
-            let (mark, rest) = l.strip_prefix('[')?.split_once("] ")?;
-            let (_, text) = rest.split_once(": ")?;
-            Some((mark.to_string(), text.to_string()))
-        })
-        .collect()
-}
-
 /// The panel: a header and one row per item; done dim, in progress bold.
 pub fn todo_lines(state: &State) -> Vec<Line<'static>> {
     let mut lines = vec![Line::styled(
         " todo",
         Style::default().add_modifier(Modifier::BOLD),
     )];
-    lines.extend(state.todo.iter().map(|(mark, text)| {
-        let style = match mark.as_str() {
-            "x" => Style::default().add_modifier(Modifier::DIM),
-            "~" => Style::default().add_modifier(Modifier::BOLD),
-            _ => Style::default(),
+    lines.extend(state.todo.iter().map(|item| {
+        let (mark, style) = match item.state {
+            TodoState::Done => ("x", Style::default().add_modifier(Modifier::DIM)),
+            TodoState::InProgress => ("~", Style::default().add_modifier(Modifier::BOLD)),
+            TodoState::Pending => (" ", Style::default()),
         };
-        Line::styled(format!(" [{mark}] {text}"), style)
+        Line::styled(format!(" [{mark}] {}", item.text), style)
     }));
     lines
 }

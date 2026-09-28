@@ -158,6 +158,7 @@ fn frame_after_one_turn_replays_events() {
                 bytes: 12,
                 duration_ms: 3,
                 diff: None,
+                structured: None,
             },
         },
         Event::ItemStarted {
@@ -383,6 +384,7 @@ fn daltonized(name: &str) -> String {
                 path: subject.into(),
                 unified: u.into(),
             }),
+            structured: None,
         }),
         started: 0,
         user: false,
