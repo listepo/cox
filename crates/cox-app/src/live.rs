@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 
 use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
+use crate::info::{self, Info};
 use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
 use crate::{TimelinePatch, dispatch};
 
@@ -142,6 +143,22 @@ impl LiveSession {
         // Checkpoint paths are confined, so canonical.
         let cwd = std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone());
         Ok(changes::build(&self.snapshot(), &rows, &cwd, worktree))
+    }
+
+    /// What the inspector's Info tab lists (T37.29.5): the id, cwd and
+    /// rollout file, the linked worktree through git, and the config layers
+    /// with `cox-config`'s provenance as Settings reads it.
+    pub async fn info(&self) -> Result<Info, AppError> {
+        let settings = crate::settings::view(&self.app.user_config(), &self.cwd)?;
+        let worktree = cox_tools::git::linked(&self.cwd).await;
+        let rollout = self.app.workspace().store().rollout_path(&self.id());
+        Ok(info::build(
+            self.id(),
+            &self.cwd,
+            worktree,
+            &settings,
+            rollout,
+        ))
     }
 
     /// `/` commands and `@` files for the composer's token.

@@ -100,6 +100,12 @@ impl Store {
         self.home.join("sessions")
     }
 
+    /// Where session `id`'s JSONL rollout lives, whether or not it exists
+    /// yet; the desktop inspector shows it (T37.29.5).
+    pub fn rollout_path(&self, id: &SessionId) -> PathBuf {
+        self.sessions_dir().join(format!("{id}.jsonl"))
+    }
+
     fn archive_dir(&self) -> PathBuf {
         self.home.join("archive")
     }
@@ -344,7 +350,7 @@ impl StoreTrait for Store {
         let writer = match writers.entry(*id) {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(v) => {
-                let path = self.sessions_dir().join(format!("{id}.jsonl"));
+                let path = self.rollout_path(id);
                 let w = RolloutWriter::open(&path).map_err(|_| StoreError::Io)?;
                 v.insert(w)
             }
@@ -881,7 +887,7 @@ impl Store {
         &self,
         id: &SessionId,
     ) -> Result<(Vec<Event>, bool), StoreError> {
-        let path = self.sessions_dir().join(format!("{id}.jsonl"));
+        let path = self.rollout_path(id);
         rollout::read_lines(&path).map_err(|_| StoreError::Io)
     }
 

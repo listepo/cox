@@ -40,6 +40,8 @@ public protocol SessionClient: AnyObject, Sendable {
   func history(limit: UInt32) throws -> [String]
   /// What the inspector's Changes tab lists (`cox_app::live::LiveSession::changes`, T37.29.1).
   func changes() async throws -> Changes
+  /// What the inspector's Info tab lists (`cox_app::live::LiveSession::info`, T37.29.5).
+  func info() async throws -> Info
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
 }
@@ -114,7 +116,7 @@ extension FixtureCoreClient: InboxClient {
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
 /// fixed list instead of the Rust completer, serves a fixed prompt history and lists fixed
-/// changes. Waiting on the person, it plays the core: the turn resumes when the card is
+/// changes and info. Waiting on the person, it plays the core: the turn resumes when the card is
 /// answered.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
@@ -125,6 +127,7 @@ public final class FixtureSession: SessionClient {
   /// Newest first, as the core returns them.
   private let prompts: [String]
   private let fixedChanges: Changes
+  private let fixedInfo: Info
   private let inbox: FixtureInbox
   private let state = Mutex(State())
 
@@ -140,20 +143,22 @@ public final class FixtureSession: SessionClient {
 
   public convenience init(
     fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
-    waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes()
+    waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes(),
+    info: Info = Info()
   ) {
     self.init(
       fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou,
-      prompts: prompts, changes: changes, inbox: FixtureInbox())
+      prompts: prompts, changes: changes, info: info, inbox: FixtureInbox())
   }
 
   init(
     fixture: Fixture, completions: [Completion], host: (any PlatformHost)?, waitsForYou: Bool,
-    prompts: [String] = [], changes: Changes = Changes(), inbox: FixtureInbox
+    prompts: [String] = [], changes: Changes = Changes(), info: Info = Info(),
+    inbox: FixtureInbox
   ) {
     (self.fixture, self.completions, self.host, self.waitsForYou) =
       (fixture, completions, host, waitsForYou)
-    (self.prompts, fixedChanges, self.inbox) = (prompts, changes, inbox)
+    (self.prompts, fixedChanges, fixedInfo, self.inbox) = (prompts, changes, info, inbox)
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -207,6 +212,8 @@ public final class FixtureSession: SessionClient {
   public func history(limit: UInt32) -> [String] { Array(prompts.prefix(Int(limit))) }
 
   public func changes() async throws -> Changes { fixedChanges }
+
+  public func info() async throws -> Info { fixedInfo }
 
   public func close() {
     let resume = state.withLock { state in

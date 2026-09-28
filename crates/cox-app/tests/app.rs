@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use cox_app::TimelinePatch;
 use cox_app::app::{App, AppError, Host};
 use cox_app::live::LiveSession;
-use cox_app::{BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Need};
+use cox_app::{
+    BlockId, BlockKind, CheckId, CheckStatus, FileChange, InboxItem, Intent, Layer, Need,
+};
 use cox_protocol::types::{Decision, StopReason};
 
 /// Reads `notes.md`, then replies in markdown.
@@ -363,4 +365,30 @@ async fn changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to() 
     assert!(checkpoint.label.ends_with(" and 1 more"), "{checkpoint:?}");
     assert!(checkpoint.time.starts_with("20"), "{checkpoint:?}");
     assert_eq!(changes.worktree, None, "a tempdir is no linked worktree");
+}
+
+#[tokio::test]
+async fn info_names_the_session_its_cwd_rollout_and_the_user_config_it_read() {
+    let dir = scratch(Some(READ_AND_REPLY));
+    let user = dir.path().join("user/.cox/config.toml");
+    std::fs::create_dir_all(dir.path().join("user/.cox")).expect("home");
+    std::fs::write(&user, "[tui]\nvim = true\n").expect("config");
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session.send(send("read it")).await.expect("send");
+    finish(&session).await;
+
+    let info = session.info().await.expect("info");
+    assert_eq!(info.session, session.id());
+    assert_eq!(info.cwd, dir.path().join("project"));
+    assert_eq!(info.worktree, None, "a tempdir is no linked worktree");
+    let layers: Vec<_> = info.config.iter().map(|c| c.layer).collect();
+    assert_eq!(layers.first(), Some(&Layer::Default), "{layers:?}");
+    let from_user = info.config.iter().find(|c| c.layer == Layer::User);
+    let from_user = from_user.map(|c| (c.file.clone(), c.keys));
+    assert_eq!(from_user, Some((Some(user), 1)));
+    let rollout = dir
+        .path()
+        .join(format!("user/.cox/sessions/{}.jsonl", session.id()));
+    assert_eq!(info.rollout, rollout);
+    assert!(info.rollout.is_file(), "the turn was appended to it");
 }
