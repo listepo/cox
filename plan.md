@@ -92,6 +92,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.4 | todo | P3 | 2 | 0% | |
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
+| T50.4 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
+| T50.5 | todo | P3 | 1 | 0% | |
 
 ## Reference
 
@@ -2835,6 +2837,30 @@ Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: recording the mode in the rollout (T50.2).
 
+### T50.4. Resume keeps the session's starting permission mode
+
+Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~120 · Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/rollout.rs`, `crates/cox/src/session.rs` (or wherever resume applies the flag layer)
+
+Goal: a session started in Plan or Auto through config or `--permission-mode` and never switched comes back in that mode on resume, not in `Default` (a Plan session must never resume wider). The session records its starting mode when it opens (the T50.2 `Event::PermissionModeChanged`, or the same record), so `History.permission_mode` is always `Some` for new rollouts. On resume, an explicit `--permission-mode` flag wins; otherwise the recorded mode; a rollout with no record at all falls back to the configured mode. Found by T50.2.
+
+Check: a test opens a session configured `plan`, runs a turn without switching, resumes, and asserts the resumed session denies a write as Plan does; a second test resumes with an explicit `--permission-mode auto` and gets Auto; both fail on current `main`. Old rollouts still load.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: the `--plain` status line (T50.5).
+
+### T50.5. `cox --plain` shows the mode after `/permissions`
+
+Model: mid-tier · Status: open · Depends: — · Size: ~40 · Files: `crates/cox/src/plain.rs` (or its owner)
+
+Goal: after `/permissions <mode>` in `cox --plain`, the plain surface's own displayed mode updates (today `plain.rs` sends the change but keeps showing the configured mode). Use the `Event::PermissionModeChanged` from T50.2 rather than a second source of truth. Found by T50.2.
+
+Check: a test drives the plain surface through `/permissions plan` and finds `plan` in the next status output; it fails on current `main`.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: the full TUI (already correct).
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -2980,6 +3006,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A80 §3 (new P49: T49.1–T49.5), by the creator on 2026-09-28 from `ideas.md`. Why: the remaining later gates of the 2026 field survey (`research.md` §8.1) and the Cursor Cloud Agents API idea (`research.md` §4.3.8) were approved as scope gates. Effect: one `docs/design/v0.3-<name>.md` per item in the P19 shape (Problem / The field / cox / Falsifiers / Review, primary sources with URL and date); no runtime code, no dependency; a "build" verdict comes back as its own amendment. The "later gates" and Cursor Cloud Agents lines leave `ideas.md`. No §0 decision changes (D7's Windows line and the "voice" entry in the §0 v0.2+ list stay until a gate's verdict is approved).
 - A81 §3 (new P50: T50.1; T45.1 raised to P0), by the creator on 2026-09-28, and the answers to the P39–P49 planning questions. Why: planning P42–P45 found that instruction files and the skills index never reach the model (system[2] is still the pre-T7.1 stub) and that a subagent copies the configured permission mode instead of its parent's live one, so after Shift+Tab to plan a child still runs auto (T45.1). Answers: new dependencies approved — `base64` (T40.1, also replaces the hand-rolled encoder in `cox-tui/src/term.rs`), `url` (T41.3), `trycmd` as a dev-dependency (P48) and rmcp's `elicitation` feature as a dev-dependency of `cox-mcp` (T47.2), each with its §1 row in the implementing commit; Gemini stays a type-2 preset with the signature passthrough (P39); the scripted status line is plain text, `cox_sanitize::sanitize` is unchanged (P46); the Windows gate (T49.2) stays and decides the order of a Windows build and sandbox. Every other open question from planning takes the option the cards propose. No decision in §0 changes.
 - A82 §3 P50 (new T50.2, T50.3), by the creator on 2026-09-28 ("create everything there is"). Why: T45.1 found that mode changes are never written to the rollout, so a resumed session and a child woken by `TaskMessage` come back in `Default` (a child can be wider than a Plan-mode parent), and that the volatile block shows the configured mode, not the live one. Effect: two cards; `cox_permission::Engine` stays the single guard. No decision changes.
+- A83 §3 P50 (new T50.4, T50.5), by the creator on 2026-09-28 ("create everything there is"). Why: T50.2 found that resume ignores the starting mode (a session started in Plan through config comes back in `Default`, i.e. wider) and that `cox --plain` keeps showing the configured mode after `/permissions`. Effect: two cards; on resume an explicit `--permission-mode` flag wins, then the recorded mode, then config. `cox_permission::Engine` stays the single guard. No decision changes.
 
 ## 7. Risk register
 
