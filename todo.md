@@ -32,7 +32,6 @@
 - T37.44.11. The running app matches the mockups end to end
 - T37.45.1. Settings: filter field in the sidebar
 - T37.45.3. Settings: permission rules editor and session grants
-- T37.45.4. Settings: MCP server status and log
 - T37.45.5. Onboarding: drop a project folder
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item

@@ -38,7 +38,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.11 | todo | P2 | 3 | 0% | |
 | T37.45.1 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
-| T37.45.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.45.5 | todo | P3 | 2 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2864,13 +2863,6 @@ Depends: — · Size: ~200 · Files: CoxUI Permissions page, CoxModel, cox-app/c
 Goal: A120, mockup 19. The Permissions page lists the allow/ask/deny rules with the layer each comes from, lets the user add, edit and remove rules in their user config (a project config never gains a rule from the app, per the project-config guard), validates a rule with `cox_permission`'s grammar before saving, and lists the grants given for the open session ("allow for session") with a revoke. Writes go through `cox-config` `set`; the permission engine stays the one place a call is decided.
 Check: a cox-app or CoxModel test that an invalid rule is refused with the grammar's message and a valid one lands in the user layer only; a test that a revoked session grant asks again; CoxUI snapshots of the page.
 Plan: check what cox-app/cox-ffi expose for rules with their layers and session grants, add the missing calls (validated by `cox_permission`, written by `cox-config` set to the user layer, revoke through the session), then the Permissions page views, tests at the cox-app and CoxModel layers, snapshots.
-
-#### T37.45.4 Settings: MCP server status and log
-
-Depends: — · Size: ~150 · Files: CoxUI MCP page, CoxModel, cox-app/cox-ffi if status and log are not exposed yet
-Goal: A120, DT§ MCP row ("Status per server"), mockup 20. Each server row shows a status badge (connected, needs login, failed, disabled) from the MCP client's state and a Show log button that opens the server's recent stderr/log lines, sanitized through `cox_sanitize` before display.
-Check: a cox-app test mapping client states to badges and that log text is sanitized; CoxUI snapshots of each badge and the log sheet.
-Plan: check what cox-app exposes for MCP server state and logs, add a status mapping and a sanitized log read if missing, then the badge and Show log sheet in CoxUI, tests at the cox-app layer, snapshots.
 
 #### T37.45.5 Onboarding: drop a project folder
 
