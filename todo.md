@@ -34,7 +34,6 @@
 - T40.8. ACP image content blocks become attachments
 - T40.9. A model declared text-only refuses images at the wire
 - T40.10. `cox-vendor models` fills `images` from models.dev
-- T41.1. `[lsp]` config and its project-config guard
 - T41.3. Diagnostic wire subset, file URIs and formatting
 - T41.4. One LSP server: spawn, handshake, document sync, collect, stop
 - T41.5. `Tool::shutdown`, called when the root session ends

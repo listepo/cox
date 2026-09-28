@@ -232,17 +232,48 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         }
     }
 
+    // T41.1: an LSP server is a program cox spawns, so which ones exist
+    // and what they run is the user's call alone; any project difference
+    // (a new server, or a changed command, args or extensions) reverts the
+    // whole map to the layers without the project.
+    if full.lsp.servers != without_project.lsp.servers {
+        let changed: Vec<&str> = full
+            .lsp
+            .servers
+            .iter()
+            .filter(|(name, s)| without_project.lsp.servers.get(name.as_str()) != Some(*s))
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let kept: Vec<&str> = without_project
+            .lsp
+            .servers
+            .keys()
+            .map(String::as_str)
+            .collect();
+        violations.push(GuardViolation {
+            key: "lsp.servers",
+            project_value: changed.join(", "),
+            reverted_to: if kept.is_empty() {
+                "none".to_string()
+            } else {
+                kept.join(", ")
+            },
+        });
+        full.lsp.servers = without_project.lsp.servers.clone();
+    }
+
     violations
 }
 
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 9] = [
+const GUARDED_KEYS: [&str; 10] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
     "core.max_concurrent_subagents",
+    "lsp.servers",
     "mcp.servers.*.sandbox",
     "permissions.mode",
     "plugins.enabled",
@@ -268,7 +299,16 @@ impl LoadedConfig {
     /// `cox config show --sources`. A key the project guard list reverted
     /// reports the layer its *effective* (post-revert) value came from.
     pub fn source_of(&self, key: &str) -> &'static str {
-        let reverted = GUARDED_KEYS.contains(&key) && self.violations.iter().any(|v| v.key == key);
+        // A guarded table (`lsp.servers`) is reverted whole, so each of its
+        // leaf keys takes its provenance from the pre-project figment too.
+        let under = |guarded: &str| {
+            key == guarded
+                || key
+                    .strip_prefix(guarded)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        let reverted =
+            GUARDED_KEYS.iter().any(|g| under(g)) && self.violations.iter().any(|v| under(v.key));
         let fig = if reverted {
             &self.pre_project_fig
         } else {
@@ -579,6 +619,52 @@ mod tests {
             assert!(!loaded.config.plugins.enabled, "turn-on must be ignored");
             assert!(loaded.violations.iter().any(|v| v.key == "plugins.enabled"));
             assert_eq!(loaded.source_of("plugins.enabled"), "user");
+        });
+    }
+
+    /// T41.1: a repository must not choose a program cox runs, so a
+    /// project `.cox/config.toml` can neither add an LSP server nor change
+    /// a default one's command; the rest of `[lsp]` stays project-settable.
+    #[test]
+    fn project_config_cannot_set_lsp_servers() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::write(
+            home.path().join("config.toml"),
+            "[lsp.servers.zig]\ncommand = \"zls\"\nextensions = [\"zig\"]\n",
+        )
+        .expect("write user config");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        fs::write(
+            git_root.path().join(".cox/config.toml"),
+            "[lsp]\ntimeout_s = 10\n\n[lsp.servers.rust]\ncommand = \"./evil\"\n\n\
+             [lsp.servers.new]\ncommand = \"./also-evil\"\nextensions = [\"x\"]\n",
+        )
+        .expect("write project config");
+
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let loaded = load_plain(git_root.path()).expect("load succeeds");
+            let servers = &loaded.config.lsp.servers;
+            assert_eq!(servers["rust"].command, "rust-analyzer");
+            assert!(!servers.contains_key("new"), "{servers:?}");
+            assert_eq!(
+                servers["zig"].command, "zls",
+                "the user's own server must survive the revert"
+            );
+            assert_eq!(loaded.config.lsp.timeout_s, 10, "timeout_s is not guarded");
+            let violation = loaded
+                .violations
+                .iter()
+                .find(|v| v.key == "lsp.servers")
+                .expect("an lsp.servers violation");
+            assert!(violation.project_value.contains("rust"), "{violation:?}");
+            assert!(violation.project_value.contains("new"), "{violation:?}");
+            assert!(!violation.project_value.contains("zig"), "{violation:?}");
+            // `cox config show --sources` asks per leaf key.
+            assert_eq!(loaded.source_of("lsp.servers.rust.command"), "default");
+            assert_eq!(loaded.source_of("lsp.servers.zig.command"), "user");
+            assert_eq!(loaded.source_of("lsp.timeout_s"), "project");
         });
     }
 
