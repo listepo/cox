@@ -5795,3 +5795,18 @@ Deviations: the worktree could not merge p37-desktop (the permission classifier 
 Check: baseline on the merged T37.22.7/9/11/12 tree — CoxModel 84, CoxPlatform 13, CoxUI 182, CoxTranscriptText 36, CoxTranscript 50, CoxCore 13; after the fix CoxUI 184/184, CoxTranscript 50/50; swiftlint and swift-format strict clean; app rebuilt and screenshotted (`t37.44.2-app-before/after.png`); Figma calls: 1 `use_figma`, `get_design_context`, `get_screenshot`, `get_metadata`.
 
 Not done: values with no token (row title 13/500, subtitle 11, composer chip 26, text area min height 46, composer bottom margin 18) → T37.44.10; deliberate differences kept (row cost in `text.secondary`, selected title `text.primary` per A115, accent toggles, `status.plan` sparkle); features (send button active on an empty draft, attach chip, bolt on "think", "Keep text panels readable" in Appearance, Stop as plain "⌘." text); transcript column (mockup 760 centred with 32 pt sides and 24 pt top, turn-number gutter) and the other main-screen states → T37.44.9.
+
+#### T37.44.7 Approval and composer screens match the Figma frames
+
+Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI approval, decision and composer views, their snapshots
+Goal: A114, A119. The Figma pages "Approvals" and "Composer" are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2, which touches the same main-screen parts.
+Check: as T37.44.5.
+Plan: as T37.44.5 for the "Approvals" and "Composer" pages, touching only approval, decision-bar and composer views; merge p37-desktop when T37.44.2 lands.
+Status: done 2026-09-28
+Result: approval card, pinned decision bar and composer compared with mockup renders 03–07 (the Figma file holds only "Main") and fixed where a token covers the value. ApprovalCard: regular-height buttons in the mockup's order (Allow, Allow for session, Edit… as secondary, Deny), "Session grant: …" in footnote at the end of the action row (wraps under when narrow), `space.l` bottom padding. Composer: Send is a round accent button (`fill.secondary` disabled; its style moved to `CoxButtonStyle.swift`), the paperclip an icon-only chip, the queued chip joins the chips, `space.s` between text and chips, the hint in `text.placeholder` (A112). Mode and queue chips carry no symbol; the CompletionList selected row is white on accent (ModelPopover rows follow). Mapping: 03 → `ApprovalCardTests`, `DecisionBarTests`; 04 → `questionCard`; 05 → `composer.mention`, `completionList.files`; 06 → `composer.commands`, `completionList.commands`; 07 → `composer.shell-queued`, `ComposerMoleculeTests`.
+
+Deviations: ModelPopover, TokenMeter and ComposerFailure snapshots re-recorded too; `ApprovalCardEditTests` clicks Edit… as the third button.
+
+Check: focused suites 24 then a second pass, CoxUI 183/183; approval card vs mockup 3 4.32 % at threshold 0.3 (text rows); swift-format and swiftlint strict clean. Merged tree: `Composer.swift` conflict (identical padding) resolved, 94 snapshot conflicts re-recorded, CoxUI 187 and CoxTranscript 50 pass.
+
+Not done: values with no token (12.5 mono well text, 12.5 regular bar text, 0.35 orange hairline, chip 26, Send 30, text area min 46, command popover 520 wide, 12 pt key caps) → T37.44.10; features (shortcut hints in card buttons, mono ask rule with a layer badge, Sandbox reason line, radio-row question card, inline mention pills, green "!" shell prefix, "Shell · share output" chip, popover row icons, match highlight, hint footer, bold command names, bolt "think" chip); the flat chips of 03–07 vs the lifted glass chips of 28.
