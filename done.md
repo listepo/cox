@@ -3036,3 +3036,15 @@ Deviations: more than 3 files and ~300–500 lines of new code (spec, error and 
 Check: clippy `-p cox-session -p cox --all-targets` clean (also `--no-default-features --features cox/otel`); `nextest -p cox-session` 33/33 incl. `open_returns_skill_warnings_as_data`; `-p cox --bin cox --test tui_e2e --test run_cli --test plain --test deps --test no_real_keychain_in_tests --test plugins --test external_agents_cursor` 112/112, no snapshot changed; `--test ide --test mcp_serve --test subagent_messaging` 6/6; real binary with a scratch `COX_HOME` and a broken skill printed `cox: warning: skill … skipped` and the scripted reply. After merging with T37.6/T37.13/T37.36: clippy clean, `cox-session` 33/33, `deps` + `run_cli` 23/23. The workspace-wide nextest is left to CI. Commit d26b6d0.
 
 Not done: ~13 comments in other crates still name `crates/cox/src/session.rs`.
+
+#### T37.11 Login-shell environment resolution in `cox-session`
+
+Depends: T37.1 · Size: ~80 · Files: `crates/cox-session/src/env.rs`
+Goal: an app launched from Finder sees the user's login-shell `PATH` and env, like a terminal launch.
+Check: a test with a fake shell script returns its exported `PATH`; a timeout falls back to the process env with a warning.
+Status: done 2026-09-28
+Result: `crates/cox-session/src/env.rs`: `login_env(timeout)` runs `$SHELL` (or `/bin/zsh` on macOS, `/bin/sh` elsewhere) as `-l -i -c` with a fixed script printing `env -0` between two markers; `resolve(shell, timeout)` takes the shell path so tests pass a fake one. Returns `(Env, Option<Warning>)`, `Env` a sorted map of `OsString`s. On timeout the shell's process group gets SIGKILL. `parse(&[u8])` is pure and ignores rc-file noise around the markers. Any failure (spawn, timeout, no markers) falls back to the process env with the new `Warning::Env`. Library only; the CLI's startup is unchanged; the app wires it in through cox-ffi.
+
+Deviations: `-l -i` as DT§4.8 says (PATH is often set in `.zshrc`, which only an interactive shell reads; stdin is empty so it cannot wait for input); `nix` (`signal`, workspace version) added to cox-session for the group kill, as `cox-ext` hooks do (§1.1 row). The timeout became 10 s instead of 3 s after merge: a real `zsh -l -i -c` took ~2.0 s on a loaded machine (DT§4.8 updated).
+
+Check: `cargo nextest run -p cox-session` 38/38 (5 new: a fake shell's exported PATH comes back through junk output; a 30 s sleeper against a 200 ms timeout falls back with a "timed out" warning; a missing shell falls back; `parse` keeps multi-line values and ignores junk; `parse` returns nothing without markers); re-run after the timeout change 38/38; clippy and fmt clean. Commits 8cda296, 57783af.

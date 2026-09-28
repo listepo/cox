@@ -35,7 +35,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
-| T37.11 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.12 | todo | P1 | 3 | 0% | |
 | T37.14 | todo | P0 | 4 | 0% | |
 | T37.15 | todo | P0 | 3 | 0% | |
@@ -1136,12 +1135,6 @@ Check: `slow_consumer_never_stalls_the_core` — a consumer that sleeps 2 s per 
 Depends: T37.1, T37.8, T37.35 · Size: ~200 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-app/src/inbox.rs`, `crates/cox-app/src/intent.rs`
 Goal: projects, sessions, search, worktrees with disk size, the "needs you" inbox, and one intent enum the app sends (DT§4.3).
 Check: unit tests per intent against a scratch `COX_HOME`; inbox ordering test.
-
-#### T37.11 Login-shell environment resolution in `cox-session`
-
-Depends: T37.1 · Size: ~80 · Files: `crates/cox-session/src/env.rs`
-Goal: an app launched from Finder sees the user's login-shell `PATH` and env, like a terminal launch.
-Check: a test with a fake shell script returns its exported `PATH`; a timeout falls back to the process env with a warning.
 
 #### T37.12 `cox-app`: usage and throughput view state
 
