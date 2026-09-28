@@ -82,7 +82,10 @@ final class Decor: NSObject {
     super.init()
     styles = (0..<4).map { raw in
       let edge = Edge(rawValue: raw)
-      let paragraph = NSMutableParagraphStyle()
+      let paragraph =
+        kind == .bubble
+        ? TranscriptStyle.lines(style.body, style.lineHeights.body)
+        : TranscriptStyle.lines(thought.font, style.lineHeights.thought)
       let spacing = edge.contains(.last) ? style.blockSpacing : 0
       switch kind {
       case .bubble:

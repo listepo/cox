@@ -319,7 +319,9 @@
           "tint": true
         },
         "transcript": {
-          "cross_block_selection": true
+          "cross_block_selection": true,
+          "text_size": 13.5,
+          "line_height": 1.55
         }
       }
     }
@@ -1830,7 +1832,9 @@
           "description": "`[desktop.transcript]`",
           "$ref": "#/$defs/DesktopTranscriptConfig",
           "default": {
-            "cross_block_selection": true
+            "cross_block_selection": true,
+            "text_size": 13.5,
+            "line_height": 1.55
           }
         }
       },
@@ -1898,13 +1902,29 @@
       ]
     },
     "DesktopTranscriptConfig": {
-      "description": "`[desktop.transcript]` (A67).",
+      "description": "`[desktop.transcript]` (A67, A93).",
       "type": "object",
       "properties": {
         "cross_block_selection": {
           "description": "Whether a text selection runs across blocks like one document;\n`false` clamps it to the block where the drag started.",
           "type": "boolean",
           "default": true
+        },
+        "text_size": {
+          "description": "The transcript's prose size in pt at 100 % text size, 10 to 24;\ncode, headings and thoughts keep their size relative to it.",
+          "type": "number",
+          "format": "double",
+          "minimum": 10.0,
+          "maximum": 24.0,
+          "default": 13.5
+        },
+        "line_height": {
+          "description": "The prose line height as a multiple of the text size, 1 to 2.5.",
+          "type": "number",
+          "format": "double",
+          "minimum": 1.0,
+          "maximum": 2.5,
+          "default": 1.55
         }
       },
       "additionalProperties": false
