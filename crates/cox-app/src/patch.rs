@@ -14,6 +14,7 @@ use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 
 use crate::summary::Icon;
+use crate::usage::UsageView;
 
 /// How many trailing lines of output a running `Tool` block keeps.
 pub const TAIL_LINES: usize = 5;
@@ -165,6 +166,11 @@ pub enum TimelinePatch {
     },
     Remove {
         id: BlockId,
+    },
+    /// The token meter's whole state (DS§7), beside the block list; a
+    /// queue keeps only the latest.
+    Usage {
+        usage: Box<UsageView>,
     },
 }
 

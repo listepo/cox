@@ -15,6 +15,7 @@ use tokio::time::Instant;
 use crate::coalesce;
 use crate::patch::{Block, TimelinePatch};
 use crate::timeline::Timeline;
+use crate::usage::Meter;
 
 /// A pull hands back at most one batch per frame (DT§4.1), so the UI hops
 /// to its main thread at most once per frame…
@@ -36,6 +37,9 @@ struct Shared {
 
 struct State {
     timeline: Timeline,
+    meter: Meter,
+    /// The meter's clock origin; tokio's, so a paused-time test scripts it.
+    opened: Instant,
     queue: Vec<TimelinePatch>,
     closed: bool,
     last_pull: Option<Instant>,
@@ -56,6 +60,8 @@ impl Controller {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
                 timeline,
+                meter: Meter::default(),
+                opened: Instant::now(),
                 queue: Vec::new(),
                 closed: false,
                 last_pull: None,
@@ -67,7 +73,12 @@ impl Controller {
             while let Some(event) = events.recv().await {
                 let queued = {
                     let mut state = feed.lock();
-                    let patches = state.timeline.apply(&event);
+                    let mut patches = state.timeline.apply(&event);
+                    let now = state.opened.elapsed();
+                    if state.meter.apply(&event, now) {
+                        let usage = Box::new(state.meter.view().clone());
+                        patches.push(TimelinePatch::Usage { usage });
+                    }
                     let queued = !patches.is_empty();
                     for patch in patches {
                         coalesce::push(&mut state.queue, patch);
@@ -85,10 +96,13 @@ impl Controller {
     }
 
     /// The whole block list. Patches queued so far are already in it, so
-    /// they are dropped: the next pull continues from this state.
+    /// they are dropped — all but the meter's, which is not: the next pull
+    /// continues from this state.
     pub fn snapshot(&self) -> Vec<Block> {
         let mut state = self.shared.lock();
-        state.queue.clear();
+        state
+            .queue
+            .retain(|p| matches!(p, TimelinePatch::Usage { .. }));
         state.timeline.blocks().to_vec()
     }
 

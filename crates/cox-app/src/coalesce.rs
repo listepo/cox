@@ -42,6 +42,10 @@ pub fn push(queue: &mut Vec<TimelinePatch>, patch: TimelinePatch) {
             }
         }
         TimelinePatch::Remove { .. } => patch,
+        TimelinePatch::Usage { .. } => {
+            queue.retain(|p| !matches!(p, TimelinePatch::Usage { .. }));
+            patch
+        }
     };
     queue.push(patch);
 }
@@ -65,6 +69,8 @@ pub fn apply(blocks: &mut Vec<Block>, patch: TimelinePatch) {
             blocks.insert(at, *block);
         }
         TimelinePatch::Remove { id } => blocks.retain(|b| b.id != id),
+        // The meter sits beside the list; a UI keeps it on its own.
+        TimelinePatch::Usage { .. } => {}
         TimelinePatch::AppendText { .. } | TimelinePatch::DocTail { .. } => {
             let found = target(&patch).and_then(|id| blocks.iter().position(|b| &b.id == id));
             if let Some(i) = found {
@@ -76,10 +82,11 @@ pub fn apply(blocks: &mut Vec<Block>, patch: TimelinePatch) {
     }
 }
 
-/// The block a patch changes; `None` for `Reset`, which changes them all.
+/// The block a patch changes; `None` for `Reset`, which changes them all,
+/// and for `Usage`, which changes none.
 fn target(patch: &TimelinePatch) -> Option<&BlockId> {
     match patch {
-        TimelinePatch::Reset { .. } => None,
+        TimelinePatch::Reset { .. } | TimelinePatch::Usage { .. } => None,
         TimelinePatch::Upsert { block, .. } => Some(&block.id),
         TimelinePatch::AppendText { id, .. }
         | TimelinePatch::DocTail { id, .. }
@@ -91,10 +98,11 @@ fn target(patch: &TimelinePatch) -> Option<&BlockId> {
 /// before it survives.
 fn last_for(queue: &[TimelinePatch], id: &BlockId) -> Option<usize> {
     for (i, patch) in queue.iter().enumerate().rev() {
-        match target(patch) {
-            None => return None,
-            Some(t) if t == id => return Some(i),
-            Some(_) => {}
+        if matches!(patch, TimelinePatch::Reset { .. }) {
+            return None;
+        }
+        if target(patch) == Some(id) {
+            return Some(i);
         }
     }
     None
@@ -272,6 +280,21 @@ mod tests {
             thinking("u", "u2"),
         ]);
         assert_eq!(queue, vec![thinking("u", "u2"), thinking("t", "whole")]);
+    }
+
+    #[test]
+    fn only_the_latest_usage_state_stays_queued() {
+        let meter = |calls| TimelinePatch::Usage {
+            usage: Box::new(crate::UsageView {
+                session: crate::Tally {
+                    calls,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        };
+        let queue = coalesced(&[meter(1), append("t", "a"), meter(2), append("t", "b")]);
+        assert_eq!(queue, vec![append("t", "ab"), meter(2)]);
     }
 
     #[test]
