@@ -774,6 +774,8 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                 .push(cox_tui::state::Cell::Notice { level, text });
         }
         state.files = cox_tools::glob::workspace_files(cwd);
+        // T45.6: what `@name task` may dispatch, as the `agent` tool resolves it.
+        state.agent_names = session.agent_names();
         state.cwd = cwd.to_path_buf();
         state.git_branches = rt.block_on(cox_tools::git::branches(cwd));
         state.worktree = cli.worktree.clone();

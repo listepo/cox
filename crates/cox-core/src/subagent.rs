@@ -149,6 +149,47 @@ pub struct AgentTool {
     spawned: AtomicU32,
 }
 
+/// Discovered names not already shadowed by a built-in preset, and not
+/// `disabled: true` (T34.10) — used in the tool description, the "unknown
+/// preset" error and `Session::agent_names`, so none of them disagrees
+/// about what is dispatchable. A disabled def still discovers (`cox ext
+/// list` shows it, marked); it just never appears here.
+fn custom_names(session: &Session) -> Vec<String> {
+    session
+        .agent_defs()
+        .iter()
+        .filter(|d| !d.disabled)
+        .map(|d| d.name.clone())
+        .filter(|n| !PRESETS.iter().any(|p| p.name == n))
+        .collect()
+}
+
+/// Granted external-agent names (T35.5) not shadowed by a built-in or
+/// discovered preset, which resolve first.
+fn external_names(session: &Session) -> Vec<String> {
+    let custom = custom_names(session);
+    session
+        .external_agents()
+        .iter()
+        .map(|a| a.name().to_string())
+        .filter(|n| !PRESETS.iter().any(|p| p.name == n) && !custom.contains(n))
+        .collect()
+}
+
+impl Session {
+    /// Every name `agent(preset: …)` resolves, in resolution order:
+    /// built-in presets, enabled definitions, granted external agents. A
+    /// surface offers these for `@name task` (T45.6).
+    pub fn agent_names(&self) -> Vec<String> {
+        PRESETS
+            .iter()
+            .map(|p| p.name.to_string())
+            .chain(custom_names(self))
+            .chain(external_names(self))
+            .collect()
+    }
+}
+
 impl AgentTool {
     pub(crate) fn new(parent: Session) -> Self {
         Self {
@@ -157,31 +198,12 @@ impl AgentTool {
         }
     }
 
-    /// Discovered names not already shadowed by a built-in preset, and not
-    /// `disabled: true` (T34.10) — used both in the tool description and in
-    /// the "unknown preset" error, so the two never disagree about what is
-    /// dispatchable. A disabled def still discovers (`cox ext list` shows
-    /// it, marked); it just never appears here.
     fn custom_names(&self) -> Vec<String> {
-        self.parent
-            .agent_defs()
-            .iter()
-            .filter(|d| !d.disabled)
-            .map(|d| d.name.clone())
-            .filter(|n| !PRESETS.iter().any(|p| p.name == n))
-            .collect()
+        custom_names(&self.parent)
     }
 
-    /// Granted external-agent names (T35.5) not shadowed by a built-in or
-    /// discovered preset, which resolve first.
     fn external_names(&self) -> Vec<String> {
-        let custom = self.custom_names();
-        self.parent
-            .external_agents()
-            .iter()
-            .map(|a| a.name().to_string())
-            .filter(|n| !PRESETS.iter().any(|p| p.name == n) && !custom.contains(n))
-            .collect()
+        external_names(&self.parent)
     }
 
     /// Built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`,
@@ -244,9 +266,7 @@ impl AgentTool {
                 permission: None,
             });
         }
-        let mut names: Vec<String> = PRESETS.iter().map(|p| p.name.to_string()).collect();
-        names.extend(self.custom_names());
-        names.extend(self.external_names());
+        let names = self.parent.agent_names();
         Err(ToolError::Denied {
             why: format!(
                 "unknown agent preset {name:?}; available presets: {}",
