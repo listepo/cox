@@ -2362,7 +2362,7 @@ Prerequisite finding: `AgentTool::call` clones `parent.config`, and `Session::bu
 
 ### T45.1. A child inherits the parent's live permission mode
 
-Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~70 · Priority: P1 · Complexity: 3
+Model: Claude Code / opus-5.5 · Status: in progress · Depends: - · Size: ~70 · Priority: P0 · Complexity: 3
 
 Goal: a subagent is never wider than its parent at spawn time.
 
@@ -2386,6 +2386,12 @@ mise exec -- cargo fmt --check
 Done when: both tests pass (open question 9: this may deserve P0 outside P45).
 
 Out of scope: per-agent overrides (T45.2).
+
+Plan:
+1. Tests first, both failing on `main`. `child_inherits_parent_live_plan_mode` (unit, `subagent.rs` `mod tests`): parent configured `auto`, `SetPermissionMode { Plan }`, one `agent` (explore) call; the `Recording` provider also keeps each request's volatile system block, and the child's (cheap-tier) request must say `permission_mode=Plan` (`context.rs` renders it from the child's `config.permissions.mode`, the same field `Session::build` seeds the engine mode from). `child_of_default_parent_does_not_run_auto` (`crates/cox-core/tests/subagent.rs`, inline scenario): parent configured `auto`, live `Default`, a `shell` child limited to the `touch` (`Risk::Write`) tool; after the parent's own `agent` approval the child's `touch` must raise `ApprovalRequired` labelled with the agent (under `auto` it ran unasked).
+2. `session.rs`: `pub(crate) async fn permission_mode(&self)` reads `Inner.permission_mode`.
+3. `subagent.rs` `AgentTool::call`: after `let mut config = self.parent.config.clone();` set `config.permissions.mode = self.parent.permission_mode().await`. Grants stay per session; `cox_permission::Engine` is untouched.
+4. Verify: the two tests, then fmt, clippy, nextest.
 
 ### T45.2. `permissionMode` in an agent definition narrows only
 
