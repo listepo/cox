@@ -32,7 +32,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.2 | todo | P2 | 4 | 0% | |
+| T37.44.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
@@ -2776,6 +2776,7 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
 Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
 Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
+Plan: first run every Swift package's tests on the base (the merged T37.22.7/9/11/12 tree); re-sync the Figma variables for `accent.selected`; build and screenshot the app and compare with Figma, screen 28 first (`get_design_context`, `get_variable_defs`, `get_screenshot`); fix token-level differences (layout, spacing, radius, colour, type) in CoxUI, leaving glass and window chrome to T37.22.10 and merging it when it lands; re-record snapshots on purpose; lint.
 
 #### T37.44.3 Figma text in SF Pro and SF Mono
 
