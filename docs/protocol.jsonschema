@@ -466,6 +466,36 @@
         ]
       },
       {
+        "description": "The repo map now in system[2] (P43). Its text is archived before\nthis is emitted; resume reads the last one back instead of\nrebuilding, so the replayed request carries the same bytes.",
+        "type": "object",
+        "properties": {
+          "archive": {
+            "description": "The archived map text.",
+            "$ref": "#/$defs/ArchiveId"
+          },
+          "bytes": {
+            "description": "Its size in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "reason": {
+            "description": "What built it.",
+            "$ref": "#/$defs/RepoMapReason"
+          },
+          "type": {
+            "type": "string",
+            "const": "repo_map_built"
+          }
+        },
+        "required": [
+          "type",
+          "archive",
+          "bytes",
+          "reason"
+        ]
+      },
+      {
         "description": "Pre-images of the files a tool call changed are archived and\nretrievable (T26.1). Emitted after the `checkpoints` rows exist, so a\nsurface that sees it can already `/rewind`; never emitted for a call\nthat changed nothing.",
         "type": "object",
         "properties": {
@@ -1710,6 +1740,26 @@
             "description": "The provider rejected a request as too long; the call retries once.",
             "type": "string",
             "const": "context-too-long"
+          }
+        ]
+      },
+      "RepoMapReason": {
+        "description": "Why `Event::RepoMapBuilt` happened (P43): the only three moments the\nrepo map in system[2] is built.",
+        "oneOf": [
+          {
+            "description": "Before the first request of a session.",
+            "type": "string",
+            "const": "session_start"
+          },
+          {
+            "description": "`/repomap refresh` produced different bytes.",
+            "type": "string",
+            "const": "refresh"
+          },
+          {
+            "description": "Compaction rebuilt it with the prefix it already restarts.",
+            "type": "string",
+            "const": "compaction"
           }
         ]
       },
