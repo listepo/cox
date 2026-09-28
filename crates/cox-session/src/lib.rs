@@ -30,7 +30,7 @@ pub mod sandbox;
 pub mod testing;
 pub mod tools;
 
-pub use lineage::{fork, handoff, resume};
+pub use lineage::{Follow, fork, handoff, resume};
 pub use mcp::{mcp_auth, mcp_servers};
 #[cfg(feature = "plugins")]
 pub use plugins::start_plugins;
@@ -62,6 +62,17 @@ pub enum SessionError {
     UnknownProvider(String),
     #[error("unknown api `{api}` for provider `{owner}` (want \"chat\" or \"responses\")")]
     UnknownApi { api: String, owner: String },
+    /// T37.34 (A67): another process drives session `id`; one writer per
+    /// rollout. The caller may [`Follow`] it read-only or [`fork`] it.
+    #[error(
+        "session {id} is open in {holder}; one process drives a session. \
+         Follow it read-only or fork it into a new session \
+         (taking it over is not available yet)"
+    )]
+    SessionBusy {
+        id: SessionId,
+        holder: cox_store::lock::Holder,
+    },
 }
 
 /// Something skipped while the session was built; the session runs
@@ -115,6 +126,9 @@ pub struct SessionSpec {
     pub mcp_login: Option<cox_mcp::client::Prompt>,
     /// T33.23, T33.44: renders the live plugins; only the TUI has one.
     pub plugin_ui: Option<ServeUi>,
+    /// T37.34: who drives the session (`tui`, `plain`, `headless`, `app`),
+    /// named to a second process that tries to open it.
+    pub surface: String,
 }
 
 /// A built session.
@@ -141,6 +155,7 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
         resume,
         mcp_login,
         plugin_ui,
+        surface,
     } = spec;
     let cwd = cwd.as_path();
     let mut warnings = Vec::new();
@@ -167,6 +182,12 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
     }
     let mut config = base.clone();
     let store = Arc::new(Store::open(&home)?);
+    // T37.34: claimed before anything is built or written, so a busy
+    // session costs the second opener nothing.
+    let id = resume.as_ref().map_or_else(SessionId::new, |(id, _)| *id);
+    if let Some(holder) = store.claim_session(&id, &surface)? {
+        return Err(SessionError::SessionBusy { id, holder });
+    }
     // T33.19: granted plugins load before the provider is built and before
     // MCP discovery: a granted plugin's declarative `[[provider]]` rows
     // (T33.17) must already be in `config.providers.custom` when
@@ -249,7 +270,6 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
     }
     #[cfg_attr(not(feature = "plugins"), allow(unused_mut))]
     let mut plugin_warnings = plugins.notices;
-    let id = resume.as_ref().map_or_else(SessionId::new, |(id, _)| *id);
     #[cfg(feature = "plugins")]
     let mut live = plugins.live;
     #[cfg(feature = "plugins")]
@@ -415,6 +435,7 @@ mod tests {
             resume: None,
             mcp_login: None,
             plugin_ui: None,
+            surface: "test".into(),
         };
         let scenario = scenario.display().to_string();
         let vars = [

@@ -298,8 +298,11 @@ Rules:
   turns asks first.
 - **Sessions open elsewhere.** The TUI and the app share `cox.db`; `Presence`
   (already in the protocol) marks a session open in another surface, and the
-  app shows it read-only with a "take over" action. SQLite concurrency across
-  two processes is an open question (DT§11 Q6).
+  app shows it read-only with a "take over" action. One process drives a
+  session (T37.34, DT§11 Q6): it holds an OS lock on `sessions/<id>.lock`
+  (`cox_store::lock`), and any other opener gets `SessionBusy { holder }`
+  and may follow it read-only (`cox_session::Follow` tails the rollout) or
+  fork it; "take over" is only named in the notice so far.
 
 ### 4.6 Swift side
 

@@ -1,7 +1,8 @@
 //! A session's children and its reopening (T26.3, T2.4): `/fork` and
 //! `/handoff` seed a new session whose own rollout rebuilds its history,
-//! and `resume` rebuilds any session's history from its rollout. Separate
-//! from `open`, which takes the history these return.
+//! and `resume` rebuilds any session's history from its rollout;
+//! [`Follow`] tails the rollout of a session another process drives
+//! (T37.34). Separate from `open`, which takes the history these return.
 
 use std::path::{Path, PathBuf};
 
@@ -107,6 +108,36 @@ pub fn resume(home: &Path, id: SessionId) -> Result<History, SessionError> {
     Ok(History::from_rollout(&events, truncated))
 }
 
+/// T37.34: a read-only view of a session another process drives (its
+/// `SessionBusy`): re-reads the holder's rollout, the D2 replay path, and
+/// hands back what it appended since the last look, for the caller to fold
+/// (`History::from_events`, a surface's own fold). It never writes: no
+/// claim, no rollout writer.
+pub struct Follow {
+    store: Store,
+    id: SessionId,
+    seen: usize,
+}
+
+impl Follow {
+    pub fn new(home: &Path, id: SessionId) -> Result<Self, SessionError> {
+        Ok(Self {
+            store: Store::open(home)?,
+            id,
+            seen: 0,
+        })
+    }
+
+    /// The events appended since the last call; all of them the first
+    /// time. A half-written last line is left for the next call.
+    pub fn poll(&mut self) -> Result<Vec<Event>, SessionError> {
+        let (events, _) = self.store.rollout_read_with_truncation(&self.id)?;
+        let new: Vec<Event> = events.into_iter().skip(self.seen).collect();
+        self.seen += new.len();
+        Ok(new)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +188,38 @@ mod tests {
 
         let (_, all) = fork(home.path(), work.path(), parent, None).expect("fork all");
         assert_eq!(texts(&all), ["one", "a1", "two", "a2"]);
+    }
+
+    /// T37.34: a follower sees the turns the driving session appends, only
+    /// the new ones on each look, and folds them into the same history.
+    #[tokio::test]
+    async fn follow_sees_events_the_holder_appends() {
+        let home = tempfile::tempdir().expect("home");
+        let work = tempfile::tempdir().expect("work");
+        let (session, _store) = scripted_session(
+            home.path(),
+            work.path(),
+            "[[turn]]\ntext = \"a1\"\n[[turn]]\ntext = \"a2\"\n",
+        );
+        user_turn(&session, "one").await;
+        let mut follow = Follow::new(home.path(), session.id()).expect("follow");
+        let mut seen = follow.poll().expect("first look");
+        assert_eq!(texts(&History::from_events(&seen)), ["one", "a1"]);
+        assert!(follow.poll().expect("idle look").is_empty());
+
+        user_turn(&session, "two").await;
+        let new = follow.poll().expect("second look");
+        assert!(
+            !new.is_empty()
+                && !new
+                    .iter()
+                    .any(|e| matches!(e, Event::SessionStarted { .. }))
+        );
+        seen.extend(new);
+        assert_eq!(
+            texts(&History::from_events(&seen)),
+            ["one", "a1", "two", "a2"]
+        );
     }
 
     /// T26.3: `/handoff` asks the parent's `compact` job (cheap tier, in the

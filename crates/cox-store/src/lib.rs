@@ -6,6 +6,7 @@
 //! asserts no other crate depends on `diesel`.
 
 pub mod fts;
+pub mod lock;
 mod models;
 pub mod queries;
 mod rollout;
@@ -57,6 +58,9 @@ pub struct Store {
     home: PathBuf,
     conn: Mutex<SqliteConnection>,
     rollouts: Mutex<HashMap<SessionId, RolloutWriter>>,
+    /// The sessions this store drives (T37.34), held while it lives: the
+    /// session that writes through it keeps it alive.
+    locks: Mutex<Vec<lock::SessionLock>>,
 }
 
 impl Store {
@@ -67,6 +71,23 @@ impl Store {
         directories::BaseDirs::new()
             .map(|d| d.home_dir().join(".cox"))
             .unwrap_or_else(|| PathBuf::from(".cox"))
+    }
+
+    /// T37.34: makes this store the one writer of session `id`'s rollout
+    /// for as long as it lives, or names the process that already is.
+    /// `None` means claimed.
+    pub fn claim_session(
+        &self,
+        id: &SessionId,
+        surface: &str,
+    ) -> Result<Option<lock::Holder>, StoreError> {
+        match lock::claim(&self.sessions_dir(), id, surface)? {
+            Ok(held) => {
+                self.locks.lock().map_err(|_| StoreError::Io)?.push(held);
+                Ok(None)
+            }
+            Err(holder) => Ok(Some(holder)),
+        }
     }
 
     fn sessions_dir(&self) -> PathBuf {
@@ -285,6 +306,7 @@ impl StoreTrait for Store {
             home: home.to_path_buf(),
             conn: Mutex::new(conn),
             rollouts: Mutex::new(HashMap::new()),
+            locks: Mutex::new(Vec::new()),
         })
     }
 
