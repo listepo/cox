@@ -181,6 +181,28 @@ keeps it compiling. A matching doctest on
 call without prompting, so the model learns to describe the change
 instead of making it.
 
+### Modes: architect and editor
+
+A mode is a named preset over two things only: the permission mode and
+the tier main turns run on. `/mode architect|editor` in the TUI, `--mode`
+on the command line and `core.mode` in config all set the same value.
+
+| | architect | editor (default) |
+| --- | --- | --- |
+| permission mode | the narrower of `permissions.mode` and `plan` | `permissions.mode` |
+| main tier | think, confirmed | the configured tier |
+| writes and non-read-only `bash` | denied by `plan` | per policy |
+
+A mode never widens permissions: architect over a `plan` config is still
+`plan`, and `/mode editor` goes back to `permissions.mode`, never past it.
+Tools are not filtered by mode, so the tool list and system blocks stay
+byte-identical across a switch and the prompt cache survives; `plan` does
+the narrowing through the same `cox_permission::Engine` as every other
+call. The think tier still needs consent: the TUI asks its price once per
+architect stretch, and in `cox run` only the explicit `--mode architect`
+flag (or `--deep`) counts, so `core.mode = architect` from a config file
+alone makes the run refuse with the flag to pass.
+
 ## Example 4: big output is lossless, not lost
 
 Tools return their **full** output; the core archives it *before* the
