@@ -5378,3 +5378,24 @@ Check:
 - `reverting_one_file_restores_it_and_leaves_the_other`, `revert_file_restores_only_that_file`, `every_intent_maps_to_its_submission`; clippy and fmt clean; a real-binary scripted write under a scratch `COX_HOME`.
 - After merging into `p37-desktop` (merge 8944da74): `just test --changed-since` 1521 passed, 5 skipped; clippy on cox-core, cox-app, cox-ffi and cox-protocol clean; CoxCore 12, CoxModel 59.
 Not done: the headless surface has no way to send a revert, so the real-binary run covered the checkpoint, not the revert.
+
+#### T37.24.11 `/think` and the think toggle run their turn on the think tier
+
+Depends: T37.24.10 · Size: ~60 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
+Goal: D5 and A103 — `UserTurn { confirm_think: true }` routes that one turn's main request to `Tier::Think`, then the session goes back to its own tier. Today `Router::pick` takes the main tier from the session override or the session tier and uses `confirm_think` only to pass the confirmation gate, so `/think` and the desktop toggle on a code-tier session still run on code; only `--deep` reaches think, through a session-wide `SwitchModel`. Architect mode (which already sets `confirm_think` while on the think tier) must keep working.
+Check: a cox-core test that a code-tier session's `confirm_think` turn requests the think model and the next plain turn requests the code model again.
+Status: done 2026-09-28
+Result:
+- `crates/cox-core/src/session.rs`: a turn with `confirm_think` on a session whose main tier is not think puts `Tier::Think` into `Inner::routed`, the per-turn slot `route` advice (T33.20) uses. Every request of that turn, tool-call follow-ups included, runs on think. `run_turn` clears the slot, so the next plain turn is back on the session tier. No `ModelSwitched` event. Ledger rows keep `job = main` with the think tier and model (commit ec852097).
+- A session already on think (`--deep`, architect mode) gets no slot; its requests and cache prefix are unchanged.
+- The `Router::pick`, `Inner::routed` and `confirm_think` docs are updated, and `docs/protocol.jsonschema` is regenerated.
+Deviations: the fix is in `session.rs`, not `router.rs`. `step` and `switch_model` call `Router::pick` with `confirm_think = true` on every main request, so routing there would move every such request.
+Check:
+- `crates/cox-core/tests/router.rs` `confirm_think_runs_one_turn_on_think_then_the_session_tier_again`: it fails without the change. cox-core router 8/8.
+- Protocol schema drift test passed.
+- clippy and fmt are clean.
+- Real binary, scripted provider: a plain run started on code, and a `--deep` run on think.
+- After merging into `p37-desktop`: `just test --changed-since` 1522 passed, 5 skipped.
+Not done:
+- No real-binary run of a `confirm_think` turn on a code-tier session: only the TUI can send one.
+- A think turn's thinking blocks stay in history for the next code-tier turn, the same as a turn `route` advice sent to cheap (T33.40.8).

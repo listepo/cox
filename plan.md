@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.24.11 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28.4 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3 | todo | P2 | 4 | 25% | |
 | T37.29.3.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2744,12 +2743,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.24.11 `/think` and the think toggle run their turn on the think tier
-
-Depends: T37.24.10 · Size: ~60 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
-Goal: D5 and A103 — `UserTurn { confirm_think: true }` routes that one turn's main request to `Tier::Think`, then the session goes back to its own tier. Today `Router::pick` takes the main tier from the session override or the session tier and uses `confirm_think` only to pass the confirmation gate, so `/think` and the desktop toggle on a code-tier session still run on code; only `--deep` reaches think, through a session-wide `SwitchModel`. Architect mode (which already sets `confirm_think` while on the think tier) must keep working.
-Check: a cox-core test that a code-tier session's `confirm_think` turn requests the think model and the next plain turn requests the code model again.
 
 #### T37.28.4 Line comments sent to the agent
 
