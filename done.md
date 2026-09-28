@@ -2961,7 +2961,7 @@ Check:
 - In the worktree: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
 
-### T38.1. OpenAI Chat wire emits `ToolUseEnd`
+#### T38.1 OpenAI Chat wire emits `ToolUseEnd`
 
 Model: Claude Code / opus-5.5 · Status: done 2026-09-28 · Depends: — · Size: ~150 · Files: `crates/cox-provider-openai/src/chat.rs` (+ a fixture under its tests)
 

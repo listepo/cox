@@ -1038,7 +1038,6 @@ Check: the recorded fixture round-trips through T35.7's mapper unchanged; the sc
 
 Rationale in §6 A62.
 
-
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
