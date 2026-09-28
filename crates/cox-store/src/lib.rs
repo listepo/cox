@@ -186,6 +186,34 @@ fn write_tx<T>(
         .map_err(|TxError(e)| e)
 }
 
+/// Fails with `SchemaNewer` if `cox.db` records a migration this binary
+/// does not embed (T37.36): a newer `cox` migrated it, and running this
+/// one's queries or pending migrations against that schema could corrupt
+/// it. Runs before any migration, inside the same write transaction.
+fn refuse_newer_schema(conn: &mut SqliteConnection) -> Result<(), StoreError> {
+    let applied = conn
+        .applied_migrations()
+        .map_err(|_| StoreError::Migrate { from: 0, to: 1 })?;
+    let embedded: Vec<String> =
+        diesel::migration::MigrationSource::<diesel::sqlite::Sqlite>::migrations(&MIGRATIONS)
+            .map_err(|_| StoreError::Migrate { from: 0, to: 1 })?
+            .iter()
+            .map(|m| m.name().version().to_string())
+            .collect();
+    let unknown = applied
+        .iter()
+        .map(ToString::to_string)
+        .filter(|v| !embedded.contains(v))
+        .max();
+    match unknown {
+        Some(db) => Err(StoreError::SchemaNewer {
+            db,
+            binary: embedded.into_iter().max().unwrap_or_default(),
+        }),
+        None => Ok(()),
+    }
+}
+
 /// Switches `cox.db` to WAL. The switch needs an exclusive lock, and SQLite
 /// skips the busy handler when two connections both hold a shared lock and
 /// wait to upgrade (it would deadlock), so a second process opening a fresh
@@ -247,6 +275,7 @@ impl StoreTrait for Store {
         // same migration pending. Diesel nests each migration's own
         // transaction as a savepoint inside this one.
         write_tx(&mut conn, |c| {
+            refuse_newer_schema(c)?;
             c.run_pending_migrations(MIGRATIONS)
                 .map(|_| ())
                 .map_err(|_| StoreError::Migrate { from: 0, to: 1 })
@@ -903,6 +932,32 @@ mod tests {
                 latency_ms: 100,
             },
         }
+    }
+
+    /// T37.36: a migration version this binary does not embed makes open
+    /// fail with `SchemaNewer`, naming both versions, and runs no migration.
+    #[test]
+    fn older_binary_refuses_newer_schema() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        {
+            let store = Store::open(dir.path()).expect("first open");
+            let mut conn = store.conn.lock().expect("lock");
+            // A future binary's migration row; test-only raw SQL because
+            // `__diesel_schema_migrations` has no public Diesel table.
+            diesel::sql_query(
+                "INSERT INTO __diesel_schema_migrations (version) VALUES ('99991231000000')",
+            )
+            .execute(&mut *conn)
+            .expect("insert future version");
+        }
+        let err = Store::open(dir.path()).err().expect("newer schema refused");
+        assert_eq!(
+            err,
+            StoreError::SchemaNewer {
+                db: "99991231000000".into(),
+                binary: "00000000000004".into(),
+            }
+        );
     }
 
     #[test]
