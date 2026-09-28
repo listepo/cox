@@ -23,7 +23,6 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.13. Transcript text size and line height from config and tokens
-- T37.23.14. Empty signed thinking items close like streamed thoughts
 - T37.23.15. Per-level transcript heading sizes
 - T37.23.16. Theme colours for syntax runs in edit cards
 - T37.25.1. Context window size and split in the token popover

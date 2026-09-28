@@ -5019,3 +5019,16 @@ Check:
 - CoxModel 39, CoxTranscriptText 32 (`aQuoteLineLaysOutWithItsBarsAndProseWithout`), CoxTranscript 32 (`replyWithEveryBlockKind` light/dark re-recorded and looked at; `copyAsMarkdownGivesTheStructureBack`, new `copyAsMarkdownOfALoadedReplyGivesItsSource`), CoxCore 10.
 - After merging into `p37-desktop`: cox-render, cox-app, cox-ffi and cox-tui 378/378; CoxCore 12/12, CoxModel 44/44, CoxPlatform 13/13, CoxTranscriptText 33/33, CoxTranscript 37/37.
 Not done: per-level heading sizes (pending token decision); the quote bar uses the thought's hairline, faint in light mode (token question in `ideas.md`).
+
+#### T37.23.14 Empty signed thinking items close like streamed thoughts
+
+Depends: — · Size: ~60 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`
+Goal: T39.2 keeps a tool call's signature as an empty signed `Thinking` item (Gemini over Chat). Since T37.23.10 a streamed thought is closed with `ThinkingDone`, but these empty items open a Timeline thinking block that never gets a duration; the desktop only hides it because its text is empty. Either the core closes them the same way or `Timeline` does not open a block for a signature-only item.
+Check: a cox-app test folding a signature-only thinking item leaves no open thinking block; the T39.2 chat-wire test still passes.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/timeline.rs`: an `ItemStarted` of `ItemKind::Thinking` with empty text and `signature: Some(_)` (T39.2's signature carrier) opens no block, so its `ItemDone` is a no-op and nothing waits for a duration. A streamed thought (`signature: None`) still opens a block closed by `ThinkingDone` (T37.23.10). The core is unchanged, so the rollout and provider history keep the signature.
+Deviations: the Timeline option, not a core `ThinkingDone` for these items (that would close an empty thought at 0 ms and still show it).
+Check:
+- `cargo nextest run -p cox-core -p cox-app`: 349 passed, 1 skipped, including `signature_only_thinking_item_leaves_no_open_thinking_block`; `-p cox-core --test chat_wire`: 1 passed; clippy and fmt clean.
+Not done: how the TUI and ACP show these items was outside the card.

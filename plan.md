@@ -29,7 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.9 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.13 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.23.14 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.15 | todo | P3 | 2 | 0% | |
 | T37.23.16 | todo | P3 | 3 | 0% | |
 | T37.25.1 | todo | P2 | 3 | 0% | |
@@ -2763,12 +2762,6 @@ Check: light/dark snapshots of a prompt at rest and hovered; a test that Copy pu
 Depends: — · Size: ~100 · Files: `crates/cox-config/…` (`[desktop.transcript]`), `docs/config.jsonschema`, `docs/config.md`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscriptText/…`
 Goal (A93): `[desktop.transcript]` gets `text_size` and `line_height`; the desktop builds `TranscriptStyle` from them together with `Appearance.textScale` (⌘+/⌘−) and applies the token line heights to the transcript text, restyling in place through T37.23.6's `restyle(_:)`.
 Check: the config-schema drift test; a CoxModel test that the keys reach the style; CoxTranscriptText snapshots at two sizes and line heights.
-
-#### T37.23.14 Empty signed thinking items close like streamed thoughts
-
-Depends: — · Size: ~60 · Files: `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`
-Goal: T39.2 keeps a tool call's signature as an empty signed `Thinking` item (Gemini over Chat). Since T37.23.10 a streamed thought is closed with `ThinkingDone`, but these empty items open a Timeline thinking block that never gets a duration; the desktop only hides it because its text is empty. Either the core closes them the same way or `Timeline` does not open a block for a signature-only item.
-Check: a cox-app test folding a signature-only thinking item leaves no open thinking block; the T39.2 chat-wire test still passes.
 
 #### T37.23.15 Per-level transcript heading sizes
 
