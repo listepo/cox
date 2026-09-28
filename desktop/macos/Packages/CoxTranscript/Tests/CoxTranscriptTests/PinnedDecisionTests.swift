@@ -23,15 +23,23 @@ private let approveWrite = URL(filePath: #filePath)
   .deletingLastPathComponent()  // macos
   .appending(path: "Fixtures/approve-write.json")
 
-/// The call the fixture's write waits on.
-private let writeCall = "01M3KMRBATVYREMTC23NY1VBZR"
+/// The call the fixture's write waits on: its first undecided approval, read from the recording
+/// so a re-record keeps the test valid.
+private let writeCall: String = {
+  guard let fixture = try? Fixture(contentsOf: approveWrite) else { return "" }
+  for case .upsert(let block, _) in fixture.batches.joined() {
+    if case .approval(let call, _, _, _, _, _, _, nil, _) = block.kind { return call }
+  }
+  return ""
+}()
 
 @Test func onlyAWaitingApprovalOrQuestionPinsABar() {
   func approval(_ tool: String, decision: Decision? = nil) -> Block {
     Block(
       id: "a", turn: 1,
       kind: .approval(
-        call: "c1", tool: tool, summary: "git push", why: .risk(risk: .exec), source: nil,
+        call: "c1", tool: tool, summary: "git push", input: "{}", grants: [],
+        why: .risk(risk: .exec), source: nil,
         decision: decision, by: nil))
   }
   #expect(approval("bash").waiting?.bar == .approval("git push"))

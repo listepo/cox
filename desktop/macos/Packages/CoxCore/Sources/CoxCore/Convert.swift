@@ -28,9 +28,10 @@ extension CoxClient.BlockKind {
     case .toolGroup(let summary, let children, let state):
       self = .toolGroup(summary: summary, children: children, state: .init(state))
     case .approval(
-      let call, let tool, let summary, let why, let source, let decision, let decidedBy):
+      let call, let tool, let summary, let input, let grants, let why, let source, let decision,
+      let decidedBy):
       self = .approval(
-        call: call, tool: tool, summary: summary, why: .init(why),
+        call: call, tool: tool, summary: summary, input: input, grants: grants, why: .init(why),
         source: source.map { .init(session: $0.session, agent: $0.agent, preset: $0.preset) },
         decision: decision.map { CoxClient.Decision($0) },
         by: decidedBy.map { CoxClient.DecidedBy($0) })

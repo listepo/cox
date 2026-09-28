@@ -1,6 +1,7 @@
 // `ApprovalCard` (DS§6.4 row `ApprovalCard`, the mockup's `.appr`, DT§5.2 Approval): a tool call
-// that waits on the person — what it will run, why they are asked, which subagent asks — with
-// Allow, Allow for session and Deny; once decided, the one line that says how. Separate so the
+// that waits on the person — what it will run, why they are asked, which subagent asks, what
+// Allow for session would grant — with Allow, Allow for session, Deny and Edit… (T37.27.6); once
+// decided, the one line that says how. Separate so the
 // transcript card and the pinned bar above the composer draw an approval alike. `DecisionFrame`
 // here is shared with `QuestionCard`, the other card that waits on the person.
 
@@ -9,6 +10,8 @@ import SwiftUI
 /// Pending: a header with a warning symbol and the risk, the command in a code well, the
 /// reasons in `text.secondary`, then the buttons on `fill.primary` under a hairline — a readable
 /// face at e1 with an orange edge. Decided: a `NoticeRow`, "Allowed by you · for session".
+/// Editing: the input as JSON in the well, Run edited and Cancel; the draft is the card's own
+/// until it is sent.
 public struct ApprovalCard: View {
   /// What the card shows; every string comes formatted from the transcript's mapping.
   public struct Content: Equatable, Sendable {
@@ -23,13 +26,19 @@ public struct ApprovalCard: View {
     public var risk: ToolHeader.Risk?
     /// Set once decided: the card shrinks to this line.
     public var outcome: Outcome?
+    /// What Allow for session would grant, `bash: git status · npm test`; `nil` hides the line.
+    public var grant: String?
+    /// The call's input as JSON text, what Edit… starts from; `nil` hides Edit….
+    public var input: String?
 
     public init(
       title: String, command: String, reason: String, source: String? = nil,
-      risk: ToolHeader.Risk? = nil, outcome: Outcome? = nil
+      risk: ToolHeader.Risk? = nil, outcome: Outcome? = nil, grant: String? = nil,
+      input: String? = nil
     ) {
       (self.title, self.command, self.reason) = (title, command, reason)
       (self.source, self.risk, self.outcome) = (source, risk, outcome)
+      (self.grant, self.input) = (grant, input)
     }
   }
 
@@ -44,17 +53,30 @@ public struct ApprovalCard: View {
     }
   }
 
-  /// The buttons. Edit needs the call's input, which the approval block does not carry yet.
+  /// The fixed buttons; Edit… sends its JSON through `edit` instead.
   public enum Action: CaseIterable, Sendable {
     case allow, allowForSession, deny
   }
 
   let content: Content
   let act: (Action) -> Void
+  let edit: ((String) -> Void)?
+  /// The input being edited; `nil` when not editing.
+  @State private var draft: String?
 
   public init(_ content: Content, act: @escaping (Action) -> Void) {
     self.content = content
     self.act = act
+    self.edit = nil
+  }
+
+  /// With Edit…: the edited input, JSON text, goes to `edit`.
+  public init(
+    _ content: Content, act: @escaping (Action) -> Void, edit: @escaping (String) -> Void
+  ) {
+    self.content = content
+    self.act = act
+    self.edit = edit
   }
 
   public var body: some View {
@@ -67,29 +89,75 @@ public struct ApprovalCard: View {
         ) {
           if let risk = content.risk { RiskChip(risk.text, level: risk.level) }
         }
-        Text(content.command)
-          .textStyle(.monoCode)
-          .foregroundStyle(Color(.textPrimary))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, Space.l)
-          .padding(.vertical, Space.m)
-          .background {
-            RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(Color(.surfaceCode))
-          }
-          .hairline(in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
+        well
         VStack(alignment: .leading, spacing: Space.xs) {
           DecisionReason(label: "Why you are asked:", text: content.reason)
           if let source = content.source { DecisionReason(label: "Asked by:", text: source) }
+          if let grant = content.grant {
+            DecisionReason(label: "Allow for session grants:", text: grant)
+          }
         }
       } actions: {
-        Button("Allow") { act(.allow) }.buttonStyle(CoxButtonStyle(.primary, size: .small))
-        Button("Allow for session") { act(.allowForSession) }
-          .buttonStyle(CoxButtonStyle(.secondary, size: .small))
-        Button("Deny") { act(.deny) }.buttonStyle(CoxButtonStyle(.danger, size: .small))
+        if draft != nil {
+          Button("Run edited", action: runEdited)
+            .buttonStyle(CoxButtonStyle(.primary, size: .small))
+            .disabled(EditedInput(draft).json == nil)
+          Button("Cancel") { draft = nil }.buttonStyle(CoxButtonStyle(.secondary, size: .small))
+        } else {
+          Button("Allow") { act(.allow) }.buttonStyle(CoxButtonStyle(.primary, size: .small))
+          Button("Allow for session") { act(.allowForSession) }
+            .buttonStyle(CoxButtonStyle(.secondary, size: .small))
+          Button("Deny") { act(.deny) }.buttonStyle(CoxButtonStyle(.danger, size: .small))
+          if let input = content.input, edit != nil {
+            Button("Edit…") { draft = input }.buttonStyle(CoxButtonStyle(.plain, size: .small))
+          }
+        }
         Spacer(minLength: 0)
       }
     }
+  }
+
+  /// The command in the code well, or the input being edited in its place.
+  @ViewBuilder private var well: some View {
+    let shape = RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
+    Group {
+      if let text = draft {
+        TextField(
+          "Input", text: Binding(get: { text }, set: { draft = $0 }), axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .lineLimit(3...12)
+        .onSubmit(runEdited)
+        .accessibilityLabel("Edited input")
+      } else {
+        Text(content.command).textSelection(.enabled)
+      }
+    }
+    .textStyle(.monoCode)
+    .foregroundStyle(Color(.textPrimary))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, Space.l)
+    .padding(.vertical, Space.m)
+    .background { shape.fill(Color(.surfaceCode)) }
+    .hairline(in: shape)
+  }
+
+  private func runEdited() {
+    guard let json = EditedInput(draft).json, let edit else { return }
+    edit(json)
+    draft = nil
+  }
+}
+
+/// A draft of an edited input: sent only as JSON the core can parse, trimmed. Whether the edit
+/// is allowed stays the core's; this only keeps a typo from failing on the way there.
+struct EditedInput {
+  let json: String?
+
+  init(_ draft: String?) {
+    let text = draft?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let parses = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) != nil
+    json = parses ? text : nil
   }
 }
 
@@ -167,6 +235,9 @@ private struct DecisionReason: View {
 #Preview("pending") { PreviewMatrix { ApprovalCardSample(PreviewState.approvalPending) } }
 #Preview("subagent, risky") {
   PreviewMatrix { ApprovalCardSample(PreviewState.approvalRisky) }
+}
+#Preview("grant, editable") {
+  PreviewMatrix { ApprovalCardSample(PreviewState.approvalGrant) }
 }
 #Preview("allowed") { PreviewMatrix { ApprovalCardSample(PreviewState.approvalAllowed) } }
 #Preview("denied") { PreviewMatrix { ApprovalCardSample(PreviewState.approvalDenied) } }

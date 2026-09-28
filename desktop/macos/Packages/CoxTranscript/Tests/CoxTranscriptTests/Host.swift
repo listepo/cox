@@ -68,7 +68,7 @@ final class Host {
   /// What the approval slot shows when the host is given no `send`.
   static func slot(_ block: Block) -> String {
     switch block.kind {
-    case .approval(_, _, let summary, _, _, _, _): "Approve: \(summary)"
+    case .approval(_, _, let summary, _, _, _, _, _, _): "Approve: \(summary)"
     case .question(_, let question, _, _): "Asked: \(question)"
     default: ""
     }

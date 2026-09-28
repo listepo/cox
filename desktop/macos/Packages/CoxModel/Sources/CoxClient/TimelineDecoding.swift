@@ -51,10 +51,11 @@ extension BlockKind: Decodable {
       self = try .toolGroup(
         summary: keys("summary"), children: keys("children"), state: keys("state"))
     case "approval":
+      let input: JSONValue = try keys("input")
       self = try .approval(
-        call: keys("call"), tool: keys("tool"), summary: keys("summary"), why: keys("why"),
-        source: keys.optional("source"), decision: keys.optional("decision"),
-        by: keys.optional("by"))
+        call: keys("call"), tool: keys("tool"), summary: keys("summary"), input: input.text(),
+        grants: keys("grants"), why: keys("why"), source: keys.optional("source"),
+        decision: keys.optional("decision"), by: keys.optional("by"))
     case "question":
       self = try .question(
         call: keys("call"), question: keys("question"), options: keys("options"),

@@ -28,8 +28,11 @@ public enum BlockKind: Equatable, Sendable {
     tool: String, summary: String, icon: Icon, risk: Risk, state: ToolState, tail: String,
     archive: ArchiveRef?, diff: DiffModel?, durationMs: UInt64)
   case toolGroup(summary: String, children: [BlockID], state: ToolState)
+  /// `input` is the call's input as JSON text, what Edit… starts from; `grants` the subjects
+  /// Allow for session would grant `tool` (the engine's `grants_for`).
   case approval(
-    call: String, tool: String, summary: String, why: Why, source: Source?, decision: Decision?,
+    call: String, tool: String, summary: String, input: String, grants: [String], why: Why,
+    source: Source?, decision: Decision?,
     // cox-ffi's field name.
     // swiftlint:disable:next identifier_name
     by: DecidedBy?)

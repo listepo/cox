@@ -7,10 +7,11 @@
 import CoxClient
 import CoxModel
 import CoxUI
+import Foundation
 import SwiftUI
 
-/// An approval or question block as its card; an Allow, Deny or answer goes to `send`. Nothing
-/// for any other block.
+/// An approval or question block as its card; an Allow, Deny, edited input or answer goes to
+/// `send`. Nothing for any other block.
 public struct DecisionCard: View {
   let block: Block
   let send: @MainActor (Intent) -> Void
@@ -22,9 +23,10 @@ public struct DecisionCard: View {
 
   public var body: some View {
     switch block.kind {
-    case .approval(let call, _, _, _, _, _, _):
+    case .approval(let call, _, _, _, _, _, _, _, _):
       if let content = ApprovalCard.Content(block) {
-        ApprovalCard(content) { send(.approve(call: call, decision: $0.decision)) }
+        ApprovalCard(
+          content, act: { send(.approve(call: call, decision: $0.decision)) }, edit: edit)
       }
     case .question(let call, _, _, _):
       if let content = QuestionCard.Content(block) {
@@ -33,6 +35,13 @@ public struct DecisionCard: View {
     default:
       EmptyView()
     }
+  }
+
+  /// Edit…'s JSON runs the call with that input in place of the model's; the core still
+  /// decides whether it may.
+  func edit(_ json: String) {
+    guard case .approval(let call, _, _, _, _, _, _, _, _) = block.kind else { return }
+    send(.approve(call: call, decision: .edit(input: json)))
   }
 }
 
@@ -63,14 +72,32 @@ extension ApprovalCard.Content {
   /// The card of an approval block; `nil` for any other block.
   init?(_ block: Block) {
     guard
-      case .approval(_, let tool, let summary, let why, let source, let decision, let decidedBy) =
-        block.kind
+      case .approval(
+        _, let tool, let summary, let input, let grants, let why, let source, let decision,
+        let decidedBy) = block.kind
     else { return nil }
     let risk: ToolHeader.Risk? = if case .risk(let risk) = why { risk.chip } else { nil }
     self.init(
       title: tool == "bash" ? "Run this command?" : "Allow \(tool)?", command: summary,
       reason: why.text, source: source?.label, risk: risk,
-      outcome: decision.map { .init(text: $0.outcome(by: decidedBy), isAllowed: $0.allows) })
+      outcome: decision.map { .init(text: $0.outcome(by: decidedBy), isAllowed: $0.allows) },
+      grant: Self.grant(tool, grants), input: Self.editable(input))
+  }
+
+  /// DT§5.2's grant preview, `bash: git status · npm test`: the subjects the engine would
+  /// record, each on one line.
+  static func grant(_ tool: String, _ grants: [String]) -> String? {
+    let subjects = grants.map { $0.split(whereSeparator: \.isNewline).joined(separator: " ") }
+    return subjects.isEmpty ? nil : "\(tool): " + subjects.joined(separator: " · ")
+  }
+
+  /// The input as indented JSON to edit; `nil` (no Edit…) for a call without one.
+  static func editable(_ input: String) -> String? {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(input.utf8)),
+      let data = try? JSONSerialization.data(
+        withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    else { return nil }
+    return String(bytes: data, encoding: .utf8)
   }
 }
 
@@ -86,7 +113,7 @@ extension Block {
   /// decided. A bash call shows its command, as the mockup does; another call names its tool.
   var waiting: (call: String, bar: DecisionBar.Content)? {
     switch kind {
-    case .approval(let call, let tool, let summary, _, _, .none, _):
+    case .approval(let call, let tool, let summary, _, _, _, _, .none, _):
       (call, .approval(tool == "bash" ? summary : "\(tool) \(summary)"))
     case .question(let call, let question, let options, .none):
       (call, .question(question, options: options))

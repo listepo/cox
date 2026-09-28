@@ -51,8 +51,8 @@ private let everyKind: [Block] = [
   Block(
     id: "p", turn: 1,
     kind: .approval(
-      call: "c1", tool: "bash", summary: "git push", why: .risk(risk: .exec), source: nil,
-      decision: nil, by: nil)),
+      call: "c1", tool: "bash", summary: "git push", input: #"{"command":"git push"}"#,
+      grants: ["git push"], why: .risk(risk: .exec), source: nil, decision: nil, by: nil)),
   Block(
     id: "q", turn: 1,
     kind: .question(call: "c2", question: "Keep the sleep as a fallback?", options: [], answer: nil)

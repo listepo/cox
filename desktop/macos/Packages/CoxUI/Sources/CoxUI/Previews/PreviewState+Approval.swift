@@ -1,5 +1,6 @@
 // `PreviewState` fixtures for `ApprovalCard` and `QuestionCard` (T37.27): the mockup's push that
-// waits on the person, a subagent's risky call, the two decided lines, and the mockup's retry
+// waits on the person, a subagent's risky call, a split line with its grant and Edit… (T37.27.6),
+// the two decided lines, and the mockup's retry
 // question with options, without them, and answered. Separate so the organisms' fixtures do
 // not edit the shared file.
 
@@ -16,6 +17,13 @@ extension PreviewState {
     title: "Run this command?", command: "rm -rf target/debug/incremental",
     reason: "risk: destructive", source: "reviewer",
     risk: ToolHeader.Risk(text: "destructive", level: .high))
+
+  /// A split command line: Allow for session grants each of its commands, and Edit… is offered.
+  static let approvalGrant = ApprovalCard.Content(
+    title: "Run this command?", command: "cargo fmt && git push -u origin wt/retry-jitter",
+    reason: "matches ask rule Bash(git push:*)",
+    grant: "bash: cargo fmt · git push -u origin wt/retry-jitter",
+    input: #"{"command": "cargo fmt && git push -u origin wt/retry-jitter"}"#)
 
   static let approvalAllowed = ApprovalCard.Content(
     title: "Run this command?", command: "git push -u origin wt/retry-jitter",
@@ -49,7 +57,9 @@ struct ApprovalCardSample: View {
 
   init(_ content: ApprovalCard.Content) { self.content = content }
 
-  var body: some View { ApprovalCard(content) { _ in }.frame(width: Size.readingWidth) }
+  var body: some View {
+    ApprovalCard(content, act: { _ in }, edit: { _ in }).frame(width: Size.readingWidth)
+  }
 }
 
 /// A question card across the reading column.
