@@ -313,7 +313,7 @@ fn no_crate_below_cox_depends_on_core() {
     // T34.1's `agent` tool matches a custom preset by `AgentDef`, but that
     // type lives in `cox_protocol::agent` precisely so this crate never
     // needs `cox-ext`, which does the filesystem read (`agents::discover`)
-    // the surface (`crates/cox/src/session.rs`) runs instead. cox-sanitize
+    // session assembly (`cox-session`) runs instead. cox-sanitize
     // (T33.9) holds the secret-redaction table `redact::scrub` re-exports,
     // shared with the plugin host; it is a pure leaf.
     let core_allowed: HashSet<&str> = [
@@ -532,4 +532,18 @@ fn no_crate_below_cox_depends_on_core() {
             .all(|dep| tools_allowed.contains(dep.as_str())),
         "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax/cox-search/cox-web among workspace crates, found {tools_deps:?}"
     );
+}
+
+/// T37.1 (DT§4.2): session assembly is a library every surface shares, so
+/// it carries no CLI parser, no `anyhow` and no terminal: the flags stay in
+/// `crates/cox`, errors are `SessionError`, warnings come back as data.
+#[test]
+fn session_has_no_cli_or_terminal() {
+    let deps = &all_deps()["cox-session"];
+    for banned in ["clap", "anyhow", "cox-tui"] {
+        assert!(
+            !deps.contains(banned),
+            "cox-session must not depend on {banned}"
+        );
+    }
 }

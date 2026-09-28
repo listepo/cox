@@ -5,21 +5,29 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# T37.7: everything that draws with ratatui (the `markdown::render` layout,
+# themes, colour mapping, diffs, SVG, OSC 8 links). Off, only the neutral
+# `StyledDoc` and syntax highlighting remain, for the desktop app.
+[features]
+default = ["ratatui"]
+ratatui = ["dep:ratatui", "dep:similar", "dep:terminal-colorsaurus", "dep:toml_edit", "dep:thiserror"]
+
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 # `glyph` width-checks and truncates through the terminal-text guard.
 cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
-ratatui = { workspace = true }
+ratatui = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true }
 syntect = { workspace = true }
 two-face = { version = "0.5", features = ["syntect-fancy"] }
-similar = { workspace = true }
+similar = { workspace = true, optional = true }
 unicode-width = { workspace = true }
-terminal-colorsaurus = { workspace = true }
+terminal-colorsaurus = { workspace = true, optional = true }
 # T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
 # set` uses, so a theme file's own comments survive an edit.
-toml_edit = { workspace = true }
-thiserror = { workspace = true }
+toml_edit = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = { workspace = true }

@@ -227,8 +227,22 @@ fn check_home_writable(home: &std::path::Path) -> CheckResult {
 }
 
 fn check_db(home: &std::path::Path) -> CheckResult {
-    match cox_store::Store::open(home) {
-        Ok(_) => CheckResult::ok("db", "database opens and schema is valid".to_string()),
+    db_result(cox_store::Store::open(home).map(drop), home)
+}
+
+/// The `db` row for one open attempt. A newer schema (T37.36) gets its own
+/// fix: the file is sound and a newer `cox` still uses it, so the generic
+/// "remove cox.db" advice would throw away that `cox`'s sessions and ledger.
+fn db_result(opened: Result<(), cox_protocol::StoreError>, home: &std::path::Path) -> CheckResult {
+    match opened {
+        Ok(()) => CheckResult::ok("db", "database opens and schema is valid".to_string()),
+        Err(cox_protocol::StoreError::SchemaNewer { db, binary }) => CheckResult::fail(
+            "db",
+            format!("cox.db schema {db} is newer than this cox ({binary}); a newer cox wrote it"),
+            "update this cox (e.g. `brew upgrade cox`, or the app's own update) or run the \
+             newer one; keep cox.db"
+                .to_string(),
+        ),
         Err(e) => CheckResult::fail(
             "db",
             format!("cannot open database: {}", e),
@@ -1394,6 +1408,20 @@ mod tests {
         }
 
         insta::assert_snapshot!(output);
+    }
+
+    /// T37.36: a `cox.db` a newer `cox` migrated fails the `db` row with
+    /// both versions and an update fix, never "remove cox.db".
+    #[test]
+    fn doctor_reports_a_newer_schema() {
+        let row = db_result(
+            Err(cox_protocol::StoreError::SchemaNewer {
+                db: "99991231000000".into(),
+                binary: "00000000000004".into(),
+            }),
+            std::path::Path::new("/home/user/.cox"),
+        );
+        insta::assert_snapshot!(human(&row));
     }
 
     #[test]

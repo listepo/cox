@@ -28,19 +28,16 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.1 | todo | P0 | 4 | 0% | |
+| T37.1 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.2 | todo | P1 | 2 | 0% | |
-| T37.3 | todo | P1 | 2 | 0% | |
-| T37.4 | todo | P1 | 3 | 0% | |
-| T37.5 | todo | P2 | 2 | 0% | |
-| T37.6 | todo | P1 | 3 | 0% | |
-| T37.7 | todo | P1 | 3 | 0% | |
+| T37.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
 | T37.11 | todo | P1 | 2 | 0% | |
 | T37.12 | todo | P1 | 3 | 0% | |
-| T37.13 | todo | P1 | 2 | 0% | |
 | T37.14 | todo | P0 | 4 | 0% | |
 | T37.15 | todo | P0 | 3 | 0% | |
 | T37.16 | todo | P0 | 3 | 0% | |
@@ -62,8 +59,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.34 | todo | P0 | 4 | 0% | |
-| T37.35 | todo | P0 | 3 | 0% | |
-| T37.36 | todo | P1 | 2 | 0% | |
 | T37.37 | todo | P0 | 3 | 0% | |
 
 ## Reference
@@ -120,7 +115,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
-| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
+| `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
 | `cox-provider` | the provider registry and `from_env`; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction; re-exports the wires at the old `anthropic` and `openai` paths | reqwest 0.12 (rustls) |
 | `cox-provider-anthropic` | the Anthropic Messages wire (T32.13; split out of `cox-provider`): request building, stream parsing, wire types from the vendored spec, `schema/` | reqwest 0.12, typify 0.8 (build.rs, T30.10/T30.12) |
@@ -1130,18 +1125,6 @@ Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/lib.rs`, `crates/c
 Goal: effort and permission-mode changes and the session title arrive as typed events, not a `Notice`.
 Check: a scenario that changes mode and effort emits both events; `docs/protocol.md` counts match the enum.
 
-#### T37.6 Honor `UserTurn.attachments` for images and files
-
-Depends: — · Size: ~180 · Files: `crates/cox-core/src/context.rs`, `crates/cox-provider-anthropic/src/…`, `crates/cox-provider-openai/src/…` (G2)
-Goal: an attached image or file reaches the model on every wire that supports it; an unsupported wire gets a clear notice.
-Check: request snapshots for Anthropic and OpenAI Responses contain the image block; a Chat-only local model gets the notice.
-
-#### T37.7 `cox-render`: a neutral `StyledDoc` for markdown and highlighting
-
-Depends: — · Size: ~200 · Files: `crates/cox-render/src/doc.rs`, `crates/cox-render/src/markdown.rs`, `crates/cox-render/Cargo.toml`
-Goal: markdown and syntax highlighting produce runs tagged with `StyleToken` roles that both ratatui and SwiftUI can draw; ratatui sits behind a feature.
-Check: the TUI transcript snapshots are unchanged; `StyledDoc` snapshots exist for a markdown fixture with code, lists and links.
-
 #### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
 
 Depends: T37.3–T37.7 · Size: ~200 · Files: `crates/cox-app/src/timeline.rs`, `crates/cox-app/src/patch.rs`, `crates/cox-app/src/lib.rs`
@@ -1171,12 +1154,6 @@ Check: a test with a fake shell script returns its exported `PATH`; a timeout fa
 Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/usage.rs`, `crates/cox-app/src/timeline.rs`
 Goal: the token meter's data (DS§7): sent and received per turn and per session from the ledger, live tok/s estimated from output deltas over a rolling window and replaced by the exact figure when usage arrives, time to first token, and the context breakdown the TUI already shows (P28).
 Check: a scripted stream with known timings yields the expected tok/s within 5 %; per-turn and session totals equal the ledger rows.
-
-#### T37.13 `[desktop.appearance]` config section
-
-Depends: — · Size: ~100 · Files: `crates/cox-config/src/…`, `docs/config.jsonschema`
-Goal: `[desktop.appearance]` — `material` (frosted | glossy | solid), `opacity`, `blur`, `depth`, `tint` with defaults from `desktop/design/tokens/base.json` (DS§3.5) — and `[desktop.transcript] cross_block_selection` (default `true`, A67), owned by `cox-config` like every other setting.
-Check: the config-schema drift test passes; `cox config set desktop.appearance.material glossy` round-trips; an out-of-range value is rejected.
 
 #### T37.14 `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
 
@@ -1303,18 +1280,6 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: T37.1 · Size: ~180 · Files: `crates/cox-store/src/lock.rs`, `crates/cox-session/src/lib.rs`, `crates/cox-store/src/lib.rs`
 Goal: the process that runs a session holds an OS advisory lock on `sessions/<id>.lock` (`std::fs::File::try_lock`, stable since Rust 1.89, no new dependency); the kernel drops it when the process exits or crashes, so no lease goes stale. A second process — another TUI, the app, `cox resume` — that opens the same session gets a typed `SessionBusy { holder }` and may follow it read-only (tail the rollout and fold it, the D2 replay path), fork it into a new session, or ask to take it over. Never two writers on one rollout (A67, DT§11 Q6).
 Check: `second_opener_gets_session_busy` and `lock_released_when_holder_exits` (child process holds then exits); a follow test sees events the holder appends; the TUI e2e prints the busy notice instead of resuming.
-
-#### T37.35 Write transactions are IMMEDIATE; cross-process change feed
-
-Depends: — · Size: ~150 · Files: `crates/cox-store/src/lib.rs`, `crates/cox-store/src/queries.rs`, `crates/cox-store/src/watch.rs`
-Goal: every write that reads first runs in Diesel's `SqliteConnection::immediate_transaction`, so a concurrent commit makes it wait for `busy_timeout` instead of failing with `SQLITE_BUSY_SNAPSHOT`; a `Store::changes()` feed polls `PRAGMA data_version` (raw SQL: Diesel cannot model a PRAGMA; kept in `cox-store` with that comment) and reports "sessions/ledger changed by another process", which `cox-app` turns into sidebar and cost refreshes (T37.10).
-Check: `concurrent_writers_never_fail_busy` — two processes each append 500 ledger rows and create sessions; all rows land, no busy error; `change_feed_sees_other_process_commit`.
-
-#### T37.36 An older binary refuses a newer `cox.db`
-
-Depends: — · Size: ~80 · Files: `crates/cox-store/src/lib.rs`, `crates/cox/src/doctor.rs`
-Goal: on open, if `__diesel_schema_migrations` holds a version this binary does not embed (`MigrationHarness::applied_migrations`), `Store::open` fails with `StoreError::SchemaNewer { db, binary }` and the CLI says which `cox` is newer and how to update; `cox doctor` reports the mismatch. Covers the app's bundled `cox` next to a Homebrew `cox` of another version.
-Check: `older_binary_refuses_newer_schema` (a test inserts a future migration version); doctor snapshot shows the mismatch line.
 
 #### T37.37 Spike: the cross-block selection engine
 

@@ -37,7 +37,7 @@ otel = ["cox-telemetry/otel"]
 # wasmtime) to the release binary. On by default; a slim build drops it with
 # `--no-default-features --features otel`. Plugin code sits behind
 # `#[cfg(feature = "plugins")]`.
-plugins = ["dep:cox-plugin", "dep:cox-plugin-api"]
+plugins = ["dep:cox-plugin", "dep:cox-plugin-api", "cox-session/plugins"]
 
 [dependencies]
 clap = { workspace = true }
@@ -67,6 +67,10 @@ cox-models = { path = "../cox-models", version = "0.1.2" }
 # cox-config (figment and toml_edit with them); this crate keeps the flag
 # layer built from `Cli` and the printing.
 cox-config = { path = "../cox-config", version = "0.1.2" }
+# T37.1: session assembly (provider, tools, MCP, skills, hooks, plugins);
+# this crate keeps the flags, the TUI loop and the printing. Its `plugins`
+# feature follows this crate's.
+cox-session = { path = "../cox-session", version = "0.1.2", default-features = false }
 # anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
 # serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }
@@ -87,17 +91,11 @@ reqwest = { workspace = true }
 sha2 = { workspace = true }
 # T5.8: the binary owns the async runtime the TUI and core loop run on.
 tokio = { workspace = true }
-# T35.13: the external-agent drivers implement `ExternalAgent`
-# (`#[async_trait]`, its `CancellationToken`) and hand the spawned CLI's
-# tokio stdio to the ACP client, which reads `futures` I/O (`compat`).
-# Both were already dev-dependencies here and ship in the workspace.
-async-trait = { workspace = true }
-tokio-util = { workspace = true, features = ["compat"] }
-# T35.13: the ACP driver sends `session/new`/`session/prompt` and frames
-# the CLI's stdio (`ByteStreams`); already `cox-acp`'s dependency.
-agent-client-protocol = { workspace = true }
 
 [dev-dependencies]
+# T37.1: the plugin and scripted-session fixtures `session.rs`'s render test
+# shares with cox-session's own tests.
+cox-session = { path = "../cox-session", version = "0.1.2", default-features = false, features = ["test-util"] }
 tempfile = { workspace = true }
 # T32.16: the shared env-var lock (`temp_env`) for env-mutating tests.
 cox-config = { path = "../cox-config", version = "0.1.2", features = ["test-util"] }

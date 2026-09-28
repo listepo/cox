@@ -256,8 +256,8 @@ fn message_items(m: &Message) -> Result<Vec<wire::InputItem>, ProviderError> {
                 // `InputImageContent::detail` has no `skip_serializing_if`
                 // (only `#[serde(default)]`), so this also emits an explicit
                 // `"detail":"auto"` the hand-written version never sent —
-                // harmless (it's the documented API default) and unwatched:
-                // no fixture/snapshot exercises an image message today.
+                // harmless (it's the documented API default);
+                // `responses_request_user_image` pins it.
                 content: wire::EasyInputContent::ContentList(vec![wire::InputContent::InputImage(
                     wire::InputImageContent {
                         image_url: Some(format!("data:{media_type};base64,{data_b64}")),
@@ -531,6 +531,11 @@ impl OpenAiResponsesProvider {
 impl Provider for OpenAiResponsesProvider {
     fn id(&self) -> ProviderId {
         ProviderId::OpenAi
+    }
+
+    /// Responses is OpenAI's own wire, whose models take `input_image`.
+    fn accepts_images(&self, _model: &str) -> bool {
+        true
     }
 
     fn capabilities(&self) -> Caps {
@@ -810,6 +815,27 @@ mod tests {
     fn responses_request_plain_text() {
         let mut req = base("gpt-5.1");
         req.messages = vec![user_text("what does cox-provider own?")];
+
+        let body = build_body(&req).expect("no thinking blocks, never fails");
+        insta::assert_json_snapshot!(body);
+    }
+
+    /// T37.6 Check: an attached image reaches the wire as `input_image`.
+    #[test]
+    fn responses_request_user_image() {
+        let mut req = base("gpt-5.1");
+        req.messages = vec![Message {
+            role: Role::User,
+            content: vec![
+                Content::Text {
+                    text: "what is in this screenshot?".into(),
+                },
+                Content::Image {
+                    media_type: "image/png".into(),
+                    data_b64: "iVBORw0KGgo=".into(),
+                },
+            ],
+        }];
 
         let body = build_body(&req).expect("no thinking blocks, never fails");
         insta::assert_json_snapshot!(body);

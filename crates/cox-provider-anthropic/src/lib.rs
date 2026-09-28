@@ -231,6 +231,11 @@ impl Provider for AnthropicProvider {
         }
     }
 
+    /// Every Messages model takes base64 image blocks.
+    fn accepts_images(&self, _model: &str) -> bool {
+        true
+    }
+
     async fn stream(
         &self,
         req: Request,

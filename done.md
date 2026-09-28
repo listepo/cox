@@ -2958,3 +2958,67 @@ Check:
 - `python3 -c 'import json,glob; [json.load(open(f)) for f in glob.glob("desktop/design/tokens/*.json")]'` exits 0 (3 files).
 - All 61 mockup CSS classes named in DS§6 occur in `mockups.html` (the other 6 names the check picked up are SF Symbol names from DS§3.7).
 - `build_tokens.py` regenerates the token files with no diff.
+
+#### T37.7 `cox-render`: a neutral `StyledDoc` for markdown and highlighting
+
+Depends: — · Size: ~200 · Files: `crates/cox-render/src/doc.rs`, `crates/cox-render/src/markdown.rs`, `crates/cox-render/Cargo.toml`
+Goal: markdown and syntax highlighting produce runs tagged with `StyleToken` roles that both ratatui and SwiftUI can draw; ratatui sits behind a feature.
+Check: the TUI transcript snapshots are unchanged; `StyledDoc` snapshots exist for a markdown fixture with code, lists and links.
+Status: done 2026-09-28
+Result: `crates/cox-render/src/doc.rs` adds `StyledDoc` — blocks (`Text{Paragraph|Heading(n)|List|Quote}`, `Code{lang}`, `Table`, `Rule`) of lines of `StyledSpan{text, token: StyleToken, rgb, bold, italic, strike, underline, link}`. `markdown::parse` and `highlight_runs` build it with no terminal; the ratatui `render`/`highlight` are thin adapters over them. A default `ratatui` feature gates color, diff, link, svg, theme and `Look`, so a non-TUI consumer (cox-app) can depend on cox-render without ratatui.
+
+Deviations: `StyledSpan` also carries `rgb` (syntect's per-run colour, which a `StyleToken` cannot hold), `strike` and `underline`; 5 files instead of 3 (`lib.rs` gating, `AGENTS.md` row, `Cargo.lock` for insta dev-dep); `deps.rs` unchanged (no ratatui rule there).
+
+Check: `cargo nextest run -p cox-render -p cox-tui` 295/295, TUI snapshots unchanged; new snapshot `markdown_parses_into_tagged_blocks_without_a_terminal`; `cargo check`/`nextest -p cox-render --no-default-features` 6/6; clippy clean with and without default features; fmt clean. Commit a30e0f8.
+
+#### T37.6 Honor `UserTurn.attachments` for images and files
+
+Depends: — · Size: ~180 · Files: `crates/cox-core/src/context.rs`, `crates/cox-provider-anthropic/src/…`, `crates/cox-provider-openai/src/…` (G2)
+Goal: an attached image or file reaches the model on every wire that supports it; an unsupported wire gets a clear notice.
+Check: request snapshots for Anthropic and OpenAI Responses contain the image block; a Chat-only local model gets the notice.
+Status: done 2026-09-28
+Result: `cox-core/src/context.rs` `user_content` builds the user message from text, hook context and each `UserTurn.attachments` entry: png/jpeg/gif/webp → `Content::Image` when the model takes images; other UTF-8 files → a `<attachment name=… media_type=…>` text block; anything else is held back with one Warn notice. `Provider::accepts_images(model)` (default false) is true on Anthropic and OpenAI Responses, and on Chat only for a `models` entry with `images = true` (new `ProviderModel.images`, `Capabilities.images` in the catalog). Attachments ride on `ItemStarted` (`UserMessage.attachments`).
+
+Deviations: more than 3 files (trait, catalog flag, config field and schema, three wires, `Priced`); new dependency `base64 0.23` in cox-core (already in Cargo.lock) to decode attached text files, listed in §1.1 and `toolchain.md`.
+
+Check: `cargo nextest run -p cox-core -p cox-models -p cox-provider-anthropic -p cox-provider-openai -p cox-provider -p cox-protocol` 467 passed, 1 skipped — snapshots `anthropic_request_user_image`, `responses_request_user_image`; `chat_accepts_images_only_where_a_model_declares_them`; `image_on_a_text_only_wire_is_held_back_with_a_notice`; config schema drift test green; clippy and fmt clean. Commit 3b6ee4c.
+
+Not done (follow-ups): PDFs and other binary files are held back (needs a document `Content` variant); resume rebuilds history without attachments; an external-agent child turn does not forward them.
+
+#### T37.13 `[desktop.appearance]` config section
+
+Depends: — · Size: ~100 · Files: `crates/cox-config/src/…`, `docs/config.jsonschema`
+Goal: `[desktop.appearance]` — `material` (frosted | glossy | solid), `opacity`, `blur`, `depth`, `tint` with defaults from `desktop/design/tokens/base.json` (DS§3.5) — and `[desktop.transcript] cross_block_selection` (default `true`, A67), owned by `cox-config` like every other setting.
+Check: the config-schema drift test passes; `cox config set desktop.appearance.material glossy` round-trips; an out-of-range value is rejected.
+Status: done 2026-09-28
+Result: `Config.desktop` (`DesktopConfig`, `cox-protocol/src/config.rs`) adds `[desktop.appearance]` — `material` (`frosted`|`glossy`|`solid`), `opacity` (default 0.42 = `material.frosted.windowOpacity`), `blur` (34 = `material.frosted.blur`, max 60 pt), `depth` (1.0: elevation tokens as designed, DS§3.4), `tint` (true) — and `[desktop.transcript] cross_block_selection` (true). Ranges (opacity and depth 0..=1, blur 0..=60, NaN rejected) are enforced while deserializing, so a bad value fails `load` with the usual `CoreError::Config { key, .. }`; the schema carries minimum/maximum. `default.toml`, `docs/config.jsonschema` and `docs/config.md` regenerated.
+
+Deviations: the types live in `cox-protocol/src/config.rs` with every other section (cox-config owns loading and editing only); 5 files, two of them generated docs.
+
+Check: `cargo nextest run -p cox-protocol -p cox-config` 84/84, including the schema and `config.md` drift tests, `config_set_desktop_material_round_trips` and `config_rejects_out_of_range_desktop_appearance`; `-p cox --test docs` 1/1; `-p cox --bin cox -E 'test(config) | test(doctor)'` 33/33; clippy and fmt clean. Real binary (`COX_HOME` scratch): `config set desktop.appearance.material glossy` → `config get` prints `glossy`, `show --sources` marks it `# user`; opacity 1.5 → exit 1, `1.5 is out of range 0..=1`. Re-checked after merging with T37.6's schema change: 84/84. Commit 97e9f77.
+
+Not done: `cox config set` does not validate ranges before writing (no key does today); the error appears on the next load.
+
+#### T37.35 Write transactions are IMMEDIATE; cross-process change feed
+
+Depends: — · Size: ~150 · Files: `crates/cox-store/src/lib.rs`, `crates/cox-store/src/queries.rs`, `crates/cox-store/src/watch.rs`
+Goal: every write that reads first runs in Diesel's `SqliteConnection::immediate_transaction`, so a concurrent commit makes it wait for `busy_timeout` instead of failing with `SQLITE_BUSY_SNAPSHOT`; a `Store::changes()` feed polls `PRAGMA data_version` (raw SQL: Diesel cannot model a PRAGMA; kept in `cox-store` with that comment) and reports "sessions/ledger changed by another process", which `cox-app` turns into sidebar and cost refreshes (T37.10).
+Check: `concurrent_writers_never_fail_busy` — two processes each append 500 ledger rows and create sessions; all rows land, no busy error; `change_feed_sees_other_process_commit`.
+Status: done 2026-09-28
+Result: `cox-store` `write_tx` runs a body under Diesel's `SqliteConnection::immediate_transaction`; it wraps every read-then-write or multi-statement path (`memory_upsert`, `grant_put`, `kv_put` with its quota read, `finish_session_turn`'s ledger SUM + counter update, the open-time migration run). Single-statement writes stay in autocommit. `crates/cox-store/src/watch.rs` adds `Store::change_token()` and `Store::changes(&mut ChangeToken)`, polling `PRAGMA data_version` on the store's own connection — it moves only when another connection commits, so the store's own writes never report; pull-based, no thread.
+
+Deviations: `Store::open` sets `busy_timeout` before `journal_mode = WAL` and retries the WAL switch on "database is locked" for up to 5 s (two processes opening a fresh file at once skip the busy handler); `queries.rs` has no write path and is unchanged; cross-process tests re-execute the test binary (`current_exe()` + an ignored `writer_process` test) instead of a test-only bin.
+
+Check: `cargo nextest run -p cox-store` 21 passed, 1 skipped (child-only), 3 runs; `concurrent_writers_never_fail_busy` (2 processes × 500 rows + 5 sessions each, all land; fails with a deferred transaction); `change_feed_sees_other_process_commit`; clippy and fmt clean. Commit 640ef26.
+
+#### T37.36 An older binary refuses a newer `cox.db`
+
+Depends: — · Size: ~80 · Files: `crates/cox-store/src/lib.rs`, `crates/cox/src/doctor.rs`
+Goal: on open, if `__diesel_schema_migrations` holds a version this binary does not embed (`MigrationHarness::applied_migrations`), `Store::open` fails with `StoreError::SchemaNewer { db, binary }` and the CLI says which `cox` is newer and how to update; `cox doctor` reports the mismatch. Covers the app's bundled `cox` next to a Homebrew `cox` of another version.
+Check: `older_binary_refuses_newer_schema` (a test inserts a future migration version); doctor snapshot shows the mismatch line.
+Status: done 2026-09-28
+Result: `Store::open` runs `refuse_newer_schema` inside the same IMMEDIATE transaction before migrating: an applied version unknown to the embedded `MIGRATIONS` gives `StoreError::SchemaNewer { db, binary }`. The CLI message names both versions and says to update cox or run the newer one; `cox doctor` has its own `db` row for it whose fix keeps `cox.db` (the generic "remove cox.db" would throw away the newer cox's data).
+
+Deviations: the variant lives in `cox-protocol/src/errors.rs`, so `docs/protocol.jsonschema` was regenerated (two files beyond the card). `doctor_human_output` unchanged; new snapshot `doctor_reports_a_newer_schema`.
+
+Check: `older_binary_refuses_newer_schema`; nextest `-p cox-store -p cox-protocol` 91 passed (re-run after merge: 91 passed, 1 skipped); `-p cox` doctor tests 24; clippy and fmt clean. Real binary with a scratch `COX_HOME`: doctor ✓, then ✗ with the new line after a future migration row was inserted; `cox stats` printed the SchemaNewer error. Commit a6e839e.

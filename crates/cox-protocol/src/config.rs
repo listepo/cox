@@ -63,6 +63,8 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     /// `[record]`
     pub record: RecordConfig,
+    /// `[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)
+    pub desktop: DesktopConfig,
 }
 
 impl Config {
@@ -363,6 +365,13 @@ pub struct ProviderModel {
     /// §4.3.3), so it is opt-in per model rather than per wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<bool>,
+    /// Whether this model takes image input (T37.6). Read only by an
+    /// `api = "chat"` section, where one server hosts both vision and
+    /// text-only models: unset means "not declared", and an attached image
+    /// is then held back with a notice rather than sent to a model that
+    /// would reject it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
 }
 
 /// `[providers]` (plan.md §1.6).
@@ -1187,6 +1196,120 @@ pub struct RecordConfig {
 impl Default for RecordConfig {
     fn default() -> Self {
         Self { redact: true }
+    }
+}
+
+/// `desktop/design/tokens/base.json` `material.frosted.windowOpacity`
+/// (DS§3.5): the frosted window's default opacity. Copied, not read at
+/// runtime, so config loading never depends on the app's design files.
+pub const DESKTOP_DEFAULT_OPACITY: f64 = 0.42;
+/// `desktop/design/tokens/base.json` `material.frosted.blur` (DS§3.5), in pt.
+pub const DESKTOP_DEFAULT_BLUR_PT: f64 = 34.0;
+/// The Appearance popover's "Heavy" end of the blur slider, in pt.
+pub const DESKTOP_MAX_BLUR_PT: f64 = 60.0;
+/// DS§3.4: Depth scales every elevation level by 0…1; 1 draws the
+/// `elevation.*` tokens unscaled, as designed.
+pub const DESKTOP_DEFAULT_DEPTH: f64 = 1.0;
+
+/// `[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the
+/// app reads them; they live here so they get a schema and provenance like
+/// every other setting.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopConfig {
+    /// `[desktop.appearance]`
+    pub appearance: DesktopAppearanceConfig,
+    /// `[desktop.transcript]`
+    pub transcript: DesktopTranscriptConfig,
+}
+
+/// The window's glass material (DS§3.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Material {
+    /// `glassEffect(.regular)`, heavy blur.
+    #[default]
+    Frosted,
+    /// `glassEffect(.clear)` plus the specular streak, light blur.
+    Glossy,
+    /// Opaque `surface.window`; what Reduce Transparency forces.
+    Solid,
+}
+
+/// `[desktop.appearance]` (DS§3.5): what the Appearance popover and
+/// Settings › Appearance edit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopAppearanceConfig {
+    /// `frosted` | `glossy` | `solid`.
+    pub material: Material,
+    /// Window and pane background opacity, 0 (clear) to 1 (opaque). Text
+    /// panels never drop below `material.readableFloor`, whatever this is.
+    #[serde(deserialize_with = "unit_interval")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub opacity: f64,
+    /// Background blur in pt, 0 to 60 (frosted); glossy reads it as reflection.
+    #[serde(deserialize_with = "blur_pt")]
+    #[schemars(range(min = 0.0, max = DESKTOP_MAX_BLUR_PT))]
+    pub blur: f64,
+    /// Elevation scale, 0 (flat) to 1 (full shadows and highlights).
+    #[serde(deserialize_with = "unit_interval")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub depth: f64,
+    /// Tint the glass from the wallpaper.
+    pub tint: bool,
+}
+
+impl Default for DesktopAppearanceConfig {
+    fn default() -> Self {
+        Self {
+            material: Material::Frosted,
+            opacity: DESKTOP_DEFAULT_OPACITY,
+            blur: DESKTOP_DEFAULT_BLUR_PT,
+            depth: DESKTOP_DEFAULT_DEPTH,
+            tint: true,
+        }
+    }
+}
+
+/// `[desktop.transcript]` (A67).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopTranscriptConfig {
+    /// Whether a text selection runs across blocks like one document;
+    /// `false` clamps it to the block where the drag started.
+    pub cross_block_selection: bool,
+}
+
+impl Default for DesktopTranscriptConfig {
+    fn default() -> Self {
+        Self {
+            cross_block_selection: true,
+        }
+    }
+}
+
+/// A value in `0.0..=1.0`, or a load error naming the key (figment adds it).
+fn unit_interval<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, 0.0, 1.0)
+}
+
+/// A blur radius in `0.0..=DESKTOP_MAX_BLUR_PT`.
+fn blur_pt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, 0.0, DESKTOP_MAX_BLUR_PT)
+}
+
+/// Serde, not the loader, rejects an out-of-range number, so the error
+/// surfaces through the same `CoreError::Config { key, .. }` as a bad type
+/// or an unknown key. NaN fails `contains` and is rejected too.
+fn in_range<'de, D: serde::Deserializer<'de>>(d: D, min: f64, max: f64) -> Result<f64, D::Error> {
+    let value = f64::deserialize(d)?;
+    if (min..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "{value} is out of range {min}..={max}"
+        )))
     }
 }
 

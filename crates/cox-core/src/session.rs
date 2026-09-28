@@ -14,8 +14,9 @@ use cox_protocol::traits::{
     Tool, Worktrees,
 };
 use cox_protocol::types::{
-    ArchiveRef, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
-    ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier, ToolCall,
+    ArchiveRef, Attachment, Content, Decision, Event, HookEvent, HookOutcome, ItemKind, Job, Level,
+    Message, ModelId, PermissionMode, ProviderId, Role, SandboxMode, StopReason, Submission, Tier,
+    ToolCall,
 };
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -745,8 +746,8 @@ impl Session {
             Submission::UserTurn {
                 text,
                 confirm_think,
-                attachments: _,
-            } => self.run_turn(text, confirm_think).await,
+                attachments,
+            } => self.run_turn(text, attachments, confirm_think).await,
             Submission::Interrupt => {
                 self.interrupt();
                 Ok(())
@@ -988,7 +989,12 @@ impl Session {
         added
     }
 
-    async fn run_turn(&self, text: String, confirm_think: bool) -> Result<(), CoreError> {
+    async fn run_turn(
+        &self,
+        text: String,
+        attachments: Vec<Attachment>,
+        confirm_think: bool,
+    ) -> Result<(), CoreError> {
         let turn = TurnId::new();
         let span = tracing::info_span!(
             parent: &self.telemetry_span,
@@ -1006,7 +1012,7 @@ impl Session {
             otel.status_code = tracing::field::Empty,
         );
         let result = self
-            .run_turn_inner(turn, text, confirm_think)
+            .run_turn_inner(turn, text, attachments, confirm_think)
             .instrument(span.clone())
             .await;
         // T33.20: `route` advice holds for its own turn only, however the
@@ -1029,6 +1035,7 @@ impl Session {
         &self,
         turn: TurnId,
         text: String,
+        attachments: Vec<Attachment>,
         confirm_think: bool,
     ) -> Result<(), CoreError> {
         {
@@ -1118,16 +1125,22 @@ impl Session {
         if self.compact_now(due, last, max_context).await? {
             self.compact(compact::Trigger::Auto, None).await?;
         }
+        // T37.6: what the wire cannot take is held back with a notice
+        // rather than sent to a model that would reject the whole request.
+        let (content, held) = crate::context::user_content(
+            text.clone(),
+            context,
+            &attachments,
+            &route.model.0,
+            self.provider.accepts_images(&route.model.0),
+        );
         let seq = {
             let mut inner = self.inner.lock().await;
             inner.state = State::Assembling;
             let start = inner.history.len();
             inner.history.push(Message {
                 role: Role::User,
-                content: std::iter::once(text.clone())
-                    .chain(context)
-                    .map(|text| Content::Text { text })
-                    .collect(),
+                content,
             });
             let seq = inner.turn_seq + 1;
             inner.turn_marks.push(TurnMark {
@@ -1153,11 +1166,18 @@ impl Session {
             item: user_item,
             kind: ItemKind::UserMessage {
                 text: text.clone(),
-                attachments: vec![],
+                attachments,
             },
         })
         .await?;
         self.emit(Event::ItemDone { item: user_item }).await?;
+        for text in held {
+            self.emit(Event::Notice {
+                level: Level::Warn,
+                text,
+            })
+            .await?;
+        }
         if let Some(agent) = external {
             return self.external_turn(agent, turn, route.tier, text).await;
         }
@@ -2034,6 +2054,50 @@ mod tests {
         let probe = Arc::new(Probe::default());
         session.set_hook(probe.clone());
         (session, probe)
+    }
+
+    /// T37.6 Check: a wire without image input gets the notice, the text
+    /// still goes, and the rollout keeps the attachment for every surface.
+    #[tokio::test]
+    async fn image_on_a_text_only_wire_is_held_back_with_a_notice() {
+        let store = Arc::new(MemoryStore::new());
+        let provider =
+            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        let session = Session::new(
+            cox_protocol::Config::default(),
+            provider,
+            vec![],
+            store.clone(),
+            store.clone(),
+            PathBuf::from("/tmp/cox-turn"),
+        )
+        .expect("session");
+        let shot = Attachment {
+            name: "shot.png".into(),
+            media_type: "image/png".into(),
+            data_b64: "iVBORw0KGgo=".into(),
+        };
+        session
+            .submit(Submission::UserTurn {
+                text: "look".into(),
+                attachments: vec![shot.clone()],
+                confirm_think: false,
+            })
+            .await
+            .expect("turn");
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        assert!(events.iter().any(|e| matches!(e,
+            Event::ItemStarted { kind: ItemKind::UserMessage { attachments, .. }, .. }
+                if *attachments == vec![shot.clone()])));
+        assert!(events.iter().any(|e| matches!(e,
+            Event::Notice { level: Level::Warn, text } if text.contains("does not take images"))));
+        let history = &session.inner.lock().await.history;
+        assert_eq!(
+            history[0].content,
+            vec![Content::Text {
+                text: "look".into()
+            }]
+        );
     }
 
     #[tokio::test]

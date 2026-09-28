@@ -2560,6 +2560,29 @@
             "required": [
               "type"
             ]
+          },
+          {
+            "description": "`cox.db` holds a migration this binary does not embed: a newer `cox`\n(the app's bundled one, or a Homebrew one of another version) wrote\nit, and this older one must not read or write it (T37.36).",
+            "type": "object",
+            "properties": {
+              "db": {
+                "description": "The newest migration version in `cox.db` this binary does not know.",
+                "type": "string"
+              },
+              "binary": {
+                "description": "The newest migration version this binary embeds.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "schema_newer"
+              }
+            },
+            "required": [
+              "type",
+              "db",
+              "binary"
+            ]
           }
         ]
       }

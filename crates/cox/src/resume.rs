@@ -33,10 +33,8 @@ pub fn run(cli: &Cli, args: &RunArgs) -> anyhow::Result<()> {
 
 /// Reads a session's rollout from `home` and rebuilds [`History`].
 pub fn from_home(home: &Path, id: &str) -> anyhow::Result<History> {
-    let store = Store::open(home)?;
     let id: SessionId = id.parse()?;
-    let (events, truncated) = store.rollout_read_with_truncation(&id)?;
-    Ok(History::from_rollout(&events, truncated))
+    Ok(cox_session::resume(home, id)?)
 }
 
 #[cfg(test)]
