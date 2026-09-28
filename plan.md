@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.1 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.2 | todo | P1 | 2 | 0% | |
 | T37.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -1094,12 +1093,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.1 Extract `cox-session` from `crates/cox/src/session.rs`
-
-Depends: — · Size: ~200 · Files: `crates/cox-session/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/tests/deps.rs`
-Goal: session assembly (provider, tools, MCP, skills, hooks, plugins, checkpointer, worktrees) is a library with no `Cli`, no `anyhow`, no `eprintln!`; warnings are returned as data (DT§4.2).
-Check: `cargo nextest run --workspace` green; `deps.rs` asserts `cox-session` does not depend on `clap` or `anyhow`; the TUI and `run -p` e2e snapshots are unchanged.
 
 #### T37.2 Route `cox acp` through `cox-session`
 
