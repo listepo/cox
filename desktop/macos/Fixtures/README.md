@@ -7,4 +7,11 @@ mise exec -- cargo run -p cox-ffi --example record -- \
   crates/cox-ffi/fixtures/read-and-reply.toml desktop/macos/Fixtures/read-and-reply.json "Read the notes"
 ```
 
+`edit.json` edits a file, so it is recorded with `COX_PERMISSIONS_MODE=auto` in front of the same command (writes run without an approval):
+
+```bash
+COX_PERMISSIONS_MODE=auto mise exec -- cargo run -p cox-ffi --example record -- \
+  crates/cox-ffi/fixtures/edit.toml desktop/macos/Fixtures/edit.json "Cap the backoff"
+```
+
 Ids and timings change on every run.

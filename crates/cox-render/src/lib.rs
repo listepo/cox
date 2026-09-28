@@ -13,6 +13,7 @@
 pub mod color;
 #[cfg(feature = "ratatui")]
 pub mod diff;
+pub mod diffmodel;
 pub mod diffstat;
 pub mod doc;
 pub mod glyph;

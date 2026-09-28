@@ -15,7 +15,9 @@ use cox_app::{Block, BlockKind, Controller, Meter, Tally, Timeline, TimelinePatc
 use cox_core::{MemoryStore, Session};
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Store, Tool, ToolCx};
-use cox_protocol::types::{Concurrency, Decision, Event, Risk, Submission, ToolOutput, ToolSpec};
+use cox_protocol::types::{
+    Concurrency, Decision, Diff, Event, Risk, Submission, ToolOutput, ToolSpec,
+};
 use cox_protocol::{Before, Change, Checkpointer, Config, PreImage, Snapshot, UsageRow};
 use cox_provider::scripted::Scripted;
 use serde_json::{Value, json};
@@ -88,14 +90,19 @@ fn cases() -> Vec<Case> {
             home: "cox-app",
             ..core("checkpoint_rewind", writes, Act::RewindSecondTurn)
         },
+        Case {
+            home: "cox-app",
+            ..core("edit", plain(), Act::Nothing)
+        },
     ]
 }
 
-/// A read-only stub under a real tool's name, whose `structured` payload is
-/// the one the real tool sends (`cox-tools` `read`/`grep`).
+/// A read-only stub under a real tool's name, whose `structured` payload
+/// and diff are the ones the real tool sends (`cox-tools` `read`/`grep`/`edit`).
 struct Stub {
     name: &'static str,
     structured: Value,
+    diff: Option<Diff>,
 }
 
 #[async_trait]
@@ -118,7 +125,7 @@ impl Tool for Stub {
         Ok(ToolOutput {
             text: "1\tfn main() {}".into(),
             is_error: false,
-            diff: None,
+            diff: self.diff.clone(),
             structured: Some(self.structured.clone()),
         })
     }
@@ -166,10 +173,24 @@ fn open(
     tools.push(Arc::new(Stub {
         name: "read",
         structured: json!({"lines": 1}),
+        diff: None,
     }));
     tools.push(Arc::new(Stub {
         name: "grep",
         structured: json!({"matches": 1}),
+        diff: None,
+    }));
+    // Two hunks: numbering restarts at each header; a file marker is dropped.
+    let unified = "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,2 +1,2 @@\n use std::io;\n\
+        -fn old() {}\n+fn new() -> u8 { 1 }\n@@ -40,2 +40,3 @@ impl Backoff\n     let x = 2;\n\
+        +    // more\n }\n";
+    tools.push(Arc::new(Stub {
+        name: "edit",
+        structured: json!({}),
+        diff: Some(Diff {
+            path: "src/lib.rs".into(),
+            unified: unified.into(),
+        }),
     }));
     let store = Arc::new(MemoryStore::new());
     let cwd = PathBuf::from("/tmp/cox-turn");

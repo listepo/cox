@@ -33,6 +33,7 @@ pub use workspace::{ProjectRow, SearchHit, SessionEntry, Workspace, WorkspaceErr
 
 // What the exported types carry, named here so `cox-ffi` depends on no
 // other workspace crate (T37.39, DT§4.2).
+pub use cox_render::diffmodel;
 pub use cox_render::doc;
 pub use cox_store::fts::SessionInfo;
 pub use cox_store::lock::Holder;

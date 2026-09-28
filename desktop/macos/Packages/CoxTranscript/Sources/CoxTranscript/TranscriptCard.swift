@@ -27,12 +27,13 @@ extension ToolCard.Content {
   /// it; `nil` for any other block.
   init?(_ block: Block, locale: Locale) {
     switch block.kind {
-    case .tool(_, let summary, let icon, let risk, let state, let tail, _, _, let durationMs):
+    case .tool(_, let summary, let icon, let risk, let state, let tail, _, let diff, let durationMs):
       let duration = state == .running ? nil : Self.seconds(durationMs, locale)
       let header = ToolHeader.Item(
         tile: icon.tile, symbol: icon.symbol, verb: summary, subject: "", risk: risk.chip,
         state: state.header, duration: duration)
-      self.init(header: header, detail: Self.tail(tail, state: state, status: duration))
+      let detail = diff.flatMap(Self.hunks) ?? Self.tail(tail, state: state, status: duration)
+      self.init(header: header, detail: detail)
     case .toolGroup(let summary, _, let state):
       let header = ToolHeader.Item(
         tile: Icon.search.tile, symbol: Icon.search.symbol, verb: summary, subject: "",
@@ -47,6 +48,15 @@ extension ToolCard.Content {
     default:
       return nil
     }
+  }
+
+  /// An edit's hunks as the core split, numbered and highlighted them (T37.23.5); none when
+  /// it changed nothing, so the card falls back to the tail.
+  private static func hunks(_ diff: DiffModel) -> ToolCard.Detail? {
+    let hunks = diff.hunks.map { hunk in
+      ToolCard.Hunk(header: hunk.header, lines: hunk.lines.map(DiffLineView.Line.init))
+    }
+    return hunks.isEmpty ? nil : .diff(hunks)
   }
 
   /// The core's five-line tail, one string per line; none when the call printed nothing.
@@ -68,6 +78,22 @@ extension ToolCard.Content {
     Duration.milliseconds(milliseconds).formatted(
       .units(allowed: [.seconds], width: .narrow, fractionalPart: .show(length: 1))
         .locale(locale))
+  }
+}
+
+extension DiffLineView.Line {
+  /// The gutter shows the new number, or the old one for a removed line. The runs stay plain:
+  /// a span's `rgb` is the session's syntect theme, which knows neither the light appearance
+  /// nor DS§8's contrast floor, and no `StyleToken` names a syntax role yet.
+  init(_ line: DiffLine) {
+    let kind: DiffLineView.Kind =
+      switch line.kind {
+      case .context: .context
+      case .add: .added
+      case .del: .removed
+      }
+    let number = (line.kind == .del ? line.old : line.new).map(String.init) ?? ""
+    self.init(kind: kind, number: number, runs: line.spans.map { CodeRun($0.text) })
   }
 }
 

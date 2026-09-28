@@ -7,9 +7,10 @@ use std::path::PathBuf;
 
 use cox_protocol::ids::{CallId, TaskId};
 use cox_protocol::types::{
-    ArchiveRef, CompactReason, DecidedBy, Decision, Diff, Level, ModelId, Risk, Source, StopReason,
-    Tier, Usage, Why,
+    ArchiveRef, CompactReason, DecidedBy, Decision, Level, ModelId, Risk, Source, StopReason, Tier,
+    Usage, Why,
 };
+use cox_render::diffmodel::DiffModel;
 use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +63,9 @@ pub enum BlockKind {
         /// The last `TAIL_LINES` lines of output.
         tail: String,
         archive: Option<ArchiveRef>,
-        diff: Option<Diff>,
+        /// An edit's change as hunks of numbered, highlighted lines, so no
+        /// UI parses unified text (T37.23.5).
+        diff: Option<DiffModel>,
         duration_ms: u64,
     },
     /// Consecutive read/grep/glob/outline calls of one step: "Explored 3
