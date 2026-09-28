@@ -1,6 +1,7 @@
 // The sidebar's workspace over cox-ffi (DT§5.1, DT§4.3): `App.projects`, `sessions`,
 // `activity` and the change wait as CoxClient's values, the toolbar's model catalog and the
-// footer's usable providers (T37.22.6, A110), and the launch's login-shell environment (DT§4.8). Separate
+// footer's usable providers (T37.22.6, A110), the launch's login-shell environment (DT§4.8) and the
+// browser pane's address check (T51.10). Separate
 // from `LiveCoreClient.swift` like the other conversions, so that file stays the list of calls
 // into Rust for one session.
 
@@ -41,6 +42,12 @@ extension LiveCoreClient: WorkspaceClient {
   /// session opens. Returns why it kept the inherited environment, if it did.
   public static func loadLoginEnv() async throws -> String? {
     try await CoxFFIBindings.loadLoginEnv()
+  }
+
+  /// The browser pane's typed address as the URL to load, or `nil` when it is not an `http` or
+  /// `https` page: Rust's check, the one `browser_open` makes (T51.10).
+  public static func webAddress(_ text: String) -> String? {
+    CoxFFIBindings.webAddress(text: text)
   }
 }
 

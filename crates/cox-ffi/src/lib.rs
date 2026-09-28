@@ -118,6 +118,13 @@ pub fn review_message(comments: Vec<cox_app::review::LineComment>) -> Option<Str
     cox_app::review::message(&comments)
 }
 
+/// T51.10: the browser pane's typed address as the URL to load, or `None`
+/// when it is not an `http`/`https` page; `browser_open`'s rule.
+#[uniffi::export]
+pub fn web_address(text: String) -> Option<String> {
+    cox_app::browser::web_address(&text)
+}
+
 /// One per process: the workspace, the inbox across sessions, the host.
 #[derive(uniffi::Object)]
 pub struct App {

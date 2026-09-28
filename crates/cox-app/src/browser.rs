@@ -72,6 +72,23 @@ fn web_url(raw: &str) -> Result<Url, String> {
     }
 }
 
+/// T51.10: what the person typed in the browser pane's address field, as
+/// the URL to load, or `None` when it is not a web page. The same rule as
+/// `browser_open`. A bare host gets a scheme the way a browser's field adds
+/// one: `http` for this machine's dev servers, `https` for the rest.
+pub fn web_address(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if text.contains("://") {
+        return web_url(text).ok().map(String::from);
+    }
+    let local = web_url(&format!("http://{text}")).ok().filter(is_loopback);
+    let url = local.map_or_else(|| web_url(&format!("https://{text}")), Ok);
+    url.ok().map(String::from)
+}
+
 /// Whether `url` stays on this machine: `localhost` (and its subdomains,
 /// RFC 6761) or a loopback address.
 fn is_loopback(url: &Url) -> bool {
@@ -414,6 +431,37 @@ mod tests {
         assert!(matches!(local, Outcome::Allow { .. }), "{local:?}");
         let denied = decide("https://www.evil.test/", PermissionMode::Bypass);
         assert!(matches!(denied, Outcome::Deny { .. }), "{denied:?}");
+    }
+
+    #[test]
+    fn a_typed_address_passes_the_same_scheme_rule() {
+        let typed = |text: &str| web_address(text);
+        assert_eq!(
+            typed(" localhost:5173/checkout ").as_deref(),
+            Some("http://localhost:5173/checkout")
+        );
+        assert_eq!(
+            typed("127.0.0.1:8080").as_deref(),
+            Some("http://127.0.0.1:8080/")
+        );
+        assert_eq!(
+            typed("example.com/a").as_deref(),
+            Some("https://example.com/a")
+        );
+        assert_eq!(
+            typed("http://example.com").as_deref(),
+            Some("http://example.com/")
+        );
+        for refused in [
+            "",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "about:blank",
+            "ftp://example.com",
+            "data:text/html,hi",
+        ] {
+            assert_eq!(typed(refused), None, "{refused:?}");
+        }
     }
 
     #[tokio::test]

@@ -7,8 +7,9 @@
 // rename a session (A113), its model popover switches the session's model
 // as `/model` does, the inspector's tabs read the open session,
 // Review replaces the transcript column, the shell's panes fold, ⌃` shows the session's terminal
-// pane under the column (T51.6; the window asks before closing over a running command) and the
-// Appearance popover writes `[desktop.appearance]`.
+// pane under the column (T51.6; the window asks before closing over a running command), ⌘⇧B
+// shows the browser pane beside it (T51.10) and the Appearance popover writes
+// `[desktop.appearance]`.
 
 import CoxClient
 import CoxModel
@@ -42,6 +43,8 @@ struct SessionWindow: View {
   /// The terminal pane shows under the column; its height is the user's drag, UI-only.
   @State private var isTerminalVisible = false
   @State private var terminalHeight = SessionTerminal.defaultHeight
+  /// The browser pane shows beside the column; UI-only, like the terminal's.
+  @State private var isBrowserVisible = false
   @Environment(\.coxAppearance) private var base
 
   var body: some View {
@@ -76,10 +79,10 @@ struct SessionWindow: View {
         \.shell,
         ShellActions(
           isSidebarVisible: screen.isSidebarVisible, isInspectorVisible: screen.isInspectorVisible,
-          isTerminalVisible: isTerminalShown,
+          isTerminalVisible: isTerminalShown, isBrowserVisible: isBrowserVisible,
           toggleSidebar: { screen.isSidebarVisible.toggle() },
           toggleInspector: { screen.isInspectorVisible.toggle() },
-          toggleTerminal: { toggleTerminal() })
+          toggleTerminal: { toggleTerminal() }, toggleBrowser: { isBrowserVisible.toggle() })
       )
       .task { if current == nil { await open(resume: nil) } }
       .task { await watch() }
@@ -134,16 +137,22 @@ struct SessionWindow: View {
       ) { refused = $0 }
       .onExitCommand { self.reviewing = nil }
     } else if let showing {
-      VStack(spacing: 0) {
-        TranscriptView(store: showing.store, send: send)
-          .composer(showing.composer)
-        // At its own height, so the transcript takes the rest of the column.
-        SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
-        if isTerminalShown {
-          SessionTerminal(
-            store: showing.store, surfaces: showing.terminals,
-            branch: showing.info?.worktree?.branch, height: $terminalHeight
-          ) { refused = $0 }
+      HStack(spacing: 0) {
+        VStack(spacing: 0) {
+          TranscriptView(store: showing.store, send: send)
+            .composer(showing.composer)
+          // At its own height, so the transcript takes the rest of the column.
+          SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
+          if isTerminalShown {
+            SessionTerminal(
+              store: showing.store, surfaces: showing.terminals,
+              branch: showing.info?.worktree?.branch, height: $terminalHeight
+            ) { refused = $0 }
+          }
+        }
+        if isBrowserVisible {
+          SessionBrowser(controller: model.launch.browser) { refused = $0 }
+            .frame(width: SessionBrowser.paneWidth)
         }
       }
       // A new view per session, so the transcript's text is rebuilt from the one it shows.

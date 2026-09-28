@@ -522,6 +522,7 @@ current project and slash commands. The whole app is keyboard-drivable:
 | ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A89) |
 | ⌘⌥A | Appearance popover |
 | ⌃` | Terminal pane under the transcript: show / hide; the first show opens the session's shell (T51.6) |
+| ⌘⇧B | Browser pane beside the transcript: show / hide; the page the agent's `browser_*` tools drive (T51.10) |
 | ⌘⇧F | Search all sessions |
 | ⌘[ / ⌘] | Previous / next turn in the transcript |
 | ⌘+ / ⌘− | Text size |
