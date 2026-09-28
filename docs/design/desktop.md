@@ -281,6 +281,12 @@ Rules:
   reader behind `secret`: generic-password items `cox/<section>`, the item
   the CLI's keyring entry uses, so one key serves both. Tests use an
   in-memory store, never the real Keychain (A49).
+- The host (T37.30.2): CoxPlatform's `MacHost` implements CoxClient's
+  `PlatformHost` — `secret` over `KeychainSecretStore`, `notify` through
+  `UNUserNotificationCenter`, `open` through `NSWorkspace` for `http(s)`
+  links only — and CoxCore's `HostBridge` adapts it to the generated
+  `AppHost`, so CoxPlatform tests without the XCFramework and CoxCore never
+  links AppKit. The app passes `HostBridge(MacHost())` to `LiveCoreClient`.
 
 ### 4.5 Threads, runtime, backpressure, cancellation
 
