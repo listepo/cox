@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use cox_app::Holder;
 use cox_app::SessionInfo;
+use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
@@ -22,8 +23,8 @@ use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
 use cox_protocol::traits::WorktreeInfo;
 use cox_protocol::types::{
-    ApprovalPolicy, ArchiveRef, Attachment, CompactReason, DecidedBy, Decision, Diff, Effort,
-    Level, ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, ToolCall, Usage, Why,
+    ApprovalPolicy, ArchiveRef, Attachment, CompactReason, DecidedBy, Decision, Effort, Level,
+    ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, ToolCall, Usage, Why,
 };
 use serde_json::Value;
 
@@ -171,7 +172,7 @@ pub enum BlockKind {
         state: ToolState,
         tail: String,
         archive: Option<ArchiveRef>,
-        diff: Option<Diff>,
+        diff: Option<DiffModel>,
         duration_ms: u64,
     },
     ToolGroup {
@@ -555,9 +556,30 @@ pub struct Attachment {
 }
 
 #[uniffi::remote(Record)]
-pub struct Diff {
+pub struct DiffModel {
     pub path: PathBuf,
-    pub unified: String,
+    pub hunks: Vec<DiffHunk>,
+}
+
+#[uniffi::remote(Record)]
+pub struct DiffHunk {
+    pub header: String,
+    pub lines: Vec<DiffLine>,
+}
+
+#[uniffi::remote(Record)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub old: Option<u32>,
+    pub new: Option<u32>,
+    pub spans: Vec<StyledSpan>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum DiffLineKind {
+    Context,
+    Add,
+    Del,
 }
 
 #[uniffi::remote(Record)]

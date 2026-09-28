@@ -1,0 +1,1760 @@
+{
+  "batches": [
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KHPC4TEPYGYRFW22DAXTRN",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": null,
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 0,
+            "received": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 0,
+            "cost_usd": 0.0,
+            "calls": 0,
+            "estimated": false
+          },
+          "turn": {
+            "turn": "01M3KHPC4TEPYGYRFW22DAXTRN",
+            "tally": {
+              "sent": 0,
+              "received": 0,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 0,
+              "cost_usd": 0.0,
+              "calls": 0,
+              "estimated": false
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": null,
+            "tok_per_s": null,
+            "exact": false,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 0
+        }
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KHPC4TD17STY28K7TRRYFV",
+          "turn": 1,
+          "kind": {
+            "type": "user",
+            "text": "Cap the backoff",
+            "attachments": []
+          }
+        },
+        "after": "turn:01M3KHPC4TEPYGYRFW22DAXTRN"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KHPC4XWTQSTZMX6GZPGRJT",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "",
+            "doc": {
+              "blocks": []
+            }
+          }
+        },
+        "after": "item:01M3KHPC4TD17STY28K7TRRYFV"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KHPC4TEPYGYRFW22DAXTRN",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 7428,
+              "output_tokens": 100,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KHPC4XWTQSTZMX6GZPGRJT",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Writing the module.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Writing the module."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KHPC4TD17STY28K7TRRYFV"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KHPC4XMJ24J3B5PFJVZYHX",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "write",
+            "summary": "Wrote `src/lib.rs` · 6 lines",
+            "icon": "edit",
+            "risk": "write",
+            "state": "done",
+            "tail": "wrote /project/src/lib.rs (152 bytes)",
+            "archive": {
+              "id": "01M3KHPC54WHS7BW9RSDNB1NXF",
+              "bytes": 104
+            },
+            "diff": null,
+            "duration_ms": 1
+          }
+        },
+        "after": "item:01M3KHPC4XWTQSTZMX6GZPGRJT"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "checkpoint:10",
+          "turn": 1,
+          "kind": {
+            "type": "checkpoint",
+            "files": [
+              "/project/src/lib.rs"
+            ]
+          }
+        },
+        "after": "call:01M3KHPC4XMJ24J3B5PFJVZYHX"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KHPC55AVEJ7NYQK5KJ6TN0",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Capping the wait.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Capping the wait."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "checkpoint:10"
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 7428,
+            "received": 100,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 7428,
+            "cost_usd": 0.0,
+            "calls": 2,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3KHPC4TEPYGYRFW22DAXTRN",
+            "tally": {
+              "sent": 7428,
+              "received": 100,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 7428,
+              "cost_usd": 0.0,
+              "calls": 2,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 4101579.5444628675,
+            "exact": true,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 3757
+        }
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KHPC55M01BACD5GWWEQRCG",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "edit",
+            "summary": "Editing `src/lib.rs`",
+            "icon": "edit",
+            "risk": "write",
+            "state": "running",
+            "tail": "",
+            "archive": null,
+            "diff": null,
+            "duration_ms": 0
+          }
+        },
+        "after": "item:01M3KHPC55AVEJ7NYQK5KJ6TN0"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "checkpoint:17",
+          "turn": 1,
+          "kind": {
+            "type": "checkpoint",
+            "files": [
+              "/project/src/lib.rs"
+            ]
+          }
+        },
+        "after": "call:01M3KHPC55M01BACD5GWWEQRCG"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KHPC55M01BACD5GWWEQRCG",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "edit",
+            "summary": "Edited `src/lib.rs` +2 −1",
+            "icon": "edit",
+            "risk": "write",
+            "state": "done",
+            "tail": "edited /project/src/lib.rs",
+            "archive": {
+              "id": "01M3KHPC5E6H1TJ2XAJZJKYY3E",
+              "bytes": 93
+            },
+            "diff": {
+              "path": "/project/src/lib.rs",
+              "hunks": [
+                {
+                  "header": "@@ -2,5 +2,6 @@",
+                  "lines": [
+                    {
+                      "kind": "context",
+                      "old": 2,
+                      "new": 2,
+                      "spans": [
+                        {
+                          "text": "",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "context",
+                      "old": 3,
+                      "new": 3,
+                      "spans": [
+                        {
+                          "text": "///",
+                          "rgb": [
+                            101,
+                            115,
+                            126
+                          ]
+                        },
+                        {
+                          "text": " The wait before a retry.",
+                          "rgb": [
+                            101,
+                            115,
+                            126
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "context",
+                      "old": 4,
+                      "new": 4,
+                      "spans": [
+                        {
+                          "text": "pub",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "fn",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "backoff",
+                          "rgb": [
+                            143,
+                            161,
+                            179
+                          ]
+                        },
+                        {
+                          "text": "(",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "attempt",
+                          "rgb": [
+                            191,
+                            97,
+                            106
+                          ]
+                        },
+                        {
+                          "text": ":",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "u32",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": ")",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "->",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " Duration",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "{",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "del",
+                      "old": 5,
+                      "new": null,
+                      "spans": [
+                        {
+                          "text": "    ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "Duration",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "::",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "from_millis",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "(",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "100",
+                          "rgb": [
+                            208,
+                            135,
+                            112
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "*",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "u64",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": "::",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "from",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "(",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "attempt",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": ")",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": ")",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "add",
+                      "old": null,
+                      "new": 5,
+                      "spans": [
+                        {
+                          "text": "    ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "let",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": " ms ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "=",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "100",
+                          "rgb": [
+                            208,
+                            135,
+                            112
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "*",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": " ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "u64",
+                          "rgb": [
+                            180,
+                            142,
+                            173
+                          ]
+                        },
+                        {
+                          "text": "::",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "from",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "(",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "attempt",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": ")",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": ";",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "add",
+                      "old": null,
+                      "new": 6,
+                      "spans": [
+                        {
+                          "text": "    ",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "Duration",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "::",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "from_millis",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "(",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "ms",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": ".",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "min",
+                          "rgb": [
+                            150,
+                            181,
+                            180
+                          ]
+                        },
+                        {
+                          "text": "(",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "5_000",
+                          "rgb": [
+                            208,
+                            135,
+                            112
+                          ]
+                        },
+                        {
+                          "text": ")",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": ")",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "context",
+                      "old": 6,
+                      "new": 7,
+                      "spans": [
+                        {
+                          "text": "}",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        },
+                        {
+                          "text": "",
+                          "rgb": [
+                            192,
+                            197,
+                            206
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "duration_ms": 2
+          }
+        },
+        "after": "item:01M3KHPC55AVEJ7NYQK5KJ6TN0"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KHPC5GW41N9YEFZQNMA39F",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "The backoff is capped at five seconds.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "The backoff is capped at five seconds."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "checkpoint:17"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KHPC4TEPYGYRFW22DAXTRN",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 11262,
+              "output_tokens": 110,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": {
+              "type": "end_turn"
+            }
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 11262,
+            "received": 110,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 11262,
+            "cost_usd": 0.0,
+            "calls": 3,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3KHPC4TEPYGYRFW22DAXTRN",
+            "tally": {
+              "sent": 11262,
+              "received": 110,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 11262,
+              "cost_usd": 0.0,
+              "calls": 3,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 1403508.7719298245,
+            "exact": true,
+            "sparkline": [],
+            "done": true
+          },
+          "context_tokens": 3834
+        }
+      }
+    ]
+  ],
+  "snapshot": [
+    {
+      "id": "turn:01M3KHPC4TEPYGYRFW22DAXTRN",
+      "turn": 1,
+      "kind": {
+        "type": "turn_meta",
+        "model": "claude-sonnet-5",
+        "tier": "code",
+        "usage": {
+          "input_tokens": 11262,
+          "output_tokens": 110,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "estimated": true,
+          "cost_usd": 0.0,
+          "latency_ms": 0
+        },
+        "stop": {
+          "type": "end_turn"
+        }
+      }
+    },
+    {
+      "id": "item:01M3KHPC4TD17STY28K7TRRYFV",
+      "turn": 1,
+      "kind": {
+        "type": "user",
+        "text": "Cap the backoff",
+        "attachments": []
+      }
+    },
+    {
+      "id": "item:01M3KHPC4XWTQSTZMX6GZPGRJT",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "Writing the module.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "Writing the module."
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "call:01M3KHPC4XMJ24J3B5PFJVZYHX",
+      "turn": 1,
+      "kind": {
+        "type": "tool",
+        "tool": "write",
+        "summary": "Wrote `src/lib.rs` · 6 lines",
+        "icon": "edit",
+        "risk": "write",
+        "state": "done",
+        "tail": "wrote /project/src/lib.rs (152 bytes)",
+        "archive": {
+          "id": "01M3KHPC54WHS7BW9RSDNB1NXF",
+          "bytes": 104
+        },
+        "diff": null,
+        "duration_ms": 1
+      }
+    },
+    {
+      "id": "checkpoint:10",
+      "turn": 1,
+      "kind": {
+        "type": "checkpoint",
+        "files": [
+          "/project/src/lib.rs"
+        ]
+      }
+    },
+    {
+      "id": "item:01M3KHPC55AVEJ7NYQK5KJ6TN0",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "Capping the wait.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "Capping the wait."
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "call:01M3KHPC55M01BACD5GWWEQRCG",
+      "turn": 1,
+      "kind": {
+        "type": "tool",
+        "tool": "edit",
+        "summary": "Edited `src/lib.rs` +2 −1",
+        "icon": "edit",
+        "risk": "write",
+        "state": "done",
+        "tail": "edited /project/src/lib.rs",
+        "archive": {
+          "id": "01M3KHPC5E6H1TJ2XAJZJKYY3E",
+          "bytes": 93
+        },
+        "diff": {
+          "path": "/project/src/lib.rs",
+          "hunks": [
+            {
+              "header": "@@ -2,5 +2,6 @@",
+              "lines": [
+                {
+                  "kind": "context",
+                  "old": 2,
+                  "new": 2,
+                  "spans": [
+                    {
+                      "text": "",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "context",
+                  "old": 3,
+                  "new": 3,
+                  "spans": [
+                    {
+                      "text": "///",
+                      "rgb": [
+                        101,
+                        115,
+                        126
+                      ]
+                    },
+                    {
+                      "text": " The wait before a retry.",
+                      "rgb": [
+                        101,
+                        115,
+                        126
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "context",
+                  "old": 4,
+                  "new": 4,
+                  "spans": [
+                    {
+                      "text": "pub",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "fn",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "backoff",
+                      "rgb": [
+                        143,
+                        161,
+                        179
+                      ]
+                    },
+                    {
+                      "text": "(",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "attempt",
+                      "rgb": [
+                        191,
+                        97,
+                        106
+                      ]
+                    },
+                    {
+                      "text": ":",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "u32",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": ")",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "->",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " Duration",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "{",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "del",
+                  "old": 5,
+                  "new": null,
+                  "spans": [
+                    {
+                      "text": "    ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "Duration",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "::",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "from_millis",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "(",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "100",
+                      "rgb": [
+                        208,
+                        135,
+                        112
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "*",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "u64",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": "::",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "from",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "(",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "attempt",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": ")",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": ")",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "add",
+                  "old": null,
+                  "new": 5,
+                  "spans": [
+                    {
+                      "text": "    ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "let",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": " ms ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "=",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "100",
+                      "rgb": [
+                        208,
+                        135,
+                        112
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "*",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": " ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "u64",
+                      "rgb": [
+                        180,
+                        142,
+                        173
+                      ]
+                    },
+                    {
+                      "text": "::",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "from",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "(",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "attempt",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": ")",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": ";",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "add",
+                  "old": null,
+                  "new": 6,
+                  "spans": [
+                    {
+                      "text": "    ",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "Duration",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "::",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "from_millis",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "(",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "ms",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": ".",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "min",
+                      "rgb": [
+                        150,
+                        181,
+                        180
+                      ]
+                    },
+                    {
+                      "text": "(",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "5_000",
+                      "rgb": [
+                        208,
+                        135,
+                        112
+                      ]
+                    },
+                    {
+                      "text": ")",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": ")",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "context",
+                  "old": 6,
+                  "new": 7,
+                  "spans": [
+                    {
+                      "text": "}",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    },
+                    {
+                      "text": "",
+                      "rgb": [
+                        192,
+                        197,
+                        206
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "duration_ms": 2
+      }
+    },
+    {
+      "id": "checkpoint:17",
+      "turn": 1,
+      "kind": {
+        "type": "checkpoint",
+        "files": [
+          "/project/src/lib.rs"
+        ]
+      }
+    },
+    {
+      "id": "item:01M3KHPC5GW41N9YEFZQNMA39F",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "The backoff is capped at five seconds.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "The backoff is capped at five seconds."
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

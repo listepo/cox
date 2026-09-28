@@ -7,6 +7,7 @@ use std::fmt::Display;
 
 use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::types::{Event, ItemKind, ToolCall};
+use cox_render::diffmodel;
 use cox_render::glyph::UNICODE;
 use cox_render::markdown;
 
@@ -170,6 +171,10 @@ impl Timeline {
                     .position(|c| c.id == *call_id)
                     .map(|i| self.calls.swap_remove(i));
                 let id = key("call", call_id);
+                let model = result
+                    .diff
+                    .as_ref()
+                    .map(|d| diffmodel::model(d, &self.theme));
                 out.extend(self.update(&id, |k| {
                     if let BlockKind::Tool {
                         summary: s,
@@ -188,7 +193,7 @@ impl Timeline {
                         };
                         *t = tail(&result.visible).to_owned();
                         *archive = result.archive.clone();
-                        *diff = result.diff.clone();
+                        *diff = model;
                         *duration_ms = result.duration_ms;
                         if let Some(call) = &call {
                             *s = summary::summary(call, Some(result));

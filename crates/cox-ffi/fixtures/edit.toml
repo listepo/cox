@@ -1,0 +1,15 @@
+# Fixture scenario (T37.23.5): one prompt that writes a Rust file, then edits
+# one line of it — two `Tool` blocks whose `diff` is a structured
+# `DiffModel` (hunks of numbered, highlighted lines) — then a short reply.
+# Recorded to desktop/macos/Fixtures/edit.json with COX_PERMISSIONS_MODE=auto,
+# so the writes run without an approval.
+[[turn]]
+text = "Writing the module."
+tool_calls = [{ name = "write", input = { path = "src/lib.rs", content = "use std::time::Duration;\n\n/// The wait before a retry.\npub fn backoff(attempt: u32) -> Duration {\n    Duration::from_millis(100 * u64::from(attempt))\n}\n" } }]
+
+[[turn]]
+text = "Capping the wait."
+tool_calls = [{ name = "edit", input = { path = "src/lib.rs", old = "    Duration::from_millis(100 * u64::from(attempt))", new = "    let ms = 100 * u64::from(attempt);\n    Duration::from_millis(ms.min(5_000))" } }]
+
+[[turn]]
+text = "The backoff is capped at five seconds."

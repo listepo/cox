@@ -26,7 +26,7 @@ public enum BlockKind: Equatable, Sendable {
   case thinking(text: String)
   case tool(
     tool: String, summary: String, icon: Icon, risk: Risk, state: ToolState, tail: String,
-    archive: ArchiveRef?, diff: Diff?, durationMs: UInt64)
+    archive: ArchiveRef?, diff: DiffModel?, durationMs: UInt64)
   case toolGroup(summary: String, children: [BlockID], state: ToolState)
   case approval(
     call: String, tool: String, summary: String, why: Why, source: Source?, decision: Decision?,
@@ -105,12 +105,38 @@ public struct ArchiveRef: Equatable, Sendable, Decodable {
   public init(id: String, bytes: UInt64) { (self.id, self.bytes) = (id, bytes) }
 }
 
-public struct Diff: Equatable, Sendable, Decodable {
+/// An edit's change as the core parsed and highlighted it (T37.23.5), so no
+/// view reads unified text.
+public struct DiffModel: Equatable, Sendable, Decodable {
   public var path: String
-  public var unified: String
+  public var hunks: [DiffHunk]
 
-  public init(path: String, unified: String) { (self.path, self.unified) = (path, unified) }
+  public init(path: String, hunks: [DiffHunk]) { (self.path, self.hunks) = (path, hunks) }
 }
+
+public struct DiffHunk: Equatable, Sendable, Decodable {
+  /// `@@ -41,12 +41,26 @@ impl Backoff`; empty for lines before any header.
+  public var header: String
+  public var lines: [DiffLine]
+
+  public init(header: String, lines: [DiffLine]) { (self.header, self.lines) = (header, lines) }
+}
+
+public struct DiffLine: Equatable, Sendable, Decodable {
+  public var kind: DiffLineKind
+  /// The number before the edit; `nil` for an added line.
+  public var old: UInt32?
+  /// The number after the edit; `nil` for a removed line.
+  public var new: UInt32?
+  /// The body without its marker.
+  public var spans: [Span]
+
+  public init(kind: DiffLineKind, old: UInt32?, new: UInt32?, spans: [Span]) {
+    (self.kind, self.old, self.new, self.spans) = (kind, old, new, spans)
+  }
+}
+
+public enum DiffLineKind: String, Equatable, Sendable, Decodable { case context, add, del }
 
 public struct Source: Equatable, Sendable, Decodable {
   public var session: String

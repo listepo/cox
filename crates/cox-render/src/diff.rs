@@ -3,8 +3,9 @@
 //! alone. A replaced line pair shows which words changed; a viewport of at
 //! least `SIDE_MIN_WIDTH` columns splits old and new into two panes. The
 //! edit card, the approval modal and `Ctrl+G` all print through `lines`.
-//! Separate from `cells` because hunk parsing, pairing and pane fitting are
-//! their own small machine and more than one surface prints a diff.
+//! Separate from `cells` because pairing and pane fitting are their own
+//! small machine and more than one surface prints a diff; the hunk parse is
+//! `diffmodel`'s, which the desktop app shares.
 
 use cox_protocol::types::Diff;
 use ratatui::style::{Modifier, Style};
@@ -13,6 +14,7 @@ use similar::{ChangeTag, TextDiff};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::Look;
+use crate::diffmodel::{Row, parse};
 pub use crate::diffstat::counts;
 use crate::markdown;
 
@@ -70,76 +72,11 @@ impl Layout {
     }
 }
 
-/// A hunk line that carries file content: its marker and the source under it.
-/// `+++`/`---` are file markers, not additions, so they are not content.
-fn content(l: &str) -> Option<(&str, &str)> {
-    if l.starts_with("+++") || l.starts_with("---") {
-        return None;
-    }
-    match l.chars().next() {
-        Some('+') | Some('-') | Some(' ') => Some(l.split_at(1)),
-        _ => None,
-    }
-}
-
-/// One line of the unified text: a content line knows its body's index and
-/// its line numbers; anything else (`@@`, file markers, `index`, `\ No
-/// newline`) is printed whole.
-enum Row<'a> {
-    Meta(&'a str),
-    Body {
-        raw: &'a str,
-        marker: &'a str,
-        body: usize,
-        old: Option<usize>,
-        new: Option<usize>,
-    },
-}
-
 /// A side-by-side row: a whole-width meta line, or the rows (indices into
 /// the `Row` list) shown in the old and the new pane.
 enum Aligned {
     Meta(usize),
     Pair(Option<usize>, Option<usize>),
-}
-
-/// `@@ -a,b +c,d @@` → `(a, c)`, the first old and new line numbers.
-fn hunk_start(l: &str) -> Option<(usize, usize)> {
-    let mut parts = l.split_whitespace().skip(1);
-    let num = |p: Option<&str>, sign: char| -> Option<usize> {
-        p?.strip_prefix(sign)?.split(',').next()?.parse().ok()
-    };
-    Some((num(parts.next(), '-')?, num(parts.next(), '+')?))
-}
-
-fn parse(unified: &str) -> (Vec<Row<'_>>, Vec<&str>) {
-    let (mut rows, mut bodies) = (Vec::new(), Vec::new());
-    let (mut old, mut new) = (1, 1);
-    for l in unified.lines() {
-        if let Some((o, n)) = l.starts_with("@@").then(|| hunk_start(l)).flatten() {
-            (old, new) = (o, n);
-        }
-        let Some((marker, text)) = content(l) else {
-            rows.push(Row::Meta(l));
-            continue;
-        };
-        let (o, n) = match marker {
-            "-" => (Some(old), None),
-            "+" => (None, Some(new)),
-            _ => (Some(old), Some(new)),
-        };
-        old += usize::from(o.is_some());
-        new += usize::from(n.is_some());
-        rows.push(Row::Body {
-            raw: l,
-            marker,
-            body: bodies.len(),
-            old: o,
-            new: n,
-        });
-        bodies.push(text);
-    }
-    (rows, bodies)
 }
 
 /// Rows in pane order: a run of `-` lines and the `+` run right after it

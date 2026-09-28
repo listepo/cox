@@ -17,7 +17,7 @@ import SwiftUI
 final class Host {
   let store: SessionStore
   let window: NSWindow
-  private let hosting: NSHostingView<AnyView>
+  let hosting: NSHostingView<AnyView>
   private let material: GlassMaterial
 
   init(

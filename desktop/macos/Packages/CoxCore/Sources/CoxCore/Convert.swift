@@ -24,7 +24,7 @@ extension CoxClient.BlockKind {
       self = .tool(
         tool: tool, summary: summary, icon: .init(icon), risk: .init(risk), state: .init(state),
         tail: tail, archive: archive.map { .init(id: $0.id, bytes: $0.bytes) },
-        diff: diff.map { .init(path: $0.path, unified: $0.unified) }, durationMs: durationMs)
+        diff: diff.map { CoxClient.DiffModel($0) }, durationMs: durationMs)
     case .toolGroup(let summary, let children, let state):
       self = .toolGroup(summary: summary, children: children, state: .init(state))
     case .approval(
@@ -83,6 +83,29 @@ extension CoxClient.DocBlock {
     case .table(let rows): self = .table(rows: rows)
     case .rule: self = .rule
     }
+  }
+}
+
+extension CoxClient.DiffModel {
+  init(_ value: CoxFFIBindings.DiffModel) {
+    self.init(
+      path: value.path,
+      hunks: value.hunks.map { hunk in
+        .init(header: hunk.header, lines: hunk.lines.map { CoxClient.DiffLine($0) })
+      })
+  }
+}
+
+extension CoxClient.DiffLine {
+  init(_ value: CoxFFIBindings.DiffLine) {
+    let kind: CoxClient.DiffLineKind =
+      switch value.kind {
+      case .context: .context
+      case .add: .add
+      case .del: .del
+      }
+    self.init(
+      kind: kind, old: value.old, new: value.new, spans: value.spans.map { CoxClient.Span($0) })
   }
 }
 
