@@ -294,7 +294,7 @@ component.
 | `ShellPane(.window/.sidebar/.column/.inspector)` | glassPane, hairline, elevation: e5 window, e2 side panes, flat column | `.window`, `.sidebar`, `.col`, `.insp` |
 | `Sidebar` | ShellPane, SessionFilter, SectionHeader + CountBadge, project disclosure, SessionRow, footer (New session, provider StatusDot) | `.sidebar` |
 | `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton, icon CapsuleStyle buttons (Appearance, inspector, sidebar while hidden) | `.toolbar` |
-| `ToolCard` | ToolHeader + one body: DiffHunkView, TerminalTail, CodeBlockView | `.tool`, `.tool.exp` |
+| `ToolCard(content, isExpanded:)` | ToolHeader + one detail: the edit's DiffHunkViews or a TerminalTail. A running call shows its tail under a flat header; a finished one folds the detail behind the chevron (open state is the card's own); opened, a readable face at e2 with a hairline rim, `radius.l`. Public with the value types it takes (T37.23) | `.tool`, `.tool.exp` |
 | `ApprovalCard` | header, command well, reasons, CoxButtonStyle row | `.appr` |
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |
 | `TurnView` | UserBubble, ThinkingDisclosure, ToolCard, AssistantMessage, TurnMeta | `.turn` |

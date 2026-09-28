@@ -5,8 +5,8 @@
 import SwiftUI
 
 /// A `Size.iconTile` tile at e1; the symbol is decorative, the row beside it names the tool.
-struct IconTile: View {
-  enum Kind: CaseIterable, Sendable {
+public struct IconTile: View {
+  public enum Kind: CaseIterable, Sendable {
     case neutral, edit, shell, search, write
   }
 
@@ -19,7 +19,7 @@ struct IconTile: View {
     self.symbol = symbol
   }
 
-  var body: some View {
+  public var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.s, style: .continuous)
     Image(systemName: symbol)
       // The mockup's 13 pt glyph is `font.body`'s size, so it scales with the text size.

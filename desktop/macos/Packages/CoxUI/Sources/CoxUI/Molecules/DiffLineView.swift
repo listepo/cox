@@ -8,16 +8,22 @@ import SwiftUI
 /// The gutter number right-aligned in `text.secondary` (`text.primary` on a tinted gutter; the
 /// mockup's tertiary would miss DS§8's 4.5:1 on a light code surface),
 /// then `+`, `-` or a space and the code in `font.mono.code`, cut with an ellipsis.
-struct DiffLineView: View {
-  enum Kind: CaseIterable, Sendable {
+public struct DiffLineView: View {
+  public enum Kind: CaseIterable, Sendable {
     case context, added, removed
   }
 
-  struct Line: Equatable, Sendable {
-    var kind: Kind
+  public struct Line: Equatable, Sendable {
+    public var kind: Kind
     /// The line number the core picked (new for added and context, old for removed), `42`.
-    var number: String
-    var runs: [CodeRun]
+    public var number: String
+    public var runs: [CodeRun]
+
+    public init(kind: Kind, number: String, runs: [CodeRun]) {
+      self.kind = kind
+      self.number = number
+      self.runs = runs
+    }
   }
 
   let line: Line
@@ -29,7 +35,7 @@ struct DiffLineView: View {
     self.widestNumber = widestNumber ?? line.number
   }
 
-  var body: some View {
+  public var body: some View {
     HStack(spacing: 0) {
       ZStack(alignment: .trailing) {
         Text(widestNumber).hidden()

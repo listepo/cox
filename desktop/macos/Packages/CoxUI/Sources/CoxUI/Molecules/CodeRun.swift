@@ -6,15 +6,15 @@
 import SwiftUI
 
 /// Text and the DS§3.1 `syntax` role that colours it; `plain` takes the surrounding colour.
-struct CodeRun: Equatable, Sendable {
-  enum Role: CaseIterable, Sendable {
+public struct CodeRun: Equatable, Sendable {
+  public enum Role: CaseIterable, Sendable {
     case plain, keyword, string, number, function, comment, type
   }
 
-  var text: String
-  var role: Role
+  public var text: String
+  public var role: Role
 
-  init(_ text: String, _ role: Role = .plain) {
+  public init(_ text: String, _ role: Role = .plain) {
     self.text = text
     self.role = role
   }

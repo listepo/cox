@@ -8,8 +8,8 @@ import SwiftUI
 /// The lines in `font.mono.terminal` and `text.terminal`, each cut with an ellipsis, in an
 /// `insetWell`; after exit a check and the status in `text.terminalOk`, or a cross in
 /// `status.danger` and the status in `text.terminal`.
-struct TerminalTail: View {
-  enum Exit: Equatable, Sendable {
+public struct TerminalTail: View {
+  public enum Exit: Equatable, Sendable {
     /// Still running: no exit line yet.
     case running
     /// Exited cleanly, with the core's status, `exit 0 · 9.8 s`.
@@ -25,7 +25,7 @@ struct TerminalTail: View {
     self.exit = exit
   }
 
-  var body: some View {
+  public var body: some View {
     VStack(alignment: .leading, spacing: Space.xxs) {
       ForEach(lines.indices, id: \.self) { index in
         Text(lines[index]).truncationMode(.tail)
