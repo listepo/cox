@@ -33,8 +33,6 @@
 - T37.27.8. One app-local key monitor for the composer and the decision bar
 - T37.28. Review pane and rewind timeline
 - T37.29.3. Inspector Context & Cost tab
-- T37.29.7. Deleted files and created-file counts in the Changes tab
-- T37.29.8. Task kind in the Tasks tab
 - T37.30.5. Coloured page tiles in Settings
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite

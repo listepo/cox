@@ -39,8 +39,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27.8 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
 | T37.28 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3 | todo | P2 | 4 | 0% | |
-| T37.29.7 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.29.8 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
 | T37.30.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
@@ -2824,18 +2822,6 @@ Check: fixture rewind restores the expected files in a scratch worktree.
 Depends: T37.25.1 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
-
-#### T37.29.7 Deleted files and created-file counts in the Changes tab
-
-T37.29.1 left two gaps. CoxUI's `ChangedFileRow.Change` has no `deleted` case, so a `FileChange::Deleted` from `changes()` has no glyph. A `write` that creates a file carries no diff, so the row reads `+0 −0` instead of the new file's line count.
-
-Done means: a `deleted` case with its glyph and snapshot in CoxUI, the mapping in `ChangesTabState`, and a created file counted as all-added lines in `crates/cox-app/src/changes.rs`. Check: the `changes.rs` unit test covers a created file's count; a CoxUI snapshot shows a deleted row.
-
-#### T37.29.8 Task kind in the Tasks tab
-
-Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…/TaskRows.swift`
-Goal: T37.29.6 gave `TaskRow` a `kind` (subagent or background shell); `TasksTab.Item` shows it as a glyph and a label ("Open transcript" for a subagent, "Open output" for a shell).
-Check: TasksTab snapshots with one row of each kind.
 
 #### T37.30.5 Coloured page tiles in Settings
 

@@ -5032,3 +5032,30 @@ Deviations: the Timeline option, not a core `ThinkingDone` for these items (that
 Check:
 - `cargo nextest run -p cox-core -p cox-app`: 349 passed, 1 skipped, including `signature_only_thinking_item_leaves_no_open_thinking_block`; `-p cox-core --test chat_wire`: 1 passed; clippy and fmt clean.
 Not done: how the TUI and ACP show these items was outside the card.
+
+#### T37.29.7 Deleted files and created-file counts in the Changes tab
+
+T37.29.1 left two gaps. CoxUI's `ChangedFileRow.Change` has no `deleted` case, so a `FileChange::Deleted` from `changes()` has no glyph. A `write` that creates a file carries no diff, so the row reads `+0 −0` instead of the new file's line count.
+
+Done means: a `deleted` case with its glyph and snapshot in CoxUI, the mapping in `ChangesTabState`, and a created file counted as all-added lines in `crates/cox-app/src/changes.rs`. Check: the `changes.rs` unit test covers a created file's count; a CoxUI snapshot shows a deleted row.
+Status: done 2026-09-28
+Result:
+- `crates/cox-app/src/changes.rs`: `written(events)` maps a `write` call to its `content` input's line count from the session's rollout (read from the store, not from disk); `build` counts a `Created` row without a diff from it. `LiveSession::changes()` reads the rollout as `open_task` does. A `write` over an existing file and a shell still add nothing.
+- CoxUI `ChangedFileRow.Change.deleted` with SF Symbol `trash`, a `#Preview("deleted")`, `PreviewState.deletedFile` and 4 `changedFileRow-_.deleted-*` snapshots; DESIGN.md DS§3.7 row and the ChangedFileRow glyph list.
+Deviations: `crates/cox-app/tests/app.rs`'s `changes_lists_…` now expects `new.rs` at +1; CoxModel needed a test change only (`ChangesTabState` already carried `FileChange.deleted`).
+Check:
+- `cargo nextest run -p cox-app`: 69/69, including `a_file_a_write_created_counts_its_content_as_added_lines`; clippy and fmt clean. CoxUI InspectorRow snapshots recorded and passed; CoxModel 44/44; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: cox-app 70/70.
+Not done: nothing.
+
+#### T37.29.8 Task kind in the Tasks tab
+
+Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…/TaskRows.swift`
+Goal: T37.29.6 gave `TaskRow` a `kind` (subagent or background shell); `TasksTab.Item` shows it as a glyph and a label ("Open transcript" for a subagent, "Open output" for a shell).
+Check: TasksTab snapshots with one row of each kind.
+Status: done 2026-09-28
+Result:
+- CoxUI `TasksTab.Kind` (`agent`, `shell`) in `Organisms/TasksTab.swift`: a subagent row shows `person.2` and "Open transcript", a shell row `terminal` and "Open output" with `doc.text`; the intent stays `.open(task:)`. The fixture's bash row is a shell, so the 4 `tasksTab` snapshots show one row of each kind; DESIGN.md's TasksTab row updated.
+Deviations: CoxModel `TaskRows.swift` unchanged — `TaskRow.kind` already maps field for field.
+Check: CoxUI `ChangesTab|InspectorRow|TasksTab|Inspector` 18/18 including `aShellRowOpensItsOutputUnderItsOwnGlyph`; CoxModel 44/44; swiftlint and swift-format clean.
+Not done: app wiring (T37.22.3).
