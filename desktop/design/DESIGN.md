@@ -278,6 +278,7 @@ component.
 | `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
 | `MaterialPicker` | three swatches | `.mat` |
 | `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
+| `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel | `.group .gr` |
 | `ChangedFileRow`, `CheckpointRow` | icon, path, DiffStat / time | inspector rows |
 
 ### 6.4 Organisms

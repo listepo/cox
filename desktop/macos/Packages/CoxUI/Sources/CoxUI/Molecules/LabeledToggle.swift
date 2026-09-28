@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// The title over an optional `text.secondary` detail, then a `CoxToggleStyle` switch.
+/// A `SettingLabel`, then a `CoxToggleStyle` switch.
 struct LabeledToggle: View {
   let title: String
   /// What the setting does, `shows a red strip while on`, or `nil`.
@@ -20,15 +20,7 @@ struct LabeledToggle: View {
 
   var body: some View {
     Toggle(isOn: $isOn) {
-      VStack(alignment: .leading, spacing: 0) {
-        Text(title)
-        if let detail {
-          Text(detail)
-            .textStyle(.footnote)
-            .foregroundStyle(Color(.textSecondary))
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      SettingLabel(title, detail: detail).frame(maxWidth: .infinity, alignment: .leading)
     }
     .toggleStyle(CoxToggleStyle())
   }
