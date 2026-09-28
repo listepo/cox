@@ -5591,3 +5591,17 @@ Status: done 2026-09-28
 **Deviations:** none. The selected session row (`text.secondary` on `accent.soft`) is 3.99:1 in light Solid, unchanged by this card; it waits for a colour decision.
 
 **Check:** `just desktop-tokens` twice, no diff the second time; `node desktop/design/high-contrast.mjs --check` 226 pairs pass. CoxUI 60 snapshots re-recorded on purpose, second run 177; after the merge with T37.22.6, CoxUI 182 passed. swiftlint and swift-format strict clean; the app builds.
+
+#### T37.22.8 Session titles: generated after the first turn, behind a setting
+
+Depends: — · Size: ~200 · Files: `crates/cox-core`, `crates/cox-store` (a migration and a column), `crates/cox-protocol` config
+Goal: A113. After a session's first turn, when `[session] auto_title` is on (default on), cox-core runs one low-cost `Job::Title` request (routing D5) on the first prompt and emits `Event::TitleSet`; the store keeps the title in a `sessions` column (Diesel migration, typed DSL); the call is a `usage` row in the ledger like any other. A title set by the user is never overwritten. Scripted scenarios and tests run with it off unless a test is about it. Config key with default.toml, docs and schema regenerated.
+Check: a cox-core test that a scripted session with the setting on emits one `TitleSet` after turn 1 and none after turn 2, and with it off none; a cox-store test that the title round-trips; a real-binary run with `COX_HOME=/tmp/…` and `COX_PROVIDER=scripted`.
+Status: done 2026-09-28
+Result: `[session] auto_title` (default on in `default.toml`, A113). After the first turn of a top-level session, `cox-core` `title.rs` sends one cheap `Job::Title` side request on the first prompt (≤ 2000 chars) and emits `Event::TitleSet`, sanitized and capped at 80 chars; a failure is logged and skipped, history and the cache-stable prefix are untouched, and the call writes a `usage` row. Shared `Session::side_call` (`side.rs`) now also serves `/init`'s README summary (fixing a byte `truncate` on a multi-byte char and a stall on a cut stream). Store migration 5 adds `sessions.title_source` (`auto`|`user`); `rollout_append` stores `TitleSet`; `Store::session_title_set` never lets an auto title replace a user one.
+
+Deviations: Rust `SessionConfig::default()` is off (schema shows `default: false`) so `Config::default()` tests make no model call; scripted `[[turn]]` takes `job = "title"` (cox-provider-testkit, cox-provider); > 3 files (~215 +/66 −); stream-json does not print `TitleSet`, which arrives after `TurnDone`.
+
+Check: cox-core `title::tests`, cox-store `session_title_round_trips_and_keeps_a_user_title`, `just test --changed-since p37-desktop` 1553 passed; clippy on the six crates and fmt clean; real binary under a scratch `COX_HOME` stored title "Fix the ledger sum" (source `auto`) with usage rows `main|code` and `title|cheap`. On the merged tree: 13 title/schema/migration/round-trip tests passed.
+
+Not done: TUI/app display and rename (T37.22.9); `subagent::summarize` and `memory_extract` not moved onto `side_call`.

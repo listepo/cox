@@ -35,7 +35,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.1 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.44.2 | todo | P2 | 4 | 0% | |
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.22.8 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.22.9 | todo | P2 | 3 | 0% | |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
@@ -2791,12 +2790,6 @@ Check: per screen, the app screenshot next to the Figma frame matches by eye; Co
 Depends: — · Size: ~120 · Files: `scripts/vendor/…`, `crates/cox-models`, the vendored model data
 Goal: A111. The `scripts/vendor` script that builds the model catalog also takes each model's `name` from models.dev; `ModelRow` gains `display_name` (with its schema and drift test regenerated); the TUI and the app read it; the app's model pill drops the vendor prefix (`Sonnet 5 · high`). A model without a name falls back to its id.
 Check: the vendor script's tests; a cox-models test that `claude-sonnet-5` reads `Claude Sonnet 5`; the pill shows `Sonnet 5 · high` on the approve-write fixture.
-
-#### T37.22.8 Session titles: generated after the first turn, behind a setting
-
-Depends: — · Size: ~200 · Files: `crates/cox-core`, `crates/cox-store` (a migration and a column), `crates/cox-protocol` config
-Goal: A113. After a session's first turn, when `[session] auto_title` is on (default on), cox-core runs one low-cost `Job::Title` request (routing D5) on the first prompt and emits `Event::TitleSet`; the store keeps the title in a `sessions` column (Diesel migration, typed DSL); the call is a `usage` row in the ledger like any other. A title set by the user is never overwritten. Scripted scenarios and tests run with it off unless a test is about it. Config key with default.toml, docs and schema regenerated.
-Check: a cox-core test that a scripted session with the setting on emits one `TitleSet` after turn 1 and none after turn 2, and with it off none; a cox-store test that the title round-trips; a real-binary run with `COX_HOME=/tmp/…` and `COX_PROVIDER=scripted`.
 
 #### T37.22.9 Session titles in the TUI and the app, with rename
 
