@@ -35,7 +35,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.44.10 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.44.11 | todo | P2 | 3 | 0% | |
-| T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2841,13 +2840,6 @@ Check: `just desktop-tokens` and `npm test` pass; the listed views use the new t
 Depends: T37.44.9, T37.44.10 · Size: ~120 · Files: `desktop/macos/App`, CoxUI where a difference shows only in the app
 Goal: A114, A119. The built app is screenshotted on each screen it reaches with the fixtures (main, approval, composer, inspector, review, palette, settings, onboarding) and compared with the mockup renders by `npm run diff`, including 23-notification-and-dock; differences that CoxUI snapshots cannot show (window chrome, toolbar, real materials, dock badge, notification) are fixed. M2/M3 screens (24–27) are out of scope.
 Check: per screen, the app screenshot and its diff against the mockup; no unexplained layout or type region left; swift-format and swiftlint strict clean.
-
-#### T37.45.3 Settings: permission rules editor and session grants
-
-Depends: — · Size: ~200 · Files: CoxUI Permissions page, CoxModel, cox-app/cox-ffi if the data is not exposed yet
-Goal: A120, mockup 19. The Permissions page lists the allow/ask/deny rules with the layer each comes from, lets the user add, edit and remove rules in their user config (a project config never gains a rule from the app, per the project-config guard), validates a rule with `cox_permission`'s grammar before saving, and lists the grants given for the open session ("allow for session") with a revoke. Writes go through `cox-config` `set`; the permission engine stays the one place a call is decided.
-Check: a cox-app or CoxModel test that an invalid rule is refused with the grammar's message and a valid one lands in the user layer only; a test that a revoked session grant asks again; CoxUI snapshots of the page.
-Plan: check what cox-app/cox-ffi expose for rules with their layers and session grants, add the missing calls (validated by `cox_permission`, written by `cox-config` set to the user layer, revoke through the session), then the Permissions page views, tests at the cox-app and CoxModel layers, snapshots.
 
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 
