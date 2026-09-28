@@ -1,20 +1,24 @@
 // `Composer` (DS§6.4 row `Composer`, the mockup's `.composer`; DT§5.3; mockup screens 1, 5–7):
 // where the next message is written — the text, the files it mentions and attaches, shell mode with its
 // "share output" switch, the prompts queued behind the running turn, the completion rows for
-// `@` and `/`, and Send. Separate so the transcript column shows it from one value and reports
-// every key and click as an intent; the store behind it decides what each one sends.
+// the `@` or `/` token at the caret, why the last send failed, and Send. Separate so the
+// transcript column shows it from one value and reports every key and click as an intent; the
+// store behind it decides what each one sends.
 
 import AppKit
 import SwiftUI
 
 /// The editor over a row of chips and Send, on readable window glass at e3 — the one thing that
-/// floats highest in a pane (DS§3.4). The completion rows float above it. ⏎ sends (or picks the
-/// selected row while rows show), ⇧⏎ breaks the line, ⌘⏎ sends now, ↑ ↓ ⇥ and ⎋ drive the
-/// rows, ↑ in an empty composer walks the earlier prompts, ⌫ in an empty shell line leaves
-/// shell mode, and ⌘V of files or an image attaches them. It holds no draft of its own.
+/// floats highest in a pane (DS§3.4). The completion rows float above it; why the last send
+/// failed stands above it as a `NoticeRow`. ⏎ sends (or picks the selected row while rows
+/// show), ⇧⏎ breaks the line, ⌘⏎ sends now, ↑ ↓ ⇥ and ⎋ drive the rows, ↑ in an empty composer
+/// walks the earlier prompts, ⌫ in an empty shell line leaves shell mode, and ⌘V of files or an
+/// image attaches them. The draft is the caller's: the editor's copy reports every change.
 public struct Composer: View {
   public struct State: Equatable, Sendable {
     public var text = ""
+    /// The selection in `text`, in UTF-16 offsets; empty is the caret, `nil` the caret at the end.
+    public var selectedRange: Range<Int>?
     /// A leading `!` turned the line into a shell command (DT§5.3).
     public var isShell = false
     /// The shell command's output goes to the agent too (`UserShell{share}`).
@@ -37,6 +41,8 @@ public struct Composer: View {
     public var meter: TokenMeter.State?
     /// The token popover over the meter while it is open.
     public var tokens: TokenPopover.State?
+    /// Why the last send failed; the draft is still there to send again.
+    public var failure: String?
 
     public init() {}
   }
@@ -68,6 +74,8 @@ public struct Composer: View {
   public enum Intent: Equatable, Sendable {
     /// The text as typed.
     case edit(String)
+    /// The selection moved, in UTF-16 offsets into the text; the token at the caret is completed.
+    case select(Range<Int>)
     /// ⏎ or Send: sends, or queues while a turn runs.
     case submit
     /// ⌘⏎: interrupts the running turn and sends.
@@ -103,8 +111,18 @@ public struct Composer: View {
   }
 
   public var body: some View {
+    VStack(alignment: .leading, spacing: Space.s) {
+      if let failure = state.failure { ComposerFailure(text: failure) }
+      pane
+    }
+    .frame(maxWidth: Size.readingWidth)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Composer")
+  }
+
+  private var pane: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.pane, style: .continuous)
-    VStack(alignment: .leading, spacing: 0) {
+    return VStack(alignment: .leading, spacing: 0) {
       ComposerEditor(state: state, send: send)
         .padding(.horizontal, Space.l)
         .padding(.top, Space.l)
@@ -145,8 +163,21 @@ public struct Composer: View {
       send(.drop(urls))
       return !urls.isEmpty
     }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Composer")
+  }
+}
+
+/// Why the last send failed, on the composer's readable glass so it reads over any backdrop.
+private struct ComposerFailure: View {
+  let text: String
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Radius.xxl, style: .continuous)
+    NoticeRow(text, kind: .error)
+      .padding(.horizontal, Space.l)
+      .padding(.vertical, Space.s)
+      .glassPane(shape, surface: Color(.surfaceWindow), role: .readable)
+      .hairline(in: shape)
+      .elevation(.e3, cornerRadius: Radius.xxl)
   }
 }
 
@@ -157,6 +188,14 @@ private struct ComposerEditor: View {
   let send: (Composer.Intent) -> Void
   @Environment(\.composerPasteboard) private var pasteboard
   @FocusState private var isFocused: Bool
+  /// The editor's own copy of the text and selection, kept in step with `state`.
+  @State private var draft: ComposerDraft
+
+  init(state: Composer.State, send: @escaping (Composer.Intent) -> Void) {
+    self.state = state
+    self.send = send
+    _draft = State(initialValue: ComposerDraft(state))
+  }
 
   /// About ten lines of `font.transcript`; a longer message scrolls inside the editor.
   private static let maxHeight: CGFloat = 220
@@ -179,7 +218,7 @@ private struct ComposerEditor: View {
           .allowsHitTesting(false)
           .accessibilityHidden(true)
       }
-      TextEditor(text: Binding(get: { state.text }, set: { send(.edit($0)) }))
+      TextEditor(text: $draft.text, selection: $draft.selection)
         .textStyle(font)
         .foregroundStyle(Color(.textPrimary))
         .scrollContentBackground(.hidden)
@@ -187,6 +226,11 @@ private struct ComposerEditor: View {
         .onKeyPress(action: key)
         .focused($isFocused)
         .background(ComposerPaste(isActive: isFocused, pasteboard: pasteboard, send: send))
+        .onChange(of: draft) { _, new in new.intents(after: state).forEach(send) }
+        // A typed `!` becomes shell mode with no text, so the text alone may not change.
+        .onChange(of: state.text) { draft = ComposerDraft(state) }
+        .onChange(of: state.isShell) { draft = ComposerDraft(state) }
+        .onChange(of: state.selectedRange) { draft = ComposerDraft(state) }
     }
     .frame(maxHeight: Self.maxHeight)
   }
@@ -347,3 +391,4 @@ private struct ComposerChipRow: View {
 }
 #Preview("shell, queued") { PreviewMatrix { ComposerSample(state: PreviewState.composerShell) } }
 #Preview("tokens") { PreviewMatrix { ComposerSample(state: PreviewState.composerTokens) } }
+#Preview("failure") { PreviewMatrix { ComposerSample(state: PreviewState.composerFailure) } }

@@ -59,6 +59,7 @@ public struct SessionComposer: View {
   private var state: Composer.State {
     var state = Composer.State()
     state.text = store.text
+    state.selectedRange = store.selectedRange
     state.isShell = store.isShell
     state.shareOutput = store.shareOutput
     state.mentions = store.mentions.map {
@@ -82,6 +83,7 @@ public struct SessionComposer: View {
     state.isRunning = store.isRunning
     state.queued = store.queued
     state.isRecalling = store.isRecalling
+    state.failure = store.failure
     if let usage = store.session.usage {
       state.meter = TokenMeter.State(usage, isRunning: store.isRunning)
       state.tokens = isTokensOpen ? TokenPopover.State(usage, isRunning: store.isRunning) : nil
@@ -97,6 +99,7 @@ public struct SessionComposer: View {
     case .pasteImage(let png): store.attach(png, name: "Pasted image.png", type: .png)
     case .removeAttachment(let id): if let index = Int(id) { store.removeAttachment(at: index) }
     case .recall(let step): store.recall(step)
+    case .select(let range): store.select(range)
     default: draft(intent)
     }
   }

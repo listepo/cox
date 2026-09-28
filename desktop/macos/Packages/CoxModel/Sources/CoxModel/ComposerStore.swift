@@ -1,6 +1,6 @@
 // The composer of one open session as observable state (DT§5.3, DT§4.6): the draft, shell
 // mode, the files picked from `@` rows, the files attached, the rows the core offers for the
-// token being typed, and the earlier prompt ↑ brought back.
+// token at the caret, and the earlier prompt ↑ brought back.
 // Separate from `SessionStore`, which holds what the core sent back; this holds what the
 // person is about to send. It asks the core for rows (`cox_app::Completer`) and sends one
 // `Intent`; the command table, the ranking and the files all stay in Rust.
@@ -26,6 +26,9 @@ public final class ComposerStore {
   /// Rows for the token being typed; empty when none is offered.
   public private(set) var completions: [Completion] = []
   public private(set) var selection = 0
+  /// The editor's selection in `text`, in UTF-16 offsets; empty is the caret, `nil` is the caret
+  /// at the end — so text typed at the end needs no report of the caret moving with it.
+  public private(set) var selectedRange: Range<Int>?
   /// Why the last send failed; the draft stays so it can be sent again.
   public private(set) var failure: String?
   @ObservationIgnored public let session: SessionStore
@@ -53,11 +56,12 @@ public final class ComposerStore {
     if !isShell, text.isEmpty, new == "!" {
       isShell = true
       text = ""
-      completions = []
+      (completions, selectedRange) = ([], nil)
       return
     }
     if new != text { recalled = nil }
     text = new
+    if let range = selectedRange, range.upperBound > text.utf16.count { selectedRange = nil }
     mentions.removeAll { !text.contains($0) }
     complete()
   }
@@ -67,11 +71,26 @@ public final class ComposerStore {
     selection = (selection + step + completions.count) % completions.count
   }
 
-  /// Puts row `index`'s insert in place of the token being typed.
+  /// The editor's selection moved, in UTF-16 offsets into `text`. Only a move onto another
+  /// token asks for rows again, so a dismissed list stays away while the caret stays put.
+  public func select(_ range: Range<Int>) {
+    let before = typedToken
+    let end = text.utf16.count
+    let isEnd = range == end..<end || range.lowerBound < 0 || range.upperBound > end
+    selectedRange = isEnd ? nil : range
+    if typedToken != before { complete() }
+  }
+
+  /// Puts row `index`'s insert in place of the token at the caret, then one space, and leaves
+  /// the caret after it.
   public func pick(_ index: Int) {
     guard completions.indices.contains(index), let token = typedToken else { return }
     let insert = completions[index].insert
-    text = String(text.dropLast(token.count)) + insert + " "
+    let rest = text[token.upperBound...]
+    let head = String(text[..<token.lowerBound]) + insert + " "
+    text = head + (rest.first == " " ? rest.dropFirst() : rest)
+    let caret = head.utf16.count
+    selectedRange = caret == text.utf16.count ? nil : caret..<caret
     if insert.hasPrefix("@"), !mentions.contains(insert) { mentions.append(insert) }
     completions = []
   }
@@ -95,9 +114,9 @@ public final class ComposerStore {
     guard let (prompts, index) = recalled else { return }
     let next = index - step
     if next < 0 {
-      (recalled, text) = (nil, "")
+      (recalled, text, selectedRange) = (nil, "", nil)
     } else if prompts.indices.contains(next) {
-      (recalled, text, completions) = ((prompts, next), prompts[next], [])
+      (recalled, text, completions, selectedRange) = ((prompts, next), prompts[next], [], nil)
     } else if index < 0 {
       recalled = nil
     }
@@ -109,6 +128,7 @@ public final class ComposerStore {
     if let range = text.range(of: insert + " ") ?? text.range(of: insert) {
       text.removeSubrange(range)
     }
+    selectedRange = nil
     complete()
   }
 
@@ -210,25 +230,35 @@ public final class ComposerStore {
       default: break
       }
       (text, mentions, completions, isShell, failure) = ("", [], [], false, nil)
-      recalled = nil
+      (recalled, selectedRange) = (nil, nil)
     } catch {
       report(error)
     }
   }
 
-  /// The word at the end of the draft when it asks for rows: an `@` file anywhere, a `/`
-  /// command only as the draft's first word.
-  private var typedToken: Substring? {
-    guard !isShell, let last = text.last, !last.isWhitespace else { return nil }
-    let start = text.lastIndex(where: \.isWhitespace).map { text.index(after: $0) }
-    let token = text[(start ?? text.startIndex)...]
-    if token.hasPrefix("@") || (token.hasPrefix("/") && start == nil) { return token }
-    return nil
+  /// The word the caret ends, when it asks for rows: an `@` file anywhere, a `/` command only as
+  /// the draft's first word. None inside a word or while text is selected.
+  private var typedToken: Range<String.Index>? {
+    guard !isShell, let caret, caret == text.endIndex || text[caret].isWhitespace,
+      let last = text[..<caret].last, !last.isWhitespace
+    else { return nil }
+    let start = text[..<caret].lastIndex(where: \.isWhitespace).map { text.index(after: $0) }
+    let token = text[(start ?? text.startIndex)..<caret]
+    guard token.hasPrefix("@") || (token.hasPrefix("/") && start == nil) else { return nil }
+    return token.startIndex..<caret
+  }
+
+  /// The caret in `text`; `nil` while a range is selected or the offset splits a character.
+  private var caret: String.Index? {
+    guard let range = selectedRange else { return text.endIndex }
+    guard range.isEmpty, range.upperBound <= text.utf16.count else { return nil }
+    let offset = text.utf16.index(text.utf16.startIndex, offsetBy: range.upperBound)
+    return String.Index(offset, within: text)
   }
 
   private func complete() {
     completions =
-      typedToken.map { session.session.complete(String($0), limit: Self.rowLimit) } ?? []
+      typedToken.map { session.session.complete(String(text[$0]), limit: Self.rowLimit) } ?? []
     selection = 0
   }
 }
