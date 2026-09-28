@@ -35,47 +35,47 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
-| T39.3 | todo | P1 | 2 | 0% | |
-| T39.4 | todo | P2 | 1 | 0% | |
-| T39.5 | todo | P1 | 2 | 0% | |
-| T39.6 | todo | P1 | 3 | 0% | |
+| T39.3 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T39.4 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
+| T39.5 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T39.6 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
-| T40.2 | todo | P1 | 4 | 0% | |
-| T40.3 | todo | P2 | 2 | 0% | |
-| T40.5 | todo | P1 | 3 | 0% | |
-| T40.6 | todo | P1 | 4 | 0% | |
-| T40.7 | todo | P2 | 2 | 0% | |
-| T40.8 | todo | P2 | 3 | 0% | |
-| T40.9 | todo | P2 | 2 | 0% | |
+| T40.2 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
+| T40.3 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T40.5 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
+| T40.6 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
+| T40.7 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T40.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T40.9 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T40.10 | todo | P3 | 2 | 0% | |
-| T41.3 | todo | P1 | 2 | 0% | |
-| T41.4 | todo | P1 | 4 | 0% | |
-| T41.5 | todo | P1 | 2 | 0% | |
-| T41.6 | todo | P1 | 4 | 0% | |
-| T41.7 | todo | P1 | 3 | 0% | |
-| T41.8 | todo | P1 | 3 | 0% | |
+| T41.3 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T41.4 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
+| T41.5 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T41.6 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
+| T41.7 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
+| T41.8 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T41.9 | todo | P3 | 2 | 0% | |
-| T42.1 | todo | P2 | 2 | 0% | |
-| T42.2 | todo | P2 | 2 | 0% | |
-| T42.3 | todo | P2 | 4 | 0% | |
-| T42.4 | todo | P2 | 3 | 0% | |
-| T42.5 | todo | P3 | 2 | 0% | |
-| T43.0 | todo | P2 | 1 | 0% | |
-| T43.1 | todo | P2 | 3 | 0% | |
-| T43.2 | todo | P2 | 2 | 0% | |
-| T43.3 | todo | P2 | 3 | 0% | |
-| T43.4 | todo | P2 | 4 | 0% | |
-| T43.5 | todo | P2 | 3 | 0% | |
+| T42.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T42.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T42.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T42.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T42.5 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T43.0 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
+| T43.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T43.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T43.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T43.4 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T43.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T44.2 | todo | P2 | 2 | 0% | |
-| T44.3 | todo | P3 | 2 | 0% | |
-| T44.4 | todo | P2 | 3 | 0% | |
-| T44.5 | todo | P3 | 1 | 0% | |
-| T45.2 | todo | P2 | 3 | 0% | |
-| T45.3 | todo | P2 | 3 | 0% | |
-| T45.4 | todo | P2 | 3 | 0% | |
-| T45.5 | todo | P2 | 3 | 0% | |
-| T45.6 | todo | P3 | 3 | 0% | |
+| T44.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T44.3 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T44.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T44.5 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
+| T45.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T45.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T45.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T45.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T45.6 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
 | T46.1 | todo | P2 | 2 | 0% | |
 | T46.2 | todo | P2 | 3 | 0% | |
 | T46.3 | todo | P2 | 3 | 0% | |
