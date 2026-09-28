@@ -293,6 +293,20 @@ mod tests {
         assert!(set_then_load("desktop.context.cache_hit", "call").is_err());
     }
 
+    /// A108: review comments queue while a turn runs unless the user picks now.
+    #[test]
+    fn config_set_desktop_review_send_round_trips() {
+        use cox_protocol::config::ReviewSend;
+        assert_eq!(
+            cox_protocol::Config::default().desktop.review.send,
+            ReviewSend::Queue
+        );
+        let loaded = set_then_load("desktop.review.send", "now").expect("load succeeds");
+        assert_eq!(loaded.config.desktop.review.send, ReviewSend::Now);
+        assert_eq!(loaded.source_of("desktop.review.send"), "user");
+        assert!(set_then_load("desktop.review.send", "later").is_err());
+    }
+
     #[test]
     fn config_rejects_out_of_range_desktop_values() {
         for (key, value) in [

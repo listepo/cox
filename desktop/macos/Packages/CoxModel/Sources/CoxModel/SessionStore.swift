@@ -14,6 +14,8 @@ public final class SessionStore {
   public private(set) var blocks: OrderedDictionary<BlockID, Block>
   /// The token meter (DS§7); `nil` until the first `usage` patch.
   public private(set) var usage: UsageView?
+  /// A turn runs, as the meter says (`TurnStarted` until `TurnDone`).
+  public var isTurnRunning: Bool { usage?.turn.map { !$0.done } ?? false }
   /// What the core reports beside the blocks: the turns queued behind the running one.
   public private(set) var status = Status()
   public var draft = ""

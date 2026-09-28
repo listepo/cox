@@ -1,6 +1,7 @@
 // Review's line comments (T37.28.4, DT§5.4): the draft a line-number click adds to and "Send to
-// agent" posts as one `Intent.send`. Here, not in CoxUI, because the anchor is read from the open
-// file's diff and the draft outlives the open file (it lives on `SessionStore`); the prompt's
+// agent" posts as one turn, queued behind a running turn like a composer prompt unless
+// `[desktop.review] send = "now"` (A108). Here, not in CoxUI, because the anchor is read from the
+// open file's diff and the draft outlives the open file (it lives on `SessionStore`); the prompt's
 // words are cox-app's (`SessionClient.reviewMessage`), so every surface sends the same.
 
 import CoxClient
@@ -43,12 +44,32 @@ public struct ReviewDraft: Equatable, Sendable {
   }
 }
 
+/// `[desktop.review] send`, spelled as Rust stores it (A108).
+public enum ReviewSend: String, Equatable, Sendable, Decodable {
+  /// Behind the running turn, as the composer queues a prompt; at once when no turn runs.
+  case queue
+  /// At once, even while a turn runs.
+  case now
+}
+
+extension SettingsStore {
+  /// `[desktop.review] send` from the loaded view; queue before the first load or when the key
+  /// holds something else.
+  public var reviewSend: ReviewSend {
+    view.flatMap { SectionRows($0.settings, "desktop.review").decode("send") } ?? .queue
+  }
+}
+
 extension SessionStore {
-  /// Posts the draft as one turn in cox-app's words and empties it once the core took it; sends
-  /// nothing while no comment has text.
-  public func sendReview() async throws {
+  /// Posts the draft as one turn in cox-app's words — queued behind the running turn while one
+  /// runs, unless `when` is `.now` — and empties it once the core took it; sends nothing while no
+  /// comment has text.
+  public func sendReview(_ when: ReviewSend = .queue) async throws {
     guard let text = session.reviewMessage(reviewDraft.comments) else { return }
-    _ = try await send(.send(text: text, attachments: [], confirmThink: false))
+    _ = try await send(
+      when == .queue && isTurnRunning
+        ? .queue(text: text, attachments: [], confirmThink: false)
+        : .send(text: text, attachments: [], confirmThink: false))
     reviewDraft = ReviewDraft()
   }
 }

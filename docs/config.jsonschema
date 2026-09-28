@@ -325,6 +325,9 @@
         },
         "context": {
           "cache_hit": "turn"
+        },
+        "review": {
+          "send": "queue"
         }
       }
     }
@@ -1846,6 +1849,13 @@
           "default": {
             "cache_hit": "turn"
           }
+        },
+        "review": {
+          "description": "`[desktop.review]`",
+          "$ref": "#/$defs/DesktopReviewConfig",
+          "default": {
+            "send": "queue"
+          }
         }
       },
       "additionalProperties": false
@@ -1963,6 +1973,33 @@
           "description": "Every call's so far: whether the cache-stable prefix pays off.",
           "type": "string",
           "const": "session"
+        }
+      ]
+    },
+    "DesktopReviewConfig": {
+      "description": "`[desktop.review]` (A108): the Review pane.",
+      "type": "object",
+      "properties": {
+        "send": {
+          "description": "`queue` | `now`: when \"Send to agent\" posts while a turn runs.",
+          "$ref": "#/$defs/ReviewSend",
+          "default": "queue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReviewSend": {
+      "description": "When the Review pane's \"Send to agent\" posts its comments (A108).",
+      "oneOf": [
+        {
+          "description": "Behind the running turn, as the composer queues a prompt; at once\nwhen no turn runs.",
+          "type": "string",
+          "const": "queue"
+        },
+        {
+          "description": "At once, even while a turn runs.",
+          "type": "string",
+          "const": "now"
         }
       ]
     }

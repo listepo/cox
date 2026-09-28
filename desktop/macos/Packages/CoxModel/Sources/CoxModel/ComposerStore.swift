@@ -178,7 +178,7 @@ public final class ComposerStore {
   }
 
   /// A turn runs, as the core's usage view says (`TurnStarted` until `TurnDone`).
-  public var isRunning: Bool { session.usage?.turn.map { !$0.done } ?? false }
+  public var isRunning: Bool { session.isTurnRunning }
 
   /// Prompts queued behind the running turn that have not started, as the core counts them.
   public var queued: Int { Int(session.status.queued) }
