@@ -37,6 +37,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T37.44.9 | todo | P2 | 3 | 0% | |
+| T37.44.10 | todo | P2 | 2 | 0% | |
+| T37.44.11 | todo | P2 | 3 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2806,6 +2809,24 @@ Depends: T37.44.1, T37.44.2 · Size: ~150 · Files: CoxUI sidebar, inbox, palett
 Goal: A114, A119. The Figma page "Navigation" is compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. After T37.44.2.
 Check: as T37.44.5.
 Plan: as T37.44.5 for the "Navigation" page, touching only sidebar, inbox, palette and navigation views; merge p37-desktop when T37.44.2 lands.
+
+#### T37.44.9 Main-screen states and glass variants match the mockups
+
+Depends: T37.44.2 · Size: ~150 · Files: CoxUI main-screen organisms and screens, their snapshots
+Goal: A114, A119. Mockups 01-main-session-streaming, 02-main-session-dark, 14-rewind-edit-resend, 15-bypass-mode-budget-stop, 22-empty-session, 29-main-glass-glossy and 30-main-glass-tokens are compared with the CoxUI snapshots of the same states (`npm run diff`); every difference is fixed through the tokens, snapshots re-recorded on purpose. Iterate in CoxUI alone.
+Check: per screen, the diff at `--threshold 0.3` shows no layout or type region left unexplained; CoxUI tests pass; swift-format and swiftlint strict clean.
+
+#### T37.44.10 Tokens for the type sizes and window sizes the mockups use
+
+Depends: T37.44.2, T37.44.6, T37.44.7, T37.44.8, T37.44.9 · Size: ~80 · Files: `desktop/design/tokens`, generated CoxUI tokens, the views that used the nearest token, `DESIGN.md`
+Goal: A114, A119. The screen cards list mockup values with no token (so far: a 20 pt bold settings page title, a 12 pt semibold group title, a 26 pt onboarding title, a 980 pt small window). Each becomes a token in `desktop/design/tokens` from the mockup's value, is generated into CoxUI, and replaces the nearest token those views used meanwhile.
+Check: `just desktop-tokens` and `npm test` pass; the listed views use the new tokens; CoxUI snapshots re-recorded on purpose; the DESIGN.md token tables list them.
+
+#### T37.44.11 The running app matches the mockups end to end
+
+Depends: T37.44.9, T37.44.10 · Size: ~120 · Files: `desktop/macos/App`, CoxUI where a difference shows only in the app
+Goal: A114, A119. The built app is screenshotted on each screen it reaches with the fixtures (main, approval, composer, inspector, review, palette, settings, onboarding) and compared with the mockup renders by `npm run diff`, including 23-notification-and-dock; differences that CoxUI snapshots cannot show (window chrome, toolbar, real materials, dock badge, notification) are fixed. M2/M3 screens (24–27) are out of scope.
+Check: per screen, the app screenshot and its diff against the mockup; no unexplained layout or type region left; swift-format and swiftlint strict clean.
 
 ## 4. Definition of done for v0.1
 

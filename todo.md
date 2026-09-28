@@ -31,6 +31,9 @@
 - T37.44.6. Inspector and review screens match the Figma frames
 - T37.44.7. Approval and composer screens match the Figma frames
 - T37.44.8. Navigation screens match the Figma frames
+- T37.44.9. Main-screen states and glass variants match the mockups
+- T37.44.10. Tokens for the type sizes and window sizes the mockups use
+- T37.44.11. The running app matches the mockups end to end
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows
