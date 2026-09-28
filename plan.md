@@ -79,11 +79,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T47.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T48.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T48.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T49.1 | todo | P2 | 3 | 0% | |
-| T49.2 | todo | P3 | 3 | 0% | |
-| T49.3 | todo | P3 | 2 | 0% | |
-| T49.4 | todo | P3 | 2 | 0% | |
-| T49.5 | todo | P3 | 3 | 0% | |
+| T49.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T49.2 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T49.3 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T49.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T49.5 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
 | T50.3 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
 | T50.5 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T51.1 | todo | P2 | 2 | 0% | |
