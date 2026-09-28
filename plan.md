@@ -32,6 +32,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
+| T37.44.1 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.44.2 | todo | P2 | 4 | 0% | |
 | T37.21.11 | in progress | P2 | 2 | 90% | Claude Code / Opus 5.5 |
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.8 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
@@ -2772,6 +2774,18 @@ On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
+#### T37.44.1 Figma file from the design tokens and mockups
+
+Depends: — · Size: ~150 (a generator script) · Files: `desktop/design/figma/…`, `desktop/design/DESIGN.md`
+Goal: A114. The Figma file `cox desktop` (https://www.figma.com/design/KA9a0R7n6P0QbwDn92e167) mirrors the repository's design: variable collections from `desktop/design/tokens/*.json` (colours with Light, Dark, Light HC and Dark HC modes; sizes, radii, spacing, type) built by a saved, tested generator script that turns the tokens into the Figma Plugin API code `use_figma` runs, so a token change re-syncs by re-running it; a page per mockup group holding every screen of `mockups.html` rendered at 2x (`render.sh`) as a reference frame; the main screen 28 rebuilt as editable layers (auto layout) whose fills, radii and spacing are bound to the variables. DESIGN.md says the repository stays the source and how to re-sync.
+Check: the generator's test; `get_variable_defs` on the rebuilt screen 28 returns token names, not raw values; a Figma screenshot of the rebuilt screen 28 next to the rendered mockup matches by eye.
+
+#### T37.44.2 Style the app from the Figma file
+
+Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
+Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
+Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
+
 #### T37.21.11 Molecule legibility and small fixes
 
 Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/DESIGN.md`
@@ -2972,6 +2986,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A111 T37.22.7 — a model's display name comes from models.dev (its `name`, e.g. `Claude Sonnet 5`) through the `scripts/vendor` script into the catalog; the app's model pill drops the vendor prefix (`Sonnet 5 · high`), by the creator (2026-09-28). Why: the mockup's pill, and one source for names instead of hand-kept strings.
 - A112 T37.21.11 — contrast, by the creator (2026-09-28): the filter prompt uses a new placeholder token (`#69696e` in light, the dark `text.secondary` in dark) instead of changing `text.secondary`; DS§8's Frosted and Glossy contrast is measured on the glass laid over the window fill, the worst predictable case, while the snapshot wallpaper stays for looks. Why: the recommendations as proposed; the user's wallpaper is unknown.
 - A113 T37.22.8, T37.22.9 — session titles, by the creator (2026-09-28): a title is generated after the first turn by one low-cost `Job::Title` request, behind a setting (`[session] auto_title`, default on), and the user can rename a session; a user's title is never overwritten. Why: every session read "Untitled session" in the app's sidebar and toolbar.
+- A114 T37.44.1, T37.44.2 — a Figma file `cox desktop` (team "Ivan's Starter team") mirrors the design, and the app is styled against it, by the creator (2026-09-28): tokens become Figma variables through a saved generator script, mockup screens become frames, screen 28 is rebuilt as editable layers bound to the variables. The repository (`desktop/design/tokens`, `mockups.html`) stays the source; an edit made in Figma is carried back into the tokens and mockups. Why: the creator wants to see and edit the design in Figma and style the app from it.
 
 ## 7. Risk register
 
