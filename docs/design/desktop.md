@@ -105,15 +105,16 @@ titles and App Intents ("Ask cox in <project>") for Shortcuts; per-hunk revert.
 
 ### 3.3 M3 — beyond a single agent
 
-ACP host: Claude Code, Codex, Gemini CLI and Cursor (P35) sessions in the same
-sidebar and transcript (reusing `crates/cox-acp` and T35.3's client adapter);
+ACP host: Claude Agent (Claude Code's ACP adapter), Codex, Gemini CLI and
+Cursor (P35) sessions in the same sidebar and transcript (reusing `crates/cox-acp` and T35.3's client adapter);
 best-of-n (one prompt, several models, each in a worktree, compared diffs);
 plugin panels drawn from the `Widget` tree (R9.4.12); remote sessions over SSH
 through a `cox app-server` that speaks the same patch protocol (DT§4.4).
 
 #### 3.3.1 ACP host: a top-level session driven by an external agent (T52.1)
 
-Status: **proposal; the creator approves it before T52.2.** Evidence: R9.6.
+Status: **approved by the creator on 2026-09-29**, with decisions 5 and 7 of
+the list at the end settled as written there. Evidence: R9.6.
 Guards and fail-open rules are EA§2, §4 and §7 (`docs/design/external-agents.md`),
 unchanged; this section only adds what a *top-level* session needs beyond the
 subagent path T35.13 built.
@@ -128,7 +129,9 @@ then (T52.4):
 1. spawns **one process per session**, not per turn as the subagent driver
    does (R9.6.2.7). It runs in the session cwd or its worktree, in its own
    process group, with `CHILD_ENV_ALLOWLIST` plus `key_env` and nothing else
-   from cox's environment. A program on no `PATH` directory, or a key that
+   from cox's environment. Its sandbox is the session's `[sandbox]` with
+   network always on and the entry's `writable` state directories added
+   (`agent_policy`, T52.2). A program on no `PATH` directory, or a key that
    does not resolve, is one warning, and the session does not open (EA§7);
 2. sends `initialize` (`initialize_request(sandboxed)`) and then `session/new`
    with the cwd and no MCP servers (the agent keeps its own MCP config). On
@@ -221,27 +224,32 @@ agent asks cox for meets cox's guards:
   candidates' rows and marks the total as partial when an external candidate
   is in it.
 
-**Launch table** (the documented examples T52.2 ships, not defaults; R9.6.1):
+**Launch table** (the documented examples T52.2 ships, not defaults; R9.6.1;
+`writable` is the entry's state directory, from the creator's decision 7):
 
-| Agent (display name) | `command` | `args` | `key_env` | Install (by the user; cox never installs) |
-| --- | --- | --- | --- | --- |
-| Claude Code's ACP adapter ("Claude Agent", R9.6.1.6) | `claude-agent-acp` | `["--hide-claude-auth"]` | `ANTHROPIC_API_KEY` | `npm install -g @agentclientprotocol/claude-agent-acp` (0.84.0, Node ≥ 22; brings the Claude Code binary) |
-| Codex's ACP adapter ("Codex") | `codex-acp` | `[]` | `CODEX_API_KEY` | `npm install -g @agentclientprotocol/codex-acp` (2.0.0; brings `@openai/codex`) |
-| Gemini CLI's ACP mode ("Gemini CLI") | `gemini` | `["--acp"]` | `GEMINI_API_KEY` | `npm install -g @google/gemini-cli` (0.61.0, Node ≥ 20) or `brew install gemini-cli` |
-| Cursor ("Cursor") | `agent` | `["acp"]` | `CURSOR_API_KEY` | `curl https://cursor.com/install -fsS \| bash`; the entry comes from the granted Cursor plugin's `[[external_agents]]` (T35.6), not from user config |
+| Agent (display name) | `command` | `args` | `key_env` | `writable` | Install (by the user; cox never installs) |
+| --- | --- | --- | --- | --- | --- |
+| Claude Code's ACP adapter ("Claude Agent", R9.6.1.6) | `claude-agent-acp` | `["--hide-claude-auth"]` | `ANTHROPIC_API_KEY` | `["~/.claude"]` | `npm install -g @agentclientprotocol/claude-agent-acp` (0.84.0, Node ≥ 22; brings the Claude Code binary) |
+| Codex's ACP adapter ("Codex") | `codex-acp` | `[]` | `CODEX_API_KEY` | `["~/.codex"]` | `npm install -g @agentclientprotocol/codex-acp` (2.0.0; brings `@openai/codex`) |
+| Gemini CLI's ACP mode ("Gemini CLI") | `gemini` | `["--acp"]` | `GEMINI_API_KEY` | `["~/.gemini"]` | `npm install -g @google/gemini-cli` (0.61.0, Node ≥ 20) or `brew install gemini-cli` |
+| Cursor ("Cursor") | `agent` | `["acp"]` | `CURSOR_API_KEY` | — (a plugin entry has no `writable`) | `curl https://cursor.com/install -fsS \| bash`; the entry comes from the granted Cursor plugin's `[[external_agents]]` (T35.6), not from user config |
 
 The `@zed-industries/*` package names are deprecated (R9.6.1.2, R9.6.1.8), so
 the table uses the `@agentclientprotocol/*` names.
 
 **Risks found here, for T52.4's live check.**
 
-- The host wrap copies `[sandbox] network`, whose default is `false`
-  (R9.6.2.8). Under the default, none of the four agents can reach its
-  vendor's API.
+- The host wrap copied `[sandbox] network`, whose default is `false`
+  (R9.6.2.8), so under the default none of the four agents could reach its
+  vendor's API. Settled by decision 7: an external agent's wrap always has
+  network (`agent_policy`, T52.2).
 - The agents may need to write their own state directories under `$HOME`.
-  The sandbox denies those writes (R9.6.3, unverified).
+  The sandbox denies those writes (R9.6.3, unverified). Settled by decision
+  7 for user-config entries (`writable`); the Cursor plugin's entry has no
+  such list yet, so `~/.cursor` stays read-only for it.
 
-**For the creator to approve**
+**Approved by the creator on 2026-09-29** (all eight, as written, with 5 and
+7 settled as below)
 
 1. Top-level ACP sessions accept only `Send`, `Queue`, `Interrupt`, `Approve`
    and `Rename`. Everything else is `AppError::Unsupported`, with the UI
@@ -255,16 +263,20 @@ the table uses the `@agentclientprotocol/*` names.
 4. The launch table above, including the `@agentclientprotocol/*` names,
    installed programs only (no `npx -y`, which would fetch unpinned code on
    every launch), and API keys only.
-5. Claude: pass `--hide-claude-auth`, so cox never uses a claude.ai
-   subscription (Anthropic's rule, R9.6.1.6), and label it "Claude Agent" in
-   the UI. Mockup 27 and the P52 goal say "Claude Code", which the branding
-   guideline does not permit.
+5. Claude: it runs as `claude-agent-acp --hide-claude-auth`, with
+   `ANTHROPIC_API_KEY` only, so cox never uses a claude.ai subscription or
+   login (Anthropic's rule, R9.6.1.6), and it is labelled "Claude Agent" in
+   the UI, never "Claude Code". Mockup 27 now says "Claude Agent".
 6. Store the agent's ACP `sessionId` next to `sessions.agent`. T52.6 names
    only the `agent` column.
-7. The network and state-directory risks: the proposal is that an external
-   agent's wrap always allows network, and that each entry may list extra
-   writable directories. The grant or config line shows both. This changes
-   T52.2's schema, and the creator decides it before T52.2 starts.
+7. Network and state directories: an external agent always gets network
+   inside its sandbox, whatever `[sandbox] network` says; its file limits
+   stay. An `[external_agents.<name>]` entry may add `writable` directories
+   for the agent's own state (`~/.claude`, `~/.codex`, `~/.gemini`,
+   `~/.cursor`). They are confined to the user's home, and a project config
+   may not set them (its own guard and reason, `external_agents.*.writable`).
+   The Agents list's launch line shows both. T52.2's schema carries
+   `writable`.
 8. cox's own slash commands are off in external sessions; `/…` goes to the
    agent verbatim.
 

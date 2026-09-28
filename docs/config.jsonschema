@@ -348,6 +348,14 @@
         },
         "remote_hosts": []
       }
+    },
+    "external_agents": {
+      "description": "`[external_agents.<name>]` (T52.2): user config only.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ExternalAgentConfig"
+      },
+      "default": {}
     }
   },
   "additionalProperties": false,
@@ -2158,6 +2166,39 @@
           "const": "now"
         }
       ]
+    },
+    "ExternalAgentConfig": {
+      "description": "One `[external_agents.<name>]` entry (T52.2, DT§3.3.1): an ACP agent a\ntop-level session can be driven by. The name is the TOML key. User\nconfig only: a project config can set none of it (the guards in\n`cox-config`'s `load.rs`), because an entry runs a program and widens\nwhere it may write. It always runs under the sandbox wrap, with network\non and file limits kept.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Program that speaks ACP on stdio: a name found on `PATH`, or an absolute path.",
+          "type": "string",
+          "default": ""
+        },
+        "args": {
+          "description": "Arguments to `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "key_env": {
+          "description": "The agent's own key variable, passed through to it by name only.",
+          "type": "string",
+          "default": ""
+        },
+        "writable": {
+          "description": "Extra directories under your home the agent may write, for its own state.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

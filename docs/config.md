@@ -284,6 +284,40 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[desktop.review]`
 
 - `send` = `"queue"` — queue | now — the Review pane's "Send to agent" while a turn runs: queue it behind the turn like a prompt, or send it at once (A108)
+## `[external_agents.<name>]`
+
+An ACP agent a new session can be driven by instead of cox's own loop (T52.2, DT§3.3.1). None by default. **User config only**: a project `.cox/config.toml` cannot add, change or widen an entry, because an entry runs a program; the loader reverts it with a warning. cox never installs the agent: you install it, and cox runs the installed program.
+
+- `command` — the program that speaks ACP on stdio: a name found on `PATH`, or an absolute path
+- `args` — arguments to `command`
+- `key_env` — the agent's own API-key variable. Only this one variable is passed through, by name, next to the child allowlist (`PATH`, `HOME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `USER`, `SHELL`); cox's own provider keys stay behind. A key that does not resolve (env var, then keychain) leaves the agent out with one warning
+- `writable` — extra directories under your home the agent may write, for its own state (for example `~/.claude`). Each must resolve inside your home, never to your home itself; one that does not refuses the entry with a warning. A project config cannot set it
+
+An external agent always runs under the sandbox wrap. Its file limits are the session's `[sandbox]` ones plus `writable`, but it always has network access, whatever `sandbox.network` says: it has to reach its vendor's API. The agent's model, cost and context are its own: cox writes no usage row for it and shows its cost as "—".
+
+Examples (install the program first; these are not defaults):
+
+```toml
+[external_agents.claude]            # "Claude Agent": npm install -g @agentclientprotocol/claude-agent-acp
+command = "claude-agent-acp"
+args = ["--hide-claude-auth"]       # API key only, never a claude.ai login
+key_env = "ANTHROPIC_API_KEY"
+writable = ["~/.claude"]
+
+[external_agents.codex]             # "Codex": npm install -g @agentclientprotocol/codex-acp
+command = "codex-acp"
+key_env = "CODEX_API_KEY"
+writable = ["~/.codex"]
+
+[external_agents.gemini]            # "Gemini CLI": npm install -g @google/gemini-cli
+command = "gemini"
+args = ["--acp"]
+key_env = "GEMINI_API_KEY"
+writable = ["~/.gemini"]
+```
+
+Cursor (`agent acp`, `CURSOR_API_KEY`) comes from the granted Cursor plugin's `[[external_agents]]` entry (`plugins/cursor`), not from this table.
+
 ## `~/.cox/keybindings.toml`
 
 Rebinds the TUI's keys (T25.5). Each line is an action id and a key, or a list of keys; dotted ids may be written as TOML tables. The keys you give replace the action's defaults, in every context the action has (`idle`, `running`), and take the key from whatever action held it by default. A missing file means the defaults in `docs/getting-started.md`.

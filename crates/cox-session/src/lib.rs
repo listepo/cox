@@ -39,7 +39,7 @@ pub use mcp::{mcp_auth, mcp_servers};
 pub use plugins::start_plugins;
 pub use plugins::{Plugins, load_plugins, plugin_notices, write_grant};
 pub use provider::{lmstudio_model, provider_for};
-pub use sandbox::{sandbox_policy, sandboxed_argv};
+pub use sandbox::{agent_argv, agent_policy, sandbox_policy, sandboxed_argv};
 pub use tools::{tools, with_client_tools};
 
 /// Why a session could not be built. Anything an extension breaks is a

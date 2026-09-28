@@ -69,6 +69,8 @@ pub struct Config {
     pub record: RecordConfig,
     /// `[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)
     pub desktop: DesktopConfig,
+    /// `[external_agents.<name>]` (T52.2): user config only.
+    pub external_agents: BTreeMap<String, ExternalAgentConfig>,
 }
 
 impl Config {
@@ -1181,6 +1183,25 @@ impl Default for LspConfig {
                 .collect(),
         }
     }
+}
+
+/// One `[external_agents.<name>]` entry (T52.2, DT§3.3.1): an ACP agent a
+/// top-level session can be driven by. The name is the TOML key. User
+/// config only: a project config can set none of it (the guards in
+/// `cox-config`'s `load.rs`), because an entry runs a program and widens
+/// where it may write. It always runs under the sandbox wrap, with network
+/// on and file limits kept.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ExternalAgentConfig {
+    /// Program that speaks ACP on stdio: a name found on `PATH`, or an absolute path.
+    pub command: String,
+    /// Arguments to `command`.
+    pub args: Vec<String>,
+    /// The agent's own key variable, passed through to it by name only.
+    pub key_env: String,
+    /// Extra directories under your home the agent may write, for its own state.
+    pub writable: Vec<PathBuf>,
 }
 
 /// `[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even

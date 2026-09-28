@@ -20,6 +20,31 @@ pub fn sandbox_policy(config: &Config) -> cox_protocol::SandboxPolicy {
     }
 }
 
+/// The policy an external agent runs under (T52.2, DT§3.3.1, the creator's
+/// decision of 2026-09-29): the session's `[sandbox]` with network always
+/// on, because every agent must reach its vendor's API, and every file
+/// limit kept. The wrap (`agent_argv`) and the ACP client's `fs/*` and
+/// `terminal/*` checks for the same agent read this one value.
+pub fn agent_policy(config: &Config) -> cox_protocol::SandboxPolicy {
+    cox_protocol::SandboxPolicy {
+        network: true,
+        ..sandbox_policy(config)
+    }
+}
+
+/// `sandboxed_argv` under [`agent_policy`]: an external agent's program
+/// (a plugin's `[[external_agents]]` entry or a user-config one), with
+/// `writable` the session's writable roots plus any state directories the
+/// entry lists.
+pub fn agent_argv(
+    program: &Path,
+    args: &[String],
+    config: &Config,
+    writable: &[PathBuf],
+) -> Result<Vec<String>, String> {
+    wrap_argv(program, args, &agent_policy(config), config, writable)
+}
+
 /// `program args` under `sandbox::command`, the guard `bash` runs under. The
 /// backend wraps a `<shell> -c <line>` triple last, so the line
 /// `exec "$0" "$@"` with the argv appended runs the program with no shell
@@ -38,10 +63,20 @@ pub fn sandboxed_argv(
     config: &Config,
     writable: &[PathBuf],
 ) -> Result<Vec<String>, String> {
+    wrap_argv(program, args, &sandbox_policy(config), config, writable)
+}
+
+/// The one argv wrap both entry points share, for a given policy.
+fn wrap_argv(
+    program: &Path,
+    args: &[String],
+    policy: &cox_protocol::SandboxPolicy,
+    config: &Config,
+    writable: &[PathBuf],
+) -> Result<Vec<String>, String> {
     use cox_protocol::SandboxMode;
     use cox_tools::sandbox::{self, Backend};
 
-    let policy = sandbox_policy(config);
     if policy.mode != SandboxMode::DangerFullAccess {
         match sandbox::backend(policy.linux_backend) {
             Some(Backend::Seatbelt | Backend::Bwrap) => {}
@@ -55,7 +90,7 @@ pub fn sandboxed_argv(
     }
     let line = r#"exec "$0" "$@""#;
     let cmd = sandbox::command(
-        &policy,
+        policy,
         &config.core.workspace_roots,
         writable,
         Path::new("/bin/sh"),
