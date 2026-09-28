@@ -7,9 +7,9 @@ import SwiftUI
 
 /// Segments laid end to end from the leading edge over a `fill.secondary` capsule; what they
 /// leave uncovered is the free share.
-struct StackedBar: View {
+public struct StackedBar: View {
   /// A part of the context window (DS§7).
-  enum Kind: CaseIterable, Sendable {
+  public enum Kind: CaseIterable, Sendable {
     case system, tools, instructions, history
   }
 
@@ -36,7 +36,7 @@ struct StackedBar: View {
     }
   }
 
-  var body: some View {
+  public var body: some View {
     GeometryReader { proxy in
       HStack(spacing: 0) {
         ForEach(segments.indices, id: \.self) { index in

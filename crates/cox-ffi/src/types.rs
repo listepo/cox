@@ -16,8 +16,8 @@ use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, Dropped, FileChange, Icon, InboxItem,
-    Intent, Layer, Linked, McpLogin, McpServer, Need, Project, SearchHit, SessionEntry, Setting,
-    SettingKind, SettingsView, Tally, TurnUsage, UsageView,
+    Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need, Project, SearchHit,
+    SessionEntry, Setting, SettingKind, SettingsView, Tally, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -301,6 +301,30 @@ pub struct UsageView {
     pub session: Tally,
     pub turn: Option<TurnUsage>,
     pub context_tokens: u32,
+    pub text: MeterText,
+}
+
+#[uniffi::remote(Record)]
+pub struct MeterText {
+    pub sent: String,
+    pub received: String,
+    pub rate: String,
+    pub spoken: String,
+    pub heading: String,
+    pub phase: String,
+    pub rate_unit: String,
+    pub rate_detail: String,
+    pub rows: Vec<MeterRow>,
+    pub context: String,
+    pub footnote: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct MeterRow {
+    pub label: String,
+    pub turn: String,
+    pub session: String,
+    pub detail: bool,
 }
 
 #[uniffi::remote(Record)]

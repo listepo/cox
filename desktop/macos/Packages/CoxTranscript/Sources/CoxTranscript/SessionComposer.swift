@@ -1,7 +1,8 @@
 // `SessionComposer` (DT§5.3, DS§6.4 row `Composer`): CoxUI's `Composer` over a session's
-// `ComposerStore` — the store's draft and rows copied into the organism's value, and each of its
-// intents handed to the store. Here, beside `TranscriptView`, because this package is where
-// CoxUI and CoxModel meet; CoxUI stays free of the stores and the store free of views.
+// `ComposerStore` — the store's draft and rows, and the session's token meter, copied into the
+// organism's value, and each of its intents handed to the store. Here, beside `TranscriptView`,
+// because this package is where CoxUI and CoxModel meet; CoxUI stays free of the stores and the
+// store free of views.
 
 import CoxClient
 import CoxModel
@@ -13,6 +14,7 @@ import SwiftUI
 public struct SessionComposer: View {
   let store: ComposerStore
   @State private var isPicking = false
+  @State private var isTokensOpen = false
 
   public init(store: ComposerStore) {
     self.store = store
@@ -56,12 +58,17 @@ public struct SessionComposer: View {
     state.isRunning = store.isRunning
     state.queued = store.queued
     state.isRecalling = store.isRecalling
+    if let usage = store.session.usage {
+      state.meter = TokenMeter.State(usage, isRunning: store.isRunning)
+      state.tokens = isTokensOpen ? TokenPopover.State(usage, isRunning: store.isRunning) : nil
+    }
     return state
   }
 
   private func handle(_ intent: Composer.Intent) {
     switch intent {
     case .attach: isPicking = true
+    case .toggleTokens: isTokensOpen.toggle()
     case .drop(let urls): Task { await store.attach(urls) }
     case .pasteImage(let png): store.attach(png, name: "Pasted image.png", type: .png)
     case .removeAttachment(let id): if let index = Int(id) { store.removeAttachment(at: index) }

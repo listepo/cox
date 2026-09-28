@@ -33,6 +33,10 @@ public struct Composer: View {
     public var canSend = false
     /// The text is an earlier prompt ↑ brought back, so ↑ and ↓ keep walking the prompts.
     public var isRecalling = false
+    /// The token meter beside Send (T37.25); `nil` before the core's first usage.
+    public var meter: TokenMeter.State?
+    /// The token popover over the meter while it is open.
+    public var tokens: TokenPopover.State?
 
     public init() {}
   }
@@ -86,6 +90,8 @@ public struct Composer: View {
     /// An image pasted with ⌘V that has no file behind it, as PNG.
     case pasteImage(Data)
     case removeAttachment(String)
+    /// The token meter: opens or closes its popover.
+    case toggleTokens
   }
 
   let state: State
@@ -124,6 +130,14 @@ public struct Composer: View {
             .fixedSize()
             .padding(.leading, Space.l)
             .padding(.bottom, Space.m)
+        }
+      }
+    }
+    .overlay(alignment: .topTrailing) {
+      // The token popover stands on the same edge, over the meter at the trailing end.
+      Color.clear.frame(height: 0).overlay(alignment: .bottomTrailing) {
+        if let tokens = state.tokens {
+          TokenPopover(state: tokens).fixedSize().padding(.bottom, Space.m)
         }
       }
     }
@@ -309,6 +323,9 @@ private struct ComposerChipRow: View {
       if state.queued > 0 {
         ComposerChip("Queued · \(state.queued)", kind: .queued)
       }
+      if let meter = state.meter {
+        TokenMeter(state: meter, isOpen: state.tokens != nil) { send(.toggleTokens) }
+      }
       Button {
         send(.submit)
       } label: {
@@ -329,3 +346,4 @@ private struct ComposerChipRow: View {
   PreviewMatrix { ComposerSample(state: PreviewState.composerAttachments) }
 }
 #Preview("shell, queued") { PreviewMatrix { ComposerSample(state: PreviewState.composerShell) } }
+#Preview("tokens") { PreviewMatrix { ComposerSample(state: PreviewState.composerTokens) } }

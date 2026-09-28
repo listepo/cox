@@ -13,6 +13,8 @@ use cox_protocol::ids::TurnId;
 use cox_protocol::types::{Event, Usage};
 use serde::{Deserialize, Serialize};
 
+use crate::meter_text::{MeterText, Rates};
+
 /// The rolling window live tok/s is estimated over.
 pub const WINDOW: Duration = Duration::from_secs(2);
 /// Sparkline points kept, one per output delta.
@@ -81,6 +83,8 @@ pub struct UsageView {
     pub turn: Option<TurnUsage>,
     /// The last call's `Usage::context_tokens`, the TUI's `ctx` figure.
     pub context_tokens: u32,
+    /// The figures above as the desktop shows them (T37.25).
+    pub text: MeterText,
 }
 
 /// Folds events and their arrival times into a `UsageView`.
@@ -95,6 +99,11 @@ pub struct Meter {
     window: VecDeque<(Duration, f64)>,
     /// The current call's first output delta.
     call_start: Option<Duration>,
+    /// The turn's exactly rated output and the seconds it streamed over.
+    rated: (f64, f64),
+    /// The turn's highest tok/s, live or exact.
+    peak: Option<f64>,
+    session_thinking_bytes: usize,
 }
 
 impl Meter {
@@ -106,11 +115,24 @@ impl Meter {
     /// replayed rollout passes one instant for all, so only the exact rates
     /// survive); true when the view changed.
     pub fn apply(&mut self, event: &Event, now: Duration) -> bool {
+        let changed = self.fold(event, now);
+        if changed {
+            let rates = Rates {
+                avg: (self.rated.1 > 0.0).then(|| self.rated.0 / self.rated.1),
+                peak: self.peak,
+                session_thinking: estimate(self.session_thinking_bytes),
+            };
+            self.view.text = MeterText::of(&self.view, rates);
+        }
+        changed
+    }
+
+    fn fold(&mut self, event: &Event, now: Duration) -> bool {
         match event {
             Event::TurnStarted { turn, .. } => {
                 (self.started, self.turn, self.thinking_bytes) = (now, (None, 0), 0);
                 self.window.clear();
-                self.call_start = None;
+                (self.call_start, self.rated, self.peak) = (None, (0.0, 0.0), None);
                 self.view.turn = Some(TurnUsage {
                     turn: *turn,
                     tally: Tally::default(),
@@ -134,8 +156,11 @@ impl Meter {
                 if let Some(t) = self.view.turn.as_mut().filter(|t| t.turn == *turn) {
                     self.turn = (Some(add_to(self.turn.0, usage)), self.turn.1 + 1);
                     t.tally = Tally::of(self.turn.0, self.turn.1);
-                    if let Some(rate) = exact_rate(usage, streamed) {
+                    if let Some((rate, secs)) = exact_rate(usage, streamed) {
                         (t.tok_per_s, t.exact) = (Some(rate), true);
+                        self.rated.0 += f64::from(usage.output_tokens);
+                        self.rated.1 += secs;
+                        self.peak = Some(self.peak.map_or(rate, |p| p.max(rate)));
                     }
                 }
                 true
@@ -157,7 +182,8 @@ impl Meter {
         };
         if thinking {
             self.thinking_bytes += bytes;
-            t.thinking_tokens = (self.thinking_bytes as f64 / BYTES_PER_TOKEN).round() as u32;
+            self.session_thinking_bytes += bytes;
+            t.thinking_tokens = estimate(self.thinking_bytes);
         }
         t.ttft_ms
             .get_or_insert(now.saturating_sub(self.started).as_millis() as u64);
@@ -179,6 +205,7 @@ impl Meter {
             let rate = self.window.iter().skip(1).map(|(_, n)| n).sum::<f64>() / span;
             (t.tok_per_s, t.exact) = (Some(rate), false);
             t.sparkline.push(rate);
+            self.peak = Some(self.peak.map_or(rate, |p| p.max(rate)));
             let over = t.sparkline.len().saturating_sub(SPARK_POINTS);
             t.sparkline.drain(..over);
         }
@@ -186,16 +213,21 @@ impl Meter {
     }
 }
 
-/// A call's exact tok/s: its reported output over the time from its first
-/// output delta to its usage, or over the ledger's latency (which includes
+/// Tokens in `bytes` of streamed text, by the live estimate's constant.
+fn estimate(bytes: usize) -> u32 {
+    (bytes as f64 / BYTES_PER_TOKEN).round() as u32
+}
+
+/// A call's exact tok/s and the seconds it is over: its reported output
+/// over the time from its first output delta to its usage, or over the ledger's latency (which includes
 /// the wait for the first token) when that time is unknown — a call that
 /// streamed no text, or a replay. `None` for a call that produced nothing.
-fn exact_rate(usage: &Usage, streamed: Option<Duration>) -> Option<f64> {
+fn exact_rate(usage: &Usage, streamed: Option<Duration>) -> Option<(f64, f64)> {
     let secs = streamed
         .filter(|d| !d.is_zero())
         .unwrap_or(Duration::from_millis(usage.latency_ms))
         .as_secs_f64();
-    (secs > 0.0 && usage.output_tokens > 0).then(|| f64::from(usage.output_tokens) / secs)
+    (secs > 0.0 && usage.output_tokens > 0).then(|| (f64::from(usage.output_tokens) / secs, secs))
 }
 
 /// `sum` plus one more call; the one sum the meter and `TurnMeta` share.
@@ -311,6 +343,16 @@ mod tests {
         assert_eq!(
             (t.tally, view.session, view.context_tokens),
             (tally, tally, 1050)
+        );
+        // 600 tokens over 2.7 s + 0.6 s; the peak is the first call's exact rate.
+        let text = &view.text;
+        assert_eq!(
+            (text.rate.as_str(), text.heading.as_str()),
+            ("100", "Last turn · 2 requests")
+        );
+        assert_eq!(
+            text.rate_detail,
+            "avg 182 tok/s · first token 300 ms · peak 200 tok/s"
         );
     }
 

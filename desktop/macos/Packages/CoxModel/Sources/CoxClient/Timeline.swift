@@ -231,14 +231,43 @@ public struct UsageView: Equatable, Sendable, Decodable {
   public var session: Tally
   public var turn: TurnUsage?
   public var contextTokens: UInt32
+  /// The figures as the meter and its popover show them, formatted by the core (T37.25).
+  public var text: MeterText
 
-  public init(session: Tally, turn: TurnUsage?, contextTokens: UInt32) {
-    (self.session, self.turn, self.contextTokens) = (session, turn, contextTokens)
+  public init(session: Tally, turn: TurnUsage?, contextTokens: UInt32, text: MeterText = .init()) {
+    (self.session, self.turn, self.contextTokens, self.text) = (session, turn, contextTokens, text)
   }
 
   enum CodingKeys: String, CodingKey {
     case session, turn
     case contextTokens = "context_tokens"
+    case text
+  }
+}
+
+/// `cox_app::MeterText`: every figure of the token meter and popover as it is shown.
+public struct MeterText: Equatable, Sendable, Decodable {
+  public var sent = "", received = "", rate = "", spoken = ""
+  public var heading = "", phase = "", rateUnit = "", rateDetail = ""
+  public var rows: [MeterRow] = []
+  public var context = "", footnote = ""
+
+  public init() {}
+
+  enum CodingKeys: String, CodingKey {
+    case sent, received, rate, spoken, heading, phase, rows, context, footnote
+    case rateUnit = "rate_unit"
+    case rateDetail = "rate_detail"
+  }
+}
+
+/// One line of the token popover's grid: a label and its turn and session figures.
+public struct MeterRow: Equatable, Sendable, Decodable {
+  public var label, turn, session: String
+  public var detail: Bool
+
+  public init(label: String, turn: String, session: String, detail: Bool) {
+    (self.label, self.turn, self.session, self.detail) = (label, turn, session, detail)
   }
 }
 
