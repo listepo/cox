@@ -8,14 +8,15 @@ import CoxClient
 import CoxModel
 import CoxTranscript
 import CoxUI
+import Foundation
 
-/// A session this window opened: its stores, what it reported at open, its pull, which runs
-/// while another session shows, and its terminal tabs' views.
+/// A session this window shows: the stores it shares through `AppStore` with every other window
+/// on the session (their pull runs while another session shows), what it reported at open, and
+/// this window's terminal tabs' views.
 @MainActor
 struct OpenedSession {
   let store: SessionStore
   let composer: ComposerStore
-  let pull: Task<Void, Never>
   /// What it reported after it showed; nil until then.
   var info: Info?
   /// The models its cwd's config offers; empty until read.
@@ -26,12 +27,15 @@ struct OpenedSession {
   /// The toolbar's model menu for what the session runs on now.
   var menu: ModelMenu { ModelMenu(choices: models, status: store.status) }
 
-  /// Stops the pull and closes its terminals; the session keeps running in the core.
-  func close() {
-    pull.cancel()
+  init(_ shared: AppStore.Shared) {
+    (store, composer) = (shared.store, shared.composer)
+  }
+
+  /// This window stops showing the session: its terminal views detach, and the registry closes
+  /// the session once no window shows it. The core keeps a running turn either way.
+  func close(in registry: AppStore, window: UUID) {
     terminals.endAll()
-    store.closeTerminals()
-    store.session.close()
+    registry.release(store.session.id, window: window)
   }
 }
 

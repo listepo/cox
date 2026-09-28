@@ -9,7 +9,8 @@
 // Review replaces the transcript column, the shell's panes fold, ⌃` shows the session's terminal
 // pane under the column (T51.6; the window asks before closing over a running command), ⌘⇧B
 // shows the browser pane beside it (T51.10) and the Appearance popover writes
-// `[desktop.appearance]`.
+// `[desktop.appearance]`. A popped-out window (T51.11) is the same view on one session with no
+// sidebar; every window on a session shares its stores through `AppStore`.
 
 import CoxClient
 import CoxModel
@@ -19,6 +20,10 @@ import SwiftUI
 
 struct SessionWindow: View {
   let model: AppModel
+  /// Set for a popped-out window: the one session it shows, and the window it joins as a tab.
+  let popOut: PopOut?
+  /// This window's hold on the sessions it shows in `AppStore`.
+  @State private var windowID = UUID()
   /// Set once first run chose a project; a fixture launch never asks.
   @AppStorage("CoxOnboarded") private var onboarded = false
   @State private var screen = MainScreenState()
@@ -46,6 +51,15 @@ struct SessionWindow: View {
   /// The browser pane shows beside the column; UI-only, like the terminal's.
   @State private var isBrowserVisible = false
   @Environment(\.coxAppearance) private var base
+  @Environment(\.openWindow) private var openWindow
+
+  init(model: AppModel, popOut: PopOut? = nil) {
+    self.model = model
+    self.popOut = popOut
+    var screen = MainScreenState()
+    screen.isSidebarVisible = popOut == nil
+    _screen = State(initialValue: screen)
+  }
 
   var body: some View {
     Group {
@@ -80,15 +94,17 @@ struct SessionWindow: View {
         ShellActions(
           isSidebarVisible: screen.isSidebarVisible, isInspectorVisible: screen.isInspectorVisible,
           isTerminalVisible: isTerminalShown, isBrowserVisible: isBrowserVisible,
-          toggleSidebar: { screen.isSidebarVisible.toggle() },
+          toggleSidebar: { toggleSidebar() },
           toggleInspector: { screen.isInspectorVisible.toggle() },
-          toggleTerminal: { toggleTerminal() }, toggleBrowser: { isBrowserVisible.toggle() })
+          toggleTerminal: { toggleTerminal() }, toggleBrowser: { isBrowserVisible.toggle() },
+          popOut: current.map { session -> (Bool) -> Void in { openPopOut(session, asTab: $0) } })
       )
-      .task { if current == nil { await open(resume: nil) } }
+      .task { if current == nil { await open(resume: popOut?.session) } }
       .task { await watch() }
       .onDisappear {
-        for session in opened.values { session.close() }
+        for session in opened.values { session.close(in: model.registry, window: windowID) }
       }
+      .joinsTabs(of: popOut?.tabOf)
       .closeGuard { opened.values.contains { $0.store.hasBusyTerminal } }
   }
 
@@ -123,6 +139,16 @@ struct SessionWindow: View {
       }
     }
     isTerminalVisible = !isShown
+  }
+
+  /// A popped-out window has no sidebar to show.
+  private func toggleSidebar() {
+    if popOut == nil { screen.isSidebarVisible.toggle() }
+  }
+
+  /// Opens `session` in a window of its own, or as a tab of this one.
+  private func openPopOut(_ session: String, asTab: Bool) {
+    openWindow(value: PopOut(session: session, asTab: asTab))
   }
 
   private var isRefused: Binding<Bool> {
@@ -203,7 +229,7 @@ struct SessionWindow: View {
 
   private func handle(_ intent: SessionToolbar.Intent) {
     switch intent {
-    case .showSidebar: screen.isSidebarVisible.toggle()
+    case .showSidebar: toggleSidebar()
     case .toggleInspector: screen.isInspectorVisible.toggle()
     case .open(.appearance): screen.popover = screen.popover == .appearance ? nil : .appearance
     case .mode(let mode): send(.setMode(mode: PermissionMode(mode)))
@@ -218,10 +244,11 @@ struct SessionWindow: View {
 
   private func handle(_ intent: Sidebar.Intent) {
     switch intent {
-    case .hide: screen.isSidebarVisible.toggle()
+    case .hide: toggleSidebar()
     case .filter(let text): model.sidebar.filter = text
     case .toggle(let project): model.sidebar.toggle(project)
     case .newSession: Task { await open(resume: nil) }
+    case .popOut(let session, let asTab): openPopOut(session, asTab: asTab)
     case .rename(let session, let title):
       // An open session renames through its core; the store takes a closed one's directly.
       if let store = opened[session]?.store {
@@ -262,26 +289,31 @@ struct SessionWindow: View {
     screen.appearance = AppearancePopover.State(settings)
   }
 
-  /// Opens a new session, or resumes `resume` where it last ran, and shows it.
+  /// Opens a new session, or resumes `resume` where it last ran, and shows it. A session another
+  /// window already shows is joined, not opened again.
   private func open(resume: String?) async {
     guard !isOpening else { return }
     isOpening = true
     defer { isOpening = false }
     do {
       let cwd = resume.flatMap { model.sidebar.entry($0)?.session.cwd } ?? LaunchCore.project()
-      let client = try await model.launch.core.get().open(
-        // The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
-        OpenSession(cwd: cwd, resume: resume, theme: "base16-ocean.dark"))
-      let store = SessionStore(session: client)
-      opened[client.id]?.close()
-      opened[client.id] = OpenedSession(
-        store: store, composer: ComposerStore(session: store), pull: Task { await store.run() })
+      let shared: AppStore.Shared
+      if let resume, let joined = model.registry.join(resume, window: windowID) {
+        shared = joined
+      } else {
+        let client = try await model.launch.core.get().open(
+          // The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
+          OpenSession(cwd: cwd, resume: resume, theme: "base16-ocean.dark"))
+        shared = model.registry.adopt(client, window: windowID)
+      }
+      let client = shared.store.session
+      if opened[client.id] == nil { opened[client.id] = OpenedSession(shared) }
       (current, failure, reviewing) = (client.id, nil, nil)
       opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
       model.sidebar.refresh()
       // After it shows: Info asks git about the cwd, which can take a while.
       if let info = try? await client.info() {
-        model.register(store, as: info.session)
+        model.register(shared.store, as: info.session)
         opened[client.id]?.info = info
       }
     } catch {

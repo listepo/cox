@@ -1,7 +1,8 @@
 // The app target's entry (DT§4.6, DT§7, A106): `@main`, its scenes and the launch-wide state
 // they share. Thin by design — every view and store lives in the local packages; this target
 // picks the core at launch, hosts the windows and joins stores to screens. The session window
-// hides its title bar (DS§4); Settings opens from the app menu (⌘,).
+// hides its title bar (DS§4); a session pops out into its own window or a native tab (T51.11);
+// Settings opens from the app menu (⌘,).
 
 import AppKit
 import CoxClient
@@ -21,6 +22,11 @@ struct CoxApp: App {
     }
     .windowStyle(.hiddenTitleBar)
     .commands { ShellCommands() }
+    // One session popped out of a window, alone or as a native tab (T51.11).
+    WindowGroup("Session", for: PopOut.self) { $popOut in
+      if let popOut { SessionWindow(model: model, popOut: popOut) }
+    }
+    .windowStyle(.hiddenTitleBar)
     Settings {
       SettingsWindow(model: model)
     }
@@ -37,6 +43,8 @@ final class AppModel {
   let settings: SettingsStore?
   /// The sidebar's sessions: the live workspace's, or a fixture's inbox alone.
   let sidebar: SidebarStore
+  /// The open sessions every window shares (T51.11).
+  let registry = AppStore()
   private var loginEnv: Task<Void, Never>?
   private var sessions: [String: WeakSession] = [:]
   private var responder: NotificationResponder?
