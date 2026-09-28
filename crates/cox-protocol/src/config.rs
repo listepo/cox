@@ -377,7 +377,8 @@ pub struct ProviderModel {
     /// `api = "chat"` section, where one server hosts both vision and
     /// text-only models: unset means "not declared", and an attached image
     /// is then held back with a notice rather than sent to a model that
-    /// would reject it.
+    /// would reject it. `false` also makes the Chat wire refuse any request
+    /// that still carries an image (T40.9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<bool>,
 }
@@ -1692,6 +1693,33 @@ mod tests {
         let json = serde_json::to_string(&cfg).expect("serialize");
         let back: Config = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn provider_model_images_round_trips() {
+        // T40.9: `images = false` survives TOML → struct → JSON → struct,
+        // and an unset flag stays absent rather than serializing as null.
+        use figment::providers::Format as _;
+        let toml = r#"
+            [providers.local]
+            models = [
+                { id = "qwen3-coder", images = false },
+                { id = "llava", images = true },
+                { id = "phi" },
+            ]
+        "#;
+        let cfg: Config = figment::Figment::from(figment::providers::Toml::string(toml))
+            .extract()
+            .expect("models with images parse");
+        let models = &cfg.providers.local.models;
+        assert_eq!(models[0].images, Some(false));
+        assert_eq!(models[1].images, Some(true));
+        assert_eq!(models[2].images, None);
+        let json = serde_json::to_value(models).expect("serialize");
+        assert_eq!(json[0]["images"], false);
+        assert!(json[2].get("images").is_none());
+        let back: Vec<ProviderModel> = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(&back, models);
     }
 
     #[test]
