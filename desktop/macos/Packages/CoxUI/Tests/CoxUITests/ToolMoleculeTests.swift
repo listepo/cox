@@ -17,6 +17,12 @@ import Testing
     try check(ToolHeaderSample(PreviewState.toolFailed), variant, "failed")
   }
 
+  @Test(arguments: Variant.all) func terminalTail(_ variant: Variant) throws {
+    try check(TerminalTailSample(exit: .running), variant, "running")
+    try check(TerminalTailSample(exit: PreviewState.tailSucceeded), variant, "succeeded")
+    try check(TerminalTailSample(exit: PreviewState.tailFailed), variant, "failed")
+  }
+
   /// One image per molecule variant, named `<variant>.<cell>`, at its ideal size (see
   /// `ShellMoleculeSnapshotTests`). Reduce Motion holds a running spinner still.
   private func check(

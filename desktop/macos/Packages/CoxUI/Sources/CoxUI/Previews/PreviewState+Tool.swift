@@ -43,3 +43,26 @@ struct ToolHeaderSample: View {
     ToolHeader(item, isExpanded: isExpanded).frame(width: Size.readingWidth)
   }
 }
+
+extension PreviewState {
+  /// The mockup's running `cargo nextest` tail.
+  static let tail = [
+    "   Compiling cox-provider-http v0.9.0 (crates/cox-provider-http)",
+    "    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.84s",
+    "    Starting 38 tests across 4 binaries",
+    "        PASS [   0.004s] cox-provider-http retry::tests::delay_never_exceeds_cap",
+    "        PASS [   0.006s] cox-provider-http retry::tests::jitter_is_uniform_over_seeded_rng",
+  ]
+
+  static let tailSucceeded = TerminalTail.Exit.succeeded("exit 0 · 12.4 s")
+  static let tailFailed = TerminalTail.Exit.failed("exit 101 · 12.4 s")
+}
+
+/// The mockup's tail under a tool row in the reading column.
+struct TerminalTailSample: View {
+  let exit: TerminalTail.Exit
+
+  var body: some View {
+    TerminalTail(PreviewState.tail, exit: exit).frame(width: Size.readingWidth)
+  }
+}

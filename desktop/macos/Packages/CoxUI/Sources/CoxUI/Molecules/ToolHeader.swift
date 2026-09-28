@@ -111,8 +111,9 @@ private struct ToolHeaderStatus: View {
     HStack(spacing: Space.s) {
       switch state {
       case .running: Spinner()
-      case .succeeded: mark("checkmark", Color(.statusSuccess), label: "Done")
-      case .failed: mark("xmark", Color(.statusDanger), label: "Failed")
+      case .succeeded:
+        ToolHeaderMark(symbol: "checkmark", colour: Color(.statusSuccess), label: "Done")
+      case .failed: ToolHeaderMark(symbol: "xmark", colour: Color(.statusDanger), label: "Failed")
       }
       if let duration {
         Text(duration).textStyle(.footnote, tabularDigits: true)
@@ -120,12 +121,17 @@ private struct ToolHeaderStatus: View {
     }
     .foregroundStyle(Color(.textSecondary))
   }
+}
 
-  private func mark(_ symbol: String, _ colour: Color, label: String) -> some View {
-    Image(systemName: symbol)
-      .symbolStyle(.caption)
-      .foregroundStyle(colour)
-      .accessibilityLabel(label)
+/// A finished call's glyph, named for VoiceOver.
+private struct ToolHeaderMark: View {
+  let symbol: String
+  let colour: Color
+  let label: String
+
+  var body: some View {
+    Image(systemName: symbol).symbolStyle(.caption).foregroundStyle(colour).accessibilityLabel(
+      label)
   }
 }
 
