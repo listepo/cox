@@ -5,7 +5,8 @@
 
 import SwiftUI
 
-/// `font.label` in `text.tertiary`, uppercased, with `trailing` pushed to the far edge.
+/// `font.label` in `text.secondary`, uppercased, with `trailing` pushed to the far edge. Not the
+/// mockup's tertiary: a label must stay readable on frosted glass (DS§8).
 struct SectionHeader<Trailing: View>: View {
   let title: String
   let trailing: Trailing
@@ -20,7 +21,7 @@ struct SectionHeader<Trailing: View>: View {
       Text(title)
         .textStyle(.label)
         .textCase(.uppercase)
-        .foregroundStyle(Color(.textTertiary))
+        .foregroundStyle(Color(.textSecondary))
         .accessibilityAddTraits(.isHeader)
       Spacer(minLength: Space.m)
       trailing

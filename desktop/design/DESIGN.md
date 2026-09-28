@@ -69,7 +69,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | --- | --- | --- |
 | surface | `window`, `sidebar`, `code`, `capsule`, `capsuleBorder`, `popover`, `terminal` | Backgrounds, by layer |
 | fill | `primary`, `secondary` | Quiet fills inside a surface |
-| text | `primary`, `secondary`, `tertiary`, `terminal`, `terminalOk`, `onAccent` | Foregrounds; `onAccent` is the label on an accent or status fill (primary button, Bypass segment), white, and High Contrast holds it to 7:1 on those fills |
+| text | `primary`, `secondary`, `tertiary`, `placeholder`, `terminal`, `terminalOk`, `onAccent` | Foregrounds; `placeholder` is the hint in an empty field, stronger than `tertiary` so it holds §8 on glass (A112); `onAccent` is the label on an accent or status fill (primary button, Bypass segment), white, and High Contrast holds it to 7:1 on those fills |
 | line | `separator` | 0.5 pt hairlines |
 | quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
 | intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
@@ -192,6 +192,7 @@ names map one-to-one:
 | lock | `lock` | dollar | `dollarsign.circle` |
 | plug | `powerplug` | cpu | `cpu` |
 | — (Settings › Advanced) | `slider.horizontal.3` | — (Changes › deleted file) | `trash` |
+| — (Changes › checkpoint) | `clock` | | |
 
 ## 4. Layout
 
@@ -276,15 +277,15 @@ component.
 | --- | --- | --- |
 | `StatusDot` | running, waiting, idle, error | `.dot .d-*` |
 | `IconTile(kind, symbol)` | neutral, edit, shell, search, write; the tool picks the DS§3.7 symbol. `IconTile(face:glyph:symbol:)` takes its caller's colours, as a Settings page's | `.tool .ic.c-*`, `.set-side .sq` |
-| `KeyCap` | — | `.kbd` |
+| `KeyCap` | glass; inverted (an outline in `surface.window`, on StopButton's `text.primary` face) | `.kbd` |
 | `Badge` | neutral, user, project (`role.project`), env, default, warning, danger; `radius.badge` | `.badge .b-*` |
 | `CountBadge` | `text.onAccent` digits on a `status.warning` pill at e1, `size.countBadge` high | `.sect .cnt` |
 | `RiskChip(text, level)` | low, medium, high — drawn as a `Badge` in the level's `risk.*` role | `.risk` |
 | `Spinner`, `ProgressRing(fraction)` | — | `.spin`, `.ring` |
 | `Sparkline(samples)` | tint | `svg` in `.meter` |
 | `StackedBar(segments)` | — | `.tokpop .bar` |
-| `DiffStat(added, removed)` | — | `.plus`, `.minus` |
-| `SectionHeader(title, trailing)` | — | `.sect`, `.ih` |
+| `DiffStat(added, removed)` | an add-only change shows no "−0" | `.plus`, `.minus` |
+| `SectionHeader(title, trailing)` | title in `text.secondary`, not the mockup's tertiary, so it stays readable on Frosted (§8) | `.sect`, `.ih` |
 | `InlineCode`, `Hairline(orientation)` | `Hairline`: horizontal, vertical; drawn by `.hairline` | `code`, `.divider:before`, `.sep` |
 | `Thumbnail(attachment)` | image, file | `.thumb` |
 
@@ -292,12 +293,12 @@ component.
 
 | Molecule | Built from | CSS |
 | --- | --- | --- |
-| `SessionRow(item, isSelected:)` | StatusDot, title, subtitle, cost; selected on `accent.soft` at e1 | `.row` |
-| `SessionFilter(text:, prompt:, shortcut:)` | search field in an `insetWell`, KeyCap | `.filter` |
+| `SessionRow(item, isSelected:)` | StatusDot, title, subtitle, cost; selected with InspectorRow's `rowSelection` (`accent.soft` at e1) | `.row` |
+| `SessionFilter(text:, prompt:, shortcut:)` | search field in an `insetWell`, the prompt and magnifier in `text.placeholder` (§8, A112), KeyCap | `.filter` |
 | `Breadcrumb(title, project:, branch:)` | title, project, branch | `.crumb` |
 | `ModelCapsule(model, isOpen:)`, `CostCapsule(cost:, context:, fraction:, isOpen:)` | CapsuleStyle (active while open), ProgressRing | `.cap` |
 | `ModeSegmented(selection:)` | CoxSegmented; ask, plan, auto, bypass (offered only while on) | `.seg` |
-| `StopButton` | KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
+| `StopButton` | inverted KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
 | `ToolHeader(item, isExpanded:)` | IconTile, summary (subject bold, monospaced for a command), DiffStat, RiskChip, Spinner / check / cross and duration, disclosure chevron; expanded on `fill.primary` over a hairline | `.tool .h` |
 | `DiffLineView(line, widestNumber:)`, `DiffHunkView(header:, lines:)` | gutter number (`text.secondary`, `text.primary` on a `diff.*Gutter`), sign, `CodeRun` syntax runs on `diff.add` / `diff.del` (coloured by the session theme's light or dark variant, as the view's appearance picks, A95), a replaced pair's changed words (the core's word diff) on `diff.*Gutter`; the hunk: header on `fill.primary`, one gutter width, `surface.code` | `.diff .ln`, `.hh` |
 | `CodeBlockView(language:, lines:, copy:)` | header (language, icon-only `doc.on.doc` copy button, `CoxButtonStyle(.plain, size: .small)`), `CodeRun` lines scrolling sideways on `surface.code`, `radius.l` | `.codeblock` |
@@ -387,7 +388,11 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
 
 - Every interactive element has a label; icon-only buttons have a tooltip with their shortcut.
 - Text contrast is at least 4.5:1 against its surface in every material and appearance; the snapshot
-  suite checks the Frosted renders.
+  suite checks the Frosted renders. For Frosted and Glossy the surface is the glass laid over the
+  window fill — each pane's tint at the material's window opacity over opaque `surface.window` — the
+  worst case cox can predict, since the wallpaper behind the window is unknown; the snapshot
+  wallpaper is for looks only (A112). CoxUI's `ContrastTests` computes each pair it names on that
+  backdrop for all three materials in both appearances.
 - VoiceOver rotors: Approvals, Tool calls, Errors. The token meter reads as "218 thousand tokens sent,
   9.8 thousand received, 71 tokens per second".
 - Honour Reduce Transparency, Reduce Motion and Increase Contrast (§1.6). `high-contrast.mjs` derives

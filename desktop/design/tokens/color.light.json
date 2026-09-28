@@ -168,6 +168,19 @@
         },
         "$description": "Timestamps, placeholders, key caps"
       },
+      "placeholder": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.4118,
+            0.4118,
+            0.4314
+          ],
+          "hex": "#69696e"
+        },
+        "$description": "The hint in an empty field, as the sidebar filter's prompt: stronger than `text.tertiary`, so it holds DS§8's 4.5:1 on glass (A112)"
+      },
       "terminal": {
         "$type": "color",
         "$value": {

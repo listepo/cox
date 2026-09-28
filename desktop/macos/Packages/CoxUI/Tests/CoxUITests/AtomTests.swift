@@ -82,4 +82,10 @@ import Testing
   @Test func diffStatReadsAsLinesAddedAndRemoved() {
     #expect(DiffStat(added: 42, removed: 7).label == "42 lines added, 7 removed")
   }
+
+  @Test func anAddOnlyDiffStatShowsNoZeroRemoved() {
+    let stat = DiffStat(added: 12, removed: 0)
+    #expect(!stat.showsRemoved)
+    #expect(stat.label == "12 lines added")
+  }
 }
