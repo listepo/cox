@@ -6,10 +6,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use cox_protocol::ids::CallId;
 use cox_protocol::traits::Tool;
 use cox_protocol::types::{
-    ArchiveRef, Content, Job, Message, ModelId, Request, SystemBlock, Tier, Usage,
+    ArchiveRef, Attachment, Content, Job, Message, ModelId, Request, SystemBlock, Tier, Usage,
 };
 
 /// Instruction-file stub until T7.1 reads the AGENTS.md chain.
@@ -381,9 +383,124 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
     }
 }
 
+/// The image types every wire takes (Anthropic's base64 source allows
+/// exactly these four), so an image that passes never needs a per-wire
+/// fallback.
+const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/// A user turn's content (T37.6): the text, any hook context, then each
+/// attachment — an image as `Content::Image` when `images` says `model`
+/// takes it, any other file whose bytes are UTF-8 as a tagged text block,
+/// which every wire carries. The rest is held back; the second value is
+/// one notice per held attachment saying why.
+pub fn user_content(
+    text: String,
+    context: Option<String>,
+    attachments: &[Attachment],
+    model: &str,
+    images: bool,
+) -> (Vec<Content>, Vec<String>) {
+    let mut content: Vec<Content> = std::iter::once(text)
+        .chain(context)
+        .map(|text| Content::Text { text })
+        .collect();
+    let mut held = Vec::new();
+    for a in attachments {
+        let media_type = a.media_type.to_ascii_lowercase();
+        if IMAGE_TYPES.contains(&media_type.as_str()) {
+            if images {
+                content.push(Content::Image {
+                    media_type,
+                    data_b64: a.data_b64.clone(),
+                });
+            } else {
+                held.push(format!(
+                    "attachment {:?} not sent: {model} does not take images on this provider \
+                     (a chat-api model opts in with `images = true` on its `models` entry)",
+                    a.name
+                ));
+            }
+            continue;
+        }
+        let body = STANDARD
+            .decode(&a.data_b64)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+        match body {
+            Some(body) => content.push(Content::Text {
+                text: format!(
+                    "<attachment name={:?} media_type={media_type:?}>\n{body}\n</attachment>",
+                    a.name
+                ),
+            }),
+            None => held.push(format!(
+                "attachment {:?} not sent: {media_type} is neither a png/jpeg/gif/webp image \
+                 nor UTF-8 text",
+                a.name
+            )),
+        }
+    }
+    (content, held)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn attach(name: &str, media_type: &str, bytes: &[u8]) -> Attachment {
+        Attachment {
+            name: name.into(),
+            media_type: media_type.into(),
+            data_b64: STANDARD.encode(bytes),
+        }
+    }
+
+    /// T37.6: an image follows the text as `Content::Image` when the model
+    /// takes images, and a UTF-8 file joins as a tagged text block.
+    #[test]
+    fn user_content_carries_image_and_text_file() {
+        let files = [
+            attach("shot.png", "image/PNG", b"\x89PNG"),
+            attach("notes.md", "text/markdown", b"# hi"),
+        ];
+        let (content, held) = user_content("look".into(), None, &files, "m", true);
+        assert!(held.is_empty(), "{held:?}");
+        assert_eq!(
+            content,
+            vec![
+                Content::Text {
+                    text: "look".into()
+                },
+                Content::Image {
+                    media_type: "image/png".into(),
+                    data_b64: files[0].data_b64.clone(),
+                },
+                Content::Text {
+                    text: "<attachment name=\"notes.md\" media_type=\"text/markdown\">\n# hi\n</attachment>"
+                        .into()
+                },
+            ]
+        );
+    }
+
+    /// T37.6: what the wire cannot take is left out, one notice each.
+    #[test]
+    fn user_content_holds_back_what_the_wire_cannot_take() {
+        let files = [
+            attach("shot.png", "image/png", b"\x89PNG"),
+            attach("a.bin", "application/octet-stream", &[0xff, 0xfe, 0x00]),
+        ];
+        let (content, held) = user_content("look".into(), None, &files, "qwen3", false);
+        assert_eq!(
+            content,
+            vec![Content::Text {
+                text: "look".into()
+            }]
+        );
+        assert_eq!(held.len(), 2);
+        assert!(held[0].contains("\"shot.png\"") && held[0].contains("qwen3 does not take images"));
+        assert!(held[1].contains("\"a.bin\"") && held[1].contains("neither"));
+    }
 
     /// T25.7: `breakdown.total` equals the estimator's request total and the
     /// segment shares sum to that estimate exactly.

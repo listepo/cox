@@ -671,6 +671,13 @@
             "boolean",
             "null"
           ]
+        },
+        "images": {
+          "description": "Whether this model takes image input (T37.6). Read only by an\n`api = \"chat\"` section, where one server hosts both vision and\ntext-only models: unset means \"not declared\", and an attached image\nis then held back with a notice rather than sent to a model that\nwould reject it.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

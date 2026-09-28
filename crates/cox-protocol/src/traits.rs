@@ -171,6 +171,14 @@ pub trait Provider: Send + Sync {
     /// What this provider implementation can do, so `cox-core` can avoid
     /// sending it a request shape it does not support.
     fn capabilities(&self) -> Caps;
+    /// Whether `model` on this wire takes `Content::Image` in a user
+    /// message (T37.6). Per model because one Chat server hosts vision and
+    /// text-only models side by side; `false` by default so a wire that
+    /// never said so gets a notice instead of an image it would reject.
+    fn accepts_images(&self, model: &str) -> bool {
+        let _ = model;
+        false
+    }
     /// Streams a response, forwarding `ProviderEvent`s on `sink` as they
     /// arrive; returns the call's final `Usage` once the stream ends, or
     /// stops early if `cancel` fires.

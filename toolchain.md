@@ -41,6 +41,7 @@ Programs the project uses and the direct packages from its manifests.
 | assert_fs | local | https://crates.io/crates/assert_fs | Rust dependency |
 | async-openai | local (`response-types` only) | https://github.com/64bit/async-openai | cox-provider: OpenAI Responses request and stream event types (T30.11); transport stays ours |
 | async-trait | local | https://crates.io/crates/async-trait | Rust dependency |
+| base64 | local | https://crates.io/crates/base64 | cox-core: decodes an attached text file (`UserTurn.attachments`, T37.6) |
 | bytes | local | https://crates.io/crates/bytes | T1.2: turns a reqwest byte stream into SSE frames (`sse.rs`) and drives the in-memory fixture parser (`parse_sse_str`) through the same code path. |
 | clap | local | https://crates.io/crates/clap | cox (CLI) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal I/O |

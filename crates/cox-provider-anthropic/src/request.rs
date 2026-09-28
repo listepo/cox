@@ -472,6 +472,26 @@ mod tests {
         insta::assert_json_snapshot!(build_body(&req, cfg(None)));
     }
 
+    /// T37.6 Check: an attached image reaches the wire as a base64 block.
+    #[test]
+    fn anthropic_request_user_image() {
+        let mut req = base("claude-sonnet-5");
+        req.messages = vec![Message {
+            role: Role::User,
+            content: vec![
+                Content::Text {
+                    text: "what is in this screenshot?".into(),
+                },
+                Content::Image {
+                    media_type: "image/png".into(),
+                    data_b64: "iVBORw0KGgo=".into(),
+                },
+            ],
+        }];
+
+        insta::assert_json_snapshot!(build_body(&req, cfg(None)));
+    }
+
     #[test]
     fn anthropic_request_parallel_tool_results() {
         let mut req = base("claude-sonnet-5");
