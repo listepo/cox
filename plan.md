@@ -27,10 +27,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.40 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.41 | todo | P0 | 3 | 0% | |
-| T37.42 | todo | P0 | 3 | 0% | |
-| T37.43 | todo | P0 | 4 | 0% | |
+| T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.42 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.20.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -1080,12 +1079,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.40 `CoxTranscriptText`: the TextKit 2 transcript view
-
-Depends: T37.37 · Size: ~200 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
-Goal: a new package with `TranscriptTextView`, one TextKit 2 `NSTextView` over the whole transcript built from timeline blocks, each block a tracked text range; SwiftLint and `swift test` wired like the other packages (research.md §9.5.13).
-Check: a test builds the view from a fixture and maps every block id to its range and back; `swift test` and both linters pass.
 
 #### T37.41 Cards as view-backed attachments
 

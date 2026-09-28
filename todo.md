@@ -21,7 +21,6 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.40. `CoxTranscriptText`: the TextKit 2 transcript view
 - T37.41. Cards as view-backed attachments
 - T37.42. Copy as Markdown and the one-block clamp
 - T37.43. Incremental text from `StyledDoc` spans

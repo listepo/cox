@@ -3434,3 +3434,17 @@ Deviations: ~510 source lines in 10 files. Mockup values with no token are named
 Check: helper merge alone — 25 tests in 7 suites pass against the existing references; then the first run recorded 100 atom snapshots, second and third runs 37 tests in 9 suites pass with nothing re-recorded; `swiftlint --strict` and `swift-format lint --strict` clean. Built and tested without the SwiftLintPlugins lines (plugin fetch stalls locally); `Package.swift`/`Package.resolved` unchanged. Commits 0cf1ff9, 9bc39d3.
 
 Not done: Spinner, ProgressRing, Sparkline, StackedBar, Thumbnail and the Hairline atom (T37.20.1–T37.20.4).
+
+#### T37.40 `CoxTranscriptText`: the TextKit 2 transcript view
+
+Depends: T37.37 · Size: ~200 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: a new package with `TranscriptTextView`, one TextKit 2 `NSTextView` over the whole transcript built from timeline blocks, each block a tracked text range; SwiftLint and `swift test` wired like the other packages (research.md §9.5.13).
+Check: a test builds the view from a fixture and maps every block id to its range and back; `swift test` and both linters pass.
+Status: done 2026-09-28
+Result: new package `desktop/macos/Packages/CoxTranscriptText` (tools 6.2, macOS 26, Swift 6; SwiftLintPlugins 0.65.1; depends only on `CoxModel`'s `CoxClient`). `TranscriptTextView` — one read-only, selectable TextKit 2 `NSTextView` over the whole transcript (`make(style:)`, `inScrollView(frame:)`, `load(_ blocks:)`, `range(of:)`, `blockID(at:)`). `BlockRanges` maps a block id to its range and a location back to its id by binary search (a caret right after a block's last character is inside it; a block with no text gets a zero-length range and no line). `TranscriptText.swift` builds one attributed string, each kind as plain text for now; `TranscriptStyle` carries fonts, colour, spacing and inset so the package spells out no design values. DT§4.6 table and §6 layout tree updated.
+
+Deviations: no dependency on `CoxUI` — the transcript organism (T37.23) lives in `CoxUI` and imports this package, so `CoxUI` builds the `TranscriptStyle` from its tokens. 262 LOC in 3 source files.
+
+Check: `swift test` 6/6 (temporary manifests without the plugin lines), including `everyFixtureBlockMapsToItsRangeAndBack` — builds the view from `Fixtures/read-and-reply.json`, maps every block id to its range and back and every location to its block, and asserts TextKit 2 stays on; `swiftlint lint --strict` and `swift-format lint --strict` clean; `swift package resolve` with the real manifest wrote `Package.resolved`. Commit 3401cf9.
+
+Not done: cards (T37.41), copy and clamp (T37.42), `StyledDoc` styling and incremental building (T37.43). For T37.43: `CoxUI`'s colour assets are internal, so mapping `StyleToken` colours into `TranscriptStyle` needs a public accessor in `CoxUI`.
