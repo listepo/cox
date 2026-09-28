@@ -23,7 +23,16 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.41. Cards as view-backed attachments
 - T37.43. Incremental text from `StyledDoc` spans
-- T37.21. `CoxUI` Molecules
+- T37.21.1. `ToolHeader`
+- T37.21.2. `DiffLineView` and `DiffHunkView`
+- T37.21.3. `CodeBlockView`
+- T37.21.4. `TerminalTail`
+- T37.21.5. `UserBubble` and `ThinkingDisclosure`
+- T37.21.6. `NoticeRow`, `TurnDivider` and `TurnMeta`
+- T37.21.7. `ComposerChip`
+- T37.21.8. `MaterialPicker`
+- T37.21.9. `ChangedFileRow` and `CheckpointRow`
+- T37.21.10. `SettingRow`
 - T37.22. Window shell: split view, sidebar, toolbar, inspector frame
 - T37.23. Transcript view and the DT§9 benchmark gate
 - T37.24. Composer: mentions, commands, shell mode, attachments, queue

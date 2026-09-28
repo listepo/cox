@@ -29,8 +29,17 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.21 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.22 | todo | P0 | 3 | 0% | |
+| T37.21.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.5 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.6 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.7 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.8 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.9 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.21.10 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.22 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23 | todo | P0 | 5 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
@@ -1090,11 +1099,65 @@ Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
 Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
 Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
 
-#### T37.21 `CoxUI` Molecules
+#### T37.21.1 `ToolHeader`
 
-Depends: T37.20.1–T37.20.4 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
-Goal: every DS§6.3 molecule built only from atoms and foundations.
-Check: snapshot suite green; no molecule imports `CoxCore`; no styling modifier is applied to an atom from outside it except through the atom's own parameters.
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the tool card header: icon tile, summary line, state and duration, the disclosure chevron. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.2 `DiffLineView` and `DiffHunkView`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: diff lines (added, removed, context, gutter numbers) and a hunk with its header, from plain values. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.3 `CodeBlockView`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a highlighted code block with language label and copy button, taking pre-styled runs as plain values. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.4 `TerminalTail`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the last lines of a running command in an inset well, monospaced, with the exit state. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.5 `UserBubble` and `ThinkingDisclosure`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the user turn bubble with attachments row, and the collapsible thinking block. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.6 `NoticeRow`, `TurnDivider` and `TurnMeta`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: notices (info, warning, error), the divider between turns, and the per-turn meta line (tokens, cost, duration, stop reason). Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.7 `ComposerChip`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the composer's mention, attachment and command chips with remove affordance. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.8 `MaterialPicker`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the appearance popover's glass picker (frosted, glossy, solid) with depth preview. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.9 `ChangedFileRow` and `CheckpointRow`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a changed file with diff stat and actions, and a rewind checkpoint row. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+
+#### T37.21.10 `SettingRow`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a Settings row — label, control and the source-layer badge (mockup `.group .gr`); DS§6.3 gains its row. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
 
 #### T37.22 Window shell: split view, sidebar, toolbar, inspector frame
 
@@ -1104,14 +1167,14 @@ Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/
 
 #### T37.23 Transcript view and the DT§9 benchmark gate
 
-Depends: T37.22, T37.40–T37.43 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
+Depends: T37.22, T37.40–T37.43, T37.21.1–T37.21.6 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
 Goal: lazy transcript from timeline patches with `UserBubble`, `ThinkingDisclosure`, `ToolCard`, `AssistantMessage` and `ApprovalCard` slots; text selection runs across blocks like a document (copy keeps block order and gives Markdown), and `cross_block_selection = false` clamps it to one block (A67); the DT§9 rendering bet is decided by its benchmark with selection on.
 Selection engine (T37.37, `research.md` §9.5.13): our own TextKit 2 view — one `NSTextView` over the transcript with blocks as ranges and cards as view-backed attachments — from the package `CoxTranscriptText`; Textual was rejected.
 Check: the benchmark in DT§9 passes its budget on a 2 000-block fixture; snapshots per block kind; a UI test drags a selection across three blocks and the pasteboard holds all three in order; with the setting off the same drag selects one block.
 
 #### T37.24 Composer: mentions, commands, shell mode, attachments, queue
 
-Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
+Depends: T37.23, T37.21.7 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
 Goal: DT§5 composer with completion driven by `cox-app` (T37.10).
 Check: UI test types `@`, picks a file, sends; the intent reaches the fixture client.
 
@@ -1123,7 +1186,7 @@ Check: snapshots idle and streaming; VoiceOver label reads the three numbers; th
 
 #### T37.26 Appearance popover and live window material
 
-Depends: T37.13, T37.22 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
+Depends: T37.13, T37.22, T37.21.8 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
 Goal: material, transparency, blur/reflection, depth and tint change the window live and persist through `[desktop.appearance]` (mockups 28–29); Reduce Transparency disables the controls and says why.
 Check: snapshot per material; changing a slider writes the config through an intent; Reduce Transparency snapshot is Solid.
 
@@ -1135,19 +1198,19 @@ Check: a fixture with a pending approval shows the card, the notification and ba
 
 #### T37.28 Review pane and rewind timeline
 
-Depends: T37.23 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
 Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
 Check: fixture rewind restores the expected files in a scratch worktree.
 
 #### T37.29 Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
 
-Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
 Goal: DT§5 inspector built from DS§6 rows.
 Check: snapshot per tab.
 
 #### T37.30.1 Settings screen
 
-Depends: T37.21 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
+Depends: T37.21.10 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
 Goal: the Settings screen from `CoxUI` molecules over `SettingsStore`: sidebar groups, a layer badge per value, a read-only project field that names the project file, secure fields for keys through `SecretStore`.
 Check: snapshot of a setting overridden by the project layer (read-only, badge names the layer); editing a user value round-trips through the fixture client.
 

@@ -3532,3 +3532,17 @@ Deviations: snapshots also cover Solid/Frosted. Named private constants: line 1.
 Check: recorded once, two runs pass (6 tests); both linters clean. The whole CoxUI suite (48 tests, 11 suites) failed once on the older timing test `SegmentedTests.reduceMotionCrossFadesTheSelection` (missed its mid-fade frame under load) and passed alone and in the next two full runs. Commit ec3f05e.
 
 Not done: nothing.
+
+#### T37.21 `CoxUI` Molecules
+
+Depends: T37.20.1–T37.20.4 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
+Goal: every DS§6.3 molecule built only from atoms and foundations.
+Check: snapshot suite green; no molecule imports `CoxCore`; no styling modifier is applied to an atom from outside it except through the atom's own parameters.
+Status: done 2026-09-28
+Result: first set of molecules (split at claim; the rest moved to T37.21.1–T37.21.10) — the ones the window shell (T37.22), Settings (T37.30.1) and the token popover (T37.25) need. `Sources/CoxUI/Molecules/`: SessionRow, SessionFilter, Breadcrumb, ModelCapsule, CostCapsule, ModeSegmented, StopButton, LabeledToggle, LabeledSlider, KeyValueGrid — headers naming their DS§6.3 rows, a `#Preview` per variant, SwiftUI-only imports; fixtures in `Previews/PreviewState+Shell.swift` and `+Settings.swift`; 84 snapshots in `ShellMoleculeTests.swift` and `SettingMoleculeTests.swift`. Foundations: `.symbolStyle(_:)` draws an SF Symbol per DS§3.7 (IconTile and Thumbnail use it, images unchanged); `CoxSegmented` gains `look:`. Timing fix: the segmented slide/cross-fade and spinner tests hold the animation half-way and wait for the first changed frame (`SnapshotHost.bitmap(until:limit:)`), so load delays but cannot change what they see. DESIGN.md §3.7, §6.1, §6.3 updated.
+
+Deviations: ~590 source lines in 17 files. SessionRow cost uses `text.secondary` (readable on frosted glass, DS§8) instead of the mockup's tertiary; its title uses `.body` (no 13 pt medium token); the slider heading reuses SectionHeader; Bypass shows in the mode control only while on. Molecule snapshots render at their ideal size (`fixedSize`) because the harness sizes a sample up to half a point small — fixing the harness would re-record every reference. No new private constants: nearest tokens stand in (grid gaps `Space.xs` × `Space.l`, detail indent `Space.ml`, row gap `Space.m` for 9 px).
+
+Check: the reworked Reduce Motion test fails with the gate removed from `coxMatchedGeometry`, the spinner test with it removed from `coxSpin`; timing tests pass three runs under 12 CPU burners; full `swift test` 62 tests in 16 suites pass twice with nothing re-recorded; `swiftlint --strict` and `swift-format lint --strict` clean (plugin-free manifest locally). Commits b9dacd8, 8b7d55c, be87348.
+
+Not done: T37.21.1–T37.21.10; TokenMeter stays with T37.25.
