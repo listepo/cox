@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
@@ -53,7 +52,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.34 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.37 | todo | P0 | 3 | 0% | |
 
 ## Reference
@@ -1091,12 +1089,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.2 Route `cox acp` through `cox-session`
-
-Depends: T37.1 · Size: ~80 · Files: `crates/cox-acp/src/lib.rs`, `crates/cox/src/main.rs`
-Goal: ACP sessions get the same tools, MCP servers, hooks and plugins as the TUI.
-Check: an ACP e2e against the scripted provider lists the same tool names as `cox run -p` for the same `COX_HOME`.
-
 #### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
 
 Depends: T37.3–T37.7 · Size: ~200 · Files: `crates/cox-app/src/timeline.rs`, `crates/cox-app/src/patch.rs`, `crates/cox-app/src/lib.rs`
@@ -1240,12 +1232,6 @@ Check: `spctl --assess` accepts the release build; the appcast validates.
 Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.34 One process drives a session: session lock, read-only follow, fork
-
-Depends: T37.1 · Size: ~180 · Files: `crates/cox-store/src/lock.rs`, `crates/cox-session/src/lib.rs`, `crates/cox-store/src/lib.rs`
-Goal: the process that runs a session holds an OS advisory lock on `sessions/<id>.lock` (`std::fs::File::try_lock`, stable since Rust 1.89, no new dependency); the kernel drops it when the process exits or crashes, so no lease goes stale. A second process — another TUI, the app, `cox resume` — that opens the same session gets a typed `SessionBusy { holder }` and may follow it read-only (tail the rollout and fold it, the D2 replay path), fork it into a new session, or ask to take it over. Never two writers on one rollout (A67, DT§11 Q6).
-Check: `second_opener_gets_session_busy` and `lock_released_when_holder_exits` (child process holds then exits); a follow test sees events the holder appends; the TUI e2e prints the busy notice instead of resuming.
 
 #### T37.37 Spike: the cross-block selection engine
 

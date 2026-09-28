@@ -3090,3 +3090,31 @@ Deviations: no separate question id (the call id is unique, as for approvals); `
 Check: new `crates/cox-core/tests/question.rs` — a scripted scenario asks and answers headless and the rollout holds the question and answered result; a subagent's question is answered through the parent (fails without the relay); a stray answer gives a warning notice. 733 tests across protocol, tools, core, session and tui; `-p cox` 139; clippy and fmt clean. Real binary `--plain` with a scripted scenario: question shown, "2" answered, `prod` returned, `question_asked` in the rollout. After merge with T37.11: clippy `-p cox-session -p cox` clean, `cox-session` + `cox-protocol` 117/117. Commit 69a63d5.
 
 Not done: headless `--answer` still answers inside the tool (no `QuestionAsked` there); the `Notification` hook fires on the `ask_user` call, not on `QuestionAsked`.
+
+#### T37.2 Route `cox acp` through `cox-session`
+
+Depends: T37.1 · Size: ~80 · Files: `crates/cox-acp/src/lib.rs`, `crates/cox/src/main.rs`
+Goal: ACP sessions get the same tools, MCP servers, hooks and plugins as the TUI.
+Check: an ACP e2e against the scripted provider lists the same tool names as `cox run -p` for the same `COX_HOME`.
+Status: done 2026-09-28
+Result: `AcpFactory::create` (`crates/cox/src/acp_cmd.rs`) opens sessions through `cox_session::open`, so ACP sessions get the same MCP servers, skills, subagent definitions, hooks, plugins, checkpointer and worktrees as the TUI. `SessionSpec.client: Option<ClientTools>` (link, fs, terminal) swaps in the client-backed `read`/`edit`/`write`/`bash`. `open`'s warnings reach the ACP client as `Notice` events, never stdout. `cox_acp::SessionFactory::create` is async (async-trait). The scripted provider gained a turn field `echo_tools = true` that replies with the request's sorted tool names. Also: 12 comments in other crates now point at `crates/cox-session` (commit 533595e).
+
+Deviations: the factory lives in `crates/cox/src/acp_cmd.rs`, not `cox-acp/src/lib.rs`; 10 files, ~200 changed LOC with the test; `async-trait` is a new edge for `crates/cox` (already a workspace dependency); ACP's default workspace root is now the git root of `cwd` (else `cwd`), as on the other surfaces, with the client's extra roots appended. Merged after T37.4 and T37.34: `questions: false`, `surface: "acp"`.
+
+Check: e2e `acp_session_offers_the_same_tools_as_run_p` (`crates/cox/tests/ide.rs`) — one MCP server (`cox mcp`, `mcp.deferred = false`) in `COX_HOME`; `cox run -p` and a JSON-RPC `cox acp` run list identical tools including `mcp__self__read`. clippy `-p cox-acp -p cox-session -p cox-provider -p cox-provider-testkit -p cox` clean; nextest of those four 83/83; `-p cox --test ide --test run_cli --test deps` 25/25; fmt clean. After the merge: `-p cox-session -p cox-store -p cox-acp` 79 passed, 2 skipped; `-p cox --test ide --test tui_e2e --test run_cli --test plain --test deps` 33/33. Commit a131f2d.
+
+Not done: ACP `session/new` still ignores the client's own `mcpServers` list.
+
+#### T37.34 One process drives a session: session lock, read-only follow, fork
+
+Depends: T37.1 · Size: ~180 · Files: `crates/cox-store/src/lock.rs`, `crates/cox-session/src/lib.rs`, `crates/cox-store/src/lib.rs`
+Goal: the process that runs a session holds an OS advisory lock on `sessions/<id>.lock` (`std::fs::File::try_lock`, stable since Rust 1.89, no new dependency); the kernel drops it when the process exits or crashes, so no lease goes stale. A second process — another TUI, the app, `cox resume` — that opens the same session gets a typed `SessionBusy { holder }` and may follow it read-only (tail the rollout and fold it, the D2 replay path), fork it into a new session, or ask to take it over. Never two writers on one rollout (A67, DT§11 Q6).
+Check: `second_opener_gets_session_busy` and `lock_released_when_holder_exits` (child process holds then exits); a follow test sees events the holder appends; the TUI e2e prints the busy notice instead of resuming.
+Status: done 2026-09-28
+Result: `crates/cox-store/src/lock.rs`: `lock::claim` takes an OS advisory lock (`File::try_lock`) on `sessions/<id>.lock` next to the rollout and writes `Holder { pid, surface, since }` as JSON; a held lock returns that holder (unreadable → "another cox process"). Claims inside one process share the lock through a static registry, so a failed `/fork` that falls back to its parent is not refused by its own lock. `Store::claim_session` keeps the lock in the `Store`, which the `Session` holds through an `Arc`; the kernel drops it on exit or crash. `cox_session::open` claims the id (new or resumed) before building anything; a held lock → `SessionError::SessionBusy { id, holder }`. `SessionSpec.surface` (`tui`, `plain`, `headless`, `acp`). `cox_session::Follow` (`lineage.rs`) re-reads the holder's rollout and returns only new events; fork is the existing `lineage::fork`. AGENTS.md `cox-store` row and DT§4.5 "Sessions open elsewhere" updated.
+
+Deviations: five source files (`lineage.rs` holds `Follow`; `crates/cox/src/session.rs` passes the surface); ~180 lines of non-test code; no new dependency. The lock file stays on disk after release on purpose (deleting it could race another opener).
+
+Check: `cargo nextest run -p cox-store -p cox-session` 59 passed, 2 skipped (child-process helpers) — `second_opener_gets_session_busy`, `lock_released_when_holder_exits` (child exits via `process::exit` without dropping the lock), `claims_in_one_process_share_the_lock`, `follow_sees_events_the_holder_appends`; `-p cox --test tui_e2e` 6 incl. `tui_resume_of_a_driven_session_prints_busy_notice`; `--test run_cli --test plain` 19; `--bin cox` 75; clippy and fmt clean. Real binary (scratch `COX_HOME`): lock file written, `run --resume` after exit works; with the lock held from outside (`flock`), `run --resume` exits 1 naming the holder and the follow/fork options. Re-checked after merging with T37.2 and T37.4 (see T37.2). Commit 33133b8.
+
+Not done: "take over" is only notice text; no CLI/TUI command yet to follow or fork a busy session (`Follow` and `fork` are library functions for the app); on Windows the holder cannot be read while locked, so the notice says "another cox process".
