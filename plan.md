@@ -32,7 +32,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.3 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.44.11 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T40.10 | todo | P3 | 2 | 0% | |
@@ -1449,6 +1449,7 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
 Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
 Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
+Blocked (2026-09-29): with both fonts in `~/Library/Fonts` and Figma plus `figma_agent` restarted after the install, four `use_figma` probes still found no `SF Mono` family and flagged SF Pro text `hasMissingFont` (115 of 135 layers on 4:2): the MCP session does not get this Mac's local fonts. Creator's decision: upload SF Pro and SF Mono as shared fonts (Figma Organization/Enterprise, admin → Resources → Fonts, `.otf`/`.ttf`; https://help.figma.com/hc/en-us/articles/360039956774, checked 2026-09-29), after the creator confirms the Apple font licence allows it. Resume when the creator says the fonts are uploaded.
 
 #### T37.44.11 The running app matches the mockups end to end
 
