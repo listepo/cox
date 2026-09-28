@@ -35,7 +35,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.2 | todo | P2 | 4 | 0% | |
 | T37.44.3 | todo | P3 | 2 | 0% | |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.22.11 | todo | P2 | 2 | 0% | |
+| T37.22.11 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2790,12 +2790,12 @@ Depends: — · Size: ~80 · Files: `desktop/macos/App/WindowChrome.swift`, `…
 Goal: a regression the orchestrator saw on the approve-write fixture with the window in front (2026-09-28): text inside the panes draws much lighter than its token (`text.primary` reads about `#626366`, the sidebar's "Needs you" about 1.8:1), as if the glass or blur layer sits on top of the content, and the transcript's tool block and the pinned approval are not visible at all, leaving a gap. The toolbar's text, outside the panes, draws at full strength. Snapshot tests do not show it, so it lies in how the app window composes the panes (T37.22.4's `glassPane(frosts: false)`, the behind-window view) or in a later change (T37.22.6, T37.21.11). Find the cause (bisect the merges if needed), fix it so pane content draws above the glass at its token colour, and add a guard a test can hold where possible.
 Check: a screenshot of the app in front on the approve-write fixture shows the tool block, the pinned approval and text at token strength; the measured `text.primary` pixel matches its token within a small tolerance over a plain backdrop.
 
-#### T37.22.11 Selected session row meets 4.5:1 in light Solid
+#### T37.22.11 Selected session row meets 4.5:1 in every appearance
 
-Depends: — · Size: ~30 · Files: `desktop/design/tokens` (the `accent.soft` light value), CoxUI tokens, `ContrastTests.swift`
-Goal: A115. `text.secondary` on the selected row's `accent.soft` is 3.99:1 in light Solid; lighten `accent.soft` (light appearance only) until every pair on the selected row reaches 4.5:1, keeping the row visibly selected. Text tokens stay as they are.
-Check: `ContrastTests` asserts the selected-row pairs at ≥ 4.5:1 in every appearance and material; CoxUI snapshots re-recorded on purpose; the Figma variables regenerated (`npm run figma`).
-Plan: measure the selected-row pairs in `ContrastTests`, lighten the light `accent.soft` in the design tokens and CoxUI until they reach 4.5:1, re-record CoxUI snapshots, regenerate the Figma variables script; verify with CoxUI tests, swift-format and swiftlint.
+Depends: — · Size: ~40 · Files: the design tokens (`desktop/design`), CoxUI tokens and the sidebar row, `ContrastTests.swift`
+Goal: A115. A new colour token `accent.selected` (light `#eaf3ff` opaque, dark `#3b9bff` α0.14) fills the selected session row instead of `accent.soft`, so `text.primary` and `text.secondary` on it reach ≥ 4.5:1 in every appearance and material. `accent.soft` keeps its value and its other uses.
+Check: `ContrastTests` asserts the selected-row pairs at ≥ 4.5:1 in light and dark, Solid, Frosted and Glossy (glass measured over the window fill, A112); CoxUI snapshots re-recorded on purpose; swift-format and swiftlint strict clean.
+Plan: add `accent.selected` to the design tokens and CoxUI's token set the way other colour tokens are kept in sync, use it for the selected sidebar row, extend `ContrastTests`, re-record CoxUI snapshots; verify CoxUI tests and the linters.
 
 ## 4. Definition of done for v0.1
 
@@ -2972,7 +2972,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A112 T37.21.11 — contrast, by the creator (2026-09-28): the filter prompt uses a new placeholder token (`#69696e` in light, the dark `text.secondary` in dark) instead of changing `text.secondary`; DS§8's Frosted and Glossy contrast is measured on the glass laid over the window fill, the worst predictable case, while the snapshot wallpaper stays for looks. Why: the recommendations as proposed; the user's wallpaper is unknown.
 - A113 T37.22.8, T37.22.9 — session titles, by the creator (2026-09-28): a title is generated after the first turn by one low-cost `Job::Title` request, behind a setting (`[session] auto_title`, default on), and the user can rename a session; a user's title is never overwritten. Why: every session read "Untitled session" in the app's sidebar and toolbar.
 - A114 T37.44.1, T37.44.2 — a Figma file `cox desktop` (team "Ivan's Starter team") mirrors the design, and the app is styled against it, by the creator (2026-09-28): tokens become Figma variables through a saved generator script, mockup screens become frames, screen 28 is rebuilt as editable layers bound to the variables. The repository (`desktop/design/tokens`, `mockups.html`) stays the source; an edit made in Figma is carried back into the tokens and mockups. Why: the creator wants to see and edit the design in Figma and style the app from it.
-- A115 T37.22.11 — selected-row contrast, by the creator (2026-09-28): the selected session row reaches 4.5:1 by lightening `accent.soft` in the light appearance; text tokens stay. Why: `text.secondary` on `accent.soft` measured 3.99:1 in light Solid.
+- A115 T37.22.11 — selected-row contrast, by the creator (2026-09-28): the selected session row gets its own fill token `accent.selected` — light opaque `#eaf3ff`, dark `#3b9bff` at α0.14 — so every text pair on it reaches 4.5:1 in every appearance and material; `accent.soft` and its other uses (focus halo, chips, badge, DecisionBar, inspector selection) stay as they are. Why: `text.secondary` on `accent.soft` measured 3.99:1 in light Solid and 4.22:1 in dark Solid, and changing `accent.soft` itself would pale every other use.
 - A116 T37.22.12 — by the creator (2026-09-28): the model pill also drops a trailing " (latest)" from a models.dev name. Why: haiku read `Haiku 4.5 (latest)`.
 - A117 T37.22.13 — by the creator (2026-09-28): the catalog is refreshed with a full `cox-vendor models` run, accepting the new `medium` efforts and the OpenRouter deepseek-v4-pro price. Why: T37.22.7 wrote only names and left the rest of models.dev's changes pending.
 - A118 T37.44.3 — by the creator (2026-09-28): the Figma file uses SF Pro and SF Mono, which the creator installs locally; no substitute font. Why: the app draws in SF, and a substitute would change the metrics being compared in T37.44.2.
