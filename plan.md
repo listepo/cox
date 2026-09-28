@@ -34,7 +34,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.19.5 | todo | P2 | 3 | 80% | |
+| T37.19.5 | in progress | P2 | 3 | 80% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
 | T37.22.3 | todo | P1 | 2 | 0% | |
@@ -2977,6 +2977,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A106 T37.32, T37.32.1, T37.32.2, T37.22.3 — T37.32 splits in two, by the creator (2026-09-28): T37.32.1 is the app target and an unsigned dev build, which needs no secrets; T37.32.2 is Developer ID signing, notarization, Sparkle and the Homebrew cask, which wait for the creator's certificates and keys. T37.22.3 depends on T37.32.1. Why: the app target unblocks the window setup and the app wiring of finished views without waiting for signing secrets.
 - A107 T37.33 — the performance budget suite is on hold, by the creator (2026-09-28). Why: benchmarks are skipped for now.
 - A108 T37.28.6 — the Review pane's "Send to agent" follows a setting: queue the comments while a turn runs, like the composer (the default), or send them at once, by the creator (2026-09-28). Why: the same behaviour as a typed prompt by default, with the choice left to the user.
+- A109 T37.19.5 — the dark-mode control highlight is a user setting, by the creator (2026-09-28): none (the dark mockup's look, the default) or white at 10% of the light highlight's strength; a second setting applies it to controls only (e1, the default, as the card says) or to every elevation level (e1–e4, including the transcript's user bubble). Why: the dark mockup gives no value, and both looks are wanted as options.
 
 ## 7. Risk register
 
