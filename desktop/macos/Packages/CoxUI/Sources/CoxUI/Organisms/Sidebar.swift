@@ -8,10 +8,10 @@ import SwiftUI
 
 /// The session list on a floating `ShellPane(.sidebar)` of `Size.sidebarWidth`. It renders
 /// `state` and reports every action through `send`; it owns no session state.
-struct Sidebar: View {
-  struct Session: Equatable, Sendable, Identifiable {
+public struct Sidebar: View {
+  public struct Session: Equatable, Sendable, Identifiable {
     /// The session's stable id from Rust, or an inbox item's: one session can wait on several.
-    let id: String
+    public let id: String
     var row: SessionRow.Item
     /// The session an inbox item's row opens; `nil` when `id` is the session.
     var session: ID?
@@ -21,14 +21,14 @@ struct Sidebar: View {
     var opens: ID { session ?? id }
   }
 
-  struct Group: Equatable, Sendable, Identifiable {
-    let id: String
+  public struct Group: Equatable, Sendable, Identifiable {
+    public let id: String
     var title: String
     var kind: Kind
     var sessions: [Session]
   }
 
-  struct State: Equatable, Sendable {
+  public struct State: Equatable, Sendable {
     var filter = ""
     var groups: [Group] = []
     var selection: Session.ID?
@@ -37,7 +37,7 @@ struct Sidebar: View {
     var providerStatus = StatusDot.Status.idle
   }
 
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     case filter(String)
     case select(Session.ID)
     case toggle(Group.ID)
@@ -48,7 +48,7 @@ struct Sidebar: View {
   let state: State
   let send: (Intent) -> Void
 
-  var body: some View {
+  public var body: some View {
     ShellPane(.sidebar) {
       VStack(spacing: 0) {
         HStack {

@@ -13,6 +13,7 @@ use cox_app::Holder;
 use cox_app::SessionInfo;
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
+use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
 use cox_app::{
@@ -652,6 +653,28 @@ pub struct SettingsView {
     pub project_file: Option<PathBuf>,
     pub mcp: Vec<McpServer>,
     pub dropped: Vec<Dropped>,
+}
+
+#[uniffi::remote(Record)]
+pub struct CheckRow {
+    pub id: CheckId,
+    pub status: CheckStatus,
+    pub detail: String,
+}
+
+#[uniffi::remote(Enum)]
+pub enum CheckId {
+    ProviderKey,
+    Git,
+    Sandbox,
+    ShellEnv,
+}
+
+#[uniffi::remote(Enum)]
+pub enum CheckStatus {
+    Ok,
+    Warn,
+    Fail,
 }
 
 #[uniffi::remote(Record)]

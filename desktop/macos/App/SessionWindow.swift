@@ -1,32 +1,60 @@
 // One window's session (DT§5.1): opens a session on the launch's core and shows it in CoxUI's
-// `MainScreen`, the transcript and composer in its column. Wiring only — the stores decide and
-// the packages draw. The shell's panes show their defaults and their intents go nowhere until
-// T37.22.3 binds them to the stores.
+// `MainScreen`, the transcript and composer in its column, over the behind-window blur; the
+// first-run checklist comes first on a first launch (DT§5.8). Wiring only — the stores decide
+// and the packages draw. The shell's panes fold and the Appearance popover writes
+// `[desktop.appearance]` here; the inspector tabs still show nothing.
 
 import CoxClient
 import CoxModel
 import CoxTranscript
+import CoxUI
 import SwiftUI
-// `MainScreen` and its state and intent types are internal to CoxUI until T37.22.3 makes the
-// shell's API public; a Debug build compiles the packages testable, so this reaches them.
-@testable import CoxUI
 
 struct SessionWindow: View {
-  let core: Result<any CoreClient, any Error>
+  let model: AppModel
+  /// Set once first run chose a project; a fixture launch never asks.
+  @AppStorage("CoxOnboarded") private var onboarded = false
+  @State private var screen = MainScreenState()
+  @State private var appearanceWrites = Coalescer()
   @State private var session: SessionStore?
   @State private var composer: ComposerStore?
   /// Why the session did not open.
   @State private var failure: String?
   /// Why the core refused the last intent; shown until dismissed.
   @State private var refused: String?
+  @Environment(\.coxAppearance) private var base
 
   var body: some View {
-    MainScreen(
-      state: MainScreenState(), send: { _ in }, transcript: { column },
-      inspector: { _ in EmptyView() }
+    Group {
+      if !onboarded && !model.launch.isFixture {
+        FirstRun(launch: model.launch) { onboarded = true }
+      } else {
+        main
+      }
+    }
+    .environment(\.coxAppearance, screen.appearance.applied(to: base))
+    .behindWindowBlur(
+      screen.appearance.blurFraction, tint: screen.appearance.tint,
+      in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous)
     )
-    .task { await open() }
+    .seeThroughWindow()
+    .task { await readSettings() }
+    .onChange(of: model.settings?.view) {
+      if !appearanceWrites.isPending { readAppearance() }
+    }
     .alert(refused ?? "", isPresented: isRefused) {}
+  }
+
+  private var main: some View {
+    MainScreen(state: screen, send: handle, transcript: { column }, inspector: { _ in EmptyView() })
+      .focusedSceneValue(
+        \.shell,
+        ShellActions(
+          isSidebarVisible: screen.isSidebarVisible, isInspectorVisible: screen.isInspectorVisible,
+          toggleSidebar: { screen.isSidebarVisible.toggle() },
+          toggleInspector: { screen.isInspectorVisible.toggle() })
+      )
+      .task { await open() }
   }
 
   private var isRefused: Binding<Bool> {
@@ -48,13 +76,48 @@ struct SessionWindow: View {
     }
   }
 
+  /// What the shell reports: the panes fold here, and an appearance change shows at once and is
+  /// written once the control rests.
+  private func handle(_ intent: MainScreenIntent) {
+    switch intent {
+    case .sidebar(.hide), .toolbar(.showSidebar): screen.isSidebarVisible.toggle()
+    case .toolbar(.toggleInspector): screen.isInspectorVisible.toggle()
+    case .toolbar(.open(.appearance)):
+      screen.popover = screen.popover == .appearance ? nil : .appearance
+    case .dismissPopover: screen.popover = nil
+    case .inspectorTab(let tab): screen.inspectorTab = tab
+    case .appearance(let change):
+      screen.appearance.apply(change)
+      screen.appearance.fillTexts()
+      let edit = AppearanceEdit(change)
+      guard let settings = model.settings else { return }
+      appearanceWrites.submit(edit.key) { await settings.apply(edit) }
+    case .sidebar, .toolbar:
+      // The session list, the model and cost popovers, the mode and Stop are bound with the
+      // sidebar's and toolbar's rows.
+      break
+    }
+  }
+
+  private func readSettings() async {
+    appearanceWrites.onIdle = { readAppearance() }
+    await model.settings?.load()
+    readAppearance()
+  }
+
+  private func readAppearance() {
+    guard let settings = model.settings else { return }
+    screen.appearance = AppearancePopover.State(settings)
+  }
+
   private func open() async {
     do {
-      let client = try await core.get().open(
+      let client = try await model.launch.core.get().open(
         // The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
         OpenSession(cwd: LaunchCore.project(), theme: "base16-ocean.dark"))
       let store = SessionStore(session: client)
       (session, composer) = (store, ComposerStore(session: store))
+      if let info = try? await client.info() { model.register(store, as: info.session) }
       await store.run()
     } catch {
       failure = String(describing: error)

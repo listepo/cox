@@ -8,9 +8,9 @@ import SwiftUI
 /// A status symbol in its colour, a `SettingLabel`, then the fix button at its natural size.
 /// The detail stays in `text.secondary`: the colour is on the symbol, so the words stay
 /// readable on frosted glass (DS§8).
-struct ChecklistRow: View {
+public struct ChecklistRow: View {
   /// `cox doctor`'s ok, warn and fail, and a step the person has still to take.
-  enum Status: CaseIterable, Sendable {
+  public enum Status: CaseIterable, Sendable {
     case passed, warning, missing, step
   }
 
@@ -35,7 +35,7 @@ struct ChecklistRow: View {
     self.perform = perform
   }
 
-  var body: some View {
+  public var body: some View {
     HStack(spacing: Space.l) {
       Image(systemName: symbol)
         .symbolStyle(.body)

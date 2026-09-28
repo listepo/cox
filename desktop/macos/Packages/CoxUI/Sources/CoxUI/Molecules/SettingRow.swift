@@ -67,7 +67,7 @@ struct TitledSetting<Control: View>: View {
 
 /// The config layers a setting's value can come from, as `cox config show --sources` names
 /// them. Outside `SettingRow` so it does not depend on the row's content type.
-enum SettingSource: CaseIterable, Sendable {
+public enum SettingSource: CaseIterable, Sendable {
   case `default`, user, project, claudeSettings, env, flag
 }
 

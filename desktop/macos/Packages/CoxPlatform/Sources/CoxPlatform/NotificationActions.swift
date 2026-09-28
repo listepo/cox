@@ -95,12 +95,19 @@ public enum NotificationActions {
 }
 
 /// The notification centre's delegate: an action on a cox notification goes to `handle`, which
-/// the app points at the session's store. The app keeps it alive and sets it as
+/// the app points at the session's store, and a click on the notification itself goes to `show`
+/// with its session. The app keeps it alive and sets it as
 /// `UNUserNotificationCenter.current().delegate` at launch.
 public final class NotificationResponder: NSObject, UNUserNotificationCenterDelegate, Sendable {
   private let handle: @Sendable (NotificationRoute) -> Void
+  private let show: @Sendable (String) -> Void
 
-  public init(handle: @escaping @Sendable (NotificationRoute) -> Void) { self.handle = handle }
+  public init(
+    handle: @escaping @Sendable (NotificationRoute) -> Void,
+    show: @escaping @Sendable (String) -> Void = { _ in }
+  ) {
+    (self.handle, self.show) = (handle, show)
+  }
 
   public func userNotificationCenter(
     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
@@ -109,6 +116,19 @@ public final class NotificationResponder: NSObject, UNUserNotificationCenterDele
     let userInfo = response.notification.request.content.userInfo
     let route = NotificationActions.route(
       action: response.actionIdentifier, userInfo: userInfo, text: text)
-    route.map(handle)
+    let session = userInfo[NotificationActions.sessionKey] as? String
+    if let route {
+      handle(route)
+    } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier, let session {
+      show(session)
+    }
+  }
+
+  /// A note that arrives while cox is frontmost still shows: the session it names may be in a
+  /// window behind this one, and `notify` posts only what needs the person.
+  public func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+  ) async -> UNNotificationPresentationOptions {
+    [.banner, .list, .sound]
   }
 }

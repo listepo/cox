@@ -6,16 +6,20 @@
 import SwiftUI
 
 /// What a server's login button does.
-enum LoginAction: Equatable, Sendable { case logIn, logOut }
+public enum LoginAction: Equatable, Sendable { case logIn, logOut }
 
 extension SettingsScreen {
-  struct Login: Identifiable, Equatable, Sendable {
+  public struct Login: Identifiable, Equatable, Sendable {
     /// The server's name.
-    let id: String
+    public let id: String
     /// `Logged in, expires in 3h`, `Not logged in`, …
     var detail: String
     /// `nil` for a server with no login (stdio).
     var action: LoginAction?
+
+    public init(id: String, detail: String, action: LoginAction?) {
+      (self.id, self.detail, self.action) = (id, detail, action)
+    }
   }
 }
 

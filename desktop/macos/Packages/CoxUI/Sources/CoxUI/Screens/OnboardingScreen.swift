@@ -6,12 +6,14 @@
 import SwiftUI
 
 /// The checklist rows, in the order `cox-app` returns them.
-struct OnboardingScreenState: Equatable, Sendable {
-  var checks: [OnboardingScreen.Check] = []
+public struct OnboardingScreenState: Equatable, Sendable {
+  public var checks: [OnboardingScreen.Check]
+
+  public init(checks: [OnboardingScreen.Check] = []) { self.checks = checks }
 }
 
 /// Every intent the first-run window reports.
-enum OnboardingScreenIntent: Equatable, Sendable {
+public enum OnboardingScreenIntent: Equatable, Sendable {
   /// The folder picker, for the project the first session runs in.
   case chooseFolder
   /// Settings, to store a provider key.
@@ -21,11 +23,15 @@ enum OnboardingScreenIntent: Equatable, Sendable {
 }
 
 /// The first-run window: a project step over a `SettingsGroupBox` of `ChecklistRow`s.
-struct OnboardingScreen: View {
+public struct OnboardingScreen: View {
   let state: OnboardingScreenState
   let send: (OnboardingScreenIntent) -> Void
 
-  var body: some View {
+  public init(state: OnboardingScreenState, send: @escaping (OnboardingScreenIntent) -> Void) {
+    (self.state, self.send) = (state, send)
+  }
+
+  public var body: some View {
     ShellPane(.window) {
       ScrollView {
         VStack(alignment: .leading, spacing: Space.xl) {
@@ -52,18 +58,24 @@ struct OnboardingScreen: View {
 }
 
 extension OnboardingScreen {
-  struct Check: Identifiable, Equatable, Sendable {
+  public struct Check: Identifiable, Equatable, Sendable {
     /// The check's stable id from `cox-app` (`provider_key`, `git`, `sandbox`, `shell_env`).
-    let id: String
+    public let id: String
     var title: String
     /// What was found, or what is missing.
     var detail: String
     var status: ChecklistRow.Status
     var fix: Fix?
+
+    public init(
+      id: String, title: String, detail: String, status: ChecklistRow.Status, fix: Fix? = nil
+    ) {
+      (self.id, self.title, self.detail, self.status, self.fix) = (id, title, detail, status, fix)
+    }
   }
 
   /// The button a check that is not ok offers.
-  enum Fix: Equatable, Sendable {
+  public enum Fix: Equatable, Sendable {
     case openSettings, retry
 
     var title: String {

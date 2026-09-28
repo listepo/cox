@@ -2,34 +2,41 @@
 // screens 28–29): the window's glass settings — material, transparency, blur or reflection,
 // Depth and wallpaper tint — under the toolbar's paintbrush. Separate so the window shell
 // shows them from one value and reports each change as an intent the app writes to
-// `[desktop.appearance]`; the window redraws from the same value, so a change shows live.
+// `[desktop.appearance]`; the window redraws from the same value, so a change shows live. A
+// control a config layer above the user file sets is disabled, and the note names the layer.
 
 import SwiftUI
 
 /// The popover on readable popover glass at e4. It holds no setting: every control shows
 /// `state` and reports a change through `send`. Under Reduce Transparency the window is Solid
 /// whatever is picked, so the glass controls are disabled and the note says why (DS§1.6).
-struct AppearancePopover: View {
+public struct AppearancePopover: View {
   /// `[desktop.appearance]` as the core stored it, and its values as the core formats them.
-  struct State: Equatable, Sendable {
-    var material = GlassMaterial.frosted
+  public struct State: Equatable, Sendable {
+    public var material = GlassMaterial.frosted
     /// Window and pane background opacity, 0 (clear) … 1 (opaque); the slider shows its
     /// complement, transparency.
-    var opacity = MaterialToken.frostedWindowOpacity
+    public var opacity = MaterialToken.frostedWindowOpacity
     /// Blur in pt for Frosted, reflection for Glossy, within `blurRange` from the schema.
-    var blur = MaterialToken.frostedBlur
-    var blurRange: ClosedRange<Double> = MaterialToken.solidBlur...MaterialToken.frostedBlur
+    public var blur = MaterialToken.frostedBlur
+    public var blurRange: ClosedRange<Double> = MaterialToken.solidBlur...MaterialToken.frostedBlur
     /// Depth, 0 (Flat) … 1 (3D).
-    var depth = 1.0
-    var tint = true
+    public var depth = 1.0
+    public var tint = true
     /// `58%`, `34 pt`, `High`.
-    var transparencyText = ""
-    var blurText = ""
-    var depthText = ""
+    public var transparencyText = ""
+    public var blurText = ""
+    public var depthText = ""
+    /// The controls a layer above the user file sets, each with that layer's name (`project`):
+    /// an edit would not take effect, so they are disabled.
+    public var locked: [Control: String] = [:]
+
+    /// Frosted at its token values, nothing locked: what the window shows before the config loads.
+    public init() {}
 
     /// The window these values draw, over `base`'s text size: what `coxAppearance` holds
     /// while the popover edits it.
-    func applied(to base: Appearance) -> Appearance {
+    public func applied(to base: Appearance) -> Appearance {
       var window = base
       window.material = material
       window.windowOpacity = opacity
@@ -39,7 +46,7 @@ struct AppearancePopover: View {
 
     /// Takes a change at once, so the window follows a slider while the core stores it; the
     /// texts stay until the core formats the stored value.
-    mutating func apply(_ change: Intent) {
+    public mutating func apply(_ change: Intent) {
       switch change {
       case .material(let value): material = value
       case .opacity(let value): opacity = value
@@ -51,7 +58,7 @@ struct AppearancePopover: View {
   }
 
   /// One control's change, named as its `[desktop.appearance]` key.
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     case material(GlassMaterial)
     case opacity(Double)
     case blur(Double)
@@ -59,11 +66,16 @@ struct AppearancePopover: View {
     case tint(Bool)
   }
 
+  /// The popover's controls, by the `[desktop.appearance]` key each one sets.
+  public enum Control: String, CaseIterable, Sendable {
+    case material, opacity, blur, depth, tint
+  }
+
   let state: State
   let send: (Intent) -> Void
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-  var body: some View {
+  public var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.popover, style: .continuous)
     let isGlass = state.material != .solid
     VStack(alignment: .leading, spacing: Space.l) {
@@ -78,23 +90,29 @@ struct AppearancePopover: View {
         SectionHeader("Material")
         MaterialPicker(selection: bind(\.material, Intent.material))
       }
-      .disabled(reduceTransparency)
+      .disabled(reduceTransparency || isLocked(.material))
       Group {
         LabeledSlider(
           "Window transparency",
           value: transparency,
-          valueText: state.transparencyText, ends: (low: "Opaque", high: "Clear"))
-        blurSlider
+          valueText: state.transparencyText, ends: (low: "Opaque", high: "Clear")
+        )
+        .disabled(isLocked(.opacity))
+        blurSlider.disabled(isLocked(.blur))
       }
       .disabled(reduceTransparency || !isGlass)
       LabeledSlider(
         "Depth", value: bind(\.depth, Intent.depth), valueText: state.depthText,
-        ends: (low: "Flat", high: "3D"))
+        ends: (low: "Flat", high: "3D")
+      )
+      .disabled(isLocked(.depth))
       LabeledToggle("Tint from wallpaper", isOn: bind(\.tint, Intent.tint))
-        .disabled(reduceTransparency)
+        .disabled(reduceTransparency || isLocked(.tint))
       Text(note)
         .textStyle(.footnote)
-        .foregroundStyle(Color(reduceTransparency ? .textSecondary : .textTertiary))
+        .foregroundStyle(
+          Color(reduceTransparency || !state.locked.isEmpty ? .textSecondary : .textTertiary)
+        )
         .fixedSize(horizontal: false, vertical: true)
     }
     .padding(.horizontal, Space.xl)
@@ -118,10 +136,18 @@ struct AppearancePopover: View {
   }
 
   private var note: String {
-    reduceTransparency
-      ? "Reduce transparency is on, so the window stays Solid."
-      : "Text panels stay readable at every setting."
+    if reduceTransparency { return "Reduce transparency is on, so the window stays Solid." }
+    // One sentence per layer, its controls in the popover's order.
+    let layers = Set(state.locked.values).sorted()
+    guard !layers.isEmpty else { return "Text panels stay readable at every setting." }
+    return layers.map { layer in
+      let names = Control.allCases.filter { state.locked[$0] == layer }.map(\.title)
+      return "Set by the \(layer) layer: \(names.formatted(.list(type: .and)))."
+    }
+    .joined(separator: " ")
   }
+
+  private func isLocked(_ control: Control) -> Bool { state.locked[control] != nil }
 
   /// The transparency slider: the complement of the opacity the config stores.
   var transparency: Binding<Double> {
@@ -136,6 +162,21 @@ struct AppearancePopover: View {
   }
 }
 
+extension AppearancePopover.Control {
+  var title: String {
+    switch self {
+    case .material: "Material"
+    case .opacity: "Transparency"
+    case .blur: "Blur"
+    case .depth: "Depth"
+    case .tint: "Tint"
+    }
+  }
+}
+
 #Preview("frosted") { PreviewMatrix { AppearancePopoverSample(material: .frosted) } }
 #Preview("glossy") { PreviewMatrix { AppearancePopoverSample(material: .glossy) } }
 #Preview("solid") { PreviewMatrix { AppearancePopoverSample(material: .solid) } }
+#Preview("locked") {
+  PreviewMatrix { AppearancePopover(state: PreviewState.appearanceLocked) { _ in } }
+}

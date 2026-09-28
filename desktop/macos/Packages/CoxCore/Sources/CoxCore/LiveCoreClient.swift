@@ -8,7 +8,8 @@ import CoxClient
 import CoxFFIBindings
 
 public final class LiveCoreClient: CoreClient {
-  private let app: App
+  /// Internal so the conversion files' extensions (the checklist) call it too.
+  let app: App
 
   /// `home` is `COX_HOME`; `nil` means `~/.cox`. Call `loadLoginEnv()`
   /// first, once per launch (DT§4.8).
