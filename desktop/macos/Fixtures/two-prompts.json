@@ -16,7 +16,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3M4KTJ59EKQ73K57RC8EN0B",
+          "id": "turn:01M3ME5WB0MG2Q0ZFQC38EZ9AW",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -41,7 +41,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M4KTJ5VPJRQR2SB0KPVNXY",
+          "id": "item:01M3ME5WB0R9AF6B765FVA8WHB",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -49,12 +49,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3M4KTJ59EKQ73K57RC8EN0B"
+        "after": "turn:01M3ME5WB0MG2Q0ZFQC38EZ9AW"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M4KTJ94S8Z1WHXNK5SNEFX",
+          "id": "item:01M3ME5WB4W94Z2XYJM9NWVP9H",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -78,7 +78,7 @@
             }
           }
         },
-        "after": "item:01M3M4KTJ5VPJRQR2SB0KPVNXY"
+        "after": "item:01M3ME5WB0R9AF6B765FVA8WHB"
       },
       {
         "op": "usage",
@@ -94,7 +94,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3M4KTJ59EKQ73K57RC8EN0B",
+            "turn": "01M3ME5WB0MG2Q0ZFQC38EZ9AW",
             "tally": {
               "sent": 3711,
               "received": 5,
@@ -107,8 +107,8 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 33388.981636060096,
-            "exact": true,
+            "tok_per_s": null,
+            "exact": false,
             "sparkline": [],
             "done": true
           },
@@ -116,12 +116,12 @@
           "text": {
             "sent": "3.7k",
             "received": "5",
-            "rate": "33389",
-            "spoken": "3.7 thousand tokens sent, 5 received, 33389 tokens per second",
+            "rate": "",
+            "spoken": "3.7 thousand tokens sent, 5 received",
             "heading": "Last turn · 1 request",
             "phase": "done",
-            "rate_unit": "tok/s last call",
-            "rate_detail": "avg 33389 tok/s · first token 0 ms · peak 33389 tok/s",
+            "rate_unit": "tok/s now",
+            "rate_detail": "first token 0 ms",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -206,7 +206,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3M4KTJQ6F8D26EQDWBR18TV",
+          "id": "turn:01M3ME5WBJ5PBYJZPC1Y03QY9N",
           "turn": 2,
           "kind": {
             "type": "turn_meta",
@@ -226,12 +226,12 @@
             }
           }
         },
-        "after": "item:01M3M4KTJ94S8Z1WHXNK5SNEFX"
+        "after": "item:01M3ME5WB4W94Z2XYJM9NWVP9H"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M4KTJQ2QHTFD9MSG0CSWWY",
+          "id": "item:01M3ME5WBJZATHMV58K9367G59",
           "turn": 2,
           "kind": {
             "type": "user",
@@ -239,12 +239,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3M4KTJQ6F8D26EQDWBR18TV"
+        "after": "turn:01M3ME5WBJ5PBYJZPC1Y03QY9N"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M4KTJT74VAFFSYMZEXR48K",
+          "id": "item:01M3ME5WBNYZS8HSW6P2JW4Y08",
           "turn": 2,
           "kind": {
             "type": "assistant",
@@ -268,7 +268,7 @@
             }
           }
         },
-        "after": "item:01M3M4KTJQ2QHTFD9MSG0CSWWY"
+        "after": "item:01M3ME5WBJZATHMV58K9367G59"
       },
       {
         "op": "usage",
@@ -284,7 +284,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3M4KTJQ6F8D26EQDWBR18TV",
+            "turn": "01M3ME5WBJ5PBYJZPC1Y03QY9N",
             "tally": {
               "sent": 3724,
               "received": 6,
@@ -297,8 +297,8 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 33457.311258942864,
-            "exact": true,
+            "tok_per_s": null,
+            "exact": false,
             "sparkline": [],
             "done": true
           },
@@ -306,12 +306,12 @@
           "text": {
             "sent": "7.4k",
             "received": "11",
-            "rate": "33457",
-            "spoken": "7.4 thousand tokens sent, 11 received, 33457 tokens per second",
+            "rate": "",
+            "spoken": "7.4 thousand tokens sent, 11 received",
             "heading": "Last turn · 1 request",
             "phase": "done",
-            "rate_unit": "tok/s last call",
-            "rate_detail": "avg 33457 tok/s · first token 0 ms · peak 33457 tok/s",
+            "rate_unit": "tok/s now",
+            "rate_detail": "first token 0 ms",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -396,7 +396,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3M4KTJ59EKQ73K57RC8EN0B",
+      "id": "turn:01M3ME5WB0MG2Q0ZFQC38EZ9AW",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -417,7 +417,7 @@
       }
     },
     {
-      "id": "item:01M3M4KTJ5VPJRQR2SB0KPVNXY",
+      "id": "item:01M3ME5WB0R9AF6B765FVA8WHB",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -426,7 +426,7 @@
       }
     },
     {
-      "id": "item:01M3M4KTJ94S8Z1WHXNK5SNEFX",
+      "id": "item:01M3ME5WB4W94Z2XYJM9NWVP9H",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -451,7 +451,7 @@
       }
     },
     {
-      "id": "turn:01M3M4KTJQ6F8D26EQDWBR18TV",
+      "id": "turn:01M3ME5WBJ5PBYJZPC1Y03QY9N",
       "turn": 2,
       "kind": {
         "type": "turn_meta",
@@ -472,7 +472,7 @@
       }
     },
     {
-      "id": "item:01M3M4KTJQ2QHTFD9MSG0CSWWY",
+      "id": "item:01M3ME5WBJZATHMV58K9367G59",
       "turn": 2,
       "kind": {
         "type": "user",
@@ -481,7 +481,7 @@
       }
     },
     {
-      "id": "item:01M3M4KTJT74VAFFSYMZEXR48K",
+      "id": "item:01M3ME5WBNYZS8HSW6P2JW4Y08",
       "turn": 2,
       "kind": {
         "type": "assistant",
