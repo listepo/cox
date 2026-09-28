@@ -1,0 +1,175 @@
+// `ToolHeader` (DS§6.3 row `ToolHeader`, the mockup's `.tool .h`): one tool call at a glance —
+// what kind of work, what it did to what, how risky, whether it is still running and how long
+// it took, and whether its body is open. Separate so a collapsed tool row and an expanded
+// tool card share one header, and the card's body (diff, terminal, code) stays its own part.
+
+import SwiftUI
+
+/// An `IconTile`, the summary with its subject in bold, a `DiffStat`, a `RiskChip`, the state
+/// and duration in `text.secondary` and a disclosure chevron. The expanded header sits on
+/// `fill.primary` over a hairline, the mockup's `.tool.exp .h`; a collapsed one is flat (e0).
+struct ToolHeader: View {
+  /// What the header shows; every string comes formatted from the core.
+  struct Item: Equatable, Sendable {
+    var tile: IconTile.Kind
+    /// An SF Symbol from the DS§3.7 map.
+    var symbol: String
+    /// What the tool did, `Edited`.
+    var verb: String
+    /// What it did it to, `crates/cox-provider-http/src/retry.rs`, drawn in bold.
+    var subject: String
+    /// A command rather than a name: drawn monospaced, the mockup's `b.mono`.
+    var subjectIsCode = false
+    /// More in `text.secondary`, `· retry.rs, http.rs +2`.
+    var detail: String?
+    var change: Change?
+    var risk: Risk?
+    var state: State
+    /// How long it ran, `0.1 s`.
+    var duration: String?
+  }
+
+  /// The lines a file change adds and removes.
+  struct Change: Equatable, Sendable {
+    var added: Int
+    var removed: Int
+  }
+
+  struct Risk: Equatable, Sendable {
+    var text: String
+    var level: RiskChip.Level
+  }
+
+  enum State: CaseIterable, Sendable {
+    case running, succeeded, failed
+  }
+
+  let item: Item
+  /// `nil` for a call with no body to open, which draws no chevron and is not a button.
+  let isExpanded: Bool?
+  let toggle: () -> Void
+
+  init(_ item: Item, isExpanded: Bool? = nil, toggle: @escaping () -> Void = {}) {
+    self.item = item
+    self.isExpanded = isExpanded
+    self.toggle = toggle
+  }
+
+  var body: some View {
+    if let isExpanded {
+      Button(action: toggle) { ToolHeaderRow(item: item, isExpanded: isExpanded) }
+        .buttonStyle(ToolHeaderStyle(isExpanded: isExpanded))
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+    } else {
+      ToolHeaderRow(item: item, isExpanded: nil).modifier(ToolHeaderFace(isExpanded: false))
+    }
+  }
+}
+
+/// The header's content, laid out as the mockup's `.tool .h` flex row.
+private struct ToolHeaderRow: View {
+  let item: ToolHeader.Item
+  let isExpanded: Bool?
+
+  var body: some View {
+    HStack(spacing: Space.m) {
+      IconTile(item.tile, symbol: item.symbol)
+      summary
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .foregroundStyle(Color(.textPrimary))
+      if let change = item.change { DiffStat(added: change.added, removed: change.removed) }
+      Spacer(minLength: 0)
+      if let risk = item.risk { RiskChip(risk.text, level: risk.level) }
+      ToolHeaderStatus(state: item.state, duration: item.duration)
+      if let isExpanded {
+        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+          .symbolStyle(.footnote)
+          .foregroundStyle(Color(.textTertiary))
+          .accessibilityHidden(true)
+      }
+    }
+    .textStyle(.body)
+    .accessibilityElement(children: .combine)
+  }
+
+  private var summary: Text {
+    let subject = Text(item.subject).fontWeight(item.subjectIsCode ? .medium : .semibold)
+    let styled = item.subjectIsCode ? subject.monospaced() : subject
+    guard let detail = item.detail else { return Text("\(item.verb) \(styled)") }
+    let rest = Text(detail).foregroundStyle(Color(.textSecondary))
+    return Text("\(item.verb) \(styled) \(rest)")
+  }
+}
+
+/// A spinner, check or cross, then the duration, the mockup's `.st`.
+private struct ToolHeaderStatus: View {
+  let state: ToolHeader.State
+  let duration: String?
+
+  var body: some View {
+    HStack(spacing: Space.s) {
+      switch state {
+      case .running: Spinner()
+      case .succeeded: mark("checkmark", Color(.statusSuccess), label: "Done")
+      case .failed: mark("xmark", Color(.statusDanger), label: "Failed")
+      }
+      if let duration {
+        Text(duration).textStyle(.footnote, tabularDigits: true)
+      }
+    }
+    .foregroundStyle(Color(.textSecondary))
+  }
+
+  private func mark(_ symbol: String, _ colour: Color, label: String) -> some View {
+    Image(systemName: symbol)
+      .symbolStyle(.caption)
+      .foregroundStyle(colour)
+      .accessibilityLabel(label)
+  }
+}
+
+/// Hover and press lay the usual quiet fills over the header (`ControlState`).
+private struct ToolHeaderStyle: ButtonStyle {
+  let isExpanded: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    ControlStateReader(isPressed: configuration.isPressed) { state in
+      configuration.label
+        .modifier(ToolHeaderFace(isExpanded: isExpanded, tint: state.tint))
+    }
+  }
+}
+
+/// The mockup's padding and radius; an expanded header takes `fill.primary`, rounds only its
+/// top corners to meet the card and ends on a hairline.
+private struct ToolHeaderFace: ViewModifier {
+  let isExpanded: Bool
+  var tint: Color = .clear
+
+  func body(content: Content) -> some View {
+    let shape = UnevenRoundedRectangle(
+      topLeadingRadius: Radius.l, bottomLeadingRadius: isExpanded ? 0 : Radius.l,
+      bottomTrailingRadius: isExpanded ? 0 : Radius.l, topTrailingRadius: Radius.l,
+      style: .continuous)
+    content
+      .padding(.horizontal, Space.ml)
+      .padding(.vertical, Space.s)
+      .background { shape.fill(tint) }
+      .background { if isExpanded { shape.fill(Color(.fillPrimary)) } }
+      .hairline(isExpanded ? .bottom : [])
+      .contentShape(shape)
+  }
+}
+
+#Preview("edited") {
+  PreviewMatrix { ToolHeaderSample(PreviewState.toolEdited, isExpanded: false) }
+}
+#Preview("expanded") {
+  PreviewMatrix { ToolHeaderSample(PreviewState.toolEdited, isExpanded: true) }
+}
+#Preview("running") { PreviewMatrix { ToolHeaderSample(PreviewState.toolRunning) } }
+#Preview("explored") {
+  PreviewMatrix { ToolHeaderSample(PreviewState.toolExplored, isExpanded: false) }
+}
+#Preview("failed") { PreviewMatrix { ToolHeaderSample(PreviewState.toolFailed) } }
