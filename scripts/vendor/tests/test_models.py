@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import tomlkit
 
-from cox_vendor import models
+from cox_vendor import models, registry
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REGISTRY_BODY = (FIXTURES / "models_dev_subset.json").read_bytes()
@@ -146,6 +146,57 @@ def test_default_toml_regenerates_context_window_and_efforts(isolated_files):
     # local has no models.dev counterpart at all: untouched.
     local = {m["id"]: m for m in doc["providers"]["local"]["models"]}
     assert local["qwen3-coder"]["context_window"] == 32768
+
+
+def test_default_toml_takes_the_models_dev_name_as_display_name_after_the_id(isolated_files):
+    prices, default = isolated_files
+    models.run(fetch=fetching())
+    text = default.read_text()
+    assert '{id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000' in text
+    doc = tomlkit.parse(text)
+    anthropic = {m["id"]: m for m in doc["providers"]["anthropic"]["models"]}
+    assert anthropic["claude-haiku-4-5"]["display_name"] == "Claude Haiku 4.5"
+    # No name on models.dev (glm-5.2), a blank one (qwen/qwen3-coder-plus) or
+    # no models.dev row at all (kimi-k2.7-code): no display_name, the reader
+    # falls back to the id.
+    zai = {m["id"]: m for m in doc["providers"]["z-ai"]["models"]}
+    assert "display_name" not in zai["glm-5.2"]
+    openrouter = {m["id"]: m for m in doc["providers"]["openrouter"]["models"]}
+    assert "display_name" not in openrouter["qwen/qwen3-coder-plus"]
+    moonshot = {m["id"]: m for m in doc["providers"]["moonshot"]["models"]}
+    assert "display_name" not in moonshot["kimi-k2.7-code"]
+    assert moonshot["kimi-k2.6"]["display_name"] == "Kimi K2.6"
+
+
+def test_a_renamed_model_updates_its_display_name_in_place(isolated_files):
+    prices, default = isolated_files
+    models.run(fetch=fetching())
+    renamed = json.loads(REGISTRY_BODY)
+    renamed["anthropic"]["models"]["claude-sonnet-5"]["name"] = "Claude Sonnet 5 (new)"
+    assert models.run(fetch=fetching(json.dumps(renamed).encode()))
+    text = default.read_text()
+    assert '{id="claude-sonnet-5", display_name="Claude Sonnet 5 (new)", context_window=' in text
+    assert text.count("display_name=") == 4
+
+
+def test_names_only_writes_the_names_and_nothing_else(isolated_files):
+    prices, default = isolated_files
+    before_prices = prices.read_text()
+    assert models.run(fetch=fetching(), names_only=True)
+    assert prices.read_text() == before_prices
+    doc = tomlkit.parse(default.read_text())
+    anthropic = {m["id"]: m for m in doc["providers"]["anthropic"]["models"]}
+    sonnet, haiku = anthropic["claude-sonnet-5"], anthropic["claude-haiku-4-5"]
+    assert sonnet["display_name"] == "Claude Sonnet 5"
+    # The fixture's stale efforts and context window stay as they were.
+    assert list(sonnet["efforts"]) == ["low", "high"]
+    assert haiku["context_window"] == 111111
+    # A second names-only run has nothing left to write.
+    assert models.run(check=True, fetch=fetching(), names_only=True) is False
+
+
+def test_model_names_is_a_registered_command():
+    assert registry.COMMANDS["model-names"] is models.run_names
 
 
 def test_default_toml_comments_and_unrelated_tables_are_preserved(isolated_files):

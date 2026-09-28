@@ -186,9 +186,11 @@ public final class ComposerStore {
   /// The permission mode in force, as the core reports it.
   public var mode: PermissionMode? { session.status.mode }
 
-  /// The model the main turn runs on and its effort, `claude-sonnet-5 · high`.
+  /// The model the main turn runs on and its effort, `Sonnet 5 · high`: the catalog's name without
+  /// its vendor prefix, else the id.
   public var model: String? {
-    guard let model = session.status.model else { return nil }
+    guard let id = session.status.model else { return nil }
+    let model = ModelName.short(session.status.modelName, id: id)
     return session.status.effort.map { "\(model) · \($0.rawValue)" } ?? model
   }
 

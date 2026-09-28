@@ -59,9 +59,12 @@ import Testing
   let queue = CoxClient.Intent.queue(text: "look", attachments: [shot], confirmThink: true)
   #expect(CoxFFIBindings.Intent(queue) == want)
   let live = CoxFFIBindings.TimelinePatch.status(
-    status: .init(queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high))
+    status: .init(
+      queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5",
+      modelName: "Claude Sonnet 5", effort: .high))
   let status = CoxClient.Status(
-    queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high)
+    queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high,
+    modelName: "Claude Sonnet 5")
   #expect(CoxClient.TimelinePatch(live) == .status(status: status))
 }
 

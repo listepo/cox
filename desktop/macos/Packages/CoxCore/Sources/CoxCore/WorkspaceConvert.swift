@@ -45,7 +45,8 @@ extension LiveCoreClient: ModelsClient {
     try app.models(cwd: cwd).map {
       CoxClient.ModelChoice(
         tier: CoxClient.Tier($0.tier), provider: $0.provider, id: $0.id,
-        efforts: $0.efforts.map { CoxClient.Effort($0) }, contextWindow: $0.contextWindow)
+        displayName: $0.displayName, efforts: $0.efforts.map { CoxClient.Effort($0) },
+        contextWindow: $0.contextWindow)
     }
   }
 

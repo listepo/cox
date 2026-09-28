@@ -13,6 +13,7 @@ uv run --project scripts/vendor cox-vendor anthropic-spec --check   # report a d
 
 uv run --project scripts/vendor cox-vendor models           # regenerate prices.toml + default.toml from models.dev
 uv run --project scripts/vendor cox-vendor models --check   # report a diff, write nothing, exit 1 if stale
+uv run --project scripts/vendor cox-vendor model-names      # only the models' display names, nothing else
 ```
 
 `models` (T30.20) regenerates the `[[model]]` rows of
@@ -23,7 +24,10 @@ doesn't have, or whose provider section has no models.dev counterpart
 (`local`, `typesafe`), is reported on stdout and left unchanged, never
 dropped. Anthropic's four native rows are cross-checked against models.dev
 but never overwritten from it (the vendor pricing page outranks a mirror);
-a difference is reported for a human to re-verify by hand.
+a difference is reported for a human to re-verify by hand. Each listed
+model also takes models.dev's `name` as its `display_name` (A111);
+`model-names` writes those alone, so new names can land without also
+shipping price or effort drift nobody has reviewed.
 
 Or through the task runner: `just vendor anthropic-spec`, `just vendor anthropic-spec --check`, `just vendor models --check`.
 

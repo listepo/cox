@@ -52,7 +52,7 @@ enum ShellState {
         ModelPopover.Section(
           title: section.title,
           rows: section.rows.map {
-            CompletionList.Row(id: $0.id, title: $0.model, detail: $0.detail)
+            CompletionList.Row(id: $0.id, title: $0.name, detail: $0.detail)
           },
           selected: section.rows.first(where: \.isSelected)?.id)
       })

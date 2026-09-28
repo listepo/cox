@@ -73,19 +73,22 @@ public struct Status: Equatable, Sendable, Decodable {
   /// The model the main turn runs on, and its effort.
   public var model: String?
   public var effort: Effort?
+  /// What the catalog calls that model, `Claude Sonnet 5`; `nil` when it has no name.
+  public var modelName: String?
 
   public init(
     queued: UInt32 = 0, mode: PermissionMode? = nil, nextMode: PermissionMode? = nil,
-    model: String? = nil, effort: Effort? = nil
+    model: String? = nil, effort: Effort? = nil, modelName: String? = nil
   ) {
-    (self.queued, self.mode, self.nextMode, self.model, self.effort) = (
-      queued, mode, nextMode, model, effort
+    (self.queued, self.mode, self.nextMode, self.model, self.effort, self.modelName) = (
+      queued, mode, nextMode, model, effort, modelName
     )
   }
 
   enum CodingKeys: String, CodingKey {
     case queued, mode, model, effort
     case nextMode = "next_mode"
+    case modelName = "model_name"
   }
 }
 

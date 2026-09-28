@@ -101,6 +101,7 @@ pub struct ModelChoice {
     pub tier: Tier,
     pub provider: String,
     pub id: String,
+    pub display_name: Option<String>,
     pub efforts: Vec<Effort>,
     pub context_window: Option<u32>,
 }
@@ -173,6 +174,7 @@ pub struct Status {
     pub mode: Option<PermissionMode>,
     pub next_mode: Option<PermissionMode>,
     pub model: Option<ModelId>,
+    pub model_name: Option<String>,
     pub effort: Option<Effort>,
 }
 

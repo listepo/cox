@@ -2,15 +2,33 @@
 //! model and effort chips, and the queue count. Seeded from the config the
 //! session opened with — the core records its opening mode to the rollout
 //! only (T50.4), because every surface already has it from that config —
-//! then kept by `StateChanged`, `TurnStarted` and `ModelSwitched`. Separate
+//! then kept by `StateChanged`, `TurnStarted` and `ModelSwitched`; the
+//! model's display name comes from the model catalog (A111). Separate
 //! from `Timeline`, whose fold is the block list, and from `Controller`,
 //! which only queues what this says changed.
+
+use std::collections::HashMap;
 
 use cox_core::permission::next_mode;
 use cox_protocol::Config;
 use cox_protocol::types::{Effort, Event, Job, ModelId, PermissionMode, Tier};
 
 use crate::patch::Status;
+
+/// Model id → display name for every catalog row that has one (A111). The
+/// built-in rows are under `config`'s, so an entry that names nothing keeps
+/// models.dev's name; a catalog that fails to load names nothing, and the
+/// app shows the id.
+pub(crate) fn model_names(config: &Config) -> HashMap<String, String> {
+    cox_models::Catalog::load(config, &[], None)
+        .map(|catalog| {
+            catalog
+                .rows()
+                .filter_map(|r| Some((r.id.clone(), r.display_name.clone()?)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 /// The status and what it needs to put back when an override is cleared.
 #[derive(Debug, Clone, Default)]
@@ -19,19 +37,21 @@ pub struct StatusFold {
     /// The `code` tier's configured effort, which `SetEffort { None }`
     /// restores.
     tier_effort: Option<Effort>,
+    /// Model id → display name, for every catalog row that has one.
+    names: HashMap<String, String>,
 }
 
 impl StatusFold {
     /// The status a session opened with `config` starts in.
     pub fn open(config: &Config) -> Self {
         let code = &config.tiers.code;
+        let names = model_names(config);
         let mut fold = Self {
-            status: Status {
-                model: Some(ModelId(code.model.clone())),
-                ..Status::default()
-            },
+            status: Status::default(),
             tier_effort: Some(code.effort),
+            names,
         };
+        fold.name(ModelId(code.model.clone()));
         fold.set(config.permissions.mode, None);
         fold
     }
@@ -55,15 +75,20 @@ impl StatusFold {
                 job: Job::Main,
                 model,
                 ..
-            } => self.status.model = Some(model.clone()),
+            } => self.name(model.clone()),
             Event::ModelSwitched {
                 tier: Tier::Code,
                 to,
                 ..
-            } => self.status.model = Some(to.clone()),
+            } => self.name(to.clone()),
             _ => {}
         }
         self.status != before
+    }
+
+    fn name(&mut self, model: ModelId) {
+        self.status.model_name = self.names.get(&model.0).cloned();
+        self.status.model = Some(model);
     }
 
     fn set(&mut self, mode: PermissionMode, effort: Option<Effort>) {
@@ -136,5 +161,15 @@ mod tests {
         assert!(!fold.apply(&switch(Tier::Cheap)));
         assert!(fold.apply(&switch(Tier::Code)));
         assert_eq!(fold.status().model, Some(ModelId("gpt-6".into())));
+    }
+
+    #[test]
+    fn the_status_names_the_model_from_the_catalog_and_an_unknown_one_by_nothing() {
+        let mut fold = opened();
+        assert_eq!(fold.status().model_name.as_deref(), Some("Claude Sonnet 5"));
+        assert!(fold.apply(&turn(Job::Main, "claude-opus-5")));
+        assert_eq!(fold.status().model_name.as_deref(), Some("Claude Opus 5"));
+        assert!(fold.apply(&turn(Job::Main, "my-local-model")));
+        assert_eq!(fold.status().model_name, None);
     }
 }

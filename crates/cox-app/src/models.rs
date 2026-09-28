@@ -29,9 +29,11 @@ pub struct ModelChoice {
     pub tier: Tier,
     /// The `[providers.<name>]` section the tier calls.
     pub provider: String,
-    /// The id sent on the wire, which the popover shows: the catalog has
-    /// no display names.
+    /// The id sent on the wire.
     pub id: String,
+    /// What the catalog calls it (`Claude Sonnet 5`, A111); `None` when it
+    /// has no name, and the popover shows the id.
+    pub display_name: Option<String>,
     /// The efforts it takes; empty means any.
     pub efforts: Vec<Effort>,
     /// Its window in tokens, when the config knows it.
@@ -41,6 +43,7 @@ pub struct ModelChoice {
 /// Every tier's models, the tier's configured one first, also when its
 /// section does not list it (LM Studio lists none).
 pub fn choices(config: &Config) -> Vec<ModelChoice> {
+    let names = crate::status::model_names(config);
     let mut out = Vec::new();
     for tier in TIERS {
         let t = config.tiers.get(tier);
@@ -49,6 +52,7 @@ pub fn choices(config: &Config) -> Vec<ModelChoice> {
             tier,
             provider: t.provider.clone(),
             id: id.to_owned(),
+            display_name: names.get(id).cloned(),
             efforts,
             context_window,
         };
@@ -201,19 +205,24 @@ mod tests {
             id: "claude-sonnet-5".into(),
             context_window: 1_000_000,
             efforts: vec![Effort::Low, Effort::High],
-            reasoning_effort: None,
-            images: None,
+            ..Default::default()
         }];
-        let code: Vec<(String, Option<u32>)> = choices(&config)
+        let code: Vec<(String, Option<u32>, Option<String>)> = choices(&config)
             .into_iter()
             .filter(|c| c.tier == Tier::Code)
-            .map(|c| (c.id, c.context_window))
+            .map(|c| (c.id, c.context_window, c.display_name))
             .collect();
+        // A config entry without a name keeps the catalog's (A111); an id
+        // the catalog does not know has none.
         assert_eq!(
             code,
             [
-                ("claude-custom-9".into(), None),
-                ("claude-sonnet-5".into(), Some(1_000_000)),
+                ("claude-custom-9".into(), None, None),
+                (
+                    "claude-sonnet-5".into(),
+                    Some(1_000_000),
+                    Some("Claude Sonnet 5".into())
+                ),
             ]
         );
         let tiers: Vec<Tier> = choices(&config).iter().map(|c| c.tier).collect();

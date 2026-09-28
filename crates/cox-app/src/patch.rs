@@ -212,6 +212,11 @@ pub struct Status {
     /// The model the main turn runs on: the configured `code` tier's, then
     /// whatever the latest main turn ran on or `/model` switched to.
     pub model: Option<ModelId>,
+    /// What a person calls that model (`Claude Sonnet 5`), from the model
+    /// catalog (A111); `None` when the catalog has no name for it, and the
+    /// app shows the id.
+    #[serde(default)]
+    pub model_name: Option<String>,
     /// The effort that model runs at: the `/effort` override, else the
     /// `code` tier's configured effort.
     pub effort: Option<Effort>,

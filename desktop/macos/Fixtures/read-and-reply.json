@@ -8,6 +8,7 @@
           "mode": "default",
           "next_mode": "plan",
           "model": "claude-sonnet-5",
+          "model_name": "Claude Sonnet 5",
           "effort": "high"
         }
       }
@@ -16,7 +17,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3ME5RMEQGJ9584BN3TPRX72",
+          "id": "turn:01M3MJ2WVFDP1Z16PADENZYSBM",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -39,7 +40,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5RMEBWXWZ57NAJW1C0TK",
+          "id": "item:01M3MJ2WVF6JJT8EXQECQY28TA",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -47,12 +48,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3ME5RMEQGJ9584BN3TPRX72"
+        "after": "turn:01M3MJ2WVFDP1Z16PADENZYSBM"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5RMJ2SK02ZV85AZX71X1",
+          "id": "item:01M3MJ2WVKKSJG060JKAWYFCQF",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -76,12 +77,12 @@
             }
           }
         },
-        "after": "item:01M3ME5RMEBWXWZ57NAJW1C0TK"
+        "after": "item:01M3MJ2WVF6JJT8EXQECQY28TA"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3ME5RMKQKM97KJ1TZSSP04S",
+          "id": "call:01M3MJ2WVKJ8WMYQVFMW3WXQ2P",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -92,14 +93,14 @@
             "state": "done",
             "tail": "1\thello\n\n[1 lines total]",
             "archive": {
-              "id": "01M3ME5RMNGB4J1ZF02MPKEXP9",
+              "id": "01M3MJ2WVNRCRPERSZN7QDNCWE",
               "bytes": 24
             },
             "diff": null,
             "duration_ms": 1
           }
         },
-        "after": "item:01M3ME5RMJ2SK02ZV85AZX71X1"
+        "after": "item:01M3MJ2WVKKSJG060JKAWYFCQF"
       },
       {
         "op": "usage",
@@ -115,7 +116,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3ME5RMEQGJ9584BN3TPRX72",
+            "turn": "01M3MJ2WVFDP1Z16PADENZYSBM",
             "tally": {
               "sent": 3709,
               "received": 10,
@@ -227,7 +228,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5RMPV0W7WDJDBQ8SK053",
+          "id": "item:01M3MJ2WVQ1CZD35011YMREVYX",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -438,12 +439,12 @@
             }
           }
         },
-        "after": "call:01M3ME5RMKQKM97KJ1TZSSP04S"
+        "after": "call:01M3MJ2WVKJ8WMYQVFMW3WXQ2P"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3ME5RMEQGJ9584BN3TPRX72",
+          "id": "turn:01M3MJ2WVFDP1Z16PADENZYSBM",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -479,7 +480,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3ME5RMEQGJ9584BN3TPRX72",
+            "turn": "01M3MJ2WVFDP1Z16PADENZYSBM",
             "tally": {
               "sent": 7437,
               "received": 35,
@@ -591,7 +592,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3ME5RMEQGJ9584BN3TPRX72",
+      "id": "turn:01M3MJ2WVFDP1Z16PADENZYSBM",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -612,7 +613,7 @@
       }
     },
     {
-      "id": "item:01M3ME5RMEBWXWZ57NAJW1C0TK",
+      "id": "item:01M3MJ2WVF6JJT8EXQECQY28TA",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -621,7 +622,7 @@
       }
     },
     {
-      "id": "item:01M3ME5RMJ2SK02ZV85AZX71X1",
+      "id": "item:01M3MJ2WVKKSJG060JKAWYFCQF",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -646,7 +647,7 @@
       }
     },
     {
-      "id": "call:01M3ME5RMKQKM97KJ1TZSSP04S",
+      "id": "call:01M3MJ2WVKJ8WMYQVFMW3WXQ2P",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -657,7 +658,7 @@
         "state": "done",
         "tail": "1\thello\n\n[1 lines total]",
         "archive": {
-          "id": "01M3ME5RMNGB4J1ZF02MPKEXP9",
+          "id": "01M3MJ2WVNRCRPERSZN7QDNCWE",
           "bytes": 24
         },
         "diff": null,
@@ -665,7 +666,7 @@
       }
     },
     {
-      "id": "item:01M3ME5RMPV0W7WDJDBQ8SK053",
+      "id": "item:01M3MJ2WVQ1CZD35011YMREVYX",
       "turn": 1,
       "kind": {
         "type": "assistant",

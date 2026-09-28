@@ -8,6 +8,7 @@
           "mode": "default",
           "next_mode": "plan",
           "model": "claude-sonnet-5",
+          "model_name": "Claude Sonnet 5",
           "effort": "high"
         }
       }
@@ -16,7 +17,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3ME5WB0MG2Q0ZFQC38EZ9AW",
+          "id": "turn:01M3MJ36SPCJC52CVV4YPP3B4A",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -41,7 +42,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5WB0R9AF6B765FVA8WHB",
+          "id": "item:01M3MJ36SPVQD8822K5QX86939",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -49,12 +50,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3ME5WB0MG2Q0ZFQC38EZ9AW"
+        "after": "turn:01M3MJ36SPCJC52CVV4YPP3B4A"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5WB4W94Z2XYJM9NWVP9H",
+          "id": "item:01M3MJ36SWDSADW2HC0WN1W9ZK",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -78,7 +79,7 @@
             }
           }
         },
-        "after": "item:01M3ME5WB0R9AF6B765FVA8WHB"
+        "after": "item:01M3MJ36SPVQD8822K5QX86939"
       },
       {
         "op": "usage",
@@ -94,7 +95,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3ME5WB0MG2Q0ZFQC38EZ9AW",
+            "turn": "01M3MJ36SPCJC52CVV4YPP3B4A",
             "tally": {
               "sent": 3711,
               "received": 5,
@@ -206,7 +207,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3ME5WBJ5PBYJZPC1Y03QY9N",
+          "id": "turn:01M3MJ36T9WN8NX786E1AR6VK7",
           "turn": 2,
           "kind": {
             "type": "turn_meta",
@@ -226,12 +227,12 @@
             }
           }
         },
-        "after": "item:01M3ME5WB4W94Z2XYJM9NWVP9H"
+        "after": "item:01M3MJ36SWDSADW2HC0WN1W9ZK"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5WBJZATHMV58K9367G59",
+          "id": "item:01M3MJ36T9YE3NN2GH183S2ZQP",
           "turn": 2,
           "kind": {
             "type": "user",
@@ -239,12 +240,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3ME5WBJ5PBYJZPC1Y03QY9N"
+        "after": "turn:01M3MJ36T9WN8NX786E1AR6VK7"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3ME5WBNYZS8HSW6P2JW4Y08",
+          "id": "item:01M3MJ36TCKJ77YEC42DQVRTFY",
           "turn": 2,
           "kind": {
             "type": "assistant",
@@ -268,7 +269,7 @@
             }
           }
         },
-        "after": "item:01M3ME5WBJZATHMV58K9367G59"
+        "after": "item:01M3MJ36T9YE3NN2GH183S2ZQP"
       },
       {
         "op": "usage",
@@ -284,7 +285,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3ME5WBJ5PBYJZPC1Y03QY9N",
+            "turn": "01M3MJ36T9WN8NX786E1AR6VK7",
             "tally": {
               "sent": 3724,
               "received": 6,
@@ -396,7 +397,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3ME5WB0MG2Q0ZFQC38EZ9AW",
+      "id": "turn:01M3MJ36SPCJC52CVV4YPP3B4A",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -417,7 +418,7 @@
       }
     },
     {
-      "id": "item:01M3ME5WB0R9AF6B765FVA8WHB",
+      "id": "item:01M3MJ36SPVQD8822K5QX86939",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -426,7 +427,7 @@
       }
     },
     {
-      "id": "item:01M3ME5WB4W94Z2XYJM9NWVP9H",
+      "id": "item:01M3MJ36SWDSADW2HC0WN1W9ZK",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -451,7 +452,7 @@
       }
     },
     {
-      "id": "turn:01M3ME5WBJ5PBYJZPC1Y03QY9N",
+      "id": "turn:01M3MJ36T9WN8NX786E1AR6VK7",
       "turn": 2,
       "kind": {
         "type": "turn_meta",
@@ -472,7 +473,7 @@
       }
     },
     {
-      "id": "item:01M3ME5WBJZATHMV58K9367G59",
+      "id": "item:01M3MJ36T9YE3NN2GH183S2ZQP",
       "turn": 2,
       "kind": {
         "type": "user",
@@ -481,7 +482,7 @@
       }
     },
     {
-      "id": "item:01M3ME5WBNYZS8HSW6P2JW4Y08",
+      "id": "item:01M3MJ36TCKJ77YEC42DQVRTFY",
       "turn": 2,
       "kind": {
         "type": "assistant",

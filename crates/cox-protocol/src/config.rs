@@ -357,6 +357,10 @@ pub struct ProviderModel {
     /// gateways the full `"vendor/model"` id, e.g.
     /// `"anthropic/claude-sonnet-5"`).
     pub id: String,
+    /// What a person calls the model (`"Claude Sonnet 5"`), from models.dev's
+    /// `name` (A111). Unset means a reader shows the id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     /// Context window in tokens (local servers do not report it; gateways
     /// vary it per model, so the section default is only a fallback).
     pub context_window: u32,

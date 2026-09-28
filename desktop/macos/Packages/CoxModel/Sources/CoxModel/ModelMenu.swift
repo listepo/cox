@@ -1,6 +1,6 @@
 // The toolbar's model popover (DT§5.1 "model chip", T37.22.6): each tier's models from the core's
-// catalog under the tier's name, by id since the catalog names none, the one the session runs on
-// marked. A pick is `/model <tier> <id>`, the TUI's switch. Here, not in CoxUI,
+// catalog under the tier's name, by the catalog's name without its vendor prefix (A111), the one
+// the session runs on marked. A pick is `/model <tier> <id>`, the TUI's switch. Here, not in CoxUI,
 // because these decide what the menu offers (DS§1); the app copies it into `ModelPopover.State`.
 
 import CoxClient
@@ -9,8 +9,10 @@ public struct ModelMenu: Equatable, Sendable {
   public struct Row: Identifiable, Equatable, Sendable {
     public var id: String { "\(tier.rawValue)/\(model)" }
     public let tier: Tier
-    /// The id the switch sends and the row shows.
+    /// The id the switch sends.
     public let model: String
+    /// What the row shows: `Sonnet 5`, else the id (`ModelName`).
+    public let name: String
     /// `low · high`: the efforts it takes; empty when it takes any.
     public let detail: String
     public let isSelected: Bool
@@ -38,6 +40,7 @@ public struct ModelMenu: Equatable, Sendable {
       rows[choice.tier, default: []].append(
         Row(
           tier: choice.tier, model: choice.id,
+          name: ModelName.short(choice.displayName, id: choice.id),
           detail: choice.efforts.map(\.rawValue).joined(separator: " · "),
           isSelected: choice.id == status.model))
     }

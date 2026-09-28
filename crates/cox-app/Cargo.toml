@@ -43,6 +43,9 @@ rmcp = { workspace = true }
 # T37.22.6: a shell's archived output is shown whole, so it passes the
 # terminal-text guard first; already in the tree through cox-render.
 cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+# T37.22.7 (A111): the status names its model from the catalog. Already
+# in the app's tree through cox-session.
+cox-models = { path = "../cox-models", version = "0.1.2" }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and

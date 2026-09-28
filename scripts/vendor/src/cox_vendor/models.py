@@ -17,7 +17,9 @@ surcharge there, i.e. 0 — matches how `usage.rs::PriceTable::cost` prices a
 ignores in favour of the base rate, per docs/design/providers.md) and
 `reasoning_options`: a list of shape markers, typically `{"type": "effort",
 "values": [...]}"` and/or `{"type": "toggle"}`; some rows instead carry
-`{"type": "budget_tokens", ...}` or an empty/absent list. Checked
+`{"type": "budget_tokens", ...}` or an empty/absent list. `name` is the
+model's display name (`Claude Sonnet 5`), written as `display_name` next to
+the id in `default.toml` (A111). Checked
 2026-09-25: `curl -s https://models.dev/api.json | python3 -c
 "import json,sys; d=json.load(sys.stdin); print(len(d))"` returned 223
 providers.
@@ -34,7 +36,10 @@ against Anthropic's own pricing page, which outranks a mirror; a value that
 differs is reported for a human to re-verify by hand.
 
 To vendor a newer snapshot: `uv run --project scripts/vendor cox-vendor
-models` (or `--check` to preview a diff without writing). See
+models` (or `--check` to preview a diff without writing). `cox-vendor
+model-names` writes only the `display_name`s and leaves every price,
+context window and effort as it is — for taking new names without also
+shipping upstream price or effort drift nobody has reviewed yet. See
 docs/design/providers.md for the `reasoning_options` -> cox `Effort`
 mapping and `crates/cox-provider/src/usage.rs` for the `[[model]]` row shape
 this writes: `PriceTable::cost` uses `cache_read`/`cache_write` as absolute
@@ -58,6 +63,7 @@ from pathlib import Path
 from typing import Any
 
 import tomlkit
+from tomlkit.items import SingleKey
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PRICES_FILE = REPO_ROOT / "crates" / "cox-provider" / "prices.toml"
@@ -89,7 +95,7 @@ _HEADER_MARKER = "# Type-2 provider rows verified on"
 
 def download(url: str = API_URL) -> bytes:
     # models.dev 403s the default urllib User-Agent; any identifiable one works.
-    req = urllib.request.Request(url, headers={"User-Agent": "cox-vendor (https://github.com/listepo)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "cox-dev (https://github.com/listepo/cox)"})
     with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed https URL
         return resp.read()
 
@@ -257,7 +263,26 @@ def build_prices_toml(
     return _rewrite_header(dumped, today=today)
 
 
-def build_default_toml(text: str, registry: dict, *, report: list[str]) -> str:
+def _set_display_name(entry: Any, dev_row: dict) -> None:
+    """Write models.dev's `name` as the entry's `display_name`, right after
+    its `id` and in the file's compact `key="value"` style. A row with no
+    usable name keeps whatever it has: the reader falls back to the id."""
+    name = dev_row.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return
+    name = name.strip()
+    if "display_name" in entry:
+        entry["display_name"] = name
+        return
+    item = tomlkit.item(name)
+    item.trivia.indent = " "
+    # tomlkit has no public insert-at-position for an inline table; its
+    # container's `_insert_after` is what `Table` uses internally (pinned in
+    # uv.lock), and appending instead renders `,display_name = "..."`.
+    entry.value._insert_after("id", SingleKey("display_name", sep="="), item)
+
+
+def build_default_toml(text: str, registry: dict, *, report: list[str], names_only: bool = False) -> str:
     doc = tomlkit.parse(text)
     providers = doc.get("providers", {})
     for section, table in providers.items():
@@ -284,6 +309,9 @@ def build_default_toml(text: str, registry: dict, *, report: list[str]) -> str:
                     f"models.dev (`{dev_id}`), kept unchanged"
                 )
                 continue
+            _set_display_name(entry, dev_row)
+            if names_only:
+                continue
             limit = dev_row.get("limit") or {}
             new_ctx = limit.get("context")
             if isinstance(new_ctx, int):
@@ -307,12 +335,14 @@ def _unified_diff(before: str, after: str, path: str) -> str:
     )
 
 
-def run(*, check: bool = False, fetch=None, today: str | None = None) -> bool:
+def run(*, check: bool = False, fetch=None, today: str | None = None, names_only: bool = False) -> bool:
     """Fetch the models.dev registry, validate it, and — unless `check` —
     rewrite `prices.toml` and `default.toml`. Prints one report line per
     unknown id / ambiguous effort shape / Anthropic discrepancy, and (in
     `check` mode) a unified diff for each file that would change. Returns
-    whether either file's bytes differ from what's on disk.
+    whether either file's bytes differ from what's on disk. `names_only`
+    writes the `display_name`s alone: `prices.toml` is not touched and no
+    other `default.toml` field moves.
 
     `today` defaults to the real date; tests inject a fixed value to prove
     a row's `verified_on` and the header's run date only move when a row's
@@ -327,10 +357,12 @@ def run(*, check: bool = False, fetch=None, today: str | None = None) -> bool:
     id_to_sections = _id_to_provider_sections(tomlkit.parse(default_text))
 
     prices_text = PRICES_FILE.read_text()
-    new_prices_text = build_prices_toml(
-        prices_text, registry, id_to_sections=id_to_sections, today=today, report=report
+    new_prices_text = (
+        prices_text
+        if names_only
+        else build_prices_toml(prices_text, registry, id_to_sections=id_to_sections, today=today, report=report)
     )
-    new_default_text = build_default_toml(default_text, registry, report=report)
+    new_default_text = build_default_toml(default_text, registry, report=report, names_only=names_only)
 
     for line in report:
         print(line)
@@ -351,3 +383,8 @@ def run(*, check: bool = False, fetch=None, today: str | None = None) -> bool:
     if default_changed:
         DEFAULT_TOML_FILE.write_text(new_default_text)
     return changed
+
+
+def run_names(*, check: bool = False, fetch=None) -> bool:
+    """`cox-vendor model-names`: `run` with `names_only`."""
+    return run(check=check, fetch=fetch, names_only=True)

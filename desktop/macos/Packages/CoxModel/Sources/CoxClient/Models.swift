@@ -7,16 +7,19 @@ public struct ModelChoice: Equatable, Sendable {
   public var tier: Tier
   /// The `[providers.<name>]` section the tier calls.
   public var provider: String
-  /// The id sent on the wire, and what the popover shows: the catalog has no display names.
+  /// The id sent on the wire.
   public var id: String
+  /// What the catalog calls it, `Claude Sonnet 5`; `nil` when it has no name.
+  public var displayName: String?
   /// The efforts it takes; empty means any.
   public var efforts: [Effort]
   public var contextWindow: UInt32?
 
   public init(
-    tier: Tier, provider: String, id: String, efforts: [Effort] = [], contextWindow: UInt32? = nil
+    tier: Tier, provider: String, id: String, displayName: String? = nil, efforts: [Effort] = [],
+    contextWindow: UInt32? = nil
   ) {
-    (self.tier, self.provider, self.id) = (tier, provider, id)
+    (self.tier, self.provider, self.id, self.displayName) = (tier, provider, id, displayName)
     (self.efforts, self.contextWindow) = (efforts, contextWindow)
   }
 }

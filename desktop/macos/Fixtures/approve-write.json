@@ -8,6 +8,7 @@
           "mode": "default",
           "next_mode": "plan",
           "model": "claude-sonnet-5",
+          "model_name": "Claude Sonnet 5",
           "effort": "high"
         }
       }
@@ -16,7 +17,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3MC8HMABSVBHCAWN3B22HA6",
+          "id": "turn:01M3MJ33JDH7C5FTAA4R0AJ6NM",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -39,7 +40,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3MC8HMAJ9VAVFZTFJZCH4K7",
+          "id": "item:01M3MJ33JDBSY246MXNP00Y29J",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -47,12 +48,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3MC8HMABSVBHCAWN3B22HA6"
+        "after": "turn:01M3MJ33JDH7C5FTAA4R0AJ6NM"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3MC8HMENHMA4PHB9P3F9YJH",
+          "id": "item:01M3MJ33JHPRX56R56K48BN131",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -76,7 +77,7 @@
             }
           }
         },
-        "after": "item:01M3MC8HMAJ9VAVFZTFJZCH4K7"
+        "after": "item:01M3MJ33JDBSY246MXNP00Y29J"
       },
       {
         "op": "usage",
@@ -92,7 +93,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3MC8HMABSVBHCAWN3B22HA6",
+            "turn": "01M3MJ33JDH7C5FTAA4R0AJ6NM",
             "tally": {
               "sent": 3710,
               "received": 16,
@@ -202,7 +203,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3MC8HME3M1XEJ3PSCB16NT5",
+          "id": "call:01M3MJ33JHT21TQZ1S3R9FEGN2",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -217,16 +218,16 @@
             "duration_ms": 0
           }
         },
-        "after": "item:01M3MC8HMENHMA4PHB9P3F9YJH"
+        "after": "item:01M3MJ33JHPRX56R56K48BN131"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3MC8HME3M1XEJ3PSCB16NT5",
+          "id": "approval:01M3MJ33JHT21TQZ1S3R9FEGN2",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3MC8HME3M1XEJ3PSCB16NT5",
+            "call": "01M3MJ33JHT21TQZ1S3R9FEGN2",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -241,24 +242,24 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3MC8HGETXKAEA388JHW12S2"
+              "session": "01M3MJ33EAHBY44RQ56510PXN2"
             },
             "decision": null,
             "by": null
           }
         },
-        "after": "call:01M3MC8HME3M1XEJ3PSCB16NT5"
+        "after": "call:01M3MJ33JHT21TQZ1S3R9FEGN2"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3MC8HME3M1XEJ3PSCB16NT5",
+          "id": "approval:01M3MJ33JHT21TQZ1S3R9FEGN2",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3MC8HME3M1XEJ3PSCB16NT5",
+            "call": "01M3MJ33JHT21TQZ1S3R9FEGN2",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -273,7 +274,7 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3MC8HGETXKAEA388JHW12S2"
+              "session": "01M3MJ33EAHBY44RQ56510PXN2"
             },
             "decision": {
               "type": "allow"
@@ -281,7 +282,7 @@
             "by": "user"
           }
         },
-        "after": "call:01M3MC8HME3M1XEJ3PSCB16NT5"
+        "after": "call:01M3MJ33JHT21TQZ1S3R9FEGN2"
       },
       {
         "op": "upsert",
@@ -295,12 +296,12 @@
             ]
           }
         },
-        "after": "approval:01M3MC8HME3M1XEJ3PSCB16NT5"
+        "after": "approval:01M3MJ33JHT21TQZ1S3R9FEGN2"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3MC8HME3M1XEJ3PSCB16NT5",
+          "id": "call:01M3MJ33JHT21TQZ1S3R9FEGN2",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -311,142 +312,19 @@
             "state": "done",
             "tail": "wrote /project/summary.md (6 bytes)",
             "archive": {
-              "id": "01M3MC8HMY0SJZ6XWEN727RPR0",
+              "id": "01M3MJ33K1AS4379EAZ7J5ZCH8",
               "bytes": 102
             },
             "diff": null,
             "duration_ms": 1
           }
         },
-        "after": "item:01M3MC8HMENHMA4PHB9P3F9YJH"
+        "after": "item:01M3MJ33JHPRX56R56K48BN131"
       },
-      {
-        "op": "usage",
-        "usage": {
-          "session": {
-            "sent": 3710,
-            "received": 16,
-            "cache_read": 0,
-            "cache_write": 0,
-            "uncached": 3710,
-            "cost_usd": 0.0,
-            "calls": 1,
-            "estimated": true
-          },
-          "turn": {
-            "turn": "01M3MC8HMABSVBHCAWN3B22HA6",
-            "tally": {
-              "sent": 3710,
-              "received": 16,
-              "cache_read": 0,
-              "cache_write": 0,
-              "uncached": 3710,
-              "cost_usd": 0.0,
-              "calls": 1,
-              "estimated": true
-            },
-            "thinking_tokens": 0,
-            "ttft_ms": 0,
-            "tok_per_s": null,
-            "exact": false,
-            "sparkline": [],
-            "done": false
-          },
-          "context_tokens": 3710,
-          "text": {
-            "sent": "3.7k",
-            "received": "16",
-            "rate": "",
-            "spoken": "3.7 thousand tokens sent, 16 received",
-            "heading": "This turn · 1 request",
-            "phase": "streaming",
-            "rate_unit": "tok/s now",
-            "rate_detail": "first token 0 ms",
-            "rows": [
-              {
-                "label": "↑ Sent",
-                "turn": "3.7k",
-                "session": "3.7k",
-                "detail": false
-              },
-              {
-                "label": "cache read",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "cache write",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "uncached",
-                "turn": "3.7k",
-                "session": "3.7k",
-                "detail": true
-              },
-              {
-                "label": "↓ Received",
-                "turn": "16",
-                "session": "16",
-                "detail": false
-              },
-              {
-                "label": "of it thinking",
-                "turn": "0",
-                "session": "0",
-                "detail": true
-              },
-              {
-                "label": "Cost",
-                "turn": "$0.00",
-                "session": "$0.00",
-                "detail": false
-              }
-            ],
-            "context": "Context · 3.7k",
-            "context_share": "0.4% of 1M",
-            "context_parts": [
-              {
-                "kind": "system",
-                "label": "System",
-                "tokens": "109",
-                "share": 0.00010921048153819976
-              },
-              {
-                "kind": "tools",
-                "label": "Tools",
-                "tokens": "3.5k",
-                "share": 0.003457490216096648
-              },
-              {
-                "kind": "instructions",
-                "label": "Instructions",
-                "tokens": "16",
-                "share": 0.000015781861493959503
-              },
-              {
-                "kind": "history",
-                "label": "History",
-                "tokens": "128",
-                "share": 0.0001275174408711928
-              }
-            ],
-            "context_free": "996.3k",
-            "cache_hit": "0% this turn",
-            "cache_hit_session": "0% this session",
-            "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
-          }
-        }
-      }
-    ],
-    [
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3MC8HN66F0VAT2V1MKN9K7B",
+          "id": "item:01M3MJ33K8S2PC1AVXBW6Z16JC",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -482,7 +360,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3MC8HMABSVBHCAWN3B22HA6",
+          "id": "turn:01M3MJ33JDH7C5FTAA4R0AJ6NM",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -518,7 +396,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3MC8HMABSVBHCAWN3B22HA6",
+            "turn": "01M3MJ33JDH7C5FTAA4R0AJ6NM",
             "tally": {
               "sent": 7465,
               "received": 21,
@@ -631,14 +509,14 @@
     {
       "batch": 1,
       "item": {
-        "session": "01M3MC8HGETXKAEA388JHW12S2",
+        "session": "01M3MJ33EAHBY44RQ56510PXN2",
         "source": {
-          "session": "01M3MC8HGETXKAEA388JHW12S2"
+          "session": "01M3MJ33EAHBY44RQ56510PXN2"
         },
         "need": {
           "type": "approval",
           "call": {
-            "id": "01M3MC8HME3M1XEJ3PSCB16NT5",
+            "id": "01M3MJ33JHT21TQZ1S3R9FEGN2",
             "name": "write",
             "input": {
               "content": "hello\n",
@@ -660,7 +538,7 @@
   ],
   "snapshot": [
     {
-      "id": "turn:01M3MC8HMABSVBHCAWN3B22HA6",
+      "id": "turn:01M3MJ33JDH7C5FTAA4R0AJ6NM",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -681,7 +559,7 @@
       }
     },
     {
-      "id": "item:01M3MC8HMAJ9VAVFZTFJZCH4K7",
+      "id": "item:01M3MJ33JDBSY246MXNP00Y29J",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -690,7 +568,7 @@
       }
     },
     {
-      "id": "item:01M3MC8HMENHMA4PHB9P3F9YJH",
+      "id": "item:01M3MJ33JHPRX56R56K48BN131",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -715,7 +593,7 @@
       }
     },
     {
-      "id": "call:01M3MC8HME3M1XEJ3PSCB16NT5",
+      "id": "call:01M3MJ33JHT21TQZ1S3R9FEGN2",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -726,7 +604,7 @@
         "state": "done",
         "tail": "wrote /project/summary.md (6 bytes)",
         "archive": {
-          "id": "01M3MC8HMY0SJZ6XWEN727RPR0",
+          "id": "01M3MJ33K1AS4379EAZ7J5ZCH8",
           "bytes": 102
         },
         "diff": null,
@@ -734,11 +612,11 @@
       }
     },
     {
-      "id": "approval:01M3MC8HME3M1XEJ3PSCB16NT5",
+      "id": "approval:01M3MJ33JHT21TQZ1S3R9FEGN2",
       "turn": 1,
       "kind": {
         "type": "approval",
-        "call": "01M3MC8HME3M1XEJ3PSCB16NT5",
+        "call": "01M3MJ33JHT21TQZ1S3R9FEGN2",
         "tool": "write",
         "summary": "summary.md",
         "input": {
@@ -753,7 +631,7 @@
           "risk": "write"
         },
         "source": {
-          "session": "01M3MC8HGETXKAEA388JHW12S2"
+          "session": "01M3MJ33EAHBY44RQ56510PXN2"
         },
         "decision": {
           "type": "allow"
@@ -772,7 +650,7 @@
       }
     },
     {
-      "id": "item:01M3MC8HN66F0VAT2V1MKN9K7B",
+      "id": "item:01M3MJ33K8S2PC1AVXBW6Z16JC",
       "turn": 1,
       "kind": {
         "type": "assistant",

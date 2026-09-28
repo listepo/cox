@@ -10,4 +10,5 @@ COMMANDS = {
     "anthropic-spec": anthropic_spec.run,
     "cursor-fixtures": cursor_fixtures.run,
     "models": models.run,
+    "model-names": models.run_names,
 }

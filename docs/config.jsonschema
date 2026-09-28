@@ -729,6 +729,13 @@
           "type": "string",
           "default": ""
         },
+        "display_name": {
+          "description": "What a person calls the model (`\"Claude Sonnet 5\"`), from models.dev's\n`name` (A111). Unset means a reader shows the id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "context_window": {
           "description": "Context window in tokens (local servers do not report it; gateways\nvary it per model, so the section default is only a fallback).",
           "type": "integer",
