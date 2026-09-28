@@ -1123,7 +1123,8 @@ Every card in this phase:
 
 ### T39.2. Core keeps a tool call's signature in history and the rollout
 
-- Model: opus
+- Model: Claude Code / opus-5.5
+- Status: in progress
 - Depends: T39.1
 - Size: ~170
 - Priority: P1
@@ -1147,6 +1148,12 @@ Every card in this phase:
 - Out of scope:
   - Wire translation (T39.3) and surface rendering (T39.4).
   - Signatures on plain text parts (Gemini may send them on non-tool responses; the loop does not need them).
+- Execution plan:
+  1. Tests first. `rollout.rs`: `resume_rebuilds_signed_thinking_before_tool_use` (hand-built events: a signed `ItemKind::Thinking` item before each `ToolCallRequested`, plus an unsigned one that stays ignored). `crates/cox-core/tests/resume.rs`: a test-only `Signed` provider that wraps `Scripted` and inserts `ToolUseSignature` after every `ToolUseStart` (a hand-built event stream, so the scenario format needs no new key); `signed_tool_call_keeps_signature_before_its_tool_use` (live history has the signed block right before its `ToolUse`, and `router::strip_thinking` drops it) and `resume_builds_identical_request_with_signature` (the existing test's body, shared through one helper, run with `Signed`). Confirm they fail on the current code.
+  2. `turn.rs`: `run_tools` stays the entry point for its other callers and delegates to a new `run_signed_tools(session, turn, calls, &signatures)`, which emits `ItemStarted`/`ItemDone` with `ItemKind::Thinking { text: "", signature }` right before a signed call's `ToolCallRequested`.
+  3. `session.rs`: the assistant-message build pushes the signed `Content::Thinking` before each signed call's `ToolUse` and calls `run_signed_tools` with `streamed.signatures`.
+  4. `rollout.rs`: `append_tool_use` becomes a caller of one shared `append_assistant_block`; a finished signed `ItemKind::Thinking` item appends through it.
+  5. Verify: the card's Check, fmt, clippy, `cargo nextest run -p cox-core` (history build, rollout and resume all live there).
 
 ### T39.3. Chat translator replays a signature as `extra_content` on its tool call
 
