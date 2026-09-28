@@ -7,18 +7,24 @@ import SwiftUI
 
 /// Two `InspectorSection`s, each one `KeyValueGrid`: the session's facts, then the config
 /// layers with each file under its layer. With nothing to show, one quiet line.
-struct InfoTab: View {
+public struct InfoTab: View {
   /// What the tab lists, formatted by the core.
-  struct State: Equatable, Sendable {
+  public struct State: Equatable, Sendable {
     /// Session, folder, worktree and branch, rollout.
-    var session: [KeyValueGrid.Row] = []
+    public var session: [KeyValueGrid.Row] = []
     /// A layer and its key count, its file as a detail row under it.
-    var config: [KeyValueGrid.Row] = []
+    public var config: [KeyValueGrid.Row] = []
+
+    public init(session: [KeyValueGrid.Row] = [], config: [KeyValueGrid.Row] = []) {
+      (self.session, self.config) = (session, config)
+    }
   }
 
   let state: State
 
-  var body: some View {
+  public init(state: State) { self.state = state }
+
+  public var body: some View {
     VStack(alignment: .leading, spacing: Space.xl) {
       if !state.session.isEmpty {
         InspectorSection("Session") { KeyValueGrid(rows: state.session) }

@@ -6,13 +6,17 @@ import SwiftUI
 
 /// Labels on the left, one right-aligned tabular column per value, under optional uppercase
 /// column headers; a detail row is indented and quieter.
-struct KeyValueGrid: View {
+public struct KeyValueGrid: View {
   /// One line of the grid: the label and a value per column, formatted by the core.
-  struct Row: Equatable, Sendable {
-    var label: String
-    var values: [String]
+  public struct Row: Equatable, Sendable {
+    public var label: String
+    public var values: [String]
     /// A breakdown of the row above it (`cache read` under `Sent`).
-    var isDetail = false
+    public var isDetail = false
+
+    public init(label: String, values: [String], isDetail: Bool = false) {
+      (self.label, self.values, self.isDetail) = (label, values, isDetail)
+    }
   }
 
   /// The value columns' headers, `Turn` and `Session`; empty for no header row.
@@ -24,7 +28,7 @@ struct KeyValueGrid: View {
     self.rows = rows
   }
 
-  var body: some View {
+  public var body: some View {
     // Styles go on the cells: a modifier on a `GridRow` would turn it into one spanning view.
     Grid(alignment: .trailing, horizontalSpacing: Space.l, verticalSpacing: Space.xs) {
       if !columns.isEmpty {

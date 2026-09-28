@@ -6,15 +6,19 @@ import SwiftUI
 
 /// An `InspectorRow`: a clock, the checkpoint's label, then its time in `text.secondary` —
 /// not the mockup's tertiary, so it stays readable on frosted glass (DS§8).
-struct CheckpointRow: View {
+public struct CheckpointRow: View {
   /// A checkpoint, formatted by the core.
-  struct Checkpoint: Equatable, Sendable {
+  public struct Checkpoint: Equatable, Sendable {
     /// The core's id for it, which a rewind names.
-    var id: String
+    public var id: String
     /// `Turn 1 · before edit retry.rs`.
-    var label: String
+    public var label: String
     /// When it was taken, `14:02`.
-    var time: String
+    public var time: String
+
+    public init(id: String, label: String, time: String) {
+      (self.id, self.label, self.time) = (id, label, time)
+    }
   }
 
   let checkpoint: Checkpoint
@@ -27,7 +31,7 @@ struct CheckpointRow: View {
     self.actions = actions
   }
 
-  var body: some View {
+  public var body: some View {
     InspectorRow(symbol: "clock", isSelected: isSelected, actions: actions) {
       Text(checkpoint.label).frame(maxWidth: .infinity, alignment: .leading)
       Text(checkpoint.time)

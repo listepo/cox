@@ -7,17 +7,21 @@ import SwiftUI
 
 /// One `InspectorSection` of `CheckpointRow`s; a row's actions are the three scopes. The selected
 /// row (the one a gutter mark points at) is lifted and shows them without a hover.
-struct RewindTimeline: View {
+public struct RewindTimeline: View {
   /// What the timeline lists, formatted by the core.
-  struct State: Equatable, Sendable {
+  public struct State: Equatable, Sendable {
     /// Oldest first.
-    var checkpoints: [CheckpointRow.Checkpoint] = []
+    public var checkpoints: [CheckpointRow.Checkpoint] = []
     /// The id of the lifted checkpoint.
-    var selection: String?
+    public var selection: String?
+
+    public init(checkpoints: [CheckpointRow.Checkpoint] = [], selection: String? = nil) {
+      (self.checkpoints, self.selection) = (checkpoints, selection)
+    }
   }
 
   /// What the timeline asks the app to do.
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     /// Rewind to before the checkpoint's turn: its files, its conversation, or both.
     case rewind(checkpoint: String, code: Bool, conversation: Bool)
   }
@@ -25,7 +29,7 @@ struct RewindTimeline: View {
   let state: State
   let send: @MainActor (Intent) -> Void
 
-  var body: some View {
+  public var body: some View {
     InspectorSection("Rewind") {
       ForEach(state.checkpoints, id: \.id) {
         CheckpointRow(

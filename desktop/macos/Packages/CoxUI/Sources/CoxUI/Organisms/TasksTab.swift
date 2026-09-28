@@ -7,14 +7,16 @@ import SwiftUI
 
 /// One `InspectorSection` of task rows, newest last as the core started them; with none, one
 /// quiet line. A row click asks the app to open that task's transcript, or a shell's output.
-struct TasksTab: View {
+public struct TasksTab: View {
   /// What the tab lists, formatted by the core.
-  struct State: Equatable, Sendable {
-    var items: [Item] = []
+  public struct State: Equatable, Sendable {
+    public var items: [Item] = []
+
+    public init(items: [Item] = []) { self.items = items }
   }
 
   /// What a task is, which picks its glyph and what opening it shows (T37.29.8).
-  enum Kind: Equatable, Sendable {
+  public enum Kind: Equatable, Sendable {
     /// A subagent, whose transcript opens.
     case agent
     /// A background shell, whose output opens.
@@ -22,21 +24,30 @@ struct TasksTab: View {
   }
 
   /// A subagent or a background call.
-  struct Item: Equatable, Sendable {
+  public struct Item: Equatable, Sendable {
     /// The core's id for it, which opening its transcript names.
-    var id: String
+    public var id: String
     /// `reviewer`, `bash: cargo nextest run`.
-    var label: String
+    public var label: String
     /// The model tier it runs on, `cheap`.
-    var tier: String
-    var kind: Kind
-    var state: ToolHeader.State
+    public var tier: String
+    public var kind: Kind
+    public var state: ToolHeader.State
     /// What it cost, `$0.03`; `nil` while it runs.
-    var cost: String?
+    public var cost: String?
+
+    public init(
+      id: String, label: String, tier: String, kind: Kind, state: ToolHeader.State,
+      cost: String? = nil
+    ) {
+      (self.id, self.label, self.tier, self.kind, self.state, self.cost) = (
+        id, label, tier, kind, state, cost
+      )
+    }
   }
 
   /// What the tab asks the app to do.
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     /// Open the task with this id: a subagent's transcript or a shell's output.
     case open(task: String)
   }
@@ -44,7 +55,11 @@ struct TasksTab: View {
   let state: State
   let send: @MainActor (Intent) -> Void
 
-  var body: some View {
+  public init(state: State, send: @escaping @MainActor (Intent) -> Void) {
+    (self.state, self.send) = (state, send)
+  }
+
+  public var body: some View {
     if state.items.isEmpty {
       Text("No tasks yet")
         .textStyle(.caption)

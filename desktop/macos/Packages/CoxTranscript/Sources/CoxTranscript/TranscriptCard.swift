@@ -53,9 +53,7 @@ extension ToolCard.Content {
   /// An edit's hunks as the core split, numbered and highlighted them (T37.23.5); none when
   /// it changed nothing, so the card falls back to the tail.
   private static func hunks(_ diff: DiffModel) -> ToolCard.Detail? {
-    let hunks = diff.hunks.map { hunk in
-      ToolCard.Hunk(header: hunk.header, lines: hunk.lines.map(DiffLineView.Line.init))
-    }
+    let hunks = diff.hunks.map(ToolCard.Hunk.init)
     return hunks.isEmpty ? nil : .diff(hunks)
   }
 
@@ -78,6 +76,14 @@ extension ToolCard.Content {
     Duration.milliseconds(milliseconds).formatted(
       .units(allowed: [.seconds], width: .narrow, fractionalPart: .show(length: 1))
         .locale(locale))
+  }
+}
+
+extension ToolCard.Hunk {
+  /// A hunk as the core split, numbered and highlighted it; the transcript's edit cards and
+  /// Review draw the same lines.
+  init(_ hunk: DiffHunk) {
+    self.init(header: hunk.header, lines: hunk.lines.map(DiffLineView.Line.init))
   }
 }
 

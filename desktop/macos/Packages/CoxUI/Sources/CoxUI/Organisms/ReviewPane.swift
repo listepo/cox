@@ -8,38 +8,52 @@
 import SwiftUI
 
 /// The list at the inspector's width, a hairline, then the diff filling the rest.
-struct ReviewPane: View {
+public struct ReviewPane: View {
   /// The files one turn changed last.
-  struct Turn: Equatable, Sendable {
+  public struct Turn: Equatable, Sendable {
     /// `Turn 2`.
-    var title: String
-    var files: [ChangedFileRow.File]
+    public var title: String
+    public var files: [ChangedFileRow.File]
+
+    public init(title: String, files: [ChangedFileRow.File]) {
+      (self.title, self.files) = (title, files)
+    }
   }
 
   /// What the pane shows, formatted by the core.
-  struct State: Equatable, Sendable {
+  public struct State: Equatable, Sendable {
     /// Oldest first.
-    var turns: [Turn] = []
-    var timeline = RewindTimeline.State()
+    public var turns: [Turn] = []
+    public var timeline = RewindTimeline.State()
     /// The path of the open file; its row is lifted.
-    var selection: String?
+    public var selection: String?
     /// Its net diff (A101); empty when nothing is left to show.
-    var hunks: [ToolCard.Hunk] = []
+    public var hunks: [ToolCard.Hunk] = []
     /// The draft's comments, oldest first (T37.28.4).
-    var comments: [Comment] = []
+    public var comments: [Comment] = []
     /// The anchor of the line a click picked, while its comment is being typed.
-    var editing: String?
+    public var editing: String?
+
+    public init(
+      turns: [Turn] = [], timeline: RewindTimeline.State = .init(), selection: String? = nil,
+      hunks: [ToolCard.Hunk] = [], comments: [Comment] = [], editing: String? = nil
+    ) {
+      (self.turns, self.timeline, self.selection) = (turns, timeline, selection)
+      (self.hunks, self.comments, self.editing) = (hunks, comments, editing)
+    }
   }
 
   /// One comment of the draft.
-  struct Comment: Equatable, Sendable {
+  public struct Comment: Equatable, Sendable {
     /// `src/retry.rs:42`.
-    var anchor: String
-    var text: String
+    public var anchor: String
+    public var text: String
+
+    public init(anchor: String, text: String) { (self.anchor, self.text) = (anchor, text) }
   }
 
   /// What the pane asks the app to do.
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     /// Open this file's diff.
     case open(path: String)
     /// What the timeline asked.
@@ -59,7 +73,11 @@ struct ReviewPane: View {
   @State private var text = ""
   @FocusState private var typing: Bool
 
-  var body: some View {
+  public init(state: State, send: @escaping @MainActor (Intent) -> Void) {
+    (self.state, self.send) = (state, send)
+  }
+
+  public var body: some View {
     HStack(spacing: 0) {
       ScrollView { files }
         .frame(width: Size.inspectorWidth)

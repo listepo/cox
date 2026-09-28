@@ -11,37 +11,51 @@ import SwiftUI
 /// An `InspectorSection` headed by the context and its share of the window: the StackedBar, a
 /// legend row per part and one for what is free, and "Compact now"; then the cache hit and the
 /// cost by turn; the project's spend as a footnote. Before the core sent anything, one quiet line.
-struct ContextTab: View {
+public struct ContextTab: View {
   /// What the tab shows, formatted by the core.
-  struct State: Equatable, Sendable {
+  public struct State: Equatable, Sendable {
     /// `Context · 76.4k` and `7.6% of 1M` (empty while the window is unknown).
-    var context = "", share = ""
+    public var context = "", share = ""
     /// In the bar's order; none hides the section.
-    var parts: [Part] = []
+    public var parts: [Part] = []
     /// `923.6k`, the window less the parts; empty while the window is unknown.
-    var free = ""
+    public var free = ""
     /// `94% this turn` or `88% this session`.
-    var cacheHit = ""
+    public var cacheHit = ""
     /// A turn is running: compaction would rewrite the context it uses, so "Compact now" waits.
-    var turnRunning = false
+    public var turnRunning = false
     /// `In`, `Out`, `Cache r/w`, `$`: the cost grid's value columns.
-    var costColumns: [String] = []
+    public var costColumns: [String] = []
     /// A row per turn, its subagents indented under it, the session total last; none hides
     /// the section.
-    var costs: [KeyValueGrid.Row] = []
+    public var costs: [KeyValueGrid.Row] = []
     /// `Project cox today: $3.18 · this week: $21.40. …`, under everything; empty hides it.
-    var footnote = ""
+    public var footnote = ""
+
+    public init(
+      context: String = "", share: String = "", parts: [Part] = [], free: String = "",
+      cacheHit: String = "", turnRunning: Bool = false, costColumns: [String] = [],
+      costs: [KeyValueGrid.Row] = [], footnote: String = ""
+    ) {
+      (self.context, self.share, self.parts, self.free) = (context, share, parts, free)
+      (self.cacheHit, self.turnRunning) = (cacheHit, turnRunning)
+      (self.costColumns, self.costs, self.footnote) = (costColumns, costs, footnote)
+    }
   }
 
   /// A part of the window: its colour role and share of the bar, `System` and `7.6k`.
-  struct Part: Equatable, Sendable {
-    var kind: StackedBar.Kind
-    var fraction: Double
-    var label, tokens: String
+  public struct Part: Equatable, Sendable {
+    public var kind: StackedBar.Kind
+    public var fraction: Double
+    public var label, tokens: String
+
+    public init(kind: StackedBar.Kind, fraction: Double, label: String, tokens: String) {
+      (self.kind, self.fraction, self.label, self.tokens) = (kind, fraction, label, tokens)
+    }
   }
 
   /// What the tab asks the app to do.
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     /// Compact the conversation now, as `/compact` does.
     case compact
   }
@@ -52,7 +66,11 @@ struct ContextTab: View {
   /// The mockup's legend swatch, 8 pt, as the token popover draws it.
   private static let swatch: CGFloat = 8
 
-  var body: some View {
+  public init(state: State, send: @escaping @MainActor (Intent) -> Void) {
+    (self.state, self.send) = (state, send)
+  }
+
+  public var body: some View {
     VStack(alignment: .leading, spacing: Space.xl) {
       if !state.parts.isEmpty {
         InspectorSection(state.context) {

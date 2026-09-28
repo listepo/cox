@@ -6,19 +6,23 @@ import SwiftUI
 
 /// An `InspectorRow`: the change's glyph, the path with its directory in `text.secondary` and
 /// the name kept visible when it truncates, then a `DiffStat`.
-struct ChangedFileRow: View {
+public struct ChangedFileRow: View {
   /// How the session changed a file.
-  enum Change: Sendable {
+  public enum Change: Sendable {
     case edited, created, deleted
   }
 
   /// A changed file, as the core reports it.
-  struct File: Equatable, Sendable {
+  public struct File: Equatable, Sendable {
     /// Relative to the workspace root, `cox-provider-http/src/retry.rs`.
-    var path: String
-    var change: Change
-    var added: Int
-    var removed: Int
+    public var path: String
+    public var change: Change
+    public var added: Int
+    public var removed: Int
+
+    public init(path: String, change: Change, added: Int, removed: Int) {
+      (self.path, self.change, self.added, self.removed) = (path, change, added, removed)
+    }
   }
 
   let file: File
@@ -31,7 +35,7 @@ struct ChangedFileRow: View {
     self.actions = actions
   }
 
-  var body: some View {
+  public var body: some View {
     InspectorRow(symbol: file.change.symbol, isSelected: isSelected, actions: actions) {
       Text(file.styledPath)
         .truncationMode(.head)

@@ -7,19 +7,28 @@ import SwiftUI
 
 /// Up to three `InspectorSection`s: the changed files under a Review button, the checkpoints,
 /// the worktree's facts. A section with nothing to list is left out; with none, one quiet line.
-struct ChangesTab: View {
+public struct ChangesTab: View {
   /// What the tab lists, formatted by the core.
-  struct State: Equatable, Sendable {
-    var files: [ChangedFileRow.File] = []
+  public struct State: Equatable, Sendable {
+    public var files: [ChangedFileRow.File] = []
     /// The path of the file Review has open; its row is lifted.
-    var selection: String?
-    var checkpoints: [CheckpointRow.Checkpoint] = []
+    public var selection: String?
+    public var checkpoints: [CheckpointRow.Checkpoint] = []
     /// Branch, base and size; empty when the session runs outside a worktree.
-    var worktree: [KeyValueGrid.Row] = []
+    public var worktree: [KeyValueGrid.Row] = []
+
+    public init(
+      files: [ChangedFileRow.File] = [], selection: String? = nil,
+      checkpoints: [CheckpointRow.Checkpoint] = [], worktree: [KeyValueGrid.Row] = []
+    ) {
+      (self.files, self.selection, self.checkpoints, self.worktree) = (
+        files, selection, checkpoints, worktree
+      )
+    }
   }
 
   /// What the tab asks the app to do.
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     /// Open Review on the session's changes (DT§5.4).
     case review
     /// Open Review at this file.
@@ -34,7 +43,11 @@ struct ChangesTab: View {
   let state: State
   let send: @MainActor (Intent) -> Void
 
-  var body: some View {
+  public init(state: State, send: @escaping @MainActor (Intent) -> Void) {
+    (self.state, self.send) = (state, send)
+  }
+
+  public var body: some View {
     VStack(alignment: .leading, spacing: Space.xl) {
       if !state.files.isEmpty {
         InspectorSection(state.filesTitle) {

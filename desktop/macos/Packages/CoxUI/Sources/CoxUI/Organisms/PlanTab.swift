@@ -7,28 +7,36 @@ import SwiftUI
 
 /// One `InspectorSection` of the plan's steps in the model's order; with none, one quiet line.
 /// Read-only: the list is the model's, so the tab sends nothing.
-struct PlanTab: View {
+public struct PlanTab: View {
   /// What the tab lists, as the latest `todo` call left it.
-  struct State: Equatable, Sendable {
-    var items: [Item] = []
+  public struct State: Equatable, Sendable {
+    public var items: [Item] = []
+
+    public init(items: [Item] = []) { self.items = items }
   }
 
   /// One step of the plan.
-  struct Item: Equatable, Sendable {
+  public struct Item: Equatable, Sendable {
     /// Unique within the list.
-    var id: String
-    var text: String
-    var step: Step
+    public var id: String
+    public var text: String
+    public var step: Step
+
+    public init(id: String, text: String, step: Step) {
+      (self.id, self.text, self.step) = (id, text, step)
+    }
   }
 
   /// Where a step stands.
-  enum Step: Equatable, Sendable {
+  public enum Step: Equatable, Sendable {
     case pending, inProgress, done
   }
 
   let state: State
 
-  var body: some View {
+  public init(state: State) { self.state = state }
+
+  public var body: some View {
     if state.items.isEmpty {
       Text("No plan yet")
         .textStyle(.caption)

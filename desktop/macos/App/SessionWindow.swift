@@ -3,8 +3,9 @@
 // first-run checklist comes first on a first launch (DT§5.8), after the login shell's
 // environment is read (DT§4.8). Wiring only — the stores decide and the packages draw. The
 // sidebar lists the workspace's sessions and opens one here, the toolbar shows the open one's
-// title, model, mode and cost and stops its turn, the shell's panes fold and the Appearance
-// popover writes `[desktop.appearance]`.
+// title, model, mode and cost and stops its turn, the inspector's tabs read the open session,
+// Review replaces the transcript column, the shell's panes fold and the Appearance popover writes
+// `[desktop.appearance]`.
 
 import CoxClient
 import CoxModel
@@ -27,6 +28,8 @@ struct SessionWindow: View {
   @State private var isEnvLoaded = false
   /// The checklist's provider-key row, for the sidebar's footer dot.
   @State private var providerCheck: CheckRow?
+  /// Review shows in the column instead of the transcript, at this file or the first changed one.
+  @State private var reviewing: Reviewing?
   /// Why the first session did not open.
   @State private var failure: String?
   /// Why the core refused the last intent; shown until dismissed.
@@ -60,7 +63,7 @@ struct SessionWindow: View {
   }
 
   private var main: some View {
-    MainScreen(state: shown, send: handle, transcript: { column }, inspector: { _ in EmptyView() })
+    MainScreen(state: shown, send: handle, transcript: { column }, inspector: { inspector($0) })
       .focusedSceneValue(
         \.shell,
         ShellActions(
@@ -91,7 +94,13 @@ struct SessionWindow: View {
   }
 
   @ViewBuilder private var column: some View {
-    if let showing {
+    if let showing, let reviewing {
+      SessionReview(
+        store: showing.store, path: reviewing.path,
+        reviewSend: model.settings?.reviewSend ?? .queue
+      ) { refused = $0 }
+      .onExitCommand { self.reviewing = nil }
+    } else if let showing {
       VStack(spacing: 0) {
         TranscriptView(store: showing.store, send: send)
           .composer(showing.composer)
@@ -104,6 +113,23 @@ struct SessionWindow: View {
       Text(failure).textSelection(.enabled)
     } else {
       ProgressView()
+    }
+  }
+
+  @ViewBuilder private func inspector(_ tab: InspectorTab) -> some View {
+    if let showing {
+      SessionInspector(
+        store: showing.store, tab: tab, cacheHit: model.settings?.cacheHitScope ?? .turn
+      ) { request in
+        switch request {
+        // The tab's Review button shows Review, or hides it again.
+        case .review(nil): reviewing = reviewing == nil ? Reviewing(path: nil) : nil
+        case .review(let path): reviewing = Reviewing(path: path)
+        case .open(let session): handle(Sidebar.Intent.select(session))
+        case .refused(let why): refused = why
+        }
+      }
+      .id(current)
     }
   }
 
@@ -147,6 +173,7 @@ struct SessionWindow: View {
     case .toggle(let project): model.sidebar.toggle(project)
     case .newSession: Task { await open(resume: nil) }
     case .select(let session):
+      reviewing = nil
       if opened[session] != nil {
         current = session
       } else if !model.launch.isFixture {
@@ -195,7 +222,7 @@ struct SessionWindow: View {
       opened[client.id]?.close()
       opened[client.id] = OpenedSession(
         store: store, composer: ComposerStore(session: store), pull: Task { await store.run() })
-      (current, failure) = (client.id, nil)
+      (current, failure, reviewing) = (client.id, nil, nil)
       model.sidebar.refresh()
       // After it shows: Info asks git about the cwd, which can take a while.
       if let info = try? await client.info() {
@@ -222,4 +249,9 @@ struct SessionWindow: View {
       }
     }
   }
+}
+
+/// Where Review opened.
+private struct Reviewing: Equatable {
+  var path: String?
 }
