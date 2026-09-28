@@ -19,7 +19,16 @@ path = "tests/support/fake_agent.rs"
 test = false
 doc = false
 
-# T35.7: without this, dist puts `fake_agent` in every release archive next
+# T41.8: the test-only language server `tests/lsp.rs` points
+# `lsp.servers.rust.command` at; same shape and dist exclusion as
+# `fake_agent`, and its only dependency is `serde_json` too.
+[[bin]]
+name = "fake_lsp"
+path = "tests/support/fake_lsp.rs"
+test = false
+doc = false
+
+# T35.7: without this, dist puts `fake_agent` (and, T41.8, `fake_lsp`) in every release archive next
 # to `cox` (checked with `dist plan`). One row per `targets` entry in
 # dist-workspace.toml; a new target needs its row here too.
 [package.metadata.dist.binaries]

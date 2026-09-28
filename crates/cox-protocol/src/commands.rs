@@ -17,6 +17,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "one turn on the think tier, price confirmed first",
     ),
     (
+        "mode",
+        "/mode architect|editor",
+        "switch between planning and editing",
+    ),
+    (
         "effort",
         "/effort [low|medium|high|xhigh]",
         "effort for the rest of the session; bare restores the tier default",
@@ -31,6 +36,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
     ("redo", "/redo", "redo what /undo took back"),
     ("cost", "/cost", "what this session has spent"),
     ("context", "/context", "where the next request's tokens go"),
+    (
+        "repomap",
+        "/repomap [refresh]",
+        "show or rebuild the repo map",
+    ),
     (
         "autocompact",
         "/autocompact",

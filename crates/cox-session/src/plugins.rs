@@ -41,6 +41,9 @@ pub struct Plugins {
     /// Never an ungranted plugin's; empty without `writable`.
     #[cfg(feature = "plugins")]
     pub external_agents: Vec<cox_plugin::external_agent::ExternalAgentCommand>,
+    /// Each granted plugin's `[[agents]]` definitions by plugin id (T45.4),
+    /// for `cox_ext::agents::merge`; never an ungranted plugin's.
+    pub agent_defs: Vec<(String, Vec<cox_protocol::agent::AgentDef>)>,
     /// Each loaded plugin's `[[models]]` rows by plugin id (T33.44).
     pub models: Vec<(String, Vec<cox_protocol::plugin::ModelDecl>)>,
     /// The loaded instances, compiled under their grants; `start_plugins`
@@ -144,6 +147,10 @@ pub fn load_plugins(
                 }
                 if loaded.is_ok() && !manifest.models.is_empty() {
                     out.models.push((id.clone(), manifest.models.clone()));
+                }
+                if loaded.is_ok() && !manifest.agents.is_empty() {
+                    let defs = plugin_agent_defs(id, &p.dir, manifest, notices);
+                    out.agent_defs.push((id.clone(), defs));
                 }
                 match (loaded, writable) {
                     (Err(e), _) => notices.push(format!("plugin {id} failed to load: {e}")),
@@ -362,6 +369,44 @@ fn plugin_agents(
         }
     }
     agents
+}
+
+/// T45.4: one granted plugin's `[[agents]]` files, parsed by the same
+/// code as `.cox/agents/*.md`. A file that is missing, reached through a
+/// symlink (the digest hashes regular files only), unparsable, or whose
+/// frontmatter `name` is not the one the grant approved is a warning and
+/// absent (D14).
+#[cfg(feature = "plugins")]
+fn plugin_agent_defs(
+    id: &str,
+    dir: &Path,
+    manifest: &cox_plugin_api::PluginManifest,
+    notices: &mut Vec<String>,
+) -> Vec<cox_protocol::agent::AgentDef> {
+    let mut defs = Vec::new();
+    for decl in &manifest.agents {
+        // `./` so a file at the package root is never taken for a bare PATH
+        // name: `package_program` then walks it inside `dir`, refusing an
+        // absolute path, `..` and any symlink on the way.
+        let def = cox_plugin::external_agent::package_program(dir, &format!("./{}", decl.file))
+            .map_err(|e| e.to_string())
+            .and_then(|path| cox_ext::agents::parse_file(&path, notices))
+            .and_then(|def| {
+                if def.name == decl.name {
+                    Ok(def)
+                } else {
+                    Err(format!(
+                        "its frontmatter names {:?}, the grant approved {:?}",
+                        def.name, decl.name
+                    ))
+                }
+            });
+        match def {
+            Ok(def) => defs.push(def),
+            Err(why) => notices.push(format!("plugin {id}: agent {} skipped: {why}", decl.name)),
+        }
+    }
+    defs
 }
 
 /// Builds and writes one `PluginGrant` row (PL§3): the single place the row

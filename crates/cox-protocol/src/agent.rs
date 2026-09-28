@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-use crate::types::Tier;
+use crate::types::{PermissionMode, Tier};
 
 /// One discovered subagent definition.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +39,11 @@ pub struct AgentDef {
     /// Code's documented subagent frontmatter (research.md M1) has no field
     /// for this, so there is no existing name to match.
     pub disabled: bool,
+    /// `permissionMode:` frontmatter (T45.2, Claude Code's field name): the
+    /// mode the child asks for. It can only narrow — the child runs in the
+    /// narrower of this and the parent's live mode — and `None` means the
+    /// parent's live mode.
+    pub permission_mode: Option<PermissionMode>,
 }
 
 impl AgentDef {
@@ -99,6 +104,7 @@ mod tests {
             path: PathBuf::from("<test>"),
             body: String::new(),
             disabled: false,
+            permission_mode: None,
         };
         let parent = [
             ("read".to_string(), 0),

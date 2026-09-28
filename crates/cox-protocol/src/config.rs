@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    ApprovalPolicy, Effort, LinuxBackend, PermissionMode, SandboxMode, Thinking, Tier,
+    ApprovalPolicy, Effort, LinuxBackend, Mode, PermissionMode, SandboxMode, Thinking, Tier,
 };
 
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
@@ -167,6 +167,12 @@ pub struct CoreConfig {
     /// a ≤300-token system prompt, no skills or memory index;
     /// `cox --profile minimal`).
     pub profile: String,
+    /// `core.mode` (P42): the session's starting mode, `editor` (default)
+    /// or `architect`; also `cox --mode`, and `/mode` switches it live.
+    /// Not in the project-config guard list: architect only narrows
+    /// `permissions.mode` and its think tier still needs confirmation, so a
+    /// project config may set it.
+    pub mode: Mode,
 }
 
 impl Default for CoreConfig {
@@ -179,6 +185,7 @@ impl Default for CoreConfig {
             max_concurrent_subagents: 8,
             log_level: "info".to_string(),
             profile: String::new(),
+            mode: Mode::Editor,
         }
     }
 }
@@ -377,7 +384,8 @@ pub struct ProviderModel {
     /// `api = "chat"` section, where one server hosts both vision and
     /// text-only models: unset means "not declared", and an attached image
     /// is then held back with a notice rather than sent to a model that
-    /// would reject it.
+    /// would reject it. `false` also makes the Chat wire refuse any request
+    /// that still carries an image (T40.9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<bool>,
 }
@@ -778,6 +786,9 @@ pub struct ContextConfig {
     /// `"default"` or `"minimal"` (T30.1: the ≤300-token prompt; profiles
     /// set this, users normally set `core.profile` instead).
     pub system_prompt: String,
+    /// Token budget for the session repo map, placed last in system[2]
+    /// (P43); `0` is off, the default until the T43.6 bench sets one.
+    pub repomap_budget_tokens: u32,
 }
 
 impl Default for ContextConfig {
@@ -794,6 +805,7 @@ impl Default for ContextConfig {
             memory_budget_tokens: 800,
             deferred_tools: true,
             system_prompt: "default".to_string(),
+            repomap_budget_tokens: 0,
         }
     }
 }
@@ -1647,6 +1659,19 @@ mod tests {
         assert!(cfg.mcp.servers.is_empty());
     }
 
+    /// P43: the repo map stays off until the T43.6 bench picks a budget,
+    /// in the hand-written default and in `default.toml` alike.
+    #[test]
+    fn repomap_budget_defaults_to_off() {
+        use figment::providers::Format as _;
+        assert_eq!(ContextConfig::default().repomap_budget_tokens, 0);
+        let from_toml: Config =
+            figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
+                .extract()
+                .expect("default.toml parses");
+        assert_eq!(from_toml.context, ContextConfig::default());
+    }
+
     /// T41.1: the hand-written `LspConfig::default()` and the `[lsp]` rows
     /// of `default.toml` carry the same matrix, so a layer that omits a
     /// server table or key falls back to what the docs say.
@@ -1695,8 +1720,35 @@ mod tests {
     }
 
     #[test]
+    fn provider_model_images_round_trips() {
+        // T40.9: `images = false` survives TOML → struct → JSON → struct,
+        // and an unset flag stays absent rather than serializing as null.
+        use figment::providers::Format as _;
+        let toml = r#"
+            [providers.local]
+            models = [
+                { id = "qwen3-coder", images = false },
+                { id = "llava", images = true },
+                { id = "phi" },
+            ]
+        "#;
+        let cfg: Config = figment::Figment::from(figment::providers::Toml::string(toml))
+            .extract()
+            .expect("models with images parse");
+        let models = &cfg.providers.local.models;
+        assert_eq!(models[0].images, Some(false));
+        assert_eq!(models[1].images, Some(true));
+        assert_eq!(models[2].images, None);
+        let json = serde_json::to_value(models).expect("serialize");
+        assert_eq!(json[0]["images"], false);
+        assert!(json[2].get("images").is_none());
+        let back: Vec<ProviderModel> = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(&back, models);
+    }
+
+    #[test]
     fn config_default_toml_carries_compatible_providers_with_models() {
-        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the four
+        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the five
         // Type-2 sections land in `custom` (not rejected as unknown fields),
         // each with a models list the router can clamp efforts against.
         use figment::providers::Format as _;
@@ -1704,11 +1756,24 @@ mod tests {
             figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
                 .extract()
                 .expect("default.toml parses");
-        for name in ["deepseek", "openrouter", "moonshot", "z-ai"] {
+        for name in ["deepseek", "openrouter", "moonshot", "z-ai", "gemini"] {
             let section = cfg.providers.custom.get(name).expect("section present");
             assert_eq!(section.api, "chat");
             assert!(!section.models.is_empty(), "{name} lists models");
         }
+        let gemini = cfg.providers.custom["gemini"].transport();
+        assert_eq!(gemini.api_key_env, "GEMINI_API_KEY");
+        assert_eq!(
+            gemini.base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+        // Every Gemini 3 model always reasons, so each one takes the field.
+        assert!(
+            cfg.providers
+                .models_for("gemini")
+                .iter()
+                .all(|m| m.reasoning_effort == Some(true))
+        );
         let deepseek = &cfg.providers.custom["deepseek"];
         assert_eq!(deepseek.model, "deepseek-v4-pro");
         // `models_for` resolves native sections and custom entries alike;

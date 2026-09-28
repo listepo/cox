@@ -8,15 +8,15 @@ use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError, ToolError};
-use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
+use cox_protocol::ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store,
-    Tool, Worktrees,
+    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider,
+    RepoMapper, Store, Tool, Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Attachment, Content, ContextBreakdown, Decision, Event, HookEvent, HookOutcome,
-    ItemKind, Job, Level, Message, ModelId, PermissionMode, ProviderId, Request, Role, SandboxMode,
-    StopReason, Submission, Tier, ToolCall,
+    ItemKind, Job, Level, Message, Mode, ModelId, PermissionMode, ProviderId, Request, Role,
+    SandboxMode, StopReason, Submission, Tier, ToolCall, ToolResult,
 };
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -25,7 +25,7 @@ use tracing::Instrument as _;
 use crate::budget;
 use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
-use crate::context::assemble_with_skills;
+use crate::context::{Stable, assemble_with_skills};
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
@@ -66,9 +66,9 @@ pub(crate) struct Inner {
     provider_calls: u32,
     spent_usd: f64,
     budget_warned: bool,
-    permission_mode: PermissionMode,
+    pub(crate) permission_mode: PermissionMode,
     /// `AllowForSession` grants as `(tool, subject prefix)`.
-    grants: Vec<(String, String)>,
+    pub(crate) grants: Vec<(String, String)>,
     /// Calls parked in `AwaitingApproval`, answered by `Submission::Approve`.
     pending: HashMap<CallId, oneshot::Sender<Decision>>,
     /// `ask_user` calls waiting in `QuestionAsked`, resumed by
@@ -84,12 +84,21 @@ pub(crate) struct Inner {
     /// `call_id` → archived payload for microcompaction (T8.2): the request
     /// replaces old results with `Pointer`s, the stored history keeps them.
     pub(crate) archives: HashMap<CallId, ArchiveRef>,
+    /// This round's tool images (T40.5), already archived, waiting to join
+    /// the results message after every `ToolResult`.
+    tool_images: HashMap<CallId, Content>,
     /// Last request's prefix hashes + whether it hit the cache (T8.3).
     pub(crate) cache: CacheTracker,
     /// Last call's cache share, for the status line (T8.3 step 1).
     pub(crate) cache_ratio: f64,
     /// Session routing overrides from `/model` (T9.1).
     pub(crate) overrides: Overrides,
+    /// The mode in force (P42): `core.mode` at build, then `/mode`.
+    mode: Mode,
+    /// The main-tier override a mode replaced, while the mode's own tier
+    /// stands; `/mode editor` restores it, and `/model` clears it so the
+    /// user's own pick survives leaving the mode.
+    mode_tier: Option<Option<Tier>>,
     /// The tier the running user turn was moved to: by `route` advice
     /// (T33.20) or by `confirm_think` onto think (T37.24.11); `None` outside
     /// a turn and whenever the static pick stands.
@@ -130,6 +139,12 @@ pub(crate) struct Inner {
     /// `additional_context` from the `SessionStart` hook (T22.3), appended
     /// to `system[3]`, the one block after the last cache breakpoint.
     startup_context: String,
+    /// The repo map last in `system[2]` (P43): set once at session start or
+    /// on resume, then only by `/repomap refresh` or compaction.
+    pub(crate) repomap: Option<String>,
+    /// Where that map's text is archived; on resume, set from the rollout
+    /// before the text is read back on the first submit.
+    pub(crate) repomap_archive: Option<ArchiveId>,
 }
 
 /// The mode and effort as they stand after a change, for every surface to
@@ -138,6 +153,15 @@ fn state_changed(inner: &Inner) -> Event {
     Event::StateChanged {
         mode: inner.permission_mode,
         effort: inner.overrides.effort,
+    }
+}
+
+/// The mode as it stands after a change, with the permission mode it
+/// left in force (P42).
+fn mode_changed(inner: &Inner) -> Event {
+    Event::ModeChanged {
+        mode: inner.mode,
+        permission_mode: inner.permission_mode,
     }
 }
 
@@ -185,6 +209,9 @@ pub struct Session {
     /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
     /// installed by the surface, shared with children. Absent in tests.
     worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
+    /// Builds the repo map (P43); installed by the surface like `worktrees`.
+    /// Not copied to children: only the session the user talks to has a map.
+    pub(crate) repo_mapper: Arc<OnceLock<Arc<dyn RepoMapper>>>,
     /// Custom subagent definitions the surface discovered on disk (T34.1:
     /// `cox_ext::agents::discover`, which this crate never calls itself);
     /// installed like `worktrees`, empty until then. Not copied to
@@ -412,41 +439,61 @@ impl Session {
         let is_resume = resume.is_some();
         // Subagents announce themselves with `SubagentStart`, not `SessionStart`.
         let is_child = parent_id.is_some();
-        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice, turns) =
-            match resume {
-                Some((id, history)) => {
-                    let truncated_notice = history.truncated_notice();
-                    let turn_marks = history
-                        .turn_marks
-                        .iter()
-                        .map(|mark| TurnMark {
-                            item: mark.item,
-                            start: mark.message_index,
-                            seq: mark.seq,
-                        })
-                        .collect();
-                    (
-                        id,
-                        history.messages,
-                        // T50.4: a rollout with no mode record (written
-                        // before T50.2/T50.4) resumes in the configured mode.
-                        history.permission_mode.unwrap_or(config.permissions.mode),
-                        history.grants,
-                        turn_marks,
-                        truncated_notice,
-                        history.turns,
-                    )
-                }
-                None => (
-                    fresh,
-                    Vec::new(),
-                    config.permissions.mode,
-                    Vec::new(),
-                    Vec::new(),
-                    None,
-                    0,
-                ),
-            };
+        let (
+            id,
+            history_messages,
+            permission_mode,
+            grants,
+            turn_marks,
+            truncated_notice,
+            turns,
+            repomap_archive,
+        ) = match resume {
+            Some((id, history)) => {
+                let truncated_notice = history.truncated_notice();
+                let turn_marks = history
+                    .turn_marks
+                    .iter()
+                    .map(|mark| TurnMark {
+                        item: mark.item,
+                        start: mark.message_index,
+                        seq: mark.seq,
+                    })
+                    .collect();
+                (
+                    id,
+                    history.messages,
+                    // T50.4: a rollout with no mode record (written
+                    // before T50.2/T50.4) resumes in the configured mode.
+                    history.permission_mode.unwrap_or(config.permissions.mode),
+                    history.grants,
+                    turn_marks,
+                    truncated_notice,
+                    history.turns,
+                    history.repomap,
+                )
+            }
+            None => (
+                fresh,
+                Vec::new(),
+                config.permissions.mode,
+                Vec::new(),
+                Vec::new(),
+                None,
+                0,
+                None,
+            ),
+        };
+        // P42: a top-level session opens in `core.mode`, which only narrows
+        // the mode above. A child runs under its parent's live mode (T45.1),
+        // so config never re-applies one to it.
+        let mode = if is_child {
+            Mode::Editor
+        } else {
+            config.core.mode
+        };
+        let mode_preset = crate::mode::preset(mode);
+        let permission_mode = crate::mode::apply(mode_preset, permission_mode);
         let (tx, rx) = mpsc::channel(256);
         let home = std::env::home_dir();
         let engine = Engine::compile(&config.permissions, home.as_deref(), &cwd)?;
@@ -486,6 +533,7 @@ impl Session {
             checkpointer: Arc::new(OnceLock::new()),
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
+            repo_mapper: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
             instructions: Arc::new(OnceLock::new()),
             skills_index: Arc::new(OnceLock::new()),
@@ -515,12 +563,18 @@ impl Session {
                 discovered: Vec::new(),
                 turn_marks,
                 archives: HashMap::new(),
+                tool_images: HashMap::new(),
                 turn_seq: turns,
                 redone: None,
                 renamed: false,
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
-                overrides: Overrides::default(),
+                overrides: Overrides {
+                    main_tier: mode_preset.main_tier,
+                    ..Overrides::default()
+                },
+                mode,
+                mode_tier: mode_preset.main_tier.map(|_| None),
                 routed: None,
                 tasks: HashMap::new(),
                 children: HashMap::new(),
@@ -533,6 +587,8 @@ impl Session {
                 retried_after_too_long: false,
                 startup: (!is_child).then_some(if is_resume { "resume" } else { "startup" }),
                 startup_context: String::new(),
+                repomap: None,
+                repomap_archive,
             })),
         };
         let started = Event::SessionStarted {
@@ -575,6 +631,14 @@ impl Session {
                 .map_err(|error| CoreError::Store { error })?;
         }
         let _ = session.tx.try_send(started);
+        // P42: a surface learns a non-default opening mode from the core,
+        // like any later `/mode`, instead of re-reading config.
+        if mode != Mode::Editor {
+            let _ = session.tx.try_send(Event::ModeChanged {
+                mode,
+                permission_mode,
+            });
+        }
         if let Some(notice) = truncated_notice {
             let _ = session.tx.try_send(notice);
         }
@@ -671,8 +735,19 @@ impl Session {
     /// it ever handed out, so a `bash` detached in any turn is killed, not
     /// orphaned. For a surface leaving the session (quit, `/clear`, fork,
     /// handoff, headless exit); `interrupt` stays turn-scoped.
+    ///
+    /// The session the user talks to also calls `Tool::shutdown` on its
+    /// tools (T41.5), once however often `end` is called; a child
+    /// (`spawn_child`, the only constructor that sets `agent`) shares
+    /// tools with its parent and leaves them running.
     pub fn end(&self) {
+        let first = !self.ended.is_cancelled();
         self.ended.cancel();
+        if first && self.agent.is_none() {
+            for tool in &self.tools {
+                tool.shutdown();
+            }
+        }
     }
 
     /// A fresh turn token under `ended`: a previous `Esc` may have left
@@ -739,6 +814,12 @@ impl Session {
 
     pub(crate) fn worktrees(&self) -> Option<Arc<dyn Worktrees>> {
         self.worktrees.get().cloned()
+    }
+
+    /// Installs the repo-map builder (P43); a second call is ignored like
+    /// `set_worktrees`. The map itself is built on the first submit.
+    pub fn set_repo_mapper(&self, mapper: Arc<dyn RepoMapper>) {
+        let _ = self.repo_mapper.set(mapper);
     }
 
     /// Installs the custom subagent definitions the surface discovered
@@ -821,6 +902,8 @@ impl Session {
                 let (_, context) = hooks::prompt_rewrite(String::new(), input);
                 self.inner.lock().await.startup_context = context.unwrap_or_default();
             }
+            // P43: the same once-per-session slot, before the first request.
+            self.start_repomap().await?;
         }
         match sub {
             Submission::UserTurn {
@@ -896,14 +979,24 @@ impl Session {
             Submission::RevertFile { path, to_turn } => self.revert_file(&path, to_turn).await,
             Submission::Background { call_id } => self.background(call_id).await,
             Submission::UserShell { command, share } => self.user_shell(command, share).await,
+            Submission::UserAgent { name, task } => self.user_agent(name, task).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
                     .await
                     .map(|_| ())
             }
+            // P43: `/repomap` shows the map; `/repomap refresh` is one of
+            // the two ways it changes mid-session.
+            Submission::Command { command } if command.name == "repomap" => {
+                self.repomap_command(&command.args).await
+            }
             // T25.6: `/init [--force]` scaffolds AGENTS.md; the write asks
             // first, like any other model-initiated write.
+            Submission::Command { command } if command.name == "mode" => {
+                self.switch_mode(command.args.first().map(String::as_str))
+                    .await
+            }
             Submission::Command { command } if command.name == "init" => {
                 let force = command.args.iter().any(|a| a == "--force" || a == "force");
                 self.run_init(force).await
@@ -991,6 +1084,8 @@ impl Session {
         {
             let mut inner = self.inner.lock().await;
             inner.overrides.main_tier = Some(tier);
+            // P42: the user's own pick outlives the mode's.
+            inner.mode_tier = None;
             match model {
                 Some(m) => {
                     inner.overrides.models.insert(tier, m);
@@ -1115,6 +1210,13 @@ impl Session {
     /// Remembers where a tool result is archived for microcompaction (T8.2).
     pub(crate) async fn remember_archive(&self, call: CallId, archive: ArchiveRef) {
         self.inner.lock().await.archives.insert(call, archive);
+    }
+
+    /// Holds a tool's archived image for this round's results message
+    /// (T40.5). A field on the session, not on `ToolResult`, because that
+    /// type has dozens of literal constructions.
+    pub(crate) async fn remember_image(&self, call: CallId, image: Content) {
+        self.inner.lock().await.tool_images.insert(call, image);
     }
 
     /// The live mode (`SetPermissionMode` changes it; the configured one
@@ -1298,12 +1400,14 @@ impl Session {
         if self.compact_now(due, last, max_context).await? {
             self.compact(compact::Trigger::Auto, None).await?;
         }
-        // T37.6: what the wire cannot take is held back with a notice
-        // rather than sent to a model that would reject the whole request.
-        let (content, held) = crate::context::user_content(
+        // T37.6, T40.2: an invalid image, or one the wire cannot take, is
+        // held back with a notice rather than sent to a model that would
+        // reject the whole request. Only what was sent is recorded, so the
+        // rollout rebuilds this exact message (invariant 6).
+        let (content, attachments, held) = crate::context::user_content(
             text.clone(),
             context,
-            &attachments,
+            attachments,
             &route.model.0,
             self.provider.accepts_images(&route.model.0),
         );
@@ -1457,7 +1561,17 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives, startup_context, routed, mode) = {
+        let (
+            history,
+            calls_so_far,
+            discovered,
+            marks,
+            archives,
+            startup_context,
+            routed,
+            repomap,
+            mode,
+        ) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -1467,6 +1581,7 @@ impl Session {
                 inner.archives.clone(),
                 inner.startup_context.clone(),
                 inner.routed.is_some(),
+                inner.repomap.clone(),
                 // T50.3: the live mode, so the model is told what the engine
                 // enforces after a `SetPermissionMode`.
                 inner.permission_mode,
@@ -1510,6 +1625,12 @@ impl Session {
                 microcompact_after,
                 &archives,
             );
+            // T40.6: on every request, routed or not — an earlier turn's
+            // tool image is never resent, and never in a resumed request.
+            let req_messages = match marks.last() {
+                Some(start) => crate::context::strip_tool_images_before(req_messages, *start),
+                None => req_messages,
+            };
             let req_messages = match marks.last() {
                 Some(start) if routed => {
                     crate::context::strip_thinking_before(req_messages, *start)
@@ -1524,8 +1645,11 @@ impl Session {
                 &discovered,
                 &self.cwd,
                 "",
-                self.instructions.get().map_or("", String::as_str),
-                self.skills_index.get().map_or("", String::as_str),
+                &Stable {
+                    instructions: self.instructions.get().map_or("", String::as_str),
+                    skills_index: self.skills_index.get().map_or("", String::as_str),
+                    repomap: repomap.as_deref().unwrap_or(""),
+                },
                 mode,
             );
             req.model = route.model.clone();
@@ -1826,7 +1950,32 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let msg = results_message(results);
+        let order: Vec<CallId> = results.iter().map(|(id, _)| *id).collect();
+        let mut msg = results_message(results);
+        // T40.5: images follow every `ToolResult` (Anthropic wants the
+        // results first; the Chat wire sends images as a user message after
+        // the tool messages), in call order.
+        let images: Vec<Content> = {
+            // Taken whole, so an interrupted round leaves nothing behind.
+            let mut held = std::mem::take(&mut self.inner.lock().await.tool_images);
+            order.iter().filter_map(|id| held.remove(id)).collect()
+        };
+        if !images.is_empty() {
+            if self.provider.accepts_images(&route.model.0) {
+                msg.content.extend(images);
+            } else {
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: format!(
+                        "{} tool image(s) not sent: {} does not take images on this provider; \
+                         each stays archived",
+                        images.len(),
+                        route.model
+                    ),
+                })
+                .await?;
+            }
+        }
         // T10.3: tool results are user-role text the user will grep for.
         let joined: String = msg
             .content
@@ -1891,12 +2040,115 @@ impl Session {
         .await
     }
 
+    /// `/mode architect|editor` (P42, T42.3): architect narrows the live
+    /// permission mode to `plan` and moves main turns to think; editor
+    /// restores `permissions.mode` and the tier the mode replaced. Tools are
+    /// never touched, and think still needs `confirm_think` per turn
+    /// (invariant 9). Refused mid-turn: a turn's calls keep one mode.
+    async fn switch_mode(&self, arg: Option<&str>) -> Result<(), CoreError> {
+        let Some(mode) = arg.and_then(crate::mode::parse) else {
+            return self
+                .emit(Event::Notice {
+                    level: Level::Warn,
+                    text: "usage: /mode architect|editor".into(),
+                })
+                .await;
+        };
+        let preset = crate::mode::preset(mode);
+        let events = {
+            let mut inner = self.inner.lock().await;
+            if inner.state != State::Idle {
+                None
+            } else {
+                let base = match mode {
+                    Mode::Editor => self.config.permissions.mode,
+                    Mode::Architect => inner.permission_mode,
+                };
+                inner.permission_mode = crate::mode::apply(preset, base);
+                let before = inner.overrides.main_tier;
+                match preset.main_tier {
+                    Some(tier) => {
+                        if inner.mode_tier.is_none() {
+                            inner.mode_tier = Some(before);
+                        }
+                        inner.overrides.main_tier = Some(tier);
+                    }
+                    None => {
+                        if let Some(saved) = inner.mode_tier.take() {
+                            inner.overrides.main_tier = saved;
+                        }
+                    }
+                }
+                // Same reason as `/model`: thinking signatures bind to the
+                // model that wrote them.
+                if inner.overrides.main_tier != before {
+                    inner.history = crate::router::strip_thinking(&inner.history);
+                }
+                inner.mode = mode;
+                Some((state_changed(&inner), mode_changed(&inner)))
+            }
+        };
+        match events {
+            // `StateChanged` too: resume rebuilds the permission mode from
+            // it (T50.4), and surfaces already follow it.
+            Some((state, changed)) => {
+                self.emit(state).await?;
+                self.emit(changed).await
+            }
+            None => {
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: "a turn is running; `/mode` waits until it ends".into(),
+                })
+                .await
+            }
+        }
+    }
+
     /// A composer `!` line (T25.3). The call takes the model's path
     /// (`run_tools`: `PreToolUse`, the engine, the sandbox, the archive) so
     /// a user command is no more trusted than a model one. Refused outside
     /// `Idle`: a shell result landing mid-turn would split a tool_use from
     /// its tool_result in history.
     async fn user_shell(&self, command: String, share: bool) -> Result<(), CoreError> {
+        let input = serde_json::json!({ "command": command });
+        let Some(result) = self.user_tool("`!`", "bash", input).await? else {
+            return Ok(());
+        };
+        if share {
+            self.push_user_text(format!("$ {command}\n{}", result.visible))
+                .await;
+        }
+        Ok(())
+    }
+
+    /// A composer `@name task` line (T45.5): the `agent` tool on the same
+    /// path as `!` (`run_tools`: `PreToolUse`, the engine, the budget and
+    /// the agent slots), so a user dispatch is no more trusted than a model
+    /// one; an unknown name is the tool's own denial, which lists the names
+    /// it accepts. The line and the answer join history at its tail, never
+    /// inside the cached prefix, so the next model turn sees them.
+    async fn user_agent(&self, name: String, task: String) -> Result<(), CoreError> {
+        let input = serde_json::json!({ "preset": name, "task": task });
+        let label = format!("`@{name}`");
+        let Some(result) = self.user_tool(&label, "agent", input).await? else {
+            return Ok(());
+        };
+        self.push_user_text(format!("@{name} {task}\n{}", result.visible))
+            .await;
+        Ok(())
+    }
+
+    /// One user-issued tool call (`!`, `@name`) through `run_tools`, or
+    /// `None` with a notice naming `what` when a turn is running: a result
+    /// landing mid-turn would split a tool_use from its tool_result in
+    /// history.
+    async fn user_tool(
+        &self,
+        what: &str,
+        tool: &str,
+        input: serde_json::Value,
+    ) -> Result<Option<ToolResult>, CoreError> {
         let busy = {
             let mut inner = self.inner.lock().await;
             let busy = inner.state != State::Idle;
@@ -1906,33 +2158,30 @@ impl Session {
             busy
         };
         if busy {
-            return self
-                .emit(Event::Notice {
-                    level: Level::Warn,
-                    text: "a turn is running; `!` waits until it ends".into(),
-                })
-                .await;
+            self.emit(Event::Notice {
+                level: Level::Warn,
+                text: format!("a turn is running; {what} waits until it ends"),
+            })
+            .await?;
+            return Ok(None);
         }
         self.renew_cancel();
-        let input = serde_json::json!({ "command": command });
         let ran = run_tools(
             self,
             TurnId::new(),
-            vec![(CallId::new(), "bash".into(), input)],
+            vec![(CallId::new(), tool.into(), input)],
         )
         .await;
-        let mut inner = self.inner.lock().await;
-        inner.state = State::Idle;
-        let results = ran?;
-        if share && let Some((_, result)) = results.first() {
-            inner.history.push(Message {
-                role: Role::User,
-                content: vec![Content::Text {
-                    text: format!("$ {command}\n{}", result.visible),
-                }],
-            });
-        }
-        Ok(())
+        self.inner.lock().await.state = State::Idle;
+        Ok(ran?.into_iter().next().map(|(_, result)| result))
+    }
+
+    /// Appends one user text message at the history tail.
+    async fn push_user_text(&self, text: String) {
+        self.inner.lock().await.history.push(Message {
+            role: Role::User,
+            content: vec![Content::Text { text }],
+        });
     }
 
     pub(crate) async fn set_state(&self, state: State) {
@@ -2263,13 +2512,39 @@ mod tests {
         (session, probe)
     }
 
-    /// T37.6 Check: a wire without image input gets the notice, the text
-    /// still goes, and the rollout keeps the attachment for every surface.
+    /// `Scripted` on a wire without image input: `Scripted` itself stands
+    /// in for a vision wire (T40.7), and `accepts_images` defaults to false.
+    struct TextOnly(Scripted);
+
+    #[async_trait::async_trait]
+    impl Provider for TextOnly {
+        fn id(&self) -> ProviderId {
+            self.0.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.0.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: Request,
+            sink: mpsc::Sender<cox_protocol::types::ProviderEvent>,
+            cancel: CancellationToken,
+        ) -> Result<cox_protocol::types::Usage, ProviderError> {
+            self.0.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+            self.0.count_tokens(req).await
+        }
+    }
+
+    /// T37.6 Check: a wire without image input gets the notice and the text
+    /// still goes. T40.2: the rollout records only what was sent, so a
+    /// resumed session rebuilds the same text-only message.
     #[tokio::test]
     async fn image_on_a_text_only_wire_is_held_back_with_a_notice() {
         let store = Arc::new(MemoryStore::new());
-        let provider =
-            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        let scripted = Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario");
+        let provider = Arc::new(TextOnly(scripted));
         let session = Session::new(
             cox_protocol::Config::default(),
             provider,
@@ -2287,7 +2562,7 @@ mod tests {
         session
             .submit(Submission::UserTurn {
                 text: "look".into(),
-                attachments: vec![shot.clone()],
+                attachments: vec![shot],
                 confirm_think: false,
             })
             .await
@@ -2295,7 +2570,7 @@ mod tests {
         let events = store.rollout_read(&session.id()).expect("rollout");
         assert!(events.iter().any(|e| matches!(e,
             Event::ItemStarted { kind: ItemKind::UserMessage { attachments, .. }, .. }
-                if *attachments == vec![shot.clone()])));
+                if attachments.is_empty())));
         assert!(events.iter().any(|e| matches!(e,
             Event::Notice { level: Level::Warn, text } if text.contains("does not take images"))));
         let history = &session.inner.lock().await.history;
@@ -2350,15 +2625,15 @@ mod tests {
         assert_eq!(payload["hook_event_name"], "Notification");
     }
 
-    /// The script, plus every request's system blocks, so a test can
-    /// compare the cached prefix and read the volatile block.
-    struct Systems {
+    /// The script, plus every request it was sent (P42's prefix claim is
+    /// about the bytes the provider saw).
+    struct Recording {
         script: Scripted,
-        seen: StdMutex<Vec<Vec<String>>>,
+        seen: StdMutex<Vec<Request>>,
     }
 
     #[async_trait::async_trait]
-    impl Provider for Systems {
+    impl Provider for Recording {
         fn id(&self) -> ProviderId {
             self.script.id()
         }
@@ -2371,8 +2646,10 @@ mod tests {
             sink: mpsc::Sender<cox_protocol::types::ProviderEvent>,
             cancel: CancellationToken,
         ) -> Result<cox_protocol::types::Usage, ProviderError> {
-            let blocks = req.system.iter().map(|b| b.text.clone()).collect();
-            self.seen.lock().expect("lock").push(blocks);
+            self.seen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.clone());
             self.script.stream(req, sink, cancel).await
         }
         async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
@@ -2380,45 +2657,291 @@ mod tests {
         }
     }
 
-    /// T50.3 Check: after `SetPermissionMode` the next request's volatile
-    /// block names the live mode, and the cached prefix does not move.
-    #[tokio::test]
-    async fn volatile_block_shows_the_live_permission_mode() {
-        let script = "[[turn]]\ntext = \"one\"\n[[turn]]\ntext = \"two\"\n";
-        let provider = Arc::new(Systems {
-            script: Scripted::from_toml(script, "").expect("scenario"),
+    impl Recording {
+        fn seen(&self) -> Vec<Request> {
+            self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        }
+    }
+
+    /// A session under `config` over `turns` scripted replies.
+    fn recorded(
+        config: cox_protocol::Config,
+        turns: usize,
+    ) -> (Session, Arc<MemoryStore>, Arc<Recording>) {
+        let provider = Arc::new(Recording {
+            script: Scripted::from_toml(&"[[turn]]\ntext = \"ok\"\n".repeat(turns), "")
+                .expect("scenario"),
             seen: StdMutex::new(Vec::new()),
         });
         let store = Arc::new(MemoryStore::new());
         let session = Session::new(
-            cox_protocol::Config::default(),
+            config,
             provider.clone(),
             vec![],
             store.clone(),
-            store,
+            store.clone(),
             PathBuf::from("/tmp/cox-mode"),
         )
         .expect("session");
-        let turn = |text: &str| Submission::UserTurn {
-            text: text.into(),
-            attachments: vec![],
-            confirm_think: false,
+        (session, store, provider)
+    }
+
+    async fn set_mode(session: &Session, name: &str) {
+        session
+            .submit(Submission::Command {
+                command: cox_protocol::types::SlashCommand {
+                    name: "mode".into(),
+                    args: vec![name.into()],
+                },
+            })
+            .await
+            .expect("/mode");
+    }
+
+    async fn turn(session: &Session, confirm_think: bool) {
+        session
+            .submit(Submission::UserTurn {
+                text: "plan it".into(),
+                attachments: vec![],
+                confirm_think,
+            })
+            .await
+            .expect("turn");
+    }
+
+    #[tokio::test]
+    async fn architect_denies_write_through_the_engine() {
+        let (session, store, _) = recorded(cox_protocol::Config::default(), 0);
+        let write = ToolCall {
+            id: CallId::new(),
+            name: "write".into(),
+            input: serde_json::json!({"path": "/tmp/cox-mode/a.rs"}),
+            risk: cox_protocol::types::Risk::Write,
+            subject: "/tmp/cox-mode/a.rs".into(),
+            segments: None,
         };
-        session.submit(turn("first")).await.expect("turn");
+        assert!(!matches!(
+            session.decide(&write).await,
+            Outcome::Deny { .. }
+        ));
+        set_mode(&session, "architect").await;
+        match session.decide(&write).await {
+            Outcome::Deny { reason, .. } => assert!(reason.contains("plan mode"), "{reason}"),
+            other => panic!("architect let a write through: {other:?}"),
+        }
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        assert!(events.iter().any(|e| *e
+            == Event::ModeChanged {
+                mode: Mode::Architect,
+                permission_mode: PermissionMode::Plan,
+            }));
+    }
+
+    #[tokio::test]
+    async fn architect_never_widens_a_plan_config() {
+        let mut config = cox_protocol::Config::default();
+        config.permissions.mode = PermissionMode::Plan;
+        let (session, _, _) = recorded(config, 0);
+        for name in ["architect", "editor", "architect"] {
+            set_mode(&session, name).await;
+            assert_eq!(
+                session.permission_mode().await,
+                PermissionMode::Plan,
+                "{name}"
+            );
+        }
+        // A wider mode picked by hand (Shift+Tab) is narrowed again.
+        session
+            .submit(Submission::SetPermissionMode {
+                mode: PermissionMode::Auto,
+            })
+            .await
+            .expect("set mode");
+        set_mode(&session, "architect").await;
+        assert_eq!(session.permission_mode().await, PermissionMode::Plan);
+    }
+
+    #[tokio::test]
+    async fn editor_restores_the_configured_mode() {
+        let mut config = cox_protocol::Config::default();
+        config.permissions.mode = PermissionMode::Auto;
+        let (session, _, _) = recorded(config, 0);
+        set_mode(&session, "architect").await;
+        assert_eq!(session.permission_mode().await, PermissionMode::Plan);
+        assert_eq!(
+            session.inner.lock().await.overrides.main_tier,
+            Some(Tier::Think)
+        );
+        set_mode(&session, "editor").await;
+        assert_eq!(session.permission_mode().await, PermissionMode::Auto);
+        assert_eq!(session.inner.lock().await.overrides.main_tier, None);
+
+        // A `/model` pick made before the mode survives leaving it.
+        session
+            .switch_model(Tier::Cheap, None)
+            .await
+            .expect("/model cheap");
+        set_mode(&session, "architect").await;
+        set_mode(&session, "editor").await;
+        assert_eq!(
+            session.inner.lock().await.overrides.main_tier,
+            Some(Tier::Cheap)
+        );
+    }
+
+    #[tokio::test]
+    async fn mode_switch_keeps_prefix_bytes_identical() {
+        let (session, _, provider) = recorded(cox_protocol::Config::default(), 2);
+        turn(&session, false).await;
+        set_mode(&session, "architect").await;
+        turn(&session, true).await;
+        let seen = provider.seen();
+        assert_eq!(seen.len(), 2, "one request per turn");
+        assert_eq!(seen[0].tier, Tier::Code);
+        assert_eq!(seen[1].tier, Tier::Think, "the mode moved main turns");
+        assert_eq!(
+            seen[0].system[..3],
+            seen[1].system[..3],
+            "system[0..2] byte-identical across /mode"
+        );
+        assert_eq!(seen[0].tools, seen[1].tools, "no tool filtered by mode");
+    }
+
+    /// T50.3 Check: after `SetPermissionMode` the next request's volatile
+    /// block names the live mode, and the cached prefix does not move.
+    #[tokio::test]
+    async fn volatile_block_shows_the_live_permission_mode() {
+        let (session, _, provider) = recorded(cox_protocol::Config::default(), 2);
+        turn(&session, false).await;
         let mode = Submission::SetPermissionMode {
             mode: PermissionMode::Plan,
         };
         session.submit(mode).await.expect("set mode");
-        session.submit(turn("second")).await.expect("turn");
-        let seen = provider.seen.lock().expect("lock").clone();
-        assert_eq!(seen.len(), 2, "{seen:?}");
+        turn(&session, false).await;
+        let seen = provider.seen();
+        assert_eq!(seen.len(), 2, "one request per turn");
         let configured = format!("{:?}", cox_protocol::Config::default().permissions.mode);
-        assert!(seen[0][3].contains(&format!("permission_mode={configured}\n")));
+        let volatile = |req: &Request| req.system[3].text.clone();
+        assert!(volatile(&seen[0]).contains(&format!("permission_mode={configured}\n")));
         assert!(
-            seen[1][3].contains("permission_mode=Plan\n"),
+            volatile(&seen[1]).contains("permission_mode=Plan\n"),
             "{}",
-            seen[1][3]
+            volatile(&seen[1])
         );
-        assert_eq!(seen[0][..3], seen[1][..3], "cached prefix moved");
+        assert_eq!(
+            seen[0].system[..3],
+            seen[1].system[..3],
+            "cached prefix moved"
+        );
+    }
+
+    #[tokio::test]
+    async fn architect_think_still_requires_confirmation() {
+        let mut config = cox_protocol::Config::default();
+        config.core.mode = Mode::Architect;
+        let (session, store, provider) = recorded(config, 1);
+        assert_eq!(session.permission_mode().await, PermissionMode::Plan);
+        turn(&session, false).await;
+        assert!(
+            provider.seen().is_empty(),
+            "no provider call without consent"
+        );
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::TurnDone {
+                stop: StopReason::Refusal { .. },
+                ..
+            }
+        )));
+        turn(&session, true).await;
+        let seen = provider.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].tier, Tier::Think);
+    }
+
+    /// Counts `Tool::shutdown` calls (T41.5).
+    #[derive(Default)]
+    struct Owner(std::sync::atomic::AtomicUsize);
+
+    #[async_trait::async_trait]
+    impl Tool for Owner {
+        fn spec(&self) -> cox_protocol::types::ToolSpec {
+            cox_protocol::types::ToolSpec {
+                name: "owner".into(),
+                description: String::new(),
+                input_schema: Value::Null,
+                deferred: false,
+                risk: cox_protocol::types::Risk::ReadOnly,
+                concurrency: cox_protocol::types::Concurrency::Parallel,
+            }
+        }
+        fn subject(&self, _input: &Value) -> String {
+            String::new()
+        }
+        async fn call(
+            &self,
+            _input: Value,
+            _cx: &cox_protocol::traits::ToolCx,
+        ) -> Result<cox_protocol::types::ToolOutput, ToolError> {
+            Err(ToolError::NotFound)
+        }
+        fn shutdown(&self) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn with_tool(tool: Arc<Owner>) -> Session {
+        let store = Arc::new(MemoryStore::new());
+        let provider =
+            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        Session::new(
+            cox_protocol::Config::default(),
+            provider,
+            vec![tool],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-turn"),
+        )
+        .expect("session")
+    }
+
+    fn shutdowns(tool: &Owner) -> usize {
+        tool.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[tokio::test]
+    async fn end_shuts_down_tools_once() {
+        let tool = Arc::new(Owner::default());
+        let session = with_tool(tool.clone());
+        assert_eq!(shutdowns(&tool), 0);
+        session.end();
+        assert_eq!(shutdowns(&tool), 1);
+        // A second end, or one from a clone of the handle, is not a second shutdown.
+        session.end();
+        session.clone().end();
+        assert_eq!(shutdowns(&tool), 1);
+    }
+
+    #[tokio::test]
+    async fn child_end_does_not_shut_down_parent_tools() {
+        let tool = Arc::new(Owner::default());
+        let parent = with_tool(tool.clone());
+        let child = parent
+            .spawn_child(
+                parent.config.clone(),
+                parent.tools.clone(),
+                Job::Explore,
+                Tier::Code,
+                None,
+                None,
+                "explore-1".into(),
+                "explore".into(),
+            )
+            .expect("child");
+        child.end();
+        assert_eq!(shutdowns(&tool), 0);
+        parent.end();
+        assert_eq!(shutdowns(&tool), 1);
     }
 }

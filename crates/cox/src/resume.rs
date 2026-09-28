@@ -1,7 +1,7 @@
 //! Rebuild history from a store rollout for `cox run --resume` (T2.4).
 //! `--continue` (latest session for this cwd) waits on a store listing API.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use cox_core::History;
 use cox_protocol::ids::SessionId;
@@ -29,6 +29,15 @@ pub fn run(cli: &Cli, args: &RunArgs) -> anyhow::Result<()> {
     let history = from_home(&home, &id)?;
     println!("{} messages", history.messages.len());
     Ok(())
+}
+
+/// T44.4: the directory session `id` ran in, as the store recorded it at
+/// `session_create`; `None` when the id does not parse or the store has no
+/// row for it (the resume itself then reports that).
+pub fn recorded_cwd(home: &Path, id: &str) -> Option<PathBuf> {
+    let id: SessionId = id.parse().ok()?;
+    let info = Store::open(home).ok()?.session_info(&id).ok()?;
+    Some(PathBuf::from(info.cwd))
 }
 
 /// Reads a session's rollout from `home` and rebuilds [`History`].

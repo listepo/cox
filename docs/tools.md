@@ -27,6 +27,7 @@ Core tools are always in context; deferred tools join through `tool_search`
 | `agent` | max of its tools; Destructive with `isolation: "worktree"` | yes | preset | `explore` / `shell` presets, own budget; worktree isolation asks (denied in plan) |
 | `memory_save` | Write | yes | name | one fact file + index + FTS row |
 | `memory_search` | ReadOnly | yes | query | FTS first, then files; top 5 capped |
+| `diagnostics` | ReadOnly (Exec for the call that starts a server) | yes | path | one sandboxed LSP server per language; falls back to `bash` |
 | `mcp__<server>__<tool>` | from server annotations (default Write) | yes | namespaced name | fail-open servers |
 
 ## MCP elicitation
@@ -71,3 +72,35 @@ image itself, which `lines` and `mode` do not apply to. One image is capped
 at 3,750,000 bytes (5,000,000 once base64-encoded, the smallest per-image
 limit a supported provider documents); a larger one is refused as
 `too_large`. These are the four formats Anthropic and OpenAI both accept.
+
+`diagnostics` (P41) returns one file's diagnostics from a language server as
+`path:line:col: severity: message [source code]` lines, most severe first,
+then a summary such as `3 errors, 1 warning`. `path` is confined like any
+other; `wait_ms` bounds the wait, capped by `lsp.timeout_s`. The first call
+for a language starts its server, which runs the project's build scripts and
+proc macros, so that call is `Exec` and the permission engine asks; once the
+server runs, calls are `ReadOnly`. Servers are spawned under the same sandbox
+wrap as stdio MCP servers (bare under `danger-full-access`; refused on a
+Landlock-only host or one with no sandbox backend) with the child env
+allowlist, one per language per session, and killed when the session ends.
+A server that dies is restarted once per call. Pushed diagnostics count as
+complete after `lsp.quiet_ms` with no newer push and no `$/progress` work
+open; a server that advertises `diagnosticProvider` is asked instead. A
+deadline returns what arrived with a note, not an error.
+
+The default servers (`[lsp.servers]`, see config.md):
+
+| Name | Program | Extensions |
+|---|---|---|
+| `rust` | `rust-analyzer` | `rs` |
+| `typescript` | `typescript-language-server --stdio` | `ts` `tsx` `js` `jsx` |
+| `python` | `pyright-langserver --stdio` | `py` |
+| `go` | `gopls` | `go` |
+
+Only the user config chooses them: a project `.cox/config.toml` that sets
+`lsp.servers` is ignored with a warning, because a repository must not pick a
+program cox runs. With no server for a file's extension, its program missing
+from PATH, or no sandbox to run it in, the tool answers with an error that
+tells the model to run the project's checker with `bash` instead
+(`cargo check`, `tsc --noEmit`, ...). `cox doctor` lists each server's
+program as found or missing.

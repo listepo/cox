@@ -1133,6 +1133,7 @@ version = "0.1.2"
 dependencies = [
  "async-trait",
  "cox-protocol",
+ "cox-sanitize",
  "insta",
  "nix 0.31.3",
  "pathdiff",
@@ -1510,6 +1511,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
+ "url",
 ]
 
 [[package]]

@@ -261,15 +261,11 @@ impl Plain {
                 self.tui.mode = mode;
                 self.tui.status.effort = effort;
             }
-            Event::ItemStarted { item, kind } => match kind {
-                ItemKind::AssistantMessage { text } => {
-                    self.texts.insert(item, ("cox", text));
+            Event::ItemStarted { item, kind } => {
+                if let Some(entry) = buffered(kind, self.full_thinking) {
+                    self.texts.insert(item, entry);
                 }
-                ItemKind::Thinking { text, .. } if self.full_thinking => {
-                    self.texts.insert(item, ("thinking", text));
-                }
-                _ => {}
-            },
+            }
             Event::TextDelta { item, text } | Event::ThinkingDelta { item, text } => {
                 if let Some((_, buf)) = self.texts.get_mut(&item) {
                     buf.push_str(&text);
@@ -621,9 +617,44 @@ fn spawn_sigint() -> mpsc::Receiver<()> {
     rx
 }
 
+/// The label and opening text of a started item that is printed whole at
+/// `ItemDone`; `None` for an item shown some other way or not at all.
+fn buffered(kind: ItemKind, full_thinking: bool) -> Option<(&'static str, String)> {
+    match kind {
+        ItemKind::AssistantMessage { text } => Some(("cox", text)),
+        // T39.2 keeps a tool call's signature as an empty signed item for
+        // the provider's history: a replay token, not something the model
+        // said. A streamed thought also starts empty, but unsigned.
+        ItemKind::Thinking {
+            text,
+            signature: Some(_),
+        } if text.is_empty() => None,
+        ItemKind::Thinking { text, .. } if full_thinking => Some(("thinking", text)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_skips_empty_signed_thinking() {
+        let thinking = |text: &str, signature: Option<&str>| ItemKind::Thinking {
+            text: text.into(),
+            signature: signature.map(Into::into),
+        };
+        assert_eq!(buffered(thinking("", Some("sig")), true), None);
+        assert_eq!(
+            buffered(thinking("", None), true),
+            Some(("thinking", String::new()))
+        );
+        assert_eq!(
+            buffered(thinking("why", Some("sig")), true),
+            Some(("thinking", "why".into()))
+        );
+        assert_eq!(buffered(thinking("why", None), false), None);
+    }
 
     #[test]
     fn markdown_table_reads_as_header_value_rows() {

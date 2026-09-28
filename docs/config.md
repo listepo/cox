@@ -11,6 +11,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `max_concurrent_subagents` = `8` — cap on running TaskKind::Agent tasks, foreground + background (T34.2)
 - `log_level` = `"info"` — tracing filter; file log at ~/.cox/logs/cox.log
 - `profile` = `""` — "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
+- `mode` = `"editor"` — editor (default) | architect (P42: plan + think); also `cox --mode`, `/mode`
 ## `[tiers.cheap]`
 
 - `provider` = `"anthropic"`
@@ -129,6 +130,15 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `timeout_s` = `120`
 - `max_retries` = `4`
 - `models` = `[{id="glm-5.2", display_name="GLM-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", display_name="GLM-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.gemini]`
+
+- `base_url` = `"https://generativelanguage.googleapis.com/v1beta/openai"` — client appends /chat/completions
+- `api_key_env` = `"GEMINI_API_KEY"` — else keyring entry "cox/gemini"
+- `api` = `"chat"` — Google calls its OpenAI compatibility beta: https://ai.google.dev/gemini-api/docs/openai
+- `model` = `"gemini-3.8-flash"`
+- `timeout_s` = `120`
+- `max_retries` = `4`
+- `models` = `[{id="gemini-3.8-flash", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.1-pro-preview", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.5-flash-lite", context_window=0, efforts=[], reasoning_effort=true}]`
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
@@ -142,6 +152,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `memory_budget_tokens` = `800`
 - `deferred_tools` = `true`
 - `system_prompt` = `"default"` — default | minimal (T30.1); `core.profile = "minimal"` implies it
+- `repomap_budget_tokens` = `0` — repo map in system[2] (P43); 0 = off until the T43.6 bench
 ## `[permissions]`
 
 - `mode` = `"default"` — default | plan | auto | bypass (bypass only via flag)

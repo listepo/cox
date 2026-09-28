@@ -515,6 +515,26 @@ mod tests {
         assert!(matches!(p("!! "), Some(Action::Notice(_))));
     }
 
+    /// P42: `/mode` is in `/help` and reaches the core as a command.
+    #[test]
+    fn mode_command_is_listed_in_help() {
+        let help = help(&Keymap::default());
+        let row = help
+            .lines()
+            .find(|l| l.starts_with("/mode "))
+            .expect("/mode in /help");
+        insta::assert_snapshot!(row);
+        assert_eq!(
+            parse("/mode architect", Tier::Code),
+            Some(Action::Submit(Submission::Command {
+                command: SlashCommand {
+                    name: "mode".into(),
+                    args: vec!["architect".into()],
+                },
+            }))
+        );
+    }
+
     /// T26.3: `/fork` takes an optional turn in either spelling the
     /// timeline uses; `/handoff` needs its objective.
     #[test]

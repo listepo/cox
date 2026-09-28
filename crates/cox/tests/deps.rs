@@ -492,9 +492,14 @@ fn no_crate_below_cox_depends_on_core() {
     );
 
     // mcp/store/ext depend only on cox-protocol: this is the rule the test
-    // is named for — none of them may reach cox-core.
-    let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    // is named for — none of them may reach cox-core. cox-ext also takes
+    // the leaf cox-sanitize (T44.2: presence text names another session's
+    // worktree to the model through the one guard).
     for crate_name in ["cox-mcp", "cox-store", "cox-ext"] {
+        let leaf_allowed: HashSet<&str> = match crate_name {
+            "cox-ext" => ["cox-protocol", "cox-sanitize"].into_iter().collect(),
+            _ => ["cox-protocol"].into_iter().collect(),
+        };
         let d = &deps[crate_name];
         assert!(
             !d.contains("cox-core"),
@@ -502,7 +507,7 @@ fn no_crate_below_cox_depends_on_core() {
         );
         assert!(
             d.iter().all(|dep| leaf_allowed.contains(dep.as_str())),
-            "{crate_name} may only depend on cox-protocol among workspace crates, found {d:?}"
+            "{crate_name} may only depend on {leaf_allowed:?} among workspace crates, found {d:?}"
         );
     }
 
