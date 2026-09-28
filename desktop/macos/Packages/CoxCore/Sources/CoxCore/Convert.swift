@@ -370,6 +370,7 @@ extension CoxFFIBindings.Intent {
     case .rewind(let toTurn, let code, let conversation):
       self = .rewind(toTurn: toTurn, code: code, conversation: conversation)
     case .redo: self = .redo
+    case .revertFile(let path, let toTurn): self = .revertFile(path: path, toTurn: toTurn)
     case .fork(let turn): self = .fork(turn: turn)
     case .handoff(let objective): self = .handoff(objective: objective)
     case .background(let call): self = .background(call: call)

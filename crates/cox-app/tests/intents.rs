@@ -490,6 +490,16 @@ fn every_intent_maps_to_its_submission() {
         ),
         (Intent::Redo, now(Submission::Redo)),
         (
+            Intent::RevertFile {
+                path: "a.rs".into(),
+                to_turn: 2,
+            },
+            now(Submission::RevertFile {
+                path: "a.rs".into(),
+                to_turn: 2,
+            }),
+        ),
+        (
             Intent::Fork { turn: None },
             Ok(Dispatch::Fork { turn: None }),
         ),

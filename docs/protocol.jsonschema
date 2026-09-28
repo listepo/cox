@@ -505,10 +505,10 @@
             }
           },
           "skipped": {
-            "description": "Paths whose pre-image was too large to keep, left as they are.",
+            "description": "Paths left as they are, each with why.",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/SkippedFile"
             }
           },
           "type": {
@@ -1725,6 +1725,73 @@
             "description": "A user turn started; nothing archived.",
             "type": "string",
             "const": "turn"
+          }
+        ]
+      },
+      "SkippedFile": {
+        "description": "A file a code rewind left as it is (`Event::Rewound`), and why (A101).",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "The confined absolute path.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it was not restored.",
+            "$ref": "#/$defs/SkipReason"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ]
+      },
+      "SkipReason": {
+        "description": "Why a rewind could not restore a file.",
+        "oneOf": [
+          {
+            "description": "Its pre-image was over the size cap, so no bytes were kept.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "too_large"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "The path no longer confines to the workspace roots.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "outside_roots"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "Reading the pre-image or writing the file failed.",
+            "type": "object",
+            "properties": {
+              "error": {
+                "description": "The error, as shown to the user.",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "failed"
+              }
+            },
+            "required": [
+              "kind",
+              "error"
+            ]
           }
         ]
       },
@@ -3006,6 +3073,31 @@
         },
         "required": [
           "type"
+        ]
+      },
+      {
+        "description": "Revert one file (T37.28.3, A101): write back its pre-image from\nbefore `to_turn` first touched it, checkpointing its current bytes\nfirst so the revert can itself be undone. Nothing else changes.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Relative to the session's cwd or absolute; confined to the\nworkspace roots like a tool's path.",
+            "type": "string"
+          },
+          "to_turn": {
+            "description": "The turn to go back before.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "const": "revert_file"
+          }
+        },
+        "required": [
+          "type",
+          "path",
+          "to_turn"
         ]
       },
       {

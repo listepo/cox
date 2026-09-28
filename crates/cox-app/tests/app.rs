@@ -503,6 +503,49 @@ async fn rewinding_code_to_a_checkpoint_restores_its_files_and_keeps_the_convers
     );
 }
 
+/// Pulls until a notice starting with `prefix` lands.
+async fn notice(session: &LiveSession, prefix: &str) {
+    let done = |s: &LiveSession| {
+        s.snapshot()
+            .iter()
+            .any(|b| matches!(&b.kind, BlockKind::Notice { text, .. } if text.starts_with(prefix)))
+    };
+    while !done(session) {
+        session.next_patches().await.expect("the stream stays open");
+    }
+}
+
+/// T37.28.3: the Changes tab's Revert on one file puts that file back and
+/// leaves the other; the revert is checkpointed, so `/redo` undoes it.
+#[tokio::test]
+async fn reverting_one_file_restores_it_and_leaves_the_other() {
+    let dir = scratch(Some(TWO_EDITS));
+    let session = edited(dir.path()).await;
+    let changes = session.changes().await.expect("changes");
+    let file = changes
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("notes.md"))
+        .expect("notes.md changed");
+    let intent = Intent::RevertFile {
+        path: file.path.to_string_lossy().into_owned(),
+        to_turn: 1,
+    };
+    session.send(intent).await.expect("revert");
+    notice(&session, "reverted notes.md to before T1").await;
+    let notes = std::fs::read_to_string(dir.path().join("project/notes.md"));
+    assert_eq!(notes.ok().as_deref(), Some("hello\n"));
+    assert!(
+        dir.path().join("project/new.rs").exists(),
+        "the other file stays"
+    );
+
+    session.send(Intent::Redo).await.expect("redo");
+    notice(&session, "rewound to T2").await;
+    let notes = std::fs::read_to_string(dir.path().join("project/notes.md"));
+    assert_eq!(notes.ok().as_deref(), Some("bye\n"));
+}
+
 /// Each line of `path`'s Review diff as `+text`, `-text` or ` text`.
 async fn reviewed(session: &LiveSession, path: &str) -> Vec<String> {
     let diff = session.review(path).await.expect("review");
