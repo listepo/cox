@@ -3236,3 +3236,43 @@ Follow-ups found (not in this card): resume ignores the configured mode and `--p
   - Before the fix the new tests did not compile (no `ToolUseSignature` variant); by inspection, the old `index` default of 0 merged the index-less calls into one.
   - Workspace: nextest 1344 passed, 4 skipped; clippy `-D warnings` and `fmt --check` clean.
 - Note: the field path `extra_content.google.thought_signature` is **unverified** until the live check in T39.7. It is read in one place, `thought_signature` in `crates/cox-provider-openai/src/chat.rs`, which says so in its comment. The fixture `fixtures/openai-chat/gemini-tool-signature.sse` encodes the same unverified path.
+
+#### T41.2 LSP stdio framing and JSON-RPC client
+
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Depends: -
+- Size: ~190
+- Priority: P1
+- Complexity: 3
+- Goal: `lsp::client::Client` speaks `Content-Length` framed JSON-RPC over any `AsyncRead`/`AsyncWrite`, with requests (id → oneshot, per-call timeout), notifications out, a notification stream in, and a message-size cap.
+- Files: `crates/cox-tools/src/lsp/client.rs` (new), `crates/cox-tools/src/lsp/mod.rs` (new, `mod` lines only), `crates/cox-tools/src/lib.rs`
+- Steps:
+  1. `read_message`/`write_message`: parse headers until `\r\n\r\n` and require `Content-Length`. Reject a body over `MAX_MESSAGE_BYTES = 16 MiB` with `LspError::TooLarge`.
+  2. `Client::start(reader, writer)` spawns one reader task. Responses resolve pending oneshots. Server requests (for example `workspace/configuration`, `window/workDoneProgress/create`) get a `null` result or a `MethodNotFound` error so the server never blocks. Notifications go to an `mpsc`.
+  3. `request(method, params, timeout)` and `notify(method, params)`.
+  4. `LspError` (thiserror): `Io`, `Parse`, `TooLarge`, `Timeout`, `Closed` and `Server { code, message }`.
+  5. Tests over `tokio::io::duplex`:
+     - `framing_round_trips`
+     - `oversized_message_is_rejected`
+     - `server_request_is_answered`
+     - `request_times_out`
+     - `closed_pipe_fails_pending_requests`
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-tools -E 'test(lsp::client)'
+  ```
+- Done when: all five tests pass, with no `unwrap` outside the tests.
+- Plan:
+  1. Tests first in `crates/cox-tools/src/lsp/client.rs` against stub bodies: the five card tests plus the framing edge cases — `split_headers_and_back_to_back_messages_are_framed` (bytes written in small chunks across the header boundary, two messages in one write, header name case-insensitive, `Content-Type` ignored), `partial_message_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `responses_match_ids_out_of_order` (with an error response → `Server { code, message }`), `notifications_reach_the_stream`. Watch them fail.
+  2. `read_message` over `AsyncBufRead`: header lines read through a bounded `take` (a line with no `\n` within 8 KiB is `Parse`), clean EOF before a message is `Ok(None)`, EOF mid-message is `Closed`, a length over `MAX_MESSAGE_BYTES` is `TooLarge` before any body is read. `write_message` writes header, body and flushes.
+  3. `Client::start(reader, writer) -> (Client, UnboundedReceiver<Notification>)`: one reader task; responses resolve the pending oneshot by integer id; server requests are answered (`workspace/configuration` → one `null` per item, `window/workDoneProgress/create`, `client/(un)registerCapability`, `window/showMessageRequest` → `null`, anything else → `-32601`); on EOF or a framing error the pending map is closed and emptied, so waiters get `Closed`. The notification channel is unbounded on purpose: a bounded one would stall the reader, and with it every response, while the consumer awaits a request (T41.4 drains it). `request` removes its entry and sends `$/cancelRequest` on timeout; `params: null` is omitted from the wire. `Drop` aborts the reader task.
+  4. Wiring: `lsp/mod.rs` (`pub mod client;`), `pub mod lsp;` in `lib.rs`, `thiserror` (workspace dependency, already in §1 and `toolchain.md`) added to `crates/cox-tools/Cargo.toml` for `LspError`; the §1 `cox-tools` row gains the LSP client and `thiserror`. Four files because the crate had no `thiserror` yet.
+  5. Verify: the Check, then fmt, clippy `-D warnings`, workspace nextest.
+- Out of scope: process spawning and the document protocol (T41.4).
+
+Status: done 2026-09-28
+Result: `crates/cox-tools/src/lsp/client.rs` (new): `read_message`/`write_message` (`Content-Length` framing; header lines bounded to 8 KiB through `take`; clean EOF between messages is `Ok(None)`, EOF inside one or a broken pipe is `Closed`; a body over `MAX_MESSAGE_BYTES` = 16 MiB is `TooLarge` before it is read, and on write too), `LspError` (`Io`, `Parse`, `TooLarge`, `Timeout { method }`, `Closed`, `Server { code, message }`), `Notification`, and `Client::start(reader, writer) -> (Client, UnboundedReceiver<Notification>)` with one reader task. Responses resolve the pending oneshot by integer id (unknown ids ignored); server requests are answered from their own task (`workspace/configuration` → one `null` per item; `window/workDoneProgress/create`, `client/(un)registerCapability`, `window/showMessageRequest` → `null`; anything else → `-32601`); notifications go to the stream, which ends with the connection. `request` sends `$/cancelRequest` after a timeout; `null` params are omitted. `crates/cox-tools/src/lsp/mod.rs` (new, `pub mod client;`), `pub mod lsp;` in `lib.rs`, `thiserror` (workspace dependency, already in §1 and `toolchain.md`) added to `crates/cox-tools/Cargo.toml`; the §1 `cox-tools` row names the client and `thiserror`.
+Deviations: four files, since the crate had no `thiserror` yet. Size: ~290 non-comment lines after rustfmt (the card estimated ~190) — the EOF/size handling and the reply, outcome and envelope helpers; kept in one module because they are one wire. The notification channel is unbounded (a bounded one would stall the reader, and with it every response, while the consumer awaits a request); T41.4 drains it.
+Check output:
+- `cargo nextest run -p cox-tools -E 'test(lsp::client)'`: 10 passed — `framing_round_trips`, `split_headers_and_back_to_back_messages_are_framed`, `partial_message_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `oversized_message_is_rejected`, `server_request_is_answered`, `request_times_out`, `closed_pipe_fails_pending_requests`, `responses_match_ids_out_of_order`, `notifications_reach_the_stream`. Against stub bodies 9 failed first (the parse-error test passed only because the stub returned `Parse`).
+- Workspace: `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run --workspace --no-fail-fast`: 1346 passed, 4 skipped. A first fail-fast run stopped on `cox::subagent_messaging headless_run_does_not_wait_for_a_background_shell` (also failed 3 runs alone at 10-20 s under machine load, then passed alone in 2.8 s and in the full run); it touches no LSP code.

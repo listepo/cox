@@ -42,7 +42,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T40.9 | todo | P2 | 2 | 0% | |
 | T40.10 | todo | P3 | 2 | 0% | |
 | T41.1 | todo | P1 | 2 | 0% | |
-| T41.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T41.3 | todo | P1 | 2 | 0% | |
 | T41.4 | todo | P1 | 4 | 0% | |
 | T41.5 | todo | P1 | 2 | 0% | |
@@ -153,7 +152,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-provider` | the provider registry and `from_env`; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction; re-exports the wires at the old `anthropic` and `openai` paths | reqwest 0.12 (rustls) |
 | `cox-provider-anthropic` | the Anthropic Messages wire (T32.13; split out of `cox-provider`): request building, stream parsing, wire types from the vendored spec, `schema/` | reqwest 0.12, typify 0.8 (build.rs, T30.10/T30.12) |
 | `cox-provider-openai` | the OpenAI Responses and Chat wires (T32.14; split out of `cox-provider`) | reqwest 0.12, async-openai 0.42 (`response-types` only, T30.11) |
-| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand` | similar 3.2, nix |
+| `cox-tools` | `read`, `grep`, `glob`, `edit`, `apply_patch`, `write`, `bash`, `todo`, `ask_user`, `agent`, `tool_search`, `web_fetch`, `expand`; the LSP stdio JSON-RPC client (`lsp::client`, T41.2) | similar 3.2, nix, thiserror (`LspError`, T41.2) |
 | `cox-sandbox` | `path::confine`, `sandbox::{seatbelt,bwrap,landlock}` (T32.3; split out of `cox-tools`): path confinement to the workspace roots and the platform sandbox front door. `cox-tools` re-exports both as `path` and `sandbox` | landlock 0.4.7, seccompiler 0.5, nix |
 | `cox-patch` | the V4A patch engine (T32.6; split out of `cox-tools`): `parse` text ↔ AST, `stage` progressive hunk matching. Pure: no filesystem, no `ToolCx`; the `apply_patch` `Tool` impl stays in `cox-tools` (`v4a::tool`) so `path::confine` keeps one call site. `cox-tools` re-exports it as `v4a` | proptest 1.11 (dev) |
 | `cox-syntax` | tree-sitter and its grammars (T32.4; split out of `cox-tools`): `outline` (signature extraction for `read`'s outline mode) and `parse_bash` (the parser behind `bash`'s risk classifier). `cox-tools` re-exports `outline` at its old path | tree-sitter 0.27 + bash/rust/typescript/python/go grammars |
@@ -1550,39 +1549,6 @@ Every card in this phase: same four bullets as P39.
   ```
 - Done when: `docs/config.md` documents every `lsp` key, enforced by the existing docs test.
 - Out of scope: using the config (T41.7).
-
-### T41.2. LSP stdio framing and JSON-RPC client
-
-- Model: Claude Code / opus-5.5 (card: sonnet)
-- Depends: -
-- Size: ~190
-- Priority: P1
-- Complexity: 3
-- Goal: `lsp::client::Client` speaks `Content-Length` framed JSON-RPC over any `AsyncRead`/`AsyncWrite`, with requests (id → oneshot, per-call timeout), notifications out, a notification stream in, and a message-size cap.
-- Files: `crates/cox-tools/src/lsp/client.rs` (new), `crates/cox-tools/src/lsp/mod.rs` (new, `mod` lines only), `crates/cox-tools/src/lib.rs`
-- Steps:
-  1. `read_message`/`write_message`: parse headers until `\r\n\r\n` and require `Content-Length`. Reject a body over `MAX_MESSAGE_BYTES = 16 MiB` with `LspError::TooLarge`.
-  2. `Client::start(reader, writer)` spawns one reader task. Responses resolve pending oneshots. Server requests (for example `workspace/configuration`, `window/workDoneProgress/create`) get a `null` result or a `MethodNotFound` error so the server never blocks. Notifications go to an `mpsc`.
-  3. `request(method, params, timeout)` and `notify(method, params)`.
-  4. `LspError` (thiserror): `Io`, `Parse`, `TooLarge`, `Timeout`, `Closed` and `Server { code, message }`.
-  5. Tests over `tokio::io::duplex`:
-     - `framing_round_trips`
-     - `oversized_message_is_rejected`
-     - `server_request_is_answered`
-     - `request_times_out`
-     - `closed_pipe_fails_pending_requests`
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-tools -E 'test(lsp::client)'
-  ```
-- Done when: all five tests pass, with no `unwrap` outside the tests.
-- Plan:
-  1. Tests first in `crates/cox-tools/src/lsp/client.rs` against stub bodies: the five card tests plus the framing edge cases — `split_headers_and_back_to_back_messages_are_framed` (bytes written in small chunks across the header boundary, two messages in one write, header name case-insensitive, `Content-Type` ignored), `partial_body_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `responses_match_ids_out_of_order` (with an error response → `Server { code, message }`), `notifications_reach_the_stream`. Watch them fail.
-  2. `read_message` over `AsyncBufRead`: header lines read through a bounded `take` (a line with no `\n` within 8 KiB is `Parse`), clean EOF before a message is `Ok(None)`, EOF mid-message is `Closed`, a length over `MAX_MESSAGE_BYTES` is `TooLarge` before any body is read. `write_message` writes header, body and flushes.
-  3. `Client::start(reader, writer) -> (Client, UnboundedReceiver<Notification>)`: one reader task; responses resolve the pending oneshot by integer id; server requests are answered (`workspace/configuration` → one `null` per item, `window/workDoneProgress/create`, `client/(un)registerCapability`, `window/showMessageRequest` → `null`, anything else → `-32601`); on EOF or a framing error the pending map is closed and emptied, so waiters get `Closed`. The notification channel is unbounded on purpose: a bounded one would stall the reader, and with it every response, while the consumer awaits a request (T41.4 drains it). `request` removes its entry and sends `$/cancelRequest` on timeout; `params: null` is omitted from the wire. `Drop` aborts the reader task.
-  4. Wiring: `lsp/mod.rs` (`pub mod client;`), `pub mod lsp;` in `lib.rs`, `thiserror` (workspace dependency, already in §1 and `toolchain.md`) added to `crates/cox-tools/Cargo.toml` for `LspError`; the §1 `cox-tools` row gains the LSP client and `thiserror`. Four files because the crate had no `thiserror` yet.
-  5. Verify: the Check, then fmt, clippy `-D warnings`, workspace nextest.
-- Out of scope: process spawning and the document protocol (T41.4).
 
 ### T41.3. Diagnostic wire subset, file URIs and formatting
 
