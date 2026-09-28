@@ -107,6 +107,8 @@ toml_edit = { workspace = true }
 # T6.1: `cox run -p` per output format against the real binary.
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
+# T48.1: the full `cox run -p` output as reviewed `tests/cmd/*.toml` fixtures.
+trycmd = { workspace = true }
 insta = { workspace = true }
 # T5.8: PTY end-to-end of the real binary (plan D10).
 portable-pty = { workspace = true }
