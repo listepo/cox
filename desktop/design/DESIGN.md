@@ -71,6 +71,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | fill | `primary`, `secondary` | Quiet fills inside a surface |
 | text | `primary`, `secondary`, `tertiary`, `terminal`, `terminalOk` | Foregrounds |
 | line | `separator` | 0.5 pt hairlines |
+| quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
 | intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
 | diff | `add`, `addGutter`, `del`, `delGutter` | Diff lines and gutters |
 | syntax | `keyword`, `string`, `number`, `function`, `comment`, `type` | Highlighting; same roles as `cox-render`'s `StyleToken`, so TUI and app match |
@@ -93,7 +94,9 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 | `font.title.window` | Session title in the toolbar | 13.5 / semibold |
 | `font.body` | Default UI text | 13 / regular |
 | `font.transcript` | Messages | 13.5 / regular, line height 1.55 |
-| `font.transcript.h3` | Markdown headings | 15 / semibold |
+| `font.transcript.h1` | Markdown headings, level 1 (DT§5.9, A94) | 17 / semibold, line height 1.35 |
+| `font.transcript.h3` | Markdown headings, level 2 | 15 / semibold, line height 1.35 |
+| `font.transcript.h4` | Markdown headings, level 3, and levels 4–6, which DT§5.9 does not size | 13 / semibold, line height 1.35 |
 | `font.control` | Buttons, capsules, segments | 12.5 / medium |
 | `font.caption` | Thinking line, notices | 12 / regular |
 | `font.footnote` | Tool status, meter, key–value rows | 11.5 / regular |
@@ -111,7 +114,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
   `popover` → window `window`; pills use `capsule`. Nested shapes are concentric: inner radius = outer
   radius − inset.
 - **Size** fixes the layout skeleton: toolbar 56, sidebar 252, inspector 324, reading column 760,
-  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5.
+  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5,
+  quote bar 3.
 
 ### 3.4 Elevation (depth)
 

@@ -33,6 +33,7 @@
   --size-iconTile: 22px;
   --size-statusDot: 9px;
   --size-hairline: 0.5px;
+  --size-quoteBar: 3px;
   --size-windowMinWidth: 1100px;
   --size-windowMinHeight: 700px;
   --size-popoverWidth: 340px;
@@ -52,6 +53,7 @@
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
   --c-separator: rgba(0, 0, 0, 0.09);
+  --c-quote-bar: rgba(161, 161, 166, 1);
   --c-accent: rgba(10, 124, 255, 1);
   --c-accent-soft: rgba(10, 124, 255, 0.12);
   --c-status-success: rgba(31, 157, 69, 1);
@@ -138,6 +140,7 @@
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
   --c-separator: rgba(255, 255, 255, 0.09);
+  --c-quote-bar: rgba(108, 108, 114, 1);
   --c-accent: rgba(59, 155, 255, 1);
   --c-accent-soft: rgba(59, 155, 255, 0.18);
   --c-status-success: rgba(59, 208, 106, 1);
@@ -224,6 +227,7 @@
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
   --c-separator: rgba(140, 140, 140, 1);
+  --c-quote-bar: rgba(139, 139, 144, 1);
   --c-accent: rgba(6, 71, 145, 1);
   --c-accent-soft: rgba(10, 124, 255, 0.12);
   --c-status-success: rgba(17, 84, 37, 1);
@@ -310,6 +314,7 @@
   --c-text-terminal: rgba(200, 205, 224, 1);
   --c-text-terminalOk: rgba(143, 240, 168, 1);
   --c-separator: rgba(122, 122, 124, 1);
+  --c-quote-bar: rgba(122, 122, 127, 1);
   --c-accent: rgba(176, 215, 255, 1);
   --c-accent-soft: rgba(59, 155, 255, 0.18);
   --c-status-success: rgba(145, 229, 172, 1);

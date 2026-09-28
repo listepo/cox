@@ -207,6 +207,21 @@
       },
       "$description": "Hairlines, 0.5 pt"
     },
+    "quote": {
+      "bar": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.5451,
+            0.5451,
+            0.5647
+          ],
+          "hex": "#8b8b90"
+        },
+        "$description": "A quote's bar in the transcript, one per depth, size.quoteBar wide: text.tertiary's value, stronger than the hairline (A97)"
+      }
+    },
     "accent": {
       "$root": {
         "$type": "color",

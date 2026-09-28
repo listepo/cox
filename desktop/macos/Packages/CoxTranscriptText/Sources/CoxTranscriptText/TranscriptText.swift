@@ -14,8 +14,8 @@ import CoxClient
 public struct TranscriptStyle: Equatable {
   public var body: NSFont
   public var code: NSFont
-  /// A reply heading's, at every level: DS§3.2 has one heading token.
-  public var heading: NSFont
+  /// A reply heading's, one per DS§3.2 heading token (A94).
+  public var headings: Headings
   /// The `.text` token's colour, and any token `colors` leaves out.
   public var text: NSColor
   /// Each Rust style token's colour (`StyleToken`, T37.7).
@@ -24,26 +24,28 @@ public struct TranscriptStyle: Equatable {
   public var blockSpacing: CGFloat
   /// The space between the text and the view's edges.
   public var inset: NSSize
-  /// A user prompt's bubble and a thought's look (`TranscriptDecor.swift`).
+  /// A user prompt's bubble and a thought's look (`TranscriptDecor.swift`); a quote's bars.
   public var bubble: Bubble
   public var thought: Thought
+  public var quote: Quote
   /// A list's indent, and the gap between a table's columns (`TranscriptStructure.swift`).
   public var indent: CGFloat
   /// Each face's line height (`TranscriptLineHeights.swift`).
   public var lineHeights: LineHeights
 
   public init(
-    body: NSFont, code: NSFont, heading: NSFont? = nil, text: NSColor,
+    body: NSFont, code: NSFont, headings: Headings? = nil, text: NSColor,
     colors: [StyleToken: NSColor] = [:], blockSpacing: CGFloat, inset: NSSize,
-    bubble: Bubble = .system, thought: Thought = .system, indent: CGFloat = 0,
-    lineHeights: LineHeights = .natural
+    bubble: Bubble = .system, thought: Thought = .system, quote: Quote = .system,
+    indent: CGFloat = 0, lineHeights: LineHeights = .natural
   ) {
     (self.body, self.code, self.text, self.colors) = (body, code, text, colors)
-    self.heading = heading ?? NSFontManager.shared.convert(body, toHaveTrait: .boldFontMask)
+    self.headings =
+      headings ?? Headings(NSFontManager.shared.convert(body, toHaveTrait: .boldFontMask))
     (self.blockSpacing, self.inset, self.bubble, self.thought) = (
       blockSpacing, inset, bubble, thought
     )
-    (self.indent, self.lineHeights) = (indent, lineHeights)
+    (self.quote, self.indent, self.lineHeights) = (quote, indent, lineHeights)
   }
 
   public static var system: TranscriptStyle {
@@ -108,7 +110,9 @@ struct TextLook {
     spacing.paragraphSpacing = style.blockSpacing
     self.spacing = spacing
     // A heading is bold by its token's weight, so a bold span in it keeps that weight.
-    let faces = [(style.body, false), (style.code, false), (style.heading, true)]
+    let faces =
+      [(style.body, false), (style.code, false)]
+      + TranscriptStyle.HeadingSize.allCases.map { (style.headings.font($0), true) }
     fonts = faces.flatMap { font, heading in
       [[], [.bold], [.italic], [.bold, .italic]].map { (traits: NSFontDescriptor.SymbolicTraits) in
         let traits = heading ? traits.subtracting(.bold) : traits
@@ -136,13 +140,11 @@ struct TextLook {
     Look(font: code ? fonts[4] : fonts[0], color: colors[token] ?? style.text)
   }
 
-  enum Face: Int { case body, code, heading }
-
   /// A span's own look; its `rgb` is left to the token, so every colour
   /// comes from the style.
   func look(_ span: Span, _ face: Face) -> Look {
     var look = Look(
-      font: fonts[face.rawValue * 4 + (span.bold ? 1 : 0) + (span.italic ? 2 : 0)],
+      font: fonts[face.index * 4 + (span.bold ? 1 : 0) + (span.italic ? 2 : 0)],
       color: colors[span.token] ?? style.text)
     if span.strike { look.extra[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
     if span.underline { look.extra[.underlineStyle] = NSUnderlineStyle.single.rawValue }
@@ -298,8 +300,9 @@ enum TranscriptText {
     }
     switch block {
     case .text(let kind, let spans):
-      let heading = if case .heading = kind { true } else { false }
-      lines(spans, heading ? .heading : .body, kind)
+      let face: TextLook.Face =
+        if case .heading(let level) = kind { .heading(.init(level: level)) } else { .body }
+      lines(spans, face, kind)
     case .code(_, let spans): lines(spans.map { TextLine($0) }, .code, nil)
     case .table(let rows):
       let start = out.length

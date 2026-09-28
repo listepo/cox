@@ -48,6 +48,8 @@ const RULES = [
   { fg: ['text.primary'], bg: onCode('diff.addGutter', 'diff.delGutter'), min: TEXT },
   { fg: ['text.terminal', 'text.terminalOk'], bg: ['surface.terminal'], min: TEXT },
   { fg: ['separator', 'surface.capsuleBorder'], bg: PAGE, min: GRAPHIC, solid: true },
+  // A quote's bar is a graphic a person reads the quote's depth from (A97).
+  { fg: ['quote.bar'], bg: PAGE, min: GRAPHIC, solid: true },
   { fg: ['context.system', 'context.tools', 'context.instructions', 'context.history'], bg: PAGE, min: GRAPHIC },
   ...TILES.map((t) => ({ fg: [`tile.${t}.glyph`], bg: [`tile.${t}.top`, `tile.${t}.bottom`], min: GRAPHIC, move: 'bg' })),
   // A Settings page tile's face is pinned (below), so its glyph moves instead.

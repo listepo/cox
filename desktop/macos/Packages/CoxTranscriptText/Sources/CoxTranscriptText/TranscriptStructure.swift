@@ -2,9 +2,10 @@
 // items, quote lines, tables and rules stay text in the one text (A87), set by
 // paragraph styles rather than drawn as flat paragraphs. `cox-render` sends a
 // heading's level, a quote's depth and a list item's marker apart from the text
-// (A92): a heading shows without its `#` run, a quote line sits past a bar per
-// quote (`QuoteFragment`), and an item's marker hangs in the gutter before its
-// text. Its own file because it is the one place a doc block's kind becomes layout.
+// (A92): a heading shows at its level's size (A94) without its `#` run, a quote
+// line sits past a bar per quote (`QuoteFragment`, in the quote's own bar, A97),
+// and an item's marker hangs in the gutter before its text. Its own file because
+// it is the one place a doc block's kind becomes layout.
 
 import AppKit
 import CoxClient
@@ -20,10 +21,79 @@ extension TextLine {
   var lead: String { marker.isEmpty ? "" : "\t\(marker)\t" }
 }
 
+extension TranscriptStyle {
+  /// A reply heading's font at each of DS§3.2's heading tokens (A94).
+  public struct Headings: Equatable {
+    public var h1: NSFont
+    public var h3: NSFont
+    public var h4: NSFont
+
+    public init(h1: NSFont, h3: NSFont, h4: NSFont) {
+      (self.h1, self.h3, self.h4) = (h1, h3, h4)
+    }
+
+    /// The same font at every level.
+    public init(_ font: NSFont) { self.init(h1: font, h3: font, h4: font) }
+
+    func font(_ size: HeadingSize) -> NSFont {
+      switch size {
+      case .h1: h1
+      case .h3: h3
+      case .h4: h4
+      }
+    }
+  }
+
+  /// A quote's bars (A97): one per depth, a thought's indent apart.
+  public struct Quote: Equatable {
+    public var bar: NSColor
+    public var barWidth: CGFloat
+
+    public init(bar: NSColor, barWidth: CGFloat) {
+      (self.bar, self.barWidth) = (bar, barWidth)
+    }
+
+    public static var system: Quote { Quote(bar: .tertiaryLabelColor, barWidth: 3) }
+  }
+
+  /// The heading token a Markdown heading's level takes: DT§5.9 sizes headings 17 / 15 / 13 pt,
+  /// levels 1, 2 and 3. It does not size levels 4–6; they take `h4` too, so no deeper
+  /// heading is larger than a shallower one (A94).
+  enum HeadingSize: Int, CaseIterable {
+    case h1, h3, h4
+
+    init(level: UInt8) {
+      self =
+        switch level {
+        case 1: .h1
+        case 2: .h3
+        default: .h4
+        }
+    }
+  }
+}
+
+extension TextLook {
+  /// A span's face: a heading's at its level's size.
+  enum Face: Equatable {
+    case body, code
+    case heading(TranscriptStyle.HeadingSize)
+
+    /// Its four fonts' place in `fonts`.
+    var index: Int {
+      switch self {
+      case .body: 0
+      case .code: 1
+      case .heading(let size): 2 + size.rawValue
+      }
+    }
+  }
+}
+
 /// A doc line's own paragraph style, the same with the block spacing for when it
 /// is its block's last paragraph (`TranscriptText.respace`), and its quote bars.
 final class Paragraph: NSObject {
-  /// A bar per quote, `step` apart from the text column's edge, in a thought's rule.
+  /// A bar per quote, `step` apart from the text column's edge, in the style's quote bar.
   struct Rails {
     let count: Int
     let step: CGFloat
@@ -46,7 +116,7 @@ final class Paragraph: NSObject {
 /// stops follow its cells, so each table makes its own.
 final class Paragraphs {
   private struct Shape: Hashable {
-    let heading: Bool
+    let heading: TranscriptStyle.HeadingSize?
     let quote: UInt8
     /// A list line's depth; `nil` outside a list.
     let depth: UInt8?
@@ -55,7 +125,8 @@ final class Paragraphs {
   }
 
   private let style: TranscriptStyle
-  private let heading: Paragraph
+  /// A heading's, per `HeadingSize`.
+  private let headings: [Paragraph]
   /// A code block's lines, at the code face's line height.
   let code: Paragraph
   /// Between an item's marker and its text: a space of body text.
@@ -64,9 +135,11 @@ final class Paragraphs {
 
   init(_ style: TranscriptStyle) {
     self.style = style
-    let heading = TranscriptStyle.lines(style.heading, style.lineHeights.heading)
-    heading.paragraphSpacingBefore = style.blockSpacing
-    self.heading = Paragraph(heading, spacing: style.blockSpacing)
+    headings = TranscriptStyle.HeadingSize.allCases.map { size in
+      let heading = TranscriptStyle.lines(style.headings.font(size), style.lineHeights.heading)
+      heading.paragraphSpacingBefore = style.blockSpacing
+      return Paragraph(heading, spacing: style.blockSpacing)
+    }
     code = Paragraph(
       TranscriptStyle.lines(style.code, style.lineHeights.code), spacing: style.blockSpacing)
     gap = (" " as NSString).size(withAttributes: [.font: style.body]).width.rounded(.up)
@@ -76,17 +149,19 @@ final class Paragraphs {
   /// thought's indent each; a list line's past its depth's indents, the list's
   /// own indent the gutter its marker sits in. `nil` for prose.
   func of(_ kind: TextKind, _ line: TextLine) -> Paragraph? {
-    let heading = if case .heading = kind { true } else { false }
+    let heading: TranscriptStyle.HeadingSize? =
+      if case .heading(let level) = kind { .init(level: level) } else { nil }
     let depth = kind == .list ? line.depth : nil
     let marked = depth != nil && !line.marker.isEmpty
-    guard heading || depth != nil || line.quote > 0 else { return nil }
-    if heading, line.quote == 0 { return self.heading }
+    guard heading != nil || depth != nil || line.quote > 0 else { return nil }
+    if let heading, line.quote == 0 { return headings[heading.rawValue] }
     let shape = Shape(heading: heading, quote: line.quote, depth: depth, marked: marked)
     if let paragraph = made[shape] { return paragraph }
     let paragraph =
-      heading
-      ? self.heading.own.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
-      : TranscriptStyle.lines(style.body, style.lineHeights.body)
+      heading.map {
+        headings[$0.rawValue].own.mutableCopy() as? NSMutableParagraphStyle
+          ?? NSMutableParagraphStyle()
+      } ?? TranscriptStyle.lines(style.body, style.lineHeights.body)
     let base = CGFloat(line.quote) * style.thought.indent
     (paragraph.firstLineHeadIndent, paragraph.headIndent) = (base, base)
     if let depth {
@@ -101,11 +176,11 @@ final class Paragraphs {
         ]
       }
     }
-    let thought = style.thought
     let rails =
       line.quote > 0
       ? Paragraph.Rails(
-        count: Int(line.quote), step: thought.indent, width: thought.ruleWidth, color: thought.rule)
+        count: Int(line.quote), step: style.thought.indent, width: style.quote.barWidth,
+        color: style.quote.bar)
       : nil
     let made = Paragraph(paragraph, spacing: style.blockSpacing, rails: rails)
     self.made[shape] = made

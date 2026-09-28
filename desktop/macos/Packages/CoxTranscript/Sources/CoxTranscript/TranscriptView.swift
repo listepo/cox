@@ -165,12 +165,14 @@ struct CardAppearance<Content: View>: View {
 }
 
 extension TranscriptStyle {
-  /// The transcript drawn with CoxUI's tokens: `font.transcript` prose, `font.transcript.h3`
-  /// headings and `font.mono.code` code at the user's text size, each at its token's line
+  /// The transcript drawn with CoxUI's tokens: `font.transcript` prose, `font.transcript.h1`,
+  /// `h3` and `h4` headings (A94; one line height, the three tokens share it) and
+  /// `font.mono.code` code at the user's text size, each at its token's line
   /// height but the prose at `lineHeight` (A93), lists indented as the
   /// mockup's (`space.xxl`), readable colours only (DS§8) — the status colours miss
   /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`. A prompt
-  /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5).
+  /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5); a
+  /// quote's bars are `quote.bar`, `size.quoteBar` wide (A97).
   /// `appearance` is what the text is drawn at, Reduce Transparency applied.
   @MainActor
   static func cox(
@@ -181,7 +183,10 @@ extension TranscriptStyle {
     return TranscriptStyle(
       body: FontToken.transcript.nsFont(scale: textScale),
       code: FontToken.monoCode.nsFont(scale: textScale),
-      heading: FontToken.transcriptH3.nsFont(scale: textScale),
+      headings: .init(
+        h1: FontToken.transcriptH1.nsFont(scale: textScale),
+        h3: FontToken.transcriptH3.nsFont(scale: textScale),
+        h4: FontToken.transcriptH4.nsFont(scale: textScale)),
       text: TextColour.primary.nsColor,
       colors: [
         .dim: secondary, .tool: secondary, .diffHunk: secondary,
@@ -194,6 +199,7 @@ extension TranscriptStyle {
           FontToken.caption.nsFont(scale: textScale), toHaveTrait: .italicFontMask),
         color: secondary, rule: SurfaceColour.separator.nsColor, ruleWidth: Size.hairline,
         indent: Space.l),
+      quote: .init(bar: SurfaceColour.quoteBar.nsColor, barWidth: Size.quoteBar),
       indent: Space.xxl,
       lineHeights: .init(
         body: lineHeight, code: FontToken.monoCode.lineHeight,
