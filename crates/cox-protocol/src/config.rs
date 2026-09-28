@@ -1608,6 +1608,7 @@ fn generate_config_docs(toml: &str) -> String {
     }
     out.push_str(KEYBINDINGS_DOCS);
     out.push_str(ACCESSIBILITY_DOCS);
+    out.push_str(STATUS_LINE_DOCS);
     out
 }
 
@@ -1627,6 +1628,34 @@ Every state also keeps its glyph (`✓`, `✗`, `+`, `−`), so colour is never 
 `/theme` previews both.
 - `NO_COLOR` (set and non-empty, while `tui.color` is `\"auto\"`), or `tui.color = \"none\"`, \
 prints no colour at all and leaves the terminal's own.
+";
+
+/// T46.4: what `[tui.status_line]`'s three keys cannot say in a comment
+/// each — the stdin fields, the triggers and the guards around the command.
+#[cfg(test)]
+const STATUS_LINE_DOCS: &str = "
+## Status line command
+
+`[tui.status_line]` (T46.4) runs your own command and draws the first line it prints as one \
+row above the built-in status line; the built-in segments stay. An empty `command` is off.
+
+- stdin is one JSON object with Claude Code's statusline field names, so an existing script \
+runs unchanged: `session_id`, `cwd`, `workspace.current_dir`, `workspace.project_dir`, \
+`model.id`, `model.display_name`, `cost.total_cost_usd`, `context_window.used_percentage`, \
+`context_window.context_window_size` and `version`. cox adds `permission_mode`, `sandbox_mode`, \
+`git.branch` and `busy`. `COLUMNS` is the terminal width.
+- It runs 300 ms after any of those or the width changes, a newer change kills a run still \
+going, and with `refresh_s` set it also re-runs on that period.
+- A run longer than `timeout_ms`, a non-zero exit or empty output blanks the row; it is never \
+fatal.
+- It runs under the sandbox, read-only and without network (the session's own policy only \
+under `danger-full-access`), with the environment cleared to the child allowlist plus \
+`COLUMNS`. A host with no sandbox backend gets one warning and no row; the command never runs \
+bare.
+- Its output is untrusted: every escape sequence is stripped, so colours and links are \
+dropped, and the row is drawn dim.
+- A project `.cox/config.toml` cannot set `command`: it would run on every start in a cloned \
+repository, so the value is reverted with a warning, like the other guarded keys.
 ";
 
 /// `~/.cox/keybindings.toml` (T25.5) is its own file, not a `default.toml`

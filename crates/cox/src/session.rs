@@ -21,6 +21,7 @@ use crate::cli::Cli;
 use crate::config_cmd;
 use crate::config_load::{self, LoadedConfig};
 use crate::resume;
+use crate::status_line;
 
 #[cfg(feature = "plugins")]
 use cox_protocol::GrantScope;
@@ -564,6 +565,52 @@ pub fn run_init(cli: &Cli, cwd: &Path, force: bool) -> anyhow::Result<i32> {
 }
 
 /// Runs the interactive TUI until the user quits.
+/// T46.4 (P46): starts the `[tui.status_line]` runner for one TUI session
+/// and turns its row on, or does nothing when no command is set. A host
+/// whose sandbox cannot wrap the command gets one warning and no row; the
+/// command never runs bare. Each answer rides `feed` as `Msg::StatusLine`.
+fn start_status_line(
+    rt: &tokio::runtime::Runtime,
+    config: &Config,
+    cwd: &Path,
+    state: &mut State,
+    feed: &tokio::sync::mpsc::Sender<Msg>,
+) -> Option<tokio::sync::mpsc::Sender<(serde_json::Value, u16)>> {
+    let cfg = &config.tui.status_line;
+    if cfg.command.trim().is_empty() {
+        return None;
+    }
+    let roots = match config.core.workspace_roots.as_slice() {
+        [] => vec![cwd.to_path_buf()],
+        roots => roots.to_vec(),
+    };
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    let feed = feed.clone();
+    let out = move |line: Option<String>| {
+        let feed = feed.clone();
+        tokio::spawn(async move {
+            let _ = feed.send(Msg::StatusLine(line)).await;
+        });
+    };
+    let _runtime = rt.enter();
+    match status_line::spawn(cfg.clone(), sandbox_policy(config), roots, rx, out) {
+        Ok(_) => {
+            state.status_script = Some(cox_tui::status::StatusScript {
+                enabled: true,
+                ..Default::default()
+            });
+            Some(tx)
+        }
+        Err(e) => {
+            state.transcript.push(cox_tui::state::Cell::Notice {
+                level: Level::Warn,
+                text: format!("tui.status_line is off: {e}"),
+            });
+            None
+        }
+    }
+}
+
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
@@ -775,7 +822,10 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
             .pop_front()
             .map(cox_tui::state::Modal::PluginGrant);
         state.pending_grants = pending_grants;
-        let (ask, mut ask_rx) = tokio::sync::mpsc::channel(1);
+        let status_tx = start_status_line(&rt, config, cwd, &mut state, &feed);
+        // T46.4: 4, not 1 — a status-line ask must not crowd out a
+        // `Ctrl+G` that arrives while the poll below is inside `git status`.
+        let (ask, mut ask_rx) = tokio::sync::mpsc::channel(4);
         let (grant_tx, mut grant_rx) =
             tokio::sync::mpsc::channel::<cox_tui::state::GrantDecision>(4);
         // The poller lives here, not in cox-tui: the TUI never touches the disk.
@@ -828,6 +878,14 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                                     .unwrap_or_default();
                                 if feed.send(Msg::Rollout(events)).await.is_err() {
                                     break;
+                                }
+                            }
+                            // T46.4: the runner debounces; a full channel
+                            // only means a newer input is already queued.
+                            Some(Ask::StatusLine { input, columns }) => {
+                                if let Some(tx) = &status_tx {
+                                    let input = status_line::input(input, me, &dir, &project);
+                                    let _ = tx.try_send((input, columns));
                                 }
                             }
                             None => break,
@@ -951,6 +1009,36 @@ mod tests {
     use cox_session::{load_plugins, start_plugins};
 
     use super::*;
+
+    /// T46.4: without `tui.status_line.command` nothing starts and the TUI
+    /// draws no row; with one, on a host that can sandbox it, the row is on.
+    #[test]
+    fn status_line_starts_only_with_a_command() {
+        use cox_protocol::types::{PermissionMode, SandboxMode};
+
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (feed, _feed_rx) = tokio::sync::mpsc::channel(4);
+        let cwd = tempfile::tempdir().expect("tempdir");
+        let mut config = Config::default();
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        assert!(start_status_line(&rt, &config, cwd.path(), &mut state, &feed).is_none());
+        assert!(state.status_script.is_none());
+
+        config.tui.status_line.command = "echo hi".into();
+        let sandboxed = cox_tools::sandbox::backend(config.sandbox.linux_backend).is_some();
+        let tx = start_status_line(&rt, &config, cwd.path(), &mut state, &feed);
+        assert_eq!(tx.is_some(), sandboxed);
+        assert_eq!(
+            state.status_script.as_ref().map(|s| s.enabled),
+            sandboxed.then_some(true)
+        );
+        if !sandboxed {
+            assert!(
+                matches!(state.transcript.last(), Some(cox_tui::state::Cell::Notice { level: Level::Warn, text }) if text.contains("tui.status_line")),
+                "one warning instead of a row"
+            );
+        }
+    }
 
     /// T27.3: `--worktree t9` from a repository puts the session in
     /// `_worktrees/<repo>-t9` with the main checkout as its second root.
