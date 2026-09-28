@@ -18,17 +18,27 @@ struct RowAction: Identifiable, Sendable {
 /// The glyph, then `content` (the name and its trailing figure), then the actions as icon
 /// buttons while the row is hovered or selected. The selected row sits on `accent.soft`, lifted
 /// to e1 like a `SessionRow`; VoiceOver reads the row as one element with the actions attached.
-struct InspectorRow<Content: View>: View {
-  let symbol: String
+struct InspectorRow<Glyph: View, Content: View>: View {
+  let glyph: Glyph
   let isSelected: Bool
   let actions: [RowAction]
-  @ViewBuilder let content: Content
+  let content: Content
   @State private var isHovered = false
+
+  /// A row led by `glyph`, as a Settings page's `IconTile`.
+  init(
+    glyph: Glyph, isSelected: Bool, actions: [RowAction], @ViewBuilder content: () -> Content
+  ) {
+    self.glyph = glyph
+    self.isSelected = isSelected
+    self.actions = actions
+    self.content = content()
+  }
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
     HStack(spacing: Space.m) {
-      Image(systemName: symbol).symbolStyle(.body)
+      glyph
       content
       if isHovered || isSelected {
         ForEach(actions) { RowActionButton(action: $0) }
@@ -49,6 +59,24 @@ struct InspectorRow<Content: View>: View {
       ForEach(actions) { action in Button(action.title, action: action.perform) }
     }
   }
+}
+
+extension InspectorRow where Glyph == SymbolGlyph {
+  /// A row led by the DS§3.7 `symbol` at body size.
+  init(
+    symbol: String, isSelected: Bool, actions: [RowAction], @ViewBuilder content: () -> Content
+  ) {
+    self.init(
+      glyph: SymbolGlyph(symbol: symbol), isSelected: isSelected, actions: actions,
+      content: content)
+  }
+}
+
+/// A row's plain symbol, in the row's text colour.
+struct SymbolGlyph: View {
+  let symbol: String
+
+  var body: some View { Image(systemName: symbol).symbolStyle(.body) }
 }
 
 /// An action's glyph as a bare button, named by its tooltip (DS§8); a line high, so showing

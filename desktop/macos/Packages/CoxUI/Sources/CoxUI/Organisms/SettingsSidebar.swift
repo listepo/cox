@@ -38,10 +38,38 @@ enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
     case .advanced: "slider.horizontal.3"
     }
   }
+
+  /// The symbol on the page's `tile.settings.<page>` tile, a macOS system colour (A96).
+  var tile: IconTile {
+    switch self {
+    case .general:
+      tile(.tileSettingsGeneralTop, .tileSettingsGeneralBottom, .tileSettingsGeneralGlyph)
+    case .models: tile(.tileSettingsModelsTop, .tileSettingsModelsBottom, .tileSettingsModelsGlyph)
+    case .permissions:
+      tile(
+        .tileSettingsPermissionsTop, .tileSettingsPermissionsBottom, .tileSettingsPermissionsGlyph)
+    case .sandbox:
+      tile(.tileSettingsSandboxTop, .tileSettingsSandboxBottom, .tileSettingsSandboxGlyph)
+    case .budget: tile(.tileSettingsBudgetTop, .tileSettingsBudgetBottom, .tileSettingsBudgetGlyph)
+    case .mcp: tile(.tileSettingsMcpTop, .tileSettingsMcpBottom, .tileSettingsMcpGlyph)
+    case .plugins:
+      tile(.tileSettingsPluginsTop, .tileSettingsPluginsBottom, .tileSettingsPluginsGlyph)
+    case .appearance:
+      tile(.tileSettingsAppearanceTop, .tileSettingsAppearanceBottom, .tileSettingsAppearanceGlyph)
+    case .advanced:
+      tile(.tileSettingsAdvancedTop, .tileSettingsAdvancedBottom, .tileSettingsAdvancedGlyph)
+    }
+  }
+
+  private func tile(
+    _ top: ColorResource, _ bottom: ColorResource, _ glyph: ColorResource
+  ) -> IconTile {
+    IconTile(face: [Color(top), Color(bottom)], glyph: Color(glyph), symbol: symbol)
+  }
 }
 
-/// `pages` as `InspectorRow`s on a `ShellPane(.sidebar)`, the selected one lifted, over the
-/// user file and the project file with the layer badge each one sets.
+/// `pages` as `InspectorRow`s led by their tiles on a `ShellPane(.sidebar)`, the selected one
+/// lifted, over the user file and the project file with the layer badge each one sets.
 struct SettingsSidebar: View {
   let pages: [SettingsPage]
   let selection: SettingsPage
@@ -60,7 +88,7 @@ struct SettingsSidebar: View {
               Button {
                 select(page)
               } label: {
-                InspectorRow(symbol: page.symbol, isSelected: page == selection, actions: []) {
+                InspectorRow(glyph: page.tile, isSelected: page == selection, actions: []) {
                   Text(page.title).frame(maxWidth: .infinity, alignment: .leading)
                 }
               }
@@ -107,5 +135,16 @@ private struct ConfigFile: View {
       projectFile: PreviewState.projectFile
     ) { _ in }
     .frame(height: Size.windowMinHeight)
+  }
+}
+
+#Preview("models, high contrast") {
+  PreviewMatrix {
+    SettingsSidebar(
+      pages: SettingsPage.allCases, selection: .models, userFile: PreviewState.userFile,
+      projectFile: PreviewState.projectFile
+    ) { _ in }
+    .frame(height: Size.windowMinHeight)
+    .environment(\._colorSchemeContrast, .increased)
   }
 }
