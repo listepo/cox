@@ -9,7 +9,7 @@ mod common;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use cox_app::{Timeline, TimelinePatch};
+use cox_app::{Block, BlockKind, Controller, Timeline, TimelinePatch, coalesce};
 use cox_protocol::Config;
 use cox_protocol::traits::Store;
 use cox_protocol::types::{Decision, Event, Submission};
@@ -59,11 +59,7 @@ fn cases() -> Vec<(&'static str, Config, Act)> {
 
 /// One user turn over scenario `name`: the live events, then the rollout.
 async fn run(name: &str, config: Config, act: Act) -> (Vec<Event>, Vec<Event>) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../cox-core/tests/scenarios")
-        .join(format!("{name}.toml"));
-    let toml = std::fs::read_to_string(&path).expect("scenario file");
-    let (session, store, mut rx) = common::open(&toml, config);
+    let (session, store, mut rx) = common::open(&scenario(name), config);
     let running = common::spawn_turn(&session, name);
     let mut live = Vec::new();
     loop {
@@ -96,6 +92,13 @@ async fn run(name: &str, config: Config, act: Act) -> (Vec<Event>, Vec<Event>) {
     let _ = running.await.expect("join");
     let rollout = store.rollout_read(&session.id()).expect("rollout");
     (live, rollout)
+}
+
+fn scenario(name: &str) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../cox-core/tests/scenarios")
+        .join(format!("{name}.toml"));
+    std::fs::read_to_string(&path).expect("scenario file")
 }
 
 fn fold(events: &[Event]) -> Vec<TimelinePatch> {
@@ -183,5 +186,86 @@ async fn patches_match_snapshot_per_scenario() {
             })
             .collect();
         insta::assert_snapshot!(name, lines.join("\n"));
+    }
+}
+
+/// Sixty tool rounds in one user turn: more events than the core's channel
+/// (256) holds, so a drain that waited on the consumer would stall the turn.
+fn flood() -> String {
+    let mut toml = String::new();
+    for i in 0..60 {
+        toml += &format!(
+            "[[turn]]\ntext = \"round {i}\"\ntool_calls = [{{ name = \"echo\", input = {{ text = \"e{i}\" }} }}]\n\n"
+        );
+    }
+    toml + "[[turn]]\ntext = \"done\"\n"
+}
+
+fn turn_over(blocks: &[Block]) -> bool {
+    blocks
+        .iter()
+        .any(|b| matches!(&b.kind, BlockKind::TurnMeta { stop: Some(_), .. }))
+}
+
+fn mirror(patches: Vec<TimelinePatch>) -> Vec<Block> {
+    let mut blocks = Vec::new();
+    patches
+        .into_iter()
+        .for_each(|p| coalesce::apply(&mut blocks, p));
+    blocks
+}
+
+/// Paused time: the consumer's 2 s naps cost nothing, and the clock only
+/// advances past one when every task is idle, so a core blocked on a full
+/// channel would finish at 2 s or later.
+#[tokio::test(start_paused = true)]
+async fn slow_consumer_never_stalls_the_core() {
+    let nap = Duration::from_secs(2);
+    let mut runs: Vec<(String, String, Config)> = cases()
+        .into_iter()
+        .filter(|(_, _, act)| matches!(act, Act::Nothing))
+        .map(|(name, config, _)| (name.to_owned(), scenario(name), config))
+        .collect();
+    runs.push(("flood".into(), flood(), Config::default()));
+    for (name, toml, config) in runs {
+        let (session, store, rx) = common::open(&toml, config);
+        let controller = Controller::spawn(Timeline::new("base16-ocean.dark"), rx);
+        let start = tokio::time::Instant::now();
+        let turn = common::spawn_turn(&session, &name);
+        let finished = tokio::spawn(async move {
+            let _ = turn.await;
+            start.elapsed()
+        });
+        let (mut blocks, mut widest) = (Vec::new(), 0);
+        while !turn_over(&blocks) {
+            let batch = tokio::time::timeout(Duration::from_secs(60), controller.next_patches())
+                .await
+                .expect("patches in time")
+                .expect("stream open");
+            widest = widest.max(batch.len());
+            batch
+                .into_iter()
+                .for_each(|p| coalesce::apply(&mut blocks, p));
+            tokio::time::sleep(nap).await;
+        }
+        let took = finished.await.expect("join");
+        assert!(
+            took < nap,
+            "{name}: the turn waited on the consumer ({took:?})"
+        );
+        let events = store.rollout_read(&session.id()).expect("rollout");
+        if name == "flood" {
+            assert!(events.len() > 256, "flood emitted only {}", events.len());
+        }
+        assert!(
+            widest <= blocks.len(),
+            "{name}: a batch of {widest} patches for {} blocks",
+            blocks.len()
+        );
+        assert_eq!(
+            blocks,
+            mirror(fold(&events)),
+            "{name}: coalesced state differs from applying every patch"
+        );
     }
 }
