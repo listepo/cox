@@ -9,6 +9,8 @@ use cox_protocol::types::{
     ToolCall,
 };
 
+use crate::context::attached_content;
+
 /// Reconstructed transcript plus the session flags resume must restore.
 #[derive(Debug, Clone, PartialEq)]
 pub struct History {
@@ -129,12 +131,14 @@ impl History {
                         continue;
                     }
                     match kind {
-                        ItemKind::UserMessage { text, .. } => {
+                        // T40.2: the recorded attachments are the ones the
+                        // live turn sent, rebuilt by the same function.
+                        ItemKind::UserMessage { text, attachments } => {
                             current_turn = Some(*item);
                             item_seq.insert(*item, current_seq);
                             messages.push(Message {
                                 role: Role::User,
-                                content: vec![Content::Text { text }],
+                                content: attached_content(text, None, &attachments),
                             });
                             turn_of.push(current_turn);
                         }

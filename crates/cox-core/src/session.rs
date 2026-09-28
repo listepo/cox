@@ -1298,12 +1298,14 @@ impl Session {
         if self.compact_now(due, last, max_context).await? {
             self.compact(compact::Trigger::Auto, None).await?;
         }
-        // T37.6: what the wire cannot take is held back with a notice
-        // rather than sent to a model that would reject the whole request.
-        let (content, held) = crate::context::user_content(
+        // T37.6, T40.2: an invalid image, or one the wire cannot take, is
+        // held back with a notice rather than sent to a model that would
+        // reject the whole request. Only what was sent is recorded, so the
+        // rollout rebuilds this exact message (invariant 6).
+        let (content, attachments, held) = crate::context::user_content(
             text.clone(),
             context,
-            &attachments,
+            attachments,
             &route.model.0,
             self.provider.accepts_images(&route.model.0),
         );
@@ -2259,8 +2261,9 @@ mod tests {
         (session, probe)
     }
 
-    /// T37.6 Check: a wire without image input gets the notice, the text
-    /// still goes, and the rollout keeps the attachment for every surface.
+    /// T37.6 Check: a wire without image input gets the notice and the text
+    /// still goes. T40.2: the rollout records only what was sent, so a
+    /// resumed session rebuilds the same text-only message.
     #[tokio::test]
     async fn image_on_a_text_only_wire_is_held_back_with_a_notice() {
         let store = Arc::new(MemoryStore::new());
@@ -2283,7 +2286,7 @@ mod tests {
         session
             .submit(Submission::UserTurn {
                 text: "look".into(),
-                attachments: vec![shot.clone()],
+                attachments: vec![shot],
                 confirm_think: false,
             })
             .await
@@ -2291,7 +2294,7 @@ mod tests {
         let events = store.rollout_read(&session.id()).expect("rollout");
         assert!(events.iter().any(|e| matches!(e,
             Event::ItemStarted { kind: ItemKind::UserMessage { attachments, .. }, .. }
-                if *attachments == vec![shot.clone()])));
+                if attachments.is_empty())));
         assert!(events.iter().any(|e| matches!(e,
             Event::Notice { level: Level::Warn, text } if text.contains("does not take images"))));
         let history = &session.inner.lock().await.history;

@@ -12,8 +12,8 @@ use cox_protocol::errors::{ProviderError, ToolError};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::{Provider, Store, Tool, ToolCx};
 use cox_protocol::types::{
-    Caps, Concurrency, Content, Event, Message, PermissionMode, ProviderEvent, ProviderId, Request,
-    Risk, Submission, ToolOutput, ToolSpec, Usage,
+    Attachment, Caps, Concurrency, Content, Event, Message, PermissionMode, ProviderEvent,
+    ProviderId, Request, Risk, Submission, ToolOutput, ToolSpec, Usage,
 };
 use cox_provider::scripted::Scripted;
 use serde_json::Value;
@@ -96,6 +96,34 @@ impl Provider for Signed {
     }
 }
 
+/// `Scripted` on a wire that takes images, so a user attachment reaches
+/// history as `Content::Image` (T40.2).
+struct Seeing(Scripted);
+
+#[async_trait]
+impl Provider for Seeing {
+    fn id(&self) -> ProviderId {
+        self.0.id()
+    }
+    fn capabilities(&self) -> Caps {
+        self.0.capabilities()
+    }
+    fn accepts_images(&self, _model: &str) -> bool {
+        true
+    }
+    async fn stream(
+        &self,
+        req: Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
+        self.0.stream(req, sink, cancel).await
+    }
+    async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+        self.0.count_tokens(req).await
+    }
+}
+
 fn scripted() -> Scripted {
     Scripted::from_toml(&scenario(), "").expect("scenario")
 }
@@ -138,15 +166,31 @@ async fn signed_tool_call_keeps_signature_before_its_tool_use() {
     );
 }
 
+/// T40.2: a user image comes back from the rollout as the same block,
+/// ahead of the text, and never inside the system blocks (§1.9).
 #[tokio::test]
 async fn resume_builds_identical_request() {
-    resume_matches_live(Arc::new(scripted())).await;
+    let shot = Attachment {
+        name: "shot.png".into(),
+        media_type: "image/png".into(),
+        data_b64: "iVBORw0KGgo=".into(),
+    };
+    let (live, req) = resume_matches_live(Arc::new(Seeing(scripted())), vec![shot.clone()]).await;
+    assert_eq!(
+        live[0].content[0],
+        Content::Image {
+            media_type: "image/png".into(),
+            data_b64: shot.data_b64.clone(),
+        }
+    );
+    assert!(matches!(&live[0].content[1], Content::Text { text } if text == "one_tool"));
+    assert!(req.system.iter().all(|b| !b.text.contains(&shot.data_b64)));
 }
 
 /// T39.2 (§1.15 invariant 6): a signed tool round rebuilds the same way.
 #[tokio::test]
 async fn resume_builds_identical_request_with_signature() {
-    let live = resume_matches_live(Arc::new(Signed(scripted()))).await;
+    let (live, _) = resume_matches_live(Arc::new(Signed(scripted())), vec![]).await;
     let signed = live
         .iter()
         .flat_map(|m| &m.content)
@@ -155,8 +199,12 @@ async fn resume_builds_identical_request_with_signature() {
 }
 
 /// Runs `one_tool`, rebuilds history from the rollout, and asserts it and
-/// the assembled request match the live ones; returns the live history.
-async fn resume_matches_live(provider: Arc<dyn Provider>) -> Vec<Message> {
+/// the assembled request match the live ones; returns the live history and
+/// request.
+async fn resume_matches_live(
+    provider: Arc<dyn Provider>,
+    attachments: Vec<Attachment>,
+) -> (Vec<Message>, Request) {
     let mut config = cox_protocol::Config::default();
     config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
     let store = Arc::new(MemoryStore::new());
@@ -174,7 +222,7 @@ async fn resume_matches_live(provider: Arc<dyn Provider>) -> Vec<Message> {
     session
         .submit(Submission::UserTurn {
             text: "one_tool".into(),
-            attachments: vec![],
+            attachments,
             confirm_think: false,
         })
         .await
@@ -194,7 +242,7 @@ async fn resume_matches_live(provider: Arc<dyn Provider>) -> Vec<Message> {
     let live_req = assemble(&live, &config, &tools, &cwd, "");
     let resume_req = assemble(&rebuilt.messages, &config, &tools, &cwd, "");
     assert_eq!(live_req, resume_req);
-    live
+    (live, live_req)
 }
 
 #[tokio::test]

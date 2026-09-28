@@ -9,6 +9,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use cox_protocol::ids::CallId;
+use cox_protocol::image;
 use cox_protocol::traits::Tool;
 use cox_protocol::types::{
     ArchiveRef, Attachment, Content, ContextBreakdown, Job, Message, ModelId, Request, SystemBlock,
@@ -396,59 +397,94 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
 /// fallback.
 const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-/// A user turn's content (T37.6): the text, any hook context, then each
-/// attachment — an image as `Content::Image` when `images` says `model`
-/// takes it, any other file whose bytes are UTF-8 as a tagged text block,
-/// which every wire carries. The rest is held back; the second value is
-/// one notice per held attachment saying why.
+/// A user turn's content (T37.6, T40.2): see [`attached_content`] for the
+/// shape. Each attachment is admitted first — an image must pass
+/// `image::validate` and `images` must say `model` takes it, any other file
+/// must be UTF-8 — and what is not admitted is dropped with one notice
+/// saying why (fail open: the text still goes). Returns the content, the
+/// admitted attachments (what the rollout records, so resume rebuilds the
+/// same message) and the notices.
 pub fn user_content(
     text: String,
     context: Option<String>,
-    attachments: &[Attachment],
+    attachments: Vec<Attachment>,
     model: &str,
     images: bool,
-) -> (Vec<Content>, Vec<String>) {
-    let mut content: Vec<Content> = std::iter::once(text)
-        .chain(context)
-        .map(|text| Content::Text { text })
-        .collect();
+) -> (Vec<Content>, Vec<Attachment>, Vec<String>) {
+    let mut kept = Vec::new();
     let mut held = Vec::new();
     for a in attachments {
-        let media_type = a.media_type.to_ascii_lowercase();
-        if IMAGE_TYPES.contains(&media_type.as_str()) {
-            if images {
-                content.push(Content::Image {
-                    media_type,
-                    data_b64: a.data_b64.clone(),
-                });
-            } else {
-                held.push(format!(
-                    "attachment {:?} not sent: {model} does not take images on this provider \
-                     (a chat-api model opts in with `images = true` on its `models` entry)",
-                    a.name
-                ));
-            }
-            continue;
-        }
-        let body = STANDARD
-            .decode(&a.data_b64)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok());
-        match body {
-            Some(body) => content.push(Content::Text {
-                text: format!(
-                    "<attachment name={:?} media_type={media_type:?}>\n{body}\n</attachment>",
-                    a.name
-                ),
-            }),
-            None => held.push(format!(
-                "attachment {:?} not sent: {media_type} is neither a png/jpeg/gif/webp image \
-                 nor UTF-8 text",
-                a.name
-            )),
+        match admit(&a, model, images) {
+            Ok(()) => kept.push(a),
+            Err(why) => held.push(why),
         }
     }
-    (content, held)
+    (attached_content(text, context, &kept), kept, held)
+}
+
+/// A user message built from admitted attachments: the images in
+/// submission order, then the text and any hook context, then each text
+/// file as a tagged block, which every wire carries. Images lead because
+/// Anthropic's vision guide advises image-then-text (plan.md P40). Shared
+/// by the live turn and the rollout rebuild (invariant 6).
+pub fn attached_content(
+    text: String,
+    context: Option<String>,
+    attachments: &[Attachment],
+) -> Vec<Content> {
+    let (images, files): (Vec<&Attachment>, Vec<&Attachment>) =
+        attachments.iter().partition(|a| is_image(a));
+    let images = images.into_iter().map(|a| Content::Image {
+        media_type: a.media_type.to_ascii_lowercase(),
+        data_b64: a.data_b64.clone(),
+    });
+    let texts = std::iter::once(text)
+        .chain(context)
+        .map(|text| Content::Text { text });
+    let files = files.into_iter().filter_map(|a| {
+        text_body(a).map(|body| Content::Text {
+            text: format!(
+                "<attachment name={:?} media_type={:?}>\n{body}\n</attachment>",
+                a.name,
+                a.media_type.to_ascii_lowercase()
+            ),
+        })
+    });
+    images.chain(texts).chain(files).collect()
+}
+
+/// Whether `a` goes into the user message, or the notice saying why not.
+fn admit(a: &Attachment, model: &str, images: bool) -> Result<(), String> {
+    if is_image(a) {
+        if let Err(e) = image::validate(a) {
+            return Err(format!("attachment {:?} dropped: {e}", a.name));
+        }
+        if !images {
+            return Err(format!(
+                "attachment {:?} not sent: {model} does not take images on this provider \
+                 (a chat-api model opts in with `images = true` on its `models` entry)",
+                a.name
+            ));
+        }
+        return Ok(());
+    }
+    match text_body(a) {
+        Some(_) => Ok(()),
+        None => Err(format!(
+            "attachment {:?} not sent: {} is neither a png/jpeg/gif/webp image nor UTF-8 text",
+            a.name,
+            a.media_type.to_ascii_lowercase()
+        )),
+    }
+}
+
+fn is_image(a: &Attachment) -> bool {
+    IMAGE_TYPES.contains(&a.media_type.to_ascii_lowercase().as_str())
+}
+
+fn text_body(a: &Attachment) -> Option<String> {
+    let bytes = STANDARD.decode(&a.data_b64).ok()?;
+    String::from_utf8(bytes).ok()
 }
 
 #[cfg(test)]
@@ -463,25 +499,27 @@ mod tests {
         }
     }
 
-    /// T37.6: an image follows the text as `Content::Image` when the model
-    /// takes images, and a UTF-8 file joins as a tagged text block.
+    /// T40.2: an image leads the text as `Content::Image` when the model
+    /// takes images, a UTF-8 file joins after it as a tagged text block, and
+    /// both are kept for the rollout.
     #[test]
-    fn user_content_carries_image_and_text_file() {
-        let files = [
+    fn user_attachment_becomes_image_block_before_text() {
+        let files = vec![
             attach("shot.png", "image/PNG", b"\x89PNG"),
             attach("notes.md", "text/markdown", b"# hi"),
         ];
-        let (content, held) = user_content("look".into(), None, &files, "m", true);
+        let (content, kept, held) = user_content("look".into(), None, files.clone(), "m", true);
         assert!(held.is_empty(), "{held:?}");
+        assert_eq!(kept, files);
         assert_eq!(
             content,
             vec![
-                Content::Text {
-                    text: "look".into()
-                },
                 Content::Image {
                     media_type: "image/png".into(),
                     data_b64: files[0].data_b64.clone(),
+                },
+                Content::Text {
+                    text: "look".into()
                 },
                 Content::Text {
                     text: "<attachment name=\"notes.md\" media_type=\"text/markdown\">\n# hi\n</attachment>"
@@ -489,25 +527,54 @@ mod tests {
                 },
             ]
         );
+        assert_eq!(attached_content("look".into(), None, &kept), content);
     }
 
-    /// T37.6: what the wire cannot take is left out, one notice each.
+    /// T37.6: what the wire cannot take is left out, one notice each, and
+    /// is not kept for the rollout.
     #[test]
     fn user_content_holds_back_what_the_wire_cannot_take() {
-        let files = [
+        let files = vec![
             attach("shot.png", "image/png", b"\x89PNG"),
             attach("a.bin", "application/octet-stream", &[0xff, 0xfe, 0x00]),
         ];
-        let (content, held) = user_content("look".into(), None, &files, "qwen3", false);
+        let (content, kept, held) = user_content("look".into(), None, files, "qwen3", false);
         assert_eq!(
             content,
             vec![Content::Text {
                 text: "look".into()
             }]
         );
+        assert!(kept.is_empty(), "{kept:?}");
         assert_eq!(held.len(), 2);
         assert!(held[0].contains("\"shot.png\"") && held[0].contains("qwen3 does not take images"));
         assert!(held[1].contains("\"a.bin\"") && held[1].contains("neither"));
+    }
+
+    /// T40.2: an image `image::validate` refuses is dropped with a notice
+    /// naming it and the reason, even on a wire that takes images.
+    #[test]
+    fn invalid_attachment_is_warned_and_dropped() {
+        let files = vec![
+            attach("fake.png", "image/png", b"\xff\xd8\xff\xe0"),
+            attach("text.png", "image/png", b"hello"),
+        ];
+        let (content, kept, held) = user_content("look".into(), None, files, "m", true);
+        assert_eq!(
+            content,
+            vec![Content::Text {
+                text: "look".into()
+            }]
+        );
+        assert!(kept.is_empty(), "{kept:?}");
+        assert_eq!(
+            held,
+            vec![
+                "attachment \"fake.png\" dropped: declared image/png, but the bytes are image/jpeg"
+                    .to_owned(),
+                "attachment \"text.png\" dropped: not a PNG, JPEG, GIF or WebP image".to_owned(),
+            ]
+        );
     }
 
     /// T25.7: `breakdown.total` equals the estimator's request total and the
