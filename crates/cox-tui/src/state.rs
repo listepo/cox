@@ -2166,6 +2166,13 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 done: false,
                 render: ItemRender::Builtin,
             }),
+            // T39.2 keeps a tool call's signature as an empty signed item
+            // for the provider's history: a replay token, not something the
+            // model said. A streamed thought also starts empty, but unsigned.
+            ItemKind::Thinking {
+                text,
+                signature: Some(_),
+            } if text.is_empty() => {}
             ItemKind::Thinking { text, .. } => state.transcript.push(Cell::Thinking {
                 item,
                 text,
@@ -3364,5 +3371,40 @@ mod tests {
         assert_eq!(state.modal, Some(Modal::Context));
         update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
         assert_eq!(state.modal, None);
+    }
+
+    #[test]
+    fn empty_signed_thinking_draws_no_cell() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let before = state.transcript.len();
+        let signed = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: Some("sig".into()),
+        };
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted { item: signed, kind }),
+        );
+        update(&mut state, Msg::Event(Event::ItemDone { item: signed }));
+        assert_eq!(state.transcript.len(), before);
+
+        // A streamed thought starts empty too, but unsigned: it keeps its cell.
+        let streamed = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: None,
+        };
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted {
+                item: streamed,
+                kind,
+            }),
+        );
+        assert!(matches!(
+            state.transcript.last(),
+            Some(Cell::Thinking { item, .. }) if *item == streamed
+        ));
     }
 }
