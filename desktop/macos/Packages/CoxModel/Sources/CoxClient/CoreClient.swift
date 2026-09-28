@@ -35,6 +35,9 @@ public protocol SessionClient: AnyObject, Sendable {
   /// Rows for the composer's token, `@que…` or `/que…`, best first, at most `limit`
   /// (`cox_app::Completer`, DT§5.3).
   func complete(_ token: String, limit: UInt32) -> [Completion]
+  /// This session's earlier prompts, newest first, at most `limit`: what ↑ walks in an empty
+  /// composer (`cox_app::live::LiveSession::history`).
+  func history(limit: UInt32) throws -> [String]
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
 }
@@ -72,11 +75,13 @@ public struct FixtureCoreClient: CoreClient {
 
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
-/// fixed list instead of the Rust completer.
+/// fixed list instead of the Rust completer, and serves a fixed prompt history.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
   private let fixture: Fixture
   private let completions: [Completion]
+  /// Newest first, as the core returns them.
+  private let prompts: [String]
   private let state = Mutex(State())
 
   private struct State {
@@ -85,9 +90,10 @@ public final class FixtureSession: SessionClient {
     var sent: [Intent] = []
   }
 
-  public init(fixture: Fixture, completions: [Completion] = []) {
+  public init(fixture: Fixture, completions: [Completion] = [], prompts: [String] = []) {
     self.fixture = fixture
     self.completions = completions
+    self.prompts = prompts
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -123,6 +129,8 @@ public final class FixtureSession: SessionClient {
     }
     return Array(rows.prefix(Int(limit)))
   }
+
+  public func history(limit: UInt32) -> [String] { Array(prompts.prefix(Int(limit))) }
 
   public func close() { state.withLock { $0.closed = true } }
 }

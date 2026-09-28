@@ -1,6 +1,6 @@
 // The composer of one open session as observable state (DT§5.3, DT§4.6): the draft, shell
-// mode, the files picked from `@` rows, the files attached, and the rows the core offers for the
-// token being typed.
+// mode, the files picked from `@` rows, the files attached, the rows the core offers for the
+// token being typed, and the earlier prompt ↑ brought back.
 // Separate from `SessionStore`, which holds what the core sent back; this holds what the
 // person is about to send. It asks the core for rows (`cox_app::Completer`) and sends one
 // `Intent`; the command table, the ranking and the files all stay in Rust.
@@ -29,9 +29,14 @@ public final class ComposerStore {
   /// Why the last send failed; the draft stays so it can be sent again.
   public private(set) var failure: String?
   @ObservationIgnored public let session: SessionStore
+  /// The session's earlier prompts, newest first, and which one the draft shows, while ↑ ↓ walk
+  /// them; `nil` once the draft is typed, sent or walked back to empty.
+  private var recalled: (prompts: [String], index: Int)?
 
   /// Rows asked for at a time: more than the list shows scrolls nothing into view.
   static let rowLimit: UInt32 = 8
+  /// Earlier prompts asked for when ↑ starts a walk.
+  static let historyLimit: UInt32 = 100
 
   public init(session: SessionStore) {
     self.session = session
@@ -51,6 +56,7 @@ public final class ComposerStore {
       completions = []
       return
     }
+    if new != text { recalled = nil }
     text = new
     mentions.removeAll { !text.contains($0) }
     complete()
@@ -71,6 +77,31 @@ public final class ComposerStore {
   }
 
   public func dismissCompletion() { completions = [] }
+
+  /// The draft shows an earlier prompt, so ↑ and ↓ keep walking.
+  public var isRecalling: Bool { recalled != nil }
+
+  /// ↑ (-1) to an older prompt or ↓ (+1) to a newer one. A walk starts with ↑ in an empty draft
+  /// and ends with ↓ past the newest prompt, which empties the draft again.
+  public func recall(_ step: Int) {
+    if recalled == nil {
+      guard step < 0, text.isEmpty, !isShell else { return }
+      do {
+        recalled = (try session.session.history(limit: Self.historyLimit), -1)
+      } catch {
+        return report(error)
+      }
+    }
+    guard let (prompts, index) = recalled else { return }
+    let next = index - step
+    if next < 0 {
+      (recalled, text) = (nil, "")
+    } else if prompts.indices.contains(next) {
+      (recalled, text, completions) = ((prompts, next), prompts[next], [])
+    } else if index < 0 {
+      recalled = nil
+    }
+  }
 
   /// Takes a picked file back out of the draft.
   public func removeMention(_ insert: String) {
@@ -174,6 +205,7 @@ public final class ComposerStore {
       default: break
       }
       (text, mentions, completions, isShell, failure) = ("", [], [], false, nil)
+      recalled = nil
     } catch {
       report(error)
     }

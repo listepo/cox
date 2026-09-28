@@ -1,6 +1,7 @@
 // T37.24's Check: a `SessionComposer` in a window, driven by real key events — type `@`, pick a
 // file from the rows with ↓ and ⏎, type the rest, send with ⏎ — and the intent reaches the
-// fixture client, which answers the completion without Rust.
+// fixture client, which answers the completion without Rust. T37.24.6's: ↑ in the empty composer
+// brings back the session's earlier prompts, which the fixture client serves without Rust.
 
 import AppKit
 import CoxClient
@@ -10,8 +11,10 @@ import CoxUI
 import SwiftUI
 import Testing
 
+// Serialized: each test's window sends key events and runs the run loop, and a test waiting on a
+// send lets another's window take the keys meanwhile.
 @MainActor
-@Suite struct ComposerFlowTests {
+@Suite(.serialized) struct ComposerFlowTests {
   @Test func typingAtPickingAFileAndSendingReachesTheClient() async throws {
     let rows = [
       Completion(insert: "@src/lib.rs", detail: "src/lib.rs"),
@@ -24,14 +27,15 @@ import Testing
 
     host.type("@")
     #expect(store.completions.map(\.insert) == rows.map(\.insert))
-    host.press(.down)
+    host.press(.downArrow)
     host.press(.return)
     #expect(store.text == "@src/main.rs ")
     #expect(store.mentions == ["@src/main.rs"])
 
     host.type("explain it")
     host.press(.return)
-    await host.settle(until: { !session.sent.isEmpty })
+    // The draft clears after the client took the intent, and the editor a run-loop turn later.
+    await host.settle(until: { !session.sent.isEmpty && host.editor.string.isEmpty })
     #expect(session.sent == [.send(text: "@src/main.rs explain it", attachments: [])])
     #expect(host.editor.string.isEmpty)
   }
@@ -61,6 +65,23 @@ import Testing
     await host.settle(until: { session.sent.count == 3 })
     #expect(session.sent.suffix(2) == [.interrupt, .send(text: "now", attachments: [])])
   }
+
+  @Test func upInTheEmptyComposerBringsBackTheEarlierPromptsNewestFirst() {
+    let session = FixtureSession(
+      fixture: Fixture(batches: [], snapshot: []), prompts: ["run the tests", "add a cache"])
+    let store = ComposerStore(session: SessionStore(session: session))
+    let host = ComposerHost(SessionComposer(store: store))
+    defer { host.close() }
+
+    host.press(.upArrow)
+    #expect(store.text == "run the tests")
+    #expect(host.editor.string == "run the tests")
+    host.press(.upArrow)
+    #expect(store.text == "add a cache")
+    #expect(host.editor.string == "add a cache")
+    host.press(.downArrow)
+    #expect(host.editor.string == "run the tests")
+  }
 }
 
 /// A view in a borderless window far off screen, with its text view first responder, so key
@@ -71,13 +92,25 @@ private final class ComposerHost {
   let editor: NSTextView
 
   enum Key {
-    case down, `return`, commandReturn
+    case upArrow, downArrow, `return`, commandReturn
 
-    var code: UInt16 { self == .down ? 125 : 36 }
-    var characters: String { self == .down ? "\u{F701}" : "\r" }
+    var code: UInt16 {
+      switch self {
+      case .upArrow: 126
+      case .downArrow: 125
+      case .return, .commandReturn: 36
+      }
+    }
+    var characters: String {
+      switch self {
+      case .upArrow: "\u{F700}"
+      case .downArrow: "\u{F701}"
+      case .return, .commandReturn: "\r"
+      }
+    }
     var modifiers: NSEvent.ModifierFlags {
       switch self {
-      case .down: [.numericPad, .function]
+      case .upArrow, .downArrow: [.numericPad, .function]
       case .return: []
       case .commandReturn: .command
       }
@@ -130,7 +163,10 @@ private final class ComposerHost {
   /// passes, then lets SwiftUI apply what they changed.
   func settle(until done: () -> Bool, limit: Duration = .seconds(5)) async {
     let deadline = ContinuousClock.now + limit
-    while !done(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+    while !done(), ContinuousClock.now < deadline {
+      try? await Task.sleep(for: .milliseconds(20))
+      settle()
+    }
     settle()
   }
 

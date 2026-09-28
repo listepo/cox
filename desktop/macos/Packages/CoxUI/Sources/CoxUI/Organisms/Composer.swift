@@ -9,7 +9,8 @@ import SwiftUI
 /// The editor over a row of chips and Send, on readable window glass at e3 — the one thing that
 /// floats highest in a pane (DS§3.4). The completion rows float above it. ⏎ sends (or picks the
 /// selected row while rows show), ⇧⏎ breaks the line, ⌘⏎ sends now, ↑ ↓ ⇥ and ⎋ drive the
-/// rows, and ⌫ in an empty shell line leaves shell mode. It holds no draft of its own.
+/// rows, ↑ in an empty composer walks the earlier prompts, and ⌫ in an empty shell line leaves
+/// shell mode. It holds no draft of its own.
 public struct Composer: View {
   public struct State: Equatable, Sendable {
     public var text = ""
@@ -29,6 +30,8 @@ public struct Composer: View {
     public var queued = 0
     /// Something to send: text or an attachment.
     public var canSend = false
+    /// The text is an earlier prompt ↑ brought back, so ↑ and ↓ keep walking the prompts.
+    public var isRecalling = false
 
     public init() {}
   }
@@ -66,6 +69,8 @@ public struct Composer: View {
     case submitNow
     /// ↑ (-1) or ↓ (+1) through the completion rows.
     case moveSelection(Int)
+    /// ↑ (-1) to an earlier prompt or ↓ (+1) back, from an empty composer.
+    case recall(Int)
     /// A completion row, by index.
     case pick(Int)
     /// ⎋ while the rows show.
@@ -177,15 +182,26 @@ private struct ComposerEditor: View {
       send(rows ? .pick(state.completion?.selection ?? 0) : .submit)
     case .tab where rows:
       send(.pick(state.completion?.selection ?? 0))
-    case .upArrow where rows:
-      send(.moveSelection(-1))
-    case .downArrow where rows:
-      send(.moveSelection(1))
+    case .upArrow, .downArrow:
+      return arrow(press.key == .upArrow ? -1 : 1)
     case .escape where rows:
       send(.dismissCompletion)
     case .delete where state.isShell && state.text.isEmpty:
       send(.leaveShell)
     default:
+      return .ignored
+    }
+    return .handled
+  }
+
+  /// ↑ (-1) or ↓ (+1): through the rows while they show, else through the earlier prompts — a
+  /// walk ↑ starts in an empty line; otherwise the cursor moves.
+  private func arrow(_ step: Int) -> KeyPress.Result {
+    if state.completion != nil {
+      send(.moveSelection(step))
+    } else if state.isRecalling || (step < 0 && state.text.isEmpty && !state.isShell) {
+      send(.recall(step))
+    } else {
       return .ignored
     }
     return .handled

@@ -14,6 +14,10 @@ use cox_store::fts::SessionInfo;
 use cox_store::lock::Holder;
 use serde::{Deserialize, Serialize};
 
+/// How many prompts, across every session, [`Workspace::prompts`] reads:
+/// as many as the TUI's `Ctrl+R` search.
+const PROMPT_SCAN: i64 = 5000;
+
 /// What a workspace query can fail with.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
@@ -134,6 +138,22 @@ impl Workspace {
             }
         }
         Ok(out)
+    }
+
+    /// `session`'s own prompts, newest first, at most `limit` (T37.24.6):
+    /// what ↑ in an empty composer walks. The TUI's `Ctrl+R` query
+    /// (`user_prompts`) kept to one session; that query spans every
+    /// session, so this scans as far back as the TUI's search does.
+    pub fn prompts(&self, session: SessionId, limit: usize) -> Result<Vec<String>, WorkspaceError> {
+        let session = session.to_string();
+        Ok(self
+            .store
+            .user_prompts(PROMPT_SCAN)?
+            .into_iter()
+            .filter(|p| p.session_id == session)
+            .map(|p| p.text)
+            .take(limit)
+            .collect())
     }
 
     /// `project`'s checkouts with branch, lock, merged/stale state and disk
