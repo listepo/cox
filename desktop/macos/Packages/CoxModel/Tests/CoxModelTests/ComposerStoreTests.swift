@@ -2,6 +2,7 @@
 // `/` token, a picked row replaces the token, and each kind of draft leaves as its one intent.
 
 import CoxClient
+import Foundation
 import Testing
 
 @testable import CoxModel
@@ -71,4 +72,25 @@ private func composer() -> (ComposerStore, FixtureSession) {
   store.removeMention("@src/lib.rs")
   #expect(store.text == "please")
   #expect(store.mentions.isEmpty)
+}
+
+@MainActor
+@Test func attachedFilesAreReadAndSentWithTheTurn() async throws {
+  let (store, session) = composer()
+  let dir = FileManager.default.temporaryDirectory.appending(path: "cox-t37.24-\(UUID())")
+  try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: dir) }
+  let log = dir.appending(path: "trace.txt")
+  try Data("429 after 3 tries\n".utf8).write(to: log)
+
+  await store.attach([log, dir.appending(path: "missing.png")])
+  #expect(store.failure != nil)
+  #expect(store.canSend)
+  await store.submit()
+
+  let sent = Attachment(
+    name: "trace.txt", mediaType: "text/plain",
+    dataB64: Data("429 after 3 tries\n".utf8).base64EncodedString())
+  #expect(session.sent == [.send(text: "", attachments: [sent])])
+  #expect(store.attachments.isEmpty)
 }

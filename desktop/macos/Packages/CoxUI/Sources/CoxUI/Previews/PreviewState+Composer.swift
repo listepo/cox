@@ -34,8 +34,8 @@ struct ComposerChipSample: View {
   }
 }
 
-// The `Composer` organism's fixtures (T37.24): mockup screens 1 (empty), 5 (a file picked, more
-// files offered), 6 (commands offered) and 7 (shell mode with a prompt queued).
+// The `Composer` organism's fixtures (T37.24): mockup screens 1 (empty, attachments), 5 (a file
+// picked, more files offered), 6 (commands offered) and 7 (shell mode with a prompt queued).
 extension PreviewState {
   static let composerEmpty = Composer.State()
 
@@ -63,6 +63,21 @@ extension PreviewState {
     state.isShell = true
     state.isRunning = true
     state.queued = 1
+    state.canSend = true
+    return state
+  }
+
+  /// A pasted screenshot and a dropped log, with a line about them (mockup screen 1's `atts`).
+  @MainActor static var composerAttachments: Composer.State {
+    var state = Composer.State()
+    state.text = "Why does the retry loop give up here?"
+    let picture = ImageRenderer(
+      content: PreviewBackdrop().frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    ).nsImage?.tiffRepresentation
+    state.attachments = [
+      Composer.Attachment(id: "0", name: imageName, image: picture),
+      Composer.Attachment(id: "1", name: fileName),
+    ]
     state.canSend = true
     return state
   }

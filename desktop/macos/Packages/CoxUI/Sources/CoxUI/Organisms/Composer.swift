@@ -1,5 +1,5 @@
 // `Composer` (DS§6.4 row `Composer`, the mockup's `.composer`; DT§5.3; mockup screens 1, 5–7):
-// where the next message is written — the text, the files it mentions, shell mode with its
+// where the next message is written — the text, the files it mentions and attaches, shell mode with its
 // "share output" switch, the prompts queued behind the running turn, the completion rows for
 // `@` and `/`, and Send. Separate so the transcript column shows it from one value and reports
 // every key and click as an intent; the store behind it decides what each one sends.
@@ -19,6 +19,8 @@ public struct Composer: View {
     public var shareOutput = true
     /// Files picked from the `@` rows.
     public var mentions: [Mention] = []
+    /// Files and images pasted, dropped or picked, sent with the message.
+    public var attachments: [Attachment] = []
     /// Rows for the token being typed, or `nil`.
     public var completion: CompletionList.State?
     /// A turn runs, so ⏎ queues the message.
@@ -42,6 +44,19 @@ public struct Composer: View {
     }
   }
 
+  /// An attached file; an image carries its bytes for the thumbnail.
+  public struct Attachment: Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var image: Data?
+
+    public init(id: String, name: String, image: Data? = nil) {
+      self.id = id
+      self.name = name
+      self.image = image
+    }
+  }
+
   public enum Intent: Equatable, Sendable {
     /// The text as typed.
     case edit(String)
@@ -58,6 +73,11 @@ public struct Composer: View {
     case removeMention(String)
     case leaveShell
     case shareOutput(Bool)
+    /// The paperclip: pick files to attach.
+    case attach
+    /// Files dropped on the composer.
+    case drop([URL])
+    case removeAttachment(String)
   }
 
   let state: State
@@ -75,6 +95,11 @@ public struct Composer: View {
         .padding(.horizontal, Space.l)
         .padding(.top, Space.l)
         .padding(.bottom, Space.xs)
+      if !state.attachments.isEmpty {
+        ComposerAttachments(attachments: state.attachments) { send(.removeAttachment($0)) }
+          .padding(.horizontal, Space.xl)
+          .padding(.vertical, Space.xs)
+      }
       ComposerChipRow(state: state, send: send)
         .padding(.horizontal, Space.ml)
         .padding(.bottom, Space.ml)
@@ -93,6 +118,10 @@ public struct Composer: View {
             .padding(.bottom, Space.m)
         }
       }
+    }
+    .dropDestination(for: URL.self) { urls, _ in
+      send(.drop(urls))
+      return !urls.isEmpty
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Composer")
@@ -170,6 +199,14 @@ private struct ComposerChipRow: View {
 
   var body: some View {
     HStack(spacing: Space.s) {
+      Button {
+        send(.attach)
+      } label: {
+        Image(systemName: "paperclip").symbolStyle(.caption)
+      }
+      .buttonStyle(CoxButtonStyle(.plain, size: .small))
+      .help("Attach files")
+      .accessibilityLabel("Attach files")
       if state.isShell {
         ComposerChip("Shell", kind: .shell) { send(.leaveShell) }
         Toggle(
@@ -200,4 +237,7 @@ private struct ComposerChipRow: View {
 #Preview("empty") { PreviewMatrix { ComposerSample(state: PreviewState.composerEmpty) } }
 #Preview("mention") { PreviewMatrix { ComposerSample(state: PreviewState.composerMention) } }
 #Preview("commands") { PreviewMatrix { ComposerSample(state: PreviewState.composerCommands) } }
+#Preview("attachments") {
+  PreviewMatrix { ComposerSample(state: PreviewState.composerAttachments) }
+}
 #Preview("shell, queued") { PreviewMatrix { ComposerSample(state: PreviewState.composerShell) } }

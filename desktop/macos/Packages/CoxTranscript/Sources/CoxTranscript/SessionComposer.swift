@@ -9,9 +9,10 @@ import CoxUI
 import Foundation
 import SwiftUI
 
-/// The composer under a session's transcript.
+/// The composer under a session's transcript. The paperclip opens the system file picker.
 public struct SessionComposer: View {
   let store: ComposerStore
+  @State private var isPicking = false
 
   public init(store: ComposerStore) {
     self.store = store
@@ -19,6 +20,14 @@ public struct SessionComposer: View {
 
   public var body: some View {
     Composer(state: state, send: handle)
+      .fileImporter(
+        isPresented: $isPicking, allowedContentTypes: [.item], allowsMultipleSelection: true
+      ) {
+        switch $0 {
+        case .success(let urls): Task { await store.attach(urls) }
+        case .failure(let error): store.report(error)
+        }
+      }
   }
 
   private var state: Composer.State {
@@ -38,11 +47,26 @@ public struct SessionComposer: View {
         },
         selection: store.selection)
     }
+    state.attachments = store.attachments.enumerated().map { index, file in
+      // Only an image shows its picture; the bytes are decoded from what will be sent.
+      let image = file.mediaType.hasPrefix("image/") ? Data(base64Encoded: file.dataB64) : nil
+      return Composer.Attachment(id: String(index), name: file.name, image: image)
+    }
     state.canSend = store.canSend
     return state
   }
 
   private func handle(_ intent: Composer.Intent) {
+    switch intent {
+    case .attach: isPicking = true
+    case .drop(let urls): Task { await store.attach(urls) }
+    case .removeAttachment(let id): if let index = Int(id) { store.removeAttachment(at: index) }
+    default: draft(intent)
+    }
+  }
+
+  /// The intents about the text, its rows and shell mode.
+  private func draft(_ intent: Composer.Intent) {
     switch intent {
     case .edit(let text): store.edit(text)
     case .submit, .submitNow: Task { await store.submit() }
@@ -52,6 +76,7 @@ public struct SessionComposer: View {
     case .removeMention(let insert): store.removeMention(insert)
     case .leaveShell: store.leaveShell()
     case .shareOutput(let share): store.shareOutput = share
+    default: break
     }
   }
 }

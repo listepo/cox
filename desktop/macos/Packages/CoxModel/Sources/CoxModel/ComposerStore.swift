@@ -1,5 +1,6 @@
 // The composer of one open session as observable state (DT§5.3, DT§4.6): the draft, shell
-// mode, the files picked from `@` rows, and the rows the core offers for the token being typed.
+// mode, the files picked from `@` rows, the files attached, and the rows the core offers for the
+// token being typed.
 // Separate from `SessionStore`, which holds what the core sent back; this holds what the
 // person is about to send. It asks the core for rows (`cox_app::Completer`) and sends one
 // `Intent`; the command table, the ranking and the files all stay in Rust.
@@ -7,6 +8,7 @@
 import CoxClient
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 
 @Observable
 @MainActor
@@ -18,6 +20,9 @@ public final class ComposerStore {
   public var shareOutput = true
   /// The `@path` inserts picked from the rows, in the order picked.
   public private(set) var mentions: [String] = []
+  /// Files read from what was dropped, pasted or picked; the core decides what reaches the
+  /// model (T37.6).
+  public private(set) var attachments: [Attachment] = []
   /// Rows for the token being typed; empty when none is offered.
   public private(set) var completions: [Completion] = []
   public private(set) var selection = 0
@@ -33,7 +38,10 @@ public final class ComposerStore {
   }
 
   /// Something to send.
-  public var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  public var canSend: Bool {
+    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || (!isShell && !attachments.isEmpty)
+  }
 
   /// The draft as typed. A `!` typed into an empty draft enters shell mode instead.
   public func edit(_ new: String) {
@@ -75,16 +83,52 @@ public final class ComposerStore {
 
   public func leaveShell() { isShell = false }
 
+  /// Reads each file off the main actor and attaches it, its media type from its extension. A
+  /// file that cannot be read is named in `failure`; the others are still attached.
+  public func attach(_ urls: [URL]) async {
+    for url in urls {
+      do {
+        let data = try await Task.detached { try Self.read(url) }.value
+        let type = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+        attachments.append(
+          Attachment(
+            name: url.lastPathComponent, mediaType: type ?? "application/octet-stream",
+            dataB64: data.base64EncodedString()))
+      } catch {
+        report(error)
+      }
+    }
+  }
+
+  public func removeAttachment(at index: Int) {
+    if attachments.indices.contains(index) { attachments.remove(at: index) }
+  }
+
+  /// Something the view could not do for the draft, such as open the file picker.
+  public func report(_ error: any Error) {
+    failure = String(describing: error)
+  }
+
+  /// A picked file may be security-scoped (a sandboxed file picker's); reading it asks for
+  /// access for as long as the read takes.
+  private nonisolated static func read(_ url: URL) throws -> Data {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    return try Data(contentsOf: url)
+  }
+
   /// Sends the draft: a shell line, a `/` command line for the core's command table, or a
-  /// turn. The draft clears once the core took it.
+  /// turn with the attachments. The draft clears once the core took it; attachments stay for a
+  /// shell or command line, which cannot carry them.
   public func submit() async {
     guard canSend else { return }
     let intent: Intent =
       isShell
       ? .shell(command: text, share: shareOutput)
-      : text.hasPrefix("/") ? .command(line: text) : .send(text: text, attachments: [])
+      : text.hasPrefix("/") ? .command(line: text) : .send(text: text, attachments: attachments)
     do {
       _ = try await session.send(intent)
+      if case .send = intent { attachments = [] }
       (text, mentions, completions, isShell, failure) = ("", [], [], false, nil)
     } catch {
       failure = String(describing: error)
