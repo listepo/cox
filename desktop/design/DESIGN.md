@@ -232,7 +232,7 @@ component.
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
-| `CapsuleStyle(.plain/.active)` | Toolbar capsules | `size.capsuleHeight`, `surface.capsule` | `.cap`, `.cap.hot` |
+| `CapsuleStyle(.plain/.active)` | Toolbar capsules and filter chips: readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
 | `SegmentedStyle` | Segmented control with lifted selection | `e1` | `.seg` |
 | `CoxToggleStyle`, `CoxSliderStyle` | Toggles and sliders with 3D knob | `e1`, `accent` | `.tog`, `.slider` |
 
