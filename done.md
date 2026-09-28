@@ -4899,3 +4899,23 @@ Check:
 - CoxUI 141 (5 PlanTab snapshots), CoxModel 39, CoxCore 11 (`aTodoItemConvertsWithEachState`, against a debug XCFramework); swiftlint and swift-format clean.
 - After merging into `p37-desktop`: cox-app and cox-ffi 64/64; CoxModel 40/40; CoxUI PlanTab 3/3; CoxTranscript builds with its tests.
 Not done: app wiring (pull again when a `todo` call finishes; T37.22.3).
+
+#### T37.29.6 Open a task's transcript from the Tasks tab
+
+Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
+Goal: `SessionHandle::open_task(task)` returns what a Tasks-tab click opens: a subagent's child `SessionId` (from the parent session's children, no protocol change) or, for a background shell, its archived output id; the task row says which kind it is so the tab can label it. The FFI side is a one-expression forward (A90).
+Check: a cox-app test over a scripted session with one subagent and one background shell; a CoxModel test that `.open(task:)` resolves to the child session.
+Status: done 2026-09-28
+Result:
+- cox-app `LiveSession::open_task(task)` returns `Option<TaskTarget>`: `Transcript { session }` for a subagent, `Output { archive }` for a finished background shell, `None` for an unknown task or a running shell. It reads the parent's rollout and its children (new Diesel query `Store::children(parent)` in `cox-store/src/queries.rs`); `cox_app::tasks::open` (new `tasks.rs`) pairs the n-th subagent with the n-th child whose first prompt matches the task text, so a fork or handoff child in between is skipped. No protocol change.
+- `BlockKind::Task` gains `kind: TaskKind` (Agent or Shell), from the core's `<tool>: …` label through `cox_core::tasks::TaskKind::of`, settled on completion by an exit code or archive.
+- cox-ffi: remote enums `TaskKind`, `TaskTarget`; `SessionHandle::open_task`, a one-expression forward.
+- Swift: CoxClient `TaskKind`, `TaskTarget`, `SessionClient.openTask` (`FixtureSession(tasks:)`); CoxModel `TaskRow.kind`, `SessionStore.open(task:)`; CoxCore `TaskConvert.swift`, `LiveCoreClient.openTask`. DT§4.3 Task row updated.
+Deviations:
+- About 230 non-test lines in 16 files: the new block field breaks every exhaustive Swift match (one-token edits in CoxTranscript and CoxTranscriptText).
+- `subagent_explore` insta snapshot re-recorded (gains `"kind":"agent"`).
+Check:
+- `cargo nextest run -p cox-app -p cox-store -p cox-ffi`: 94, including `open_task_finds_the_subagents_session_and_the_shells_output` (Scripted provider, a foreground explore subagent and a background `bash`); clippy and fmt clean.
+- CoxModel 40 (`openingATaskResolvesToTheChildSessionOrTheShellOutput`), CoxCore 10 (debug XCFramework), CoxTranscriptText 31, CoxTranscript all but the load-bound benchmark.
+- After merging into `p37-desktop` with T37.29.2: cox-app, cox-ffi and cox-store 95/95; CoxModel 41/41, CoxTranscriptText 31/31, CoxTranscript 33/33, CoxUI TasksTab and PlanTab 7/7.
+Not done: a kind label or glyph in CoxUI's `TasksTab.Item` (T37.29.8); opening the transcript or output in the app (T37.22.3).

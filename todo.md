@@ -33,8 +33,8 @@
 - T37.28. Review pane and rewind timeline
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.5. Inspector Info tab
-- T37.29.6. Open a task's transcript from the Tasks tab
 - T37.29.7. Deleted files and created-file counts in the Changes tab
+- T37.29.8. Task kind in the Tasks tab
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`

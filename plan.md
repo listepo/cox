@@ -39,8 +39,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
 | T37.29.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.29.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.7 | todo | P3 | 2 | 0% | |
+| T37.29.8 | todo | P3 | 1 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2826,17 +2826,17 @@ Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/
 Goal: session id, cwd, worktree, config provenance and rollout path as a KeyValueGrid, from a new `SessionHandle::info()` forward.
 Check: a snapshot per cell; a cox-app test for `info()`.
 
-#### T37.29.6 Open a task's transcript from the Tasks tab
-
-Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
-Goal: `SessionHandle::open_task(task)` returns what a Tasks-tab click opens: a subagent's child `SessionId` (from the parent session's children, no protocol change) or, for a background shell, its archived output id; the task row says which kind it is so the tab can label it. The FFI side is a one-expression forward (A90).
-Check: a cox-app test over a scripted session with one subagent and one background shell; a CoxModel test that `.open(task:)` resolves to the child session.
-
 #### T37.29.7 Deleted files and created-file counts in the Changes tab
 
 T37.29.1 left two gaps. CoxUI's `ChangedFileRow.Change` has no `deleted` case, so a `FileChange::Deleted` from `changes()` has no glyph. A `write` that creates a file carries no diff, so the row reads `+0 −0` instead of the new file's line count.
 
 Done means: a `deleted` case with its glyph and snapshot in CoxUI, the mapping in `ChangesTabState`, and a created file counted as all-added lines in `crates/cox-app/src/changes.rs`. Check: the `changes.rs` unit test covers a created file's count; a CoxUI snapshot shows a deleted row.
+
+#### T37.29.8 Task kind in the Tasks tab
+
+Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…/TaskRows.swift`
+Goal: T37.29.6 gave `TaskRow` a `kind` (subagent or background shell); `TasksTab.Item` shows it as a glyph and a label ("Open transcript" for a subagent, "Open output" for a shell).
+Check: TasksTab snapshots with one row of each kind.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
