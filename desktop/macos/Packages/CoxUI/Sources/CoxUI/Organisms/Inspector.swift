@@ -35,11 +35,13 @@ struct Inspector<Content: View>: View {
         .padding(.bottom, Space.ml)
         .frame(maxWidth: .infinity, alignment: .leading)
         .hairline(.bottom)
-        // The mockup's `.ib`: every tab scrolls in the same inset body.
+        // The mockup's `.ib`: every tab scrolls in the same inset body. Its first `.ih` sits
+        // 18 pt under the tabs (14 of padding and 4 of its own margin): `space.xl` is nearest.
         ScrollView {
           content
             .padding(.horizontal, Space.xl)
-            .padding(.vertical, Space.l)
+            .padding(.top, Space.xl)
+            .padding(.bottom, Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: .infinity)

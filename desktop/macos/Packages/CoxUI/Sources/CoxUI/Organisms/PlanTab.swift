@@ -89,10 +89,7 @@ private struct PlanStepRow: View {
   var body: some View {
     let isDone = item.step == .done
     HStack(alignment: .firstTextBaseline, spacing: Space.m) {
-      Image(systemName: item.step.symbol)
-        .symbolStyle(.body)
-        .foregroundStyle(item.step.colour)
-        .accessibilityHidden(true)
+      box.accessibilityHidden(true)
       Text(item.text)
         .strikethrough(isDone)
         .foregroundStyle(Color(isDone ? .textSecondary : .textPrimary))
@@ -100,10 +97,25 @@ private struct PlanStepRow: View {
         .fixedSize(horizontal: false, vertical: true)
     }
     .textStyle(.body)
-    .padding(.horizontal, Space.m)
+    // The mockup's `.todo` sits the box almost on the section's edge, under its header.
+    .padding(.horizontal, Space.xxs)
     .padding(.vertical, Space.s)
     .accessibilityElement(children: .combine)
     .accessibilityValue(item.step.label)
+  }
+
+  /// A done step's box is solid green with the check knocked out in `text.onAccent`, as the
+  /// mockup's `.box.done`; the image's own palette mode wins over `symbolStyle`'s hierarchical
+  /// one. The other boxes take their colour whole.
+  @ViewBuilder private var box: some View {
+    if item.step == .done {
+      Image(systemName: item.step.symbol)
+        .symbolRenderingMode(.palette)
+        .symbolStyle(.body)
+        .foregroundStyle(Color(.textOnAccent), item.step.colour)
+    } else {
+      Image(systemName: item.step.symbol).symbolStyle(.body).foregroundStyle(item.step.colour)
+    }
   }
 }
 
