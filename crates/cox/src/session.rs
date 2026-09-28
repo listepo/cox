@@ -390,8 +390,35 @@ pub fn enter_worktree(cli: &mut Cli, cwd: &Path) -> anyhow::Result<PathBuf> {
     let owner = format!("cox / pid {}", std::process::id());
     let rt = tokio::runtime::Runtime::new()?;
     let wt = rt.block_on(cox_tools::git::worktree_add(cwd, &name, &owner))?;
+    let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+    // A new session has no record yet, so a fresh id excludes nobody.
+    warn_worktree_holder(&rt, &home, &wt.path, &SessionId::new());
     cli.cwd = Some(wt.path.clone());
     Ok(wt.path)
+}
+
+/// T44.2 (A75): another live session of this project already running in
+/// `worktree` is warned about by id before this one starts there — warn,
+/// not block (fail open, no lock). Printed on the same `cox: warning:` path
+/// as `open`'s warnings, which stays above the TUI's inline viewport. `me`
+/// is left out, so a resumed session never warns about its own record.
+fn warn_worktree_holder(
+    rt: &tokio::runtime::Runtime,
+    home: &Path,
+    worktree: &Path,
+    me: &SessionId,
+) {
+    let project = rt.block_on(project_root(worktree));
+    let now = cox_ext::presence::now_secs();
+    if let Some(other) = cox_ext::presence::holder(home, &project, worktree, me, now) {
+        eprintln!(
+            "cox: warning: session {} (pid {}) is already working in worktree {}; \
+             two sessions editing one tree will overwrite each other's changes",
+            other.session,
+            other.pid,
+            worktree.display()
+        );
+    }
 }
 
 /// After `/quit` in a worktree session: a clean tree is offered for
@@ -983,7 +1010,10 @@ mod tests {
             "first"
         ]));
         let repo = std::fs::canonicalize(&repo).expect("canon");
-        let mut cli = Cli::parse_from(["cox", "--worktree", "T9"]);
+        // A scratch home: `enter_worktree` reads (and sweeps) presence records.
+        let home = tmp.path().join("home");
+        let home_arg = home.display().to_string();
+        let mut cli = Cli::parse_from(["cox", "--worktree", "T9", "--home", &home_arg]);
         let cwd = enter_worktree(&mut cli, &repo).expect("enter");
         let root = std::fs::canonicalize(tmp.path()).expect("canon");
         assert_eq!(cwd, root.join("_worktrees").join("repo-t9"));
