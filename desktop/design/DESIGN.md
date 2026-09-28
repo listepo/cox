@@ -71,6 +71,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | fill | `primary`, `secondary` | Quiet fills inside a surface |
 | text | `primary`, `secondary`, `tertiary`, `terminal`, `terminalOk` | Foregrounds |
 | line | `separator` | 0.5 pt hairlines |
+| quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
 | intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
 | diff | `add`, `addGutter`, `del`, `delGutter` | Diff lines and gutters |
 | syntax | `keyword`, `string`, `number`, `function`, `comment`, `type` | Highlighting; same roles as `cox-render`'s `StyleToken`, so TUI and app match |
@@ -113,7 +114,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
   `popover` → window `window`; pills use `capsule`. Nested shapes are concentric: inner radius = outer
   radius − inset.
 - **Size** fixes the layout skeleton: toolbar 56, sidebar 252, inspector 324, reading column 760,
-  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5.
+  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5,
+  quote bar 3.
 
 ### 3.4 Elevation (depth)
 

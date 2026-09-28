@@ -228,6 +228,14 @@
         "unit": "px"
       }
     },
+    "quoteBar": {
+      "$type": "dimension",
+      "$description": "A quote's bar in the transcript (A97), coloured quote.bar",
+      "$value": {
+        "value": 3,
+        "unit": "px"
+      }
+    },
     "windowMinWidth": {
       "$type": "dimension",
       "$value": {

@@ -1,5 +1,6 @@
 // Headings and quotes at CoxUI's tokens, in light and dark, Solid, through the SwiftUI view the
-// app hosts: every heading level at its token's size (T37.23.15, A94). Apart from
+// app hosts: every heading level at its token's size (T37.23.15, A94) and a quote nested three
+// deep with a bar per depth in `quote.bar` (T37.23.17, A97). Apart from
 // `TranscriptReplyTests`, whose one reply shows every block kind once, because these show one
 // kind at each of its levels.
 
@@ -24,9 +25,30 @@ private let headings = reply(
     [heading(UInt8(level)), .text(kind: .paragraph, lines: [TextLine([Span(text: "Body text.")])])]
   })
 
-// The reading column's width; the height follows the text.
+/// A quote three deep, its first line long enough to wrap, so the bars run down both lines.
+private let quote = reply([
+  .text(
+    kind: .quote,
+    lines: [
+      TextLine(
+        [
+          Span(
+            text: "The watcher waits for its first event, so a slow disk no longer fails the "
+              + "test and the retry loop that hid the race is gone.")
+        ], quote: 1),
+      TextLine([Span(text: "nested once")], quote: 2),
+      TextLine([Span(text: "nested twice")], quote: 3),
+      TextLine([Span(text: "back out")], quote: 1),
+    ]),
+  .text(kind: .paragraph, lines: [TextLine([Span(text: "After the quote.")])]),
+])
+
+// The reading column's width; the height follows the text. The quote's is narrower, so its
+// bars are enough of the image that drawing them in the hairline fails the snapshot.
 // swiftlint:disable:next no_literal_size
 private let size = NSSize(width: 760, height: 400)
+// swiftlint:disable:next no_literal_size
+private let quoteSize = NSSize(width: 320, height: 200)
 
 @MainActor
 @Suite(.serialized)
@@ -40,5 +62,15 @@ struct TranscriptHeadingQuoteTests {
     assertSnapshot(
       of: try host.image(), as: .image(precision: 0.995, perceptualPrecision: 0.98),
       named: dark ? "dark-solid" : "light-solid", testName: "everyHeadingLevel")
+  }
+
+  @Test(arguments: [false, true])
+  func nestedQuote(dark: Bool) throws {
+    let host = Host(quote, size: quoteSize, dark: dark)
+    defer { host.close() }
+    host.fitToText()
+    assertSnapshot(
+      of: try host.image(), as: .image(precision: 0.995, perceptualPrecision: 0.98),
+      named: dark ? "dark-solid" : "light-solid", testName: "nestedQuote")
   }
 }

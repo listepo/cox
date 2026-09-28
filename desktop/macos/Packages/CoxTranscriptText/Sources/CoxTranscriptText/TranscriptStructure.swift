@@ -2,9 +2,10 @@
 // items, quote lines, tables and rules stay text in the one text (A87), set by
 // paragraph styles rather than drawn as flat paragraphs. `cox-render` sends a
 // heading's level, a quote's depth and a list item's marker apart from the text
-// (A92): a heading shows without its `#` run, a quote line sits past a bar per
-// quote (`QuoteFragment`), and an item's marker hangs in the gutter before its
-// text. Its own file because it is the one place a doc block's kind becomes layout.
+// (A92): a heading shows at its level's size (A94) without its `#` run, a quote
+// line sits past a bar per quote (`QuoteFragment`, in the quote's own bar, A97),
+// and an item's marker hangs in the gutter before its text. Its own file because
+// it is the one place a doc block's kind becomes layout.
 
 import AppKit
 import CoxClient
@@ -41,6 +42,18 @@ extension TranscriptStyle {
       case .h4: h4
       }
     }
+  }
+
+  /// A quote's bars (A97): one per depth, a thought's indent apart.
+  public struct Quote: Equatable {
+    public var bar: NSColor
+    public var barWidth: CGFloat
+
+    public init(bar: NSColor, barWidth: CGFloat) {
+      (self.bar, self.barWidth) = (bar, barWidth)
+    }
+
+    public static var system: Quote { Quote(bar: .tertiaryLabelColor, barWidth: 3) }
   }
 
   /// The heading token a Markdown heading's level takes: DT§5.9 sizes headings 17 / 15 / 13 pt,
@@ -80,7 +93,7 @@ extension TextLook {
 /// A doc line's own paragraph style, the same with the block spacing for when it
 /// is its block's last paragraph (`TranscriptText.respace`), and its quote bars.
 final class Paragraph: NSObject {
-  /// A bar per quote, `step` apart from the text column's edge, in a thought's rule.
+  /// A bar per quote, `step` apart from the text column's edge, in the style's quote bar.
   struct Rails {
     let count: Int
     let step: CGFloat
@@ -163,11 +176,11 @@ final class Paragraphs {
         ]
       }
     }
-    let thought = style.thought
     let rails =
       line.quote > 0
       ? Paragraph.Rails(
-        count: Int(line.quote), step: thought.indent, width: thought.ruleWidth, color: thought.rule)
+        count: Int(line.quote), step: style.thought.indent, width: style.quote.barWidth,
+        color: style.quote.bar)
       : nil
     let made = Paragraph(paragraph, spacing: style.blockSpacing, rails: rails)
     self.made[shape] = made

@@ -1,6 +1,6 @@
 // A reply's structure in the text (T37.23.8, A92): a heading in its level's font (A94)
 // without its `#` run, a list item's marker in the gutter before its text, a quote
-// line past a bar per quote, a table on tab stops, a rule as one character, and a
+// line past a bar per quote in the quote's bar (A97), a table on tab stops, a rule as one character, and a
 // streamed reply with the same paragraph styles a whole load gives it.
 
 import AppKit
@@ -89,6 +89,20 @@ struct TranscriptStructureTests {
     }
     #expect(try #require(paragraph(view, at: "Level 1")).lineSpacing == spacing(h1))
     #expect(try #require(paragraph(view, at: "Level 3")).lineSpacing == spacing(h4))
+  }
+
+  @Test func aQuotesBarsTakeTheQuoteStyleNotTheThoughtsRule() throws {
+    var style = style
+    style.quote = .init(bar: .systemRed, barWidth: 4)
+    let view = TranscriptTextView.make(style: style)
+    view.load([reply(structured)])
+    let location = (view.string as NSString).range(of: "deeper").location
+    let own =
+      view.textStorage?.attribute(.transcriptParagraph, at: location, effectiveRange: nil)
+      as? Paragraph
+    let rails = try #require(own?.rails)
+    #expect(rails.count == 2 && rails.step == style.thought.indent)
+    #expect(rails.width == 4 && rails.color == .systemRed)
   }
 
   @Test func aStreamedReplyHasTheParagraphStylesAWholeLoadGivesIt() {

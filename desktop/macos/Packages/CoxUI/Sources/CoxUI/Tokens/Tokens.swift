@@ -67,6 +67,8 @@ public enum Size {
     public static let iconTile: CGFloat = 22
     public static let statusDot: CGFloat = 9
     public static let hairline: CGFloat = 0.5
+    /// A quote's bar in the transcript (A97), coloured quote.bar
+    public static let quoteBar: CGFloat = 3
     public static let windowMinWidth: CGFloat = 1100
     public static let windowMinHeight: CGFloat = 700
     public static let popoverWidth: CGFloat = 340

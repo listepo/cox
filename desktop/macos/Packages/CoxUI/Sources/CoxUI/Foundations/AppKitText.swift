@@ -22,16 +22,17 @@ public enum TextColour: CaseIterable, Sendable {
 }
 
 /// The colours AppKit drawing behind text may take (T37.23.4): the user bubble's tint and
-/// readable face (T37.23.9) and the hairline beside a thought, from the same assets as
-/// `Color(.fillPrimary)`, `.glassPane`'s surface and `.hairline`.
+/// readable face (T37.23.9), the hairline beside a thought and a quote's bar (A97), from the
+/// same assets as `Color(.fillPrimary)`, `.glassPane`'s surface, `.hairline` and `quote.bar`.
 public enum SurfaceColour: CaseIterable, Sendable {
-  case fillPrimary, separator, window
+  case fillPrimary, separator, window, quoteBar
 
   public var nsColor: NSColor {
     switch self {
     case .fillPrimary: NSColor(resource: .fillPrimary)
     case .separator: NSColor(resource: .separator)
     case .window: NSColor(resource: .surfaceWindow)
+    case .quoteBar: NSColor(resource: .quoteBar)
     }
   }
 }

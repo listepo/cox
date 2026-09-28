@@ -171,7 +171,8 @@ extension TranscriptStyle {
   /// height but the prose at `lineHeight` (A93), lists indented as the
   /// mockup's (`space.xxl`), readable colours only (DS§8) — the status colours miss
   /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`. A prompt
-  /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5).
+  /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5); a
+  /// quote's bars are `quote.bar`, `size.quoteBar` wide (A97).
   /// `appearance` is what the text is drawn at, Reduce Transparency applied.
   @MainActor
   static func cox(
@@ -198,6 +199,7 @@ extension TranscriptStyle {
           FontToken.caption.nsFont(scale: textScale), toHaveTrait: .italicFontMask),
         color: secondary, rule: SurfaceColour.separator.nsColor, ruleWidth: Size.hairline,
         indent: Space.l),
+      quote: .init(bar: SurfaceColour.quoteBar.nsColor, barWidth: Size.quoteBar),
       indent: Space.xxl,
       lineHeights: .init(
         body: lineHeight, code: FontToken.monoCode.lineHeight,
