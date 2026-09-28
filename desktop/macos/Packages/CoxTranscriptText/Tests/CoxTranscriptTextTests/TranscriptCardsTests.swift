@@ -176,6 +176,24 @@ struct TranscriptCardsTests {
     #expect(host.placings == 0)
   }
 
+  /// T37.22.14: on macOS 26 `NSTextView` may not implement the pass it declares from 27, so
+  /// the override must place cards without calling `super`. The controller reports its passes
+  /// to the view itself, which is what makes the override run at all.
+  @Test func withoutNSTextViewsOwnPassCardsArePlacedAndSuperIsNotCalled() throws {
+    let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
+    defer { screen.close() }
+    #expect(screen.wait { cardHosts(in: screen.view).count == 1 })
+    let host = try #require(cardHosts(in: screen.view).first)
+    let controller = try #require(screen.view.textLayoutManager?.textViewportLayoutController)
+    #expect(controller.delegate === screen.view, "the controller calls the view's override")
+
+    host.removeFromSuperview()
+    screen.view.viewportDidLayout(controller, superLaysOut: false)
+
+    #expect(host.placing && host.placings == 1, "the macOS 26 path places the card")
+    #expect(screen.wait { host.window != nil && !host.placing }, "the card's view is back")
+  }
+
   @Test func dragAcrossACardSelectsTheWholeCard() throws {
     let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
     defer { screen.close() }
