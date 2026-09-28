@@ -23,7 +23,7 @@ const STEP = 0.005;
 
 // Glass: translucent surfaces. Each sits over the opaque window fill of its palette, as the palette
 // describes them; what shows through the window itself is the material's opacity, not a colour.
-const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'surface.terminal'];
+const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'surface.terminal', 'glass.fill'];
 const PAGE = ['surface.window', 'surface.code', ...GLASS.filter((s) => s !== 'surface.terminal')];
 const WORDS = [
   'text.primary', 'text.secondary', 'text.tertiary', 'text.placeholder', 'accent', 'status.success',
@@ -53,7 +53,7 @@ const RULES = [
   })),
   // A label on a filled face: the primary button, the Bypass segment, the count badge.
   { fg: ['text.onAccent'], bg: ['accent', 'status.danger', 'status.warning'], min: TEXT },
-  { fg: ['separator', 'surface.capsuleBorder'], bg: PAGE, min: GRAPHIC, solid: true },
+  { fg: ['separator', 'surface.capsuleBorder', 'glass.border'], bg: PAGE, min: GRAPHIC, solid: true },
   // A quote's bar is a graphic a person reads the quote's depth from (A97).
   { fg: ['quote.bar'], bg: PAGE, min: GRAPHIC, solid: true },
   { fg: ['context.system', 'context.tools', 'context.instructions', 'context.history'], bg: PAGE, min: GRAPHIC },
@@ -62,7 +62,7 @@ const RULES = [
   ...PAGES.map((p) => ({ fg: [`tile.settings.${p}.glyph`], bg: ['top', 'bottom'].map((e) => `tile.settings.${p}.${e}`), min: GRAPHIC })),
 ];
 // Tints and depth with nothing to read on them; A89 sets no ratio, so they keep their value.
-const KEPT = ['fill.secondary', 'status.successSoft', 'shadow.tint'];
+const KEPT = ['fill.secondary', 'status.successSoft', 'shadow.tint', 'glass.highlight'];
 
 const fail = (msg) => {
   throw new Error(`high contrast: ${msg}`);
