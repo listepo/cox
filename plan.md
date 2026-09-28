@@ -32,7 +32,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.1 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.44.2 | todo | P2 | 4 | 0% | |
 | T37.22.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2771,12 +2770,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.44.1 Figma file from the design tokens and mockups
-
-Depends: — · Size: ~150 (a generator script) · Files: `desktop/design/figma/…`, `desktop/design/DESIGN.md`
-Goal: A114. The Figma file `cox desktop` (https://www.figma.com/design/KA9a0R7n6P0QbwDn92e167) mirrors the repository's design: variable collections from `desktop/design/tokens/*.json` (colours with Light, Dark, Light HC and Dark HC modes; sizes, radii, spacing, type) built by a saved, tested generator script that turns the tokens into the Figma Plugin API code `use_figma` runs, so a token change re-syncs by re-running it; a page per mockup group holding every screen of `mockups.html` rendered at 2x (`render.sh`) as a reference frame; the main screen 28 rebuilt as editable layers (auto layout) whose fills, radii and spacing are bound to the variables. DESIGN.md says the repository stays the source and how to re-sync.
-Check: the generator's test; `get_variable_defs` on the rebuilt screen 28 returns token names, not raw values; a Figma screenshot of the rebuilt screen 28 next to the rendered mockup matches by eye.
 
 #### T37.44.2 Style the app from the Figma file
 
