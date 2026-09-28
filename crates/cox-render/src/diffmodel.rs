@@ -7,7 +7,7 @@
 //! with ratatui, and `cox-app` builds without the `ratatui` feature.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use cox_protocol::types::Diff;
 use serde::{Deserialize, Serialize};
@@ -267,6 +267,21 @@ fn cut(spans: StyledLine, words: &[Range<usize>]) -> StyledLine {
         out.push(span);
     }
     out
+}
+
+/// The change from `old` to `new` of the file at `path`, as [`model`] reads
+/// it: for two texts no tool diffed, such as Review's checkpoint copy and the
+/// file on disk (T37.28.2). Three lines of context, as the edit tools write.
+pub fn between(path: &Path, old: &str, new: &str, theme: &str) -> DiffModel {
+    let unified = TextDiff::from_lines(old, new)
+        .unified_diff()
+        .context_radius(3)
+        .to_string();
+    let diff = Diff {
+        path: path.to_path_buf(),
+        unified,
+    };
+    model(&diff, theme)
 }
 
 /// `diff` as hunks. Bodies go through the one syntect pass the TUI's diff

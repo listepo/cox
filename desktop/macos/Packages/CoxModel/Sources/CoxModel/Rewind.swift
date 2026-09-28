@@ -11,4 +11,10 @@ extension SessionStore {
     guard let turn = UInt32(id) else { return }
     _ = try await send(.rewind(toTurn: turn, code: code, conversation: conversation))
   }
+
+  /// The Changes tab's plain Rewind (`ChangesTab.Intent.rewind(checkpoint:)`): code only, DT§5.2's
+  /// "Restore code to here" (A101). The timeline keeps all three scopes.
+  public func rewind(checkpoint id: String) async throws {
+    try await rewind(checkpoint: id, code: true, conversation: false)
+  }
 }

@@ -17,6 +17,7 @@ pub mod mcp_login;
 pub mod meter_text;
 pub mod onboarding;
 pub mod patch;
+pub mod review;
 pub mod settings;
 pub mod status;
 pub mod summary;

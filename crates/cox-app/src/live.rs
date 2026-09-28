@@ -9,9 +9,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use cox_core::{History, Session};
+use cox_protocol::Checkpointer as _;
 use cox_protocol::ids::{SessionId, TaskId};
 use cox_protocol::traits::Store as _;
 use cox_protocol::types::{Event, Submission, TodoItem};
+use cox_render::diffmodel::DiffModel;
 use cox_session::SessionSpec;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -19,6 +21,7 @@ use tokio::task::JoinHandle;
 use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
 use crate::info::{self, Info};
+use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
 use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
@@ -34,6 +37,8 @@ pub struct LiveSession {
     controller: Arc<Controller>,
     completer: Completer,
     cwd: PathBuf,
+    /// The workspace roots a path Review reads is confined to.
+    roots: Vec<PathBuf>,
     theme: String,
     warnings: Vec<String>,
     /// The turn spawned last; a queued one starts after it.
@@ -82,6 +87,7 @@ impl LiveSession {
             controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
             turn: Mutex::new(None),
+            roots: opened.config.core.workspace_roots,
             app,
             session,
             cwd,
@@ -148,15 +154,44 @@ impl LiveSession {
         let rows = store.checkpoint_rows(&self.id())?;
         let written = changes::written(&store.rollout_read(&self.id())?);
         let worktree = cox_tools::git::linked(&self.cwd).await;
-        // Checkpoint paths are confined, so canonical.
-        let cwd = std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone());
         Ok(changes::build(
             &self.snapshot(),
             &rows,
             &written,
-            &cwd,
+            &self.canonical_cwd(),
             worktree,
         ))
+    }
+
+    /// Review's diff of a Changes-tab `path` (T37.28.2, A101): the net
+    /// change from the session's first checkpoint copy to the file on disk,
+    /// read the way a checkpoint reads it, confined to the workspace roots.
+    /// `None` for a path the session never changed or a side over the cap.
+    pub async fn review(&self, path: &str) -> Result<Option<DiffModel>, AppError> {
+        let checkpointer = cox_tools::checkpoint::GitCheckpointer::new(self.app.home.clone());
+        let paths = [path.to_owned()];
+        let Some(now) = checkpointer
+            .preimages(&self.roots, &self.cwd, &paths)
+            .await
+            .pop()
+        else {
+            return Ok(None);
+        };
+        let store = self.app.workspace().store();
+        let rows = store.checkpoint_rows(&self.id())?;
+        let Some(row) = review::base(&rows, &now.path) else {
+            return Ok(None);
+        };
+        let before = review::kept(row, |id| store.archive_get(id))?;
+        let cwd = self.canonical_cwd();
+        let shown = now.path.strip_prefix(&cwd).unwrap_or(&now.path);
+        Ok(review::diff(shown, &before, &now.before, &self.theme))
+    }
+
+    /// Checkpoint paths are confined, so canonical; paths are shown
+    /// relative to this.
+    fn canonical_cwd(&self) -> PathBuf {
+        std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone())
     }
 
     /// What the inspector's Plan tab lists (T37.29.2): the todo list the

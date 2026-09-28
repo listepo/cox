@@ -40,6 +40,9 @@ public protocol SessionClient: AnyObject, Sendable {
   func history(limit: UInt32) throws -> [String]
   /// What the inspector's Changes tab lists (`cox_app::live::LiveSession::changes`, T37.29.1).
   func changes() async throws -> Changes
+  /// Review's diff of a changed file: its checkpoint copy against the file on disk
+  /// (`cox_app::live::LiveSession::review`, T37.28.2); `nil` when there is none to show.
+  func review(_ path: String) async throws -> DiffModel?
   /// What the inspector's Plan tab lists: the latest todo list (`LiveSession::plan`, T37.29.2).
   func plan() -> [TodoItem]
   /// What a Tasks-tab click opens (`cox_app::live::LiveSession::open_task`, T37.29.6); `nil`
@@ -129,7 +132,7 @@ extension FixtureCoreClient: InboxClient {
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
 /// fixed list instead of the Rust completer, serves a fixed prompt history, lists fixed
-/// changes, a fixed plan and info, and opens tasks from a fixed map. Waiting on the person, it
+/// changes, their fixed diffs, a fixed plan and info, and opens tasks from a fixed map. Waiting on the person, it
 /// plays the core: the turn resumes when the card is answered.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
@@ -140,6 +143,7 @@ public final class FixtureSession: SessionClient {
   /// Newest first, as the core returns them.
   private let prompts: [String]
   private let fixedChanges: Changes
+  private let reviews: [String: DiffModel]
   private let fixedPlan: [TodoItem]
   private let tasks: [String: TaskTarget]
   private let fixedInfo: Info
@@ -159,24 +163,26 @@ public final class FixtureSession: SessionClient {
   public convenience init(
     fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
     waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes(),
-    plan: [TodoItem] = [], tasks: [String: TaskTarget] = [:], info: Info = Info()
+    plan: [TodoItem] = [], tasks: [String: TaskTarget] = [:], info: Info = Info(),
+    reviews: [String: DiffModel] = [:]
   ) {
     self.init(
       fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou,
       prompts: prompts, changes: changes, plan: plan, tasks: tasks, info: info,
-      inbox: FixtureInbox())
+      reviews: reviews, inbox: FixtureInbox())
   }
 
   init(
     fixture: Fixture, completions: [Completion], host: (any PlatformHost)?, waitsForYou: Bool,
     prompts: [String] = [], changes: Changes = Changes(), plan: [TodoItem] = [],
     tasks: [String: TaskTarget] = [:], info: Info = Info(),
-    inbox: FixtureInbox
+    reviews: [String: DiffModel] = [:], inbox: FixtureInbox
   ) {
     (self.fixture, self.completions, self.host, self.waitsForYou) =
       (fixture, completions, host, waitsForYou)
     (self.prompts, fixedChanges, fixedPlan, self.tasks, fixedInfo, self.inbox) =
       (prompts, changes, plan, tasks, info, inbox)
+    self.reviews = reviews
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -230,6 +236,8 @@ public final class FixtureSession: SessionClient {
   public func history(limit: UInt32) -> [String] { Array(prompts.prefix(Int(limit))) }
 
   public func changes() async throws -> Changes { fixedChanges }
+
+  public func review(_ path: String) async throws -> DiffModel? { reviews[path] }
 
   public func plan() -> [TodoItem] { fixedPlan }
 
