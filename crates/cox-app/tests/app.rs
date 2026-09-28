@@ -149,6 +149,7 @@ fn send(text: &str) -> Intent {
     Intent::Send {
         text: text.into(),
         attachments: vec![],
+        confirm_think: false,
     }
 }
 
@@ -267,6 +268,7 @@ async fn a_queued_turn_carries_its_attachments_and_counts_until_it_starts() {
             media_type: "image/png".into(),
             data_b64: "iVBORw0KGgo=".into(),
         }],
+        confirm_think: false,
     };
     session.send(queue).await.expect("queue");
     // The write waits for approval, so the queued turn cannot start first.

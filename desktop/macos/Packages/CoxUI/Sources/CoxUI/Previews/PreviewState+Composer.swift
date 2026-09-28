@@ -15,12 +15,15 @@ extension PreviewState {
     case .queued: "Queued · 1"
     case .model: modelChip
     case .mode(let mode): mode.title
+    case .think: thinkChip
     }
   }
 
   static let modeShortcut = "⇧⇥"
   /// The model and effort as the composer's chip shows them.
   static let modelChip = "claude-sonnet-5 · high"
+  /// The think toggle's label (A103).
+  static let thinkChip = "Think"
 }
 
 /// A removable chip of `kind`.
@@ -92,6 +95,13 @@ extension PreviewState {
     var state = Composer.State()
     state.mode = .plan
     state.model = modelChip
+    return state
+  }
+
+  /// The status chips with think on for the next turn (T37.24.10, A103).
+  static var composerThink: Composer.State {
+    var state = composerStatus
+    state.think = true
     return state
   }
 

@@ -51,11 +51,13 @@ import Testing
   #expect(CoxFFIBindings.Intent(.setEffort(effort: nil)) == .setEffort(effort: nil))
 }
 
-@Test func aQueuedIntentKeepsItsAttachmentsAndTheStatusKeepsEveryField() {
+@Test func aQueuedIntentKeepsItsAttachmentsAndThinkAndTheStatusKeepsEveryField() {
   let shot = CoxClient.Attachment(name: "shot.png", mediaType: "image/png", dataB64: "iVBO")
   let want = CoxFFIBindings.Intent.queue(
-    text: "look", attachments: [.init(name: "shot.png", mediaType: "image/png", dataB64: "iVBO")])
-  #expect(CoxFFIBindings.Intent(.queue(text: "look", attachments: [shot])) == want)
+    text: "look", attachments: [.init(name: "shot.png", mediaType: "image/png", dataB64: "iVBO")],
+    confirmThink: true)
+  let queue = CoxClient.Intent.queue(text: "look", attachments: [shot], confirmThink: true)
+  #expect(CoxFFIBindings.Intent(queue) == want)
   let live = CoxFFIBindings.TimelinePatch.status(
     status: .init(queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high))
   let status = CoxClient.Status(

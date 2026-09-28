@@ -411,6 +411,7 @@ pub enum Intent {
     Send {
         text: String,
         attachments: Vec<Attachment>,
+        confirm_think: bool,
     },
     Approve {
         call: CallId,
@@ -424,6 +425,7 @@ pub enum Intent {
     Queue {
         text: String,
         attachments: Vec<Attachment>,
+        confirm_think: bool,
     },
     Compact {
         focus: Option<String>,

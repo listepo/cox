@@ -1,8 +1,8 @@
 // `Composer` (DS§6.4 row `Composer`, the mockup's `.composer`; DT§5.3; mockup screens 1, 5–7):
 // where the next message is written — the text, the files it mentions and attaches, shell mode with its
 // "share output" switch, the prompts queued behind the running turn, the completion rows for
-// the `@` or `/` token at the caret, why the last send failed, the permission mode and the model
-// with its effort, and Send. Separate so the transcript column shows it from one value and
+// the `@` or `/` token at the caret, why the last send failed, the permission mode, the model
+// with its effort and the think toggle, and Send. Separate so the transcript column shows it from one value and
 // reports every key and click as an intent; the store behind it decides what each one sends.
 
 import AppKit
@@ -48,6 +48,8 @@ public struct Composer: View {
     public var mode: SessionMode?
     /// The model and its effort as the core names them, `claude-sonnet-5 · high`; `nil` hides it.
     public var model: String?
+    /// The next turn goes to the think tier (A103); its chip stands beside the model's.
+    public var think = false
 
     public init() {}
   }
@@ -107,6 +109,8 @@ public struct Composer: View {
     case toggleTokens
     /// ⇧⇥ or the mode chip: the next permission mode, which the core picks.
     case cycleMode
+    /// The think chip: the think tier for the next turn, or not.
+    case toggleThink
   }
 
   let state: State
@@ -323,7 +327,7 @@ private enum ComposerPaste {
   }
 }
 
-/// The mode and the model, shell mode and its switch, the mentioned files, the queue count and
+/// The mode, the model and think, shell mode and its switch, the mentioned files, the queue count and
 /// Send.
 private struct ComposerChipRow: View {
   let state: Composer.State
@@ -348,7 +352,10 @@ private struct ComposerChipRow: View {
         .buttonStyle(.plain)
         .help("Next permission mode (⇧⇥)")
       }
-      if let model = state.model { ComposerChip(model, kind: .model) }
+      if let model = state.model {
+        ComposerChip(model, kind: .model)
+        ThinkChip(isOn: state.think) { send(.toggleThink) }
+      }
       if state.isShell {
         ComposerChip("Shell", kind: .shell) { send(.leaveShell) }
         Toggle(
@@ -364,7 +371,8 @@ private struct ComposerChipRow: View {
         ComposerChip("Queued · \(state.queued)", kind: .queued)
       }
       if let meter = state.meter {
-        TokenMeter(state: meter, isOpen: state.tokens != nil) { send(.toggleTokens) }
+        // Its figures never wrap; the chips before it truncate instead.
+        TokenMeter(state: meter, isOpen: state.tokens != nil) { send(.toggleTokens) }.fixedSize()
       }
       Button {
         send(.submit)
@@ -389,3 +397,4 @@ private struct ComposerChipRow: View {
 #Preview("tokens") { PreviewMatrix { ComposerSample(state: PreviewState.composerTokens) } }
 #Preview("failure") { PreviewMatrix { ComposerSample(state: PreviewState.composerFailure) } }
 #Preview("status") { PreviewMatrix { ComposerSample(state: PreviewState.composerStatus) } }
+#Preview("think") { PreviewMatrix { ComposerSample(state: PreviewState.composerThink) } }
