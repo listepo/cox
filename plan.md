@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.3 | todo | P3 | 2 | 0% | |
-| T37.44.10 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.44.11 | todo | P2 | 3 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2837,12 +2836,6 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
 Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
 Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
-
-#### T37.44.10 Tokens for the type sizes and window sizes the mockups use
-
-Depends: T37.44.2, T37.44.6, T37.44.7, T37.44.8, T37.44.9 · Size: ~80 · Files: `desktop/design/tokens`, generated CoxUI tokens, the views that used the nearest token, `DESIGN.md`
-Goal: A114, A119. The screen cards list mockup values with no token (so far: a 20 pt bold settings page title, a 12 pt semibold group title, a 26 pt onboarding title, a 980 pt small window). Each becomes a token in `desktop/design/tokens` from the mockup's value, is generated into CoxUI, and replaces the nearest token those views used meanwhile.
-Check: `just desktop-tokens` and `npm test` pass; the listed views use the new tokens; CoxUI snapshots re-recorded on purpose; the DESIGN.md token tables list them.
 
 #### T37.44.11 The running app matches the mockups end to end
 
