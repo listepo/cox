@@ -82,4 +82,3 @@
 - T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
 - T50.3. The volatile block shows the live permission mode
 - T50.5. `cox --plain` shows the mode after `/permissions`
-- T50.8. Cassette redaction removes an Anthropic `sk-ant-…` key whole

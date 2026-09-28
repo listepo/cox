@@ -28,9 +28,12 @@ pub fn redact_secrets(text: &str) -> String {
             continue;
         }
         if let Some(stripped) = rest.strip_prefix("sk-") {
+            // Anthropic (`sk-ant-api03-…`) and OpenAI project keys carry `-`
+            // and `_` in the body, as in `cox_sanitize::redact::scrub` (T50.7);
+            // that crate is off-limits here (`deps.rs` keeps this a leaf).
             let n = stripped
                 .bytes()
-                .take_while(u8::is_ascii_alphanumeric)
+                .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
                 .count();
             if n >= 8 {
                 out.push_str("«redacted»");
@@ -165,6 +168,12 @@ mod tests {
         assert!(!redacted.contains("sk-abcdefghijk"));
         assert!(!redacted.contains("Bearer "));
         assert!(redacted.contains("«redacted»"));
+    }
+
+    #[test]
+    fn cassette_redaction_removes_an_anthropic_key_whole() {
+        let line = "x-api-key: sk-ant-api03-R2D2_c3po-XyZ0123456789-abcDEF_ghiAA end";
+        assert_eq!(redact_secrets(line), "x-api-key: «redacted» end");
     }
 
     #[test]
