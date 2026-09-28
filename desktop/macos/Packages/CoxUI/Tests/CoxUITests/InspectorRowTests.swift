@@ -12,6 +12,7 @@ import Testing
   @Test(arguments: Variant.all) func changedFileRow(_ variant: Variant) throws {
     try check(ChangedFileSample(isSelected: true), variant, "selected")
     try check(ChangedFileList(), variant, "list")
+    try check(DeletedFileSample(), variant, "deleted")
   }
 
   @Test(arguments: Variant.all) func checkpointRow(_ variant: Variant) throws {

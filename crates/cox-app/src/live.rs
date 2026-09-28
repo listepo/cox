@@ -138,13 +138,22 @@ impl LiveSession {
     }
 
     /// What the inspector's Changes tab lists (T37.29.1): the blocks, the
-    /// checkpoint rows and, through git, the linked worktree.
+    /// checkpoint rows, the rollout's `write` inputs (T37.29.7) and, through
+    /// git, the linked worktree.
     pub async fn changes(&self) -> Result<Changes, AppError> {
-        let rows = self.app.workspace().store().checkpoint_rows(&self.id())?;
+        let store = self.app.workspace().store();
+        let rows = store.checkpoint_rows(&self.id())?;
+        let written = changes::written(&store.rollout_read(&self.id())?);
         let worktree = cox_tools::git::linked(&self.cwd).await;
         // Checkpoint paths are confined, so canonical.
         let cwd = std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone());
-        Ok(changes::build(&self.snapshot(), &rows, &cwd, worktree))
+        Ok(changes::build(
+            &self.snapshot(),
+            &rows,
+            &written,
+            &cwd,
+            worktree,
+        ))
     }
 
     /// What the inspector's Plan tab lists (T37.29.2): the todo list the

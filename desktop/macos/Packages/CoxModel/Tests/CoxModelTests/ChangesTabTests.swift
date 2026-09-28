@@ -11,7 +11,8 @@ private let changes = Changes(
   files: [
     ChangedFile(path: "src/retry.rs", change: .edited, added: 18, removed: 4, call: "c1", turn: 1),
     ChangedFile(
-      path: "tests/backoff.rs", change: .created, added: 0, removed: 0, call: "c2", turn: 1),
+      path: "tests/backoff.rs", change: .created, added: 12, removed: 0, call: "c2", turn: 1),
+    ChangedFile(path: "src/old.rs", change: .deleted, added: 0, removed: 30, call: "c3", turn: 1),
   ],
   checkpoints: [
     Checkpoint(
@@ -26,7 +27,7 @@ private let changes = Changes(
   let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []), changes: changes)
   let tab = try await SessionStore(session: session).changesTab()
   #expect(tab == ChangesTabState(changes))
-  #expect((tab.files.count, tab.checkpoints.count, tab.worktree.count) == (2, 1, 3))
+  #expect((tab.files.count, tab.checkpoints.count, tab.worktree.count) == (3, 1, 3))
 }
 
 @Test func theMappingFormatsTheRowsTheTabShows() {
@@ -34,7 +35,8 @@ private let changes = Changes(
   #expect(
     tab.files == [
       .init(path: "src/retry.rs", change: .edited, added: 18, removed: 4),
-      .init(path: "tests/backoff.rs", change: .created, added: 0, removed: 0),
+      .init(path: "tests/backoff.rs", change: .created, added: 12, removed: 0),
+      .init(path: "src/old.rs", change: .deleted, added: 0, removed: 30),
     ])
   #expect(
     tab.checkpoints == [.init(id: "1", label: "Turn 1 · before retry.rs and 1 more", time: "14:02")]

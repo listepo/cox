@@ -1,5 +1,5 @@
 // `ChangedFileRow` (DS§6.3 row `ChangedFileRow`, the inspector's Changes tab `.fr`): one file
-// the session changed — edited or created — with the lines it gained and lost and what you can
+// the session changed — edited, created or deleted — with the lines it gained and lost and what you can
 // do to it. Separate so the Changes tab and the review list draw a changed file the same way.
 
 import SwiftUI
@@ -9,7 +9,7 @@ import SwiftUI
 struct ChangedFileRow: View {
   /// How the session changed a file.
   enum Change: Sendable {
-    case edited, created
+    case edited, created, deleted
   }
 
   /// A changed file, as the core reports it.
@@ -52,14 +52,16 @@ extension ChangedFileRow.File {
 }
 
 extension ChangedFileRow.Change {
-  /// The DS§3.7 symbol: a pencil for an edit, a document for a new file.
+  /// The DS§3.7 symbol: a pencil for an edit, a document for a new file, a bin for a removed one.
   var symbol: String {
     switch self {
     case .edited: "pencil"
     case .created: "doc.text"
+    case .deleted: "trash"
     }
   }
 }
 
 #Preview("selected") { PreviewMatrix { ChangedFileSample(isSelected: true) } }
 #Preview("list") { PreviewMatrix { ChangedFileList() } }
+#Preview("deleted") { PreviewMatrix { DeletedFileSample() } }

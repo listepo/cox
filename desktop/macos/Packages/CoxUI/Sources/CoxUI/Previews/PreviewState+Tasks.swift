@@ -6,10 +6,12 @@ import SwiftUI
 
 extension PreviewState {
   static let taskItems: [TasksTab.Item] = [
-    .init(id: "task-1", label: "reviewer", tier: "cheap", state: .running),
-    .init(id: "task-2", label: "test-writer", tier: "code", state: .succeeded, cost: "$0.07"),
+    .init(id: "task-1", label: "reviewer", tier: "cheap", kind: .agent, state: .running),
     .init(
-      id: "task-3", label: "bash: cargo nextest run", tier: "cheap", state: .failed,
+      id: "task-2", label: "test-writer", tier: "code", kind: .agent, state: .succeeded,
+      cost: "$0.07"),
+    .init(
+      id: "task-3", label: "bash: cargo nextest run", tier: "cheap", kind: .shell, state: .failed,
       cost: "$0.00"),
   ]
 
