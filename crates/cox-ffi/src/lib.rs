@@ -25,7 +25,7 @@ pub mod types;
 
 pub use host::AppHost;
 pub use session::{SessionHandle, TerminalHandle};
-pub use types::OpenRequest;
+pub use types::{BrowserFailure, OpenRequest};
 
 uniffi::setup_scaffolding!();
 

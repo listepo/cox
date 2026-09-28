@@ -17,10 +17,11 @@ use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
 use cox_app::{
-    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, CostRow,
-    Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer,
-    MeterRow, MeterText, ModelChoice, Need, Project, SearchHit, SessionEntry, Setting, SettingKind,
-    SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
+    Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
+    ContextPart, CostRow, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked,
+    McpLogin, McpServer, MeterRow, MeterText, ModelChoice, Need, PageText, Project, SearchHit,
+    SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts,
+    TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -921,4 +922,39 @@ pub enum Level {
     Warn,
     Budget,
     Security,
+}
+
+/// T51.8: what the app's browser pane reports of its page.
+#[uniffi::remote(Record)]
+pub struct PageText {
+    pub title: String,
+    pub url: String,
+    pub text: String,
+}
+
+/// T51.8: why the Swift browser could not do what a tool asked. Local, not
+/// `cox_app::BrowserError` declared remote, because a foreign trait's error
+/// must also take UniFFI's unexpected-callback error, and that `From` may
+/// only be written for a type of this crate.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum BrowserFailure {
+    #[error("no page is open; call browser_open first")]
+    NoPage,
+    #[error("{message}")]
+    Page { message: String },
+}
+
+impl From<uniffi::UnexpectedUniFFICallbackError> for BrowserFailure {
+    fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Page { message: e.reason }
+    }
+}
+
+impl From<BrowserFailure> for BrowserError {
+    fn from(e: BrowserFailure) -> Self {
+        match e {
+            BrowserFailure::NoPage => Self::NoPage,
+            BrowserFailure::Page { message } => Self::Page(message),
+        }
+    }
 }

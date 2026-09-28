@@ -5,6 +5,7 @@
 
 import CoxClient
 import CoxFFIBindings
+import Foundation
 
 public final class HostBridge: AppHost {
   private let host: any PlatformHost
@@ -20,6 +21,44 @@ public final class HostBridge: AppHost {
   public func openUrl(url: String) { host.open(url) }
 
   public func secret(section: String) -> String? { host.secret(for: section) }
+
+  public func hasBrowser() -> Bool { host.hasBrowser }
+
+  public func browserLoad(url: String) async throws {
+    do throws(CoxClient.BrowserFailure) {
+      try await host.browserLoad(url)
+    } catch {
+      throw CoxFFIBindings.BrowserFailure(error)
+    }
+  }
+
+  public func browserText() async throws -> CoxFFIBindings.PageText {
+    do throws(CoxClient.BrowserFailure) {
+      let page = try await host.browserText()
+      return CoxFFIBindings.PageText(title: page.title, url: page.url, text: page.text)
+    } catch {
+      throw CoxFFIBindings.BrowserFailure(error)
+    }
+  }
+
+  public func browserSnapshot() async throws -> Data {
+    do throws(CoxClient.BrowserFailure) {
+      return Data(try await host.browserSnapshot())
+    } catch {
+      throw CoxFFIBindings.BrowserFailure(error)
+    }
+  }
+}
+
+extension CoxFFIBindings.BrowserFailure {
+  /// UniFFI lifts only its own error type back into Rust; any other would
+  /// arrive as an unexpected callback error.
+  init(_ failure: CoxClient.BrowserFailure) {
+    switch failure {
+    case .noPage: self = .NoPage
+    case .page(let message): self = .Page(message: message)
+    }
+  }
 }
 
 extension CoxClient.InboxItem {

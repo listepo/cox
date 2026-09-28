@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use cox_app::{BlockKind, InboxItem, Intent, TimelinePatch};
-use cox_ffi::{App, AppError, AppHost, OpenRequest, SessionHandle};
+use cox_app::{BlockKind, InboxItem, Intent, PageText, TimelinePatch};
+use cox_ffi::{App, AppError, AppHost, BrowserFailure, OpenRequest, SessionHandle};
 use cox_protocol::types::Decision;
 
 /// The Keychain as a map; remembers what it was asked and told.
@@ -27,6 +27,8 @@ pub struct MemoryHost {
     pub notes: Mutex<Vec<(InboxItem, u32)>>,
 }
 
+/// No browser pane: the recorded sessions have no `browser_*` tools.
+#[async_trait::async_trait]
 impl AppHost for MemoryHost {
     fn notify(&self, item: InboxItem, badge: u32) {
         self.notes
@@ -43,6 +45,18 @@ impl AppHost for MemoryHost {
             .unwrap_or_else(|e| e.into_inner())
             .push(section);
         found
+    }
+    fn has_browser(&self) -> bool {
+        false
+    }
+    async fn browser_load(&self, _: String) -> Result<(), BrowserFailure> {
+        Err(BrowserFailure::NoPage)
+    }
+    async fn browser_text(&self) -> Result<PageText, BrowserFailure> {
+        Err(BrowserFailure::NoPage)
+    }
+    async fn browser_snapshot(&self) -> Result<Vec<u8>, BrowserFailure> {
+        Err(BrowserFailure::NoPage)
     }
 }
 

@@ -47,3 +47,42 @@ final class RecordingHost: PlatformHost {
   #expect(host.opened.withLock { $0 } == ["https://example.com"])
   #expect(host.badges.withLock { $0 } == [0])
 }
+
+/// A browser pane showing one page; remembers what it was asked to load.
+final class PageHost: PlatformHost {
+  let loaded = Mutex<[String]>([])
+
+  func secret(for section: String) -> String? { nil }
+  func notify(_ note: HostNote) {}
+  func badge(_ count: Int) {}
+  func open(_ url: String) {}
+  var hasBrowser: Bool { true }
+  func browserLoad(_ url: String) async throws(CoxClient.BrowserFailure) {
+    loaded.withLock { $0.append(url) }
+  }
+  func browserText() async throws(CoxClient.BrowserFailure) -> CoxClient.PageText {
+    CoxClient.PageText(title: "Docs", url: "http://localhost:3000/", text: "hello")
+  }
+  func browserSnapshot() async throws(CoxClient.BrowserFailure) -> [UInt8] { throw .page("blank") }
+}
+
+@Test func theBridgeForwardsTheBrowserPane() async throws {
+  let host = PageHost()
+  let bridge = HostBridge(host)
+  #expect(bridge.hasBrowser())
+  try await bridge.browserLoad(url: "http://localhost:3000/")
+  #expect(host.loaded.withLock { $0 } == ["http://localhost:3000/"])
+  let page = try await bridge.browserText()
+  #expect(page.title == "Docs" && page.url == "http://localhost:3000/" && page.text == "hello")
+  await #expect(throws: CoxFFIBindings.BrowserFailure.self) {
+    try await bridge.browserSnapshot()
+  }
+}
+
+@Test func aHostWithoutAPaneOffersNoBrowser() async {
+  let bridge = HostBridge(RecordingHost())
+  #expect(!bridge.hasBrowser())
+  await #expect(throws: CoxFFIBindings.BrowserFailure.self) {
+    try await bridge.browserText()
+  }
+}

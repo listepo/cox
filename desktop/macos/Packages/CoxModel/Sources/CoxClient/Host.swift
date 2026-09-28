@@ -15,6 +15,43 @@ public protocol PlatformHost: Sendable {
   func badge(_ count: Int)
   /// An MCP server's login page or a link; the host decides what it opens.
   func open(_ url: String)
+  /// T51.8: whether there is a page the agent may drive (the browser
+  /// pane). Without one, sessions get no browser tools.
+  var hasBrowser: Bool { get }
+  /// Loads `url`, which Rust already checked is `http` or `https`.
+  func browserLoad(_ url: String) async throws(BrowserFailure)
+  /// The page's title, address and visible text.
+  func browserText() async throws(BrowserFailure) -> PageText
+  /// The visible page as PNG bytes.
+  func browserSnapshot() async throws(BrowserFailure) -> [UInt8]
+}
+
+/// A host with no browser pane: every host but the one that has it.
+extension PlatformHost {
+  public var hasBrowser: Bool { false }
+  public func browserLoad(_ url: String) async throws(BrowserFailure) { throw .noPage }
+  public func browserText() async throws(BrowserFailure) -> PageText { throw .noPage }
+  public func browserSnapshot() async throws(BrowserFailure) -> [UInt8] { throw .noPage }
+}
+
+/// What the browser pane reports of its page (T51.8).
+public struct PageText: Sendable, Equatable {
+  public var title: String
+  public var url: String
+  /// The page's visible text (`document.body.innerText`).
+  public var text: String
+
+  public init(title: String, url: String, text: String) {
+    (self.title, self.url, self.text) = (title, url, text)
+  }
+}
+
+/// Why the browser pane could not do what the agent asked.
+public enum BrowserFailure: Error, Sendable, Equatable {
+  /// Nothing is loaded yet.
+  case noPage
+  /// The page did not load, or could not be read or captured.
+  case page(String)
 }
 
 /// An inbox item reduced to what a notification shows.
