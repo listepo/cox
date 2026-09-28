@@ -43,9 +43,9 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
       CardAppearance(shared: shared) { TranscriptCard(block: block, approval: approval) }
     } thumbnail: { name in
       CardAppearance(shared: shared) { Thumbnail(name) }
-    } thinking: { open, toggle in
+    } thinking: { title, open, toggle in
       CardAppearance(shared: shared) {
-        ThinkingHeader("Thinking", isExpanded: open, action: toggle)
+        ThinkingHeader(title, isExpanded: open, action: toggle)
       }
     }
     text.crossBlockSelection = crossBlockSelection

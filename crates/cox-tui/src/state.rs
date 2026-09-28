@@ -2158,6 +2158,9 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 t.push_str(&text);
             }
         }
+        // The desktop's fold header shows the duration (A91); the TUI's
+        // thinking cell has no header to put it in.
+        Event::ThinkingDone { .. } => {}
         Event::ItemDone { item } => {
             if let Some(Cell::Assistant { done, .. } | Cell::Thinking { done, .. }) =
                 state.item_mut(item)

@@ -82,8 +82,8 @@ extension BlockKind {
   /// A patch that does not fit the block's kind changes nothing.
   mutating func append(_ more: String) {
     switch self {
-    case .thinking(let text):
-      self = .thinking(text: text + more)
+    case .thinking(let text, let durationMs):
+      self = .thinking(text: text + more, durationMs: durationMs)
     case .tool(
       let tool, let summary, let icon, let risk, let state, let tail, let archive, let diff,
       let durationMs):

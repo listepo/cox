@@ -23,7 +23,8 @@ public struct Block: Identifiable, Equatable, Sendable, Decodable {
 public enum BlockKind: Equatable, Sendable {
   case user(text: String, attachments: [String])
   case assistant(text: String, doc: StyledDoc)
-  case thinking(text: String)
+  /// `durationMs` is `nil` while the thought streams, then how long the model thought (A91).
+  case thinking(text: String, durationMs: UInt64? = nil)
   case tool(
     tool: String, summary: String, icon: Icon, risk: Risk, state: ToolState, tail: String,
     archive: ArchiveRef?, diff: DiffModel?, durationMs: UInt64)

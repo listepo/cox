@@ -41,7 +41,8 @@ extension BlockKind: Decodable {
     switch tag {
     case "user": self = try .user(text: keys("text"), attachments: keys("attachments"))
     case "assistant": self = try .assistant(text: keys("text"), doc: keys("doc"))
-    case "thinking": self = try .thinking(text: keys("text"))
+    case "thinking":
+      self = try .thinking(text: keys("text"), durationMs: keys.optional("duration_ms"))
     case "tool":
       self = try .tool(
         tool: keys("tool"), summary: keys("summary"), icon: keys("icon"), risk: keys("risk"),

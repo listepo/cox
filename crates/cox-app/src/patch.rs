@@ -52,8 +52,12 @@ pub enum BlockKind {
         text: String,
         doc: StyledDoc,
     },
+    /// `duration_ms` is `None` while the thought streams; its
+    /// `ThinkingDone` sets it, and the fold header reads "Thought for 12 s".
     Thinking {
         text: String,
+        #[serde(default)]
+        duration_ms: Option<u64>,
     },
     Tool {
         tool: String,
