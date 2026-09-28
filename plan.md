@@ -36,7 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.10 | todo | P2 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
-| T37.45.1 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.45.5 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
@@ -2850,12 +2849,6 @@ Check: `just desktop-tokens` and `npm test` pass; the listed views use the new t
 Depends: T37.44.9, T37.44.10 · Size: ~120 · Files: `desktop/macos/App`, CoxUI where a difference shows only in the app
 Goal: A114, A119. The built app is screenshotted on each screen it reaches with the fixtures (main, approval, composer, inspector, review, palette, settings, onboarding) and compared with the mockup renders by `npm run diff`, including 23-notification-and-dock; differences that CoxUI snapshots cannot show (window chrome, toolbar, real materials, dock badge, notification) are fixed. M2/M3 screens (24–27) are out of scope.
 Check: per screen, the app screenshot and its diff against the mockup; no unexplained layout or type region left; swift-format and swiftlint strict clean.
-
-#### T37.45.1 Settings: filter field in the sidebar
-
-Depends: — · Size: ~80 · Files: CoxUI `SettingsSidebar`/`SettingsScreen`, CoxModel `SettingsStore`
-Goal: A120. Mockups 18–20 put a search field at the top of the settings sidebar. Typing filters the pages and the fields on them by label and config key (the schema-generated field list), highlighting matches; Esc clears. Pure Swift over the settings the store already holds.
-Check: a CoxModel test that a query keeps only matching pages and fields; a CoxUI snapshot with a query; the sidebar diff against mockup 18 loses the offset region T37.44.5 reported.
 
 #### T37.45.3 Settings: permission rules editor and session grants
 
