@@ -43,7 +43,8 @@ public struct ChecklistRow: View {
         // One column for every symbol, so the titles line up down the checklist.
         .frame(width: Size.iconTile)
         .accessibilityLabel(status.name)
-      SettingLabel(title, detail: detail).frame(maxWidth: .infinity, alignment: .leading)
+      SettingLabel(title, detail: detail, namesItem: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
       if let action {
         Button(action, action: perform)
           .buttonStyle(CoxButtonStyle(status == .step ? .primary : .secondary, size: .small))

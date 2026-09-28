@@ -55,11 +55,14 @@ extension SettingRow {
 struct TitledSetting<Control: View>: View {
   let title: String
   let detail: String?
+  /// `SettingLabel.namesItem`.
+  var namesItem = false
   let control: Control
 
   var body: some View {
     HStack(spacing: Space.l) {
-      SettingLabel(title, detail: detail).frame(maxWidth: .infinity, alignment: .leading)
+      SettingLabel(title, detail: detail, namesItem: namesItem)
+        .frame(maxWidth: .infinity, alignment: .leading)
       control
     }
   }

@@ -34,14 +34,15 @@ public struct OnboardingScreen: View {
   public var body: some View {
     ShellPane(.window) {
       ScrollView {
-        VStack(alignment: .leading, spacing: Space.xl) {
-          SettingsGroupBox("Project") {
+        // The mockup's first-run window heads neither box: each row names itself.
+        VStack(alignment: .leading, spacing: Space.xxl) {
+          SettingsGroupBox(nil) {
             ChecklistRow(
               "Open a project", detail: "Choose a folder. A git repository is recommended.",
               status: .step, symbol: "folder", action: "Choose Folder…"
             ) { send(.chooseFolder) }
           }
-          SettingsGroupBox("Checks") {
+          SettingsGroupBox(nil) {
             ForEach(state.checks) { check in
               ChecklistRow(
                 check.title, detail: check.detail, status: check.status, action: check.fix?.title

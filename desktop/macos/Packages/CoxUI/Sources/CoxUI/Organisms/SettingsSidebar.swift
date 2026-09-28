@@ -69,7 +69,7 @@ public enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// `pages` as `InspectorRow`s led by their tiles on a `ShellPane(.sidebar)`, the selected one
-/// lifted, over the user file and the project file with the layer badge each one sets.
+/// lifted on `accent` in `text.onAccent`, over the user file and the project file with the layer badge each one sets.
 struct SettingsSidebar: View {
   let pages: [SettingsPage]
   let selection: SettingsPage
@@ -88,9 +88,14 @@ struct SettingsSidebar: View {
               Button {
                 select(page)
               } label: {
-                InspectorRow(glyph: page.tile, isSelected: page == selection, actions: []) {
-                  Text(page.title).frame(maxWidth: .infinity, alignment: .leading)
+                // The mockup's `.set-side .it.on`: the chosen page on `accent`, as macOS
+                // Settings marks it, rather than a session row's paler selection.
+                InspectorRow(glyph: page.tile, isSelected: false, actions: []) {
+                  Text(page.title)
+                    .foregroundStyle(Color(page == selection ? .textOnAccent : .textPrimary))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .rowSelection(page == selection, fill: .accent)
               }
               .buttonStyle(.plain)
             }

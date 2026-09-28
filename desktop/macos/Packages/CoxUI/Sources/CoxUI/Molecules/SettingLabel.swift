@@ -9,16 +9,21 @@ struct SettingLabel: View {
   let title: String
   /// What the setting does, `for new sessions`, or `nil`.
   let detail: String?
+  /// The row names a thing — a server, a check — rather than a setting: its title semibold, the
+  /// mockup's `<b>`.
+  let namesItem: Bool
 
-  init(_ title: String, detail: String? = nil) {
+  init(_ title: String, detail: String? = nil, namesItem: Bool = false) {
     self.title = title
     self.detail = detail
+    self.namesItem = namesItem
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Text(title)
         .textStyle(.body)
+        .fontWeight(namesItem ? .semibold : nil)
         .foregroundStyle(Color(.textPrimary))
       if let detail {
         Text(detail)
