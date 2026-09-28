@@ -265,10 +265,24 @@ extension TranscriptTextView {
   /// that line out. At launch the viewport settles over several passes, and one that swapped in
   /// a new element view for a line whose layout it kept left the view out: the card showed as a
   /// blank gap until the next full re-layout, such as a window resize (T37.22.10).
+  ///
+  /// The SDK declares this on `NSTextView` only from macOS 27, and the package targets 26
+  /// (T37.22.14). The protocol method is optional from macOS 12 and the controller asks its
+  /// delegate, the text view, whether it answers, so the override runs on 26 as well; there
+  /// `NSTextView` may have no method for `super` to reach.
   public override func textViewportLayoutControllerDidLayout(
     _ controller: NSTextViewportLayoutController
   ) {
-    super.textViewportLayoutControllerDidLayout(controller)
+    viewportDidLayout(controller, superLaysOut: Self.superLaysOut)
+  }
+
+  /// Whether `NSTextView` implements `textViewportLayoutControllerDidLayout` on this system.
+  static let superLaysOut = NSTextView.instancesRespond(
+    to: #selector(NSTextView.textViewportLayoutControllerDidLayout(_:)))
+
+  /// The pass after each viewport layout: `NSTextView`'s own where it has one, then `placeCards`.
+  func viewportDidLayout(_ controller: NSTextViewportLayoutController, superLaysOut: Bool) {
+    if superLaysOut { super.textViewportLayoutControllerDidLayout(controller) }
     placeCards()
   }
 
