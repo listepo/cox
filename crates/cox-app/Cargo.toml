@@ -19,6 +19,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # T37.9 (DT§4.5): the drain task, its wake-up and the per-frame pull.
 tokio = { workspace = true }
+# T37.10 (DT§4.2): the workspace reads sessions, search and lock holders
+# from cox.db, groups them by git root (cox-config's `find_git_root`), and
+# completes `/` from cox-ext's command files and `@` from cox-search's walk.
+cox-store = { path = "../cox-store", version = "0.1.2" }
+cox-config = { path = "../cox-config", version = "0.1.2" }
+cox-ext = { path = "../cox-ext", version = "0.1.2" }
+cox-search = { path = "../cox-search", version = "0.1.2" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and
@@ -29,3 +37,7 @@ async-trait = { workspace = true }
 insta = { workspace = true }
 # Paused time: a consumer that naps 2 s per pull stays a fast test.
 tokio = { workspace = true, features = ["test-util"] }
+# T37.10: intents run against a scratch COX_HOME; `/fork` goes through
+# cox-session's lineage, as the controller will.
+cox-session = { path = "../cox-session", version = "0.1.2", default-features = false }
+tempfile = { workspace = true }

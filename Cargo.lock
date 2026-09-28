@@ -960,13 +960,20 @@ name = "cox-app"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "cox-config",
  "cox-core",
+ "cox-ext",
  "cox-protocol",
  "cox-provider",
  "cox-render",
+ "cox-search",
+ "cox-session",
+ "cox-store",
  "insta",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
  "tokio",
 ]
 

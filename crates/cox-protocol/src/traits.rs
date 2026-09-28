@@ -446,6 +446,26 @@ pub struct Worktree {
     pub main: PathBuf,
 }
 
+/// One checkout of a repository as `Worktrees::list` reports it (T37.10):
+/// what the desktop's worktree list shows next to its prune action.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorktreeInfo {
+    /// The checkout's directory.
+    pub path: PathBuf,
+    /// The branch checked out there; `None` when detached.
+    pub branch: Option<String>,
+    /// The main checkout rather than a linked worktree.
+    pub main: bool,
+    /// The lock reason; `Some("")` when locked without one.
+    pub locked: Option<String>,
+    /// Git reports it prunable: its directory is gone.
+    pub stale: bool,
+    /// Its branch is already merged into the main checkout's `HEAD`.
+    pub merged: bool,
+    /// Bytes on disk under `path`, best effort.
+    pub bytes: u64,
+}
+
 /// Where the loop gets a worktree for `agent(isolation: "worktree")`
 /// (T27.3). Implemented by `cox-tools` (`git::GitWorktrees`), the crate
 /// allowed to run git; `cox-core` only decides which task gets one.
@@ -455,6 +475,14 @@ pub trait Worktrees: Send + Sync {
     /// per the workspace `worktrees` skill and locked for `owner`, or the
     /// existing one when it is already registered under a cox owner.
     async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError>;
+
+    /// Every checkout of the repository around `from`, main first (T37.10).
+    /// The default lists none: a source that only creates worktrees (a test
+    /// fake) has nothing to report.
+    async fn list(&self, from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
+        let _ = from;
+        Ok(Vec::new())
+    }
 }
 
 /// A hook source (`cox-ext`'s shell hooks, `cox-plugin`'s plugin hooks, or
