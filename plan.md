@@ -88,6 +88,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
+| T50.7 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
 
@@ -2708,6 +2709,22 @@ Check: a test drives the plain surface through `/permissions plan` and finds `pl
 Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
+
+### T50.7. `scrub` redacts Anthropic `sk-ant-…` keys in full
+
+Model: mid-tier · Status: in progress · Depends: — · Size: ~20 · Files: `crates/cox-sanitize/src/redact.rs`
+
+Goal: `cox_sanitize::redact::scrub` redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is alphanumeric only, so the scan stops at the first `-` after `sk-`: `ant` is below the 8-byte floor and the key leaks verbatim into rollouts, logs and headless output. Other `sk-` keys (`sk-abc…`, `sk-proj-…`) keep being redacted and short `sk-` words stay verbatim.
+
+Plan:
+1. `redact.rs`: let `prefixed` take the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_` (the Anthropic and OpenAI project-key alphabets), the other arms stay alphanumeric only.
+2. Regression test `scrub_redacts_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-sanitize` (the new test fails on current `main`), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
+
+Out of scope: the separate cassette redactor in `cox-provider-testkit/src/replay.rs`.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
