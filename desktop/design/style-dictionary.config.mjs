@@ -144,7 +144,10 @@ const swiftFormat = ({ dictionary }) => {
     const open = extension ? `public extension ${type}` : `public enum ${type}`;
     return `${open} {\n${lines.join('\n')}\n}\n`;
   });
-  return `// ${HEADER}\n\nimport SwiftUI\n\n${SWIFT_TYPES}\n${blocks.join('\n')}`;
+  // Generated layout is the generator's, not swift-format's (CI `desktop-macos-lint` runs
+  // `swift-format lint --strict`), so the file opts out as a whole; one token per line runs
+  // past SwiftLint's line length.
+  return `// swiftlint:disable line_length\n// ${HEADER}\n// swift-format-ignore-file\n\nimport SwiftUI\n\n${SWIFT_TYPES}\n${blocks.join('\n')}\n// swiftlint:enable line_length\n`;
 };
 
 const cssFormat = ({ dictionary }) => {
