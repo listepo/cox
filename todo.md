@@ -23,4 +23,3 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T38.1. OpenAI Chat wire emits `ToolUseEnd`
 - T38.2. Detached `bash` from an older turn is killed on quit
-- T38.3. `adaptive_thinking` from models.dev instead of a name rule
