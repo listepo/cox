@@ -3280,3 +3280,17 @@ Deviations: the new code is split into `app.rs` and `live.rs` (card names `app.r
 Check: Swift bindings regenerated in library mode before and after — `diff -r` byte-identical; `swiftc -emit-object` compiles them. `cargo nextest run -p cox-app -p cox-ffi` 41/41 (6 new in `cox-app/tests/app.rs`); `cargo nextest run -p cox --test deps` 9/9; clippy `-p cox-app -p cox-ffi` clean; fmt clean. Re-run after the merge into `p37-desktop`: same counts. Commit 9070d97.
 
 Not done: no real-binary run (the `cox` binary is unchanged; the tests run real sessions against a tempdir `COX_HOME`).
+
+#### T37.15 XCFramework script, `just` recipes, macOS CI job
+
+Depends: T37.14 · Size: ~120 · Files: `scripts/desktop/xcframework.sh`, `justfile`, `.github/workflows/ci.yml`
+Goal: `just desktop-xcframework` builds `CoxFFI.xcframework` for `aarch64-apple-darwin` only with `MACOSX_DEPLOYMENT_TARGET=26.0` (A67: no Intel, no universal slice); CI builds it and runs the Swift tests on an Apple Silicon macOS runner.
+Check: the recipe exits 0 on a clean checkout; `lipo -archs` on the library prints `arm64` only; the CI job is green.
+Status: done 2026-09-28
+Result: `scripts/desktop/xcframework.sh` builds the `cox-ffi` static library for `aarch64-apple-darwin` only (`--profile dist`, `MACOSX_DEPLOYMENT_TARGET=26.0`), generates the Swift bindings with library-mode `uniffi-bindgen` (built separately, so its code never lands in the app's library) and runs `xcodebuild -create-xcframework` into `desktop/macos/build/CoxFFI.xcframework` (header + `module.modulemap`) and `desktop/macos/build/bindings/cox_ffi.swift`. `just desktop-xcframework` runs it. `ci.yml` job `desktop-macos` on `macos-26` (GA arm64, Xcode 26.x, macOS 26 SDK; runner-images `macos-26-arm64-Readme.md`, image 20260907.0351.1, checked 2026-09-28) runs the script, fails unless `lipo -archs` prints only `arm64`, then `swift test` for each `desktop/macos/Packages/*/Package.swift`.
+
+Deviations: `.gitignore` gains `desktop/macos/build/` (a fourth file). No split debug info: the dist profile has none. `revert-on-failure` does not wait on the new job. CI calls the script directly (no `just` on the runner, as in `footprint`). Bindings go to `build/bindings/`; T37.16 decides their home in `CoxCore`.
+
+Check: `CARGO_BUILD_JOBS=4 just desktop-xcframework` exit 0 (staticlib 4m44s, bindgen 4m49s); `lipo -archs` → `arm64`; `otool` minimum OS 26.0 on our objects (`compiler_builtins` and a few prebuilt `std` objects say 11.0, which links fine); `actionlint` 1.7.12 with shellcheck clean; `shellcheck` 0.11.0 clean. Commit ca495b5. The CI job first runs on the PR.
+
+Not done: the static library is 393 MB (1250 members, fat LTO) — revisit when the app is packaged.

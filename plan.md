@@ -27,10 +27,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.15 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.16 | todo | P0 | 3 | 0% | |
-| T37.17 | todo | P0 | 3 | 0% | |
-| T37.18 | todo | P1 | 2 | 0% | |
+| T37.16 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.17 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.18 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.19 | todo | P0 | 4 | 0% | |
 | T37.20 | todo | P0 | 3 | 0% | |
 | T37.21 | todo | P0 | 4 | 0% | |
@@ -1078,12 +1077,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.15 XCFramework script, `just` recipes, macOS CI job
-
-Depends: T37.14 · Size: ~120 · Files: `scripts/desktop/xcframework.sh`, `justfile`, `.github/workflows/ci.yml`
-Goal: `just desktop-xcframework` builds `CoxFFI.xcframework` for `aarch64-apple-darwin` only with `MACOSX_DEPLOYMENT_TARGET=26.0` (A67: no Intel, no universal slice); CI builds it and runs the Swift tests on an Apple Silicon macOS runner.
-Check: the recipe exits 0 on a clean checkout; `lipo -archs` on the library prints `arm64` only; the CI job is green.
 
 #### T37.16 Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
 

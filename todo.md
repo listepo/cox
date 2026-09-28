@@ -21,7 +21,6 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.15. XCFramework script, `just` recipes, macOS CI job
 - T37.16. Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
 - T37.17. Token pipeline: DTCG → `Tokens.swift`, `Colors.xcassets`, `tokens.css`
 - T37.18. SwiftLint with the no-literal rules
