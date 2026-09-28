@@ -11,7 +11,8 @@ import Testing
 @Suite struct SegmentedTests {
   @Test(arguments: Variant.all) func selection(_ variant: Variant) throws {
     for mode in SegmentedSample.modes {
-      try assertControlSnapshot(SegmentedSample(selection: mode), variant, state: mode)
+      try assertCoxSnapshot(
+        SegmentedSample(selection: mode), variant, named: "\(mode).\(variant.name)")
     }
   }
 
@@ -36,10 +37,11 @@ import Testing
   /// between, how much of the pill covers each segment (0 bare … 1 selected).
   private func animate(reduceMotion: Bool) throws -> [[Double]] {
     let (first, last) = (SegmentedSample.modes[0], SegmentedSample.modes[2])
-    let control = ControlHost(
-      SegmentedSample(selection: first), .light, .solid, reduceMotion: reduceMotion)
+    let control = SnapshotHost(
+      SegmentedSample(selection: first), Variant(scheme: .light, material: .solid),
+      reduceMotion: reduceMotion)
     let before = try control.bitmap()
-    control.update(SegmentedSample(selection: last), .light, .solid, reduceMotion: reduceMotion)
+    control.update(SegmentedSample(selection: last))
     var frames: [NSBitmapImageRep] = []
     let end = Date().addingTimeInterval(Motion.durationBase * 2)
     while Date() < end {

@@ -10,8 +10,8 @@ import Testing
 @Suite struct CapsuleStyleSnapshotTests {
   @Test(arguments: CapsuleStyle.Emphasis.allCases, Variant.all)
   func capsule(_ emphasis: CapsuleStyle.Emphasis, _ variant: Variant) throws {
-    try StyleSnapshot.check(
-      CapsuleSample(emphasis: emphasis), named: "\(emphasis)-\(variant.name)", variant)
+    try assertCoxSnapshot(
+      CapsuleSample(emphasis: emphasis), variant, named: "\(emphasis)-\(variant.name)")
   }
 }
 

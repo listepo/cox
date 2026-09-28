@@ -12,14 +12,15 @@ import Testing
 @Suite struct ToggleSliderTests {
   @Test(arguments: Variant.all) func toggle(_ variant: Variant) throws {
     for isOn in [false, true] {
-      try assertControlSnapshot(ToggleSample(isOn: isOn), variant, state: isOn ? "on" : "off")
+      try assertCoxSnapshot(
+        ToggleSample(isOn: isOn), variant, named: "\(isOn ? "on" : "off").\(variant.name)")
     }
   }
 
   @Test(arguments: Variant.all) func slider(_ variant: Variant) throws {
     for value in [0, 0.5, 1] {
-      try assertControlSnapshot(
-        SliderSample(value: value), variant, state: "value\(Int(value * 100))")
+      try assertCoxSnapshot(
+        SliderSample(value: value), variant, named: "value\(Int(value * 100)).\(variant.name)")
     }
   }
 
@@ -34,7 +35,8 @@ import Testing
   }
 
   private func render(_ sample: SliderSample) throws -> Data? {
-    try ControlHost(sample, .light, .solid, reduceMotion: false).bitmap().tiffRepresentation
+    try SnapshotHost(sample, Variant(scheme: .light, material: .solid)).bitmap()
+      .tiffRepresentation
   }
 }
 

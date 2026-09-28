@@ -32,8 +32,8 @@ import Testing
     _ role: CoxButtonStyle.Role, _ size: ButtonSize, _ variant: Variant,
     testName: String = #function
   ) throws {
-    try StyleSnapshot.check(
-      ButtonSample(role: role, size: size), named: "\(size)-\(variant.name)", variant,
+    try assertCoxSnapshot(
+      ButtonSample(role: role, size: size), variant, named: "\(size)-\(variant.name)",
       testName: testName)
   }
 }

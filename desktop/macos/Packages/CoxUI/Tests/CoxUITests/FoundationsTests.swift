@@ -1,25 +1,10 @@
 // The Foundations' check (T37.19): one snapshot per modifier × light/dark × Solid/Frosted, the
 // Reduce Transparency override, and the appearance arithmetic the modifiers share.
 
-import AppKit
-import SnapshotTesting
 import SwiftUI
 import Testing
 
 @testable import CoxUI
-
-/// One cell of the snapshot matrix.
-struct Variant: CustomTestStringConvertible, Sendable {
-  let scheme: ColorScheme
-  let material: GlassMaterial
-
-  static let all = [ColorScheme.light, .dark].flatMap { scheme in
-    [GlassMaterial.solid, .frosted].map { Variant(scheme: scheme, material: $0) }
-  }
-
-  var name: String { "\(scheme == .dark ? "dark" : "light")-\(material.rawValue)" }
-  var testDescription: String { name }
-}
 
 @MainActor
 @Suite struct FoundationsSnapshotTests {
@@ -49,55 +34,17 @@ struct Variant: CustomTestStringConvertible, Sendable {
 
   @Test func reduceTransparencyRendersSolid() throws {
     for scheme in [ColorScheme.light, .dark] {
-      let forced = try render(
-        GlassPaneSample(), scheme, Appearance(material: .frosted), reduceTransparency: true)
-      let solid = try render(GlassPaneSample(), scheme, Appearance(material: .solid))
+      let forced = try SnapshotHost(
+        GlassPaneSample(), Variant(scheme: scheme, material: .frosted), reduceTransparency: true
+      ).bitmap()
+      let solid = try SnapshotHost(GlassPaneSample(), Variant(scheme: scheme, material: .solid))
+        .bitmap()
       #expect(forced.tiffRepresentation == solid.tiffRepresentation)
     }
   }
 
-  /// Anti-aliasing differs slightly between machines; a real change moves far more pixels.
-  private func check(
-    _ sample: some View, _ variant: Variant, testName: String = #function,
-    filePath: StaticString = #filePath, line: UInt = #line
-  ) throws {
-    let image = try render(sample, variant.scheme, Appearance(material: variant.material))
-    assertSnapshot(
-      of: image, as: .image(precision: 0.995, perceptualPrecision: 0.98), named: variant.name,
-      fileID: #fileID, file: filePath, testName: testName, line: line)
-  }
-
-  /// Draws through a window-hosted `NSHostingView` (`ImageRenderer` drops glass content) into
-  /// a bitmap of a fixed 2× scale, so the image does not depend on the machine's display.
-  private func render(
-    _ sample: some View, _ scheme: ColorScheme, _ appearance: Appearance,
-    reduceTransparency: Bool = false
-  ) throws -> NSImage {
-    let host = NSHostingView(
-      rootView:
-        sample
-        .padding(Space.xxl)
-        .background(Backdrop())
-        .environment(\.colorScheme, scheme)
-        .environment(\.coxAppearance, appearance)
-        .environment(\._accessibilityReduceTransparency, reduceTransparency))
-    host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
-    host.frame = CGRect(origin: .zero, size: host.fittingSize)
-    let window = NSWindow(
-      contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
-    window.contentView = host
-    host.layoutSubtreeIfNeeded()
-    let bitmap = try #require(
-      NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width) * 2,
-        pixelsHigh: Int(host.bounds.height) * 2, bitsPerSample: 8, samplesPerPixel: 4,
-        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
-        bitsPerPixel: 0))
-    bitmap.size = host.bounds.size
-    host.cacheDisplay(in: host.bounds, to: bitmap)
-    let image = NSImage(size: host.bounds.size)
-    image.addRepresentation(bitmap)
-    return image
+  private func check(_ sample: some View, _ variant: Variant, test: String = #function) throws {
+    try assertCoxSnapshot(sample, variant, named: variant.name, testName: test)
   }
 }
 
@@ -118,15 +65,6 @@ struct Variant: CustomTestStringConvertible, Sendable {
   @Test func windowOpacityDefaultsToTheMaterialToken() {
     #expect(Appearance(material: .glossy).windowOpacity == MaterialToken.glossyWindowOpacity)
     #expect(Appearance(material: .frosted).windowOpacity == MaterialToken.frostedWindowOpacity)
-  }
-}
-
-/// Colour behind every sample, so glass and shadows show what they do to it.
-private struct Backdrop: View {
-  var body: some View {
-    LinearGradient(
-      colors: [Color(.accent), Color(.statusPlan), Color(.statusSuccess)],
-      startPoint: .topLeading, endPoint: .bottomTrailing)
   }
 }
 
