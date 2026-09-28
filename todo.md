@@ -26,7 +26,6 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.44.3. Figma text renders with stand-in fonts
 - T37.44.11. The running app matches the mockups end to end
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 - T40.10. `cox-vendor models` fills `images` from models.dev

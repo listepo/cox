@@ -32,7 +32,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.3 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.44.11 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T40.10 | todo | P3 | 2 | 0% | |
@@ -1436,12 +1435,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.44.3 Figma text renders with stand-in fonts
-
-Depends: — · Size: ~40 · Files: `desktop/design/figma/variables.mjs`, `desktop/design/DESIGN.md`
-Goal: A125 (replaces A118). The Figma file shows every text layer: the generator's text styles and screen 28's layers use the stand-ins Figma renders (Inter for SF Pro, Roboto Mono for SF Mono) instead of SF Pro, which `use_figma` lists but does not render, and SF Mono, which it does not list. The HTML mockups, CoxUI and DESIGN.md keep SF Pro and SF Mono; DESIGN.md's fonts note says the Figma file uses stand-ins and why.
-Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
 
 #### T37.44.11 The running app matches the mockups end to end
 

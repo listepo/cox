@@ -7975,3 +7975,17 @@ Deviations: none.
 Check (2026-09-29): `doctor_reports_voice_model_missing`, `voice_disabled_passes_no_dictation` pass; `-p cox-voice` 10 passed; `deps` 10 passed; `cargo build -p cox` without the feature ok; clippy clean for voice, default and `--no-default-features`; fmt clean; doctor prints "voice: ✓ built; off" with the feature and "not built" without. Commit 07116b03.
 
 Not done: the manual push-to-talk run (needs a microphone and a downloaded model — the creator's step).
+
+#### T37.44.3 Figma text renders with stand-in fonts
+
+Depends: — · Size: ~40 · Files: `desktop/design/figma/variables.mjs`, `desktop/design/DESIGN.md`
+Goal: A125 (replaces A118). The Figma file shows every text layer: the generator's text styles and screen 28's layers use the stand-ins Figma renders (Inter for SF Pro, Roboto Mono for SF Mono) instead of SF Pro, which `use_figma` lists but does not render, and SF Mono, which it does not list. The HTML mockups, CoxUI and DESIGN.md keep SF Pro and SF Mono; DESIGN.md's fonts note says the Figma file uses stand-ins and why.
+Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
+Status: done 2026-09-29
+Result: A125 stand-ins in Figma: the generator's 25 text styles use Inter (for SF Pro Text) and Roboto Mono (for SF Mono), the 4 mono styles are no longer skipped, and the Type `family` variables hold the stand-in names with the code families in their descriptions. In file KA9a0R7n6P0QbwDn92e167, 81 SF Pro ranges across 79 layers on "Screen 28 · editable" switched to Inter at the same weight (size, line height, fills unchanged). DESIGN.md's Fonts note says Figma uses stand-ins and why; the product, CoxUI and the HTML renders keep SF.
+
+Deviations: the re-sync also created 65 variables added to the tokens since the last sync and updated 232; Figma stores `'` in descriptions as `&#39;` (its own behaviour, left).
+
+Check (2026-09-29): `npm test` in `desktop/design` 12/12 (new `every_text_style_uses_a_stand_in_style_figma_renders_mono_included`); `npm run figma -- --out` scripts run through `use_figma`: text 25, effect 6, `missingFonts` [], `unrenderedFonts` []; a digest of the 328 variables and styles in Figma matches the generator output; `hasMissingFont` 0 of 136 text layers; `get_screenshot` of 4:2 shows every label. Commit f0439723.
+
+Not done: screens other than 28 are still images (out of scope).
