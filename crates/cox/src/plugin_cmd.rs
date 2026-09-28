@@ -787,28 +787,9 @@ fn decide(
     Ok(true)
 }
 
-/// Builds and writes one `PluginGrant` row (PL§3): the single place the row
-/// is assembled, so `decide` (`cox plugin enable`/`install`) and the TUI's
-/// grant dialog (`crates/cox/src/session.rs`'s `write_plugin_grant`) share
-/// it instead of each holding its own `grant_put` literal (T33.8).
-pub(crate) fn write_grant(
-    store: &Store,
-    id: &str,
-    scope: &GrantScope,
-    digest: &str,
-    capabilities: Vec<String>,
-    source: serde_json::Value,
-) -> Result<(), cox_protocol::StoreError> {
-    store.grant_put(&PluginGrant {
-        plugin_id: id.to_string(),
-        scope: scope.clone(),
-        digest: digest.to_string(),
-        capabilities: serde_json::json!(capabilities),
-        enabled: true,
-        source,
-        decided_at: cox_store::now_rfc3339(),
-    })
-}
+/// The one place a `PluginGrant` row is assembled (PL§3, T33.8), shared
+/// with the TUI's grant dialog (`session.rs`'s `write_plugin_grant`).
+pub(crate) use cox_session::write_grant;
 
 /// `[y/N]` on stdin, same idiom as `session::offer_worktree_removal`.
 fn confirm(question: &str) -> bool {

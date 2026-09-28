@@ -896,10 +896,8 @@ checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 name = "cox"
 version = "0.1.2"
 dependencies = [
- "agent-client-protocol",
  "anyhow",
  "assert_cmd",
- "async-trait",
  "clap",
  "cox-acp",
  "cox-config",
@@ -913,6 +911,7 @@ dependencies = [
  "cox-protocol",
  "cox-provider",
  "cox-sanitize",
+ "cox-session",
  "cox-store",
  "cox-telemetry",
  "cox-tools",
@@ -930,7 +929,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tokio-util",
  "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "vt100",
@@ -1250,6 +1248,34 @@ dependencies = [
  "ignore",
  "nucleo",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cox-session"
+version = "0.1.2"
+dependencies = [
+ "agent-client-protocol",
+ "async-trait",
+ "cox-acp",
+ "cox-config",
+ "cox-core",
+ "cox-ext",
+ "cox-mcp",
+ "cox-models",
+ "cox-plugin",
+ "cox-plugin-api",
+ "cox-protocol",
+ "cox-provider",
+ "cox-sanitize",
+ "cox-store",
+ "cox-tools",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "wiremock",
 ]
 
 [[package]]

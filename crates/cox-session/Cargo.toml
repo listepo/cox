@@ -1,0 +1,63 @@
+[package]
+name = "cox-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# T37.1 (DT§4.2): session assembly — config to provider, tools, MCP,
+# skills, agents, hooks, plugins, checkpointer and worktrees — as a library
+# every surface shares. No clap, no anyhow, no printing: warnings come back
+# as data (`crates/cox/tests/deps.rs` holds the first two).
+
+[features]
+default = ["plugins"]
+# PL§12 falsifier 1: the WASM plugin host (extism, wasmtime) is optional;
+# `crates/cox`'s own `plugins` feature forwards here, so its slim build
+# still drops it.
+plugins = ["dep:cox-plugin", "dep:cox-plugin-api"]
+# Plugin and scripted-session fixtures for `crates/cox`'s own tests (a
+# dev-dependency feature), so both crates share one copy.
+test-util = []
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+cox-core = { path = "../cox-core", version = "0.1.2" }
+cox-config = { path = "../cox-config", version = "0.1.2" }
+cox-models = { path = "../cox-models", version = "0.1.2" }
+cox-provider = { path = "../cox-provider", version = "0.1.2" }
+cox-tools = { path = "../cox-tools", version = "0.1.2" }
+cox-mcp = { path = "../cox-mcp", version = "0.1.2" }
+cox-ext = { path = "../cox-ext", version = "0.1.2" }
+cox-store = { path = "../cox-store", version = "0.1.2" }
+# `with_client_tools` swaps in ACP client-backed tools (T11.1), and an
+# external agent in `acp` mode is driven through its client (T35.13).
+cox-acp = { path = "../cox-acp", version = "0.1.2" }
+# An external agent's stderr tail is shown only through the guard (T35.13).
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+cox-plugin = { path = "../cox-plugin", version = "0.1.2", optional = true }
+# A plugin's `[[mcp]]`/`[[external_agents]]` declarations are manifest
+# types; `cox-plugin` (the extism host) does not re-export them.
+cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2", optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+# `write_grant` stores a grant's capability list as JSON (T33.8).
+serde_json = { workspace = true }
+# `plugin_mcp` checks a plugin HTTP server's host against its `net` grant.
+reqwest = { workspace = true }
+# T35.13: the external-agent drivers implement `ExternalAgent`
+# (`#[async_trait]`, its `CancellationToken`) and hand the spawned CLI's
+# tokio stdio to the ACP client, which reads `futures` I/O (`compat`).
+async-trait = { workspace = true }
+tokio-util = { workspace = true, features = ["compat"] }
+# T35.13: the ACP driver sends `session/new`/`session/prompt` and frames
+# the CLI's stdio (`ByteStreams`); already `cox-acp`'s dependency.
+agent-client-protocol = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# The shared env-var lock (`temp_env`) for `open`'s `COX_PROVIDER` test.
+cox-config = { path = "../cox-config", version = "0.1.2", features = ["test-util"] }
+# T33.17: a plugin's merged `[[provider]]` section against a mock server.
+wiremock = { workspace = true }
