@@ -19,6 +19,27 @@ extension PreviewState {
   static let thinkingText =
     "The delay doubles with no ceiling, so attempt 16 waits over an hour. Cap it first, then "
     + "draw uniformly below the cap so clients that failed together retry apart."
+
+  /// One notice per kind, as the transcript shows them.
+  static func notice(_ kind: NoticeRow.Kind) -> String {
+    switch kind {
+    case .info:
+      "This session is driven by Claude Code over the Agent Client Protocol. Its own model, "
+        + "auth and billing apply."
+    case .warning:
+      "Bypass mode is on: tools run without asking. The shell still runs inside the sandbox."
+    case .error: "Anthropic returned 529 overloaded. Retrying in 4 s."
+    }
+  }
+
+  static let dividerLabel = "Compacted · 48.2k → 12.1k"
+
+  static let turnMeta = TurnMeta.Facts(
+    model: "Sonnet 5", tokens: "in 48.2k · out 3.1k", cache: "cache 91%", cost: "$0.44",
+    duration: "2 m 18 s", stopReason: "end turn")
+  /// A turn on the session's model with nothing cached.
+  static let turnMetaShort = TurnMeta.Facts(
+    tokens: "in 2.4k · out 310", cost: "$0.01", duration: "4 s")
 }
 
 /// A prompt, with or without attachments, in a narrow column so it wraps.
@@ -42,5 +63,23 @@ struct ThinkingDisclosureSample: View {
       PreviewState.thinkingSummary, text: PreviewState.thinkingText, isExpanded: isExpanded
     )
     .frame(width: Size.popoverWidth, alignment: .leading)
+  }
+}
+
+/// A notice of `kind` in a narrow column so it wraps.
+struct NoticeRowSample: View {
+  let kind: NoticeRow.Kind
+
+  var body: some View {
+    NoticeRow(PreviewState.notice(kind), kind: kind).frame(width: Size.popoverWidth)
+  }
+}
+
+/// The divider, labelled or bare, across a narrow column.
+struct TurnDividerSample: View {
+  let label: String?
+
+  var body: some View {
+    TurnDivider(label).frame(width: Size.popoverWidth)
   }
 }
