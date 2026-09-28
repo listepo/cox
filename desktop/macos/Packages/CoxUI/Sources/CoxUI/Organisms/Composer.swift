@@ -137,7 +137,7 @@ public struct Composer: View {
       ComposerEditor(state: state, send: send)
         .padding(.horizontal, Space.l)
         .padding(.top, Space.l)
-        .padding(.bottom, Space.xs)
+        .padding(.bottom, Space.s)
       if !state.attachments.isEmpty {
         ComposerAttachments(attachments: state.attachments) { send(.removeAttachment($0)) }
           .padding(.horizontal, Space.xl)
@@ -145,6 +145,7 @@ public struct Composer: View {
       }
       ComposerChipRow(state: state, send: send)
         .padding(.horizontal, Space.ml)
+        .padding(.top, Space.s)
         .padding(.bottom, Space.ml)
     }
     .frame(maxWidth: Size.readingWidth)
@@ -224,7 +225,7 @@ private struct ComposerEditor: View {
       if state.text.isEmpty {
         Text(state.isShell ? "Shell command" : "Ask cox…  @ files  / commands  ! shell")
           .textStyle(font)
-          .foregroundStyle(Color(.textTertiary))
+          .foregroundStyle(Color(.textPlaceholder))
           .padding(.horizontal, Space.xs)
           .allowsHitTesting(false)
           .accessibilityHidden(true)
@@ -327,8 +328,7 @@ private enum ComposerPaste {
   }
 }
 
-/// The mode, the model and think, shell mode and its switch, the mentioned files, the queue count and
-/// Send.
+/// The paperclip, the mode, the model and think, shell mode and its switch, mentions, the queue, Send.
 private struct ComposerChipRow: View {
   let state: Composer.State
   let send: (Composer.Intent) -> Void
@@ -338,9 +338,9 @@ private struct ComposerChipRow: View {
       Button {
         send(.attach)
       } label: {
-        Image(systemName: "paperclip").symbolStyle(.caption)
+        ComposerChip("", kind: .attachment)
       }
-      .buttonStyle(CoxButtonStyle(.plain, size: .small))
+      .buttonStyle(.plain)
       .help("Attach files")
       .accessibilityLabel("Attach files")
       if let mode = state.mode {
@@ -366,10 +366,10 @@ private struct ComposerChipRow: View {
       ForEach(state.mentions) { mention in
         ComposerChip(mention.label, kind: .mention) { send(.removeMention(mention.id)) }
       }
-      Spacer(minLength: Space.m)
       if state.queued > 0 {
         ComposerChip("Queued · \(state.queued)", kind: .queued)
       }
+      Spacer(minLength: Space.m)
       if let meter = state.meter {
         // Its figures never wrap; the chips before it truncate instead.
         TokenMeter(state: meter, isOpen: state.tokens != nil) { send(.toggleTokens) }.fixedSize()
@@ -379,7 +379,7 @@ private struct ComposerChipRow: View {
       } label: {
         Image(systemName: "arrow.up").symbolStyle(.body)
       }
-      .buttonStyle(CoxButtonStyle(.primary))
+      .buttonStyle(SendButtonStyle())
       .disabled(!state.canSend)
       .help(state.isRunning ? "Queue after this turn (⏎) · send now (⌘⏎)" : "Send (⏎)")
       .accessibilityLabel(state.isRunning ? "Queue" : "Send")

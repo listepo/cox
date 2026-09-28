@@ -6,7 +6,7 @@
 
 import SwiftUI
 
-/// The kind's symbol, the label in `font.caption`, an optional `KeyCap`, and an `xmark` that
+/// The kind's symbol if it has one, the label in `font.caption`, an optional `KeyCap`, and an `xmark` that
 /// removes the chip, on a readable capsule face lifted to e1 (DS§3.4). Mentions and commands
 /// change what the model sees, and queued prompts wait on it, so they are tinted `accent`; a
 /// mode takes its DS§3.1 colour, as `ModeSegmented` shows it; think is tinted `accent` while on.
@@ -43,11 +43,14 @@ struct ComposerChip: View {
     // The mockup's 5 px gap and 26 px height take the nearest steps, `Space.xs` and the small
     // button height.
     HStack(spacing: Space.xs) {
-      Image(systemName: kind.symbol).symbolStyle(.caption)
-      Text(label)
-        .textStyle(.caption)
-        .lineLimit(1)
-        .truncationMode(.middle)
+      if let symbol = kind.symbol { Image(systemName: symbol).symbolStyle(.caption) }
+      // An empty label leaves the symbol alone, the paperclip's chip.
+      if !label.isEmpty {
+        Text(label)
+          .textStyle(.caption)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
       if let shortcut { KeyCap(shortcut) }
       if let onRemove { RemoveButton(label: label, action: onRemove) }
     }
@@ -103,15 +106,15 @@ struct ThinkChip: View {
 }
 
 extension ComposerChip.Kind {
-  var symbol: String {
+  /// The mockup draws the mode and the queue as bare labels.
+  var symbol: String? {
     switch self {
     case .mention: "at"
     case .attachment: "paperclip"
     case .command: "bolt"
     case .shell: "terminal"
-    case .queued: "clock"
+    case .queued, .mode: nil
     case .model: "sparkle"
-    case .mode: "shield.lefthalf.filled"
     case .think: "brain"
     }
   }
