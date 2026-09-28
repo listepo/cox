@@ -3769,3 +3769,59 @@ Not done:
 - Binding ⌘⌥A moved to T37.22.2.
 - The dimmed look for disabled controls is in T37.19.5.
 - Disabling controls locked by a higher config layer moved to T37.22.3.
+
+#### T37.30.1 Settings screen
+
+Depends: T37.21.10 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
+Goal: the Settings screen from `CoxUI` molecules over `SettingsStore`: sidebar groups, a layer badge per value, a read-only project field that names the project file, secure fields for keys through `SecretStore`.
+Check: snapshot of a setting overridden by the project layer (read-only, badge names the layer); editing a user value round-trips through the fixture client.
+Status: done 2026-09-28
+Result:
+- `CoxUI/Screens/SettingsScreen.swift` is the Settings window.
+  - A `SettingsSidebar` lists the DT§5.7 pages from General to Advanced. At its foot are the user and project files, each with its layer badge.
+  - The main area has one `SettingsGroupBox` per config table of the selected page. Each setting is a `SettingRow` holding a LabeledToggle, LabeledSlider, CoxSegmented or the new `SettingField`.
+  - A provider's box adds a secure key field that never shows a stored key.
+  - The screen takes `SettingsScreenState` and emits `SettingsScreenIntent` (`select`, `set(key:, Edit)`, `storeKey`).
+- `CoxModel/SettingsFields.swift` adds `SettingsStore.tables(in:)`. Each field gets a title, a detail line and a `SettingControl`. The detail names the project file when the project layer sets the value; otherwise it is the schema's help text.
+- `SettingsStore.edit` types an edit by the field's kind.
+- The mapping lives in CoxModel so it is unit-tested without views; CoxUI depends on no other cox package.
+- DESIGN.md gains rows in §3.7, §6.3 (`SettingField`), §6.4 (`SettingsSidebar`, `SettingsGroupBox`) and §6.5.
+Deviations:
+- 8 source files instead of 1, because a screen may not style anything (DS§5).
+- The sidebar uses plain SF Symbols, not the mockup's coloured tiles (no colour tokens for them).
+- A slider sends an intent on every drag step, so the app coalesces the writes.
+- The 1× window-snapshot helper moved into the shared `Snapshot.swift`. It was merged with T37.26's move into one signature: `size:` defaults to the mockup window, plus `reduceTransparency:` and `named:`.
+Check:
+- CoxModel `swift test`: 15/15, twice, including `aProjectValueIsReadOnlyAndNamesTheProjectFile` and `editingAUserValueRoundTripsThroughTheFixtureClient`. Only the in-memory `SecretStore` is used.
+- CoxUI: `aSettingTheProjectOverridesIsReadOnlyWithItsLayer` × 4 cells. The full suite passed twice without re-recording, 97 tests.
+- After merging with T37.26: CoxUI 104 tests in 34 suites and CoxModel 19 tests pass, nothing re-recorded.
+- `swiftlint --strict` and `swift-format lint --strict` are clean.
+Not done:
+- Wiring into the app, in T37.22.3.
+- List-shaped and open-shaped values are shown read-only.
+- No Remove-key button yet (`SettingsStore.removeKey` exists).
+- The coloured page tiles wait on a creator decision (ideas.md).
+
+#### T37.30.2 The app's `AppHost` over the Keychain
+
+Depends: T37.22 · Size: ~150 · Files: `desktop/macos/Packages/CoxPlatform/…`, the app target
+Goal: a `CoxPlatform` `AppHost` whose `secret` reads `KeychainSecretStore` (and `notify`/`open_url` through AppKit), wired in the app target.
+Check: a test with the injected in-memory keychain answers `secret` for a stored provider key and `nil` otherwise; no test touches the real keychain (A49).
+Status: done 2026-09-28
+Result:
+- `CoxClient/Host.swift` adds the `PlatformHost` protocol and `HostNote`, an inbox item cut down to what a notification shows.
+- `CoxPlatform/Host.swift` adds `MacHost`:
+  - `secret` reads `KeychainSecretStore`; a Keychain error counts as no key.
+  - `notify` posts through `UNUserNotificationCenter` and sets the Dock badge.
+  - `open` goes through `NSWorkspace` for `http`/`https` only, because the URL comes from an MCP server or the model.
+- `CoxCore/HostBridge.swift` adapts `PlatformHost` to the generated `AppHost` and maps `InboxItem` to `HostNote`. The app passes `HostBridge(MacHost())` to `LiveCoreClient`.
+- With this layering CoxPlatform depends only on CoxModel and is tested without the XCFramework, and CoxCore never links AppKit (DT§4.4 bullet).
+Deviations: the card's app-target wiring is deferred to T37.22.3, since the app target comes with T37.32. Three packages are touched, with new files only, plus one doc bullet.
+Check:
+- `secretAnswersTheStoredProviderKeyAndNilOtherwise` passes with the injected in-memory Keychain. No test touches the real Keychain.
+- `swift test`: CoxPlatform 8/8, CoxModel 12/12, CoxCore 7/7. CoxCore ran against an XCFramework built once in the worktree and then deleted.
+- `swiftlint --strict` and `swift-format lint --strict` are clean.
+- After merging into `p37-desktop`, CoxModel's 19 tests pass.
+Not done:
+- `notify` and `open` are thin and untested: the notification centre needs an app bundle, and tests never post a notification or open a URL.
+- Notification authorization is asked on the first `notify`. There is no delegate yet for clicks or foreground display.

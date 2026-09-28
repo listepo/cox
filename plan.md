@@ -33,8 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27 | todo | P0 | 3 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | todo | P1 | 3 | 0% | |
-| T37.30.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.30.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.30.3 | todo | P1 | 3 | 0% | |
 | T37.30.4 | todo | P2 | 2 | 0% | |
 | T37.31 | todo | P2 | 2 | 0% | |
@@ -1120,18 +1118,6 @@ Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Inspe
 Goal: DT§5 inspector built from DS§6 rows.
 Check: snapshot per tab.
 
-#### T37.30.1 Settings screen
-
-Depends: T37.21.10 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
-Goal: the Settings screen from `CoxUI` molecules over `SettingsStore`: sidebar groups, a layer badge per value, a read-only project field that names the project file, secure fields for keys through `SecretStore`.
-Check: snapshot of a setting overridden by the project layer (read-only, badge names the layer); editing a user value round-trips through the fixture client.
-
-#### T37.30.2 The app's `AppHost` over the Keychain
-
-Depends: T37.22 · Size: ~150 · Files: `desktop/macos/Packages/CoxPlatform/…`, the app target
-Goal: a `CoxPlatform` `AppHost` whose `secret` reads `KeychainSecretStore` (and `notify`/`open_url` through AppKit), wired in the app target.
-Check: a test with the injected in-memory keychain answers `secret` for a stored provider key and `nil` otherwise; no test touches the real keychain (A49).
-
 #### T37.30.3 MCP login status and OAuth
 
 Depends: T37.30.1, T37.30.2 · Size: ~150 · Files: `crates/cox-app/…`, `…/Screens/SettingsScreen.swift`
@@ -1207,7 +1193,7 @@ Check: snapshot with bypass on; the toolbar tooltips name the shortcuts; DS§4 a
 #### T37.22.3 App window setup and the public CoxUI surface
 
 Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
-Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named.
+Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display.
 Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
 
 #### T37.42.1 `SessionStore` keeps the reply text current while it streams

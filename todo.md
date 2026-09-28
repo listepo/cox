@@ -27,8 +27,6 @@
 - T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
 - T37.28. Review pane and rewind timeline
 - T37.29. Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
-- T37.30.1. Settings screen
-- T37.30.2. The app's `AppHost` over the Keychain
 - T37.30.3. MCP login status and OAuth
 - T37.30.4. Show dropped project values
 - T37.31. Onboarding and doctor checklist
