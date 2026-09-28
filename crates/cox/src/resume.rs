@@ -45,7 +45,6 @@ mod tests {
 
     use cox_protocol::Event;
     use cox_protocol::ids::{SessionId, TurnId};
-    use cox_protocol::traits::Store as _;
     use cox_protocol::types::StopReason;
 
     use super::*;

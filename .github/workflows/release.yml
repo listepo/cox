@@ -107,11 +107,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.ref }}
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          components: rustfmt, clippy
-          # `cox-plugin-fixtures` builds the example plugin for wasm32 (PL§13, T33.28).
-          targets: wasm32-unknown-unknown
+      # The Rust mise.toml pins, checked like in ci.yml. `cox-plugin-fixtures`
+      # builds the example plugin for wasm32 (PL§13, T33.28); the target comes
+      # with the pin.
+      - uses: ./.github/actions/rust
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - name: Format
@@ -144,7 +143,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.ref }}
-      - uses: dtolnay/rust-toolchain@1.97.1
+      # The Rust mise.toml pins, checked like in ci.yml; scripts/package.sh
+      # adds the matrix target to it.
+      - uses: ./.github/actions/rust
       - uses: Swatinem/rust-cache@v2
 
       # The certificate goes into a keychain of its own, created for this job
