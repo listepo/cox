@@ -1553,7 +1553,7 @@ Every card in this phase: same four bullets as P39.
 
 ### T41.2. LSP stdio framing and JSON-RPC client
 
-- Model: sonnet
+- Model: Claude Code / opus-5.5 (card: sonnet)
 - Depends: -
 - Size: ~190
 - Priority: P1
@@ -1576,6 +1576,12 @@ Every card in this phase: same four bullets as P39.
   mise exec -- cargo nextest run -p cox-tools -E 'test(lsp::client)'
   ```
 - Done when: all five tests pass, with no `unwrap` outside the tests.
+- Plan:
+  1. Tests first in `crates/cox-tools/src/lsp/client.rs` against stub bodies: the five card tests plus the framing edge cases — `split_headers_and_back_to_back_messages_are_framed` (bytes written in small chunks across the header boundary, two messages in one write, header name case-insensitive, `Content-Type` ignored), `partial_body_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `responses_match_ids_out_of_order` (with an error response → `Server { code, message }`), `notifications_reach_the_stream`. Watch them fail.
+  2. `read_message` over `AsyncBufRead`: header lines read through a bounded `take` (a line with no `\n` within 8 KiB is `Parse`), clean EOF before a message is `Ok(None)`, EOF mid-message is `Closed`, a length over `MAX_MESSAGE_BYTES` is `TooLarge` before any body is read. `write_message` writes header, body and flushes.
+  3. `Client::start(reader, writer) -> (Client, UnboundedReceiver<Notification>)`: one reader task; responses resolve the pending oneshot by integer id; server requests are answered (`workspace/configuration` → one `null` per item, `window/workDoneProgress/create`, `client/(un)registerCapability`, `window/showMessageRequest` → `null`, anything else → `-32601`); on EOF or a framing error the pending map is closed and emptied, so waiters get `Closed`. The notification channel is unbounded on purpose: a bounded one would stall the reader, and with it every response, while the consumer awaits a request (T41.4 drains it). `request` removes its entry and sends `$/cancelRequest` on timeout; `params: null` is omitted from the wire. `Drop` aborts the reader task.
+  4. Wiring: `lsp/mod.rs` (`pub mod client;`), `pub mod lsp;` in `lib.rs`, `thiserror` (workspace dependency, already in §1 and `toolchain.md`) added to `crates/cox-tools/Cargo.toml` for `LspError`; the §1 `cox-tools` row gains the LSP client and `thiserror`. Four files because the crate had no `thiserror` yet.
+  5. Verify: the Check, then fmt, clippy `-D warnings`, workspace nextest.
 - Out of scope: process spawning and the document protocol (T41.4).
 
 ### T41.3. Diagnostic wire subset, file URIs and formatting
