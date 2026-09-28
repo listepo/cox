@@ -50,7 +50,11 @@ struct SettingsWindow: View {
       },
       userFile: settings.view?.userFile ?? "", projectFile: settings.view?.projectFile,
       logins: page == .mcp
-        ? settings.logins.map { .init(id: $0.server, detail: $0.detail, action: action($0)) } : [],
+        ? settings.logins.map {
+          .init(
+            id: $0.server, detail: $0.detail, action: action($0), status: Self.status($0.status),
+            log: $0.log)
+        } : [],
       dropped: SettingsGroup(rawValue: page.rawValue).map { group in
         settings.dropped(in: group).map { .init(id: $0.key, reason: $0.reason, change: $0.change) }
       } ?? [])
@@ -92,6 +96,16 @@ struct SettingsWindow: View {
 
   private func action(_ row: McpLoginRow) -> LoginAction? {
     row.action.map { $0 == .logIn ? .logIn : .logOut }
+  }
+
+  private static func status(_ status: McpStatus) -> ServerStatus {
+    switch status {
+    case .connected: .connected
+    case .needsLogin: .needsLogin
+    case .failed: .failed
+    case .disabled: .disabled
+    case .unknown: .unknown
+    }
   }
 
   private static func source(_ layer: Layer) -> SettingSource {

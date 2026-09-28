@@ -19,8 +19,8 @@ use cox_app::review::LineComment;
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, CostRow,
     Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer,
-    MeterRow, MeterText, ModelChoice, Need, Project, SearchHit, SessionEntry, Setting, SettingKind,
-    SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
+    McpStatus, MeterRow, MeterText, ModelChoice, Need, Project, SearchHit, SessionEntry, Setting,
+    SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -704,6 +704,17 @@ pub struct McpServer {
     pub name: String,
     pub source: String,
     pub login: McpLogin,
+    pub status: McpStatus,
+    pub log: Vec<String>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum McpStatus {
+    Connected,
+    NeedsLogin,
+    Failed,
+    Disabled,
+    Unknown,
 }
 
 #[uniffi::remote(Enum)]

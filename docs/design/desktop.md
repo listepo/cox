@@ -550,6 +550,10 @@ value that holds instead. Edits go through
 `cox-config`'s comment-preserving `set` (user file only). Provider keys are
 entered in a secure field and go to the Keychain through `SecretStore`. MCP:
 status per server, Log in / Log out; login opens the browser via `Host`.
+The status badge (connected, needs login, failed, disabled, unknown) comes
+from `cox-app`'s `mcp_status`: the config, the token store and what the
+last session opened in the project made of each server; Show log opens why
+a server failed, sanitized and capped in Rust (T37.45.4).
 
 ### 5.8 Onboarding and empty states
 

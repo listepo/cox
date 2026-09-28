@@ -16,15 +16,31 @@ public enum McpLogin: Equatable, Sendable {
   case unreadable(error: String)
 }
 
+/// A server's badge (T37.45.4), as `cox_app::McpStatus` decides it from the config, the token
+/// store and the last session opened in the project.
+public enum McpStatus: Equatable, Sendable {
+  case connected, needsLogin, failed, disabled
+  /// No session in the project has tried the server yet.
+  case unknown
+}
+
 public struct McpServer: Identifiable, Equatable, Sendable {
   public var name: String
   /// Where it is configured: `config`, `.mcp.json`, `~/.claude.json`.
   public var source: String
   public var login: McpLogin
+  public var status: McpStatus
+  /// Why it failed, already sanitized and capped by Rust; empty when nothing went wrong.
+  public var log: [String]
 
   public var id: String { name }
 
-  public init(name: String, source: String, login: McpLogin) {
-    (self.name, self.source, self.login) = (name, source, login)
+  public init(
+    name: String, source: String, login: McpLogin, status: McpStatus = .unknown,
+    log: [String] = []
+  ) {
+    (self.name, self.source, self.login, self.status, self.log) = (
+      name, source, login, status, log
+    )
   }
 }

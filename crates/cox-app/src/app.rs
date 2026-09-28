@@ -4,6 +4,7 @@
 //! Here rather than in `cox-ffi` (T37.39, A86) so the FFI only forwards and
 //! this logic is tested in Rust once, without a foreign language.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -17,8 +18,14 @@ use cox_store::lock::Holder;
 
 use crate::live::LiveSession;
 use crate::mcp_login::{LoginError, McpAuth};
+use crate::mcp_status::McpRun;
 use crate::{Activity, Inbox, InboxItem, IntentError, SettingsError, SettingsView};
 use crate::{Workspace, WorkspaceError};
+
+/// The project `cwd` is in, as MCP discovery finds it: its git root.
+fn project_of(cwd: &Path) -> PathBuf {
+    cox_config::load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())
+}
 
 /// DT§4.8: how long the login shell may take before its env is skipped.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -100,6 +107,9 @@ pub struct App {
     inbox: Mutex<Inbox>,
     workspace: Workspace,
     mcp: McpAuth,
+    /// What the last session opened in each project made of its MCP
+    /// servers, by project root (T37.45.4).
+    mcp_runs: Mutex<HashMap<PathBuf, McpRun>>,
     /// Woken when a session here changes what the session list shows.
     listed: tokio::sync::Notify,
 }
@@ -125,6 +135,7 @@ impl App {
             inbox: Mutex::default(),
             workspace,
             mcp,
+            mcp_runs: Mutex::default(),
             listed: tokio::sync::Notify::new(),
         }))
     }
@@ -214,7 +225,9 @@ impl App {
         let user = self.user_config();
         let loaded = crate::settings::load(&user, cwd)?;
         let mut view = crate::settings::view_of(&loaded, &user, cwd)?;
-        view.mcp = crate::mcp_login::servers(&loaded.config, cwd, &*self.mcp.secrets).await;
+        let run = self.mcp_run(cwd);
+        view.mcp =
+            crate::mcp_login::servers(&loaded.config, cwd, &*self.mcp.secrets, run.as_ref()).await;
         Ok(view)
     }
 
@@ -249,6 +262,18 @@ impl App {
     /// This home's `config.toml`, what sessions and Settings both read.
     pub(crate) fn user_config(&self) -> PathBuf {
         self.home.join("config.toml")
+    }
+
+    /// Keeps `run` as the MCP status of the project `cwd` is in, replacing
+    /// the one an earlier session there left.
+    pub(crate) fn record_mcp(&self, cwd: &Path, run: McpRun) {
+        let mut runs = self.mcp_runs.lock().unwrap_or_else(PoisonError::into_inner);
+        runs.insert(project_of(cwd), run);
+    }
+
+    fn mcp_run(&self, cwd: &Path) -> Option<McpRun> {
+        let runs = self.mcp_runs.lock().unwrap_or_else(PoisonError::into_inner);
+        runs.get(&project_of(cwd)).cloned()
     }
 
     fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {
