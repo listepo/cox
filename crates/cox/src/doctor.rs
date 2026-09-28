@@ -760,7 +760,7 @@ fn check_plugins_with(
     // Granted plugins' `[[models]]` feed the catalog so a price or field
     // conflict with the built-in table (T33.16) shows up per plugin below;
     // `check_catalog_prices` still passes `&[]` for the top-level catalog
-    // check until session.rs keeps loaded manifests around to share (that
+    // check until `cox-session` keeps loaded manifests around to share (that
     // wiring is T33.16's own "Left").
     let mut granted: Vec<(&str, &cox_plugin_api::PluginManifest)> = Vec::new();
     for p in &found.plugins {

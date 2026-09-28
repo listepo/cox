@@ -243,7 +243,7 @@ pub struct JevProvider {
     /// model catalog (`cox_models::Catalog`, merged with `[providers.
     /// typesafe].models`) for `model`, not looked up here — same
     /// "resolve at construction" shape as `AnthropicProvider::max_context`.
-    /// `backend_for_with` in `crates/cox/src/session.rs` does the lookup
+    /// `backend_for_with` in `crates/cox-session/src/provider.rs` does the lookup
     /// and falls back to 128 000 — today's literal — when the catalog has
     /// no row for the configured model (expected: Jev/TypeSafe models have
     /// no models.dev counterpart, so only an explicit `[providers.

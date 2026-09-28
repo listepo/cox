@@ -454,7 +454,7 @@ pub struct OpenAiChatProvider {
 impl OpenAiChatProvider {
     /// Builds a client for any `api = "chat"` section — native `local` and
     /// every Type-2 compatible section alike (T30.23: `openai_shaped` in
-    /// `crates/cox/src/session.rs` is the one production caller for both).
+    /// `crates/cox-session/src/provider.rs` is the one production caller for both).
     /// `api_key` is already resolved by the caller (`None` means no
     /// `Authorization` header at all — most local/self-hosted gateways
     /// need none).
