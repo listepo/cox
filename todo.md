@@ -21,16 +21,12 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.15. Per-level transcript heading sizes
-- T37.23.16. Theme colours for syntax runs in edit cards
 - T37.23.17. A stronger quote bar from its own token
 - T37.23.18. Edit and resend rewinds the conversation
-- T37.25.1. Core emits the context window and its split
 - T37.25.2. Context split in the desktop token popover
 - T37.25.3. Context split in the TUI
-- T37.24.7. Composer status chips
-- T37.27.8. One app-local key monitor for the composer and the decision bar
+- T37.24.10. Think toggle in the composer
 - T37.28.2. Review pane: files by turn and their diff
 - T37.28.3. Revert one file to before turn N
 - T37.28.4. Line comments sent to the agent
