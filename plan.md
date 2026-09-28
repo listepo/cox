@@ -587,7 +587,8 @@ The engine is pure: `decide(&self, call, mode, policy, grants) -> Decision`. Rul
 ```
  ┌ system[0]  tool specs, non-deferred, sorted by name, canonical JSON        ┐ byte-stable for the session
  │ system[1]  cox system prompt (versioned string, no date, no cwd)           │  cache breakpoint 1 (after system[2])
- │ system[2]  instruction files: AGENTS.md/CLAUDE.md chain, skills index      ┘
+ │ system[2]  instruction files: AGENTS.md/CLAUDE.md chain, skills index,     ┘
+ │            repo map last (A74, off by default)
  │ system[3]  volatile: date, cwd, git branch, memory index, permission mode      no cache (changes daily / per turn)
  │ messages   [Summary item if compacted]
  │            history … (older tool results microcompacted to pointers)         cache breakpoint 2 = end of previous turn
@@ -595,7 +596,7 @@ The engine is pure: `decide(&self, call, mode, policy, grants) -> Decision`. Rul
  └
 ```
 
-Invariants: bytes of `system[0..=2]` are identical across all calls of a session unless the user changes instruction files or tools are discovered via `tool_search` (discovered tools are appended to `system[0]`, which invalidates breakpoint 1 once; `Notice` explains it). Anthropic allows 4 breakpoints; cox uses 3 so a fourth is free for experiments. OpenAI providers ignore breakpoints (automatic prefix caching) but still benefit from the stable order. `Request.cache_breakpoints` are indices; the Anthropic translator turns them into `cache_control: {"type": "ephemeral", "ttl": …}`.
+Invariants: bytes of `system[0..=2]` are identical across all calls of a session unless the user changes instruction files, tools are discovered via `tool_search` (discovered tools are appended to `system[0]`, which invalidates breakpoint 1 once; `Notice` explains it), a `/repomap refresh` changes the map's bytes (idle only, announced by a `Notice`, recorded by `Event::RepoMapBuilt`, attributed by `cache_diag`; identical bytes change nothing), or compaction rebuilds the map on the prefix restart it already causes (A74). Anthropic allows 4 breakpoints; cox uses 3 so a fourth is free for experiments. OpenAI providers ignore breakpoints (automatic prefix caching) but still benefit from the stable order. `Request.cache_breakpoints` are indices; the Anthropic translator turns them into `cache_control: {"type": "ephemeral", "ttl": …}`.
 
 Token accounting per call writes `context_tokens` (input + cache read + cache write) to the ledger; `context-token-turns` for a session is the sum. T8.5 measures each D6 mechanism by toggling it and replaying recorded sessions.
 
