@@ -10,7 +10,7 @@ import Testing
 @Suite struct ComposerMoleculeSnapshotTests {
   @Test(arguments: Variant.all) func composerChip(_ variant: Variant) throws {
     for kind in ComposerChip.Kind.allCases {
-      try check(ComposerChipSample(kind: kind), variant, "\(kind)")
+      try check(ComposerChipSample(kind: kind), variant, kind.name)
     }
     try check(ComposerChipSample.shortcut, variant, "shortcut")
   }
@@ -23,5 +23,12 @@ import Testing
     try assertCoxSnapshot(
       PreviewPane { molecule.fixedSize() }, variant, named: "\(look).\(variant.name)",
       testName: test)
+  }
+}
+
+extension ComposerChip.Kind {
+  /// The snapshot's name: the case, and a mode's mode.
+  fileprivate var name: String {
+    if case .mode(let mode) = self { "mode-\(mode)" } else { "\(self)" }
   }
 }

@@ -31,6 +31,8 @@ public struct Attachment: Equatable, Sendable {
   }
 }
 
-public enum PermissionMode: Equatable, Sendable { case `default`, plan, auto, bypass }
+public enum PermissionMode: String, Equatable, Sendable, Decodable {
+  case `default`, plan, auto, bypass
+}
 
-public enum Effort: Equatable, Sendable { case low, medium, high, xhigh }
+public enum Effort: String, Equatable, Sendable, Decodable { case low, medium, high, xhigh }

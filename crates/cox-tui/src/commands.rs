@@ -473,14 +473,8 @@ fn mode_named(s: &str) -> Option<PermissionMode> {
     }
 }
 
-/// `Shift+Tab`: default → plan → auto → default (§1.13).
-pub fn next_mode(mode: PermissionMode) -> PermissionMode {
-    match mode {
-        PermissionMode::Default => PermissionMode::Plan,
-        PermissionMode::Plan => PermissionMode::Auto,
-        PermissionMode::Auto | PermissionMode::Bypass => PermissionMode::Default,
-    }
-}
+/// `Shift+Tab`'s cycle, shared with the desktop composer (T37.24.7).
+pub use cox_core::permission::next_mode;
 
 /// `/autocompact`'s line: the threshold and the config layer that set it —
 /// `source` is `cox config show --sources`' `source_of` layer name.

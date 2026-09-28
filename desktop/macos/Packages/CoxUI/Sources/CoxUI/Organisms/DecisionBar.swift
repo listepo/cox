@@ -116,8 +116,7 @@ public struct DecisionBar: View {
   /// ⌘⏎ (or ⌘ with the keypad's Enter) allows, ⌘⌫ denies; any other key goes on. A held key's
   /// repeats are swallowed rather than sent: one press decides once.
   private func take(_ event: NSEvent) -> Bool {
-    guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
-    else { return false }
+    guard WindowKeys.holds(event, only: .command) else { return false }
     let decision: ApprovalCard.Action? =
       switch event.charactersIgnoringModifiers {
       case "\r", "\u{3}": .allow
@@ -127,44 +126,6 @@ public struct DecisionBar: View {
     guard let decision else { return false }
     if !event.isARepeat { choose(.decide(decision)) }
     return true
-  }
-}
-
-/// Keys this view's window receives, seen before its first responder and the menus: an
-/// app-local event monitor, because the composer's editor has focus and claims ⌘⏎ (send now)
-/// and ⌘⌫ (delete to the line's start) before a view's shortcut would see them. `handle` says
-/// whether it took the key; `nil` lets every key go on.
-struct WindowKeys: NSViewRepresentable {
-  let handle: ((NSEvent) -> Bool)?
-
-  func makeNSView(context: Context) -> Monitor { Monitor() }
-
-  func updateNSView(_ view: Monitor, context: Context) { view.handle = handle }
-
-  final class Monitor: NSView {
-    var handle: ((NSEvent) -> Bool)?
-    private var monitor: Any?
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidMoveToWindow() {
-      super.viewDidMoveToWindow()
-      stop()
-      guard window != nil else { return }
-      monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-        guard let self, event.window === self.window, self.handle?(event) == true else {
-          return event
-        }
-        return nil
-      }
-    }
-
-    isolated deinit { stop() }
-
-    private func stop() {
-      if let monitor { NSEvent.removeMonitor(monitor) }
-      monitor = nil
-    }
   }
 }
 

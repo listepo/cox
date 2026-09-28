@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use cox_protocol::ids::{CallId, TaskId};
 use cox_protocol::types::{
-    ArchiveRef, CompactReason, DecidedBy, Decision, Level, ModelId, Risk, Source, StopReason, Tier,
-    Usage, Why,
+    ArchiveRef, CompactReason, DecidedBy, Decision, Effort, Level, ModelId, PermissionMode, Risk,
+    Source, StopReason, Tier, Usage, Why,
 };
 use cox_render::diffmodel::DiffModel;
 use cox_render::doc::{Block as DocBlock, StyledDoc};
@@ -198,11 +198,23 @@ pub enum TimelinePatch {
     },
 }
 
-/// What the composer shows about the session, not about any one block.
+/// What the composer shows about the session, not about any one block
+/// (`crate::status` folds it). `None` fields are not known yet.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     /// Turns queued behind the running one that have not started yet.
     pub queued: u32,
+    /// The permission mode in force.
+    pub mode: Option<PermissionMode>,
+    /// The mode ⇧⇥ asks for (`cox_permission::next_mode`), decided here so
+    /// the app only sends it back as `Intent::SetMode`.
+    pub next_mode: Option<PermissionMode>,
+    /// The model the main turn runs on: the configured `code` tier's, then
+    /// whatever the latest main turn ran on or `/model` switched to.
+    pub model: Option<ModelId>,
+    /// The effort that model runs at: the `/effort` override, else the
+    /// `code` tier's configured effort.
+    pub effort: Option<Effort>,
 }
 
 /// The last `TAIL_LINES` lines of `text`, a trailing newline kept so the

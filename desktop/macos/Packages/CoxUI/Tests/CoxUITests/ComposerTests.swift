@@ -1,6 +1,7 @@
 // The `Composer` organism's and `CompletionList`'s check (T37.24, DS§6.3–§6.4): a snapshot per
 // state × light/dark × Solid/Frosted — empty, a file mentioned with more files offered,
-// commands offered, a shell line with a prompt queued, and an image and a file attached.
+// commands offered, a shell line with a prompt queued, an image and a file attached, and the
+// mode and model chips (T37.24.7).
 
 import SwiftUI
 import Testing
@@ -13,7 +14,7 @@ import Testing
     let states = [
       ("empty", PreviewState.composerEmpty), ("mention", PreviewState.composerMention),
       ("commands", PreviewState.composerCommands), ("shell-queued", PreviewState.composerShell),
-      ("attachments", PreviewState.composerAttachments),
+      ("attachments", PreviewState.composerAttachments), ("status", PreviewState.composerStatus),
     ]
     for (look, state) in states {
       try assertCoxSnapshot(

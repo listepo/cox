@@ -1,17 +1,22 @@
 // `ComposerChip` (DS§6.3 row `ComposerChip`, the mockup's `.chip` and `.chip.blue`): one thing
 // the next message carries besides its text — an @-mentioned file, an attachment, a slash
-// command or mode, shell mode, the prompts queued behind the running turn — with a way to take
-// it back out. Separate so the composer shows everything
+// command, shell mode, the prompts queued behind the running turn, the permission mode and the
+// model it runs under — with a way to take it back out. Separate so the composer shows everything
 // it will send as the same small lifted pill.
 
 import SwiftUI
 
 /// The kind's symbol, the label in `font.caption`, an optional `KeyCap`, and an `xmark` that
 /// removes the chip, on a readable capsule face lifted to e1 (DS§3.4). Mentions and commands
-/// change what the model sees, and queued prompts wait on it, so they are tinted `accent`.
+/// change what the model sees, and queued prompts wait on it, so they are tinted `accent`; a
+/// mode takes its DS§3.1 colour, as `ModeSegmented` shows it.
 struct ComposerChip: View {
-  enum Kind: CaseIterable, Sendable {
-    case mention, attachment, command, shell, queued
+  enum Kind: Equatable, Sendable, CaseIterable {
+    case mention, attachment, command, shell, queued, model
+    case mode(SessionMode)
+
+    static let allCases: [Kind] =
+      [.mention, .attachment, .command, .shell, .queued, .model] + SessionMode.allCases.map(mode)
   }
 
   let label: String
@@ -82,21 +87,26 @@ extension ComposerChip.Kind {
     case .command: "bolt"
     case .shell: "terminal"
     case .queued: "clock"
+    case .model: "sparkle"
+    case .mode: "shield.lefthalf.filled"
     }
   }
 
   var foreground: Color {
     switch self {
-    case .mention, .command, .queued: Color(.accent)
-    case .attachment, .shell: Color(.textSecondary)
+    case .mention, .command, .queued, .mode(.auto): Color(.accent)
+    case .attachment, .shell, .model, .mode(.ask): Color(.textSecondary)
+    case .mode(.plan): Color(.statusPlan)
+    case .mode(.bypass): Color(.statusDanger)
     }
   }
 
   /// The mockup's `.chip.blue` tint over the capsule face.
   var tint: Color {
     switch self {
-    case .mention, .command, .queued: Color(.accentSoft)
-    case .attachment, .shell: .clear
+    case .mention, .command, .queued, .mode(.auto): Color(.accentSoft)
+    case .mode(.bypass): Color(.statusDangerSoft)
+    case .attachment, .shell, .model, .mode(.ask), .mode(.plan): .clear
     }
   }
 }

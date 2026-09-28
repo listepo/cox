@@ -1,8 +1,8 @@
 // `SessionComposer` (DT§5.3, DS§6.4 row `Composer`): CoxUI's `Composer` over a session's
-// `ComposerStore` — the store's draft and rows, and the session's token meter, copied into the
-// organism's value, and each of its intents handed to the store. Here, beside `TranscriptView`,
-// because this package is where CoxUI and CoxModel meet; CoxUI stays free of the stores and the
-// store free of views.
+// `ComposerStore` — the store's draft and rows, and the session's token meter, mode and model,
+// copied into the organism's value, and each of its intents handed to the store. Here, beside
+// `TranscriptView`, because this package is where CoxUI and CoxModel meet; CoxUI stays free of
+// the stores and the store free of views.
 
 import CoxClient
 import CoxModel
@@ -84,6 +84,8 @@ public struct SessionComposer: View {
     state.queued = store.queued
     state.isRecalling = store.isRecalling
     state.failure = store.failure
+    state.mode = store.mode.map(SessionMode.init)
+    state.model = store.model
     if let usage = store.session.usage {
       state.meter = TokenMeter.State(usage, isRunning: store.isRunning)
       state.tokens = isTokensOpen ? TokenPopover.State(usage, isRunning: store.isRunning) : nil
@@ -100,6 +102,7 @@ public struct SessionComposer: View {
     case .removeAttachment(let id): if let index = Int(id) { store.removeAttachment(at: index) }
     case .recall(let step): store.recall(step)
     case .select(let range): store.select(range)
+    case .cycleMode: Task { await store.cycleMode() }
     default: draft(intent)
     }
   }
@@ -117,6 +120,18 @@ public struct SessionComposer: View {
     case .leaveShell: store.leaveShell()
     case .shareOutput(let share): store.shareOutput = share
     default: break
+    }
+  }
+}
+
+extension SessionMode {
+  /// The core's mode as the composer names it: `default` is Ask.
+  init(_ mode: PermissionMode) {
+    switch mode {
+    case .default: self = .ask
+    case .plan: self = .plan
+    case .auto: self = .auto
+    case .bypass: self = .bypass
     }
   }
 }

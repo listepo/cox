@@ -211,7 +211,7 @@ enum TimelinePatch {
   AppendText { id: BlockId, text: String }      // thinking, tool output tail
   DocTail { id: BlockId, from: u32, blocks: Vec<DocBlock> }  // markdown: closed blocks are frozen, only the tail is re-sent
   Remove { id: BlockId }
-  Status { status: Status }                     // beside the list: `queued`, the turns waiting behind the running one (T37.24.8); a queue keeps only the latest
+  Status { status: Status }                     // beside the list: `queued`, the turns waiting behind the running one (T37.24.8); `mode`, the `next_mode` ⇧⇥ asks for, and the main turn's `model` and `effort`, seeded from config and kept by `StateChanged`/`TurnStarted`/`ModelSwitched` (T37.24.7); a queue keeps only the latest
   Usage { usage: UsageView }                    // token meter (DS§7): ledger totals, tok/s, TTFT, and `text` (MeterText, T37.25): every figure formatted; a queue keeps only the latest
 }
 ```

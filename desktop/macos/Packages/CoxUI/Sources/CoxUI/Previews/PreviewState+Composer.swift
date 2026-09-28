@@ -13,11 +13,14 @@ extension PreviewState {
     case .command: "/review"
     case .shell: "Shell · share output"
     case .queued: "Queued · 1"
+    case .model: modelChip
+    case .mode(let mode): mode.title
     }
   }
 
-  static let modeChip = "Plan"
   static let modeShortcut = "⇧⇥"
+  /// The model and effort as the composer's chip shows them.
+  static let modelChip = "claude-sonnet-5 · high"
 }
 
 /// A removable chip of `kind`.
@@ -28,9 +31,10 @@ struct ComposerChipSample: View {
     ComposerChip(PreviewState.chip(kind), kind: kind) {}
   }
 
-  /// The mode chip: a command with its shortcut that stays in the composer.
+  /// The mode chip with the shortcut that cycles it.
   static var shortcut: some View {
-    ComposerChip(PreviewState.modeChip, kind: .command, shortcut: PreviewState.modeShortcut)
+    ComposerChip(
+      SessionMode.plan.title, kind: .mode(.plan), shortcut: PreviewState.modeShortcut)
   }
 }
 
@@ -79,6 +83,15 @@ extension PreviewState {
       Composer.Attachment(id: "1", name: fileName),
     ]
     state.canSend = true
+    return state
+  }
+
+  /// The status chips under an empty draft (T37.24.7, mockup screen 1): Plan, the model and
+  /// its effort.
+  static var composerStatus: Composer.State {
+    var state = Composer.State()
+    state.mode = .plan
+    state.model = modelChip
     return state
   }
 
