@@ -487,3 +487,35 @@ async fn a_skipped_restore_carries_its_reason() {
         "rewound to T1: 0 files restored, 1 too large to restore, 1 failed: io error"
     );
 }
+
+/// T37.28.3: a revert of a file no turn from `to_turn` on touched writes
+/// nothing and says so; one it did touch goes back alone.
+#[tokio::test]
+async fn revert_file_restores_only_that_file() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = Arc::new(Disk::default());
+    disk.set(&[("a.rs", "old")]);
+    session.set_checkpointer(disk.clone());
+    turn(&session, &mut rx, "edit a.rs and new.rs").await;
+    disk.set(&[("a.rs", "now"), ("new.rs", "fresh")]);
+
+    let revert = |path: &str| Submission::RevertFile {
+        path: path.into(),
+        to_turn: 1,
+    };
+    session.submit(revert("other.rs")).await.expect("revert");
+    assert_eq!(
+        notice(&mut rx).await,
+        "revert: other.rs has no checkpoint from T1 on; left as it is"
+    );
+    session.submit(revert("a.rs")).await.expect("revert");
+    assert_eq!(notice(&mut rx).await, "reverted a.rs to before T1");
+    assert_eq!(
+        disk.snapshot(),
+        [
+            (PathBuf::from("/tmp/cox-turn/a.rs"), b"old".to_vec()),
+            (PathBuf::from("/tmp/cox-turn/new.rs"), b"fresh".to_vec()),
+        ]
+        .into()
+    );
+}

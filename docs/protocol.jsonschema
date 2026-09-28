@@ -2994,6 +2994,31 @@
         ]
       },
       {
+        "description": "Revert one file (T37.28.3, A101): write back its pre-image from\nbefore `to_turn` first touched it, checkpointing its current bytes\nfirst so the revert can itself be undone. Nothing else changes.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Relative to the session's cwd or absolute; confined to the\nworkspace roots like a tool's path.",
+            "type": "string"
+          },
+          "to_turn": {
+            "description": "The turn to go back before.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "const": "revert_file"
+          }
+        },
+        "required": [
+          "type",
+          "path",
+          "to_turn"
+        ]
+      },
+      {
         "description": "`Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a\nbackground task; the model gets a pointer result and the turn goes on.",
         "type": "object",
         "properties": {

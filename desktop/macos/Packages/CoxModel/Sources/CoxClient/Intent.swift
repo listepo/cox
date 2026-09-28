@@ -14,6 +14,7 @@ public enum Intent: Equatable, Sendable {
   case setEffort(effort: Effort?)
   case rewind(toTurn: UInt32, code: Bool, conversation: Bool)
   case redo
+  case revertFile(path: String, toTurn: UInt32)
   case fork(turn: UInt32?)
   case handoff(objective: String)
   case background(call: String)

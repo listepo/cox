@@ -880,6 +880,7 @@ impl Session {
                 conversation,
             } => self.rewind(to_turn, code, conversation).await,
             Submission::Redo => self.redo().await,
+            Submission::RevertFile { path, to_turn } => self.revert_file(&path, to_turn).await,
             Submission::Background { call_id } => self.background(call_id).await,
             Submission::UserShell { command, share } => self.user_shell(command, share).await,
             Submission::Command { command } if command.name == "compact" => {

@@ -1,5 +1,5 @@
 // The rewind timeline's intent (T37.28.1): a Changes tab checkpoint and a scope reach the session
-// as `Intent.rewind` to that turn.
+// as `Intent.rewind` to that turn; a file's Revert (T37.28.3) as `Intent.revertFile`.
 
 import CoxClient
 import Testing
@@ -20,4 +20,12 @@ import Testing
       .rewind(toTurn: 2, code: true, conversation: false),
       .rewind(toTurn: 2, code: true, conversation: true),
     ])
+}
+
+@MainActor
+@Test func aFilesRevertRestoresItToBeforeTheSession() async throws {
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+  let store = SessionStore(session: session)
+  try await store.revert(path: "src/retry.rs")
+  #expect(session.sent == [.revertFile(path: "src/retry.rs", toTurn: 1)])
 }

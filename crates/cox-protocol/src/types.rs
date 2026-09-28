@@ -995,6 +995,16 @@ pub enum Submission {
     /// `/redo` (T26.4): put back the files the last rewind restored, when
     /// nothing has happened since it. One step; a warning otherwise.
     Redo,
+    /// Revert one file (T37.28.3, A101): write back its pre-image from
+    /// before `to_turn` first touched it, checkpointing its current bytes
+    /// first so the revert can itself be undone. Nothing else changes.
+    RevertFile {
+        /// Relative to the session's cwd or absolute; confined to the
+        /// workspace roots like a tool's path.
+        path: String,
+        /// The turn to go back before.
+        to_turn: u32,
+    },
     /// `Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a
     /// background task; the model gets a pointer result and the turn goes on.
     Background {
@@ -1696,6 +1706,7 @@ mod tests {
     #[case::set_permission_mode(Submission::SetPermissionMode { mode: PermissionMode::Plan })]
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
+    #[case::revert_file(Submission::RevertFile { path: "src/a.rs".into(), to_turn: 2 })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
     #[case::redo(Submission::Redo)]

@@ -423,6 +423,10 @@ pub enum Intent {
         conversation: bool,
     },
     Redo,
+    RevertFile {
+        path: String,
+        to_turn: u32,
+    },
     Fork {
         turn: Option<u32>,
     },

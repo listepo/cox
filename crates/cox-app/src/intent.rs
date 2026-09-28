@@ -51,6 +51,12 @@ pub enum Intent {
         conversation: bool,
     },
     Redo,
+    /// Restore one file to before `to_turn` (DT§5.4); `path` as the
+    /// Changes tab lists it.
+    RevertFile {
+        path: String,
+        to_turn: u32,
+    },
     Fork {
         turn: Option<u32>,
     },
@@ -129,6 +135,7 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
             conversation,
         }),
         Intent::Redo => now(Submission::Redo),
+        Intent::RevertFile { path, to_turn } => now(Submission::RevertFile { path, to_turn }),
         Intent::Fork { turn } => Ok(Dispatch::Fork { turn }),
         Intent::Handoff { objective } if objective.trim().is_empty() => Err(IntentError::Empty),
         Intent::Handoff { objective } => Ok(Dispatch::Handoff { objective }),
