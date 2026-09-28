@@ -88,6 +88,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
+| T50.8 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
 
@@ -2708,6 +2709,20 @@ Check: a test drives the plain surface through `/permissions plan` and finds `pl
 Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
+
+### T50.8. Cassette redaction removes an Anthropic `sk-ant-…` key whole
+
+Model: mid-tier · Status: in progress · Depends: — · Size: ~20 · Files: `crates/cox-provider-testkit/src/replay.rs`
+
+Goal: `cox_provider_testkit::replay::redact_secrets` (the cassette redactor `cox record` and the scripted fixtures' secret scan use) redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is ASCII alphanumeric only with an 8-byte floor, so the scan stops at `ant` and the key is written into a cassette verbatim — the bug T50.7 fixed in `cox_sanitize::redact::scrub`. Calling `scrub` instead is ruled out: `crates/cox/tests/deps.rs` keeps `cox-provider-testkit` a pure leaf that may depend only on `cox-protocol`.
+
+Plan:
+1. `replay.rs`: the `sk-` arm counts ASCII alphanumerics plus `-` and `_` (the same body alphabet as T50.7's `scrub`); the 8-byte floor and the `Bearer ` arm stay.
+2. Regression test `cassette_redaction_removes_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-provider-testkit` (the new test fails on current `main`), `cargo nextest run -p cox-provider` (its committed-fixtures secret scan still finds nothing), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
