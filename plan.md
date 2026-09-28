@@ -28,7 +28,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.9 | todo | P2 | 2 | 0% | |
-| T37.23.10 | todo | P2 | 2 | 0% | |
+| T37.23.10 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.23.12 | todo | P2 | 3 | 0% | |
+| T37.23.13 | todo | P3 | 2 | 0% | |
 | T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.24.8 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2761,10 +2763,22 @@ Check: light/dark snapshots of a prompt at rest and hovered; a test that Copy pu
 
 #### T37.23.10 Thought duration in the thinking header
 
-Depends: — · Size: ~80 · Files: `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
+Depends: — · Size: ~150 · Files: `crates/cox-protocol/…`, `crates/cox-core/src/turn.rs`, `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
 Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
 Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
-Held for the creator: the event stream carries no reasoning timing, and live reasoning deltas are keyed to the reply's `AssistantMessage` item, so `Timeline` drops them (`cox-core/src/turn.rs`). The proposed fix, a protocol change, needs approval first: `cox-core` gives streamed reasoning its own `Thinking` item (`ItemStarted` → deltas → `ItemDone`) and records the first-to-last-delta time in the rollout, either as a new `Event::ThinkingDone { item, duration_ms }` or as `ItemDone.duration_ms: Option<u64>`.
+Decided by the creator (A91): `cox-core` gives streamed reasoning its own `Thinking` item (`ItemStarted` → deltas → `ItemDone`) and emits `Event::ThinkingDone { item, duration_ms }` with the first-to-last-delta time, which the rollout keeps; `Timeline` folds the live deltas and the duration. Today live reasoning deltas are keyed to the reply's `AssistantMessage` item and `Timeline` drops them (`cox-core/src/turn.rs`). Regenerate `docs/protocol.jsonschema` through its drift test.
+
+#### T37.23.12 Heading and quote structure from StyledDoc
+
+Depends: — · Size: ~150 · Files: `crates/cox-render/src/…` (`StyledDoc`), `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A92): each `StyledDoc` block carries its kind (heading, quote, list item, …), level or depth and marker apart from the text, so the desktop draws a heading without its `#` markers, a quote with a real bar at its depth and a list item with its marker in the gutter. The TUI keeps printing as today. "Copy as Markdown" still returns the source Markdown.
+Check: a `cox-render` test that a heading, a nested quote and a list item carry level and marker and their text without them; a TUI snapshot unchanged; CoxTranscriptText light/dark snapshots of a reply with each kind; a copy test that returns the Markdown source.
+
+#### T37.23.13 Transcript text size and line height from config and tokens
+
+Depends: — · Size: ~100 · Files: `crates/cox-config/…` (`[desktop.transcript]`), `docs/config.jsonschema`, `docs/config.md`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A93): `[desktop.transcript]` gets `text_size` and `line_height`; the desktop builds `TranscriptStyle` from them together with `Appearance.textScale` (⌘+/⌘−) and applies the token line heights to the transcript text, restyling in place through T37.23.6's `restyle(_:)`.
+Check: the config-schema drift test; a CoxModel test that the keys reach the style; CoxTranscriptText snapshots at two sizes and line heights.
 
 #### T37.25.1 Context window size and split in the token popover
 
@@ -3037,6 +3051,9 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A88 §0 D11 — the `#[uniffi::remote]` type declarations in `crates/cox-ffi/src/types.rs` do not count toward D11's 300-LOC limit on `cox-ffi`, by the creator (2026-09-28). Why: they hold no logic — one declaration per type the Swift side names — and growing with the protocol is their job; the limit guards the forwarding code in `lib.rs`, `session.rs` and `host.rs` (299 lines after T37.39 and T37.30). Effect: `types.rs` may grow without splitting or generating it. No other decision changes.
 - A89 §3 P37, T37.17.1, T37.17.2, T37.19.5, T37.20.5, T37.21.11, T37.22.1–T37.22.3, T37.42.1, T37.42.2 — the P37 follow-ups in `ideas.md` become cards, by the creator ("approve all", 2026-09-28). Decisions taken with them: the High Contrast palette is derived by rule (text ≥7:1, borders ≥3:1, more opaque glass, no specular); the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts, replacing both DS§4's and DT§5's pairs; the bypass strip sits under the toolbar; syntax colours come from `TranscriptStyle` tokens and a `StyledDoc` span's `rgb` is ignored, so themes and High Contrast stay consistent; T37.22 lays the window out by hand instead of `NavigationSplitView`. Why: each follow-up came from a finished card's report and none changes a D-decision; the system commands give the menu items, shortcuts and VoiceOver names macOS users already know.
 - A90 §0 D11, T37.39.1 — `cox-ffi`'s 300-LOC limit becomes a rule, by the creator (2026-09-28): every exported function or method is a one-expression forward into `cox-app`, and a test enforces it. This replaces A88's line count. Why: the surface was at 299 of 300 lines while the composer, approvals, onboarding and app wiring each need new calls. A fixed number would force logic-free forwards to be squeezed or merged. What D11 guards is "no logic in the FFI layer", which the rule checks directly.
+- A91 T37.23.10 — streamed reasoning becomes its own `Thinking` item and a new `Event::ThinkingDone { item, duration_ms }` carries how long the model thought, by the creator (2026-09-28; chosen over `ItemDone.duration_ms`). Why: the desktop's "Thought for 12 s" header needs the timing, and live reasoning keyed to the reply item was dropped by `Timeline`.
+- A92 T37.23.12 — `cox-render`'s `StyledDoc` sends a block's kind, level and marker apart from its text, by the creator (2026-09-28). Why: the desktop hides `#` markers and draws a real quote bar and list markers instead of printing the source characters; a DT-3 view-model change the TUI can ignore.
+- A93 T37.23.13 — `[desktop.transcript]` gets `text_size` and `line_height`, and the transcript applies the token line heights, by the creator (2026-09-28). Why: a text size set once in config, not only by ⌘+/⌘−, and the line spacing the design tokens specify.
 
 ## 7. Risk register
 
