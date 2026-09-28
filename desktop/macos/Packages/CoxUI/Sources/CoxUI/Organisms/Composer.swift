@@ -225,7 +225,10 @@ private struct ComposerEditor: View {
         .accessibilityLabel(state.isShell ? "Shell command" : "Message")
         .onKeyPress(action: key)
         .focused($isFocused)
-        .background(ComposerPaste(isActive: isFocused, pasteboard: pasteboard, send: send))
+        .background(
+          WindowKeys(
+            handle: ComposerPaste.keys(isActive: isFocused, pasteboard: pasteboard, send: send))
+        )
         .onChange(of: draft) { _, new in new.intents(after: state).forEach(send) }
         // A typed `!` becomes shell mode with no text, so the text alone may not change.
         .onChange(of: state.text) { draft = ComposerDraft(state) }
@@ -279,17 +282,15 @@ extension EnvironmentValues {
 }
 
 /// ⌘V while the editor has focus: file URLs or an image on the pasteboard are attached (as a
-/// drop is), anything else is left for the text view to paste. An app-local event monitor,
-/// because the Edit menu's Paste claims ⌘V before a view's key handler sees it.
-private struct ComposerPaste: NSViewRepresentable {
-  let isActive: Bool
-  let pasteboard: NSPasteboard
-  let send: (Composer.Intent) -> Void
-
-  func makeNSView(context: Context) -> Monitor { Monitor() }
-
-  func updateNSView(_ view: Monitor, context: Context) {
-    view.paste = isActive ? { Self.attachable(on: pasteboard).map(send) != nil } : nil
+/// drop is), anything else is left for the text view to paste. Through `WindowKeys`, because
+/// the Edit menu's Paste claims ⌘V before a view's key handler sees it.
+private enum ComposerPaste {
+  /// The window's key handler while the editor has focus; `nil` while it has not.
+  static func keys(
+    isActive: Bool, pasteboard: NSPasteboard, send: @escaping (Composer.Intent) -> Void
+  ) -> ((NSEvent) -> Bool)? {
+    guard isActive else { return nil }
+    return { event in isPaste(event) && attachable(on: pasteboard).map(send) != nil }
   }
 
   /// Files first — a file copied in Finder also carries its icon and name — then an image,
@@ -304,37 +305,10 @@ private struct ComposerPaste: NSViewRepresentable {
       .flatMap { $0.representation(using: .png, properties: [:]) }.map(Composer.Intent.pasteImage)
   }
 
-  final class Monitor: NSView {
-    /// Attaches what the pasteboard holds and says whether it did; `nil` while unfocused.
-    var paste: (() -> Bool)?
-    private var monitor: Any?
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidMoveToWindow() {
-      super.viewDidMoveToWindow()
-      stop()
-      guard window != nil else { return }
-      monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-        guard let self, event.window === self.window, Self.isPaste(event), self.paste?() == true
-        else { return event }
-        return nil
-      }
-    }
-
-    isolated deinit { stop() }
-
-    private func stop() {
-      if let monitor { NSEvent.removeMonitor(monitor) }
-      monitor = nil
-    }
-
-    /// ⌘V alone. `characters`, not `charactersIgnoringModifiers`: with ⌘ held a layout gives its
-    /// command-key letters (Latin on a Cyrillic layout), which is what the menu matches too.
-    private static func isPaste(_ event: NSEvent) -> Bool {
-      event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
-        && event.characters == "v"
-    }
+  /// ⌘V alone. `characters`, not `charactersIgnoringModifiers`: with ⌘ held a layout gives its
+  /// command-key letters (Latin on a Cyrillic layout), which is what the menu matches too.
+  private static func isPaste(_ event: NSEvent) -> Bool {
+    WindowKeys.holds(event, only: .command) && event.characters == "v"
   }
 }
 
