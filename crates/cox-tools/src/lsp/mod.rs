@@ -5,3 +5,4 @@
 
 pub mod client;
 pub mod diag;
+pub mod server;
