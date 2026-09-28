@@ -27,6 +27,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
+| T38.1 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
+| T38.2 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
+| T38.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
 
@@ -1038,6 +1041,46 @@ Check: the recorded fixture round-trips through T35.7's mapper unchanged; the sc
 
 Rationale in §6 A62.
 
+### P38 — Leftovers from ideas (goal: two defects and one hard-coded rule found in passing are fixed while P33 waits for an extism release on wasmtime ≥ 48)
+
+Rationale in §6 A69. Each card came from `ideas.md`; the creator approved the move on 2026-09-28. The implementing agent writes its execution plan into its own card before starting.
+
+### T38.1. OpenAI Chat wire emits `ToolUseEnd`
+
+Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~150 · Files: `crates/cox-provider-openai/src/chat.rs` (+ a fixture under its tests)
+
+Goal: a tool call streamed over the Chat Completions wire (OpenAI Chat, Ollama, vLLM, LM Studio, OpenRouter) reaches the core. Today `chat.rs` emits `ToolUseStart` and input deltas but never `ToolUseEnd`, and `turn::consume_provider` commits a call only on `ToolUseEnd` — the bug T30.6 fixed for Anthropic. Chat interleaves parallel calls by `index`, so each call's start, deltas and end must come out in order (buffer per index, flush on `finish_reason`).
+
+Check: a scripted Chat SSE stream with two interleaved parallel tool calls yields, per call, `ToolUseStart` → its deltas → `ToolUseEnd`, and a core-level test commits both calls; the regression test fails without the fix.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: live recording against a paid key; the Responses wire (already correct).
+
+### T38.2. Detached `bash` from an older turn is killed on quit
+
+Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~180 · Files: `crates/cox-tools` (bash spawn/cancel), `crates/cox-core` (session-scoped token), `crates/cox` or `crates/cox-tui` (quit path)
+
+Goal: no orphaned shell after cox exits. Cancellation is turn-scoped (T34.11 follow-up), so once the user sends another prompt, `interrupt()` at TUI quit no longer reaches a detached shell's `ToolCx::cancel`; `wait_tasks_cleared` gives up after `SHELL_CANCEL_GRACE` and the process is orphaned (reproduced with `sleep 4003`, ppid 1). A session-scoped token that detached shell tasks also watch closes it for TUI quit, headless `--loop`, `/clear`, fork and handoff alike.
+
+Check: a test starts a detached `bash` in turn 1, runs turn 2, ends the session, and asserts the shell's process group is gone within the grace period; it fails without the fix. Manual: the `sleep 4003` repro against a `COX_HOME` scratch tree leaves no process with ppid 1.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: changing turn-scoped cancellation for foreground tools.
+
+### T38.3. `adaptive_thinking` from models.dev instead of a name rule
+
+Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~160 · Files: `scripts/vendor/src/cox_vendor/models.py` (+ its tests), the vendored catalog data it writes, `crates/cox-models/src/catalog.rs`
+
+Goal: `Capabilities.adaptive_thinking` is filled per catalog row from models.dev `reasoning_options` by the `scripts/vendor` script (A48: no hand-edited rows), and the name rule `cox_models::supports_adaptive_thinking` (prefix list) goes away or becomes a fallback only for rows models.dev does not describe (follow-up to T30.25).
+
+Check: the vendor script's test maps a models.dev fixture row with adaptive reasoning to `adaptive_thinking = true` and one without to `false`; a `cox-models` test proves the effort map reads the catalog value for a row the old prefix rule got wrong or did not list; the regenerated data comes from a re-run of the script.
+
+Done when: the Check passes, `just vendor-test` passes, and the three AGENTS.md commands are clean.
+
+Out of scope: other capability fields.
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -1169,6 +1212,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A64 §3 P36 (new T36.2), by the creator. Why: T36.1's follow-ups are security gaps: an assignment prefix (`GIT_PAGER='rm x' git log`) keeps a command rated `ReadOnly`, so it runs without asking; wrappers (`nohup rm …`) and `sh -c` strings hide a command from deny. Effect: one card; `cox_permission::Engine` stays the single guard. No decision changes.
 - A65 `docs/design/plugins.md` §11–12, `scripts/footprint.json` — plugin size budget 22 MiB, by the creator. Why: PR #53's footprint job failed: the full release binary is 77 764 992 B on the macOS CI runner against a baseline of 47 323 136 B, and the whole `plugins` feature now adds +20.38 MiB over the slim build (56 409 008 B), just over A55's 20 MiB. Effect: the budget is 22 MiB and the `Darwin-arm64-ci` baseline is refreshed from that CI run (startup 6.9 ms, first frame 35.7 ms, RSS 24.0 MiB), and the local `Darwin-arm64` one from a fresh release build (77 799 856 B). No decision changes.
 - A66 §3 P35 (new T35.14), by the creator. Why: the PR #53 CI fix found that bwrap's private `/tmp` hides any sandboxed program under `/tmp` on Linux, including AGENTS.md's `COX_HOME=/tmp/cox-scratch` dev runs. Effect: one card; `cox_sandbox::sandbox::Policy` stays the single sandbox guard. No decision changes.
+- A69 §3 (new P38: T38.1–T38.3), by the creator on 2026-09-28. Why: every open P33 card waits on T33.43 (no extism release after 1.30.0 pins wasmtime ≥ 48; checked on crates.io 2026-09-28) or on the creator's key, and the creator asked to fill the slots from `ideas.md`, excluding benchmarks and comparisons with other agents. Effect: three ideas move to P38 and leave `ideas.md`: the OpenAI Chat `ToolUseEnd` bug, the orphaned detached `bash` on quit and `adaptive_thinking` from models.dev. No decision changes.
 
 ## 7. Risk register
 
