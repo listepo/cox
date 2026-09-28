@@ -3420,3 +3420,17 @@ Deviations: `CoxSlider` is a view, not a `CoxSliderStyle` (macOS has no public `
 Check: 20 snapshots (on/off and slider 0/50/100 % × light/dark × Solid/Frosted); the knob sits at the value's share of the range; out-of-range values clamp; merged run as in T37.19.1. Commit fb412f5.
 
 Not done: no disabled-state visuals for toggle or slider (the card does not ask).
+
+#### T37.20 `CoxUI` Atoms
+
+Depends: T37.19.1–T37.19.4 · Size: split at claim · Files: `…/CoxUI/Atoms/*`, `…/CoxUI/Previews/PreviewState.swift`
+Goal: every DS§6.2 atom, one file each, with previews and snapshots for every variant.
+Check: snapshot suite green; lint green; each atom's file names a DS§6.2 row.
+Status: done 2026-09-28
+Result: first part of the atoms (split at claim; the rest moved to T37.20.1–T37.20.4). `Sources/CoxUI/Atoms/`: StatusDot, IconTile, KeyCap, Badge, CountBadge, RiskChip (drawn as a Badge), DiffStat, SectionHeader, InlineCode — one file each, the header naming its DS§6.2 row, a `#Preview` per variant over light/dark × Solid/Frosted. `Sources/CoxUI/Previews/PreviewState.swift`: fixtures plus `PreviewBackdrop`, `PreviewPane`, `PreviewMatrix`. `Tests/CoxUITests/Snapshot.swift` is now the one snapshot harness (`Variant`, `SnapshotHost`, `assertCoxSnapshot`); the three earlier copies are gone and every suite uses it with its references unchanged. DESIGN.md §6.2 IconTile and RiskChip rows name their parameters.
+
+Deviations: ~510 source lines in 10 files. Mockup values with no token are named private constants (Badge/InlineCode radius 5 and 1 pt vertical padding, InlineCode 5 pt horizontal padding, CountBadge height 16, StatusDot halo 3 and idle ring 1.5, project tint 0.13, CountBadge text `Color.white`). The project badge uses `status.plan` (blue), not the mockup's purple — no purple role token. RiskChip maps low→neutral, medium→warning, high→danger. KeyCap has a `surface.capsule` face at e1 (DS§3.4).
+
+Check: helper merge alone — 25 tests in 7 suites pass against the existing references; then the first run recorded 100 atom snapshots, second and third runs 37 tests in 9 suites pass with nothing re-recorded; `swiftlint --strict` and `swift-format lint --strict` clean. Built and tested without the SwiftLintPlugins lines (plugin fetch stalls locally); `Package.swift`/`Package.resolved` unchanged. Commits 0cf1ff9, 9bc39d3.
+
+Not done: Spinner, ProgressRing, Sparkline, StackedBar, Thumbnail and the Hairline atom (T37.20.1–T37.20.4).

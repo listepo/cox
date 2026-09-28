@@ -31,7 +31,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.41 | todo | P0 | 3 | 0% | |
 | T37.42 | todo | P0 | 3 | 0% | |
 | T37.43 | todo | P0 | 4 | 0% | |
-| T37.20 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.20.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.20.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.20.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.20.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21 | todo | P0 | 4 | 0% | |
 | T37.22 | todo | P0 | 3 | 0% | |
 | T37.23 | todo | P0 | 5 | 0% | |
@@ -1102,15 +1105,33 @@ Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
 Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
 Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
 
-#### T37.20 `CoxUI` Atoms
+#### T37.20.1 `Spinner` and `ProgressRing`
 
-Depends: T37.19.1–T37.19.4 · Size: split at claim · Files: `…/CoxUI/Atoms/*`, `…/CoxUI/Previews/PreviewState.swift`
-Goal: every DS§6.2 atom, one file each, with previews and snapshots for every variant.
-Check: snapshot suite green; lint green; each atom's file names a DS§6.2 row.
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the DS§6.2 indeterminate spinner and `ProgressRing(fraction)`, with the Reduce Motion fallback resolved in `Appearance`.
+Check: snapshot per variant × light/dark × Solid/Frosted; under Reduce Motion the spinner does not rotate.
+
+#### T37.20.2 `Sparkline` and `StackedBar`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the token meter's data graphics: `Sparkline(samples)` (tint, gradient fill) and `StackedBar(segments)` (segment colours from tokens).
+Check: snapshots for empty, one-sample and full series and for a bar of each segment mix × light/dark.
+
+#### T37.20.3 `Thumbnail`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: `Thumbnail(attachment)` in its image and file variants (DS§6.2).
+Check: snapshot per variant × light/dark × Solid/Frosted.
+
+#### T37.20.4 `Hairline` atom
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the DS§6.2 hairline atom. SwiftPM rejects two files of the same name in one target and `Foundations/Hairline.swift` exists, so the atom's file (or the Foundations file) takes another name; the type names must not clash either.
+Check: snapshot per orientation × light/dark; the Foundations `hairline` references stay unchanged.
 
 #### T37.21 `CoxUI` Molecules
 
-Depends: T37.20 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
+Depends: T37.20.1–T37.20.4 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
 Goal: every DS§6.3 molecule built only from atoms and foundations.
 Check: snapshot suite green; no molecule imports `CoxCore`; no styling modifier is applied to an atom from outside it except through the atom's own parameters.
 
