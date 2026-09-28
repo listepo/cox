@@ -44,8 +44,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.29.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.2 | todo | P2 | 3 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
-| T37.29.4 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.5 | todo | P3 | 2 | 0% | |
+| T37.29.6 | todo | P2 | 3 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2861,17 +2861,17 @@ Depends: — · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
 
-#### T37.29.4 Inspector Tasks tab
-
-Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…`
-Goal: subagent and background-call rows with label, tier, state and cost, fed from `BlockKind.task`; a click opens the child transcript (a session-open-by-task call in cox-app if one is missing).
-Check: a snapshot per cell; a test that a click sends the open intent with the child id.
-
 #### T37.29.5 Inspector Info tab
 
 Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/InfoTab.swift`, `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`
 Goal: session id, cwd, worktree, config provenance and rollout path as a KeyValueGrid, from a new `SessionHandle::info()` forward.
 Check: a snapshot per cell; a cox-app test for `info()`.
+
+#### T37.29.6 Open a task's transcript from the Tasks tab
+
+Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
+Goal: `SessionHandle::open_task(task)` returns what a Tasks-tab click opens: a subagent's child `SessionId` (from the parent session's children, no protocol change) or, for a background shell, its archived output id; the task row says which kind it is so the tab can label it. The FFI side is a one-expression forward (A90).
+Check: a cox-app test over a scripted session with one subagent and one background shell; a CoxModel test that `.open(task:)` resolves to the child session.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 

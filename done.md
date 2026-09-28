@@ -4696,3 +4696,26 @@ Check:
 Not done:
 - Installing `NotificationResponder` and `HostBridge(MacHost())` in the app goes to T37.22.3, and notifications there post only when the session is not visible.
 - Remaining parts are T37.27.5–T37.27.7.
+
+#### T37.29.4 Inspector Tasks tab
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…`
+Goal: subagent and background-call rows with label, tier, state and cost, fed from `BlockKind.task`; a click opens the child transcript (a session-open-by-task call in cox-app if one is missing).
+Check: a snapshot per cell; a test that a click sends the open intent with the child id.
+Status: done 2026-09-28
+Result:
+- CoxUI `Organisms/TasksTab.swift`, `TasksTab(state:send:)`:
+  - One `InspectorSection`, "Subagents & background · n", with one `InspectorRow` per task: glyph, label, tier `Badge`, cost once done, and the ToolHeader status glyph.
+  - A row click or "Open transcript" sends `.open(task:)`.
+  - An empty state.
+- CoxModel `TaskRows.swift`: `SessionStore.tasks` maps each `BlockKind.task` to a `TaskRow` (id, label, tier, state, cost).
+- DS§6.4 has a `TasksTab` row. `ToolHeaderStatus` is internal instead of private.
+Deviations:
+- The intent carries the task id, not a child session id, because the task block has only a `TaskId` (T37.29.6).
+- Every row is clickable: the block does not say whether a task is a subagent or a background shell.
+Check:
+- CoxModel `taskBlocksBecomeRowsWithStateAndCostInTimelineOrder`: 31 tests.
+- CoxUI: 5 TasksTab snapshots and `aRowClickOpensTheTaskTranscriptByItsId`; the full suite passes 130 tests.
+- swiftlint and swift-format are clean.
+- After merging into `p37-desktop`: CoxModel 33/33, CoxUI TasksTab and Inspector 11/11.
+Not done: opening the child transcript (T37.29.6); app wiring (T37.22.3).
