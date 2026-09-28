@@ -160,3 +160,4 @@ Programs the project uses and the direct packages from its manifests.
 | swift-collections | local (`CoxModel`) | https://github.com/apple/swift-collections | T37.16: `OrderedDictionary` keeps the timeline store in block order (research.md §9.5.6) |
 | SwiftLintPlugins | local (every package under `desktop/macos/Packages`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |
 | swift-snapshot-testing | local (`CoxUI` tests) | https://github.com/pointfreeco/swift-snapshot-testing | T37.19: image snapshots of the CoxUI Foundations and components (DS§9, A67) |
+| SwiftTerm | local (`CoxPlatform`) | https://github.com/migueldeicaza/SwiftTerm | T51.5: the terminal pane's VT emulator and renderer, `TerminalView` only — the shell runs in Rust (research.md §9.5.2; 1.20.0, the latest release, 2026-08-18; MIT) |
