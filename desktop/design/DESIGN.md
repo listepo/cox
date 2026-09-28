@@ -7,7 +7,8 @@ does not have, add it here first (token, component or variant), then build the s
 - **Source of truth for values:** `tokens/*.json` (W3C Design Tokens Format Module 2025.10). This file
   explains them; it never restates a value the JSON holds, except in the tables marked *mirror*.
 - **Source of truth for looks:** `mockups/mockups.html`; `mockups/render.sh <screen-id>…` renders PNGs into `mockups/screens/` (not committed). The glass main screen
-  is `28-main-glass-frosted`, `29-main-glass-glossy`, `30-main-glass-tokens`.
+  is `28-main-glass-frosted`, `29-main-glass-glossy`, `30-main-glass-tokens`; in dark,
+  `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy`.
 - **Behaviour and architecture:** `docs/design/desktop.md` (cited as DT§n). This file covers only the view layer.
 
 ## 1. Principles
@@ -107,6 +108,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | Group | Tokens | Use |
 | --- | --- | --- |
 | surface | `window`, `sidebar`, `code`, `capsule`, `capsuleBorder`, `popover`, `terminal` | Backgrounds, by layer |
+| glass | `fill`, `border`, `highlight` | A glass pane's tint, rim and top-edge highlight (§3.5) |
 | fill | `primary`, `secondary` | Quiet fills inside a surface |
 | text | `primary`, `secondary`, `tertiary`, `placeholder`, `terminal`, `terminalOk`, `onAccent` | Foregrounds; `placeholder` is the hint in an empty field, stronger than `tertiary` so it holds §8 on glass (A112); `onAccent` is the label on an accent or status fill (primary button, Bypass segment), white, and High Contrast holds it to 7:1 on those fills |
 | line | `separator` | 0.5 pt hairlines |
@@ -202,6 +204,23 @@ highlights go too and the app looks like a standard macOS app. Only `e5` ignores
 | Frosted | `material.frosted.windowOpacity` (default) | heavy | soft sweep | `glassEffect(.regular)`; window behind: `NSVisualEffectView`, `.behindWindow` |
 | Glossy | lower | light | strong sweep and streak | `glassEffect(.clear)` + the `specular` sweep |
 | Solid | 1 | none | none | Plain `surface.window`; forced by Reduce Transparency |
+
+Glass colours (`color.glass.*`, T51.1): the pane tint, rim and top-edge highlight glass draws over
+the window's own tint (`surface.window` at the material's window opacity). Light takes mockup 28's
+values; dark takes mockups 31-main-glass-dark-frosted and 32-main-glass-dark-glossy, the same
+layout over the same wallpaper — a cool near-black tint that keeps the wallpaper's colour, and
+white rims.
+
+| Token | *mirror* light | *mirror* dark | High Contrast (`high-contrast.mjs`) |
+| --- | --- | --- | --- |
+| `glass.fill` | `#ffffff` at 0.34 | `#14141a` at 0.34 | glass: keeps `glassKeep` of its transparency (0.835) |
+| `glass.border` | `#ffffff` at 0.75 | `#ffffff` at 0.16 | a border: solid, at least 3:1 on every page surface |
+| `glass.highlight` | `#ffffff` at 0.95 | `#ffffff` at 0.22 | kept: depth, nothing to read on it |
+
+In dark, lifted panes (e2 and up) draw `glass.highlight` as it is; controls (e1) draw it at
+`material.darkHighlight`'s share — none by default, as mockups 31 and 32 show (A109, §3.4). On the
+dark glass, `text.primary` is 15.3:1, `text.secondary` 6.7:1, the selected row's subtitle 5.4:1 and
+the filter prompt 7.1:1, laid over opaque `surface.window` (§8).
 
 - The user sets material, window transparency, blur (frosted) or reflection (glossy), Depth, and
   "Tint from wallpaper" in the Appearance popover (toolbar paintbrush, ⌘⌥A) and in Settings ›
