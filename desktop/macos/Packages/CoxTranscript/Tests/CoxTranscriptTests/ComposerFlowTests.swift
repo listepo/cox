@@ -1,6 +1,7 @@
 // T37.24's Check: a `SessionComposer` in a window, driven by real key events — type `@`, pick a
 // file from the rows with ↓ and ⏎, type the rest, send with ⏎ — and the intent reaches the
-// fixture client, which answers the completion without Rust.
+// fixture client, which answers the completion without Rust. T37.24.5's: ⌘V of a PNG from a
+// private pasteboard attaches it, and ⌘V of text is left to the Edit menu's Paste.
 
 import AppKit
 import CoxClient
@@ -61,6 +62,45 @@ import Testing
     await host.settle(until: { session.sent.count == 3 })
     #expect(session.sent.suffix(2) == [.interrupt, .send(text: "now", attachments: [])])
   }
+
+  @Test func pastingAPNGAttachesItAndSendCarriesIt() async throws {
+    let board = NSPasteboard(name: NSPasteboard.Name("cox.test.\(UUID())"))
+    defer { board.releaseGlobally() }
+    let rep = NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8, samplesPerPixel: 4,
+      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+      bitsPerPixel: 0)
+    let png = try #require(rep?.representation(using: .png, properties: [:]))
+    board.clearContents()
+    board.setData(png, forType: .png)
+    let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+    let store = ComposerStore(session: SessionStore(session: session))
+    let host = ComposerHost(SessionComposer(store: store).environment(\.composerPasteboard, board))
+    defer { host.close() }
+
+    #expect(!host.paste())
+    #expect(store.attachments.count == 1)
+    host.type("what is this")
+    host.press(.return)
+    await host.settle(until: { !session.sent.isEmpty })
+    let image = Attachment(
+      name: "Pasted image.png", mediaType: "image/png", dataB64: png.base64EncodedString())
+    #expect(session.sent == [.send(text: "what is this", attachments: [image])])
+  }
+
+  @Test func pastingTextAttachesNothingAndLeavesTheKeyToTheMenu() throws {
+    let board = NSPasteboard(name: NSPasteboard.Name("cox.test.\(UUID())"))
+    defer { board.releaseGlobally() }
+    board.clearContents()
+    board.setString("plain words", forType: .string)
+    let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+    let store = ComposerStore(session: SessionStore(session: session))
+    let host = ComposerHost(SessionComposer(store: store).environment(\.composerPasteboard, board))
+    defer { host.close() }
+
+    #expect(host.paste())
+    #expect(store.attachments.isEmpty)
+  }
 }
 
 /// A view in a borderless window far off screen, with its text view first responder, so key
@@ -118,6 +158,23 @@ private final class ComposerHost {
     settle()
   }
 
+  /// ⌘V through the application, whose event monitors see a keyboard's ⌘V before the Edit menu
+  /// does; says whether the key went on to a Paste item standing in for the menu's.
+  func paste() -> Bool {
+    let menu = PasteMenu()
+    let previous = NSApp.mainMenu
+    NSApp.mainMenu = menu.bar
+    defer { NSApp.mainMenu = previous }
+    let event = NSEvent.keyEvent(
+      with: .keyDown, location: .zero, modifierFlags: .command,
+      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+      context: nil, characters: "v", charactersIgnoringModifiers: "v", isARepeat: false,
+      keyCode: 9)
+    if let event { NSApp.sendEvent(event) }
+    settle()
+    return menu.pasted
+  }
+
   /// A few turns of the run loop, so SwiftUI applies what the store changed.
   func settle() {
     for _ in 0..<5 {
@@ -137,6 +194,24 @@ private final class ComposerHost {
   func close() {
     window.orderOut(nil)
     window.close()
+  }
+
+  /// A menu bar whose one item takes ⌘V and records that it did.
+  private final class PasteMenu: NSObject {
+    let bar = NSMenu()
+    private(set) var pasted = false
+
+    override init() {
+      super.init()
+      let item = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+      item.submenu = NSMenu(title: "Edit")
+      let paste = NSMenuItem(title: "Paste", action: #selector(record), keyEquivalent: "v")
+      paste.target = self
+      item.submenu?.addItem(paste)
+      bar.addItem(item)
+    }
+
+    @objc private func record() { pasted = true }
   }
 
   private static func textViews(in view: NSView) -> [NSTextView] {

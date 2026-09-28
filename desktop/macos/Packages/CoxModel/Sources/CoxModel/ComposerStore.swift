@@ -89,15 +89,20 @@ public final class ComposerStore {
     for url in urls {
       do {
         let data = try await Task.detached { try Self.read(url) }.value
-        let type = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-        attachments.append(
-          Attachment(
-            name: url.lastPathComponent, mediaType: type ?? "application/octet-stream",
-            dataB64: data.base64EncodedString()))
+        let type = UTType(filenameExtension: url.pathExtension)
+        attach(data, name: url.lastPathComponent, type: type)
       } catch {
         report(error)
       }
     }
+  }
+
+  /// Bytes with no file behind them, such as a pasted screenshot.
+  public func attach(_ data: Data, name: String, type: UTType?) {
+    attachments.append(
+      Attachment(
+        name: name, mediaType: type?.preferredMIMEType ?? "application/octet-stream",
+        dataB64: data.base64EncodedString()))
   }
 
   public func removeAttachment(at index: Int) {
