@@ -450,3 +450,42 @@ fn resume_followup_prompt_reuses_session_id() {
     let v2: Value = serde_json::from_slice(&out2).unwrap();
     assert_eq!(v2["session"].as_str(), Some(session_id));
 }
+
+/// T50.4: runs `TEXT_ONLY` with `start` flags, then resumes that session
+/// with `WRITE` and `resume` flags; returns whether the write landed.
+fn resumed_write_lands(start: &[&str], resume: &[&str]) -> bool {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let out = cox(work.path(), home.path(), TEXT_ONLY)
+        .args(start)
+        .args(["--output-format", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let first: Value = serde_json::from_slice(&out).unwrap();
+    let id = first["session"].as_str().unwrap().to_string();
+    cox(work.path(), home.path(), WRITE)
+        .args(["--resume", &id])
+        .args(resume)
+        .output()
+        .unwrap();
+    work.path().join("a.txt").exists()
+}
+
+/// T50.4: on resume an explicit `--permission-mode` wins over the mode the
+/// session recorded.
+#[test]
+fn resume_with_an_explicit_permission_mode_flag_uses_it() {
+    assert!(resumed_write_lands(
+        &["--permission-mode", "plan"],
+        &["--permission-mode", "auto"],
+    ));
+}
+
+/// T50.4: without the flag, resume keeps the mode the session started in,
+/// not the configured `Default`.
+#[test]
+fn resume_without_a_flag_keeps_the_recorded_mode() {
+    assert!(resumed_write_lands(&["--permission-mode", "auto"], &[]));
+}

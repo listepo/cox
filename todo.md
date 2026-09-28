@@ -83,6 +83,5 @@
 - T49.4. MCP Apps scope gate
 - T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
 - T50.3. The volatile block shows the live permission mode
-- T50.4. Resume keeps the session's starting permission mode
 - T50.5. `cox --plain` shows the mode after `/permissions`
 - T50.6. `headless_run_does_not_wait_for_a_background_shell` is not timing-flaky

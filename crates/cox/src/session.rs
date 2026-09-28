@@ -63,6 +63,19 @@ pub async fn open(
 ) -> anyhow::Result<(Session, LoadedConfig)> {
     let mut loaded = config_load::load(cwd, cli)?;
     tweak(&mut loaded.config);
+    // T50.4: on resume an explicit `--permission-mode` wins, then the mode
+    // the rollout recorded, then config. The resolved mode goes back into
+    // the config too, so the TUI and `--plain` show the mode the session
+    // actually runs in; `cox-core` records it when the session opens.
+    let resume = resume.map(|(id, mut history)| {
+        let mode = match (&cli.permission_mode, history.permission_mode) {
+            (None, Some(recorded)) => recorded,
+            _ => loaded.config.permissions.mode,
+        };
+        history.permission_mode = Some(mode);
+        loaded.config.permissions.mode = mode;
+        (id, history)
+    });
     // §1.6: empty `workspace_roots` means the git root of cwd, else cwd.
     if loaded.config.core.workspace_roots.is_empty() {
         loaded.config.core.workspace_roots =

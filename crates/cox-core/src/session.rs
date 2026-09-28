@@ -407,8 +407,9 @@ impl Session {
                     (
                         id,
                         history.messages,
-                        // Rollouts before T50.2 record no mode.
-                        history.permission_mode.unwrap_or(PermissionMode::Default),
+                        // T50.4: a rollout with no mode record (written
+                        // before T50.2/T50.4) resumes in the configured mode.
+                        history.permission_mode.unwrap_or(config.permissions.mode),
                         history.grants,
                         turn_marks,
                         truncated_notice,
@@ -528,6 +529,23 @@ impl Session {
                 })
                 .map_err(|error| CoreError::Store { error })?;
             session.store.rollout_append(&id, &started).ok();
+        }
+        // T50.4: a top-level session records the mode it opens in, fresh or
+        // resumed, so resume never falls back to a wider mode and a flag
+        // that overrides the record on resume is itself recorded. Rollout
+        // only, like the persisted `SessionStarted`: every surface already
+        // has the opening mode from the config it built the session with.
+        // A child's mode is its parent's (T45.1, T50.2 `restart`).
+        if !is_child {
+            session
+                .store
+                .rollout_append(
+                    &id,
+                    &Event::PermissionModeChanged {
+                        mode: permission_mode,
+                    },
+                )
+                .map_err(|error| CoreError::Store { error })?;
         }
         let _ = session.tx.try_send(started);
         if let Some(notice) = truncated_notice {
