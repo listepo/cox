@@ -53,7 +53,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `fallbacks` = `true` — fallbacks: "default" + beta header
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="claude-haiku-4-5", display_name="Claude Haiku 4.5 (latest)", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-fable-5-1", display_name="Claude Fable 5.1", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="claude-haiku-4-5", display_name="Claude Haiku 4.5 (latest)", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="claude-fable-5-1", display_name="Claude Fable 5.1", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openai]`
 
 - `base_url` = `"https://api.openai.com/v1"`
@@ -61,7 +61,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"responses"` — "responses" | "chat"
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="gpt-5.1", display_name="GPT-5.1", context_window=400000, efforts=["low", "high"]}, {id="gpt-5.5", display_name="GPT-5.5", context_window=1050000, efforts=["low", "high", "xhigh"]}, {id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=1050000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="gpt-5.1", display_name="GPT-5.1", context_window=400000, efforts=["low", "medium", "high"]}, {id="gpt-5.5", display_name="GPT-5.5", context_window=1050000, efforts=["low", "medium", "high", "xhigh"]}, {id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=1050000, efforts=["low", "medium", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.local]`
 
 - `base_url` = `"http://localhost:11434/v1"`
@@ -108,7 +108,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `context_window` = `1000000`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="anthropic/claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", display_name="Qwen3 Coder Plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", display_name="Grok 4.3", context_window=1000000, efforts=["low", "high"]}]` — curated coding subset; the full 359-model list lives in models.dev
+- `models` = `[{id="anthropic/claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="anthropic/claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", display_name="Qwen3 Coder Plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", display_name="Grok 4.3", context_window=1000000, efforts=["low", "medium", "high"]}]` — curated coding subset; the full 359-model list lives in models.dev
 ## `[providers.moonshot]`
 
 - `base_url` = `"https://api.moonshot.ai/v1"`
@@ -118,7 +118,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `context_window` = `262144`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="kimi-k2.6", display_name="Kimi K2.6", context_window=262144, efforts=["low", "high", "xhigh"]}, {id="kimi-k2.7-code", display_name="Kimi K2.7 Code", context_window=262144, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+- `models` = `[{id="kimi-k2.6", display_name="Kimi K2.6", context_window=262144, efforts=["low", "medium", "high", "xhigh"]}, {id="kimi-k2.7-code", display_name="Kimi K2.7 Code", context_window=262144, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
 ## `[providers.z-ai]`
 
 - `base_url` = `"https://api.z.ai/api/paas/v4"`
